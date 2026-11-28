@@ -1,0 +1,14 @@
+--- delta_lake_enable_engine_predicate = 0
+23
+23
+23
+43
+0
+9
+--- delta_lake_enable_engine_predicate = 1
+23
+23
+23
+43
+0
+9

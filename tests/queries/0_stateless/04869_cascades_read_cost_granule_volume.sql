@@ -4,7 +4,6 @@
 -- scan-volume cost the optimizer replicates the read and every node re-scans the whole table;
 -- with it the table is scanned once in parallel and the small result is broadcast.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET param__internal_cascades_cluster_node_count = 8;
@@ -21,7 +20,6 @@ SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_optimize_join_order_algorithm = 'dpsize greedy';
 SET optimize_move_to_prewhere = 1;
 SET query_plan_merge_filters = 1;
-SET query_plan_optimize_prewhere = 1;
 SET enable_multiple_prewhere_read_steps = 1;
 SET allow_reorder_prewhere_conditions = 1;
 

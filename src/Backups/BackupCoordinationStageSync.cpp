@@ -3,6 +3,7 @@
 #include <base/chrono_io.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -31,6 +32,11 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
+namespace FailPoints
+{
+    extern const char backup_coordination_finish_zk_fail_before_op[];
+}
+
 namespace
 {
     /// The coordination version is stored in the 'start' node for each host
@@ -48,7 +54,16 @@ namespace
 
         /// Now we create the 'finish' node both if the work is done or if the error handling is done.
 
-        kCurrentVersion = 2,
+        /// Since this version the initiating host takes the named collections access decisions
+        /// before dispatching the query: a BACKUP ON CLUSTER initiator authorizes exporting the
+        /// collections against the initiating user (see `backupNamedCollections`), and a RESTORE
+        /// ON CLUSTER initiator requires the right restoring them needs (`CREATE NAMED COLLECTION`,
+        /// see `RestorerFromBackup::getRequiredAccess`). The hosts executing the dispatched query -
+        /// possibly with full access - may trust it only then: a host receiving a query dispatched
+        /// by an older initiator must neither export nor restore the collections.
+        kVersionWithNamedCollectionsAccessDecisions = 3,
+
+        kCurrentVersion = 3,
     };
 }
 
@@ -62,6 +77,15 @@ bool BackupCoordinationStageSync::HostInfo::operator ==(const HostInfo & other) 
 bool BackupCoordinationStageSync::HostInfo::operator !=(const HostInfo & other) const
 {
     return !(*this == other);
+}
+
+String BackupCoordinationStageSync::HostInfo::getStatusDesc(const String & operation) const
+{
+    if (!started)
+        return fmt::format(": the host hasn't started working on this {} yet", operation);
+    if (!connected)
+        return fmt::format(": the host is currently disconnected, last connection was at {}", last_connection_time);
+    return "";
 }
 
 bool BackupCoordinationStageSync::State::operator ==(const State & other) const = default;
@@ -868,20 +892,7 @@ void BackupCoordinationStageSync::setStage(const String & stage, const String & 
 
 void BackupCoordinationStageSync::createStageNode(const String & stage, const String & stage_result, Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper)
 {
-    if (isErrorSet())
-        rethrowSetError();
-
-    String serialized_error;
-    if (zookeeper->tryGet(error_node_path, serialized_error))
-    {
-        auto [exception, host] = parseErrorNode(serialized_error);
-        if (exception)
-        {
-            std::lock_guard lock{mutex};
-            state.addErrorInfo(exception, host);
-            std::rethrow_exception(exception);
-        }
-    }
+    rethrowErrorIfSet(zookeeper);
 
     auto code = zookeeper->tryCreate(getStageNodePath(stage), stage_result, zkutil::CreateMode::Persistent);
     if (code == Coordination::Error::ZOK)
@@ -968,13 +979,7 @@ bool BackupCoordinationStageSync::checkIfHostsReachStage(const Strings & hosts, 
         if (should_stop_watching_thread)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "waitHostsReachStage() can't wait for stage {} after the watching thread stopped", stage_to_wait);
 
-        String host_status;
-        if (!host_info.started)
-            host_status = fmt::format(": the host hasn't started working on this {} yet", operation_name);
-        else if (!host_info.connected)
-            host_status = fmt::format(": the host is currently disconnected, last connection was at {}", host_info.last_connection_time);
-
-        LOG_TRACE(log, "Waiting for {} to reach stage {}{}", getHostDesc(host), stage_to_wait, host_status);
+        LOG_TRACE(log, "Waiting for {} to reach stage {}{}", getHostDesc(host), stage_to_wait, host_info.getStatusDesc(operation_name));
         return false; /// wait for next change of `state_changed`
     }
 
@@ -984,16 +989,6 @@ bool BackupCoordinationStageSync::checkIfHostsReachStage(const Strings & hosts, 
 
 
 void BackupCoordinationStageSync::finish(bool throw_if_error)
-{
-    WithRetries::Kind retries_kind = WithRetries::kNormal;
-    if (throw_if_error)
-        retries_kind = WithRetries::kErrorHandling;
-
-    finishImpl(throw_if_error, retries_kind);
-}
-
-
-void BackupCoordinationStageSync::finishImpl(bool throw_if_error, WithRetries::Kind retries_kind)
 {
     {
         std::lock_guard lock{mutex};
@@ -1041,10 +1036,12 @@ void BackupCoordinationStageSync::finishImpl(bool throw_if_error, WithRetries::K
     auto component_guard = Coordination::setCurrentComponent("BackupCoordinationStageSync::finish");
     try
     {
-        auto holder = with_retries.createRetriesControlHolder("BackupCoordinationStageSync::finish", retries_kind);
+        auto holder = with_retries.createRetriesControlHolder(
+            "BackupCoordinationStageSync::finish", WithRetries::kindForThrowIfError(throw_if_error));
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
             with_retries.renewZooKeeper(zookeeper);
+            fiu_do_on(FailPoints::backup_coordination_finish_zk_fail_before_op, { zookeeper->forceFailureBeforeOperation(); });
             createFinishNodeAndRemoveAliveNode(zookeeper, throw_if_error);
         });
     }
@@ -1072,23 +1069,7 @@ void BackupCoordinationStageSync::createFinishNodeAndRemoveAliveNode(Coordinatio
     for (size_t attempt_no = 1; attempt_no <= max_attempts_after_bad_version; ++attempt_no)
     {
         if (throw_if_error)
-        {
-            /// Rethrow the current error if there is an error node.
-            if (isErrorSet())
-                rethrowSetError();
-
-            String serialized_error;
-            if (zookeeper->tryGet(error_node_path, serialized_error))
-            {
-                auto [exception, host] = parseErrorNode(serialized_error);
-                if (exception)
-                {
-                    std::lock_guard lock{mutex};
-                    state.addErrorInfo(exception, host);
-                    std::rethrow_exception(exception);
-                }
-            }
-        }
+            rethrowErrorIfSet(zookeeper);
 
         /// The 'num_hosts' node may not exist if createStartAndAliveNodes() failed when startup() was called.
         if (!num_hosts)
@@ -1222,6 +1203,12 @@ int BackupCoordinationStageSync::getInitiatorVersion() const
 }
 
 
+bool BackupCoordinationStageSync::doesInitiatorTakeNamedCollectionsAccessDecisions() const
+{
+    return getInitiatorVersion() >= kVersionWithNamedCollectionsAccessDecisions;
+}
+
+
 void BackupCoordinationStageSync::waitOtherHostsFinish(bool throw_if_error) const
 {
     std::optional<std::chrono::seconds> timeout;
@@ -1291,11 +1278,7 @@ bool BackupCoordinationStageSync::checkIfOtherHostsFinish(
 
         String reason_text = reason.empty() ? "" : (" " + reason);
 
-        String host_status;
-        if (!host_info.started)
-            host_status = fmt::format(": the host hasn't started working on this {} yet", operation_name);
-        else if (!host_info.connected)
-            host_status = fmt::format(": the host is currently disconnected, last connection was at {}", host_info.last_connection_time);
+        String host_status = host_info.getStatusDesc(operation_name);
 
         if (time_is_out)
         {
@@ -1550,6 +1533,24 @@ void BackupCoordinationStageSync::rethrowSetError() const
     std::lock_guard lock{mutex};
     chassert(state.host_with_error);
     std::rethrow_exception(state.hosts.at(*state.host_with_error).exception);
+}
+
+void BackupCoordinationStageSync::rethrowErrorIfSet(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper)
+{
+    if (isErrorSet())
+        rethrowSetError();
+
+    String serialized_error;
+    if (zookeeper->tryGet(error_node_path, serialized_error))
+    {
+        auto [exception, host] = parseErrorNode(serialized_error);
+        if (exception)
+        {
+            std::lock_guard lock{mutex};
+            state.addErrorInfo(exception, host);
+            std::rethrow_exception(exception);
+        }
+    }
 }
 
 }

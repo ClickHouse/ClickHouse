@@ -83,18 +83,18 @@ public:
     }
 
 
-    bool eof() const
+    [[nodiscard]] bool eof() const
     {
         return bits_count == 0 && source_current >= source_end;
     }
 
     // number of bits that was already read by clients with readBits()
-    UInt64 count() const
+    [[nodiscard]] UInt64 count() const
     {
         return (source_current - source_begin) * 8 - bits_count;
     }
 
-    UInt64 remaining() const
+    [[nodiscard]] UInt64 remaining() const
     {
         return (source_end - source_current) * 8 + bits_count;
     }
@@ -202,7 +202,7 @@ public:
             doFlush();
     }
 
-    UInt64 count() const
+    [[nodiscard]] UInt64 count() const
     {
         return (dest_current - dest_begin) * 8 + bits_count;
     }

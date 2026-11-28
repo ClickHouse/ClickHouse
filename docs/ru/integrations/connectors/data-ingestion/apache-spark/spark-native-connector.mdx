@@ -25,15 +25,11 @@ Hive Metastore или AWS Glue.
 Каталогом по умолчанию в Spark является `spark_catalog`, а таблицы идентифицируются как `{catalog name}.{database}.{table}`. Благодаря этой
 возможности теперь можно добавлять и использовать несколько каталогов в одном приложении Spark.
 
-<div id="choosing-between-apis">
-  ## Выбор между Catalog API и TableProvider API
-</div>
+## Выбор между Catalog API и TableProvider API {#choosing-between-apis}
 
 Коннектор ClickHouse Spark поддерживает два варианта доступа: **Catalog API** и **TableProvider API** (доступ на основе формата). Понимание различий между ними поможет выбрать подходящий вариант для вашего сценария использования.
 
-<div id="catalog-vs-tableprovider-comparison">
-  ### Catalog API vs TableProvider API
-</div>
+### Catalog API vs TableProvider API {#catalog-vs-tableprovider-comparison}
 
 | Возможность                 | Catalog API                                                           | TableProvider API                                    |
 | --------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------- |
@@ -43,17 +39,13 @@ Hive Metastore или AWS Glue.
 | **Интеграция со Spark SQL** | Нативная (`clickhouse.database.table`)                                | Требуется указать формат                             |
 | **Сценарий использования**  | Долгосрочные, стабильные подключения с централизованной конфигурацией | Динамический, временный или разовый доступ           |
 
-<div id="requirements">
-  ## Требования
-</div>
+## Требования {#requirements}
 
 * Java 8 или 17 (для Spark 4.0 требуется Java 17 и выше)
 * Scala 2.12 или 2.13 (Spark 4.0 поддерживает только Scala 2.13)
 * Apache Spark 3.3, 3.4, 3.5 или 4.0
 
-<div id="compatibility-matrix">
-  ## Матрица совместимости
-</div>
+## Матрица совместимости {#compatibility-matrix}
 
 | Версия | Совместимые версии Spark | Версия ClickHouse JDBC |
 | ------ | ------------------------ | ---------------------- |
@@ -69,9 +61,7 @@ Hive Metastore или AWS Glue.
 | 0.2.1  | Spark 3.2                | Не зависит             |
 | 0.1.2  | Spark 3.2                | Не зависит             |
 
-<div id="installation--setup">
-  ## Установка и настройка
-</div>
+## Установка и настройка {#installation--setup}
 
 Для интеграции ClickHouse со Spark доступно несколько вариантов установки, подходящих для разных конфигураций проекта.
 Вы можете добавить коннектор ClickHouse Spark как зависимость напрямую в файл сборки проекта (например, в `pom.xml`
@@ -80,9 +70,7 @@ Hive Metastore или AWS Glue.
 с помощью флага `--jars` в команде `spark-submit`.
 Оба подхода позволяют сделать коннектор ClickHouse доступным в вашей среде Spark.
 
-<div id="import-as-a-dependency">
-  ### Импорт в качестве зависимости
-</div>
+### Импорт в качестве зависимости {#import-as-a-dependency}
 
 <Tabs>
   <Tab title="Maven">
@@ -147,9 +135,7 @@ Hive Metastore или AWS Glue.
   </Tab>
 </Tabs>
 
-<div id="download-the-library">
-  ### Скачайте библиотеку
-</div>
+### Скачайте библиотеку {#download-the-library}
 
 Имя бинарного JAR-файла соответствует следующему шаблону:
 
@@ -175,9 +161,7 @@ JAR-файлы ежедневных SNAPSHOT-сборок доступны че�
   [матрице совместимости](#compatibility-matrix).
 </Warning>
 
-<div id="register-the-catalog-required">
-  ## Зарегистрируйте каталог (обязательно)
-</div>
+## Зарегистрируйте каталог (обязательно) {#register-the-catalog-required}
 
 Чтобы получить доступ к таблицам ClickHouse, необходимо настроить новый каталог Spark со следующими параметрами:
 
@@ -226,15 +210,11 @@ JAR-файлы ежедневных SNAPSHOT-сборок доступны че�
   `clickhouse1.<ck_db>.<ck_table>`, а к таблице `<ck_db>.<ck_table>` в clickhouse2 — как `clickhouse2.<ck_db>.<ck_table>`.
 </Warning>
 
-<div id="using-the-tableprovider-api">
-  ## Использование TableProvider API (доступ на основе формата)
-</div>
+## Использование TableProvider API (доступ на основе формата) {#using-the-tableprovider-api}
 
 Помимо подхода на основе каталога, коннектор ClickHouse Spark поддерживает **доступ на основе формата** через TableProvider API.
 
-<div id="format-based-read">
-  ### Пример чтения через format API
-</div>
+### Пример чтения через format API {#format-based-read}
 
 <Tabs>
   <Tab title="Python">
@@ -297,9 +277,7 @@ JAR-файлы ежедневных SNAPSHOT-сборок доступны че�
   </Tab>
 </Tabs>
 
-<div id="format-based-write">
-  ### Пример записи с использованием format
-</div>
+### Пример записи с использованием format {#format-based-write}
 
 <Tabs>
   <Tab title="Python">
@@ -355,15 +333,11 @@ JAR-файлы ежедневных SNAPSHOT-сборок доступны че�
   </Tab>
 </Tabs>
 
-<div id="tableprovider-features">
-  ### Возможности TableProvider API
-</div>
+### Возможности TableProvider API {#tableprovider-features}
 
 TableProvider API предоставляет ряд полезных возможностей:
 
-<div id="automatic-table-creation">
-  #### Автоматическое создание таблицы
-</div>
+#### Автоматическое создание таблицы {#automatic-table-creation}
 
 При записи в несуществующую таблицу коннектор автоматически создает ее с подходящей схемой. Коннектор использует следующие значения по умолчанию:
 
@@ -457,15 +431,11 @@ TableProvider API предоставляет ряд полезных возмо�
   **Выбор движка**: По умолчанию используется движок `MergeTree()`, но с помощью параметра `engine` можно указать любой движок таблицы ClickHouse (например, `ReplacingMergeTree()`, `SummingMergeTree()`, `AggregatingMergeTree()` и т. д.).
 </Warning>
 
-<div id="tableprovider-connection-options">
-  ### Параметры подключения TableProvider
-</div>
+### Параметры подключения TableProvider {#tableprovider-connection-options}
 
 При использовании API с доступом на основе формата доступны следующие параметры подключения:
 
-<div id="connection-options">
-  #### Параметры подключения
-</div>
+#### Параметры подключения {#connection-options}
 
 | Параметр    | Описание                                     | Значение по умолчанию | Обязательный |
 | ----------- | -------------------------------------------- | --------------------- | ------------ |
@@ -480,9 +450,7 @@ TableProvider API предоставляет ряд полезных возмо�
 | `ssl_mode`  | Режим SSL (`NONE`, `STRICT` и т. д.)         | `STRICT`              | Нет          |
 | `timezone`  | Часовой пояс для операций с датой и временем | `server`              | Нет          |
 
-<div id="table-creation-options">
-  #### Параметры создания таблицы
-</div>
+#### Параметры создания таблицы {#table-creation-options}
 
 Эти параметры используются, если таблица не существует и её нужно создать:
 
@@ -502,9 +470,7 @@ TableProvider API предоставляет ряд полезных возмо�
   **Рекомендация**: В ClickHouse Cloud явно задавайте `settings.allow_nullable_key=1`, если столбцы в ORDER BY могут иметь тип Nullable, так как ClickHouse Cloud требует этой настройки.
 </Tip>
 
-<div id="writing-modes">
-  #### Режимы записи
-</div>
+#### Режимы записи {#writing-modes}
 
 Spark-коннектор (и TableProvider API, и Catalog API) поддерживает следующие режимы записи в Spark:
 
@@ -556,17 +522,13 @@ Spark-коннектор (и TableProvider API, и Catalog API) поддержи
   </Tab>
 </Tabs>
 
-<div id="configuring-clickhouse-options">
-  ## Настройка параметров ClickHouse
-</div>
+## Настройка параметров ClickHouse {#configuring-clickhouse-options}
 
 И Catalog API, и TableProvider API поддерживают настройку параметров, специфичных для ClickHouse (а не параметров коннектора). Эти параметры передаются в ClickHouse при создании таблиц или выполнении запросов.
 
 Параметры ClickHouse позволяют настраивать специфичные для ClickHouse значения, такие как `allow_nullable_key`, `index_granularity`, а также другие параметры на уровне таблицы и запроса. Они отличаются от параметров коннектора (например, `host`, `database`, `table`), которые определяют, как коннектор подключается к ClickHouse.
 
-<div id="using-tableprovider-api-options">
-  ### Использование TableProvider API
-</div>
+### Использование TableProvider API {#using-tableprovider-api-options}
 
 При работе с TableProvider API используйте для параметров формат `settings.<key>`:
 
@@ -617,9 +579,7 @@ Spark-коннектор (и TableProvider API, и Catalog API) поддержи
   </Tab>
 </Tabs>
 
-<div id="using-catalog-api-options">
-  ### Использование Catalog API
-</div>
+### Использование Catalog API {#using-catalog-api-options}
 
 При использовании Catalog API укажите в конфигурации Spark формат `spark.sql.catalog.<catalog_name>.option.<key>`:
 
@@ -643,9 +603,7 @@ TBLPROPERTIES (
 )
 ```
 
-<div id="clickhouse-cloud-settings">
-  ## Настройки ClickHouse Cloud
-</div>
+## Настройки ClickHouse Cloud {#clickhouse-cloud-settings}
 
 При подключении к [ClickHouse Cloud](https://clickhouse.com) обязательно включите SSL и укажите подходящий режим SSL. Например:
 
@@ -654,9 +612,7 @@ spark.sql.catalog.clickhouse.option.ssl        true
 spark.sql.catalog.clickhouse.option.ssl_mode   NONE
 ```
 
-<div id="read-data">
-  ## Чтение данных
-</div>
+## Чтение данных {#read-data}
 
 <Tabs>
   <Tab title="Java">
@@ -758,9 +714,7 @@ spark.sql.catalog.clickhouse.option.ssl_mode   NONE
   </Tab>
 </Tabs>
 
-<div id="write-data">
-  ## Запись данных
-</div>
+## Запись данных {#write-data}
 
 <Warning>
   **Перезапись партиций не поддерживается**: в настоящее время Catalog API не поддерживает операции перезаписи на уровне партиций (например, режим `overwrite` с `partitionBy`). Работа над этой возможностью продолжается. Для отслеживания статуса см. [issue #34 на GitHub](https://github.com/ClickHouse/spark-clickhouse-connector/issues/34).
@@ -890,9 +844,7 @@ spark.sql.catalog.clickhouse.option.ssl_mode   NONE
   </Tab>
 </Tabs>
 
-<div id="ddl-operations">
-  ## Операции DDL
-</div>
+## Операции DDL {#ddl-operations}
 
 Вы можете выполнять DDL-операции в своём экземпляре ClickHouse с помощью Spark SQL, при этом все изменения сразу сохраняются в
 ClickHouse.
@@ -926,12 +878,10 @@ TBLPROPERTIES (
 Приведённые выше примеры показывают запросы Spark SQL, которые можно выполнять в приложении с помощью любого API — Java, Scala,
 PySpark или оболочки shell.
 
-<div id="working-with-varianttype">
-  ## Работа с VariantType
-</div>
+## Работа с VariantType {#working-with-varianttype}
 
 <Note>
-  Поддержка VariantType доступна в Spark 4.0+ и требует ClickHouse 25.3+ с включенными экспериментальными типами JSON/Variant.
+  Поддержка VariantType доступна в Spark 4.0+ и требует ClickHouse 25.3+, где типы `JSON` и `Variant` готовы к использованию в продакшн-среде и включены по умолчанию.
 </Note>
 
 Коннектор поддерживает тип `VariantType` в Spark для работы с полуструктурированными данными. VariantType сопоставляется с типами ClickHouse `JSON` и `Variant`, что позволяет эффективно хранить данные с гибкой схемой и выполнять по ним запросы.
@@ -940,18 +890,14 @@ PySpark или оболочки shell.
   Этот раздел посвящен исключительно сопоставлению и использованию VariantType. Полный обзор всех поддерживаемых типов данных см. в разделе [Поддерживаемые типы данных](#supported-data-types).
 </Note>
 
-<div id="clickhouse-type-mapping">
-  ### Сопоставление типов ClickHouse
-</div>
+### Сопоставление типов ClickHouse {#clickhouse-type-mapping}
 
 | Тип ClickHouse         | Тип Spark     | Описание                                                                   |
 | ---------------------- | ------------- | -------------------------------------------------------------------------- |
 | `JSON`                 | `VariantType` | Хранит только объекты JSON (должны начинаться с `{`)                       |
 | `Variant(T1, T2, ...)` | `VariantType` | Хранит значения нескольких типов, включая примитивные типы, массивы и JSON |
 
-<div id="reading-varianttype-data">
-  ### Чтение данных типа VariantType
-</div>
+### Чтение данных типа VariantType {#reading-varianttype-data}
 
 При чтении из ClickHouse столбцы `JSON` и `Variant` автоматически преобразуются в `VariantType` Spark:
 
@@ -1008,9 +954,7 @@ PySpark или оболочки shell.
   </Tab>
 </Tabs>
 
-<div id="writing-varianttype-data">
-  ### Запись данных типа VariantType
-</div>
+### Запись данных типа VariantType {#writing-varianttype-data}
 
 Вы можете записывать данные типа VariantType в ClickHouse, используя типы столбцов JSON или Variant:
 
@@ -1125,9 +1069,7 @@ PySpark или оболочки shell.
   </Tab>
 </Tabs>
 
-<div id="creating-varianttype-tables-spark-sql">
-  ### Создание таблиц VariantType в Spark SQL
-</div>
+### Создание таблиц VariantType в Spark SQL {#creating-varianttype-tables-spark-sql}
 
 Таблицы VariantType можно создавать с помощью DDL Spark SQL:
 
@@ -1156,15 +1098,11 @@ TBLPROPERTIES (
 )
 ```
 
-<div id="configuring-variant-types">
-  ### Настройка типов Variant
-</div>
+### Настройка типов Variant {#configuring-variant-types}
 
 При создании таблиц со столбцами типа VariantType вы можете указать, какие типы ClickHouse использовать:
 
-<div id="json-type-default">
-  #### Тип JSON (по умолчанию)
-</div>
+#### Тип JSON (по умолчанию) {#json-type-default}
 
 Если свойство `variant_types` не указано, для столбца по умолчанию используется тип `JSON` в ClickHouse, который принимает только объекты JSON:
 
@@ -1185,9 +1123,7 @@ TBLPROPERTIES (
 CREATE TABLE json_table (id Int32, data JSON) ENGINE = MergeTree() ORDER BY id
 ```
 
-<div id="variant-type-multiple-types">
-  #### Тип Variant с несколькими типами данных
-</div>
+#### Тип Variant с несколькими типами данных {#variant-type-multiple-types}
 
 Чтобы поддерживать примитивные типы, массивы и объекты JSON, укажите их в свойстве `variant_types`:
 
@@ -1212,9 +1148,7 @@ CREATE TABLE flexible_data (
 ) ENGINE = MergeTree() ORDER BY id
 ```
 
-<div id="supported-variant-types">
-  ### Поддерживаемые типы для Variant
-</div>
+### Поддерживаемые типы для Variant {#supported-variant-types}
 
 В `Variant()` можно использовать следующие типы ClickHouse:
 
@@ -1222,9 +1156,7 @@ CREATE TABLE flexible_data (
 * **Массивы**: `Array(T)`, где T — любой поддерживаемый тип, включая вложенные массивы
 * **JSON**: `JSON` для хранения объектов JSON
 
-<div id="read-format-configuration">
-  ### Настройка формата чтения
-</div>
+### Настройка формата чтения {#read-format-configuration}
 
 По умолчанию столбцы JSON и Variant считываются как `VariantType`. При необходимости это поведение можно изменить, чтобы считывать их как строки:
 
@@ -1260,9 +1192,7 @@ CREATE TABLE flexible_data (
   </Tab>
 </Tabs>
 
-<div id="write-format-support">
-  ### Поддержка форматов записи
-</div>
+### Поддержка форматов записи {#write-format-support}
 
 Поддержка записи VariantType зависит от формата:
 
@@ -1281,30 +1211,22 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Рекомендуе
   Если вам нужно записывать данные в тип ClickHouse `Variant`, используйте формат JSON. Формат Arrow поддерживает запись только в тип `JSON`.
 </Tip>
 
-<div id="varianttype-best-practices">
-  ### Лучшие практики
-</div>
+### Лучшие практики {#varianttype-best-practices}
 
 1. **Используйте тип JSON для данных только в формате JSON**: Если вы храните только объекты JSON, используйте тип JSON по умолчанию (без свойства `variant_types`)
 2. **Явно указывайте типы**: При использовании `Variant()` явно перечислите все типы, которые планируете хранить
-3. **Включите экспериментальные возможности**: Убедитесь, что в ClickHouse включен параметр `allow_experimental_json_type = 1`
-4. **Используйте формат JSON для записи**: Для данных VariantType рекомендуется формат JSON, так как он обеспечивает лучшую совместимость
-5. **Учитывайте шаблоны запросов**: Типы JSON/Variant поддерживают в ClickHouse запросы по путям JSON для эффективной фильтрации
-6. **Подсказки для столбцов для повышения производительности**: При использовании полей JSON в ClickHouse добавление подсказок для столбцов повышает производительность запросов. В настоящее время добавление подсказок для столбцов через Spark не поддерживается. Отслеживать эту возможность можно в [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497).
+3. **Используйте формат JSON для записи**: Для данных типа VariantType рекомендуется формат JSON, так как он обеспечивает лучшую совместимость
+4. **Учитывайте шаблоны запросов**: Типы JSON/Variant поддерживают в ClickHouse запросы по путям JSON для эффективной фильтрации
+5. **Подсказки для столбцов для повышения производительности**: При использовании полей JSON в ClickHouse добавление подсказок для столбцов повышает производительность запросов. В настоящее время добавление подсказок для столбцов через Spark не поддерживается. Отслеживать эту возможность можно в [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497).
 
-<div id="varianttype-example-workflow">
-  ### Пример: полный процесс
-</div>
+### Пример: полный процесс {#varianttype-example-workflow}
 
 <Tabs>
   <Tab title="Scala">
     ```scala
     import org.apache.spark.sql.functions._
 
-    // Включить экспериментальный тип JSON в ClickHouse
-    spark.sql("SET allow_experimental_json_type = 1")
-
-    // Создать таблицу со столбцом типа Variant
+    // Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
         event_id BIGINT,
@@ -1318,14 +1240,14 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Рекомендуе
       )
     """)
 
-    // Подготовить данные со смешанными типами
+    // Prepare data with mixed types
     val events = Seq(
       (1L, "2024-01-01 10:00:00", """{"action": "login", "user_id": 123}"""),
       (2L, "2024-01-01 10:05:00", """{"action": "purchase", "amount": 99.99}"""),
       (3L, "2024-01-01 10:10:00", """{"action": "logout", "duration": 600}""")
     ).toDF("event_id", "event_time", "json_data")
 
-    // Преобразовать в VariantType и записать
+    // Convert to VariantType and write
     val variantEvents = events.select(
       col("event_id"),
       to_timestamp(col("event_time")).as("event_time"),
@@ -1334,7 +1256,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Рекомендуе
 
     variantEvents.writeTo("clickhouse.default.events").append()
 
-    // Чтение и выполнение запроса
+    // Read and query
     val result = spark.sql("""
       SELECT event_id, event_time, event_data
       FROM clickhouse.default.events
@@ -1350,10 +1272,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Рекомендуе
     ```python
     from pyspark.sql.functions import parse_json, to_timestamp
 
-    # Включить экспериментальный тип JSON в ClickHouse
-    spark.sql("SET allow_experimental_json_type = 1")
-
-    # Создать таблицу со столбцом Variant
+    # Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
         event_id BIGINT,
@@ -1367,7 +1286,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Рекомендуе
       )
     """)
 
-    # Подготовить данные со смешанными типами
+    # Prepare data with mixed types
     events = [
         (1, "2024-01-01 10:00:00", '{"action": "login", "user_id": 123}'),
         (2, "2024-01-01 10:05:00", '{"action": "purchase", "amount": 99.99}'),
@@ -1375,7 +1294,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Рекомендуе
     ]
     df = spark.createDataFrame(events, ["event_id", "event_time", "json_data"])
 
-    # Преобразовать в VariantType и записать
+    # Convert to VariantType and write
     variant_events = df.select(
         "event_id",
         to_timestamp("event_time").alias("event_time"),
@@ -1384,7 +1303,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Рекомендуе
 
     variant_events.writeTo("clickhouse.default.events").append()
 
-    # Чтение и выполнение запроса
+    # Read and query
     result = spark.sql("""
       SELECT event_id, event_time, event_data
       FROM clickhouse.default.events
@@ -1400,10 +1319,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Рекомендуе
     ```java
     import static org.apache.spark.sql.functions.*;
 
-    // Включить экспериментальный тип JSON в ClickHouse
-    spark.sql("SET allow_experimental_json_type = 1");
-
-    // Создать таблицу со столбцом типа Variant
+    // Create table with Variant column
     spark.sql("CREATE TABLE clickhouse.default.events (" +
         "event_id BIGINT, " +
         "event_time TIMESTAMP, " +
@@ -1415,7 +1331,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Рекомендуе
         "'order_by' = 'event_time'" +
         ")");
 
-    // Подготовить данные со смешанными типами
+    // Prepare data with mixed types
     List<Row> events = Arrays.asList(
         RowFactory.create(1L, "2024-01-01 10:00:00", "{\"action\": \"login\", \"user_id\": 123}"),
         RowFactory.create(2L, "2024-01-01 10:05:00", "{\"action\": \"purchase\", \"amount\": 99.99}"),
@@ -1428,7 +1344,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Рекомендуе
     });
     Dataset<Row> eventsDF = spark.createDataFrame(events, eventSchema);
 
-    // Преобразовать в VariantType и записать
+    // Convert to VariantType and write
     Dataset<Row> variantEvents = eventsDF.select(
         col("event_id"),
         to_timestamp(col("event_time")).as("event_time"),
@@ -1437,7 +1353,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Рекомендуе
 
     variantEvents.writeTo("clickhouse.default.events").append();
 
-    // Чтение и выполнение запроса
+    // Read and query
     Dataset<Row> result = spark.sql("SELECT event_id, event_time, event_data " +
         "FROM clickhouse.default.events " +
         "WHERE event_time >= '2024-01-01' " +
@@ -1448,9 +1364,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Рекомендуе
   </Tab>
 </Tabs>
 
-<div id="configurations">
-  ## Конфигурации
-</div>
+## Конфигурации {#configurations}
 
 Ниже перечислены настраиваемые конфигурации, доступные в коннекторе.
 
@@ -1506,16 +1420,12 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Рекомендуе
 | spark.clickhouse.write.retryInterval                                     | 10s                                                              | Интервал в секундах между повторными попытками записи.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | 0.1.0    |
 | spark.clickhouse.write.retryableErrorCodes                               | 241                                                              | Коды ошибок, при которых возможна повторная попытка и которые сервер ClickHouse возвращает при сбое записи.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 0.1.0    |
 
-<div id="supported-data-types">
-  ## Поддерживаемые типы данных
-</div>
+## Поддерживаемые типы данных {#supported-data-types}
 
 В этом разделе описывается сопоставление типов данных между Spark и ClickHouse. В таблицах ниже приведена краткая справка
 по преобразованию типов данных при чтении из ClickHouse в Spark и при вставке данных из Spark в ClickHouse.
 
-<div id="reading-data-from-clickhouse-into-spark">
-  ### Чтение данных из ClickHouse в Spark
-</div>
+### Чтение данных из ClickHouse в Spark {#reading-data-from-clickhouse-into-spark}
 
 | Тип данных ClickHouse                                             | Тип данных Spark               | Поддерживается | Примитивный | Примечания                                                                                                                                                                                                                      |
 | ----------------------------------------------------------------- | ------------------------------ | -------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1555,9 +1465,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Рекомендуе
 | `AggregateFunction`                                               |                                | ❌              |             |                                                                                                                                                                                                                                 |
 | `SimpleAggregateFunction`                                         |                                | ❌              |             |                                                                                                                                                                                                                                 |
 
-<div id="inserting-data-from-spark-into-clickhouse">
-  ### Вставка данных из Spark в ClickHouse
-</div>
+### Вставка данных из Spark в ClickHouse {#inserting-data-from-spark-into-clickhouse}
 
 | Тип данных Spark                    | Тип данных ClickHouse | Поддерживается | Примитивный | Примечания                                                                                                                                                                                |
 | ----------------------------------- | --------------------- | -------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1581,9 +1489,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Рекомендуе
 | `Object`                            |                       | ❌              |             |                                                                                                                                                                                           |
 | `Nested`                            |                       | ❌              |             |                                                                                                                                                                                           |
 
-<div id="contributing-and-support">
-  ## Участие в проекте и поддержка
-</div>
+## Участие в проекте и поддержка {#contributing-and-support}
 
 Если вы хотите внести вклад в проект или сообщить о проблеме, мы будем рады вашей помощи!
 Посетите наш [репозиторий GitHub](https://github.com/ClickHouse/spark-clickhouse-connector), чтобы создать issue, предложить

@@ -7,8 +7,6 @@
 -- The assertion compares an estimate against the product of the estimates of its two conjuncts rather
 -- than against a fixed number, so it holds whatever the default factors are.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_index_hint_est;
 DROP TABLE IF EXISTS t_index_hint_dim;
 DROP TABLE IF EXISTS t_index_hint_estimates;

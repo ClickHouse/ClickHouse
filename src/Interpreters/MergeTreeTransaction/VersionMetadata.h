@@ -44,7 +44,7 @@ struct LockFingerprint
     Int32 version = -1;
     int64_t czxid = 0;
 
-    bool hasFingerprint() const { return version >= 0 && czxid != 0; }
+    [[nodiscard]] bool hasFingerprint() const { return version >= 0 && czxid != 0; }
     bool operator==(const LockFingerprint &) const = default;
 };
 
@@ -107,6 +107,10 @@ public:
     /// Same as the instance method but operates on a free-standing `VersionInfo`.
     /// Resolves `VersionInfo::isVisible`'s `nullopt` (unknown CSN) via `TransactionManager::getCSN`.
     static bool isVisible(const VersionInfo & current_info, CSN snapshot_version, TransactionID current_tid = Tx::EmptyTID);
+
+    /// Whether a transaction started now sees the object. Active is not enough: a part can be Active before
+    /// its transaction commits.
+    bool isVisibleByLatestSnapshot();
 
     /// Sets `creation_csn` when a transaction commits.
     void setAndStoreCreationCSN(CSN csn);

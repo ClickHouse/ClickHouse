@@ -44,21 +44,34 @@ public:
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
     NameSet getVirtualsToCheckBeforeUsingStructureHint() const override;
     bool hasStaticStructure() const override;
-    void setPartitionBy(const ASTPtr & partition_by_) override;
+    bool hasUnreplicatedTableDataOnDisk() const override;
 
-    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure_, const String & format_, const ContextPtr & context, bool with_structure)
+    static void updateStructureAndFormatArgumentsIfNeeded(
+        ASTs & args,
+        const String & structure_,
+        const String & format_,
+        const ContextPtr & context,
+        bool with_structure,
+        bool is_replayed_definition = false,
+        bool replace_not_overridable = false)
     {
-        if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
+        if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
         {
             /// In case of named collection, just add key-value pairs "format='...', structure='...'"
             /// at the end of arguments to override existed format and structure with "auto" values.
-            if (collection->getOrDefault<String>("format", "auto") == "auto")
+            /// A `NOT OVERRIDABLE` "auto" is replaced only if `replace_not_overridable`: only a replayed definition accepts it.
+            auto can_replace = [&](const String & key)
+            {
+                return collection->getOrDefault<String>(key, "auto") == "auto"
+                    && (replace_not_overridable || collection->isOverridable(key, /* default_value= */ true));
+            };
+            if (can_replace("format"))
             {
                 ASTs format_equal_func_args = {make_intrusive<ASTIdentifier>("format"), make_intrusive<ASTLiteral>(format_)};
                 auto format_equal_func = makeASTOperator("equals", std::move(format_equal_func_args));
                 args.push_back(format_equal_func);
             }
-            if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
+            if (with_structure && can_replace("structure"))
             {
                 ASTs structure_equal_func_args = {make_intrusive<ASTIdentifier>("structure"), make_intrusive<ASTLiteral>(structure_)};
                 auto structure_equal_func = makeASTOperator("equals", std::move(structure_equal_func_args));
@@ -86,6 +99,12 @@ public:
     }
 
 protected:
+    /// Whether the caller's `READ ON URL` bounds what the workers of `cluster_name` fetch after a redirect: they run as
+    /// the cluster user unless an interserver secret carries the caller's identity, so a filter bounds nothing there.
+    static bool callerGrantAppliesOnWorkers(const ContextPtr & context, const String & cluster_name);
+    /// Throws `ACCESS_DENIED` when `callerGrantAppliesOnWorkers` is false.
+    static void checkCallerGrantAppliesOnWorkers(const ContextPtr & context, const String & cluster_name);
+
     void parseArguments(const ASTPtr & ast, ContextPtr context) override;
     void parseArgumentsImpl(ASTs & args, const ContextPtr & context) override;
 
@@ -101,6 +120,15 @@ protected:
     /// Source URI used for the access check of the delegated function (e.g. the file path or the
     /// resolved object-storage URL). Empty for `file://`, matching `TableFunctionFile` behavior.
     String delegate_function_uri;
+    /// Whether the URL argument was a relative reference resolved against the `url_base` setting.
+    bool is_relative_url = false;
+    /// Whether the structure is a `NOT OVERRIDABLE` "auto" of a named collection, so it cannot be sent to the nodes of a cluster.
+    bool is_structure_not_overridable = false;
+
+    /// How the surface the user invoked is named when a glob in the URL generates more addresses
+    /// than allowed. `urlCluster` overrides it so that the shared code paths (schema inference,
+    /// the `StorageURL` constructed for a secondary query on a worker) report `urlCluster`.
+    virtual RemoteDescriptionCaller globCaller() const { return tableFunctionURLCaller(); }
 
 private:
     /// Build `delegate` for a non-URL scheme target by constructing and parsing the delegate
@@ -111,10 +139,10 @@ private:
 
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
-        const std::string & table_name, const String & compression_method_, bool is_insert_query) const override;
+        const std::string & table_name, const String & compression_method_, bool is_insert_query, bool is_table_definition) const override;
 
     const char * getStorageEngineName() const override { return delegate_engine_name; }
-    const String & getFunctionURI() const override { return delegate ? delegate_function_uri : filename; }
+    std::string_view getFunctionURI() const override { return delegate ? delegate_function_uri : filename; }
 
     std::optional<String> tryGetFormatFromFirstArgument() override;
 };

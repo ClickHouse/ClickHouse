@@ -64,9 +64,7 @@ HTTP 服务器可用于验证 ClickHouse 用户身份。HTTP 身份验证目前�
 
 本部分定义了哪些请求头会从客户端请求头转发到外部 HTTP 身份验证器。请注意，请求头会以不区分大小写的方式与配置中的请求头进行匹配，但转发时会保持原样，即不会被修改。
 
-<div id="enabling-http-auth-in-users-xml">
-  ### 在 `users.xml` 中启用 HTTP 身份验证
-</div>
+### 在 `users.xml` 中启用 HTTP 身份验证 {#enabling-http-auth-in-users-xml}
 
 要为用户启用 HTTP 身份验证，请在用户定义中指定 `http_authentication` 部分，而不是 `password` 或其他类似部分。
 

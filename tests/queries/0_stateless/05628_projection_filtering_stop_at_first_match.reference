@@ -1,0 +1,54 @@
+-- { echoOn }
+
+-- Only the second part has a matching row.
+SELECT count(), sum(k) FROM tp WHERE v IN (SELECT 10000 + number * 50 FROM numbers(200));
+200	2995000
+SELECT count(), sum(k) FROM tp WHERE v IN (SELECT 10000 + number * 50 FROM numbers(200)) SETTINGS optimize_use_projection_filtering = 0;
+200	2995000
+SELECT trimLeft(explain) FROM (EXPLAIN projections = 1 SELECT count(), sum(k) FROM tp WHERE v IN (SELECT 10000 + number * 50 FROM numbers(200)))
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
+ReadFromMergeTree (default.tp)
+Projections:
+Name: p
+Description: Projection has been analyzed and is used for part-level filtering
+Condition: (v in 200-element set)
+Search Algorithm: generic exclusion search
+Parts: 1
+Marks: 1239
+Ranges: 4
+Rows: 9912
+Filtered Parts: 2
+-- The first and the third parts.
+SELECT count(), sum(k) FROM tp WHERE v IN (SELECT number * 50 FROM numbers(200)) OR v IN (SELECT 20000 + number * 50 FROM numbers(200));
+400	5990000
+SELECT count(), sum(k) FROM tp WHERE v IN (SELECT number * 50 FROM numbers(200)) OR v IN (SELECT 20000 + number * 50 FROM numbers(200)) SETTINGS optimize_use_projection_filtering = 0;
+400	5990000
+SELECT trimLeft(explain) FROM (EXPLAIN projections = 1 SELECT count(), sum(k) FROM tp WHERE v IN (SELECT number * 50 FROM numbers(200)) OR v IN (SELECT 20000 + number * 50 FROM numbers(200)))
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
+ReadFromMergeTree (default.tp)
+Projections:
+Name: p
+Description: Projection has been analyzed and is used for part-level filtering
+Condition: or((v in 200-element set), (v in 200-element set))
+Search Algorithm: generic exclusion search
+Parts: 2
+Marks: 2478
+Ranges: 8
+Rows: 19824
+Filtered Parts: 1
+-- No part.
+SELECT count(), sum(k) FROM tp WHERE v IN (SELECT 100000 + number FROM numbers(10));
+0	0
+SELECT trimLeft(explain) FROM (EXPLAIN projections = 1 SELECT count(), sum(k) FROM tp WHERE v IN (SELECT 100000 + number FROM numbers(10)))
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
+ReadFromMergeTree (default.tp)
+Projections:
+Name: p
+Description: Projection has been analyzed and is used for part-level filtering
+Condition: (v in 10-element set)
+Search Algorithm: generic exclusion search
+Parts: 0
+Marks: 0
+Ranges: 0
+Rows: 0
+Filtered Parts: 3

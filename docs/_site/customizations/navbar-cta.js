@@ -163,8 +163,14 @@
   function init() {
     injectCta();
 
+    var scheduled = false;
     var observer = new MutationObserver(function () {
-      injectCta();
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(function () {
+        scheduled = false;
+        injectCta();
+      });
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }

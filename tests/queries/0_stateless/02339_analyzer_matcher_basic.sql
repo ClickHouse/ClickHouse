@@ -1,7 +1,5 @@
 -- Tags: no-parallel
 
-SET enable_analyzer = 1;
-
 SELECT 'Matchers without FROM section';
 
 DESCRIBE (SELECT *);

@@ -33,14 +33,22 @@ one which did compile the same overlay is confined to what the two compile diffe
 is inconclusive too. Any other build failure is an infrastructure or attribution problem
 and stays an ERROR.
 
+Every build type in `BEFORE_BUILD_TYPES` is a sanitizer build, and a sanitizer build has no
+jemalloc, so a regression case under `#if USE_JEMALLOC` (or under any other guard that is
+false with a sanitizer) is registered on none of them and the job could never validate it.
+When every one of them compiled the overlay and left a declared case unregistered, the job
+therefore builds one more "before" binary on `UNSANITIZED_BUILD_TYPE`, the build without a
+sanitizer, where such a case exists. That costs a third cold build only for those PRs.
+
 Like the functional/integration validators, this job only checks the "before" side.
 The complementary "the touched tests PASS on the PR binary" side is delegated to the
 regular `Unit tests (asan_ubsan)` job, which compiles and runs the full suite —
 including the new test — on the PR binary; a regression test that is itself broken
-makes that job red and blocks the PR.  That delegation is per-arm: the counterpart of the
-arm that reproduced is the `Unit tests (<that arm's sanitizer>)` job, so a bug reproduced
-on the `amd_tsan` arm is complemented by `Unit tests (tsan)`.  Delegating it also lets this
-job avoid a direct dependency on the PR's `UNITTEST_AMD_ASAN_UBSAN` artifact.
+makes that job red and blocks the PR.  That delegation is per build type: the counterpart
+of the build type that reproduced is the `Unit tests (<that build type's sanitizer>)` job, so
+a bug reproduced on the `arm_tsan` build type is complemented by `Unit tests (tsan)`.
+Delegating it also lets this job avoid a direct dependency on the PR's
+`UNITTEST_ARM_ASAN_UBSAN` artifact.
 
 See ci/jobs/functional_tests.py:invert_bugfix_validation_status for the analogous
 functional-test logic.
@@ -73,10 +81,18 @@ BEFORE_BUILD_NORMALIZED = f"{BEFORE_SRC_NORMALIZED}/build"
 BEFORE_BINARY = f"{BEFORE_SRC}/build/src/unit_tests_dbms"
 
 # Build types the "before" binary is validated on, in order. A test whose failure mode
-# needs a sanitizer the arm lacks passes there either way, so one arm cannot separate
-# "the test does not catch the bug" from "this build cannot observe it". Every arm is a
-# cold build, so the list stops at two and `amd_msan`/`amd_debug` remain blind spots.
-BEFORE_BUILD_TYPES = (BuildTypes.AMD_ASAN_UBSAN, BuildTypes.AMD_TSAN)
+# needs a sanitizer the build type lacks passes there either way, so one build type cannot
+# separate "the test does not catch the bug" from "this build cannot observe it". Every build
+# type is a cold build, so the list stops at two and `arm_msan` remains a blind spot.
+BEFORE_BUILD_TYPES = (BuildTypes.ARM_ASAN_UBSAN, BuildTypes.ARM_TSAN)
+
+# The build type without a sanitizer. It is not validated by default (a third cold build for
+# every bugfix PR), only when every build type above compiled the overlaid tests and left a
+# case declared in them unregistered: sanitizer builds have no jemalloc, so a case under
+# `#if USE_JEMALLOC`, or under another guard that is false with a sanitizer, exists only here.
+UNSANITIZED_BUILD_TYPE = BuildTypes.ARM_DEBUG
+
+_NOT_REGISTERED_REASON = "a case declared in the changed test files was not registered"
 
 # gtest test-registration macros whose first argument is the test-suite name.
 # `TEST`/`TEST_F` are `#define`d to `GTEST_TEST`/`GTEST_TEST_F`, so both spellings of
@@ -854,7 +870,7 @@ def changed_cases_unexercised(test_files):
     ]
     not_run += [f"{name} (not registered)" for name in missing]
     if missing:
-        reason = "a case declared in the changed test files was not registered"
+        reason = _NOT_REGISTERED_REASON
         unexercised = True
     elif changed:
         reason = "a case of the changed test files did not run"
@@ -1102,7 +1118,10 @@ def main():
     arms_tried = []
     arms_compiled = []
     arms_without_a_verdict = []
-    for build_type in BEFORE_BUILD_TYPES:
+    arms_with_unregistered_cases = []
+    # Grows by `UNSANITIZED_BUILD_TYPE` when no sanitizer build registers a changed case.
+    build_types = list(BEFORE_BUILD_TYPES)
+    for build_type in build_types:
         if arms_tried and not reset_before_build_dir():
             results.append(
                 Result(
@@ -1182,7 +1201,7 @@ def main():
                     f"{arms_compiled[0]} but failed to COMPILE on {build_type}.",
                 )
                 return
-            if attributed_to and len(arms_tried) < len(BEFORE_BUILD_TYPES):
+            if attributed_to and len(arms_tried) < len(build_types):
                 # No arm has compiled this overlay yet and a build type is left. What a
                 # test compiles is build-type-dependent too (a sanitizer-conditional part of
                 # it can reference the fix's interface), so the next arm may still validate.
@@ -1195,7 +1214,7 @@ def main():
                     + f". That is expected when the changed test code depends on the "
                     f"interface this PR introduces, and it is not a reproduction, but it "
                     f"is not a refutation either, and a build type that may compile the "
-                    f"overlay is left. Escalating to {BEFORE_BUILD_TYPES[len(arms_tried)]}."
+                    f"overlay is left. Escalating to {build_types[len(arms_tried)]}."
                 )
                 results.append(compile_result)
                 arms_without_a_verdict.append(f"{build_type} (overlay does not compile)")
@@ -1325,8 +1344,19 @@ def main():
         # `GTEST_SKIP()` even prints a "[ RUN " marker, so an arm that never ran a changed case
         # reaches this point as "all touched tests pass": no verdict, as with a wrong build.
         unexercised, not_run_cases, reason = changed_cases_unexercised(test_files)
-        arms_left = len(BEFORE_BUILD_TYPES) - len(arms_tried)
-        escalating = f" Escalating to {BEFORE_BUILD_TYPES[len(arms_tried)]}." if arms_left else ""
+        if unexercised and reason == _NOT_REGISTERED_REASON:
+            arms_with_unregistered_cases.append(build_type)
+        if (
+            len(arms_tried) == len(build_types)
+            and arms_with_unregistered_cases == list(BEFORE_BUILD_TYPES)
+            and UNSANITIZED_BUILD_TYPE not in build_types
+        ):
+            # Every sanitizer build compiled the overlay and none registered a declared case:
+            # the case is guarded by something a sanitizer build lacks, typically jemalloc.
+            # Only the build without a sanitizer can exercise it, so validate there as well.
+            build_types.append(UNSANITIZED_BUILD_TYPE)
+        arms_left = len(build_types) - len(arms_tried)
+        escalating = f" Escalating to {build_types[len(arms_tried)]}." if arms_left else ""
         not_exercised = (
             f" Not exercised there: {', '.join(not_run_cases)}." if not_run_cases else ""
         )
@@ -1353,8 +1383,16 @@ def main():
             results.append(before_result)
             continue
 
-        # No build type is left. Refuting the test needs a verdict from every one of them.
-        if arms_without_a_verdict:
+        # No build type is left. Refuting the test needs a verdict from every one of them,
+        # except that the build without a sanitizer is only reached when the sanitizer builds
+        # ran everything they register: once it has run every changed case as well, each case
+        # has run and passed somewhere, which is a refutation.
+        all_cases_ran_unsanitized = (
+            build_type == UNSANITIZED_BUILD_TYPE
+            and build_type not in BEFORE_BUILD_TYPES
+            and not unexercised
+        )
+        if arms_without_a_verdict and not all_cases_ran_unsanitized:
             results.append(
                 Result(
                     name="Bugfix validation verdict",
@@ -1366,7 +1404,7 @@ def main():
                         + ". The bug is therefore neither reproduced nor refuted on the "
                         "merge base: this is inconclusive, NOT a refutation. A regression "
                         "case that runs, and fails without the fix, on one of "
-                        + ", ".join(BEFORE_BUILD_TYPES)
+                        + ", ".join(build_types)
                         + " would be validated here."
                     ),
                 )

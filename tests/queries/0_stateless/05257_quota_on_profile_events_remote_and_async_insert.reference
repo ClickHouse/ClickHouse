@@ -1,0 +1,9 @@
+-- remote: SelectedParts of the remote server are charged to the initiator
+45
+1	10
+45
+QUOTA_EXCEEDED
+2	20
+-- async insert: the deferred flush is charged to the submitting user
+3
+3	1

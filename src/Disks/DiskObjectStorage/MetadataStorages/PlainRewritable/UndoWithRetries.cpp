@@ -19,6 +19,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CORRUPTED_DATA;
+    extern const int READONLY;
 }
 
 namespace
@@ -48,9 +50,11 @@ void undoWithRetries(const LoggerPtr & log, std::string_view description, const 
         }
         catch (...)
         {
-            /// A logical error says that an invariant of this code does not hold, and repeating the stage cannot make
-            /// it hold. It is also how a stage reports the one thing a reversal cannot repair: the blob is gone.
-            if (getCurrentExceptionCode() == ErrorCodes::LOGICAL_ERROR)
+            /// A logical error says that an invariant of this code does not hold, corrupted data says that the blob
+            /// the stage restores is gone, and a read-only object storage refuses every write it is ever asked for.
+            /// Repeating the stage repairs none of them.
+            const int code = getCurrentExceptionCode();
+            if (code == ErrorCodes::LOGICAL_ERROR || code == ErrorCodes::CORRUPTED_DATA || code == ErrorCodes::READONLY)
                 throw;
 
             ProfileEvents::increment(ProfileEvents::DiskPlainRewritableUndoStageRetries);

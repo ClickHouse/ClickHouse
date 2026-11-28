@@ -15,7 +15,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 extern const int ILLEGAL_COLUMN;
 }
@@ -33,39 +32,24 @@ public:
         return std::make_shared<FunctionArrayZip>(name, allow_unaligned);
     }
 
-    String getName() const override { return function_name; }
+    [[nodiscard]] String getName() const override { return function_name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        DataTypes arguments_types;
-        for (size_t index = 0; index < arguments.size(); ++index)
-        {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[index].type.get());
-
-            if (!array_type)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument {} of function {} must be array. Found {} instead.",
-                    toString(index + 1),
-                    getName(),
-                    arguments[index].type->getName());
-
-            auto nested_type = array_type->getNestedType();
-            if (allow_unaligned)
-                nested_type = makeNullable(nested_type);
-            arguments_types.emplace_back(nested_type);
-        }
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(arguments_types));
+        /// Same "T was not captured" issue as `array()` — the zero-arg case
+        /// stays a separate alternative.
+        if (allow_unaligned)
+            return "() -> Array(Tuple()) OR (Array(T), ...) -> Array(Tuple(Nullable(T), ...))";
+        return "() -> Array(Tuple()) OR (Array(T), ...) -> Array(Tuple(T, ...))";
     }
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         size_t num_arguments = arguments.size();
@@ -152,7 +136,7 @@ private:
             {
                 const auto * array_column = array_columns[arg_i];
                 const auto & offsets = array_column->getOffsets();
-                size_t array_offset = offsets[row_i - 1];
+                size_t array_offset = offsets[static_cast<ssize_t>(row_i) - 1];
                 size_t array_size = offsets[row_i] - array_offset;
 
                 res_tuple_columns[arg_i]->insertRangeFrom(*tuple_columns[arg_i], array_offset, array_size);
@@ -163,7 +147,7 @@ private:
             {
                 const auto * array_column = array_columns[arg_i];
                 const auto & offsets = array_column->getOffsets();
-                size_t array_offset = offsets[row_i - 1];
+                size_t array_offset = offsets[static_cast<ssize_t>(row_i) - 1];
                 size_t array_size = offsets[row_i] - array_offset;
 
                 res_tuple_columns[arg_i]->insertManyDefaults(max_size - array_size);
@@ -200,6 +184,7 @@ REGISTER_FUNCTION(ArrayZip)
     FunctionDocumentation documentation_unaligned = {description_unaligned, syntax_unaligned, argument_unaligned, {}, returned_value_unaligned, example_unaligned, introduced_in_unaligned, category_unaligned};
 
     factory.registerFunction("arrayZipUnaligned", [](ContextPtr){ return FunctionArrayZip::create("arrayZipUnaligned", true); }, documentation_unaligned);
+    factory.registerAlias("zip", "arrayZipUnaligned", FunctionFactory::Case::Insensitive);
 }
 
 }

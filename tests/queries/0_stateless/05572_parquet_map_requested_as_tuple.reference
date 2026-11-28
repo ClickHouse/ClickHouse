@@ -1,0 +1,16 @@
+Code: 53 parquet type is Map, requested type is Tuple(value Nullable(String))
+Code: 53 parquet type is Map, requested type is Tuple(value Nullable(String))
+Code: 53 parquet type is Map, requested type is Tuple(value String)
+Code: 53 parquet type is Map, requested type is Tuple(value String)
+Code: 53 parquet type is Map, requested type is Tuple(value String)
+2	([('key','profile')])
+2	([('key','profile')])
+2	([('key','profile')],'')
+2	([('key','profile')])
+Code: 53 parquet type is Map, requested type is Tuple(KEY_VALUE Array(Tuple(key String, value String)))
+2
+Code: 53 parquet type is Map, requested type is Tuple(value Nullable(String))
+Code: 53 parquet type is Map, requested type is Tuple(value Nullable(String))
+1
+2
+Code: 53 parquet type is Array, requested type is Nullable(String)

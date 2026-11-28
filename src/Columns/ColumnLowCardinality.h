@@ -37,7 +37,18 @@ public:
     using Base = COWHelper<IColumnHelper<ColumnLowCardinality>, ColumnLowCardinality>;
     static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared)
     {
-        return ColumnLowCardinality::create(column_unique_->assumeMutable(), indexes_->assumeMutable(), is_shared);
+        /// Per the doc comment above, callers may keep their own immutable references — the
+        /// underlying `ColumnUnique`/indexes columns may be shared (e.g. with the source dictionary
+        /// in `replicate`). `assumeMutable` would `chassert(use_count() == 1)` and abort, while
+        /// `IColumn::mutate` would deep-clone the dictionary and break sharing semantics expected
+        /// by callers like `ColumnUnique::forEachMutableSubcolumn`. Bypass the assertion via
+        /// `const_cast` + `getPtr` — equivalent to the old `assumeMutable` fast path. The result is
+        /// returned as `Ptr` (immutable), and any mutation must go through `IColumn::mutate`,
+        /// which deep-clones shared sub-columns at the proper time.
+        return ColumnLowCardinality::create(
+            const_cast<IColumn *>(column_unique_.get())->getPtr(),
+            const_cast<IColumn *>(indexes_.get())->getPtr(),
+            is_shared);
     }
 
     static MutablePtr create(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared)
@@ -63,6 +74,7 @@ public:
     }
 
     std::string_view getDataAt(size_t n) const override { return getDictionary().getDataAt(getIndexes().getUInt(n)); }
+    bool supportsGetDataAt() const override { return getDictionary().supportsGetDataAt(); }
 
     bool isDefaultAt(size_t n) const override { return getDictionary().isDefaultAt(getIndexes().getUInt(n)); }
     UInt64 get64(size_t n) const override { return getDictionary().get64(getIndexes().getUInt(n)); }
@@ -102,6 +114,7 @@ public:
 #endif
     void insertRangeFromFullColumn(const IColumn & src, size_t start, size_t length);
     void insertRangeFromDictionaryEncodedColumn(const IColumn & keys, const IColumn & indexes);
+    static void checkIndexesAreLimited(const IColumn & indexes, UInt64 limit);
 
     void insertData(const char * pos, size_t length) override;
 
@@ -109,6 +122,10 @@ public:
 
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemory(std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const override;
+
+    void serializeAsComparable(size_t n, String & out) const override;
+    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const Permutation * permutation, const UInt8 * null_map) const override;
 
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
 
@@ -357,6 +374,9 @@ public:
 
     DictionaryEncodedColumn getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 limit) const;
 
+    /// Returns `getMinimalDictionaryEncodedColumn(offset, limit).dictionary` without building the indexes.
+    ColumnPtr getMinimalDictionary(UInt64 offset, UInt64 limit) const;
+
     ColumnPtr countKeys() const;
 
     bool containsNull() const;
@@ -369,16 +389,16 @@ private:
         explicit Dictionary(MutableColumnPtr && column_unique, bool is_shared);
         explicit Dictionary(ColumnPtr column_unique, bool is_shared);
 
-        const WrappedPtr & getColumnUniquePtr() const { return column_unique; }
+        [[nodiscard]] const WrappedPtr & getColumnUniquePtr() const { return column_unique; }
         WrappedPtr & getColumnUniquePtr() { return column_unique; }
 
-        const IColumnUnique & getColumnUnique() const { return static_cast<const IColumnUnique &>(*column_unique); }
+        [[nodiscard]] const IColumnUnique & getColumnUnique() const { return static_cast<const IColumnUnique &>(*column_unique); }
         IColumnUnique & getColumnUnique() { return static_cast<IColumnUnique &>(*column_unique); }
 
         /// Dictionary may be shared for several mutable columns.
         /// Immutable columns may have the same column unique, which isn't necessarily shared dictionary.
         void setShared(const ColumnPtr & column_unique_);
-        bool isShared() const { return shared; }
+        [[nodiscard]] bool isShared() const { return shared; }
 
         /// Create new dictionary with only keys that are mentioned in indexes.
         void compact(MutableColumnPtr & indexes);

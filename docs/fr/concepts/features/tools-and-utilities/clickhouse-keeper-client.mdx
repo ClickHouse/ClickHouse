@@ -8,44 +8,40 @@ doc_type: 'reference'
 
 Une application cliente permettant d’interagir avec ClickHouse Keeper via son protocole natif.
 
-<div id="clickhouse-keeper-client">
-  ## Options
-</div>
+## Options {#clickhouse-keeper-client}
 
 * `-q QUERY`, `--query=QUERY` — Requête à exécuter. Si ce paramètre n&#39;est pas fourni, `clickhouse-keeper-client` démarrera en mode interactif.
-* `-h HOST`, `--host=HOST` — Hôte du serveur. Valeur par défaut : `localhost`.
-* `-p N`, `--port=N` — Port du serveur. Valeur par défaut : 9181
-* `-c FILE_PATH`, `--config-file=FILE_PATH` — Définit le chemin du fichier de configuration à utiliser pour récupérer la chaîne de connexion. Valeur par défaut : `config.xml`.
-* `--password=PASSWORD` — Mot de passe pour l&#39;authentification. Peut également être défini via la variable d&#39;environnement `CLICKHOUSE_KEEPER_PASSWORD` ou dans le fichier de configuration XML sous `<zookeeper><password>`.
-* `--identity=IDENTITY` — Identité pour le schéma d&#39;authentification `digest`. Peut également être définie via la variable d&#39;environnement `CLICKHOUSE_KEEPER_IDENTITY` ou dans le fichier de configuration XML sous `<zookeeper><identity>`.
-* `--connection-timeout=TIMEOUT` — Définit le délai d&#39;expiration de connexion en secondes. Valeur par défaut : 10s.
-* `--session-timeout=TIMEOUT` — Définit le délai d&#39;expiration de session en secondes. Valeur par défaut : 10s.
-* `--operation-timeout=TIMEOUT` — Définit le délai d&#39;expiration de l&#39;opération en secondes. Valeur par défaut : 10s.
-* `--history-file=FILE_PATH` — Définit le chemin du fichier d&#39;historique. Valeur par défaut : `~/.keeper-client-history`.
-* `--log-level=LEVEL` — Définit le niveau de journalisation. Valeur par défaut : `information`.
-* `--no-confirmation` — Si défini, ne demandera pas de confirmation pour plusieurs commandes. Valeur par défaut : `false` en mode interactif et `true` pour la requête
+* `-h HOST`, `--host=HOST` — Hôte du serveur. Valeur par défaut : `localhost`.
+* `-p N`, `--port=N` — Port du serveur. Valeur par défaut : 9181
+* `-c FILE_PATH`, `--config-file=FILE_PATH` — Définit le chemin du fichier de configuration à utiliser pour récupérer la chaîne de connexion. Par défaut, le premier fichier existant parmi `config.xml`, `config.yaml` et `config.yml` dans le répertoire courant est utilisé.
+* `--password=PASSWORD` — Mot de passe pour l&#39;authentification. Peut également être défini via la variable d&#39;environnement `CLICKHOUSE_KEEPER_PASSWORD` ou dans le fichier de configuration sous `<zookeeper><password>` (`zookeeper.password` en YAML).
+* `--identity=IDENTITY` — Identité pour le schéma d&#39;authentification `digest`. Peut également être définie via la variable d&#39;environnement `CLICKHOUSE_KEEPER_IDENTITY` ou dans le fichier de configuration sous `<zookeeper><identity>` (`zookeeper.identity` en YAML).
+* `--connection-timeout=TIMEOUT` — Définit le délai d&#39;expiration de connexion en secondes. Valeur par défaut : 10s.
+* `--session-timeout=TIMEOUT` — Définit le délai d&#39;expiration de session en secondes. Valeur par défaut : 10s.
+* `--operation-timeout=TIMEOUT` — Définit le délai d&#39;expiration de l&#39;opération en secondes. Valeur par défaut : 10s.
+* `--history-file=FILE_PATH` — Définit le chemin du fichier d&#39;historique. Valeur par défaut : `~/.keeper-client-history`.
+* `--log-level=LEVEL` — Définit le niveau de journalisation. Valeur par défaut : `information`.
+* `--no-confirmation` — Si défini, ne demandera pas de confirmation pour plusieurs commandes. Valeur par défaut : `false` en mode interactif et `true` pour la requête
 * `--help` — Affiche le message d&#39;aide.
 
-<div id="clickhouse-keeper-client-env">
-  ## Variables d&#39;environnement
-</div>
+## Variables d&#39;environnement {#clickhouse-keeper-client-env}
 
 * `CLICKHOUSE_KEEPER_PASSWORD` — Utilisée comme mot de passe par défaut si `--password` n&#39;est pas indiqué sur la ligne de commande.
 * `CLICKHOUSE_KEEPER_IDENTITY` — Utilisée comme identité par défaut si `--identity` n&#39;est pas indiqué sur la ligne de commande.
 
-<div id="clickhouse-keeper-client-auth">
-  ## Authentification
-</div>
+## Authentification {#clickhouse-keeper-client-auth}
 
-Lors de la connexion à un serveur Keeper qui nécessite une authentification, le mot de passe est déterminé selon l&#39;ordre de priorité suivant (la première correspondance l&#39;emporte) :
+Lors de la connexion à un serveur Keeper qui nécessite une authentification, le mot de passe est déterminé selon l&#39;ordre de priorité suivant (la première correspondance l&#39;emporte) :
 
 1. argument de ligne de commande `--password`
 2. variable d&#39;environnement `CLICKHOUSE_KEEPER_PASSWORD`
-3. `<zookeeper><password>` dans le fichier de configuration XML spécifié par `--config-file`
+3. `<zookeeper><password>` dans le fichier de configuration chargé
+
+Le fichier de configuration de l&#39;étape 3 est celui indiqué par `--config-file` ou, si cette option est omise, le premier fichier trouvé parmi `config.xml`, `config.yaml` et `config.yml` dans le répertoire courant. Les formats XML et YAML sont tous deux pris en charge : `zookeeper.password` dans un fichier `config.yaml` fonctionne donc exactement comme `<zookeeper><password>` dans un fichier `config.xml`.
 
 Le même ordre de priorité s&#39;applique à `--identity` / `CLICKHOUSE_KEEPER_IDENTITY` / `<zookeeper><identity>`.
 
-Exemple de fichier de configuration XML avec les paramètres d&#39;authentification :
+Exemple de fichier de configuration avec les paramètres d&#39;authentification :
 
 ```xml
 <clickhouse>
@@ -59,9 +55,7 @@ Exemple de fichier de configuration XML avec les paramètres d&#39;authentificat
 </clickhouse>
 ```
 
-<div id="clickhouse-keeper-client-example">
-  ## Exemple
-</div>
+## Exemple {#clickhouse-keeper-client-example}
 
 ```bash
 ./clickhouse-keeper-client -h localhost -p 9181 --connection-timeout 30 --session-timeout 30 --operation-timeout 30
@@ -83,9 +77,7 @@ keeper foo bar
 2
 ```
 
-<div id="clickhouse-keeper-client-commands">
-  ## Commandes
-</div>
+## Commandes {#clickhouse-keeper-client-commands}
 
 * `ls '[path]' [watch_id]` -- Liste les nœuds du chemin indiqué (par défaut : cwd). Définit éventuellement un watch sur les enfants identifié par `watch_id`
 * `cd '[path]'` -- Change le chemin courant (par défaut `.`)

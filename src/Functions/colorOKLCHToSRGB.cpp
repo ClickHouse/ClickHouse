@@ -5,6 +5,7 @@
 #include <Functions/ColorConversion.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/ITupleFunction.h>
+#include <Common/sinCos.h>
 
 namespace DB
 {
@@ -24,18 +25,20 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionColorOKLCHToSRGB>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     /// OKLCH -> sRGB conversion. Follows the step-by-step pipeline described in Ottosson's article. See ColorConversion.h
-    ColorConversion::Color convertToSrgb(const ColorConversion::Color & oklch, Float64 gamma) const
+    [[nodiscard]] ColorConversion::Color convertToSrgb(const ColorConversion::Color & oklch, Float64 gamma) const
     {
         /// OKLCH to OKLab (cylindrical to Cartesian)
         Float64 chroma = oklch[1];
         Float64 hue_rad = oklch[2] * ColorConversion::deg2rad;
 
+        const auto [sin_hue, cos_hue] = sinCos(hue_rad);
+
         auto oklab = oklch;
-        oklab[1] = chroma * std::cos(hue_rad);
-        oklab[2] = chroma * std::sin(hue_rad);
+        oklab[1] = chroma * cos_hue;
+        oklab[2] = chroma * sin_hue;
 
         return ColorConversion::oklabToSrgb(oklab, gamma);
     }

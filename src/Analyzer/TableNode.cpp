@@ -72,6 +72,22 @@ TableNode::TableNode(StoragePtr storage_, StorageID storage_id_, TableLockHolder
     , parameterized_view_query_hash(getParameterizedViewQueryHash(storage, storage_snapshot))
 {}
 
+TableNode::TableNode(
+    CloneTag,
+    StoragePtr storage_,
+    StorageID storage_id_,
+    TableLockHolder storage_lock_,
+    StorageSnapshotPtr storage_snapshot_,
+    std::optional<IASTHash> parameterized_view_query_hash_)
+    : ITableExpressionNode(children_size)
+    , storage(std::move(storage_))
+    , storage_id(std::move(storage_id_))
+    , storage_lock(std::move(storage_lock_))
+    , storage_metadata(storage_snapshot_->metadata)
+    , storage_snapshot(std::move(storage_snapshot_))
+    , parameterized_view_query_hash(std::move(parameterized_view_query_hash_))
+{}
+
 TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
     : ITableExpressionNode(children_size)
     , storage(std::move(storage_))
@@ -142,6 +158,13 @@ void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & conte
         storage_snapshot = storage_snapshot->clone(extendMetadataWithModifiers(storage_snapshot->metadata, *table_expression_modifiers), storage_snapshot->data);
 
     parameterized_view_query_hash = getParameterizedViewQueryHash(storage, storage_snapshot);
+}
+
+void TableNode::replaceStorage(StoragePtr storage_value, StorageSnapshotPtr storage_snapshot_value)
+{
+    storage = std::move(storage_value);
+    storage_metadata = storage_snapshot_value->metadata;
+    storage_snapshot = std::move(storage_snapshot_value);
 }
 
 void TableNode::setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
@@ -222,12 +245,12 @@ void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 
 QueryTreeNodePtr TableNode::cloneImpl() const
 {
-    auto result_table_node = std::make_shared<TableNode>(storage, storage_id, storage_lock, storage_snapshot);
+    auto result_table_node = std::shared_ptr<TableNode>(
+        new TableNode(CloneTag{}, storage, storage_id, storage_lock, storage_snapshot, parameterized_view_query_hash));
     result_table_node->table_expression_modifiers = table_expression_modifiers;
     result_table_node->temporary_table_name = temporary_table_name;
 
     result_table_node->materialized_cte = materialized_cte;
-    result_table_node->parameterized_view_query_hash = parameterized_view_query_hash;
 
     return result_table_node;
 }

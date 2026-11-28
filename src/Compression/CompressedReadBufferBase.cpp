@@ -7,16 +7,18 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <base/demangle.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
+#include <base/unaligned.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
+#include <Compression/LZ4StatisticsHint.h>
 #include <IO/WithFileName.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <IO/SeekableReadBuffer.h>
 
 
 namespace ProfileEvents
@@ -42,11 +44,29 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-using Checksum = CityHash_v1_0_2::uint128;
+namespace
+{
 
+/// `PODArray::resize` rounds the capacity up to a power of two, so a block whose size is just above half of
+/// `DBMS_MAX_COMPRESSED_SIZE` would make us allocate twice `DBMS_MAX_COMPRESSED_SIZE`, and that happens before
+/// the bytes of the block arrive, so a corrupted block header in a tiny input is enough for it.
+/// Grow the buffer exactly for such large blocks: they are rare, so the lack of amortized growth does not matter.
+void resizeCompressedBuffer(PODArray<char> & buffer, size_t size)
+{
+    if (size > DBMS_MAX_COMPRESSED_SIZE / 2)
+        buffer.resize_exact(size);
+    else
+        buffer.resize(size);
+}
 
-/// Validate checksum of data, and if it mismatches, find out possible reason and throw exception.
-static void validateChecksum(char * data, size_t size, const Checksum expected_checksum, bool external_data)
+}
+
+CompressedReadBufferBase::Checksum CompressedReadBufferBase::readChecksum(const char * source)
+{
+    return {unalignedLoadLittleEndian<UInt64>(source), unalignedLoadLittleEndian<UInt64>(source + sizeof(UInt64))};
+}
+
+void CompressedReadBufferBase::validateChecksum(const char * data, size_t size, const Checksum expected_checksum, bool external_data)
 {
     auto calculated_checksum = CityHash_v1_0_2::CityHash128(data, size);
     if (expected_checksum == calculated_checksum)
@@ -188,11 +208,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     if (!always_copy && compressed_in->available() >= size_header_plus_checksum)
     {
         own_compressed_buffer_header_init = false;
-        {
-            ReadBufferFromMemory checksum_in(compressed_in->position(), sizeof(checksum));
-            readBinaryLittleEndian(checksum.low64, checksum_in);
-            readBinaryLittleEndian(checksum.high64, checksum_in);
-        }
+        checksum = readChecksum(compressed_in->position());
 
         readHeaderAndGetCodecAndSize(
             compressed_in->position() + sizeof(Checksum),
@@ -209,12 +225,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         own_compressed_buffer.resize(size_header_plus_checksum);
         compressed_in->readStrict(own_compressed_buffer.data(), size_header_plus_checksum);
         own_compressed_buffer_header_init = true;
-
-        {
-            ReadBufferFromMemory checksum_in(own_compressed_buffer.data(), sizeof(checksum));
-            readBinaryLittleEndian(checksum.low64, checksum_in);
-            readBinaryLittleEndian(checksum.high64, checksum_in);
-        }
+        checksum = readChecksum(own_compressed_buffer.data());
 
         readHeaderAndGetCodecAndSize(
             own_compressed_buffer.data() + sizeof(Checksum),
@@ -239,7 +250,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     {
         /// We read directly from compressed_in but we can't get the full buffer now. We need to copy it, so we'll read everything,
         /// including the header and checksum again as it's simpler than regenerating it
-        own_compressed_buffer.resize(sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
+        resizeCompressedBuffer(own_compressed_buffer, sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
         compressed_in->position() -= size_header_plus_checksum;
         compressed_in->readStrict(own_compressed_buffer.data(), size_header_plus_checksum + size_compressed_without_checksum - header_size);
         own_compressed_buffer_header_init = true;
@@ -247,7 +258,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     }
     else
     {
-        own_compressed_buffer.resize(sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
+        resizeCompressedBuffer(own_compressed_buffer, sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
         compressed_in->readStrict(own_compressed_buffer.data() + size_header_plus_checksum, size_compressed_without_checksum - header_size);
         compressed_buffer = own_compressed_buffer.data() + sizeof(Checksum);
     }
@@ -292,10 +303,11 @@ static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_de
 void CompressedReadBufferBase::decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
     readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs, external_data);
+    LZ4::StatisticsHintScope hint_scope(statistics_hint);
     codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to);
 }
 
-void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum)
+void CompressedReadBufferBase::decompress(BufferBase::WorkingBuffer & to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
     readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs, external_data);
 
@@ -319,7 +331,10 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
         to = BufferBase::Buffer(compressed_buffer + header_size, compressed_buffer + size_compressed_without_checksum);
     }
     else
+    {
+        LZ4::StatisticsHintScope hint_scope(statistics_hint);
         codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to.begin());
+    }
 }
 
 void CompressedReadBufferBase::addDiagnostics(Exception & e) const

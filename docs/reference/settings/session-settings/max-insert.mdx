@@ -19,6 +19,8 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048449" />
 
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1048449"},{"label": "Added the alias `max_insert_block_size_rows`."}]}]}/>
+
 The maximum size of blocks (in a count of rows) to form for insertion into a table.
 
 This setting controls block formation in two contexts:
@@ -74,6 +76,13 @@ This applies both to `INSERT SELECT` and to a plain `INSERT` whose data is sent 
 `clickhouse-client` or over the HTTP interface. The writing side of the pipeline
 (squashing the blocks and writing them to the destination table) is parallelized
 across up to this many threads.
+
+Destinations whose results depend on insertion order keep a single write stream when the input has one stream:
+`CollapsingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree`, `ReplacingMergeTree`
+(including their replicated variants), `MergeTree` tables with a `UNIQUE KEY`, `EmbeddedRocksDB`, and `Distributed`
+(the engine of the table on the shard is not known). A `SELECT` with multiple output streams has no input order
+to preserve, so these destinations can retain parallel sinks. `KeeperMap` always keeps a single write stream.
+These restrictions also apply to destinations reached through a materialized view or an `Alias` table.
 
 Possible values:
 

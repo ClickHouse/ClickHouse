@@ -1,0 +1,5 @@
+json_value_j1_native_string	1
+json_value_j2_dynamic_native_string	1
+json_value_j3_row_binary_string	1
+json_value_j4_row_binary_path	1
+json_value_j5_skipped_column_path	1

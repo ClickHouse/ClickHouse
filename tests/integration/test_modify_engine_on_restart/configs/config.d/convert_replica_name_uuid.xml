@@ -1,0 +1,5 @@
+<clickhouse>
+<default_replica_path>/clickhouse/tables/{uuid}/{shard}</default_replica_path>
+<!-- A {uuid} in the replica name is never supported: the replica name is resolved without a table UUID. -->
+<default_replica_name>{uuid}-{replica}</default_replica_name>
+</clickhouse>

@@ -30,7 +30,9 @@ QuerySlot::QuerySlot(ResourceLink link_, std::chrono::steady_clock::time_point a
     : link(link_)
 {
     chassert(link);
-    link.queue->enqueueRequest(this);
+    // Enqueue through the link so the query's scheduling pointers are stamped onto this request (the
+    // schedulers dereference them unconditionally). `chassert(link)` guarantees a queue, so it enqueues.
+    link.enqueue(this);
     CurrentMetrics::Increment scheduled(CurrentMetrics::ConcurrentQueryScheduled);
     auto timer = CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrentQueryWaitMicroseconds);
     std::unique_lock lock{mutex};

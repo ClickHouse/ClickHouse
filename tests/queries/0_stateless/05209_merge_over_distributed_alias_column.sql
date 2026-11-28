@@ -14,8 +14,6 @@ INSERT INTO t_05209 SELECT number + 1 FROM numbers(4);
 CREATE TABLE t_05209_dist AS t_05209 ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), t_05209);
 CREATE TABLE t_05209_merge AS t_05209 ENGINE = Merge(currentDatabase(), '^t_05209_dist$');
 
-SET enable_analyzer = 1;
-
 SELECT 'distributed', a, b, c, d FROM t_05209_dist ORDER BY a LIMIT 2;
 SELECT 'merge', a, b, c, d FROM t_05209_merge ORDER BY a LIMIT 2;
 SELECT 'table function', a, b FROM merge(currentDatabase(), '^t_05209_dist$') ORDER BY a LIMIT 2;

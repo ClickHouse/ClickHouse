@@ -1,0 +1,8 @@
+--- reading the column ---
+Parquet column v is a shredded variant (it has a `typed_value` field), which is not supported yet
+--- reading the other column ---
+1
+2
+--- schema inference ---
+Parquet column v is a shredded variant (it has a `typed_value` field), which is not supported yet
+n	Int32					

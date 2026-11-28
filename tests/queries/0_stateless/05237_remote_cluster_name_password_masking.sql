@@ -18,9 +18,9 @@ SELECT 1 FROM remote('', db.t, 'usr', 'SECRETPW6'); -- { serverError BAD_ARGUMEN
 SELECT 1 FROM remote('', numbers(10), 'usr', 'SECRETPW7'); -- { serverError BAD_ARGUMENTS }
 SELECT 1 FROM remote('', 'db', 't', 'usr', 'SECRETPW8', rand()); -- { serverError BAD_ARGUMENTS }
 
--- Not credentials, and they have to stay readable: a user name with no password after it, a
--- sharding key spelled as an equality whose left operand happens to be called `password`, and a
--- SETTINGS clause.
+-- Not credentials, and they have to stay readable: a user name with no password after it and a
+-- SETTINGS clause. A `password = ...` argument is hidden even where it could be a sharding key: it
+-- reads the same as a named password written in the wrong place.
 SELECT 1 FROM remote(test_shard_localhost, system, one, 'usr');
 SELECT 1 FROM remote('', 'db', 't', 'usr', password = 'NOT_A_CREDENTIAL'); -- { serverError BAD_ARGUMENTS }
 SELECT 1 FROM remote('', 'db', 't', 'usr', rand(), SETTINGS skip_unavailable_shards = 1); -- { serverError BAD_ARGUMENTS }
@@ -48,8 +48,8 @@ ORDER BY query;
 SELECT
     uniqExact(query) = 11,
     countIf(query LIKE '%SECRETPW%') = 0,
-    uniqExactIf(query, query LIKE '%[HIDDEN]%') = 8,
-    uniqExactIf(query, query LIKE '%NOT_A_CREDENTIAL%') = 1,
+    uniqExactIf(query, query LIKE '%[HIDDEN]%') = 9,
+    uniqExactIf(query, query LIKE '%NOT_A_CREDENTIAL%') = 0,
     uniqExactIf(query, query LIKE '%skip_unavailable_shards%') = 1
 FROM system.query_log
 WHERE current_database = currentDatabase()

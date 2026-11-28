@@ -1,0 +1,6 @@
+-- the codec of the projection part is known
+p	0	ZSTD(3)
+-- codec file gone: the codec recovered from the projection data is reported as unknown
+p	0	UNKNOWN
+-- projection part could not be loaded: broken, with no codec
+p	1	1

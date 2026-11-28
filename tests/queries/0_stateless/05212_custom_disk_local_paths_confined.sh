@@ -33,7 +33,7 @@ SETTINGS disk = disk(name = '../${name}_escape', type = 's3', ${s3_args}); -- { 
 SELECT 'escaping name, disk registered', count() FROM system.disks WHERE name = '../${name}_escape';
 
 CREATE TABLE t_cache_outside (a Int32) ENGINE = MergeTree ORDER BY a
-SETTINGS disk = disk(type = cache, name = '${name}_cache_outside', path = '${name}_cache_outside', max_size = '10Mi',
+SETTINGS disk = disk(type = cache, name = '${name}_cache_outside', path = '${name}_cache_outside', max_size = '10Mi', max_file_segment_size = '4Mi',
     disk = disk(name = '${name}_nested_outside', type = 'local_blob_storage', path = '${outside}_nested/')); -- { serverError BAD_ARGUMENTS }
 SELECT 'nested data path outside, disk registered', count() FROM system.disks WHERE name = '${name}_nested_outside';
 
@@ -56,7 +56,7 @@ INSERT INTO t_s3 VALUES (1), (2);
 SELECT 's3 with default metadata path', count() FROM t_s3;
 
 CREATE TABLE t_cache (a Int32) ENGINE = MergeTree ORDER BY a
-SETTINGS disk = disk(type = cache, name = '${name}_cache', path = '${name}_cache', max_size = '10Mi', disk = 'local_disk');
+SETTINGS disk = disk(type = cache, name = '${name}_cache', path = '${name}_cache', max_size = '10Mi', max_file_segment_size = '4Mi', disk = 'local_disk');
 INSERT INTO t_cache VALUES (1), (2);
 SELECT 'cache over config disk', count() FROM t_cache;
 "

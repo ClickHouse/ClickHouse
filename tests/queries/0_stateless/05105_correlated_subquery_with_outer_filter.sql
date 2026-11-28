@@ -5,7 +5,6 @@
 -- so the step below pruned it.
 
 -- Correlated subqueries are a feature of the analyzer, so this test is skipped without it.
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_correlated_filter;
 CREATE TABLE t_correlated_filter (id UInt32, v Int64) ENGINE = MergeTree ORDER BY id;

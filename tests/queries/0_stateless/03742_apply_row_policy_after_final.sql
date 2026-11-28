@@ -4,8 +4,6 @@ SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS tab;
 DROP ROW POLICY IF EXISTS pol1 ON tab;
 
-SET enable_analyzer = 1;
-
 CREATE TABLE tab (x UInt32, y String, version UInt32) ENGINE = ReplacingMergeTree(version) ORDER BY x SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760;
 
 INSERT INTO tab VALUES (1, 'aaa', 1), (2, 'bbb', 1);
@@ -215,7 +213,7 @@ CREATE ROW POLICY pol_todate ON tab_todate_policy USING toDate(time) = '2024-01-
 SET apply_row_policy_after_final = 1;
 -- rp is over sorting key toDate(time), so neither row policy nor prewhere should be deferred
 SELECT '--- toDate(time) row policy: neither row policy nor prewhere deferred';
-SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_todate_policy FINAL PREWHERE y != 'ddd' ORDER BY time) WHERE explain LIKE '%Deferred%' SETTINGS enable_analyzer=1;
+SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_todate_policy FINAL PREWHERE y != 'ddd' ORDER BY time) WHERE explain LIKE '%Deferred%';
 
 DROP ROW POLICY pol_todate ON tab_todate_policy;
 SET apply_row_policy_after_final = 0;
@@ -346,7 +344,7 @@ SELECT '--- data correctness: PREWHERE x = 2 with row policy deleted = 0';
 SELECT * FROM tab_sk_prewhere FINAL PREWHERE x = 2 ORDER BY x;
 
 SELECT '--- EXPLAIN: both row policy and PREWHERE deferred';
-SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_sk_prewhere FINAL PREWHERE x = 2 ORDER BY x) WHERE explain LIKE '%Deferred%' SETTINGS enable_analyzer=1;
+SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_sk_prewhere FINAL PREWHERE x = 2 ORDER BY x) WHERE explain LIKE '%Deferred%';
 
 DROP ROW POLICY pol_sk_pw ON tab_sk_prewhere;
 SET apply_row_policy_after_final = 0;

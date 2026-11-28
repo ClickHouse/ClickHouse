@@ -1,0 +1,19 @@
+<test>
+    <!-- A `SQL SECURITY DEFINER` view queried by its definer: `ORDER BY ... LIMIT` reads both branches in order. -->
+    <create_query>CREATE TABLE definer_view_read_in_order (k String, ts DateTime, v String) ENGINE = MergeTree ORDER BY (k, ts)</create_query>
+    <create_query>
+        CREATE VIEW definer_view_read_in_order_v DEFINER = CURRENT_USER SQL SECURITY DEFINER AS
+        SELECT k, ts, v FROM definer_view_read_in_order WHERE k = 'a'
+        UNION ALL
+        SELECT k, ts, v FROM definer_view_read_in_order WHERE k = 'b' AND v = 'z'
+    </create_query>
+
+    <fill_query>INSERT INTO definer_view_read_in_order SELECT 'a', toDateTime(1000000000 + number), 'x' FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO definer_view_read_in_order SELECT 'b', toDateTime(1000000000 + number), if(number % 2 = 0, 'z', 'y') FROM numbers(1000)</fill_query>
+    <fill_query>OPTIMIZE TABLE definer_view_read_in_order FINAL</fill_query>
+
+    <query>SELECT * FROM definer_view_read_in_order_v ORDER BY ts DESC LIMIT 15 FORMAT Null</query>
+
+    <drop_query>DROP VIEW IF EXISTS definer_view_read_in_order_v</drop_query>
+    <drop_query>DROP TABLE IF EXISTS definer_view_read_in_order</drop_query>
+</test>

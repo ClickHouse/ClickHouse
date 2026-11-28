@@ -16,7 +16,7 @@
 1	1	1
 -- scale 0 numeric conversion reaches the full [0000, 9999] range
 1	1
--- numeric toDateTime64 saturates per-scale regardless of date_time_overflow_behavior
+-- numeric toDateTime64 saturates per-scale in the ignore mode
 1	1
 -- changeYear/changeMonth saturate at the partial boundary years instead of throwing DECIMAL_OVERFLOW
 1	1	1	1

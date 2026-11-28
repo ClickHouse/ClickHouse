@@ -2,6 +2,7 @@
 
 #include <base/arithmeticOverflow.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Functions/GatherUtils/Sources.h>
@@ -16,7 +17,6 @@ namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace DB::GatherUtils
@@ -274,6 +274,7 @@ void NO_INLINE sliceFromLeftConstantOffsetUnbounded(Source && src, Sink && sink,
 }
 
 template <typename Source, typename Sink>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void NO_INLINE sliceFromLeftConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
 {
     while (!src.isEnd())
@@ -302,6 +303,7 @@ void NO_INLINE sliceFromRightConstantOffsetUnbounded(Source && src, Sink && sink
 }
 
 template <typename Source, typename Sink>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
 {
     while (!src.isEnd())
@@ -319,6 +321,7 @@ void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, 
 }
 
 template <typename Source, typename Sink>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IColumn & offset_column)
 {
     const bool is_null = offset_column.onlyNull();
@@ -339,7 +342,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
             if (offset > 0)
                 slice = src.getSliceFromLeft(offset - 1);
             else
-                slice = src.getSliceFromRight(-static_cast<UInt64>(offset));
+                slice = src.getSliceFromRight(common::negateIgnoreOverflow(static_cast<UInt64>(offset)));
 
             writeSlice(slice, sink);
         }
@@ -351,6 +354,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
 
 
 template <bool inverse, typename Source, typename Sink>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const IColumn * offset_column, const IColumn * length_column)
 {
     const bool is_offset_null = !offset_column || offset_column->onlyNull();
@@ -385,26 +389,13 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
 
         if (size < 0)
         {
-            Int64 abs_size = 0;
-            if (common::subOverflow(Int64(0), size, abs_size))
-                throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "Overflow in length argument of substring-like function: {}", size);
-            Int64 adjustment = 0;
-            if (offset > 0)
-            {
-                adjustment = static_cast<Int64>(src.getElementSize()) - (offset - 1);
-            }
-            else
-            {
-                if (common::subOverflow(Int64(0), offset, adjustment))
-                    throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "Overflow in offset argument of substring-like function: {}", offset);
-            }
-            Int64 new_size = 0;
-            if (common::addOverflow(size, adjustment, new_size))
-                throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "Overflow when computing slice size in substring-like function: size={}, adjustment={}", size, adjustment);
-            size = new_size;
+            /// Compute in 128 bits and saturate: a negative length reaching past the start gives an empty slice
+            /// instead of an overflow error.
+            Int128 adjustment = offset > 0
+                ? static_cast<Int128>(src.getElementSize()) - (static_cast<Int128>(offset) - 1)
+                : -static_cast<Int128>(offset);
+            Int128 new_size = static_cast<Int128>(size) + adjustment;
+            size = new_size < 0 ? 0 : new_size > std::numeric_limits<Int64>::max() ? std::numeric_limits<Int64>::max() : static_cast<Int64>(new_size);
         }
 
         if (offset != 0 && size > 0)
@@ -556,6 +547,9 @@ bool sliceHasImplSubstr(const FirstSliceType & first, const SecondSliceType & se
     if (second.size == 0)
         return true;
 
+    if (first.size < second.size)
+        return false;
+
     const bool has_first_null_map = first_null_map != nullptr;
     const bool has_second_null_map = second_null_map != nullptr;
 
@@ -681,6 +675,7 @@ void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, UInt8 *
 }
 
 template <typename ArraySource, typename ValueSource, typename Sink>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source, Sink && sink, const IColumn & size_column)
 {
     const auto * size_nullable = typeid_cast<const ColumnNullable *>(&size_column);
@@ -715,7 +710,7 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
             }
             else
             {
-                size_t length = -static_cast<size_t>(size);
+                size_t length = common::negateIgnoreOverflow(static_cast<size_t>(size));
                 if (length > MAX_ARRAY_SIZE)
                     throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                         length, MAX_ARRAY_SIZE);
@@ -764,7 +759,7 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
         }
         else
         {
-            size_t length = -static_cast<size_t>(size);
+            size_t length = common::negateIgnoreOverflow(static_cast<size_t>(size));
             if (length > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                     length, MAX_ARRAY_SIZE);

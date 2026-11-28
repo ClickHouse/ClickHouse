@@ -10,8 +10,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Access/IAccessStorage.h>
 
 
@@ -117,8 +115,12 @@ bool ParserCreateMaskingPolicy::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 {
     bool alter = false;
 
-    if (ParserKeyword{Keyword::ATTACH_MASKING_POLICY}.ignore(pos, expected))
-        attach_mode = true;
+    /// `ATTACH` is the form in which the policies are stored, only the loader of the access entities parses it.
+    if (attach_mode)
+    {
+        if (!ParserKeyword{Keyword::ATTACH_MASKING_POLICY}.ignore(pos, expected))
+            return false;
+    }
     else if (ParserKeyword{Keyword::ALTER_MASKING_POLICY}.ignore(pos, expected))
         alter = true;
     else if (!ParserKeyword{Keyword::CREATE_MASKING_POLICY}.ignore(pos, expected))
@@ -229,18 +231,14 @@ bool ParserCreateMaskingPolicy::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     return true;
 }
-}
 
-namespace DB
+std::map<String, Documentation> ParserCreateMaskingPolicy::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementMaskingPolicy(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE MASKING POLICY",
+    documentation["CREATE MASKING POLICY"] =
     {
         .description = R"DOCS_MD(
-import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-
 <CloudOnlyBadge/>
 
 Creates a masking policy, which allows dynamically transforming or masking column values for specific users or roles when they query a table.
@@ -332,13 +330,11 @@ CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]tab
 )",
         .parent = "CREATE",
         .related = {"ALTER MASKING POLICY", "CREATE ROW POLICY", "DROP", "SHOW"},
-    });
+    };
 
-    factory.registerStatement("ALTER MASKING POLICY",
+    documentation["ALTER MASKING POLICY"] =
     {
         .description = R"DOCS_MD(
-import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-
 <CloudOnlyBadge/>
 
 Modifies an existing masking policy.
@@ -364,7 +360,9 @@ ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
 )",
         .parent = "ALTER",
         .related = {"CREATE MASKING POLICY", "ALTER", "SHOW"},
-    });
+    };
+
+    return documentation;
 }
 
 }

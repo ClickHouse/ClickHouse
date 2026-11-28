@@ -230,7 +230,7 @@ void registerTableFunctionExplain(TableFunctionFactory & factory)
 └──────────────┘
 )"}},
             .category = FunctionDocumentation::Category::TableFunction
-        });
+        }, SecretArgumentsSpec{});
 }
 
 }

@@ -59,7 +59,7 @@ bool PartitionPruner::canPartitionBePruned(const IMergeTreeDataPart & part) cons
         if (!is_valid)
         {
             LOG_TRACE(getLogger("PartitionPruner"), "Partition {} gets pruned",
-                part.partition.serializeToString(part.getMetadataSnapshot()));
+                part.partition.serializeToString(partition_key.sample_block));
         }
     }
 

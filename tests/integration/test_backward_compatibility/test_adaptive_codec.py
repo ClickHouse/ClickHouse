@@ -51,16 +51,16 @@ def fill(table, adaptive, x_expr):
 
 
 def codecs(table, column):
-    # On the new node: whether the column has any T64 block, and how many distinct codecs it uses.
+    # On the new node: whether the column has any block compressed by T64 chained with the default LZ4, and how many distinct codecs it uses.
     return node_new.query(f"""
-        SELECT mapContains(codec_block_counts, 'T64'), length(codec_block_counts)
+        SELECT mapContains(codec_block_counts, 'T64, LZ4'), length(codec_block_counts)
         FROM mergeTreeCodecBlockCounts(currentDatabase(), '{table}')
         WHERE column = '{column}'
         """)
 
 
 def test_setting_off_no_change(start_cluster):
-    # Setting off: x keeps the default codec (one codec, not T64) and the old version reads it.
+    # Setting off: x keeps the default codec (one codec, no chain) and the old version reads it.
     fill("t_adaptive_compat_off", adaptive=0, x_expr="number")
     assert codecs("t_adaptive_compat_off", "x") == "0\t1\n"
     assert (
@@ -70,7 +70,7 @@ def test_setting_off_no_change(start_cluster):
 
 
 def test_old_version_reads_uniform_adaptive_part(start_cluster):
-    # T64 wins in every block, so x is a uniform single-codec stream.
+    # The T64, LZ4 chain wins in every block, so x is a uniform single-codec stream.
     # The old strict reader rejects a codec change inside one stream, so it reads a uniform adaptive part fine.
     fill("t_adaptive_compat_uniform", adaptive=1, x_expr="number")
     assert codecs("t_adaptive_compat_uniform", "x") == "1\t1\n"

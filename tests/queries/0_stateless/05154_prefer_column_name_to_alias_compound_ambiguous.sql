@@ -1,7 +1,6 @@
 -- The alias fallback for an ambiguous column under prefer_column_name_to_alias = 1 applies only to the
 -- unqualified name. A compound identifier whose first part names an alias must stay ambiguous.
 
-SET enable_analyzer = 1;
 SET prefer_column_name_to_alias = 1;
 
 SELECT CAST(tuple(42), 'Tuple(k UInt8)') AS a, a.k

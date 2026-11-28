@@ -27,7 +27,7 @@ log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
 binlog_row_metadata = FULL  -- introduced in 10.5.0
-expire_logs_days = 1        -- or higher; 0 would mean logs are preserved forever
+expire_logs_days = 3        -- or higher; 0 would mean logs are preserved forever
 ```
 
 To check these settings, run the following SQL commands:
@@ -48,7 +48,7 @@ log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
 binlog_row_metadata = FULL  ; only in 10.5.0 and newer
-expire_logs_days = 1
+expire_logs_days = 3
 ```
 
 If the source database is a replica, make sure to also turn on `log_slave_updates`.
@@ -76,11 +76,12 @@ Connect to your MariaDB instance as the root user and execute the following comm
     GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
     ```
 
-3. Grant replication permissions to the user:
+3. Grant replication permissions to the user. MariaDB 10.5.9 and newer also require `SLAVE MONITOR`:
 
     ```sql
     GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
     GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+    GRANT SLAVE MONITOR ON *.* TO 'clickpipes_user'@'%';
     ```
 
 <Note>

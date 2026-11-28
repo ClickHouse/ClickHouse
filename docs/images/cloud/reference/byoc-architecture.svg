@@ -2,7 +2,7 @@
      aria-label="BYOC architecture: the ClickHouse control plane in the ClickHouse VPC manages a Kubernetes data plane inside the customer cloud account; ClickHouse data, backups, logs and monitoring data stay in the customer account and only bounded operational telemetry is exported."
      font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
   <title>ClickHouse BYOC architecture</title>
-  <desc>Three zones. Left: the ClickHouse VPC control plane (Cloud console and infrastructure management). Centre: the customer cloud account, containing the Customer BYOC VPC with a Kubernetes cluster (ClickHouse services, Kubernetes API server, node pools across three availability zones, monitoring stack) and, outside the VPC, object storage for data parts, backups and archives. Right: users reaching the service over a public endpoint and customer applications reaching it over a private endpoint. ClickHouse management services reach the Kubernetes API over its public endpoint by default, or over an optional private connection that differs per cloud; a separate Tailscale zero-trust tunnel, initiated outbound from the customer cluster, carries approved ClickHouse engineer access along with metrics and dashboards. Three outbound telemetry flows leave the customer account: service and backup state, usage metrics and health alerts.</desc>
+  <desc>Three zones. Left: the ClickHouse VPC control plane (Cloud console and infrastructure management). Centre: the customer cloud account, containing the Customer BYOC VPC with a Kubernetes cluster (ClickHouse services, Kubernetes API server, node pools across three availability zones, monitoring stack) and, outside the VPC, object storage for data parts, backups and archives. Right: users reaching the service over a public endpoint and customer applications reaching it over a private endpoint. ClickHouse management services reach the Kubernetes API over its public endpoint by default, or optionally over a private connection on AWS and Azure or, on GCP, over the IAM-gated GKE DNS-based endpoint, which stays outside the VPC; a separate Tailscale zero-trust tunnel, initiated outbound from the customer cluster, carries approved ClickHouse engineer access along with metrics and dashboards. Three outbound telemetry flows leave the customer account: service and backup state, usage metrics and health alerts.</desc>
 
   <defs>
     <filter id="sh" x="-6%" y="-10%" width="112%" height="124%">
@@ -81,9 +81,9 @@
   <rect x="296" y="372" width="172" height="100" rx="12" fill="#eceff1" stroke="#43a047" stroke-width="1.6"/>
   <g>
     <text x="306" y="392" font-size="10.5" font-weight="600" fill="#37474f">Kubernetes API</text>
-    <text x="306" y="406" font-size="10.5" font-weight="600" fill="#37474f">private connection</text>
+    <text x="306" y="406" font-size="10.5" font-weight="600" fill="#37474f">private / IAM-gated path</text>
     <text x="306" y="426" font-size="10" fill="#546e7a">AWS · VPC Lattice (optional)</text>
-    <text x="306" y="442" font-size="10" fill="#546e7a">GCP · GKE DNS endpoint</text>
+    <text x="306" y="442" font-size="10" fill="#546e7a">GCP · GKE DNS endpoint (IAM)</text>
     <text x="306" y="458" font-size="10" fill="#546e7a">Azure · Private Link</text>
   </g>
 

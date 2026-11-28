@@ -3,6 +3,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
@@ -29,8 +30,10 @@ struct Regexps
     /// regexp for {M..N}, where M and N - non-negative integers
     re2::RE2 range_regex{R"({([\d]+\.\.[\d]+)})"};
 
-    /// regexp for {expr1,expr2,expr3}, expr's should be without "{", "}", "*" and ","
-    re2::RE2 enum_regex{R"({([^{}*,]+[^{}*]*[^{}*,])})"};
+    /// regexp for {expr1,expr2,expr3}, expr's should be without "{", "}" and ",". An expr may contain
+    /// the "*" and "?" wildcards, which keep their meaning inside the alternation: {csv,csv.*} matches
+    /// both `.csv` and `.csv.gz`, which no single wildcard can spell (`.csv*` also matches `.csvwithnames`).
+    re2::RE2 enum_regex{R"({([^{},]+[^{}]*[^{},])})"};
 };
 
 /// Bounds on what a path pattern is allowed to expand to. A `{a,b,c}` selector glob is enumerated
@@ -306,10 +309,12 @@ public:
             auto left_bracket_pos = tail.find_first_of('{');
             auto right_bracket_pos = tail.find_first_of('}');
 
+            /// Compare the positions instead of their difference: a `}` before the `{`, as in `}a{`,
+            /// makes the subtraction wrap, and only the size of the wrapped value keeps the answer right.
             auto is_this_enum_of_one_char =
                 left_bracket_pos != std::string_view::npos
                 && right_bracket_pos != std::string_view::npos
-                && (right_bracket_pos - left_bracket_pos) == 2;
+                && right_bracket_pos == left_bracket_pos + 2;
 
             definitely_no_selector_globs = !is_this_enum_of_one_char;
         }
@@ -486,8 +491,9 @@ std::vector<std::string> expandSelectionGlob(const std::string & path)
         result.push_back(std::move(expanded));
 
         /// The last glob changes fastest, so that the paths are generated in the order of the pattern.
-        for (size_t i = globs.size(); i-- > 0;)
+        for (size_t pos = globs.size(); pos > 0; --pos)
         {
+            const size_t i = pos - 1;
             if (++alternative_indices[i] < globs[i].alternatives.size())
                 break;
             alternative_indices[i] = 0;

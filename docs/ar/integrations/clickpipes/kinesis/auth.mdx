@@ -10,12 +10,10 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 توضح هذه المقالة كيف يمكن لعملاء ClickPipes الاستفادة من التحكم في الوصول المستند إلى الأدوار للمصادقة باستخدام Amazon Kinesis والوصول الآمن إلى تدفقات بياناتهم.
 
 <div id="prerequisite">
-  ## المتطلبات الأساسية
+  ## المتطلبات الأساسية {#prerequisite}
 </div>
 
 لمتابعة هذا الدليل، ستحتاج إلى:
@@ -23,22 +21,24 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * خدمة ClickHouse Cloud مفعّلة
 * حساب AWS
 
-<div id="introduction">
-  ## المقدمة
+## المقدمة {#introduction}
+
+قبل التعمق في إعداد الوصول الآمن إلى Kinesis، من المهم فهم الآلية. في ما يلي نظرة عامة على كيفية وصول ClickPipes إلى أدفاق Amazon Kinesis عبر تولّي دور ضمن حسابات AWS الخاصة بالعملاء.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Kinesis الآمن](/images/integrations/data-ingestion/clickpipes/securekinesis.jpg)
+  </Frame>
 </div>
 
-قبل التعمق في إعداد الوصول الآمن إلى Kinesis، من المهم فهم الآلية. في ما يلي نظرة عامة على كيفية وصول ClickPipes إلى تدفقات Amazon Kinesis عبر تولّي دور ضمن حسابات AWS الخاصة بالعملاء.
-
-<Image img="/images/integrations/data-ingestion/clickpipes/securekinesis.jpg" alt="Kinesis الآمن" size="lg" border />
-
-باستخدام هذا النهج، يمكن للعملاء إدارة جميع أذونات الوصول إلى تدفقات بيانات Kinesis الخاصة بهم من مكان واحد (سياسة IAM للدور المُتولّى)، من دون الحاجة إلى تعديل سياسة الوصول لكل تدفق على حدة.
+باستخدام هذا النهج، يمكن للعملاء إدارة جميع أذونات الوصول إلى أدفاق بيانات Kinesis الخاصة بهم من مكان واحد (سياسة IAM للدور المُتولّى)، من دون الحاجة إلى تعديل سياسة الوصول لكل دفق على حدة.
 
 <div id="setup">
-  ## الإعداد
+  ## الإعداد {#setup}
 </div>
 
 <div id="obtaining-the-clickhouse-service-iam-role-arn">
-  ### الحصول على IAM role Arn لخدمة ClickHouse
+  ### الحصول على IAM role Arn لخدمة ClickHouse {#obtaining-the-clickhouse-service-iam-role-arn}
 </div>
 
 * 1. سجّل الدخول إلى حسابك في ClickHouse Cloud.
@@ -47,14 +47,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * 4. مرّر لأسفل إلى قسم **معلومات أمان الشبكة** في أسفل الصفحة
 * 5. انسخ قيمة **معرّف دور الخدمة (IAM)** الخاصة بالخدمة، كما هو موضّح أدناه.
 
-<Image img="/images/cloud/security/secures3_arn.webp" alt="ARN الآمن لـ S3" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Secure S3 ARN](/images/cloud/security/secures3_arn.webp)
+  </Frame>
+</div>
 
 <div id="setting-up-iam-assume-role">
-  ### إعداد افتراض الدور في IAM
+  ### إعداد افتراض الدور في IAM {#setting-up-iam-assume-role}
 </div>
 
 <div id="manually-create-iam-role">
-  #### أنشئ IAM role يدويًا.
+  #### أنشئ IAM role يدويًا. {#manually-create-iam-role}
 </div>
 
 * 1. سجّل الدخول إلى AWS account الخاص بك عبر متصفح الويب باستخدام IAM user لديه إذن بإنشاء IAM role وإدارته.
