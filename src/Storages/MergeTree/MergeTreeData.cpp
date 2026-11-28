@@ -30,7 +30,6 @@
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
-#include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
@@ -99,9 +98,7 @@
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Functions/FunctionFactory.h>
-#include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
-#include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -12104,76 +12101,20 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     /// the mutation execution path does in `getPartitionAndPredicateExpressionForMutationCommand`.
     normalizeSetOperations(predicate_clone, execution_context);
 
-    /// Some predicate shapes (e.g. qualified column names) resolve only under the query-tree
-    /// analyzer.
-    std::optional<ActionsDAG> actions_dag;
-    const ActionsDAG::Node * predicate_node = nullptr;
+    /// The snapshot carries no parts: the analysis reads the active parts itself below.
+    auto storage = std::const_pointer_cast<IStorage>(shared_from_this());
+    auto table_lock = storage->lockForShare(
+        execution_context->getInitialQueryId(), execution_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    const auto table_metadata = getInMemoryMetadataPtr(execution_context, /*bypass_metadata_cache=*/ false);
+    auto table_expression = std::make_shared<TableNode>(
+        std::move(storage), std::move(table_lock), getStorageSnapshotWithoutData(table_metadata, execution_context));
 
-    {
-        auto expression = buildQueryTree(predicate_clone, execution_context);
+    auto actions = buildActionsForMutationPredicate(predicate_clone, table_expression, execution_context);
 
-        /// Resolve against the real storage, so that its columns (including `ALIAS` and
-        /// `EPHEMERAL`), subcolumns and virtual columns (e.g. `_part`, `_partition_id`)
-        /// are visible, just like during the mutation execution.
-        /// The snapshot carries no parts: the analysis reads the active parts itself below.
-        auto storage = std::const_pointer_cast<IStorage>(shared_from_this());
-        auto table_lock = storage->lockForShare(
-            execution_context->getInitialQueryId(), execution_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-        const auto table_metadata = getInMemoryMetadataPtr(execution_context, /*bypass_metadata_cache=*/ false);
-        auto table_expression = std::make_shared<TableNode>(
-            std::move(storage), std::move(table_lock), getStorageSnapshotWithoutData(table_metadata, execution_context));
-
-        QueryAnalyzer analyzer(false);
-        analyzer.resolveConstantExpression(expression, table_expression, execution_context);
-
-        GlobalPlannerContextPtr global_planner_context
-            = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
-        auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
-
-        collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
-        collectSets(expression, *planner_context);
-
-        ColumnNodePtrWithHashSet empty_correlated_columns_set;
-        /// Use plain column names for the DAG inputs (instead of planner column identifiers
-        /// like `__table1.x`), so that `PartitionPruner` can match them against the partition
-        /// key expression columns.
-        auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
-            expression,
-            /*input_columns=*/ {},
-            planner_context,
-            empty_correlated_columns_set,
-            /*use_column_identifier_as_action_node_name=*/ false);
-        correlated_subtrees.assertEmpty("in a mutation predicate");
-
-        /// Plan the subqueries, so that `KeyCondition` can build the sets for `IN (SELECT ...)`.
-        auto subquery_options = SelectQueryOptions{}.subquery();
-        for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
-        {
-            auto query_tree = subquery->detachQueryTree();
-            createUniqueAliasesIfNecessary(query_tree, execution_context);
-            /// The `Planner` mutates the options it is given (see `Planner::markDistributedPlanContext`),
-            /// so each subquery gets its own copy and cannot affect the planning of its siblings.
-            SelectQueryOptions current_subquery_options = subquery_options;
-            Planner subquery_planner(
-                query_tree,
-                current_subquery_options,
-                std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
-            subquery_planner.buildQueryPlanIfNeeded();
-
-            auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
-            subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
-        }
-
-        actions_dag.emplace(std::move(actions));
-        if (actions_dag->getOutputs().size() != 1)
-            return std::nullopt;
-        predicate_node = actions_dag->getOutputs().front();
-    }
-
-    if (!predicate_node)
+    if (!actions)
         return std::nullopt;
 
-    ActionsDAGWithInversionPushDown inverted_dag(predicate_node, execution_context, /* boolean_context */ true);
+    ActionsDAGWithInversionPushDown inverted_dag(actions->predicate, execution_context, /* boolean_context */ true);
 
     PartitionPruner partition_pruner(
         metadata_snapshot,
