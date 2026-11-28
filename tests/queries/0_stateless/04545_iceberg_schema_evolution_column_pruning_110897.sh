@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option).
-# - no-parallel: asserts on per-query ProfileEvents read from system.query_log,
-#   so it must not race other queries flushing into the shared query_log; it
-#   also compares decoded byte counts, which parallel cache/IO pressure could
-#   perturb. Unique table/database names isolate data but not those globals.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,6 +26,11 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} (id Int64, s1 String, k Int3
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --max_insert_threads=1 --query \
     "INSERT INTO ${TABLE} SELECT number, repeat('x', 200), number % 100 FROM numbers(200000)"
 
+# The bytes an id-only read selects while the file still has the table's schema. `use_columns_cache = 0`
+# on both measured reads: an `id` cached by the first one would make the second one select fewer bytes.
+Q_PRE="qpre_${CLICKHOUSE_DATABASE}_${RANDOM}"
+${CLICKHOUSE_CLIENT} --query "SELECT sum(id) FROM ${TABLE} SETTINGS use_columns_cache = 0, log_comment='${Q_PRE}'" > /dev/null
+
 # Schema evolution: add an unrelated nullable column. The already-written data
 # file now has a schema id different from the table's current schema id, which
 # is the trigger for the pruning-disabled path.
@@ -47,29 +48,26 @@ ${CLICKHOUSE_CLIENT} --query "SELECT 'filter_nonsel', sum(id) FROM ${TABLE} WHER
 # PREWHERE on the wide column.
 ${CLICKHOUSE_CLIENT} --query "SELECT 'prewhere', count() FROM ${TABLE} PREWHERE s1 = repeat('x', 200)"
 
-# --- Pruning: the fix must not read the wide column for an id-only query ------
-# Robust, randomization-proof assertion: an id-only read must decode far fewer
-# bytes than a read that genuinely needs the wide `s1` column. Before the fix
-# both decoded the full old schema, so the ratio was ~1; after the fix the
-# id-only read is an order of magnitude smaller. We require a >=3x gap, well
-# below the observed ~23x but safely above any per-run noise.
+# --- Pruning: after the schema change an id-only read selects exactly the same bytes ---------
+# Without pruning it reads every column of the old data file (`s1` and `k` too).
 Q_ID="qid_${CLICKHOUSE_DATABASE}_${RANDOM}"
-Q_S1="qs1_${CLICKHOUSE_DATABASE}_${RANDOM}"
-${CLICKHOUSE_CLIENT} --query "SELECT sum(id) FROM ${TABLE} SETTINGS log_comment='${Q_ID}'" > /dev/null
-${CLICKHOUSE_CLIENT} --query "SELECT sum(length(s1)) FROM ${TABLE} SETTINGS log_comment='${Q_S1}'" > /dev/null
+${CLICKHOUSE_CLIENT} --query "SELECT sum(id) FROM ${TABLE} SETTINGS use_columns_cache = 0, log_comment='${Q_ID}'" > /dev/null
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 
 ${CLICKHOUSE_CLIENT} --query "
-SELECT 'id_read_is_pruned',
-       (SELECT ProfileEvents['SelectedBytes'] FROM system.query_log
-          WHERE log_comment = '${Q_ID}' AND type = 'QueryFinish'
-            AND current_database = currentDatabase()
-          ORDER BY event_time_microseconds DESC LIMIT 1) * 3
-       <
-       (SELECT ProfileEvents['SelectedBytes'] FROM system.query_log
-          WHERE log_comment = '${Q_S1}' AND type = 'QueryFinish'
-            AND current_database = currentDatabase()
-          ORDER BY event_time_microseconds DESC LIMIT 1)
+SELECT 'id_read_is_pruned', pre > 0 AND post = pre
+FROM
+(
+    SELECT
+        (SELECT ProfileEvents['SelectedBytes'] FROM system.query_log
+           WHERE log_comment = '${Q_PRE}' AND type = 'QueryFinish'
+             AND current_database = currentDatabase()
+           ORDER BY event_time_microseconds DESC LIMIT 1) AS pre,
+        (SELECT ProfileEvents['SelectedBytes'] FROM system.query_log
+           WHERE log_comment = '${Q_ID}' AND type = 'QueryFinish'
+             AND current_database = currentDatabase()
+           ORDER BY event_time_microseconds DESC LIMIT 1) AS post
+)
 "
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
@@ -90,6 +88,9 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${T2} (id Int64, s1 String, d String,
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --max_insert_threads=1 --query \
     "INSERT INTO ${T2} SELECT number, repeat('x', 200), repeat('y', 150), toInt32(number % 100) FROM numbers(200000)"
 
+Q2_PRE="q2pre_${CLICKHOUSE_DATABASE}_${RANDOM}"
+${CLICKHOUSE_CLIENT} --query "SELECT sum(id) FROM ${T2} SETTINGS use_columns_cache = 0, log_comment='${Q2_PRE}'" > /dev/null
+
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${T2} RENAME COLUMN s1 TO s1_wide"
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${T2} DROP COLUMN d"
 # int -> long is one of Iceberg's allowed primitive promotions.
@@ -100,25 +101,25 @@ ${CLICKHOUSE_CLIENT} --query "SELECT 'evolved_sum_id', sum(id) FROM ${T2}"
 ${CLICKHOUSE_CLIENT} --query "SELECT 'renamed_col', any(length(s1_wide)), sum(length(s1_wide)) FROM ${T2}"
 ${CLICKHOUSE_CLIENT} --query "SELECT 'retyped_k', sum(k), any(toTypeName(k)) FROM ${T2}"
 
-# Pruning still holds on the fully-evolved schema: id-only decodes far fewer
-# bytes than reading the renamed wide column (same >=3x check as above).
+# Pruning still holds on the fully-evolved schema (same check as above).
 Q2_ID="q2id_${CLICKHOUSE_DATABASE}_${RANDOM}"
-Q2_W="q2w_${CLICKHOUSE_DATABASE}_${RANDOM}"
-${CLICKHOUSE_CLIENT} --query "SELECT sum(id) FROM ${T2} SETTINGS log_comment='${Q2_ID}'" > /dev/null
-${CLICKHOUSE_CLIENT} --query "SELECT sum(length(s1_wide)) FROM ${T2} SETTINGS log_comment='${Q2_W}'" > /dev/null
+${CLICKHOUSE_CLIENT} --query "SELECT sum(id) FROM ${T2} SETTINGS use_columns_cache = 0, log_comment='${Q2_ID}'" > /dev/null
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 
 ${CLICKHOUSE_CLIENT} --query "
-SELECT 'evolved_read_is_pruned',
-       (SELECT ProfileEvents['SelectedBytes'] FROM system.query_log
-          WHERE log_comment = '${Q2_ID}' AND type = 'QueryFinish'
-            AND current_database = currentDatabase()
-          ORDER BY event_time_microseconds DESC LIMIT 1) * 3
-       <
-       (SELECT ProfileEvents['SelectedBytes'] FROM system.query_log
-          WHERE log_comment = '${Q2_W}' AND type = 'QueryFinish'
-            AND current_database = currentDatabase()
-          ORDER BY event_time_microseconds DESC LIMIT 1)
+SELECT 'evolved_read_is_pruned', pre > 0 AND post = pre
+FROM
+(
+    SELECT
+        (SELECT ProfileEvents['SelectedBytes'] FROM system.query_log
+           WHERE log_comment = '${Q2_PRE}' AND type = 'QueryFinish'
+             AND current_database = currentDatabase()
+           ORDER BY event_time_microseconds DESC LIMIT 1) AS pre,
+        (SELECT ProfileEvents['SelectedBytes'] FROM system.query_log
+           WHERE log_comment = '${Q2_ID}' AND type = 'QueryFinish'
+             AND current_database = currentDatabase()
+           ORDER BY event_time_microseconds DESC LIMIT 1) AS post
+)
 "
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${T2}"

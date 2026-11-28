@@ -2508,18 +2508,23 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 {
                     ActionsDAG pruned = transform->clone();
                     pruned.removeUnusedActions(needed_names);
+                    const auto required_columns = pruned.getRequiredColumns();
 
-                    NameSet columns_to_read(row_lineage_columns.begin(), row_lineage_columns.end());
-                    for (const auto & required : pruned.getRequiredColumns())
-                        columns_to_read.insert(required.name);
+                    /// Like `format_header`, the header keeps a column of the file: not every format can read none.
+                    if (!required_columns.empty())
+                    {
+                        NameSet columns_to_read(row_lineage_columns.begin(), row_lineage_columns.end());
+                        for (const auto & required : required_columns)
+                            columns_to_read.insert(required.name);
 
-                    Block pruned_header;
-                    for (const auto & column : initial_header)
-                        if (columns_to_read.contains(column.name))
-                            pruned_header.insert(column);
+                        Block pruned_header;
+                        for (const auto & column : initial_header)
+                            if (columns_to_read.contains(column.name))
+                                pruned_header.insert(column);
 
-                    initial_header = std::move(pruned_header);
-                    iceberg_pruned_transform = std::move(pruned);
+                        initial_header = std::move(pruned_header);
+                        iceberg_pruned_transform = std::move(pruned);
+                    }
                 }
             }
         }
