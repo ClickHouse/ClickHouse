@@ -6,6 +6,7 @@
 #include <Disks/IDisk.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/MetadataChangeLog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -43,37 +44,54 @@ DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
 }
 
 void DatabaseMemory::createTable(
-    ContextPtr /*context*/,
+    ContextPtr local_context,
     const String & table_name,
     const StoragePtr & table,
     const ASTPtr & query)
 {
     ensurePopulated();
-    std::lock_guard lock{mutex};
-
-    /// A detached table keeps its definition and dependencies under its name, only a short `ATTACH` may reuse it.
-    const auto * create_query = query ? query->as<ASTCreateQuery>() : nullptr;
-    if (!create_query || !create_query->attach_short_syntax)
-        checkMetadataFilenameAvailabilityUnlocked(table_name);
-
-    attachTableUnlocked(table_name, table);
-
-    /// Clean the query from temporary flags.
     ASTPtr query_to_store = query;
-    if (query)
+    bool should_log = true;
     {
-        query_to_store = query->clone();
-        auto * create = query_to_store->as<ASTCreateQuery>();
-        if (!create)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query->formatForErrorMessage());
-        cleanupObjectDefinitionFromTemporaryFlags(*create);
+        std::lock_guard lock{mutex};
+
+        /// A detached table keeps its definition and dependencies under its name, only a short `ATTACH` may reuse it.
+        const auto * create_query = query ? query->as<ASTCreateQuery>() : nullptr;
+        if (!create_query || !create_query->attach_short_syntax)
+            checkMetadataFilenameAvailabilityUnlocked(table_name);
+        if (create_query && (create_query->attach || create_query->attach_short_syntax))
+            should_log = false;
+
+        attachTableUnlocked(table_name, table);
+
+        /// Clean the query from temporary flags.
+        if (query)
+        {
+            query_to_store = query->clone();
+            auto * create = query_to_store->as<ASTCreateQuery>();
+            if (!create)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query->formatForErrorMessage());
+            cleanupObjectDefinitionFromTemporaryFlags(*create);
+        }
+
+        create_queries.emplace(table_name, query_to_store ? query_to_store->formatWithSecretsOneLine<SecretString>() : SecretString());
     }
 
-    create_queries.emplace(table_name, query_to_store ? query_to_store->formatWithSecretsOneLine<SecretString>() : SecretString());
+    if (should_log)
+    {
+        MetadataChangeLog::logTableEvent(
+            local_context,
+            MetadataChangeLogElement::TABLE_CREATE,
+            table->getStorageID(),
+            getUUID(),
+            table,
+            /*metadata=*/nullptr,
+            query_to_store);
+    }
 }
 
 void DatabaseMemory::dropTable(
-    ContextPtr /*context*/,
+    ContextPtr local_context,
     const String & table_name,
     bool /*sync*/)
 {
@@ -103,13 +121,22 @@ void DatabaseMemory::dropTable(
         throw;
     }
 
-    std::lock_guard lock{mutex};
-    table->is_dropped = true;
-    create_queries.erase(table_name);
-    snapshot_detached_tables.erase(table_name);
-    UUID table_uuid = table->getStorageID().uuid;
-    if (table_uuid != UUIDHelpers::Nil)
-        DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
+    {
+        std::lock_guard lock{mutex};
+        table->is_dropped = true;
+        create_queries.erase(table_name);
+        snapshot_detached_tables.erase(table_name);
+        UUID table_uuid = table->getStorageID().uuid;
+        if (table_uuid != UUIDHelpers::Nil)
+            DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
+    }
+
+    MetadataChangeLog::logTableEvent(
+        local_context,
+        MetadataChangeLogElement::TABLE_DROP,
+        table->getStorageID(),
+        getUUID(),
+        table);
 }
 
 ASTPtr DatabaseMemory::getCreateDatabaseQueryImpl() const
@@ -216,6 +243,16 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
     }
 
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
+
+    auto altered_table = tryGetTable(table_id.table_name, local_context);
+    MetadataChangeLog::logTableEvent(
+        local_context,
+        MetadataChangeLogElement::TABLE_ALTER,
+        table_id,
+        getUUID(),
+        altered_table,
+        &metadata,
+        create_query);
 }
 
 std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const

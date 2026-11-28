@@ -25,6 +25,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/MetadataChangeLog.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
@@ -1175,6 +1176,16 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
 
     commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);
+
+    auto altered_table = tryGetTable(table_id.table_name, local_context);
+    MetadataChangeLog::logTableEvent(
+        local_context,
+        MetadataChangeLogElement::TABLE_ALTER,
+        table_id,
+        getUUID(),
+        altered_table,
+        &metadata,
+        ast);
 }
 
 void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & /*statement*/, ContextPtr /*query_context*/)

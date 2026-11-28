@@ -15,6 +15,7 @@
 #include <IO/SharedThreadPools.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/MetadataChangeLog.h>
 #include <Interpreters/TableNameHints.h>
 #include <Storages/IStorage.h>
 #include <Storages/MemorySettings.h>
@@ -830,66 +831,90 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
         if (db_uuid != UUIDHelpers::Nil)
             removeUUIDMappingFinally(db_uuid);
+
+        MetadataChangeLog::logDatabaseEvent(
+            local_context,
+            MetadataChangeLogElement::DATABASE_DROP,
+            database_name,
+            db_uuid,
+            db->getEngineName());
     }
     return db;
 }
 
 void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database)
 {
-    std::lock_guard lock{databases_mutex};
-
-    /// Re-check under the same lock as the rewrite: a concurrent `CREATE TABLE` in another database may
-    /// have added an edge to a table under the new name since the preflight check of the caller.
-    /// Nothing is modified yet, so the exception leaves the catalog intact.
-    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_name, new_name, tables_in_database);
-
-    chassert(!databases.contains(new_name));
-    auto it = databases.find(old_name);
-    chassert(it != databases.end());
-    auto db = it->second;
-    databases.erase(it);
-    databases.emplace(new_name, db);
-
-    auto datalake_it = databases_without_datalake_catalogs.find(old_name);
-    if (datalake_it != databases_without_datalake_catalogs.end())
+    UUID db_uuid = UUIDHelpers::Nil;
+    String db_engine;
     {
-        databases_without_datalake_catalogs.erase(datalake_it);
-        databases_without_datalake_catalogs.emplace(new_name, db);
-    }
+        std::lock_guard lock{databases_mutex};
 
-    auto local_it = databases_without_remote.find(old_name);
-    if (local_it != databases_without_remote.end())
-    {
-        databases_without_remote.erase(local_it);
-        databases_without_remote.emplace(new_name, db);
-    }
+        /// Re-check under the same lock as the rewrite: a concurrent `CREATE TABLE` in another database may
+        /// have added an edge to a table under the new name since the preflight check of the caller.
+        /// Nothing is modified yet, so the exception leaves the catalog intact.
+        checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_name, new_name, tables_in_database);
 
-    for (const auto & table_name : tables_in_database)
-    {
-        auto removed_ref_deps = referential_dependencies.removeDependencies(StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
-        auto removed_loading_deps = loading_dependencies.removeDependencies(StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
-        referential_dependencies.addDependencies(StorageID{new_name, table_name}, removed_ref_deps);
-        loading_dependencies.addDependencies(StorageID{new_name, table_name}, removed_loading_deps);
+        chassert(!databases.contains(new_name));
+        auto it = databases.find(old_name);
+        chassert(it != databases.end());
+        auto db = it->second;
+        db_uuid = db->getUUID();
+        db_engine = db->getEngineName();
+        databases.erase(it);
+        databases.emplace(new_name, db);
 
-        /// `view_dependencies` is rewired in both directions: the table being renamed
-        /// may be a materialized view (incoming edges from its source) and/or a source
-        /// of materialized views (outgoing edges to its dependent MVs). Both sides must
-        /// be re-keyed under `new_name`, otherwise lookups by the new name fail and
-        /// inserts into the renamed source no longer reach its MVs.
-        auto tables_from = view_dependencies.getDependents(StorageID{old_name, table_name});
-        for (const auto & the_table_from : tables_from)
+        auto datalake_it = databases_without_datalake_catalogs.find(old_name);
+        if (datalake_it != databases_without_datalake_catalogs.end())
         {
-            view_dependencies.removeDependency(the_table_from, StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
-            view_dependencies.addDependency(the_table_from, StorageID{new_name, table_name});
+            databases_without_datalake_catalogs.erase(datalake_it);
+            databases_without_datalake_catalogs.emplace(new_name, db);
         }
 
-        auto views_from = view_dependencies.getDependencies(StorageID{old_name, table_name});
-        for (const auto & view : views_from)
+        auto local_it = databases_without_remote.find(old_name);
+        if (local_it != databases_without_remote.end())
         {
-            view_dependencies.removeDependency(StorageID{old_name, table_name}, view, /* remove_isolated_tables= */ true);
-            view_dependencies.addDependency(StorageID{new_name, table_name}, view);
+            databases_without_remote.erase(local_it);
+            databases_without_remote.emplace(new_name, db);
+        }
+
+        for (const auto & table_name : tables_in_database)
+        {
+            auto removed_ref_deps = referential_dependencies.removeDependencies(StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
+            auto removed_loading_deps = loading_dependencies.removeDependencies(StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
+            referential_dependencies.addDependencies(StorageID{new_name, table_name}, removed_ref_deps);
+            loading_dependencies.addDependencies(StorageID{new_name, table_name}, removed_loading_deps);
+
+            /// `view_dependencies` is rewired in both directions: the table being renamed
+            /// may be a materialized view (incoming edges from its source) and/or a source
+            /// of materialized views (outgoing edges to its dependent MVs). Both sides must
+            /// be re-keyed under `new_name`, otherwise lookups by the new name fail and
+            /// inserts into the renamed source no longer reach its MVs.
+            auto tables_from = view_dependencies.getDependents(StorageID{old_name, table_name});
+            for (const auto & the_table_from : tables_from)
+            {
+                view_dependencies.removeDependency(the_table_from, StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
+                view_dependencies.addDependency(the_table_from, StorageID{new_name, table_name});
+            }
+
+            auto views_from = view_dependencies.getDependencies(StorageID{old_name, table_name});
+            for (const auto & view : views_from)
+            {
+                view_dependencies.removeDependency(StorageID{old_name, table_name}, view, /* remove_isolated_tables= */ true);
+                view_dependencies.addDependency(StorageID{new_name, table_name}, view);
+            }
         }
     }
+
+    auto query_context = CurrentThread::tryGetQueryContext();
+    MetadataChangeLog::logDatabaseEvent(
+        query_context ? query_context : getContext(),
+        MetadataChangeLogElement::DATABASE_RENAME,
+        new_name,
+        db_uuid,
+        db_engine,
+        /*comment=*/{},
+        /*create_query_ast=*/nullptr,
+        old_name);
 }
 
 void DatabaseCatalog::updateMetadataFile(const String & database_name, const ASTPtr & create_query)
@@ -1726,6 +1751,18 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
     interpreter.execute();
 
     LOG_INFO(log, "Table {} was successfully undropped.", dropped_table.table_id.getNameForLogs());
+
+    auto undropped_storage = database->tryGetTable(dropped_table.table_id.table_name, query_context);
+    ASTPtr undropped_create = database->tryGetCreateTableQuery(dropped_table.table_id.table_name, query_context);
+    auto caller_context = CurrentThread::tryGetQueryContext();
+    MetadataChangeLog::logTableEvent(
+        caller_context ? caller_context : query_context,
+        MetadataChangeLogElement::TABLE_UNDROP,
+        dropped_table.table_id,
+        database->getUUID(),
+        undropped_storage,
+        /*metadata=*/nullptr,
+        undropped_create);
 }
 
 std::tuple<size_t, size_t> DatabaseCatalog::getDroppedTablesCountAndInuseCount()
