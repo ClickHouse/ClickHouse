@@ -1092,6 +1092,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         .withPartFormat(part_format)
         .withPartInfo(new_part_info)
         .build();
+    new_data_part->object_shared_data_serialization_version
+        = data.chooseObjectSharedDataSerializationVersion(expected_size, /*is_insert =*/true, /*projection =*/nullptr);
 
     auto data_part_storage = new_data_part->getDataPartStoragePtr();
     data_part_storage->beginTransaction();
@@ -1323,6 +1325,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const String & part_name,
     bool is_temp,
+    bool is_insert,
     IMergeTreeDataPart * parent_part,
     const MergeTreeData & data,
     Block block,
@@ -1345,6 +1348,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     part_type = data.choosePartFormat(expected_size, block.rows(), parent_part->info.level, &projection).part_type;
 
     auto new_data_part = parent_part->getProjectionPartBuilder(part_name, &projection, PartDirIntent::CreateFresh, is_temp).withPartType(part_type).build();
+    new_data_part->object_shared_data_serialization_version
+        = data.chooseObjectSharedDataSerializationVersion(expected_size, is_insert, &projection);
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();
     auto data_settings = data.getSettings(&projection.settings_changes);
 
@@ -1527,6 +1532,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
     return writeProjectionPartImpl(
         projection.name,
         false /* is_temp */,
+        /*is_insert=*/ true,
         parent_part,
         data,
         std::move(block),
@@ -1563,6 +1569,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     auto new_part = writeProjectionPartImpl(
         part_name,
         /*is_temp=*/ true,
+        /*is_insert=*/ false,
         parent_part,
         data,
         std::move(block),

@@ -16,7 +16,7 @@ Todas las instancias de ClickHouse incluyen un conjunto de [tablas del sistema](
 Consultar estas tablas directamente es útil para supervisar implementaciones de ClickHouse, especialmente para tareas de introspección profunda y depuración.
 
 <div id="using-cloud-console">
-  ## Uso de la consola de ClickHouse Cloud
+  ## Uso de la consola de ClickHouse Cloud {#using-cloud-console}
 </div>
 
 La consola de ClickHouse Cloud incluye una [consola SQL](/es/products/cloud/features/sql-console-features/sql-console) y [herramientas de paneles](/es/products/cloud/features/sql-console-features/dashboards) que pueden usarse para consultar las tablas del sistema. Por ejemplo, la siguiente consulta muestra cuántas partes nuevas se crean (y con qué frecuencia) durante las últimas dos horas:
@@ -50,30 +50,24 @@ ORDER BY
   También puedes usar estas consultas para [crear un panel personalizado](https://clickhouse.com/blog/essential-monitoring-queries-creating-a-dashboard-in-clickHouse-cloud) en la Cloud Console.
 </Tip>
 
-<div id="built-in-advanced-observability-dashboard">
-  ## Panel avanzado de observabilidad integrado
-</div>
+## Panel avanzado de observabilidad integrado {#built-in-advanced-observability-dashboard}
 
 ClickHouse incluye un panel avanzado de observabilidad integrado, accesible mediante `$HOST:$PORT/dashboard` (requiere usuario y contraseña), que muestra las métricas de Cloud Overview incluidas en `system.dashboards`.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Panel avanzado de observabilidad nativo](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
-
-</Frame>
-
+  <Frame>
+    ![Panel avanzado de observabilidad nativo](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+  </Frame>
 </div>
 
 <Note>
-  Este panel requiere autenticación directa en la instancia de ClickHouse y es independiente del [Cloud Console Advanced Dashboard](/es/products/cloud/features/monitoring/cloud-console#advanced-dashboard), al que se puede acceder desde la UI de Cloud Console sin autenticación adicional.
+  Este panel requiere autenticación directa en la instancia de ClickHouse y es independiente del [Panel avanzado de Cloud Console](/es/products/cloud/features/monitoring/cloud-console#advanced-dashboard), al que se puede acceder desde la UI de Cloud Console sin autenticación adicional.
 </Note>
 
-Para obtener más información sobre las visualizaciones disponibles y cómo utilizarlas para solucionar problemas, consulte la [documentación del panel avanzado](/es/products/cloud/features/monitoring/advanced-dashboard).
+Para obtener más información sobre las visualizaciones disponibles y cómo utilizarlas para la resolución de problemas, consulte la [documentación del panel avanzado](/es/products/cloud/features/monitoring/advanced-dashboard).
 
 <div id="querying-across-nodes">
-  ## Consultas entre nodos y versiones
+  ## Consultas entre nodos y versiones {#querying-across-nodes}
 </div>
 
 Para obtener una visión completa de todo el clúster, los usuarios pueden utilizar la función `clusterAllReplicas` en combinación con la función `merge`. La función `clusterAllReplicas` permite consultar las tablas del sistema en todas las réplicas del clúster &quot;default&quot;, consolidando los datos específicos de cada nodo en un único resultado. Cuando se combina con la función `merge`, puede usarse para abarcar todos los datos del sistema de una tabla específica de un clúster.
@@ -100,7 +94,7 @@ Este enfoque es especialmente valioso para la monitorización y la depuración d
 Para obtener más información, consulte [consultas entre nodos](/es/reference/system-tables/overview#querying-across-nodes).
 
 <div id="system-considerations">
-  ## Consideraciones del sistema
+  ## Consideraciones del sistema {#system-considerations}
 </div>
 
 <Warning>
@@ -109,11 +103,9 @@ Para obtener más información, consulte [consultas entre nodos](/es/reference/s
 
 Para la monitorización de producción en tiempo real con separación operativa, considere usar el [endpoint de métricas compatible con Prometheus](/es/products/cloud/features/monitoring/prometheus) o los [paneles de Cloud Console](/es/products/cloud/features/monitoring/cloud-console), ambos basados en métricas ya recopiladas y sin emitir consultas al servicio subyacente.
 
-<div id="related">
-  ## Páginas relacionadas
-</div>
+## Páginas relacionadas {#related}
 
 * [Referencia de las tablas del sistema](/es/reference/system-tables/overview) — Referencia completa de todas las tablas del sistema disponibles
-* [Monitorización de Cloud Console](/es/products/cloud/features/monitoring/cloud-console) — paneles sin configuración previa que no afectan al rendimiento del servicio
-* [endpoint de Prometheus](/es/products/cloud/features/monitoring/prometheus) — Exporta métricas a herramientas de monitorización externas
+* [Monitorización de Cloud Console](/es/products/cloud/features/monitoring/cloud-console) — paneles listos para usar que no afectan el rendimiento del servicio
+* [Endpoint de Prometheus](/es/products/cloud/features/monitoring/prometheus) — Exporta métricas a herramientas de monitoreo externas
 * [panel avanzado](/es/products/cloud/features/monitoring/advanced-dashboard) — Referencia detallada de las visualizaciones del panel

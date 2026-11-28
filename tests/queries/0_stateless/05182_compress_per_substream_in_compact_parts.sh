@@ -30,7 +30,8 @@ create_and_fill()
 read_bytes()
 {
     local comment="${CLICKHOUSE_DATABASE}_$1_$3"
-    $CLICKHOUSE_CLIENT -q "SELECT $2 FROM $1 FORMAT Null SETTINGS log_comment = '$comment'"
+    # Read on this node: another parallel replica's ProfileEvents never reach the initiator's query_log row.
+    $CLICKHOUSE_CLIENT -q "SELECT $2 FROM $1 FORMAT Null SETTINGS log_comment = '$comment', enable_parallel_replicas = 0"
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
     $CLICKHOUSE_CLIENT -q "
     SELECT ProfileEvents['CompressedReadBufferBytes'] FROM system.query_log

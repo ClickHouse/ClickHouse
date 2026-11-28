@@ -20,12 +20,15 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 <ExperimentalBadge />
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+<SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "Nouveau paramètre expérimental."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Détermine par défaut le nombre de tâches de lecture à partir du nombre de lignes à lire et du nombre de threads de travail."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "8"},{"label": "Nouveau paramètre expérimental."}]}]} />
 
-Nombre de tâches par défaut pour la lecture parallèle dans une requête distribuée. Les tâches sont réparties entre les différentes répliques.
-Utilisé par le planificateur distribué basé sur des règles. L’optimiseur basé sur les coûts choisit le fan-out de lecture selon le coût estimé et n’utilise pas ce paramètre.
+Nombre de tâches de lecture parallèle dans une requête distribuée. Les tâches sont réparties entre les threads de travail.
+
+La valeur `0` détermine ce nombre automatiquement : une tâche par tranche de `distributed_plan_min_rows_per_reader` lignes sélectionnées par la lecture, avec au minimum une tâche et au maximum autant de tâches que de threads de travail.
+
+Utilisé par le planificateur distribué fondé sur des règles. L&#39;optimiseur basé sur les coûts détermine le fan-out de lecture en fonction du coût estimé et n&#39;utilise pas ce paramètre.
 
 ## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
 
@@ -145,6 +148,17 @@ Lorsque `send_logs_level` transmet au coordinateur les log des tasks de worker s
 
 Nombre maximal de lignes à partir duquel utiliser une jointure broadcast plutôt qu’une jointure shuffle dans un plan de requête distribuée.
 Une heuristique destinée au planificateur distribué basé sur des règles. Lorsque l’optimiseur basé sur les coûts est activé, le choix entre broadcast et shuffle est effectué en fonction du coût estimé, et ce paramètre n’a aucun effet.
+
+## distributed_plan_min_rows_per_reader {#distributed_plan_min_rows_per_reader}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1000000"},{"label": "Nouveau paramètre expérimental."}]}]} />
+
+Nombre minimum de lignes par tâche de lecture lorsque `distributed_plan_default_reader_bucket_count` vaut `0`.
+Utilisé par le planificateur distribué fondé sur des règles.
 
 ## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
 

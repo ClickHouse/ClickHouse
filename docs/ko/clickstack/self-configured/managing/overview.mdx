@@ -1,0 +1,42 @@
+---
+slug: /clickstack/self-configured/managing/overview
+title: '자체 관리형 ClickHouse Observability 관리'
+sidebarTitle: '개요'
+description: '자체 관리형 ClickHouse Observability 관리'
+doc_type: 'guide'
+keywords: ['자체 관리형 ClickHouse Observability 관리', '성능', 'materialized view', '관리자 명령어']
+---
+
+<Note>
+  이 페이지에서는 **자체 관리형 ClickHouse Observability**를 다룹니다. 권장되는 완전 관리형 환경은 [여기](/ko/clickstack/observability/managing/overview)의 문서를 참조하십시오.
+</Note>
+
+이 섹션에서는 자체 관리형 ClickHouse Observability를 관리하는 방법을 설명합니다.
+
+## 관리자 가이드 {#admin-guides}
+
+| 섹션                                                                           | 설명                                                                           |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| [구성 옵션](/ko/clickstack/self-configured/managing/config)                         | 각 구성 요소에서 사용할 수 있는 구성 옵션입니다.                                                 |
+| [리소스 추정](/ko/clickstack/self-configured/managing/estimating-resources)          | 수집 볼륨을 기준으로 자체 관리형 ClickHouse Observability에 필요한 컴퓨트 리소스 용량을 산정하는 방법을 안내합니다. |
+| [프로덕션 환경으로 전환](/ko/clickstack/self-configured/managing/production)              | 운영 환경에서 서비스를 실행하기 전에 수행해야 할 권장 단계와 권장 사항입니다.                                 |
+| [읽기와 쓰기 분리](/ko/clickstack/self-configured/managing/isolating-read-write)       | ClickHouse Cloud 웨어하우스(warehouse)를 사용하여 수집 워크로드와 쿼리 워크로드를 각각 전용 컴퓨트로 분리합니다.  |
+| [Materialized view](/ko/clickstack/self-configured/managing/materialized-views) | materialized view를 사용하여 쿼리 성능(query performance)을 높이는 방법을 자세히 설명하는 가이드입니다.   |
+| [성능 튜닝](/ko/clickstack/self-configured/managing/performance-tuning)             | 대규모 워크로드에 맞게 서비스를 튜닝하는 방법을 종합적으로 다루는 가이드입니다.                                 |
+| [RBAC](/ko/clickstack/observability/managing/rbac)                              | 역할 기반 접근 제어를 구성하여 대시보드, 저장된 검색, 소스에 대한 팀 권한을 관리합니다.                          |
+| [TTL 관리](/ko/clickstack/self-configured/managing/ttl)                           | 서비스에서 TTL(수명)을 사용하여 데이터 보존 기간을 관리합니다.                                        |
+
+## ClickHouse 핵심 개념 {#core-concepts}
+
+대부분의 관리 작업을 수행하려면 기반이 되는 ClickHouse 데이터베이스를 잘 알고 있어야 합니다. 관리 또는 성능 관련 작업을 수행하기 전에 아래의 ClickHouse 핵심 개념을 먼저 살펴보시기를 권장합니다.
+
+| 개념                                       | 설명                                                                                                                                              |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **테이블(Tables)**                          | 데이터 소스가 기반 ClickHouse 테이블에 매핑되는 방식입니다. ClickHouse 테이블은 주로 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 엔진을 사용합니다. |
+| **파트(Parts)**                            | 데이터가 변경 불가능한 파트로 기록되고 시간이 지남에 따라 머지되는 방식입니다.                                                                                                    |
+| **파티션(Partitions)**                      | 데이터 관리, 쿼리 실행, 최적화를 단순화하는 테이블 파트(Table Parts)의 논리적 그룹입니다.                                                                                       |
+| **머지(Merges)**                           | 파트를 결합하여 쿼리 대상 파트 수를 줄이고 성능을 유지하는 백그라운드 프로세스입니다.                                                                                                |
+| **그래뉼(Granules)**                        | 쿼리 실행(Query Execution) 시 읽기 및 프루닝의 대상이 되는 가장 작은 데이터 단위입니다.                                                                                      |
+| **프라이머리(정렬) 키(Primary (ordering) keys)** | `ORDER BY` 키가 on-disk 데이터 배치(data layout), 압축, 쿼리 프루닝 동작을 결정하는 방식입니다.                                                                           |
+
+이러한 개념은 ClickHouse 성능의 근간이 되며, 자체 관리형 ClickHouse Observability를 운영할 때 충분한 정보를 바탕으로 관리 결정을 내리는 데 도움이 됩니다.

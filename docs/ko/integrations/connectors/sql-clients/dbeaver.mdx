@@ -39,13 +39,9 @@ DBeaver는 여러 가지 에디션으로 제공됩니다. 이 가이드에서는
     * **Database &gt; New Database Connection** 메뉴 또는 **Database Navigator**의 **New Database Connection** 아이콘을 사용해 **Connect to a database** 대화 상자를 엽니다:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![새 데이터베이스 추가](/images/integrations/sql-clients/dbeaver-add-database.webp)
-
-    </Frame>
-
+      <Frame>
+        ![새 데이터베이스 추가](/images/integrations/sql-clients/dbeaver-add-database.webp)
+      </Frame>
     </div>
 
     * **Analytical**을 선택한 다음 **ClickHouse**를 선택합니다:
@@ -53,61 +49,41 @@ DBeaver는 여러 가지 에디션으로 제공됩니다. 이 가이드에서는
     * JDBC URL을 구성합니다. **Main** 탭에서 Host, Port, Username, Password, Database를 설정합니다:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![호스트명, 포트, 사용자 이름, 비밀번호, 데이터베이스 이름 설정](/images/integrations/sql-clients/dbeaver-host-port.webp)
-
-    </Frame>
-
+      <Frame>
+        ![호스트명, 포트, 사용자 이름, 비밀번호, 데이터베이스 이름 설정](/images/integrations/sql-clients/dbeaver-host-port.webp)
+      </Frame>
     </div>
 
     * 기본적으로 **SSL &gt; Use SSL** 속성은 설정되지 않습니다. ClickHouse Cloud 또는 HTTP 포트에서 SSL이 필요한 server에 연결하는 경우 **SSL &gt; Use SSL**을 켭니다:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![필요한 경우 SSL 활성화](/images/integrations/sql-clients/dbeaver-use-ssl.webp)
-
-    </Frame>
-
+      <Frame>
+        ![필요한 경우 SSL 활성화](/images/integrations/sql-clients/dbeaver-use-ssl.webp)
+      </Frame>
     </div>
 
     * 연결을 테스트합니다:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![연결 테스트](/images/integrations/sql-clients/dbeaver-test-connection.webp)
-
-    </Frame>
-
+      <Frame>
+        ![연결 테스트](/images/integrations/sql-clients/dbeaver-test-connection.webp)
+      </Frame>
     </div>
 
     DBeaver가 ClickHouse 드라이버가 설치되지 않은 것을 감지하면 드라이버를 다운로드하도록 안내합니다:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![ClickHouse 드라이버 다운로드](/images/integrations/sql-clients/dbeaver-download-driver.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickHouse 드라이버 다운로드](/images/integrations/sql-clients/dbeaver-download-driver.webp)
+      </Frame>
     </div>
 
     * 드라이버를 다운로드한 후 연결을 다시 **Test**합니다:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![연결 테스트](/images/integrations/sql-clients/dbeaver-test-connection.webp)
-
-    </Frame>
-
+      <Frame>
+        ![연결 테스트](/images/integrations/sql-clients/dbeaver-test-connection.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -117,31 +93,21 @@ DBeaver는 여러 가지 에디션으로 제공됩니다. 이 가이드에서는
     * 연결을 마우스 오른쪽 버튼으로 클릭하고 **SQL Editor &gt; Open SQL Script**를 선택해 쿼리 편집기를 엽니다:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![SQL 편집기 열기](/images/integrations/sql-clients/dbeaver-sql-editor.webp)
-
-    </Frame>
-
+      <Frame>
+        ![SQL Editor 열기](/images/integrations/sql-clients/dbeaver-sql-editor.webp)
+      </Frame>
     </div>
 
     * `system.query_log`에 대한 예시 쿼리:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![예시 쿼리](/images/integrations/sql-clients/dbeaver-query-log-select.webp)
-
-    </Frame>
-
+      <Frame>
+        ![예시 쿼리](/images/integrations/sql-clients/dbeaver-query-log-select.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
-<div id="next-steps">
-  ## 다음 단계
-</div>
+## 다음 단계 {#next-steps}
 
 DBeaver의 기능에 대해 알아보려면 [DBeaver wiki](https://github.com/dbeaver/dbeaver/wiki)를 참조하고, ClickHouse의 기능에 대해 알아보려면 [ClickHouse documentation](/ko/)을 참조하십시오.

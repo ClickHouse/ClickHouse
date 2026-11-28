@@ -7,22 +7,16 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-<div id="introduction">
-  ## Introdução
-</div>
+## Introdução {#introduction}
 
 Este guia foi elaborado para quem deseja criar sua própria solução de observabilidade baseada em SQL usando o ClickHouse, com foco em logs e traces. Ele aborda todos os aspectos da criação dessa solução, incluindo considerações sobre ingestão, otimização de esquemas para seus padrões de acesso e extração de estrutura de logs não estruturados.
 
 O ClickHouse, por si só, não é uma solução de observabilidade pronta para uso. No entanto, ele pode ser usado como um motor de armazenamento altamente eficiente para dados de observabilidade, capaz de oferecer taxas de compressão incomparáveis e tempos de resposta de consulta extremamente rápidos. Para usar o ClickHouse em uma solução de observabilidade, são necessários tanto uma interface de usuário quanto um framework de coleta de dados. Atualmente, recomendamos o uso do **Grafana** para visualizar sinais de observabilidade e do **OpenTelemetry** para coleta de dados (ambos são integrações oficialmente suportadas).
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Simple OTel](/images/use-cases/observability/observability-1.webp)
-
-</Frame>
-
+  <Frame>
+    ![Simple OTel](/images/use-cases/observability/observability-1.webp)
+  </Frame>
 </div>
 
 <br />
@@ -34,7 +28,7 @@ O ClickHouse, por si só, não é uma solução de observabilidade pronta para u
 </Info>
 
 <div id="why-use-clickhouse">
-  ## Por que usar o ClickHouse?
+  ## Por que usar o ClickHouse? {#why-use-clickhouse}
 </div>
 
 O recurso mais importante de qualquer armazenamento centralizado de observabilidade é a capacidade de agregar, analisar e pesquisar rapidamente grandes volumes de dados de logs provenientes de fontes diversas. Essa centralização simplifica a solução de problemas, facilitando a identificação das causas raiz de interrupções de serviços.
@@ -54,7 +48,7 @@ Mais especificamente, os pontos a seguir fazem do ClickHouse uma solução ideal
 * **Código aberto e padrões abertos** - Como banco de dados de código aberto, o ClickHouse adota padrões abertos, como o OpenTelemetry. A possibilidade de contribuir e participar ativamente dos projetos é atraente, além de evitar os desafios do aprisionamento a fornecedor.
 
 <div id="when-should-you-use-clickhouse-for-observability">
-  ## Quando você deve usar o ClickHouse para observabilidade
+  ## Quando você deve usar o ClickHouse para observabilidade {#when-should-you-use-clickhouse-for-observability}
 </div>
 
 Usar o ClickHouse para dados de observabilidade exige que os usuários adotem uma abordagem de observabilidade baseada em SQL. Recomendamos [este post do blog](https://clickhouse.com/blog/the-state-of-sql-based-observability) para conhecer a história da observabilidade baseada em SQL, mas, em resumo:
@@ -77,7 +71,7 @@ A observabilidade baseada em SQL pode não ser para você se:
 * Você prefere esperar o ecossistema amadurecer mais e a observabilidade baseada em SQL se tornar mais pronta para uso.
 
 <div id="logs-and-traces">
-  ## Logs e traces
+  ## Logs e traces {#logs-and-traces}
 </div>
 
 O caso de uso de observabilidade tem três pilares distintos: Logging, Tracing e Métricas. Cada um deles tem tipos de dados e padrões de acesso próprios.
@@ -99,24 +93,18 @@ Atualmente, recomendamos o ClickHouse para armazenar dois tipos de dados de obse
   Embora o ClickHouse possa ser usado para armazenar dados de métricas, esse pilar é menos maduro no ClickHouse, com suporte ainda pendente a recursos como o formato de dados do Prometheus e o PromQL.
 </Info>
 
-<div id="distributed-tracing">
-  ### Rastreamento distribuído
-</div>
+### Tracing distribuído {#distributed-tracing}
 
-O rastreamento distribuído é um recurso essencial da observabilidade. Um trace distribuído, ou simplesmente trace, mapeia o caminho percorrido por uma solicitação em um sistema. A solicitação se origina de um usuário final ou aplicativo e se propaga por todo o sistema, normalmente resultando em um fluxo de ações entre microsserviços. Ao registrar essa sequência e permitir correlacionar os eventos subsequentes, ele possibilita que um usuário de observabilidade ou SRE diagnostique problemas no fluxo de um aplicativo, independentemente de quão complexa ou serverless seja a arquitetura.
+O tracing distribuído é um recurso essencial da observabilidade. Um trace distribuído, ou simplesmente trace, mapeia o caminho percorrido por uma solicitação em um sistema. A solicitação se origina de um usuário final ou aplicativo e se propaga por todo o sistema, normalmente resultando em um fluxo de ações entre microsserviços. Ao registrar essa sequência e permitir correlacionar os eventos subsequentes, ele possibilita que um usuário de observabilidade ou SRE diagnostique problemas no fluxo de um aplicativo, independentemente de quão complexa ou serverless seja a arquitetura.
 
-Cada trace é composto por vários spans, sendo que o span inicial associado à solicitação é conhecido como root span. Esse root span captura toda a solicitação, do início ao fim. Os spans subsequentes, abaixo da raiz, fornecem insights detalhados sobre as várias etapas ou operações que ocorrem durante a solicitação. Sem rastreamento, diagnosticar problemas de desempenho em um sistema distribuído pode ser extremamente difícil. O rastreamento facilita o processo de depuração e a compreensão de sistemas distribuídos ao detalhar a sequência de eventos dentro de uma solicitação à medida que ela percorre o sistema.
+Cada trace é composto por vários spans, sendo que o span inicial associado à solicitação é conhecido como root span. Esse root span captura toda a solicitação, do início ao fim. Os spans subsequentes, abaixo da raiz, fornecem insights detalhados sobre as várias etapas ou operações que ocorrem durante a solicitação. Sem tracing, diagnosticar problemas de desempenho em um sistema distribuído pode ser extremamente difícil. O tracing facilita o processo de depuração e a compreensão de sistemas distribuídos ao detalhar a sequência de eventos dentro de uma solicitação à medida que ela percorre o sistema.
 
 A maioria dos fornecedores de observabilidade visualiza essas informações como uma cascata, com o tempo relativo representado por barras horizontais de tamanho proporcional. Por exemplo, no Grafana:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Exemplo de trace](/images/use-cases/observability/observability-2.webp)
-
-</Frame>
-
+  <Frame>
+    ![Exemplo de trace](/images/use-cases/observability/observability-2.webp)
+  </Frame>
 </div>
 
 Para usuários que precisam se aprofundar nos conceitos de logs e traces, recomendamos fortemente a [documentação do OpenTelemetry](https://opentelemetry.io/docs/concepts/).

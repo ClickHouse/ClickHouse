@@ -1,0 +1,111 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/instrument-with-ai
+title: 'Instrumenter avec l’IA'
+sidebarTitle: 'Instrumenter avec l’IA'
+description: 'Utilisez un assistant de programmation et le guide du SDK de votre langage pour instrumenter votre application avec ClickHouse Observability.'
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+Utilisez un assistant de programmation pour instrumenter votre application en suivant le guide correspondant à son langage ou à son framework. L’assistant peut identifier les points d’entrée, installer le SDK approprié et configurer l’export de la télémétrie.
+
+L’instrumentation automatique couvre les bibliothèques et frameworks pris en charge. Selon votre langage et votre application, il peut rester nécessaire de modifier le code ou d’ajouter des spans personnalisés pour capturer les opérations métier. Vérifiez les modifications générées avant de les déployer.
+
+## Avant de commencer {#before-you-begin}
+
+Vous aurez besoin du code source de votre application, d&#39;un assistant de programmation ayant accès au dépôt et d&#39;une destination ClickHouse Observability. Choisissez le [guide SDK correspondant au langage](/fr/clickstack/observability/ingesting-data/sdks) de votre application : il indique les paquets SDK, les signaux pris en charge et les paramètres d&#39;exportateur à utiliser.
+
+## Configurer votre destination {#configure-your-destination}
+
+<Tabs>
+  <Tab title="Entièrement géré">
+    <BetaBadge label="Offre bêta" />
+
+    Ouvrez **Paramètres de l’équipe → Données → Télémétrie gérée** et copiez votre endpoint OTLP HTTP ainsi que votre API key d’ingestion. Stockez-les dans un fichier d’environnement exclu du contrôle de version ou dans votre gestionnaire de secrets.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Télémétrie gérée affichant l’endpoint OTLP HTTP et l’API key masqués](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Si votre service affiche la page **Premiers pas**, vous pouvez plutôt sélectionner **Copy prompt** sous **Instrumenter avec l’IA**. Copiez le prompt de la section **Set it up with an AI agent**, puis définissez les variables `CLICKSTACK_OTLP_ENDPOINT` et `CLICKSTACK_API_KEY` indiquées dans cette boîte de dialogue. Suivez ensuite les étapes de relecture et de vérification décrites ci-dessous.
+  </Tab>
+
+  <Tab title="Autogéré">
+    Vous devez disposer d’un collecteur OpenTelemetry en cours d’exécution et connecté à votre service ClickHouse Cloud. Pour configurer le collecteur, consultez [Ingestion avec OpenTelemetry](/fr/clickstack/observability/ingesting-data/opentelemetry#self-managed).
+
+    Utilisez l’endpoint OTLP du collecteur et la clé d’ingestion configurée pour celui-ci. Reportez-vous à l’onglet **Autogéré** du guide SDK de votre langage pour connaître le format d’authentification et les paramètres de l’exportateur.
+  </Tab>
+</Tabs>
+
+## Fournir le guide du langage à votre assistant {#give-your-assistant-the-language-guide}
+
+Ouvrez le dépôt de votre application dans votre assistant de programmation, comme Claude Code, Cursor ou Codex. Copiez le prompt suivant en remplaçant les espaces réservés par l’URL de votre guide du langage, votre type de déploiement et le nom de votre service. Indiquez les noms de vos variables d’environnement plutôt que de coller vos identifiants dans le prompt.
+
+```text wrap
+Instrument this application to send telemetry to ClickHouse Observability.
+
+Language or framework guide: <LANGUAGE_SDK_GUIDE_URL>
+Destination: <fully managed or self-managed>
+Service name: <SERVICE_NAME>
+Endpoint environment variable: <ENDPOINT_VARIABLE_NAME>
+Ingestion key environment variable: <API_KEY_VARIABLE_NAME>
+
+Read the linked guide and use the instructions for my destination.
+Inspect the application's language, framework, dependencies, and startup
+commands before making changes. If you cannot read the guide, ask me for
+its contents rather than guessing SDK names or configuration.
+
+Reuse existing OpenTelemetry instrumentation where present. Otherwise,
+install the SDK and supported automatic instrumentation described in the
+guide. Initialize instrumentation at the point required by that SDK.
+Use the guide's protocol, endpoint, and authentication format, reading
+connection values from the environment. Do not hardcode or print secrets.
+
+Preserve the application's existing behavior. Check for duplicate SDK
+initialization, exporters, and logging handlers, including those installed
+by automatic instrumentation. If logs are supported, check both the
+application's logging level and the SDK's export level so the test log
+is captured once. Use the language guide's settings for these checks.
+
+Explain which signals are supported and any operations that need manual
+instrumentation. Do not assume every SDK exports logs, metrics, traces,
+or session replay.
+
+Update the startup command and document the required environment variables.
+Run the application's existing checks and a local startup check. Exercise
+an instrumented operation with a unique test marker. If logs are supported,
+emit one test log during that operation at an enabled severity. Allow time
+for batched export or flush telemetry before shutting down.
+
+When you have destination access, find the test events there and verify
+the service name, marker, and absence of duplicates. If log-to-trace
+correlation is supported, check that the test log references the operation's
+trace and span. Distinguish local export, endpoint acceptance, and events
+stored in ClickHouse Observability; startup or an HTTP success response
+alone does not prove storage.
+
+Summarize the changes, tests performed, and results. Clearly state which
+checks you could not run and give me the remaining verification steps.
+```
+
+Les noms de variables de ce prompt indiquent où sont stockées vos valeurs de connexion. Ils ne remplacent pas les variables requises par le SDK : l&#39;assistant doit les faire correspondre aux paramètres documentés dans le guide de votre langage. Pour les applications web exécutées dans le navigateur, suivez le [guide du SDK pour navigateur](/fr/clickstack/observability/ingesting-data/sdks/browser), y compris sa configuration de l&#39;endpoint et de la clé propre au navigateur.
+
+## Vérifier et exécuter l&#39;application {#review-and-run-the-application}
+
+Passez en revue les modifications apportées aux dépendances, à l&#39;initialisation et au démarrage. Vérifiez que l&#39;assistant a sélectionné la bonne destination et le bon format d&#39;authentification, qu&#39;il a conservé l&#39;instrumentation existante et qu&#39;aucun secret ne figure dans les fichiers validés.
+
+Exécutez les tests existants de votre application, puis démarrez-la avec la commande et l&#39;environnement mis à jour. Envoyez une requête ou effectuez une action qui sollicite une bibliothèque instrumentée. Si vous avez besoin de télémétrie pour une opération que l&#39;instrumentation automatique ne capture pas, demandez à l&#39;assistant d&#39;ajouter un span personnalisé à l&#39;aide de l&#39;API de votre SDK.
+
+## Vérifier la télémétrie {#verify-telemetry}
+
+1. Ouvrez [Recherche](/fr/clickstack/observability/features/search) dans ClickHouse Observability.
+2. Sélectionnez la source de logs ou de traces appropriée, ainsi qu’un intervalle de temps couvrant votre activité de test.
+3. Filtrez sur le nom de votre service et examinez les événements générés. Vérifiez que la requête ou l’opération attendue apparaît bien.
+4. Si le SDK exporte des métriques, examinez-les dans l’[Explorateur de graphiques](/fr/clickstack/observability/features/dashboards/overview#navigate-chart-explorer).
+
+Le démarrage réussi de l’application ne garantit pas que la télémétrie est bien transmise. Si des événements manquent, vérifiez les erreurs de l’exportateur de l’application, ainsi que les paramètres d’endpoint, de protocole et d’authentification. Pour les déploiements autogérés, examinez également les logs du collecteur.
+
+Pour un exemple complet d’application, suivez la [démonstration HackerNews Analyzer](/fr/clickstack/observability/example-datasets/instrument-application).

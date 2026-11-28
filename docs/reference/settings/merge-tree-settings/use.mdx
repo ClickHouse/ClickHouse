@@ -59,6 +59,16 @@ to apply it to existing parts. `Compact` parts always use adaptive granularity.
 <SettingsInfoBlock type="Bool" default_value="0" />
 Obsolete setting, does nothing.
 
+## use_object_shared_data_serialization_version_for_small_parts_on_insert {#use_object_shared_data_serialization_version_for_small_parts_on_insert}
+<SettingsInfoBlock type="Bool" default_value="1" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "New setting"}]}]}/>
+
+Write the shared data inside JSON type of parts created by inserts, including their projections, with
+[object_shared_data_serialization_version_for_small_parts](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts)
+regardless of their size, to keep inserts fast. When disabled, the version of inserted parts is chosen by
+[min_bytes_for_object_shared_data_main_serialization_version](/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version),
+as for merged parts.
+
 ## use_primary_key_cache {#use_primary_key_cache}
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "New setting"}]}]}/>

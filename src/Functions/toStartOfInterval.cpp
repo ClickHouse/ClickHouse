@@ -645,7 +645,7 @@ private:
             auto execute_default = [&]<bool saturate>()
             {
                 /// The start of the interval of one value, in the representation of the result type.
-                auto execute_row = [&](auto time)
+                auto execute_row = [&](auto time) ALWAYS_INLINE
                 {
                     /// A `DateTime` result that clamps (`to_start_of_interval_preserves_argument_type`) is computed with the
                     /// signed overload: the unsigned one clamps a day before the epoch to the first day after it, which
@@ -654,6 +654,14 @@ private:
                     if constexpr (saturate && std::is_same_v<TimeColumnType, ColumnDateTime>)
                         return convertToResultRepresentation<unit, ResultDataType>(
                             ToStartOfInterval<unit>::execute(static_cast<Int64>(time), num_units, time_zone, 1), time_zone, result_scale_multiplier);
+                    else if constexpr (unit == IntervalKind::Kind::Hour && std::is_same_v<TimeColumnType, ColumnDateTime>)
+                    {
+                        /// Rounding to hours is inlined into the loop over the rows as a whole (see also
+                        /// `ToStartOfInterval<IntervalKind::Kind::Hour>::execute`), so that the number of hours and the
+                        /// properties of the time zone are checked once per column and not in a call for every row.
+                        [[clang::always_inline]] return convertToResultRepresentation<unit, ResultDataType>(
+                            ToStartOfInterval<unit>::execute(time, num_units, time_zone, scale_multiplier), time_zone, result_scale_multiplier);
+                    }
                     else
                         return convertToResultRepresentation<unit, ResultDataType>(
                             ToStartOfInterval<unit>::execute(time, num_units, time_zone, scale_multiplier), time_zone, result_scale_multiplier);

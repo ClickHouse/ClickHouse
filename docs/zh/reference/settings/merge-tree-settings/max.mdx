@@ -90,6 +90,24 @@ server 上的单个表中存储数百 TB 的数据。这
 建议将其设置得低于文件名最大长度 (通常为 255
 字节) ，并预留一定余量，以避免文件系统错误。
 
+## max_memory_ratio_to_activate_adaptive_write_buffer {#max_memory_ratio_to_activate_adaptive_write_buffer}
+
+<SettingsInfoBlock type="Float" default_value="0.03125" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.03125"},{"label": "新增设置。当 Wide 格式数据分片预分配的缓冲区所占内存达到服务器内存限制的该比例时，启用自适应写入缓冲区，以免包含大量列的表在小型服务器上预留数百 MB 的写入缓冲区。先前的值会禁用该触发条件，即保持 26.11 之前的行为。"}]}]} />
+
+当 Wide 格式数据分片预分配的缓冲区所占内存达到服务器内存限制 (`max_server_memory_usage`) 的该比例时，也会启用自适应写入缓冲区，而不受
+`min_columns_to_activate_adaptive_write_buffer` 的影响。
+
+Wide 格式数据分片会为其写入的每个 stream 预分配两个大小为 `max_compress_block_size` 的缓冲区 (文件
+缓冲区和压缩器的块缓冲区) ，因此包含大量列的表在写入任何数据之前就会预留数百 MB 内存，并且每个并发合并都会再预留一份。这在大型
+服务器上微不足道，但在小型服务器上会占用相当一部分内存预算，可能导致 `INSERT` 因
+`MEMORY_LIMIT_EXCEEDED` 而失败。
+
+该设置适用于插入操作，以及非复制表的合并与变更。复制表的合并与变更会忽略该设置：自适应写入缓冲区会改变标记中存储的偏移量，而各副本会比较所合并 parts 的校验和，因此缓冲区不能取决于单个副本的内存限制。
+
+设置为 `0` 可禁用该触发条件，此时仅根据列数决定是否启用自适应写入缓冲区。
+
 ## max_partitions_to_read {#max_partitions_to_read}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />

@@ -7,9 +7,7 @@ doc_type: 'guide'
 keywords: ['ClickStack', '演示日']
 ---
 
-<div id="version-aware-improved-schema-filtering">
-  ## 按版本感知优化的 schema 过滤
-</div>
+## 按版本感知优化的 schema 过滤 {#version-aware-improved-schema-filtering}
 
 *由 [@knudtty](https://github.com/knudtty) 演示*
 
@@ -23,9 +21,7 @@ ClickStack 现在仅在 ClickHouse 26.2 及以上版本中启用 direct&#95;read
 
 **相关 PR：** [#2341](https://github.com/hyperdxio/hyperdx/pull/2341) feat: 默认添加针对日志和链路追踪的 direct&#95;read 优化, [#2405](https://github.com/hyperdxio/hyperdx/pull/2405) feat(common-utils): 将 direct&#95;read KV 项优化应用于 SQL 过滤器, [#2376](https://github.com/hyperdxio/hyperdx/pull/2376) feat: 使用文本索引驱动过滤器和自动补全
 
-<div id="better-log-parsing">
-  ## 更好的日志解析
-</div>
+## 更好的日志解析 {#better-log-parsing}
 
 *由 [@dhable](https://github.com/dhable) 演示*
 
@@ -39,9 +35,7 @@ ClickStack 现在仅在 ClickHouse 26.2 及以上版本中启用 direct&#95;read
 
 **相关 PR：** [#2363](https://github.com/hyperdxio/hyperdx/pull/2363) fix(log-parser): 当 body 解析为包含 level 字段的 JSON 时，跳过字符串推断
 
-<div id="mcp-server-improvements">
-  ## MCP 服务器改进
-</div>
+## MCP 服务器改进 {#mcp-server-improvements}
 
 *演示者：[ @brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -53,9 +47,7 @@ ClickStack 现在仅在 ClickHouse 26.2 及以上版本中启用 direct&#95;read
 
 **相关 PR：** [#2337](https://github.com/hyperdxio/hyperdx/pull/2337) feat(mcp): 提升 MCP 工具质量——错误提示、共享 helper 和更好的消息，[#2396](https://github.com/hyperdxio/hyperdx/pull/2396) refactor(mcp): 将工具前缀从 hyperdx&#95; 重命名为 clickstack&#95;，[#2343](https://github.com/hyperdxio/hyperdx/pull/2343) feat(mcp): 添加 patch&#95;dashboard、get&#95;dashboard&#95;tile、search&#95;dashboards 工具，[#2418](https://github.com/hyperdxio/hyperdx/pull/2418) fix(mcp): 改进别名描述和示例，以生成更易读的图表图例，[#2412](https://github.com/hyperdxio/hyperdx/pull/2412) refactor: 使用共享 helper 和 schema 级检查简化 MCP ObjectId 验证
 
-<div id="new-series-color-palette">
-  ## 新的图表系列配色板
-</div>
+## 新的图表数据系列调色板 {#new-series-color-palette}
 
 *演示者：[@elizabetdev](https://github.com/elizabetdev)*
 
@@ -63,15 +55,13 @@ ClickStack 现在仅在 ClickHouse 26.2 及以上版本中启用 direct&#95;read
   <iframe src="https://www.youtube.com/embed/YzECP3diWvg" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-为配合 Alex 在颜色选择器方面的工作，Elizabet 着手统一 HyperDX 和 ClickStack 主题中的数据可视化配色板。这两个主题原本各自使用独立的色板，并且分别带有一些例外规则，导致颜色体系过于复杂，不便于统一管理。目标是打造一套同时适用于两种主题的统一色板。
+为配合 Alex 在颜色选择器方面的工作，Elizabet 着手统一 ClickStack 用户界面和 ClickStack 主题中的数据可视化调色板。这两个主题原本各自使用独立的调色板，并且分别带有一些例外规则，导致颜色体系过于复杂，不便于统一管理。目标是打造一套同时适用于两种主题的统一调色板。
 
-她使用色觉模拟工具，对照行业标准色板 (Tableau、Observable、IBM) 测试了对比度和可访问性。ClickHouse 的色板表现较差——其中的绿色在白色背景上对比度不足。Tableau 和 Observable 都至少有一项检查未通过；IBM 的色板虽然全部通过，但只有五种颜色，数量不够。综合来看，Observable 的色板整体最接近需求，只需对蓝色稍作调整，之后就可以在两种主题中共用。
+她使用色觉模拟工具，对照行业标准调色板 (Tableau、Observable、IBM) 测试了对比度和可访问性。ClickHouse 的调色板表现较差——其中的绿色在白色背景上对比度不足。Tableau 和 Observable 都至少有一项检查未通过；IBM 的调色板虽然全部通过，但只有五种颜色，数量不够。综合来看，Observable 的调色板整体最接近需求，只需对蓝色稍作调整，之后就可以在两种主题中共用。
 
-**相关 PR：** [#2362](https://github.com/hyperdxio/hyperdx/pull/2362) 重构(theme)：将图表色板 token 重命名为色相名称，并在各主题间统一
+**相关 PR：** [#2362](https://github.com/hyperdxio/hyperdx/pull/2362) 重构(theme)：将图表调色板 token 重命名为色相名称，并在各主题间统一
 
-<div id="new-page-layout-with-sticky-header">
-  ## 带有吸顶页头的新页面布局
-</div>
+## 带有吸顶页头的新页面布局 {#new-page-layout-with-sticky-header}
 
 *由 [@elizabetdev](https://github.com/elizabetdev) 演示*
 
@@ -85,9 +75,7 @@ ClickStack 现在仅在 ClickHouse 26.2 及以上版本中启用 direct&#95;read
 
 **相关 PR：** [#2282](https://github.com/hyperdxio/hyperdx/pull/2282) Add PageHeader/PageLayout and migrate Sessions, [#2345](https://github.com/hyperdxio/hyperdx/pull/2345) Use PageHeader title on list pages, [#2346](https://github.com/hyperdxio/hyperdx/pull/2346) Migrate Service Map to PageLayout, [#2347](https://github.com/hyperdxio/hyperdx/pull/2347) Migrate Kubernetes dashboard to PageLayout, [#2348](https://github.com/hyperdxio/hyperdx/pull/2348) Migrate ClickHouse dashboard to PageLayout, [#2364](https://github.com/hyperdxio/hyperdx/pull/2364) feat(dashboard): migrate to PageLayout with sticky query toolbar, [#2394](https://github.com/hyperdxio/hyperdx/pull/2394) fix(PageHeader): keep sticky header below drawer overlays
 
-<div id="new-datasource-selector-and-color-picking-for-series">
-  ## 全新的数据源选择器和系列颜色选择功能
-</div>
+## 全新的数据源选择器和系列颜色选择功能 {#new-datasource-selector-and-color-picking-for-series}
 
 *演示者：[@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -101,9 +89,7 @@ Alex 带来了两项 UI 改进。数据源选择器经过了整理：现在点�
 
 **相关 PR：** [#2365](https://github.com/hyperdxio/hyperdx/pull/2365) feat(source-picker): chip + kebab menu UX, [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): number tile static color picker
 
-<div id="better-hints-for-dashboard-actions">
-  ## 为仪表盘操作提供更清晰的提示
-</div>
+## 为仪表盘操作提供更清晰的提示 {#better-hints-for-dashboard-actions}
 
 *演示者：[@alex-fedotyev](https://github.com/alex-fedotyev)*
 

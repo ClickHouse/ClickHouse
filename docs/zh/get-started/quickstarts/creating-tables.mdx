@@ -38,15 +38,15 @@ CREATE DATABASE IF NOT EXISTS helloworld
 下面这个名为 `my_first_table` 的表会在 `helloworld` 数据库中创建：
 
 ```sql
-  CREATE TABLE helloworld.my_first_table
-  (
-      user_id UInt32,
-      message String,
-      timestamp DateTime,
-      metric Float32
-  )
-  ENGINE = MergeTree()
-  PRIMARY KEY (user_id, timestamp)
+CREATE TABLE helloworld.my_first_table
+(
+    user_id UInt32,
+    message String,
+    timestamp DateTime,
+    metric Float32
+)
+ENGINE = MergeTree()
+PRIMARY KEY (user_id, timestamp)
 ```
 
 在上面的示例中，`my_first_table` 是一个包含四列的 `MergeTree` 表：
@@ -67,7 +67,7 @@ CREATE DATABASE IF NOT EXISTS helloworld
 </Note>
 
 <div id="a-brief-intro-to-primary-keys">
-  ## 主键简介
+  ## 主键简介 {#a-brief-intro-to-primary-keys}
 </div>
 
 在继续之前，务必要先了解 ClickHouse 中主键的工作方式 (它的实现可能会让你有些意外！) ：
@@ -81,7 +81,7 @@ ClickHouse 表的主键决定了数据写入磁盘时的排序方式。每 8,192
 主键同时也是排序键，即由 `(user_id, timestamp)` 组成的元组。因此，每个列文件中存储的数据都会先按 `user_id` 排序，再按 `timestamp` 排序。
 
 <Tip>
-  如需了解更多详细信息，请查看 ClickHouse Academy 中的 [Modeling Data 培训模块](<https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550440>)。
+  如需了解更多详细信息，请查看 ClickHouse Academy 中的 [Modeling Data 培训模块](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550440)。
 </Tip>
 
 <div className="mt-8">

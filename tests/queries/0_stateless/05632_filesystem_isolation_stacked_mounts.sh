@@ -80,8 +80,12 @@ if ! grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null || ! grep
     cat "$DIR/server.out" "$DIR/log/server.err.log" >&2
     exit 1
 fi
+# With `CAP_SYS_ADMIN`, the supervisor stays outside of the namespaces, and its child, the init of the PID
+# namespace, is inside. Otherwise that process is inside.
+INSIDE=$PID
+[ "$(cat "/proc/$PID/comm")" = clickhouse-isol ] && INSIDE=$(cut -d' ' -f1 "/proc/$PID/task/$PID/children")
 echo "started with an isolated filesystem"
 
 # `unshare` executes the server in place of itself, so the process is the server.
-echo "visible mount on top: $([ -f "/proc/$PID/root$DIR/tree/stack/on_top" ] && echo visible || echo invisible)"
-echo "covered mount inside: $([ -e "/proc/$PID/root$DIR/tree/stack/hidden" ] && echo visible || echo invisible)"
+echo "visible mount on top: $([ -f "/proc/$INSIDE/root$DIR/tree/stack/on_top" ] && echo visible || echo invisible)"
+echo "covered mount inside: $([ -e "/proc/$INSIDE/root$DIR/tree/stack/hidden" ] && echo visible || echo invisible)"

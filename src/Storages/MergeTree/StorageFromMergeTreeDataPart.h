@@ -83,6 +83,8 @@ public:
         return false;
     }
 
+    bool hasBucketedMapSerialization() const override { return storage.hasBucketedMapSerialization(); }
+
     String getPartitionId() const
     {
         return partition_id;

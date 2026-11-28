@@ -114,38 +114,6 @@ public:
             return nested_function->getName() + "ArgMax";
     }
 
-    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        const size_t rhs_key_offset = ::Memory::alignUp(rhs_nested->sizeOfData(), alignof(Key));
-        const auto & rhs_key = *reinterpret_cast<const Key *>(rhs_place + rhs_key_offset);
-
-        if ((isMin && data(place).data().setIfSmaller(rhs_key.data(), arena))
-            || (!isMin && data(place).data().setIfGreater(rhs_key.data(), arena)))
-        {
-            resetNested(place);
-            nested_function->mergeStateFromDifferentVariant(place, *rhs_nested, rhs_place, arena);
-        }
-        else if (data(place).data().isEqualTo(rhs_key.data()))
-        {
-            nested_function->mergeStateFromDifferentVariant(place, *rhs_nested, rhs_place, arena);
-        }
-    }
-
     [[nodiscard]] bool isState() const override { return nested_function->isState(); }
 
     [[nodiscard]] bool isVersioned() const override { return nested_function->isVersioned(); }

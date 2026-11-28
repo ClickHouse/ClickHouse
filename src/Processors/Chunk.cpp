@@ -173,6 +173,9 @@ void Chunk::append(const Chunk & chunk)
 
 void Chunk::append(const Chunk & chunk, size_t from, size_t length)
 {
+    /// A chunk can have rows and no columns, so the number of rows is not taken from the first column.
+    const size_t rows = num_rows + length;
+
     MutableColumns mutable_columns = mutateColumns();
     for (size_t position = 0; position < mutable_columns.size(); ++position)
     {
@@ -186,7 +189,6 @@ void Chunk::append(const Chunk & chunk, size_t from, size_t length)
         auto column = recursiveRemoveNonNativeLowCardinality(chunk.getColumns()[position]);
         mutable_columns[position]->insertRangeFrom(*column, from, length);
     }
-    size_t rows = mutable_columns[0]->size();
     setColumns(std::move(mutable_columns), rows);
 }
 

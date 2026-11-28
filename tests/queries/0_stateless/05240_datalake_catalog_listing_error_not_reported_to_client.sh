@@ -23,6 +23,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# The client prints the server logs it receives to stderr. They come over the query's connection, while
+# system.text_log drops entries when the async logger's queue is full. Warning and above is what the default
+# send_logs_level shows.
+function check_logs() {
+    local above
+    above=$(grep -c -E ' <(Fatal|Critical|Error|Warning)> ' "$1")
+    echo "client got logs$2: $(( above > 0 ))"
+    echo "site level$2: $(sed -n -E "s/.* <([A-Za-z]+)> DatabaseDataLake\(${DB}\): .*/\1/p" "$1" | head -n 1)"
+    echo "entries above information$2: ${above}"
+}
+
 # `exact_header` is forbidden by tests/config/config.d/forbidden_headers.xml. ATTACH does not validate the
 # header, so the rejection happens when the catalog is first built, inside the table listing.
 ${CLICKHOUSE_CLIENT} --query "
@@ -30,37 +41,17 @@ ${CLICKHOUSE_CLIENT} --query "
     SETTINGS catalog_type = 'rest', auth_header = 'exact_header: some_value', warehouse = 'demo'
 "
 
-${CLICKHOUSE_CLIENT} --send_logs_level=warning --show_data_lake_catalogs_in_system_tables=0 \
+${CLICKHOUSE_CLIENT} --send_logs_level=debug --show_data_lake_catalogs_in_system_tables=0 \
     --query_id "${QUERY_ID}" \
     --query "SELECT count() FROM system.iceberg_history WHERE database = '${DB}'" 2> "${STDERR_FILE}"
 
-if [ -s "${STDERR_FILE}" ]; then echo "client got logs: 1"; else echo "client got logs: 0"; fi
-
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
-echo "site level: $(${CLICKHOUSE_CLIENT} --query "
-    SELECT level FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QUERY_ID}' AND logger_name = 'DatabaseDataLake(${DB})'
-    ORDER BY event_time_microseconds
-    LIMIT 1")"
-echo "entries above information: $(${CLICKHOUSE_CLIENT} --query "
-    SELECT count() FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QUERY_ID}' AND level IN ('Fatal', 'Critical', 'Error', 'Warning')")"
+check_logs "${STDERR_FILE}" ""
 
 # The same property on the other listing entry point: `system.iceberg_history` reaches the lightweight
 # iterator, while `system.iceberg_files` reaches the general one (`getTablesIterator`), which is also what
 # `SELECT ... FROM system.tables` uses when it needs storage objects.
-${CLICKHOUSE_CLIENT} --send_logs_level=warning --show_data_lake_catalogs_in_system_tables=0 \
+${CLICKHOUSE_CLIENT} --send_logs_level=debug --show_data_lake_catalogs_in_system_tables=0 \
     --query_id "${QUERY_ID_FILES}" \
     --query "SELECT count() FROM system.iceberg_files WHERE database = '${DB}'" 2> "${STDERR_FILE_FILES}"
 
-if [ -s "${STDERR_FILE_FILES}" ]; then echo "client got logs (files): 1"; else echo "client got logs (files): 0"; fi
-
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
-echo "site level (files): $(${CLICKHOUSE_CLIENT} --query "
-    SELECT level FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QUERY_ID_FILES}' AND logger_name = 'DatabaseDataLake(${DB})'
-    ORDER BY event_time_microseconds
-    LIMIT 1")"
-echo "entries above information (files): $(${CLICKHOUSE_CLIENT} --query "
-    SELECT count() FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QUERY_ID_FILES}' AND level IN ('Fatal', 'Critical', 'Error', 'Warning')")"
+check_logs "${STDERR_FILE_FILES}" " (files)"

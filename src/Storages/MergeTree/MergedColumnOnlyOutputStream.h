@@ -49,6 +49,8 @@ private:
     /// of columns selected for automatic LowCardinality serialization before they are written, since this
     /// stream (used by vertical merges and mutations) receives full columns from the pipeline.
     SerializationInfoByName part_serialization_infos;
+
+    NameSet files_to_remove_after_finish;
 };
 
 using MergedColumnOnlyOutputStreamPtr = std::shared_ptr<MergedColumnOnlyOutputStream>;
