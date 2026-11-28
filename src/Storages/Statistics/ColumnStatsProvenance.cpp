@@ -11,6 +11,7 @@ String ColumnStatsProvenance::toString() const
         case ColumnStatsOrigin::Unknown: result = "unknown"; break;
         case ColumnStatsOrigin::MeasuredStatistics: result = "measured-statistics"; break;
         case ColumnStatsOrigin::SyntheticFallback: result = "synthetic-fallback"; break;
+        case ColumnStatsOrigin::EstimatedFromMetadata: result = "estimated-from-metadata"; break;
         case ColumnStatsOrigin::SyntheticOverride: result = "synthetic-override"; break;
     }
 

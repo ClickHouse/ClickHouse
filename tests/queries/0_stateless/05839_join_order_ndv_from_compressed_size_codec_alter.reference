@@ -1,0 +1,4 @@
+Self-joins on `k`: 1 when the selectivity is estimated from the compressed size, 0 when the join is taken as a join with a unique key.
+Delta altered to ZSTD	0
+Delta altered to the default codec	0
+ZSTD altered to LZ4	1

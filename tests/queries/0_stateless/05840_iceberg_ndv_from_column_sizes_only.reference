@@ -1,0 +1,6 @@
+--- From the sizes of the columns: k and sid do not compress and get none
+d: 1
+dec: 1
+n: 1
+s: 2
+--- Without: no column statistics
