@@ -1,0 +1,23 @@
+--- an incomplete record is completed after the file is rotated
+round1	[]
+round2	[1]
+round3	[1]
+--- a rotated file is truncated to empty and gets new records
+round4	[1]
+round5	[1,2]
+round6	[1,2]
+--- a file is truncated and written again past the position of the cursor
+round7	[1,2,10]
+round8	[1,2,10,20,30]
+round9	[1,2,10,20,30]
+round10	[1,2,10,20,20,30,31,32,33]
+round11	[1,2,10,20,20,30,31,32,33]
+--- unbounded: a file is truncated and written again past the read position
+1
+2
+3
+--- a query that stops the read early
+round1	[1]
+round2	[1]
+round3	[1,1]
+round4	[1,1]

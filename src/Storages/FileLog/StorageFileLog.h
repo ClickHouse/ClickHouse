@@ -65,6 +65,20 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    /// A streaming query reads the files with its own readers, see `FileLogStreamSource`.
+    bool supportsStreaming() const override { return true; }
+    bool reportsStreamingCursor() const override { return true; }
+    /// The cursor has the names, inodes and offsets of the files of this server.
+    bool hasServerLocalStreamingCursor() const override { return true; }
+
+    /// The names of the regular files in the directory of the table, for a streaming query, and whether a name
+    /// matches the path of the table. A file that is already read is identified by its inode, so the stream needs
+    /// the files that do not match too: it keeps reading a file renamed by log rotation (`app.log` -> `app.log.1`
+    /// for the path `*.log`).
+    std::vector<std::pair<String, bool>> listStreamFiles() const;
+
+    StreamingHandleErrorMode getStreamingHandleErrorMode() const;
+
     void drop() override;
 
     const auto & getFormatName() const { return format_name; }

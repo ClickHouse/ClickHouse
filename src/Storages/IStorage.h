@@ -167,6 +167,16 @@ public:
     /// Returns true if the storage supports `SELECT ... FROM t STREAM` continuous reads.
     virtual bool supportsStreaming() const { return false; }
 
+    /// A bounded streaming read of the table (`STREAM BOUNDED`) reports the cursor it advanced to through
+    /// `Context::getStreamingCursor`, when the context has a holder for it. Only then can the table be the source
+    /// of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`), which resumes from it.
+    virtual bool reportsStreamingCursor() const { return false; }
+
+    /// The cursor of a streaming read of the table makes sense only on the server that made it (e.g. it has positions
+    /// in local files). An incremental refresh from such a table cannot be coordinated between the replicas of
+    /// a `Replicated` database, where the replicas share one cursor and take turns in refreshing.
+    virtual bool hasServerLocalStreamingCursor() const { return false; }
+
     /// Returns true if the storage supports insert queries with the PARTITION BY section.
     virtual bool supportsPartitionBy() const { return false; }
 

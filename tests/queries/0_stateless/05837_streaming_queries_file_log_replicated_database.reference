@@ -1,0 +1,4 @@
+--- a coordinated refresh is rejected
+NOT_IMPLEMENTED
+--- a refresh on every replica is allowed
+2	3
