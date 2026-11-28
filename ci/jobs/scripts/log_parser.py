@@ -9,6 +9,7 @@ from ci.praktika.utils import Shell
 
 class FuzzerLogParser:
     UNKNOWN_ERROR = "Unknown error"
+    MEMORY_LIMIT_EXCEEDED = "Server unresponsive: memory limit exceeded"
     # Exception messages carry the trailing ", Stack trace (when copying this message,
     # always include the lines below):" marker, but the frames it promises are on the
     # following log lines. The failure name is built from the first line only, so the
@@ -534,7 +535,7 @@ class FuzzerLogParser:
             result_name = result_name.removeprefix("<Fatal> Application: ")
             result_name += f" (STID: {stack_trace_id})"
         elif is_memory_limit_exceeded:
-            result_name = "Server unresponsive: memory limit exceeded"
+            result_name = self.MEMORY_LIMIT_EXCEEDED
         elif is_oracle_mismatch:
             # The oracle kind is logged by `QueryOracleChecker` on a line of the
             # form "<kind> oracle mismatch!" after the "Fuzzed query:" line. Fold
