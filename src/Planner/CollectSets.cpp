@@ -28,7 +28,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool transform_null_in;
-    extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 namespace ErrorCodes
@@ -99,20 +98,16 @@ public:
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
-            const GetSetElementParams params{
-                .transform_null_in = settings[Setting::transform_null_in],
-                .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
-            };
-
             std::optional<ColumnsWithTypeAndName> set_from_values;
             if (const auto deferred_field = constant_node->tryGetDeferredField())
                 set_from_values = tryGetSetElementsForTupleOfPlainValues(
-                    in_first_argument->getResultType(), deferred_field->safeGet<Tuple>(), params);
+                    in_first_argument->getResultType(), deferred_field->safeGet<Tuple>(), settings[Setting::transform_null_in]);
 
             auto set = set_from_values
                 ? std::move(*set_from_values)
                 : getSetElementsForConstantValue(
-                      in_first_argument->getResultType(), constant_node->getColumn(), constant_node->getResultType(), params);
+                      in_first_argument->getResultType(), constant_node->getColumn(), constant_node->getResultType(),
+                      planner_context.getQueryContext());
 
             if (set.empty())
                 throw Exception(
