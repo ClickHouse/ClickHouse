@@ -458,6 +458,11 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (params.max_rows_to_group_by != 0 && params.group_by_overflow_mode != OverflowMode::THROW)
         return "a dropping group-by limit mode is set";
 
+    /// The byte limit counts the hash tables and arenas of the ordinary path, while the adaptive path keeps rows
+    /// staged outside them.
+    if (params.max_bytes_to_group_by != 0)
+        return "a byte limit of the aggregation state is set";
+
     if (params.overflow_row)
         return "the overflow row is set";
 

@@ -148,9 +148,10 @@ public:
         size_t max_rows_to_group_by = 0;
         OverflowMode group_by_overflow_mode = OverflowMode::THROW;
 
-        /// An internal limit on hash-table buffers, arenas, and staged records across aggregation
-        /// workers. Zero disables accounting. Exceeding the cap throws independently of the row
-        /// overflow mode and the spilling threshold.
+        /// An internal limit on the bytes of the hash tables and arenas that all the threads of the
+        /// aggregation hold. Zero disables the accounting. Exceeding it throws, whatever the row overflow
+        /// mode and the spill threshold are. The adaptive path does not run under it, because it keeps
+        /// rows staged outside the tables (see `AggregatingStep::adaptiveAggregatorRejectionReason`).
         size_t max_bytes_to_group_by = 0;
 
         struct LimitErrors
@@ -901,9 +902,9 @@ private:
     /// Track memory held by the aggreagation state during execution.
     std::unique_ptr<MemoryTracker> memory_tracker;
 
-    /// Staged chunks can outlive the worker that produced them, so their byte counter is shared.
-    /// Input and output chunks are outside the aggregation state and are not charged here.
-    std::shared_ptr<std::atomic<Int64>> aggregation_state_bytes;
+    /// The bytes that `Params::max_bytes_to_group_by` limits, summed over the threads of the aggregation.
+    /// Input and output chunks are not part of the aggregation state, so they are not counted.
+    mutable std::atomic<Int64> aggregation_state_bytes = 0;
     void updateAndCheckMemoryUsage(AggregatedDataVariants & variants) const;
     void updateAndCheckMemoryUsage(Int64 delta) const;
     bool checkLimits(AggregatedDataVariants & variants, bool & no_more_keys) const;

@@ -830,9 +830,6 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
           CurrentMetrics::AggregatorThreadsScheduled,
           params.max_threads))
 {
-    if (params.max_bytes_to_group_by)
-        aggregation_state_bytes = std::make_shared<std::atomic<Int64>>(0);
-
     /// The execute path measures memory usage via a dedicated Thread-level tracker created under the
     /// current query tracker.
     // The merge path can't use this because it recieves pre-allocated state that can not be covered by
@@ -3751,7 +3748,7 @@ void Aggregator::updateAndCheckMemoryUsage(Int64 delta) const
     if (!delta)
         return;
 
-    const auto bytes = aggregation_state_bytes->fetch_add(delta, std::memory_order_relaxed) + delta;
+    const auto bytes = aggregation_state_bytes.fetch_add(delta, std::memory_order_relaxed) + delta;
     chassert(bytes >= 0);
     if (delta > 0)
         SizeLimits(0, params.max_bytes_to_group_by, OverflowMode::THROW).check(
@@ -3960,7 +3957,7 @@ Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionsAndConvertToCh
     size_t partition_bytes = 0;
     SCOPE_EXIT({
         if (partition_bytes)
-            aggregation_state_bytes->fetch_sub(static_cast<Int64>(partition_bytes), std::memory_order_relaxed);
+            aggregation_state_bytes.fetch_sub(static_cast<Int64>(partition_bytes), std::memory_order_relaxed);
     });
     if (params.max_bytes_to_group_by)
     {
