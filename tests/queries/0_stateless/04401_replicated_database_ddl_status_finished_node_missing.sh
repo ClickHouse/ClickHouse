@@ -60,13 +60,13 @@ $CLICKHOUSE_CLIENT -q "SELECT 'alive', count() FROM $RDB.t"
 #    below) is compiled out otherwise (DEBUG_OR_SANITIZER_BUILD, matched by wantsFinishedNodeData
 #    returning false in release), so a release build returns success directly and never touches
 #    the atomic snapshot or the fallback; and
-#  - the connected Keeper advertises all three flags that generate()'s with_data gate requires:
+#  - the connected Keeper advertises both flags that generate()'s with_data gate requires:
 #    LIST_WITH_STAT_AND_DATA and FILTERED_LIST (ZooKeeperImpl::list rejects with_data without
-#    both) and MULTI_READ (keeps tryGetChildren on the atomic direct-multi path).
+#    both).
 # When either is false the runtime correctly takes the plain/fallback path, so only assert the
 # atomic path when both hold; otherwise the fallback is correct.
 IS_DEBUG_OR_SAN=$($CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.warnings WHERE message LIKE '%built in debug mode%' OR message LIKE '%sanitizer%'")
-HAS_ATOMIC=$($CLICKHOUSE_CLIENT -q "SELECT has(enabled_feature_flags, 'LIST_WITH_STAT_AND_DATA') AND has(enabled_feature_flags, 'FILTERED_LIST') AND has(enabled_feature_flags, 'MULTI_READ') FROM system.zookeeper_connection WHERE name = 'default'")
+HAS_ATOMIC=$($CLICKHOUSE_CLIENT -q "SELECT has(enabled_feature_flags, 'LIST_WITH_STAT_AND_DATA') AND has(enabled_feature_flags, 'FILTERED_LIST') FROM system.zookeeper_connection WHERE name = 'default'")
 
 if [ "$IS_DEBUG_OR_SAN" = "1" ] && [ "$HAS_ATOMIC" = "1" ]; then
     # Make the per-host getExecutionStatus fallback throw. A normal (async, finished/) DDL
