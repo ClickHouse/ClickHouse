@@ -11,6 +11,7 @@
 namespace DB
 {
 
+struct Map;
 class Block;
 class Chunk;
 class NamesAndTypesList;
@@ -140,6 +141,8 @@ struct VirtualsForFileLikeStorage
     const String * etag { nullptr };
     const std::map<String, String> * tags { nullptr };
     std::optional<UInt64> data_lake_snapshot_version { std::nullopt };
+    /// The HTTP response headers of the read: the value of the `_headers` virtual column of the storages which read over HTTP.
+    const Map * http_response_headers { nullptr };
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(
