@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <DataTypes/NestedUtils.h>
+#include <Storages/MergeTree/MergeTreeReaderCompactMultiBuffer.h>
 #include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -93,7 +94,21 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
-    return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
+    bool is_part_on_remote_disk = read_info->getDataPartStorage()->isStoredOnRemoteDisk();
+
+    /// With the `read` method every buffer opens its own file descriptor, so a local part is read with a single buffer.
+    bool use_single_buffer =
+        reader_settings.compact_parts_read_method == CompactPartsReadMethod::SingleBuffer
+        || (!is_part_on_remote_disk && reader_settings.read_settings.local_fs_settings.method == LocalFSReadMethod::read);
+
+    if (use_single_buffer)
+        return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
+            read_info, columns_to_read, virtual_fields,
+            storage_snapshot, storage_settings, uncompressed_cache, columns_cache,
+            mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
+            avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
+
+    return std::make_unique<MergeTreeReaderCompactMultiBuffer>(
         read_info, columns_to_read, virtual_fields,
         storage_snapshot, storage_settings, uncompressed_cache, columns_cache,
         mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,

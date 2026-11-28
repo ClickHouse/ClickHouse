@@ -8925,7 +8925,7 @@ threads better but add per-task overhead. 0 disables it.
 )", 0, \
         {"26.11", 0, 32, "New setting: the tasks at the end of a `MergeTree` read are smaller, so that all threads finish at about the same time."}) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
-Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
+Minimal number of granules in a stripe of a Compact part (the `compact_parts_max_granules_to_buffer` setting of the table) to read the part with a buffer per column, which supports parallel reading and prefetch of columns. Below it all columns are read with a single buffer. When reading from a remote filesystem, a buffer per column increases the number of read requests.
 )", 0) \
     \
     DECLARE(Bool, send_table_structure_on_insert_with_inline_data, true, R"(

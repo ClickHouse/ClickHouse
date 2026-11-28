@@ -55,6 +55,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool cache_temporarily_for_merges;
     extern const MergeTreeSettingsBool force_read_through_cache_for_merges;
+    extern const MergeTreeSettingsUInt64 compact_parts_merge_max_bytes_to_prefetch_part;
 }
 
 /// Lightweight (in terms of logic) stream for reading single part from
@@ -116,6 +117,16 @@ private:
     /// Closes readers and unlock part locks
     void finish();
 };
+
+/// Worst-case memory of `MergeTreeReaderCompactMultiBuffer` that reads all columns of a part:
+/// the configured read buffer per column, and one more per column if it prefetches.
+static size_t estimateCompactMultiBufferMemory(const IMergeTreeDataPart & part, const ReadSettings & read_settings)
+{
+    bool is_remote = part.getDataPartStorage().isStoredOnRemoteDisk();
+    size_t buffer_size = is_remote ? read_settings.remote_fs_settings.buffer_size : read_settings.local_fs_settings.buffer_size;
+    bool use_prefetch = is_remote ? read_settings.remote_fs_settings.prefetch : read_settings.local_fs_settings.prefetch;
+    return part.getColumns().size() * buffer_size * (use_prefetch ? 2 : 1);
+}
 
 MergeTreeSequentialSource::MergeTreeSequentialSource(
     SharedHeader result_header,
@@ -209,11 +220,40 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
             patch_read_request_maps.push_back(std::make_shared<const MarkRanges>(ranges));
     }
 
+    auto compact_parts_read_method = CompactPartsReadMethod::MultiBuffer;
+    bool adjust_read_buffer_size = true;
+
+    /// A small Compact part read as a whole is read into one buffer of its size at once,
+    /// instead of a buffer per column with a read request per stripe.
+    if (isCompactPart(data_part) && columns_to_read.size() >= data_part->getColumns().size())
+    {
+        size_t compressed_size = data_part->getTotalColumnsSize().data_compressed;
+        size_t bytes_to_prefetch = (*storage.getSettings())[MergeTreeSetting::compact_parts_merge_max_bytes_to_prefetch_part];
+
+        /// A bigger part is also read with one buffer if it fits into the worst-case memory of the per-column buffers:
+        /// one request instead of one per column per stripe.
+        if (bytes_to_prefetch)
+            bytes_to_prefetch = std::max(bytes_to_prefetch, estimateCompactMultiBufferMemory(*data_part, read_settings));
+
+        if (compressed_size <= bytes_to_prefetch)
+        {
+            read_settings.remote_fs_settings.buffer_size = compressed_size;
+            read_settings.remote_fs_settings.min_bytes_for_seek = compressed_size;
+            read_settings.remote_fs_settings.large_buffer_size = compressed_size;
+            compact_parts_read_method = CompactPartsReadMethod::SingleBuffer;
+            adjust_read_buffer_size = false;
+        }
+    }
+
+    MergeTreeReaderSettings reader_settings = MergeTreeReaderSettings::createForMergeMutation(std::move(read_settings));
+    reader_settings.compact_parts_read_method = compact_parts_read_method;
+    reader_settings.adjust_read_buffer_size = adjust_read_buffer_size;
+
     MergeTreeReadTask::Extras extras =
     {
         .mark_cache = mark_cache.get(),
         .patch_join_cache = patch_join_cache.get(),
-        .reader_settings = MergeTreeReaderSettings::createForMergeMutation(std::move(read_settings)),
+        .reader_settings = reader_settings,
         .storage_snapshot = storage_snapshot,
     };
 

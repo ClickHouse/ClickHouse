@@ -75,6 +75,8 @@ protected:
     void readPrefix(size_t column_idx, size_t from_mark, MergeTreeReaderStream & stream, ISerialization::SubstreamsDeserializeStatesCache * cache);
 
     void readSubcolumnsPrefixes(size_t from_mark);
+    /// `right_mark` bounds the reads of the subcolumns streams instead of `last_mark_to_read`.
+    void readSubcolumnsPrefixes(size_t from_mark, size_t right_mark);
     void initSubcolumnsDeserializationOrder();
 
     void createColumnsForReading(MutableColumns & res_columns) const;

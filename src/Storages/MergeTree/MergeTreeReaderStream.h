@@ -200,10 +200,22 @@ public:
     {
     }
 
+    /// Offset in the file up to which it must be read to read position `column_position` in all granules before
+    /// `right_mark_non_included`. Uses only the marks, without assumptions on where the writer cuts compressed blocks.
+    /// `first_column_position` is the first position of the column of `column_position`.
+    static size_t getRightOffsetByMarks(
+        const MergeTreeMarksGetter & marks,
+        size_t num_marks,
+        size_t total_file_size,
+        size_t right_mark_non_included,
+        size_t column_position,
+        size_t first_column_position);
+
 protected:
-    size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position);
+    size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position, size_t first_column_position);
     std::optional<size_t> getLeftOffsetOneColumn(size_t mark, size_t column_position);
-    std::pair<size_t, size_t> estimateMarkRangeBytesOneColumn(const MarkRanges & mark_ranges, size_t column_position);
+    std::pair<size_t, size_t>
+    estimateMarkRangeBytesOneColumn(const MarkRanges & mark_ranges, size_t column_position, size_t first_column_position);
     MarkInCompressedFile getStartOfNextStripeMark(size_t row_index, size_t column_position);
 };
 
@@ -244,6 +256,30 @@ public:
     std::optional<size_t> getLeftOffset(size_t mark) override { return getLeftOffsetOneColumn(mark, 0); }
     std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
     void seekToMark(size_t row_index) override { seekToMarkAndColumn(row_index, 0); }
+};
+
+/// Class for reading a range of adjacent positions from file that contains multiple columns
+/// (for reading all substreams of one column from compact parts with large stripes and marks for substreams).
+class MergeTreeReaderStreamRangeOfMultipleColumns : public MergeTreeReaderStreamMultipleColumns
+{
+public:
+    template <typename... Args>
+    explicit MergeTreeReaderStreamRangeOfMultipleColumns(size_t first_column_position_, size_t last_column_position_, Args &&... args)
+        : MergeTreeReaderStreamMultipleColumns{std::forward<Args>(args)...}
+        , first_column_position(first_column_position_)
+        , last_column_position(last_column_position_)
+    {
+    }
+
+    size_t getRightOffset(size_t right_mark_non_included) override;
+    std::optional<size_t> getLeftOffset(size_t mark) override { return getLeftOffsetOneColumn(mark, first_column_position); }
+    std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
+    void seekToMark(size_t row_index) override { seekToMarkAndColumn(row_index, first_column_position); }
+
+private:
+    /// Both positions are included.
+    const size_t first_column_position;
+    const size_t last_column_position;
 };
 
 }

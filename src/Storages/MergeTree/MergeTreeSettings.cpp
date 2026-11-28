@@ -277,20 +277,23 @@ bytes) with some gap to avoid filesystem errors.
     )", 0, \
         {"26.11", 0, 0, "New setting. Bounds the memory taken by the buffered data of a packed part being written by moving it to temporary data. 0 keeps all the data in memory, as before."}) \
     DECLARE(UInt64, compact_parts_max_bytes_to_buffer, 128 * 1024 * 1024, R"(
-Only available in ClickHouse Cloud. Maximal number of bytes to write in a
-single stripe in compact parts
+Maximal number of bytes of data buffered by the writer of a Compact part before it writes
+a stripe. A stripe stores the granules of one column together, then the granules of the
+next column, so a query reading a subset of columns reads less data. 0 means no limit on
+the bytes, only `compact_parts_max_granules_to_buffer` applies.
 )", 0) \
     DECLARE(NonZeroUInt64, compact_parts_max_granules_to_buffer, 128, R"(
-Only available in ClickHouse Cloud. Maximal number of granules to write in a
-single stripe in compact parts
+Maximal number of granules in a single stripe of a Compact part. A stripe stores the granules
+of one column together, then the granules of the next column. With 1 every granule holds all
+columns one after another.
 )", 0) \
     DECLARE(UInt64, compact_parts_merge_max_bytes_to_prefetch_part, 16 * 1024 * 1024, R"(
-Only available in ClickHouse Cloud. Maximal size of compact part to read it
-in a whole to memory during merge or mutation. A bigger part is also read in a
-whole if the part is not bigger than the worst-case memory of a read buffer for
-each column (the configured buffer size, twice with prefetch). For a part with
-small stripes this can take more memory than reading each column separately, but
-it sends one request instead of one per column per stripe. 0 disables it.
+Maximal size of a Compact part to read it as a whole into memory during a merge or
+mutation, with a single read buffer instead of a buffer per column. A bigger part is also
+read as a whole if the part is not bigger than the worst-case memory of a read buffer
+for each column (the configured buffer size, twice with prefetch). For a part with small
+stripes this can take more memory than reading each column separately, but it sends one
+request instead of one per column per stripe. 0 disables it.
 )", 0) \
     DECLARE(UInt64, merge_max_bytes_to_prewarm_cache, 1ULL * 1024 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal size of part (compact or packed)

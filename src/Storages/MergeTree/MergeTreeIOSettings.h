@@ -45,7 +45,7 @@ struct MergeTreeReaderSettings
     /// True if we read in order of sorting key.
     bool read_in_order = false;
     /// Use one buffer for each column or for all columns while reading from compact.
-    CompactPartsReadMethod compact_parts_read_method = CompactPartsReadMethod::SingleBuffer;
+    CompactPartsReadMethod compact_parts_read_method = CompactPartsReadMethod::MultiBuffer;
     /// True if we read stream for dictionary of LowCardinality type.
     bool is_low_cardinality_dictionary = false;
     /// True if we read stream that contains some metadata and will be read as a whole at once.
@@ -186,6 +186,9 @@ struct MergeTreeWriterSettings
     bool rewrite_primary_key{};
     bool save_marks_in_cache{};
     bool save_primary_index_in_memory{};
+    /// Limits of a stripe of a Compact part, see `MergeTreeDataPartCompact.h`.
+    size_t compact_parts_max_bytes_to_buffer{};
+    size_t compact_parts_max_granules_to_buffer{};
     bool blocks_are_granules_size{};
     WriteSettings query_write_settings;
 

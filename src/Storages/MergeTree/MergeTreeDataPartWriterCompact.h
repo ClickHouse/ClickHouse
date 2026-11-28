@@ -1,5 +1,6 @@
 #pragma once
 
+#include <list>
 #include <map>
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
@@ -47,12 +48,15 @@ private:
 
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
-    /// Write block of rows into .bin file and marks in .mrk files
-    void writeDataBlock(const Block & block, const Granules & granules);
+    using BlockAndGranules = std::pair<Block, Granules>;
+    using BlocksAndGranules = std::vector<BlockAndGranules>;
 
-    /// Write block of rows into .bin file and marks in .mrk files, primary index in .idx file
+    /// Write blocks of rows into .bin file in stripes and marks in .mrk files
+    void writeDataBlock(const BlocksAndGranules & blocks_and_granules);
+
+    /// Write blocks of rows into .bin file and marks in .mrk files, primary index in .idx file
     /// and skip indices in their corresponding files.
-    void writeDataBlockPrimaryIndexAndSkipIndices(const Block & block, const Granules & granules);
+    void writeDataBlockPrimaryIndexAndSkipIndices(const BlocksAndGranules & blocks_and_granules);
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
@@ -62,21 +66,39 @@ private:
 
     Block header;
 
-    /** Simplified SquashingTransform. The original one isn't suitable in this case
-      *  as it can return smaller block from buffer without merging it with larger block if last is enough size.
-      * But in compact parts we should guarantee, that written block is larger or equals than index_granularity.
-      */
+    /// Accumulates the columns to write with the granules they form,
+    /// so that the data is written by whole granules and whole stripes.
     class ColumnsBuffer
     {
     public:
-        void add(MutableColumns && columns);
-        [[nodiscard]] size_t size() const;
-        Columns releaseColumns();
+        using ColumnsAndGranules = std::vector<std::pair<Columns, Granules>>;
+
+        /// `granules` are the complete granules of `columns`, the rows after them form the incomplete granule.
+        void add(Columns && columns, Granules && granules);
+        /// Releases the first `num_granules` complete granules, grouped by the columns they belong to.
+        ColumnsAndGranules flush(size_t num_granules);
+        /// Releases all complete granules and the incomplete one, if any.
+        ColumnsAndGranules flushAll();
+
+        [[nodiscard]] size_t getNumBytes() const;
+        [[nodiscard]] size_t getNumCompleteGranules() const { return complete_granules.size(); }
+        [[nodiscard]] size_t getNumRowsInLastIncompleteGranule() const;
+        [[nodiscard]] bool empty() const { return complete_granules.empty() && getNumRowsInLastIncompleteGranule() == 0; }
+
     private:
-        MutableColumns accumulated_columns;
+        /// Columns of the added blocks that hold complete granules.
+        std::list<Columns> complete_granules_columns;
+        /// Rows of the last granule that is not complete yet.
+        MutableColumns incomplete_granule_columns;
+        /// Complete granules with the columns they refer to.
+        std::vector<std::pair<Granule, std::list<Columns>::iterator>> complete_granules;
+        ssize_t last_complete_granule_mark_number = -1;
     };
 
     ColumnsBuffer columns_buffer;
+
+    /// Blocks with the header of the part from the columns released by `columns_buffer`.
+    [[nodiscard]] BlocksAndGranules makeBlocksAndGranules(ColumnsBuffer::ColumnsAndGranules && columns_and_granules) const;
 
     /// hashing_buf -> compressed_buf -> plain_hashing -> plain_file
     std::unique_ptr<WriteBufferFromFileBase> plain_file;

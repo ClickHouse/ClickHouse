@@ -1,0 +1,64 @@
+-- Tags: no-fasttest
+-- - no-fasttest -- S3 is required
+
+-- A merge of wide Compact parts on object storage must not allocate a full-size read buffer
+-- for every column: the memory of the merge should stay proportional to the data in a stripe.
+-- All columns have a single substream.
+
+DROP TABLE IF EXISTS t_compact_merge_buffers;
+
+CREATE TABLE t_compact_merge_buffers
+(
+    {% for i in range(200) %}
+    c{{ i }} UInt64,
+    {% endfor %}
+    key UInt64
+)
+ENGINE = MergeTree ORDER BY key
+SETTINGS
+    storage_policy = 's3_no_cache',
+    min_bytes_for_wide_part = '10G',
+    index_granularity = 1024,
+    index_granularity_bytes = '10M',
+    -- Several stripes per part, and the column-per-stream reader for every source part.
+    compact_parts_max_granules_to_buffer = 2,
+    compact_parts_max_bytes_to_buffer = '128M',
+    compact_parts_merge_max_bytes_to_prefetch_part = 0,
+    -- With columns sharing compressed blocks, every column buffer holds the shared blocks.
+    compress_per_column_in_compact_parts = 1,
+    write_marks_for_substreams_in_compact_parts = 1,
+    ratio_of_defaults_for_sparse_serialization = 1,
+    auto_statistics_types = '';
+
+SYSTEM STOP MERGES t_compact_merge_buffers;
+
+{% for part in range(2) %}
+INSERT INTO t_compact_merge_buffers SELECT
+    {% for i in range(200) %}
+    rand64({{ i }}),
+    {% endfor %}
+    number
+FROM numbers({{ part * 8192 }}, 8192);
+{% endfor %}
+
+SYSTEM START MERGES t_compact_merge_buffers;
+OPTIMIZE TABLE t_compact_merge_buffers FINAL;
+
+SELECT count(), uniqExact(key) FROM t_compact_merge_buffers;
+
+SYSTEM FLUSH LOGS part_log;
+
+-- 200 columns times a 1 MiB buffer per column per source part would be at least 400 MiB;
+-- the rest of the merge (blocks, write buffers) takes about 100 MiB.
+SELECT
+    count() > 0,
+    groupUniqArray(merge_algorithm),
+    groupUniqArray(part_type),
+    max(peak_memory_usage) < 300 * 1024 * 1024
+        ? 'OK'
+        : format('FAIL: memory usage: {}', formatReadableSize(max(peak_memory_usage)))
+FROM system.part_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND database = currentDatabase() AND table = 't_compact_merge_buffers' AND event_type = 'MergeParts';
+
+DROP TABLE t_compact_merge_buffers;
