@@ -478,7 +478,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         .adaptive_aggregator_disable_thaw = from[Setting::adaptive_aggregator_disable_thaw],
         .use_aggregation_memory_tracker = from[Setting::use_aggregation_memory_tracker],
     };
-    use_index_for_in_with_subqueries_max_values = from[Setting::use_index_for_in_with_subqueries_max_values];
     set_settings = FutureSetSettings(from);
     use_skip_indexes_for_top_k = from[Setting::use_skip_indexes_for_top_k];
     use_top_k_dynamic_filtering = from[Setting::use_top_k_dynamic_filtering];
