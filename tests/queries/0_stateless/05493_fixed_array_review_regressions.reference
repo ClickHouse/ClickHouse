@@ -1,0 +1,37 @@
+-- distinct
+[0,1]
+[1,2]
+[2,3]
+[[0,1],[2,3]]
+[[1,1],[2,3]]
+-- group by
+[0,1]	5
+[1,1]	5
+-- in
+[0,1]
+[2,3]
+[4,5]
+-- join
+[1,2]	1
+[2,3]	2
+-- lightweight update
+0	[0,0]	[[0,0],[0,0]]
+1	[100,200]	[[1,2],[3,4]]
+2	[2,2]	[[2,0],[0,2]]
+-- lazily replicated
+[0,1,10]
+[0,1,20]
+[1,2,10]
+[1,2,20]
+-- left array join
+[1,2]	FixedArray(2, UInt8)
+[3,4]	FixedArray(2, UInt8)
+[[1,2],[3,4]]	Array(FixedArray(2, UInt8))
+-- correlated subquery
+[[1,2],[3,4]]	FixedArray(2, 2, UInt8)
+-- einsum alias
+[2,4]
+[11,22]
+-- einsum cancellation
+-- setting
+[1,2]

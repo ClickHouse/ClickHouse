@@ -30,6 +30,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
 
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForFixedArray() const override { return false; }
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 

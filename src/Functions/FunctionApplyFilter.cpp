@@ -75,6 +75,8 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    /// The filter is looked up with the column of the same type as the filter was built for, `FixedArray` is not converted.
+    [[nodiscard]] bool useDefaultImplementationForFixedArray() const override { return false; }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {

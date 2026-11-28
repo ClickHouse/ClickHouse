@@ -32,6 +32,7 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForFixedArray() const override { return false; }
 
     [[nodiscard]] size_t getNumberOfArguments() const override
     {

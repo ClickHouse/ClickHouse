@@ -395,6 +395,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeFixedString(*this);
     registerDataTypeEnum(*this);
     registerDataTypeArray(*this);
+    registerDataTypeFixedArray(*this);
     registerDataTypeTuple(*this);
     registerDataTypeQBit(*this);
     registerDataTypeNullable(*this);

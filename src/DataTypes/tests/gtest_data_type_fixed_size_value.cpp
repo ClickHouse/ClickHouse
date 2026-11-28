@@ -19,7 +19,7 @@ TEST(DataTypes, FixedSizeValuesHaveSize)
     /// Argument shapes that between them instantiate every registered family.
     /// A new family that none of them fits fails the test until a shape for it is added.
     static constexpr std::array shapes
-        = {"", "(3)", "(10, 2)", "(UInt8)", "(UInt8, UInt8)", "('a' = 1)", "(a UInt8)", "(sum, UInt64)", "(Float32, 8)"};
+        = {"", "(3)", "(10, 2)", "(UInt8)", "(UInt8, UInt8)", "('a' = 1)", "(a UInt8)", "(sum, UInt64)", "(Float32, 8)", "(3, UInt8)"};
 
     for (const auto & name : factory.getAllRegisteredNames())
     {

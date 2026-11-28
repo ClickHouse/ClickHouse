@@ -105,6 +105,7 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForFixedArray() const override { return false; }
     [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
     [[nodiscard]] bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 

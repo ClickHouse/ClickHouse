@@ -508,6 +508,7 @@ struct WhichDataType
     [[nodiscard]] constexpr bool isIPv4() const { return idx == TypeIndex::IPv4; }
     [[nodiscard]] constexpr bool isIPv6() const { return idx == TypeIndex::IPv6; }
     [[nodiscard]] constexpr bool isArray() const { return idx == TypeIndex::Array; }
+    [[nodiscard]] constexpr bool isFixedArray() const { return idx == TypeIndex::FixedArray; }
     [[nodiscard]] constexpr bool isTuple() const { return idx == TypeIndex::Tuple; }
     [[nodiscard]] constexpr bool isQBit() const { return idx == TypeIndex::QBit; }
     [[nodiscard]] constexpr bool isMap() const {return idx == TypeIndex::Map; }
@@ -591,6 +592,7 @@ bool isUUID(TYPE data_type); \
 bool isIPv4(TYPE data_type); \
 bool isIPv6(TYPE data_type); \
 bool isArray(TYPE data_type); \
+bool isFixedArray(TYPE data_type); \
 bool isTuple(TYPE data_type); \
 bool isQBit(TYPE data_type); \
 bool isMap(TYPE data_type); \

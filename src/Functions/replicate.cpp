@@ -1,6 +1,7 @@
 #include <Functions/replicate.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFixedArrayAdaptor.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 
@@ -12,6 +13,22 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+DataTypePtr FunctionReplicate::getReturnTypeImpl(const DataTypes & arguments) const
+{
+    DataTypes converted_arguments = arguments;
+    for (size_t i = 1; i < converted_arguments.size(); ++i)
+        converted_arguments[i] = removeOuterFixedArray(converted_arguments[i]);
+    return IFunction::getReturnTypeImpl(converted_arguments);
+}
+
+DataTypePtr FunctionReplicate::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+{
+    ColumnsWithTypeAndName converted_arguments = arguments;
+    for (size_t i = 1; i < converted_arguments.size(); ++i)
+        converted_arguments[i] = removeOuterFixedArray(converted_arguments[i]);
+    return IFunction::getReturnTypeImpl(converted_arguments);
+}
+
 ColumnPtr FunctionReplicate::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
     ColumnPtr first_column = arguments[0].column;
@@ -19,11 +36,13 @@ ColumnPtr FunctionReplicate::executeImpl(const ColumnsWithTypeAndName & argument
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
-        const ColumnArray * array_column = checkAndGetColumn<ColumnArray>(arguments[i].column.get());
+        /// `FixedArray` provides the sizes in the same way as `Array`.
+        const auto argument = removeOuterFixedArray(arguments[i]);
+        const ColumnArray * array_column = checkAndGetColumn<ColumnArray>(argument.column.get());
         ColumnPtr temp_column;
         if (!array_column)
         {
-            const auto * const_array_column = checkAndGetColumnConst<ColumnArray>(arguments[i].column.get());
+            const auto * const_array_column = checkAndGetColumnConst<ColumnArray>(argument.column.get());
             if (!const_array_column)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for replicate");
             temp_column = const_array_column->convertToFullColumn();

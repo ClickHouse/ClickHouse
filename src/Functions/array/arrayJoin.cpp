@@ -51,6 +51,8 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    /// The elements of FixedArray keep their type, see `getArrayJoinDataType`.
+    [[nodiscard]] bool useDefaultImplementationForFixedArray() const override { return false; }
 
     /// No declarative signature here on purpose: for a `Map(K, V)` argument the return type is the
     /// map's *named* `Tuple(keys, values)`, and the DSL cannot express named tuples. An unnamed

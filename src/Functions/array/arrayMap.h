@@ -20,6 +20,8 @@ struct ArrayMapImpl
     static bool needExpression() { return true; }
     /// true if the array must be exactly one.
     static bool needOneArray() { return false; }
+    /// The result for `FixedArray` arguments is `FixedArray` of the same size.
+    static constexpr bool keeps_fixed_array_size = true;
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
