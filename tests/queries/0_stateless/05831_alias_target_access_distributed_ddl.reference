@@ -1,0 +1,31 @@
+-- without grants on the target
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+2	0
+v
+x
+-- the hosts do not read through an alias without the initiating user
+NOT_IMPLEMENTED
+0
+NOT_IMPLEMENTED
+0
+-- with grants on the target
+NOT_IMPLEMENTED
+2
+OK
+0
+OK
+Alter	1
+Drop	1
+-- a chain of aliases in a Replicated database
+NOT_IMPLEMENTED
+1
+-- a chain of aliases within the Replicated database
+OK
+0

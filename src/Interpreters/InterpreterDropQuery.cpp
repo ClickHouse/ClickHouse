@@ -30,6 +30,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Storages/StorageAlias.h>
 
 #include "config.h"
 
@@ -81,6 +82,24 @@ static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists)
     return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabase(database_name);
 }
 
+/// The hosts of `ON CLUSTER` may execute the query without the user, so for `TRUNCATE` the targets of an `Alias` are
+/// authorized on the initiator, as the alias does it itself when it truncates them. `query` is the query sent to the hosts.
+static void addAliasTargetCheckForTruncateOnCluster(DDLQueryOnClusterParams & params, const ASTPtr & query, const ContextPtr & context)
+{
+    if (query->as<const ASTDropQuery &>().kind != ASTDropQuery::Kind::Truncate)
+    {
+        return;
+    }
+
+    params.additional_access_check = [query, context](const String & cluster_default_database, bool workers_run_without_user)
+    {
+        const auto & truncate = query->as<const ASTDropQuery &>();
+        const auto & database = truncate.getDatabase().empty() ? cluster_default_database : truncate.getDatabase();
+        StorageAlias::checkTargetChainAccessIfAlias(
+            StorageID{database, truncate.getTable()}, context, AccessType::TRUNCATE, workers_run_without_user);
+    };
+}
+
 
 InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_)
 {
@@ -106,6 +125,7 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
+        addAliasTargetCheckForTruncateOnCluster(params, current_query_ptr, getContext());
         return executeDDLQueryOnCluster(current_query_ptr, getContext(), params);
     }
 
@@ -279,17 +299,27 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             DDLQueryOnClusterParams params;
             params.access_to_check = getRequiredAccessForDDLOnCluster();
+            /// `TRUNCATE TABLE IF EMPTY ... ON CLUSTER` comes here, not to the branch in `executeSingleDropQuery`.
+            addAliasTargetCheckForTruncateOnCluster(params, new_query_ptr, getContext());
             return executeDDLQueryOnCluster(new_query_ptr, getContext(), params);
         }
 
         if (database->shouldReplicateQuery(getContext(), current_query_ptr))
         {
             if (query.kind == ASTDropQuery::Kind::Detach)
+            {
                 context_->checkAccess(drop_storage, table_id);
+            }
             else if (query.kind == ASTDropQuery::Kind::Truncate)
+            {
                 context_->checkAccess(AccessType::TRUNCATE, table_id);
+                /// The other replicas execute the query without the user, so the targets of an `Alias` are authorized here.
+                StorageAlias::checkTargetChainAccessIfAlias(table, context_, AccessType::TRUNCATE);
+            }
             else if (query.kind == ASTDropQuery::Kind::Drop)
+            {
                 context_->checkAccess(drop_storage, table_id);
+            }
 
             if (ddl_guard)
                 ddl_guard->releaseTableLock();
@@ -297,7 +327,11 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             query_to_send.if_empty = false;
 
-            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, QueryFlags{ .internal = internal }, std::move(ddl_guard));
+            /// The entries queued before this one may change the targets of an `Alias` before it is executed. So the replica
+            /// the query is submitted to executes its own copy of `TRUNCATE` as the user, which authorizes them again, and
+            /// the other replicas execute only the entries that succeeded there (see `QueryFlags::run_as_submitting_user`).
+            const QueryFlags flags{.internal = internal, .run_as_submitting_user = !internal && query.kind == ASTDropQuery::Kind::Truncate};
+            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, flags, std::move(ddl_guard));
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)
