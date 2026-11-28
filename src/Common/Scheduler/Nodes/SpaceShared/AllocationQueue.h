@@ -34,6 +34,7 @@ public:
     ResourceCost requestSpill(ResourceAllocation & allocation, ResourceCost max_bytes) override;
     void finishSpill(ResourceAllocation & allocation, ResourceCost settled_bytes, ResourceCost reclaimable_total) override;
     void removeAllocation(ResourceAllocation & allocation) override;
+    void cancelPendingAllocation(ResourceAllocation & allocation) override;
     void purgeQueue() override;
     void propagateUpdate(ISpaceSharedNode &, Update &&) override;
     void approveIncrease() override;

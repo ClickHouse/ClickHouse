@@ -14,6 +14,7 @@
 #include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationLimit.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
+#include <Common/Scheduler/Nodes/SpaceShared/AllocationRateLimit.h>
 #include <Interpreters/Context.h>
 
 
@@ -31,7 +32,7 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
         {"type", std::make_shared<DataTypeString>(), "Type of a scheduling node."},
         {"weight", std::make_shared<DataTypeFloat64>(), "Weight of a node, used by a parent node of `fair` type."},
         {"priority", std::make_shared<DataTypeInt64>(), "Priority of a node, used by a parent node of 'priority' type (Lower value means higher priority)."},
-        {"precedence", std::make_shared<DataTypeInt64>(), "Precedence of a node, used by space-shared (memory) parent nodes to order admission and eviction (Lower value means higher precedence)."},
+        {"precedence", std::make_shared<DataTypeInt64>(), "Precedence of a node, used by space-shared parent nodes (memory reservations and query slots) to order admission and eviction (Lower value means higher precedence)."},
 
         // ITimeSharedNode
         {"is_active", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
@@ -94,21 +95,21 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
             "For `inflight_limit` nodes only. Upper limit for inflight_requests leading to constraint violation."
         },
         {"max_cost", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
-            "For `inflight_limit` nodes only. Upper limit for inflight_cost leading to constraint violation."
+            "For `inflight_limit` nodes, upper limit for inflight_cost leading to constraint violation. For `allocation_limit` nodes, upper limit for `allocated`."
         },
 
         // ThrottlerConstraint
         {"max_speed", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
-            "For `bandwidth_limit` nodes only. Upper limit for bandwidth in tokens per second."
+            "For `bandwidth_limit` and `allocation_rate_limit` nodes only. Upper limit for speed in tokens per second (queries per second for a `QUERY` resource)."
         },
         {"max_burst", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
-            "For `bandwidth_limit` nodes only. Upper limit for tokens available in token-bucket throttler."
+            "For `bandwidth_limit` and `allocation_rate_limit` nodes only. Upper limit for tokens available in token-bucket throttler."
         },
         {"throttling_us", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
-            "For `bandwidth_limit` nodes only. Total number of microseconds this node was in throttling state."
+            "For `bandwidth_limit` and `allocation_rate_limit` nodes only. Total number of microseconds this node was in throttling state."
         },
         {"tokens", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
-            "For `bandwidth_limit` nodes only. Number of tokens currently available in token-bucket throttler."
+            "For `bandwidth_limit` and `allocation_rate_limit` nodes only. Number of tokens currently available in token-bucket throttler."
         },
 
         // ISpaceSharedNode
@@ -259,6 +260,12 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
             throttling_us = ptr->getThrottlingDuration().count() / 1000;
             tokens = ptr->getTokens();
         }
+        if (auto * ptr = dynamic_cast<AllocationRateLimit *>(node))
+        {
+            std::tie(max_speed, max_burst) = ptr->getParams();
+            throttling_us = ptr->getThrottlingDuration().count() / 1000;
+            tokens = ptr->getTokens();
+        }
         if (auto * ptr = dynamic_cast<ISpaceSharedNode *>(node))
         {
             allocated = ptr->allocated;
@@ -275,7 +282,10 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
             spills = ptr->spills;
         }
         if (auto * ptr = dynamic_cast<AllocationLimit *>(node))
+        {
+            max_cost = ptr->getLimit();
             soft_limit = ptr->getSoftLimit();
+        }
         if (auto * ptr = dynamic_cast<AllocationQueue *>(node))
         {
             rejects = ptr->getRejects();

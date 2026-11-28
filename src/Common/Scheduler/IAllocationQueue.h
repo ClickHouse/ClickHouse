@@ -62,6 +62,13 @@ public:
     /// On completion `ResourceAllocation::decreaseApproved` (with `removing_allocation=true`) will be called.
     virtual void removeAllocation(ResourceAllocation & allocation) = 0;
 
+    /// Requests to cancel an allocation only if it is still pending (e.g. on an admission timeout).
+    /// If it is pending, it is removed asynchronously by the scheduler thread, which calls
+    /// `ResourceAllocation::allocationFailed` unless the allocation is admitted first.
+    /// An admitted allocation is kept: `ResourceAllocation::increaseApproved` has been or will be called.
+    /// Either way, exactly one of these two callbacks tells the owner the outcome.
+    virtual void cancelPendingAllocation(ResourceAllocation & allocation) = 0;
+
     /// Kills all the resource allocations in the queue, fails all pending requests
     /// and marks the queue as unusable. Any further calls will throw an exception.
     /// Can only be called from the scheduler thread.
