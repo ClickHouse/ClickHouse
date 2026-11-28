@@ -233,7 +233,7 @@ ExpressionTransform
     (Expression)
     ExpressionTransform
       (Sorting)
-      MergingSortedTransform 24 → 1
+      MergingSortedTransform × 3 16 → 1
         LimitBySortedStreamTransform × 24
           MergeSortingTransform × 24
             LimitsCheckingTransform × 24
