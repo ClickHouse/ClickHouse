@@ -5,7 +5,7 @@ from praktika._environment import _Environment
 from praktika.result import Result
 from praktika.utils import Shell
 
-DOCKERFILE_PATH = "ci/docker/binary-builder/Dockerfile"
+DOCKERFILE_PATH = "ci/docker/fasttest/Dockerfile"
 S3_BUCKET = "clickhouse-builds.s3.amazonaws.com"
 
 
@@ -59,7 +59,7 @@ def create_pr(sha):
 
     body = f"""\
 ## Summary
-- Update `binary-builder` Dockerfile to use PGO+BOLT optimized toolchain from commit `{short_sha}`
+- Update `fasttest` Dockerfile (and so `binary-builder`, which is based on it) to use PGO+BOLT optimized toolchain from commit `{short_sha}`
 - Artifact URLs:
   - amd64: {amd_url}
   - aarch64: {arm_url}
