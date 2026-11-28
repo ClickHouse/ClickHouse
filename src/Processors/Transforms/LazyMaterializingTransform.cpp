@@ -3,6 +3,7 @@
 #include <Columns/ColumnSparse.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Processors/QueryPlan/PartsRemoteFSUtils.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/sortBlock.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -153,11 +154,15 @@ void LazyMaterializingTransform::work()
 
 LazyMaterializingRows::LazyMaterializingRows(RangesInDataParts ranges_in_data_parts_)
     : ranges_in_data_parts(std::move(ranges_in_data_parts_))
+    , any_source_parts_on_remote_disk(analyzePartsOnRemoteFS(ranges_in_data_parts).any_parts_on_remote_disk)
 {
 }
 
 void LazyMaterializingRows::addPartsOfMainRead(const RangesInDataParts & parts, const StorageSnapshotPtr & storage_snapshot)
 {
+    /// A projection part is stored on the disk of its parent part, so the parts as the main read reads them are enough.
+    any_source_parts_on_remote_disk |= analyzePartsOnRemoteFS(parts).any_parts_on_remote_disk;
+
     /// Only what addresses the rows: the hints of how the main read reads them, such as the filter of a vector search, would
     /// drop rows the main read returned.
     for (const auto & part : parts)

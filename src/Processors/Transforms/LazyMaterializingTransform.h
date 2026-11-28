@@ -43,6 +43,13 @@ struct LazyMaterializingRows : public ILazyMaterializingRows
     /// parts of the parent and of the projections a read was served from share one numbering of the rows.
     RangesInDataParts ranges_in_data_parts;
 
+    /// Whether any part of the first-phase read set was stored on a remote disk. It covers the parts given
+    /// to the constructor and the parts added by `addPartsOfMainRead`.
+    /// `filterRangesAndFillRows` drops parts whose ranges become empty, so the second phase alone
+    /// cannot tell whether the query touched remote parts. Decisions that must consider the whole
+    /// query (e.g. the automatic uncompressed cache mode) use this flag.
+    bool any_source_parts_on_remote_disk = false;
+
     /// Whether the row index has the offsets of the parent parts for the rows of a projection part: a projection that stores
     /// them, `_parent_part_offset`, gives them under the name `_part_offset` when it replaces a read with this lazy read.
     /// Otherwise a projection part is read by its own offsets.

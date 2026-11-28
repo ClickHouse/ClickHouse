@@ -9,6 +9,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/QueryFlags.h>
 #include <Interpreters/executeQuery.h>
+#include <Processors/QueryPlan/UncompressedCacheUtils.h>
 
 
 namespace DB
@@ -74,6 +75,8 @@ namespace
         auto changed_settings = context->getSettingsRef().changes();
         new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
         new_context->applySettingsChanges(changed_settings);
+        /// The clamping above drops the caller's default-valued `use_uncompressed_cache = 0`.
+        preserveUncompressedCacheOptOut(*new_context, automaticUncompressedCacheIsOverriddenByOptOut(context->getSettingsRef()));
 
         return new_context;
     }
@@ -83,6 +86,7 @@ namespace
     {
         auto database = context->getCurrentDatabase();
         auto changed_settings = context->getSettingsRef().changes();
+        const bool uncompressed_cache_opted_out = automaticUncompressedCacheIsOverriddenByOptOut(context->getSettingsRef());
 
         /// `setUser` resets the auth-method limits (`GRANTS` clause, per-method `VALID UNTIL`), but they
         /// belong to the session's credential, not to the principal — capture and re-apply them so an
@@ -102,6 +106,8 @@ namespace
 
         context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
         context->applySettingsChanges(changed_settings);
+        /// The clamping above drops the session's default-valued `use_uncompressed_cache = 0`.
+        preserveUncompressedCacheOptOut(*context, uncompressed_cache_opted_out);
 
         /// See the note about an empty current database in `impersonateQueryContext`.
         if (!database.empty() && database != context->getCurrentDatabase())
