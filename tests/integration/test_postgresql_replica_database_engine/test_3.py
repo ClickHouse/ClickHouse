@@ -3537,6 +3537,81 @@ def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
         cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
 
 
+def test_table_engine_publication_retry_keeps_remote_table_name(started_cluster):
+    # On attach, a failed startup of the standalone MaterializedPostgreSQL table engine is retried in the
+    # background by the same replication handler. `createPublicationIfNeeded` used to write the quoted
+    # remote table name back into the handler, so every retry quoted the result of the previous one
+    # (`"t"`, `""t""`, `""""t""""`, ...). After one failed `CREATE PUBLICATION` the publication could
+    # never be created again, replication did not resume once the cause was gone, and the name doubled
+    # in size with every attempt until the server ran out of memory.
+    # https://github.com/ClickHouse/ClickHouse/issues/120893
+    cursor = pg_manager.get_db_cursor()
+    table = "publication_retry_requote"
+
+    cursor.execute(f"DROP TABLE IF EXISTS {table}")
+    cursor.execute(f"DROP TABLE IF EXISTS {table}_hidden")
+    cursor.execute(f"CREATE TABLE {table} (key integer PRIMARY KEY, value integer)")
+    cursor.execute(f"INSERT INTO {table} SELECT g, g FROM generate_series(0, 9) AS g")
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET enable_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_backoff_min_ms = 2000, materialized_postgresql_backoff_max_ms = 2000
+        """
+    )
+    assert_eq_with_retry(
+        instance, f"SELECT count() FROM {table}", "10\n", retry_count=120, sleep_time=1
+    )
+
+    # Make `CREATE PUBLICATION` fail on attach, for a reason that goes away later: the publication is
+    # gone, and the remote table is not there under its name.
+    instance.query(f"DETACH TABLE {table} PERMANENTLY")
+    cursor.execute(f"SELECT pubname FROM pg_publication WHERE pubname LIKE '%{table}%'")
+    publications = [row[0] for row in cursor.fetchall()]
+    assert publications, "the table engine must have created a publication"
+    for publication in publications:
+        cursor.execute(f'DROP PUBLICATION "{publication}"')
+    cursor.execute(f"ALTER TABLE {table} RENAME TO {table}_hidden")
+
+    # ATTACH returns immediately (startup is delayed). Let the background task fail several times: it is
+    # the second and later attempts that used to quote the name again.
+    instance.query(f"ATTACH TABLE {table}")
+    failed_attempts = f"retry attempt will continue.*{table}"
+    for _ in range(120):
+        if int(instance.count_in_log(failed_attempts)) >= 3:
+            break
+        time.sleep(0.5)
+    else:
+        raise AssertionError("the startup of the attached table was not retried")
+
+    # The cause is gone: the next retry must create the publication for the table under the name it was
+    # given.
+    cursor.execute(f"ALTER TABLE {table}_hidden RENAME TO {table}")
+    for _ in range(60):
+        cursor.execute(f"SELECT count(*) FROM pg_publication WHERE pubname LIKE '%{table}%'")
+        if cursor.fetchall()[0][0] == 1:
+            break
+        time.sleep(0.5)
+    else:
+        raise AssertionError(
+            "the publication was not created after the remote table came back"
+        )
+
+    # Rows are written only now: a change made while the publication did not exist cannot be decoded by
+    # PostgreSQL through it later (`publication ... does not exist`), whatever ClickHouse does.
+    cursor.execute(f"INSERT INTO {table} SELECT g, g FROM generate_series(10, 19) AS g")
+    assert_eq_with_retry(
+        instance, f"SELECT count() FROM {table}", "20\n", retry_count=30, sleep_time=1
+    )
+
+    instance.query(f"DROP TABLE {table} SYNC")
+    cursor.execute(f"DROP TABLE {table}")
+
+
 def test_whole_schema_database_restart_after_new_postgresql_table(started_cluster):
     # A table created in PostgreSQL after `CREATE DATABASE` is not replicated without an explicit
     # `ATTACH TABLE`, so it has no nested table. On restart, the whole-schema database used to take
