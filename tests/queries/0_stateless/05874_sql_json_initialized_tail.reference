@@ -1,0 +1,11 @@
+scalar	0
+tuple	0
+array	0
+short-last-rows	0
+constant	0
+materialized	0
+exists	0
+query	0
+invalid-empty-missing	0
+nullable-input	0
+nullable-result	0
