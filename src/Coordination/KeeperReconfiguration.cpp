@@ -85,21 +85,12 @@ bool isValidClusterUpdate(const ClusterConfigPtr & cfg, const ClusterUpdateActio
             });
     };
 
+    for (const auto & update : updates)
+        if (const auto * change = std::get_if<UpdateRaftServerPriority>(&update); change && is_removed(change->id))
+            return false;
+
     bool participant_left = false;
     bool leader_candidate_left = false;
-    for (const auto & update : updates)
-    {
-        if (const auto * add = std::get_if<AddRaftServer>(&update))
-        {
-            participant_left |= !add->learner;
-            leader_candidate_left |= !add->learner && add->priority > 0;
-        }
-        else if (const auto * change = std::get_if<UpdateRaftServerPriority>(&update); change && is_removed(change->id))
-        {
-            return false;
-        }
-    }
-
     bool leader_candidate_removed = false;
     for (const auto & server : cfg->get_servers())
     {

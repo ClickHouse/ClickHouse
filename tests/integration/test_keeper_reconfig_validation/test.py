@@ -50,6 +50,10 @@ def test_reconfig_validation(started_cluster):
         with pytest.raises(BadArgumentsError):
             zk.reconfig(joining=None, leaving="1,3", new_members=None)
 
+        # Server 4 is not running, so it would never join and take over
+        with pytest.raises(BadArgumentsError):
+            zk.reconfig(joining="server.4=node4:9234", leaving="1,3", new_members=None)
+
         # Server 3 would be left with priority 0, so it could not become leader
         with pytest.raises(BadArgumentsError):
             zk.reconfig(
