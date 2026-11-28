@@ -553,6 +553,9 @@
     M(ExternalSetLookupKeys, "Number of keys that lookups searched for in `IN` sets in external memory.", ValueType::Number) \
     M(ExternalSetBloomFilterSkippedKeys, "Number of keys that the Bloom filters of `IN` sets in external memory ruled out during lookups.", ValueType::Number) \
     \
+    M(InitializeExternalTablesMicroseconds, "Time spent initializing (receiving) external tables.", ValueType::Microseconds) \
+    M(SendExternalTablesMicroseconds, "Time spent sending external tables.", ValueType::Microseconds) \
+    \
     M(IcebergPartitionPrunedFiles, "Number of skipped files during Iceberg partition pruning", ValueType::Number) \
     M(IcebergPartitionPrunedManifestFiles, "Number of Iceberg manifest files skipped without being read, using the partition summaries of the manifest list", ValueType::Number) \
     M(IcebergTrivialCountOptimizationApplied, "Trivial count optimization applied while reading from Iceberg", ValueType::Number) \

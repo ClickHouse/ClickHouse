@@ -307,6 +307,7 @@ static struct InitFiu
     REGULAR(zero_copy_unlock_zk_fail_before_op) \
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
+    REGULAR(sleep_on_receive_external_table_data) \
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
     PAUSEABLE(storage_merge_tree_load_mutations_pause_before_read) \
     PAUSEABLE(merge_tree_drop_all_data_pause_before_removing_parts) \

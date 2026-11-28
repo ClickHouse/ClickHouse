@@ -116,11 +116,13 @@ namespace Setting
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsUInt64 poll_interval;
     extern const SettingsSeconds receive_timeout;
+    extern const SettingsSeconds max_execution_time;
     extern const SettingsBool run_query_in_background;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsBool send_profile_events;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsSeconds send_timeout;
+    extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsTimezone session_timezone;
     extern const SettingsMilliseconds sleep_after_receiving_query_ms;
     extern const SettingsMilliseconds sleep_in_send_data_ms;
@@ -149,6 +151,7 @@ namespace FailPoints
 {
 extern const char parallel_replicas_delay_announcement[];
 extern const char parallel_replicas_reading_response_timeout[];
+extern const char sleep_on_receive_external_table_data[];
 extern const char tcp_handler_fail_connection_setup[];
 extern const char tcp_handler_pause_before_query_plan_deserialization[];
 }
@@ -170,6 +173,7 @@ namespace ProfileEvents
     extern const Event MergeTreeAllRangesAnnouncementsSent;
     extern const Event ReadTaskRequestsSentElapsedMicroseconds;
     extern const Event MergeTreeReadTaskRequestsSentElapsedMicroseconds;
+    extern const Event InitializeExternalTablesMicroseconds;
     extern const Event MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds;
     extern const Event FileProgressCallbackInvocations;
 }
@@ -1449,6 +1453,18 @@ bool TCPHandler::receivePacketsExpectDataConcurrentWithExecutor(QueryState & sta
     }
 }
 
+/// The time left for reading external tables, in microseconds. See `QueryState::external_tables_time_limit`.
+static UInt64 getTimeLeftForExternalTablesOrThrow(const QueryState & state)
+{
+    const UInt64 limit_us = state.external_tables_time_limit->limit_us;
+    const UInt64 elapsed_us = state.external_tables_time_limit->watch.elapsedMicroseconds();
+    if (elapsed_us >= limit_us)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+            "Timeout exceeded while reading external table data. Spent {} ms, timeout is {} ms.",
+            elapsed_us / 1000, limit_us / 1000);
+    return limit_us - elapsed_us;
+}
+
 bool TCPHandler::receivePacketsExpectData(QueryState & state)
 {
     /// Poll interval should not be greater than receive_timeout
@@ -1473,8 +1489,21 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
     while (tcp_server.isOpen() || !server.isCancelled())
     {
-        while (!in->poll(timeout_us))
+        while (true)
         {
+            /// The time limit of external tables is checked before every packet, whatever its type,
+            /// and the wait for the packet does not go past it.
+            UInt64 current_timeout_us = timeout_us;
+            if (state.external_tables_time_limit)
+                current_timeout_us = std::min(current_timeout_us, getTimeLeftForExternalTablesOrThrow(state));
+
+            if (in->poll(current_timeout_us))
+                break;
+
+            /// If both this limit and `receive_timeout` are over, this one is reported.
+            if (state.external_tables_time_limit)
+                getTimeLeftForExternalTablesOrThrow(state);
+
             size_t elapsed = size_t(watch.elapsedSeconds());
             if (elapsed > size_t(receive_timeout.totalSeconds()))
             {
@@ -1490,6 +1519,20 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                 sendInsertProfileEvents(state);
                 out->sync();
             }
+        }
+
+        if (state.external_tables_time_limit)
+        {
+            /// Reads inside the packet and writes until the next packet do not wait past the time limit either.
+            /// Not less than a millisecond, the granularity that socket timeouts are safe to rely on.
+            const Poco::Timespan time_left(static_cast<Poco::Timespan::TimeDiff>(std::max<UInt64>(getTimeLeftForExternalTablesOrThrow(state), 1000)));
+            /// A timeout of zero is no timeout, so it is limited as well.
+            auto limit_timeout = [&](const Poco::Timespan & timeout)
+            {
+                return timeout.totalMicroseconds() > 0 && timeout < time_left ? timeout : time_left;
+            };
+            socket().setReceiveTimeout(limit_timeout(receive_timeout));
+            socket().setSendTimeout(limit_timeout(send_timeout));
         }
 
         UInt64 packet_type = 0;
@@ -1554,8 +1597,40 @@ void TCPHandler::readTemporaryTables(QueryState & state)
     sendLogs(state);
     out->sync();
 
+    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::InitializeExternalTablesMicroseconds, watch.elapsedMicroseconds());
+    });
+
     /// no sense in partial_result_on_first_cancel setting when temporary data is read.
     auto off_setting_guard = TurnOffBoolSettingTemporary(state.allow_partial_result_on_first_cancel);
+
+    /// The pipelines are finished by the empty block that ends the external data.
+    /// If it has not come, because of an exception or a cancellation, the data is not going to be used.
+    SCOPE_EXIT({ state.cancelExternalTablePipelines(); });
+
+    /// The limit is taken from the context here and not in `extractConnectionSettingsFromContext`:
+    /// that one runs before `executeQuery`, which applies the `SETTINGS` clause of the query,
+    /// while the external tables are read from inside of it, when the settings are final.
+    const Settings & settings = state.query_context->getSettingsRef();
+    const Poco::Timespan max_execution_time = settings[Setting::max_execution_time];
+
+    /// Restores the timeouts of the socket when the external tables are read, so they are limited only here.
+    std::optional<TimeoutSetter> timeout_restorer;
+    SCOPE_EXIT({ state.external_tables_time_limit.reset(); });
+
+    /// Reading external tables cannot be stopped halfway with a partial result,
+    /// so with `timeout_overflow_mode = 'break'` it is not limited, like before.
+    if (max_execution_time.totalMicroseconds() > 0 && settings[Setting::timeout_overflow_mode] == OverflowMode::THROW)
+    {
+        /// `receivePacketsExpectData` enforces it: before every packet, in the wait for a packet,
+        /// and with the timeouts of the socket, which it sets to the time left, inside a packet.
+        /// The time is counted from here. The query has been admitted by now (external tables are read
+        /// from inside of `executeQuery`, after the query is put to the process list), so, like for
+        /// `max_execution_time` itself, the wait for admission is not part of it.
+        state.external_tables_time_limit.emplace(static_cast<UInt64>(max_execution_time.totalMicroseconds()));
+        timeout_restorer.emplace(socket(), send_timeout, receive_timeout);
+    }
 
     while (receivePacketsExpectData(state))
     {
@@ -3179,7 +3254,13 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
     state.at_packet_boundary = true;
 
     if (block.empty())
+    {
+        /// All the data of the query is read, also if finishing the pipelines fails:
+        /// there is nothing left to skip after the exception.
+        state.read_all_data = true;
+        state.finishExternalTablePipelines();
         return false;
+    }
 
     if (scalar)
     {
@@ -3190,45 +3271,70 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
     }
     else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
     {
-        /// Data for external tables
-
-        auto resolved = state.query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
-        StoragePtr storage;
-        /// If such a table does not exist, create it.
-        if (resolved)
-        {
-            storage = DatabaseCatalog::instance().getTable(resolved, state.query_context);
-        }
-        else
-        {
-            NamesAndTypesList columns = block.getNamesAndTypesList();
-            auto temporary_table = TemporaryTableHolder(state.query_context, ColumnsDescription(columns), {});
-            storage = temporary_table.getTable();
-            state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
-        }
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr(state.query_context, false);
-
         /// The block is self-describing and comes from the client, while the schema of an external table
-        /// is bound once, by its first block (see the branch above). Every block after that one must match
-        /// that schema: the columns are written to the table as a `Chunk`, which carries no types at all,
+        /// is bound once, by its first block. Every block after that one must match that schema:
+        /// the columns are written to the table as a `Chunk`, which carries no types at all,
         /// and `MemorySink::consume` labels them with the table header again. A block declaring other
         /// types would therefore not be rejected anywhere, and its data would later be read as the type
         /// the header names - a type confusion on data the client controls, not a data error.
-        if (resolved && !isCompatibleHeader(block, metadata_snapshot->getSampleBlock()))
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Structure of the block for external table {} does not match the structure of the table. "
-                "Received:\n{}\nExpected:\n{}",
-                backQuoteIfNeed(temporary_id.table_name),
-                block.dumpStructure(),
-                metadata_snapshot->getSampleBlock().dumpStructure());
+        auto check_structure = [&](const Block & expected)
+        {
+            if (!isCompatibleHeader(block, expected))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Structure of the block for external table {} does not match the structure of the table. "
+                    "Received:\n{}\nExpected:\n{}",
+                    backQuoteIfNeed(temporary_id.table_name),
+                    block.dumpStructure(),
+                    expected.dumpStructure());
+        };
 
-        /// The data will be written directly to the table.
-        QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false));
-        PushingPipelineExecutor executor(temporary_table_out);
-        executor.start();
-        executor.push(block);
-        executor.finish();
+        /// Data for external tables
+
+        auto it = state.external_table_pipelines.find(temporary_id.table_name);
+        if (it == state.external_table_pipelines.end())
+        {
+            /// The first block of this table: find or create the table and the pipeline writing to it.
+            auto resolved = state.query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
+            StoragePtr storage;
+            /// If such a table does not exist, create it.
+            if (resolved)
+            {
+                storage = DatabaseCatalog::instance().getTable(resolved, state.query_context);
+            }
+            else
+            {
+                NamesAndTypesList columns = block.getNamesAndTypesList();
+                auto temporary_table = TemporaryTableHolder(state.query_context, ColumnsDescription(columns), {});
+                storage = temporary_table.getTable();
+                state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
+            }
+            auto metadata_snapshot = storage->getInMemoryMetadataPtr(state.query_context, false);
+
+            /// The table already existed, so its schema was not bound by this block.
+            if (resolved)
+                check_structure(metadata_snapshot->getSampleBlock());
+
+            /// The pipeline is kept in `state` only after it has started, so a failure here leaves nothing half-made behind.
+            auto pipeline_holder = std::make_unique<QueryState::ExternalTablePipeline>();
+            pipeline_holder->header = metadata_snapshot->getSampleBlock();
+            pipeline_holder->pipeline = QueryPipeline(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false));
+            pipeline_holder->executor = std::make_unique<PushingPipelineExecutor>(pipeline_holder->pipeline);
+            pipeline_holder->executor->start();
+
+            it = state.external_table_pipelines.emplace(temporary_id.table_name, std::move(pipeline_holder)).first;
+        }
+        else
+        {
+            check_structure(it->second->header);
+        }
+
+        /// The data becomes visible in the table when the pipeline is finished, see `finishExternalTablePipelines`.
+        it->second->executor->push(block);
+
+        fiu_do_on(FailPoints::sleep_on_receive_external_table_data, {
+            sleepForSeconds(1);
+        });
     }
     else if (state.need_receive_data_for_input)
     {

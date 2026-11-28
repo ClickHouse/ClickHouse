@@ -10,6 +10,8 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <IO/Progress.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/TimeoutSetter.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>
@@ -20,9 +22,11 @@
 #include <QueryPipeline/BlockIO.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/StringWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <IO/WriteBuffer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -149,6 +153,65 @@ struct QueryState
     bool at_packet_boundary = true;
     bool query_duration_already_logged = false;
     bool run_query_in_background = false;
+
+    /// The pipelines writing the data of external tables, by the name of the table.
+    /// A pipeline is created by the first block of its table and finished once all the external data is received:
+    /// finishing a pipeline for every block makes a `Memory` table copy its list of blocks each time,
+    /// which is quadratic in the number of blocks.
+    struct ExternalTablePipeline
+    {
+        /// The structure of the table, which every block received for it must match.
+        Block header;
+        QueryPipeline pipeline;
+        /// Refers to `pipeline`, so it is declared after it.
+        std::unique_ptr<PushingPipelineExecutor> executor;
+    };
+    UnorderedMapWithMemoryTracking<String, std::unique_ptr<ExternalTablePipeline>> external_table_pipelines;
+
+    /// Makes the received data visible in the tables.
+    void finishExternalTablePipelines()
+    {
+        for (auto & [name, pipeline_holder] : external_table_pipelines)
+            pipeline_holder->executor->finish();
+        external_table_pipelines.clear();
+    }
+
+    /// Drops the received data. Does not throw.
+    /// `PushingPipelineExecutor` has to be finished or cancelled explicitly before it is destroyed.
+    void cancelExternalTablePipelines()
+    {
+        for (auto & [name, pipeline_holder] : external_table_pipelines)
+        {
+            try
+            {
+                pipeline_holder->executor->cancel();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+        external_table_pipelines.clear();
+    }
+
+    /// Set while external tables are read with a time limit, which is `max_execution_time`.
+    /// `receivePacketsExpectData` does not wait for the client past it.
+    struct ExternalTablesTimeLimit
+    {
+        /// Since the start of reading, and not since the start of the query (see `watch`): the query can wait for admission
+        /// (for a slot of its workload, or in the queue of `max_concurrent_queries`) before its external tables are read,
+        /// and `max_execution_time` does not include that wait, see `QueryStatus::execution_watch`.
+        Stopwatch watch;
+        UInt64 limit_us;
+
+        explicit ExternalTablesTimeLimit(UInt64 limit_us_) : limit_us(limit_us_) {}
+    };
+    std::optional<ExternalTablesTimeLimit> external_tables_time_limit;
+
+    ~QueryState()
+    {
+        cancelExternalTablePipelines();
+    }
 
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
