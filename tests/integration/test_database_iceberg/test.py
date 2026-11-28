@@ -3257,6 +3257,7 @@ def test_namespace_serialized_plan_reads_table_as_written(started_cluster):
     written and does not also try it as table `db.table` of its current database.
     A cluster table function computes its header from a query printed the same way, and the
     initiator reads the names of that query as written too.
+    So does the initiator for the printed `GLOBAL IN` subquery of a filter pushed down to the shards.
     """
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
@@ -3357,6 +3358,18 @@ def test_namespace_serialized_plan_reads_table_as_written(started_cluster):
             )
         )
         assert result == 1, f"cluster table function with a subquery over X.T (5 rows): expected 1, got {result}"
+
+        # the temporary table of a `GLOBAL IN` set sent with a pushed-down filter takes its structure from the
+        # printed subquery, which names the table as `demo`.`X.T`; the set itself is built from the resolved tree,
+        # so this checks only that the query does not fail
+        result = int(
+            node1.query(
+                f"USE {CATALOG_NAME}; SELECT count() FROM (SELECT number FROM remote('node2', numbers(10))) "
+                f"WHERE number GLOBAL IN (SELECT count() FROM `{X}.{T}`)",
+                settings=on,
+            )
+        )
+        assert result == 1, f"`GLOBAL IN` subquery over X.T (5 rows) with a pushed-down filter: expected 1, got {result}"
     finally:
         node1.query(f"DROP TABLE IF EXISTS default.{D}")
         node1.query(f"DROP TABLE IF EXISTS default.{D2}")
