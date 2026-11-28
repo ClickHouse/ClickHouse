@@ -251,6 +251,12 @@ uint64 CityHash64WithSeeds(const char *s, size_t len,
   return HashLen16(CityHash64(s, len) - seed0, seed1);
 }
 
+std::pair<uint64, uint64> CityHash64WithSeedPair(const char *s, size_t len,
+                                                 uint64 seed0, uint64 seed1) {
+  const uint64 unseeded = CityHash64(s, len) - k2;
+  return {HashLen16(unseeded, seed0), HashLen16(unseeded, seed1)};
+}
+
 // A subroutine for CityHash128().  Returns a decent 128-bit hash for strings
 // of any length representable in ssize_t.  Based on City and Murmur.
 static uint128 CityMurmur(const char *s, size_t len, uint128 seed) {

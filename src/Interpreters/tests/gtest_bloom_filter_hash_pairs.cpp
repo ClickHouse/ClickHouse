@@ -4,7 +4,9 @@
 
 #include <pcg_random.hpp>
 
+#include <limits>
 #include <random>
+#include <string_view>
 #include <vector>
 
 using namespace DB;
@@ -55,5 +57,30 @@ TEST(BloomFilter, BatchPrehashedParity)
         }
 
         EXPECT_EQ(batch_found, scalar_found);
+    }
+}
+
+TEST(BloomFilter, ComputeHashPairGoldenValues)
+{
+    /// Text bloom filter indexes persist bits derived from these values, so they must not change.
+    struct Case
+    {
+        std::string_view data;
+        UInt64 seed;
+        UInt64 hash1;
+        UInt64 hash2;
+    };
+    const std::vector<Case> cases{
+        {"", 0, 0ULL, 167021372700187220ULL},
+        {"", std::numeric_limits<UInt64>::max(), 10693559443859979498ULL, 11099807243730275057ULL},
+        {"ClickHouse", 0, 17504870580740013348ULL, 13551335315504348687ULL},
+        {"ClickHouse", std::numeric_limits<UInt64>::max(), 3955525648307601364ULL, 9038073283059794754ULL},
+    };
+
+    for (const auto & c : cases)
+    {
+        const auto pair = BloomFilter::computeHashPair(c.data.data(), c.data.size(), c.seed);
+        EXPECT_EQ(pair.hash1, c.hash1) << "data='" << c.data << "' seed=" << c.seed;
+        EXPECT_EQ(pair.hash2, c.hash2) << "data='" << c.data << "' seed=" << c.seed;
     }
 }
