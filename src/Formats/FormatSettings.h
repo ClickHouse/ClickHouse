@@ -254,6 +254,7 @@ struct FormatSettings : FormatSettingsEnums
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
+        bool output_datetime_as_timestamp = false;
         bool output_variant_as_json_string = false;
         bool output_uuid_as_fixed_byte_array = false;
         ArrowUnsupportedTypes output_unsupported_types = ArrowUnsupportedTypes::BINARY;
@@ -263,9 +264,8 @@ struct FormatSettings : FormatSettingsEnums
         UInt64 output_max_record_batch_bytes = MAX_ARROW_BUFFER_SIZE;
         /// Not settings, but choices of the formats that hand their data over as Arrow arrays (`Vortex`):
         /// a `FixedString` is written as `Utf8` when `output_string_as_string` is set, unless this is unset;
-        /// a `DateTime` as a timestamp in seconds instead of `UInt32`; `Nothing` as the Arrow `Null` type.
+        /// `Nothing` as the Arrow `Null` type.
         bool output_fixed_string_as_string = true;
-        bool output_datetime_as_timestamp = false;
         bool output_nothing_as_null = false;
     } arrow{};
 

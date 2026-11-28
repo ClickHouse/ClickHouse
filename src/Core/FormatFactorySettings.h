@@ -1727,6 +1727,10 @@ Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, n
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32).
 )", 0, \
         {"26.2", true, false, "Write Date as Arrow DATE32 instead of plain UInt16 by default."}) \
+    DECLARE(Bool, output_format_arrow_datetime_as_timestamp, false, R"(
+Write `DateTime` values as an Arrow `TIMESTAMP` in seconds with the time zone of the column (read back as `DateTime64(0)`), instead of plain 32-bit unsigned integers (read back as `UInt32`).
+)", 0, \
+        {"26.12", false, false, "New setting."}) \
     DECLARE(Bool, output_format_arrow_variant_as_json_string, false, R"(
 Write `Variant` values as a nullable Arrow `Utf8` column holding the JSON representation of each value (as in the `JSONEachRow`
 format, e.g. a `String` value is quoted), instead of an Arrow dense union. Use it for Arrow readers that do not support unions.
