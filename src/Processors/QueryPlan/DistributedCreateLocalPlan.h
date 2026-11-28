@@ -2,6 +2,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Core/QueryProcessingStage.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -16,5 +17,6 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     size_t shard_num,
     size_t shard_count,
     bool build_logical_plan = false,
-    const std::string & default_database = {});
+    const std::string & default_database = {},
+    const StorageID * table_filtered_by_partition_id = nullptr);
 }

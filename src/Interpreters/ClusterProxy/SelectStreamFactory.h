@@ -66,6 +66,8 @@ public:
         /// If we connect to replicas lazily.
         /// (When there is a local replica with big delay).
         bool lazy = false;
+        /// The local plan of the shard needs no grant on `_partition_id` of `main_table`.
+        bool main_table_filtered_by_partition_id = false;
         AdditionalShardFilterGenerator shard_filter_generator{};
     };
 
@@ -87,7 +89,8 @@ public:
         UInt32 shard_count,
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator,
-        const UnavailableShardTrackerPtr & unavailable_shard_tracker);
+        const UnavailableShardTrackerPtr & unavailable_shard_tracker,
+        const Strings * partitions_to_skip);
 
     SharedHeader header;
     const StorageSnapshotPtr storage_snapshot;

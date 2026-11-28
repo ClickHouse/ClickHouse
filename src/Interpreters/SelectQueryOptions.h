@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/QueryProcessingStage.h>
+#include <Interpreters/StorageID.h>
 #include <optional>
 
 namespace DB
@@ -91,6 +92,9 @@ struct SelectQueryOptions
 
     /// The query as received from the initiator of a distributed read, not a subquery of it.
     bool is_secondary_query_root = false;
+
+    /// The table whose `_partition_id` is read only by a condition of the initiator, so it needs no grant.
+    std::optional<StorageID> table_filtered_by_partition_id;
 
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
