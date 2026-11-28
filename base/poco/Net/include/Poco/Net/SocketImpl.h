@@ -218,6 +218,26 @@ namespace Net
         virtual bool pollImpl(Poco::Timespan & timeout, int mode);
         /// Modifies `timeout`
 
+        /// Non-blocking calls, for one thread that sends data and watches for data from the peer.
+        /// A send error is held until the caller has read what arrived. Socket types that buffer
+        /// data or wait in their own way override them.
+
+        virtual int waitForSendOrReceive(Poco::Timespan & timeout, int mode);
+        /// Returns the ready directions of `mode`, or 0 on timeout; a closed connection is ready for
+        /// both. Lowers `timeout`. A negative `timeout` waits without a limit, a zero one only checks.
+
+        virtual int sendNow(const void * buffer, int length);
+        /// Returns the bytes accepted, 0 when nothing fits, or -1 when a send error is held.
+        /// Waits only for the send throttler. After 0, repeat with the same data and at least the
+        /// same length. A TLS socket can hold accepted bytes; the next call on it sends them, also
+        /// a wait for data.
+
+        virtual int receiveNow(void * buffer, int length);
+        /// Returns the bytes received, 0 when nothing has arrived, or -1 at the end of the stream.
+
+        virtual void throwHeldSendError();
+        /// Throws the held send error, as `sendBytes` would.
+
         virtual void setSendBufferSize(int size);
         /// Sets the size of the send buffer.
 
@@ -488,6 +508,10 @@ namespace Net
         void useRecvThrottlerBudget(int rc);
         /// Checks the return code `rc` and updates recv throttler budget.
 
+        int sendNowUnthrottled(const void * buffer, int length);
+        int receiveNowUnthrottled(void * buffer, int length);
+        /// `sendNow` and `receiveNow` without the throttler, for a caller that throttles the data itself.
+
     protected:
         SocketImpl(const SocketImpl &);
         SocketImpl & operator=(const SocketImpl &);
@@ -504,8 +528,12 @@ namespace Net
         ThrottlerPtr _recvThrottler;
         ThrottlerPtr _sndThrottler;
 
+        /// The `errno` of the failed `sendNow`, or 0; cleared with a new descriptor.
+        int _heldSendError = 0;
+
         friend class Socket;
         friend class SecureSocketImpl;
+        friend class NonBlockingFilterBIO;
         friend class PollSetImpl;
     };
 
