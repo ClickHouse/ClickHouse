@@ -1,0 +1,2 @@
+parallel_replicas_plan_based	1
+parallel_replicas_allow_merge_tables	1
