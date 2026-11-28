@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/managed-getting-started
-title: 'Managed ClickStack を使い始める'
-description: 'Managed ClickStack 向けに OpenTelemetry Collector をデプロイし、アプリケーションをエンドツーエンドでインストルメントする'
+title: 'Self-managed ClickHouse Observability を使い始める'
+description: 'Self-managed ClickHouse Observability 向けに OpenTelemetry Collector をデプロイし、アプリケーションをエンドツーエンドでインストルメントする'
 doc_type: 'guide'
 keywords: ['ClickStack', 'OpenTelemetry', 'collector', 'インストルメンテーション', 'managed', 'オブザーバビリティ', 'ゲートウェイ', 'NodeJS', 'sdk']
 unlisted: true
@@ -13,7 +13,7 @@ import GatherCredentials from '/snippets/ja/clickstack/_gather_credentials.mdx';
 
 import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.mdx';
 
-このガイドでは、空の Managed ClickStack サービスから始めて、実際のアプリケーションからログ、メトリクス、トレース、セッションリプレイが流れ込むところまでを説明します。新しい OpenTelemetry Collector をデプロイするか (すでにある場合は既存のものを調整し) 、業務ロジックを変更せずにサンプルの Node.js アプリケーションをインストルメントし、最後に ClickStack UI でテレメトリーを確認します。
+このガイドでは、空の Self-managed ClickHouse Observability サービスから始めて、実際のアプリケーションからログ、メトリクス、トレース、セッションリプレイが流れ込むところまでを説明します。新しい OpenTelemetry Collector をデプロイするか (すでにある場合は既存のものを調整し) 、業務ロジックを変更せずにサンプルの Node.js アプリケーションをインストルメントし、最後に ClickStack UI でテレメトリーを確認します。
 
 <Note>
   新しい collector をセットアップする場合も、独自の collector を使う場合も、**ゲートウェイ** として実行する必要があります。つまり、アプリケーション、SDKs、agent collector の送信先となる単一の OTLP エンドポイントです。ゲートウェイはイベントをバッチ化し、設定した処理を適用して、[ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) 経由で ClickHouse に書き込みます。
@@ -22,10 +22,10 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
 今回インストルメントするアプリケーションは [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) です。これは、公開されている ClickHouse デモでホストされている HackerNews dataset に対してクエリを実行する Node.js アプリです。すべての chart、table、search box は実際の ClickHouse クエリをバックエンドとしているため、あらゆる操作でトレースが生成され、そのメイン span は backend から ClickHouse への HTTPS 呼び出しになります。
 
 <div id="prerequisites">
-  ## 前提条件
+  ## 前提条件 {#prerequisites}
 </div>
 
-* [ClickHouse Cloud](https://console.clickhouse.cloud) の **Managed ClickStack サービス**。
+* [ClickHouse Cloud](https://console.clickhouse.cloud) の **Self-managed ClickHouse Observability サービス**。
 * サンプルアプリケーションの実行に必要な **Node 18+ と npm**。
 * まだ collector を用意しておらず、以下の新しい collector の手順に沿って進める場合は **Docker**。
 
@@ -49,7 +49,7 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
 
     <Tabs>
       <Tab title="collector がない場合">
-        Managed ClickStack 向けに事前設定された**OpenTelemetry collector の ClickStack ディストリビューション**をデプロイします。以下の例では、簡単のため collector をローカルで実行します。
+        セルフマネージドの ClickHouse オブザーバビリティ向けに事前設定された**OpenTelemetry collector の ClickStack ディストリビューション**をデプロイします。以下の例では、簡単のため collector をローカルで実行します。
 
         <Note>
           本番環境では通常、collector は Kubernetes クラスター内、または OpenTelemetry SDKs、エージェント、その他の collectors から到達可能な仮想マシン上にデプロイします。これにより、環境全体のテレメトリーを一元的に収集し、ClickStack に転送できます。
@@ -83,12 +83,12 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
         <Info>
           **本番デプロイメント**
 
-          本番環境では、OTLP エンドポイントで TLS を有効にすることを推奨します。[collector の保護](/ja/clickstack/ingesting-data/collector#securing-the-collector)を参照してください。
+          本番環境では、OTLP エンドポイントで TLS を有効にすることを推奨します。[collector の保護](/ja/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)を参照してください。
         </Info>
       </Tab>
 
       <Tab title="collector を用意している">
-        既存の collector 設定を拡張し、[ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) 経由で Managed ClickStack に書き込むようにします。
+        既存の collector 設定を拡張し、[ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) 経由で Self-managed ClickHouse Observability に書き込むようにします。
 
         <Info>
           **ClickHouse exporter が必要です**
@@ -188,7 +188,7 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
 
         新しい設定で collector を再読み込みしてください。OTLPエンドポイントと、セットアップで必要になる認証ヘッダーは手元に控えておいてください。次の手順で、アプリケーションの送信先としてそれらを指定します。
 
-        Managed ClickStack 向けの OpenTelemetry collectors の設定についてさらに詳しくは、[OpenTelemetry でのインジェスト](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。
+        Self-managed ClickHouse Observability 向けの OpenTelemetry コレクターの設定についてさらに詳しくは、[OpenTelemetry でのインジェスト](/ja/clickstack/observability/ingesting-data/opentelemetry#self-managed)を参照してください。
       </Tab>
     </Tabs>
   </Step>
@@ -212,13 +212,9 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
     [http://localhost:5001](http://localhost:5001) を開きます。年のセレクタ、サマリー統計、アクティビティチャート、上位ユーザーとドメインのテーブル、検索ボックスが表示されます。いろいろ操作してみましょう。年を切り替えたり、ストーリーを詳しく見たりできます。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ローカルで実行中の HackerNews Analyzer アプリケーション](/images/clickstack/getting-started/hackernews_main.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ローカルで実行中の HackerNews Analyzer アプリケーション](/images/clickstack/getting-started/hackernews_main.webp)
+      </Frame>
     </div>
 
     この時点ではアプリケーションは実行中ですが、まだインストルメントされていません。ClickStack にはデータは表示されません。テレメトリーを待っている状態です。これは &quot;before&quot; の状態です。
@@ -244,7 +240,7 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
   <Step title="アプリケーションをインストルメントする" id="instrument-the-application">
     インストルメンテーションは、SDKs のインストール、起動コマンドの切り替え、ブラウザ SDK の有効化という3つの要素で構成されます。いずれもアプリケーションのビジネスロジックは変更しません。
 
-    ### SDKs をインストールする
+### SDKs をインストールする {#install-sdks}
 
     バックエンド用とブラウザ用の両方の OpenTelemetry SDK をインストールします:
 
@@ -252,7 +248,7 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
     npm install @hyperdx/node-opentelemetry @hyperdx/browser
     ```
 
-    ### opentelemetry-instrument CLI を使用する
+### opentelemetry-instrument CLI を使用する {#use-open-telemetry-cli}
 
     アプリケーションは `run.sh` から起動されます。このファイルの末尾には `exec` 行が 2 つあり、1 つは有効、もう 1 つはコメントアウトされています。Node が `opentelemetry-instrument` でラップされるように、どちらを有効にするかを切り替えてください。
 
@@ -268,7 +264,7 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
 
     バックエンド側の変更はこれで完了です。自動インストルメンテーションは、プロセス起動時に `opentelemetry-instrument` によって読み込まれます。
 
-    ### Browser SDK を有効にする
+### Browser SDK を有効にする {#enable-browser-sdk}
 
     分散トレース (ブラウザーからバックエンドまで) とセッションリプレイを取得するには、`src/web/telemetry.ts` で Browser SDK を有効にします。import と `HyperDX.init({...})` ブロックのコメントアウトを外してください。
 
@@ -309,13 +305,9 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
     [ClickHouse Cloud console](https://console.clickhouse.cloud) でサービスを開き、左側のメニューから **ClickStack** を選択し、続けて **Start Ingestion** をクリックします。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ClickStack を起動](/images/use-cases/observability/clickstack-cloud-first-time.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickStack を起動](/images/use-cases/observability/clickstack-cloud-first-time.webp)
+      </Frame>
     </div>
 
     次の手順は、すでに collector を設定しているためスキップできます。続行するには **Launch ClickStack** をクリックします。
@@ -323,25 +315,17 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
     ClickStack が新しいタブで開き、自動的に **Getting Started** ページに移動します。移動しない場合は、左側のメニューから **Getting Started** を選択し、**Start Ingestion** をクリックしてから **Next** をクリックします。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ClickStack Start Ingestion](/images/use-cases/observability/clickstack-start-ingestion.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickStack Start Ingestion](/images/use-cases/observability/clickstack-start-ingestion.webp)
+      </Frame>
     </div>
 
     ClickStack はテーブルとテレメトリーデータを自動的に検出し、そのまま先へ進めるようになります。データの確認を開始するには、**Start Exploring** を選択します。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ClickStack Start Exploring](/images/use-cases/observability/clickstack-start-exploring.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickStack Start Exploring](/images/use-cases/observability/clickstack-start-exploring.webp)
+      </Frame>
     </div>
 
     次に、アプリケーションが生成しているデータを確認します。
@@ -349,37 +333,25 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
     1. **Search** に移動し、直近 5 分で絞り込みます。`hn-analyzer-api` のログが流れ込んできます。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ClickStack ログ](/images/clickstack/getting-started/instrument_app_clickstack_logs.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickStack ログ](/images/clickstack/getting-started/instrument_app_clickstack_logs.webp)
+      </Frame>
     </div>
 
     2. リクエストをクリックして trace をさかのぼります。Express のハンドラー span、その子である ClickHouse クラスター宛ての HTTP span (実際のネットワーク所要時間を含む) 、さらに同じ trace 上で相関付けられた `console.log` レコードを確認できます。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ClickStack トレース](/images/clickstack/getting-started/instrument_app_clickstack_traces.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickStack トレース](/images/clickstack/getting-started/instrument_app_clickstack_traces.webp)
+      </Frame>
     </div>
 
     3. **Session Replay** を開くと、trace のタイムラインに同期した、ブラウザーセッションのシーク可能な動画を再生できます。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ClickStack セッション](/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickStack セッション](/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp)
+      </Frame>
     </div>
 
     ログ、メトリクス、トレース、セッションリプレイはすべて同じ UI に集約され、同じクエリ言語を共有し、自動的に相関付けられます。
@@ -392,12 +364,10 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
   </Step>
 </Steps>
 
-<div id="further-reading">
-  ## 参考情報
-</div>
+## 関連資料 {#further-reading}
 
-* [Kubernetes の監視](/ja/clickstack/managed-onboarding/monitoring-kubernetes): クラスターからログ、インフラメトリクス、Kubernetes イベントを収集します。
-* [AWS CloudWatch Logs の監視](/ja/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): OpenTelemetry CloudWatch receiver を使用して CloudWatch Logs を転送します。
-* [Managed ClickStack のチューニング](/ja/clickstack/managed-onboarding/tuning-clickstack-schema): クエリパフォーマンスとストレージ効率を高めるために、スキーマを調整します。
-* [collector の保護](/ja/clickstack/ingesting-data/collector#securing-the-collector): OTLP エンドポイント で TLS を有効にし、最小権限のインジェストユーザーを使用します。
-* [本番環境への移行](/ja/clickstack/managing/production): 本番環境に移行する際の推奨事項を紹介します。
+* [Kubernetes の監視](/ja/clickstack/self-configured/managed-onboarding/monitoring-kubernetes): クラスターからログ、インフラメトリクス、Kubernetes イベントを収集します。
+* [AWS CloudWatch ログの監視](/ja/clickstack/self-configured/managed-onboarding/monitoring-aws-cloudwatch-logs): OpenTelemetry の CloudWatchレシーバーを使用して CloudWatch ログを転送します。
+* [Self-managed ClickHouse Observability のチューニング](/ja/clickstack/self-configured/managed-onboarding/tuning-clickstack-schema): クエリパフォーマンスとストレージ効率を高めるためにスキーマを最適化します。
+* [collector のセキュリティ確保](/ja/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured): OTLP エンドポイントでの TLS の利用と、最小権限のインジェスト用ユーザーについて説明します。
+* [本番環境への移行](/ja/clickstack/self-configured/managing/production): 本番環境へ移行する際の推奨事項を紹介します。

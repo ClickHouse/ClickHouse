@@ -22,9 +22,9 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置，用于启用自适应 `GROUP BY` 聚合：每个线程的本地哈希表达到 `adaptive_aggregator_freeze_threshold` 个键后即冻结。高频键继续在较小的本地表中聚合，低频键则根据其哈希值路由到各桶的积压队列，并在桶并行合并期间仅聚合一次；因此低频键只需存储和处理一次，而非每个线程各处理一次。"}]}]} />
 
-启用自适应 `GROUP BY` 算法：每个线程先在本地哈希表中聚合，直至达到 `adaptive_aggregator_freeze_threshold` 个键 (或占用 `adaptive_aggregator_freeze_threshold_bytes` 内存) ，随后该表冻结。已出现过的高频键对应的行会继续原地更新该表；新的低频键则根据其哈希值路由到各桶的积压队列，并在桶并行合并期间仅聚合一次。高频键保留在可驻留于缓存的小型表中，低频键则只需存储和处理一次，而非每个线程各处理一次。
+启用自适应 `GROUP BY` 算法：每个线程先在本地哈希表中聚合，直至达到 `adaptive_aggregator_freeze_threshold` 个键，或其哈希表缓冲区达到 `adaptive_aggregator_freeze_threshold_bytes`，随后该表冻结。已出现过的高频键对应的行会继续原地更新该表；新的低频键则根据其哈希值暂存到 per-partition 缓冲区，并在桶并行合并期间仅聚合一次，该合并每次取少量分区，在缓存大小的表中处理。高频键保留在可驻留于缓存的小型表中，低频键则只需存储和处理一次，而非每个线程各处理一次。
 
-遵循外部聚合设置 (`max_bytes_before_external_group_by`、`max_bytes_ratio_before_external_group_by`) ：超过阈值后，会将积压队列提前排空至共享表；如果仍无法降至阈值以下，则通过常规外部聚合将共享表落盘。
+遵循外部聚合设置 (`max_bytes_before_external_group_by`、`max_bytes_ratio_before_external_group_by`) ：超过阈值后，线程会将其暂存记录写入磁盘并释放，合并时再逐桶读回。尚未冻结的表在占用足够内存后，会像常规外部聚合一样写入磁盘；已冻结的表则在其聚合状态 (例如 `uniqExact` 或 `groupArray` 的聚合状态) 增长到足够大时写入磁盘。随后，线程开始填充新表。
 
 ## enable_adaptive_memory_spill_scheduler {#enable_adaptive_memory_spill_scheduler}
 
@@ -45,16 +45,6 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 在 `IN` 子查询中启用 `DISTINCT`。这是一个需要权衡的设置：启用后可确保仅发送唯一值，从而大幅减小分布式 `IN` 子查询传输的临时表大小，并显著加快分片之间的数据传输。
 不过，启用此设置会增加每个节点上的额外合并开销，因为必须执行去重 (`DISTINCT`) 。当网络传输成为性能瓶颈，且可以接受额外的合并成本时，请使用此设置。
-
-## enable_alp_codec {#enable_alp_codec}
-
-<BetaBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置，可单独启用 Experimental `ALP` 压缩编解码器，无需启用 `allow_experimental_codecs`。"}]}]} />
-
-启用 `ALP` 压缩编解码器。
 
 ## enable_automatic_decision_for_merging_across_partitions_for_final {#enable_automatic_decision_for_merging_across_partitions_for_final}
 
@@ -79,6 +69,58 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 为分布式查询计划启用 Cascades 成本优化器。
 仅当同时设置 `make_distributed_plan = 1` 时才生效：仅启用此设置不会改变单节点查询的规划方式。
 
+## enable_cleanup_old_data_files_compaction {#enable_cleanup_old_data_files_compaction}
+
+<ExperimentalBadge />
+
+**别名**：`allow_experimental_cleanup_old_data_files_compaction`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新增设置"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置别名 `allow_experimental_cleanup_old_data_files_compaction`。"}]}]} />
+
+允许在 Iceberg 压实过程中清理旧的数据文件。
+
+清理操作会在压实完成后运行 `iceberg_compaction_data_cleanup`。它会将因本次压实而失效的快照标记为过期，方式与
+`expire_snapshots` 相同：将这些快照从表元数据中移除，并删除不再被任何其他快照引用的文件。对于格式版本为 1 的表，
+或由事务性目录管理的表，该操作仅删除文件，快照仍保留在元数据中。
+
+## enable_database_hms_catalog {#enable_database_hms_catalog}
+
+<ExperimentalBadge />
+
+**别名**：`allow_experimental_database_hms_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置别名 `allow_experimental_database_hms_catalog`。"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "允许使用 catalog_type = 'hive' 的实验性数据库引擎 DataLakeCatalog"}]}]} />
+
+允许使用 `catalog_type = 'hms'` 的数据库引擎 `DataLakeCatalog`
+
+## enable_database_materialized_postgresql {#enable_database_materialized_postgresql}
+
+<ExperimentalBadge />
+
+**别名**：`allow_experimental_database_materialized_postgresql`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "为设置 `allow_experimental_database_materialized_postgresql` 添加了设置别名。"}]}]} />
+
+允许创建使用 `Engine = MaterializedPostgreSQL(...)` 的数据库。
+
+## enable_database_paimon_rest_catalog {#enable_database_paimon_rest_catalog}
+
+<ExperimentalBadge />
+
+**别名**：`allow_experimental_database_paimon_rest_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置别名 `allow_experimental_database_paimon_rest_catalog`。"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+允许使用 `catalog_type = 'paimon_rest'` 的 `DataLakeCatalog` 数据库引擎
+
 ## enable_early_constant_folding {#enable_early_constant_folding}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -94,6 +136,18 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置，用于控制是否启用实验性的 Elasticsearch 集成（`Elasticsearch` 表引擎和 `elasticsearch` 表函数）。"}]}]} />
 
 启用实验性的 Elasticsearch 集成，包括 `Elasticsearch` 表引擎和 `elasticsearch` 表函数。
+
+## enable_eval_table_function {#enable_eval_table_function}
+
+<ExperimentalBadge />
+
+**别名**：`allow_experimental_eval_table_function`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "新增设置，用于启用 实验性 表函数 `eval`。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置别名 `allow_experimental_eval_table_function`。"}]}]} />
+
+启用表函数 `eval`。
 
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
@@ -157,6 +211,16 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "为设置 `allow_experimental_funnel_functions` 添加了别名。"}]}]} />
 
 启用漏斗 (funnel) 分析相关函数。
+
+## enable_gdeflate_codec {#enable_gdeflate_codec}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置，用于启用实验性 `GDeflate` 压缩编解码器。"}]}]} />
+
+启用 `GDeflate` 压缩编解码器。
 
 ## enable_global_with_statement {#enable_global_with_statement}
 
@@ -295,6 +359,30 @@ SET dialect = 'clickhouse_json';
 
 启用该设置后，仅添加或更改类型提示的 `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeName)` 属于仅修改元数据的操作：对于已有 parts，类型提示会在查询时应用，并在插入和后台合并期间被 materialized，而无需重写历史数据。
 
+## enable_kusto_dialect {#enable_kusto_dialect}
+
+<BetaBadge />
+
+**别名**：`allow_experimental_kusto_dialect`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置别名 `allow_experimental_kusto_dialect`。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Kusto 查询语言（KQL）方言已进入 Beta 阶段。"}]}, {"id": "row-3","items": [{"label": "25.1"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+启用 Kusto 查询语言 (KQL) 方言，作为 SQL 之外的另一种查询语言。
+
+## enable_lateral_join {#enable_lateral_join}
+
+<ExperimentalBadge />
+
+**别名**：`allow_experimental_lateral_join`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置别名 `allow_experimental_lateral_join`。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置，用于启用 `LATERAL JOIN` 语法。"}]}]} />
+
+允许使用 LATERAL JOIN 语法。启用后，JOIN 右侧的子查询可以引用左侧的列，从而支持在 FROM 子句中使用相关子查询 (即 SQL 标准中的 LATERAL JOIN) 。
+
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -391,6 +479,18 @@ _time:1h error | stats by (host) count()
 此设置不影响提取出的 tuple 子列是否可以为 `Nullable` (例如从 Dynamic、Variant、JSON 或 Tuple 列中提取的子列) 。
 若要控制提取出的 tuple 子列是否可以为 `Nullable`，请使用 `allow_nullable_tuple_in_extracted_subcolumns`。
 
+## enable_object_storage_queue_hive_partitioning {#enable_object_storage_queue_hive_partitioning}
+
+<ExperimentalBadge />
+
+**别名**：`allow_experimental_object_storage_queue_hive_partitioning`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "为设置 `allow_experimental_object_storage_queue_hive_partitioning` 添加了别名。"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "新增设置。"}]}]} />
+
+允许在 `S3Queue`/`AzureQueue` 引擎中使用 Hive 分区
+
 ## enable_order_by_all {#enable_order_by_all}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -438,6 +538,30 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 参与分布式查询的所有服务器必须使用相同的值：使用 `distributed_aggregation_memory_efficient` 时，两级桶编号取决于键的哈希值，而两种方法的键哈希不同，因此设置值不一致的服务器可能会将同一个键分到不同桶中，导致合并结果不正确。为确保一致性，发起者始终会随次级查询发送其生效值 (即使该值仅来自服务器/profile 默认值) ，从而覆盖远程服务器自身的默认值。
 
+## enable_packed_string_keys_in_hash_join {#enable_packed_string_keys_in_hash_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置，可加快基于单个 `String` 键的哈希连接，并降低其内存占用。"}]}]} />
+
+加快基于单个 `String` 或 `Nullable(String)` 键的 `hash`、`parallel_hash` 和 `grace_hash` 连接，并降低其内存占用。对于包含 `OR` 的连接，只要其中每个条件都只有一个此类键，同样适用。
+
+由于哈希表更小，连接会更晚触及 `max_bytes_in_join` 和 `max_bytes_before_external_join` 的限制。
+
+该设置不适用于 `FixedString` 或 `LowCardinality(Nullable(String))` 键、使用 `Join` 引擎的表，以及 `joinGet`。基于 `LowCardinality(String)` 键的连接可能会改用该键的字典。如果连接右侧的估计行数少于 `min_rows_for_packed_string_keys_in_hash_join`，该设置同样不会生效。
+
+## enable_paimon_storage_engine {#enable_paimon_storage_engine}
+
+<ExperimentalBadge />
+
+**别名**：`allow_experimental_paimon_storage_engine`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新增设置。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置别名 `allow_experimental_paimon_storage_engine`。"}]}]} />
+
+允许使用 `Paimon*` 表引擎创建表。
+
 ## enable_parsing_to_custom_serialization {#enable_parsing_to_custom_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -456,6 +580,18 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 启用 `PCO` 压缩编解码器。
 
+## enable_polyglot_dialect {#enable_polyglot_dialect}
+
+<ExperimentalBadge />
+
+**别名**：`allow_experimental_polyglot_dialect`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "新增设置，用于启用 polyglot SQL 转译器方言。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置别名 `allow_experimental_polyglot_dialect`。"}]}]} />
+
+启用 polyglot SQL 转译器，可将 30 多种方言 (MySQL、PostgreSQL、SQLite、Snowflake、DuckDB 等) 的 SQL 转译为 ClickHouse SQL。
+
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -465,6 +601,18 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 允许内存高效的聚合 (参见 `distributed_aggregation_memory_efficient`) 以乱序方式生成桶。
 当聚合桶的大小分布不均时，这可能会提升性能：副本在仍处理某些 id 较低的大桶时，可以先向发起节点发送 id 较高的桶。
 缺点是内存使用量可能会增加。
+
+## enable_prql_dialect {#enable_prql_dialect}
+
+<ExperimentalBadge />
+
+**别名**：`allow_experimental_prql_dialect`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置别名 `allow_experimental_prql_dialect`。"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+启用 PRQL——一种可替代 SQL 的查询语言。
 
 ## enable_quantized_codec {#enable_quantized_codec}
 
@@ -510,6 +658,14 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 * 0 - 禁用
 * 1 - 启用
 
+## enable_robin_hood_hash_for_joins {#enable_robin_hood_hash_for_joins}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置。在 26.10 中，`parallel_hash` 连接的哈希表在变大时会使用 Robin Hood 模式，这样可以节省内存，但可能会拖慢大型连接。"}]}]} />
+
+对于将哈希表拆分为多个部分的哈希连接 (参见 `hash_join_layout`) ，允许其哈希表在变大时切换到 Robin Hood 模式，与聚合所用哈希表的做法相同。启用后，键数量超过约 800 万的右表，其哈希表占用的内存最多可减少一半，但连接的查找速度可能会变慢，具体取决于键本身。
+
 ## enable_s3_requests_logging {#enable_s3_requests_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -528,7 +684,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "1"},{"label": "为与旧 analyzer 向后兼容而新增的设置。"}]}, {"id": "row-2","items": [{"label": "25.6"},{"label": "1"},{"label": "为与旧 analyzer 向后兼容而新增的设置。"}]}, {"id": "row-3","items": [{"label": "25.5"},{"label": "1"},{"label": "为与旧 analyzer 向后兼容而新增的设置。"}]}, {"id": "row-4","items": [{"label": "25.4"},{"label": "1"},{"label": "为与旧 analyzer 向后兼容而新增的设置。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "1"},{"label": "为与旧 analyzer 向后兼容而新增设置。"}]}, {"id": "row-2","items": [{"label": "25.6"},{"label": "1"},{"label": "为与旧 analyzer 向后兼容而新增设置。"}]}, {"id": "row-3","items": [{"label": "25.5"},{"label": "1"},{"label": "为与旧 analyzer 向后兼容而新增设置。"}]}, {"id": "row-4","items": [{"label": "25.4"},{"label": "1"},{"label": "为与旧 analyzer 向后兼容而新增设置。"}]}]} />
 
 如果禁用，父级 WITH 子句中的声明将与在当前作用域中声明时具有相同的作用域行为。
 
@@ -740,13 +896,49 @@ WHERE (_part, _part_offset) IN (
 
 启用实验性的 XGBoost 集成，包括 `XGBOOST` 字典布局和 `predictXGBoost` 函数。
 
-## enable_zxc_codec {#enable_zxc_codec}
+## enable_ytsaurus_dictionary_source {#enable_ytsaurus_dictionary_source}
 
 <ExperimentalBadge />
 
+**别名**：`allow_experimental_ytsaurus_dictionary_source`
+
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置，可单独启用Experimental `ZXC` 压缩编解码器，无需启用 `allow_experimental_codecs`。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置别名 `allow_experimental_ytsaurus_dictionary_source`。"}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "新增设置。"}]}]} />
+
+启用 `ytsaurus` 字典源，用于与 YTsaurus 集成。
+
+## enable_ytsaurus_table_engine {#enable_ytsaurus_table_engine}
+
+<ExperimentalBadge />
+
+**别名**：`allow_experimental_ytsaurus_table_engine`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置别名 `allow_experimental_ytsaurus_table_engine`。"}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "新增设置。"}]}]} />
+
+启用 `YTsaurus` 表引擎，用于与 YTsaurus 集成。
+
+## enable_ytsaurus_table_function {#enable_ytsaurus_table_function}
+
+<ExperimentalBadge />
+
+**别名**：`allow_experimental_ytsaurus_table_function`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置别名 `allow_experimental_ytsaurus_table_function`。"}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "新增设置。"}]}]} />
+
+启用 `ytsaurus` 表函数，用于与 YTsaurus 集成。
+
+## enable_zxc_codec {#enable_zxc_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置，可单独启用实验性 `ZXC` 压缩编解码器，无需启用 `allow_experimental_codecs`。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "`ZXC` 压缩编解码器已进入 Beta 阶段。"}]}]} />
 
 启用 `ZXC` 压缩编解码器。
 

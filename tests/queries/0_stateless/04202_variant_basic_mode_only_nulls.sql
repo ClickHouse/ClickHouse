@@ -4,8 +4,6 @@
 -- is all-NULL and the legacy `use_compact_variant_discriminators_serialization=0` setting is used.
 -- Existing tests with this setting (03260, 03411) use non-NULL inserts only.
 
-SET allow_experimental_variant_type=1;
-
 DROP TABLE IF EXISTS test_var_basic_nulls_wide;
 DROP TABLE IF EXISTS test_var_basic_nulls_compact;
 

@@ -4,11 +4,11 @@ slug: /cloud/reference/byoc/onboarding/customization-aws
 sidebarTitle: 'AWS 向けカスタマイズ設定'
 keywords: ['BYOC', 'クラウド', 'bring your own cloud', 'オンボーディング', 'AWS', 'VPC']
 description: '既存の AWS VPC に ClickHouse BYOC をデプロイする'
-doc_type: 'リファレンス'
+doc_type: 'reference'
 ---
 
 <div id="customer-managed-vpc-aws">
-  ## AWS 向けの顧客管理 VPC (BYO-VPC)
+  ## AWS 向けの顧客管理 VPC (BYO-VPC) {#customer-managed-vpc-aws}
 </div>
 
 ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わりに、既存の VPC を使用して ClickHouse BYOC をデプロイする場合は、以下の手順に従ってください。この方法では、ネットワーク構成をより柔軟に制御でき、既存のネットワークインフラストラクチャに ClickHouse BYOC を統合できます。
@@ -21,23 +21,15 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
     4. ロードバランサーが適切に設定されるよう、各サブネットに `kubernetes.io/role/internal-elb=1` と `clickhouse-byoc="true"` のタグを追加します。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![BYOC VPC サブネット](/images/cloud/reference/byoc-subnet-1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![BYOC VPC サブネット](/images/cloud/reference/byoc-subnet-1.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![BYOC VPC サブネットタグ](/images/cloud/reference/byoc-subnet-2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![BYOC VPC サブネットタグ](/images/cloud/reference/byoc-subnet-2.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -45,13 +37,9 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
     VPC に S3 ゲートウェイエンドポイントがまだ設定されていない場合は、VPC と Amazon S3 の間で安全かつプライベートに通信できるよう、これを作成する必要があります。このエンドポイントを使用すると、ClickHouse のサービスはパブリックインターネットを経由せずに S3 にアクセスできます。設定例については、以下のスクリーンショットを参照してください。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![BYOC S3 エンドポイント](/images/cloud/reference/byoc-s3-endpoint.webp)
-
-    </Frame>
-
+      <Frame>
+        ![BYOC S3 エンドポイント](/images/cloud/reference/byoc-s3-endpoint.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -81,7 +69,7 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
       Storage buckets、Kubernetes クラスター、コンピュートリソースはこの初期セットアップには含まれていません。これらは後続の手順でプロビジョニングされます。VPC はお客様が管理しますが、ClickHouse Cloud が AWS アカウント内で Kubernetes クラスター、service account 用の IAM ロール、S3 bucket、そのほかの必須リソースを作成および管理するには、引き続き IAM 権限が必要です。
     </Note>
 
-#### Terraform module
+#### Terraform module {#terraform-module-aws}
 
     CloudFormation ではなく Terraform を使用する場合は、[terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) module を使用してください。
 
@@ -118,13 +106,9 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
     5. **Set up Infrastructure** をクリックしてプロビジョニングを開始します。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ClickHouse Cloud BYOC setup UI with Use existing VPC selected](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickHouse Cloud BYOC setup UI with Use existing VPC selected](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
+      </Frame>
     </div>
 
     <Note>

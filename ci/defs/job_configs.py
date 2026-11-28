@@ -1,4 +1,7 @@
+import os
+
 from praktika import Job
+from praktika.settings import Settings
 from praktika.utils import Utils
 
 from ci.defs.functional_test_selection import targeted_variants
@@ -97,10 +100,29 @@ def dind_containment_env(job_mem):
 
 integration_dind_env = dind_containment_env(LIMITED_MEM)
 
+# The command is part of every build job digest, and the digest is computed on the host
+# of the Config Workflow, not on the build host. Runners of the same instance type differ
+# by a few memory pages, so the exact value made the same build get different digests in
+# different runs (and missed the cache). Whole GiB is stable across such hosts.
+BINARY_DOCKER_MEM = Utils.physical_memory() // 1024**3 * 1024**3
+
+# Only a pull request against the default branch of the public repository runs
+# without host networking; every other context keeps it. Read the trigger from the
+# environment directly: this module is imported during workflow discovery, before the
+# praktika environment is resolvable.
+HOST_NETWORK = (
+    ""
+    if (
+        os.getenv("GITHUB_REPOSITORY") == "ClickHouse/ClickHouse"
+        and os.getenv("GITHUB_BASE_REF") == Settings.MAIN_BRANCH
+    )
+    else "+--network=host"
+)
+
 BINARY_DOCKER_COMMAND = (
-    "clickhouse/binary-builder+--network=host"
-    f"+--memory={Utils.physical_memory() * 95 // 100}"
-    f"+--memory-reservation={Utils.physical_memory() * 9 // 10}"
+    f"clickhouse/binary-builder{HOST_NETWORK}"
+    f"+--memory={BINARY_DOCKER_MEM * 95 // 100}"
+    f"+--memory-reservation={BINARY_DOCKER_MEM * 9 // 10}"
     f"+--volume=.:/ClickHouse"
 )
 
@@ -381,8 +403,7 @@ class JobConfigs:
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.ARM_LARGE,
         command="python3 ./ci/jobs/fast_test.py",
-        # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker="clickhouse/fasttest+--network=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
+        run_in_docker=f"clickhouse/fasttest{HOST_NETWORK}+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
         digest_config=fast_test_digest_config,
         result_name_for_cidb="Tests",
         needs_submodules=True,
@@ -1052,19 +1073,6 @@ class JobConfigs:
             parameter="functional tests, aarch64",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
         ),
-    )
-    lightweight_functional_tests_job = Job.Config(
-        name="Quick functional tests",
-        command="python3 ./ci/jobs/clickhouse_light.py --path ./ci/tmp/clickhouse",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/clickhouse_light.py",
-                "./ci/jobs/scripts/server_cleanup.py",
-                "./ci/jobs/queries",
-            ],
-        ),
-        requires=[ArtifactNames.CH_AMD_DEBUG],
-        runs_on=RunnerLabels.AMD_SMALL,
     )
     functional_tests_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(

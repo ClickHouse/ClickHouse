@@ -313,7 +313,7 @@ if err := rows.Err(); err != nil {
 
 ## 异步插入 {#async-insert}
 
-可通过 `ExecContext` 方法执行插入来实现异步插入。如下面所示，需要向其传入启用了异步模式的上下文。这样，用户便可指定客户端是等待服务器完成插入，还是在接收到数据后就立即返回响应。这实际上控制的是参数 [wait&#95;for&#95;async&#95;insert](/zh/reference/settings/session-settings#wait_for_async_insert)。
+可通过 `ExecContext` 方法执行插入来实现异步插入。如下面所示，需要向其传入启用了异步模式的上下文。这样，用户便可指定客户端是等待服务端完成插入，还是在接收到数据后就立即返回响应。这实际上控制的是参数 [wait&#95;for&#95;async&#95;insert](/zh/reference/settings/session-settings#wait_for_async_insert)。
 
 ```go
 const ddl = `
@@ -340,7 +340,29 @@ ctx := clickhouse.Context(context.Background(), clickhouse.WithStdAsync(false))
 }
 ```
 
-[完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async.go)
+[完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async_native.go)
+
+### 结合批次使用异步插入 {#async-insert-batch}
+
+`WithAsync` 同样适用于批量插入。批次只会使用传递给 `PrepareContext` 的上下文，因此请将异步上下文传递给 `PrepareContext`。传递给 `Stmt.ExecContext` 的上下文对批次不起作用。`Commit` 会按照 `PrepareContext` 上下文中的设置发送该批次。
+
+```go
+ctx := clickhouse.Context(context.Background(), clickhouse.WithAsync(true))
+tx, err := conn.Begin()
+if err != nil {
+    return err
+}
+stmt, err := tx.PrepareContext(ctx, "INSERT INTO example") // WithAsync must be on this context
+if err != nil {
+    return err
+}
+for i := 0; i < 100; i++ {
+    if _, err := stmt.Exec(i, "Golang SQL database driver", []uint8{1, 2, 3, 4, 5, 6, 7, 8, 9}, time.Now()); err != nil {
+        return err
+    }
+}
+return tx.Commit()
+```
 
 ## 服务器端查询参数 {#server-side-query-parameters}
 

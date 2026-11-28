@@ -60,7 +60,7 @@ void backupUserDefinedSQLObjects(
 
     // On the stage of running post tasks, all directories will already be added to the backup coordination object.
     // They will only be returned for one of the hosts below, for the rest an empty list.
-    // See also BackupCoordinationReplicatedSQLObjects class.
+    // See also `BackupCoordinationReplicatedDirectories` class.
     backup_entries_collector.addPostTask(
         [my_backup_entries = std::move(backup_entries),
          my_replication_id = std::move(replication_id),

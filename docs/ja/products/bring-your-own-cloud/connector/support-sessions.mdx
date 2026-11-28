@@ -19,13 +19,9 @@ import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge
 セッションが制御するのは診断のみです。managed モードのサービスに対するライフサイクルコマンドは executor の別チャネルを経由し、このチャネルはサポートセッションによって開かれることも制御されることもありません。[managed services](/ja/products/bring-your-own-cloud/connector/managed-services#service-lifecycle) を参照してください。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse Connector support session trust flow](/images/cloud/reference/byoc-connector-session-trust.svg)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Connector support session trust flow](/images/cloud/reference/byoc-connector-session-trust.svg)
+  </Frame>
 </div>
 
 セッションは次の 2 つの手段で制御します。

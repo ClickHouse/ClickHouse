@@ -6,6 +6,7 @@
 #include <Core/SortDescription.h>
 #include <base/types.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/PlanStepIndex.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepAnalyzer.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <functional>
@@ -131,12 +132,13 @@ public:
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);
 
+    [[nodiscard]] String getUniqID() const;
+
+    /// The number in `getUniqID`, which is what identifies the step: see `PlanStepIndex`.
+    [[nodiscard]] UInt64 getStepIndex() const { return step_index.get(); }
+
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
-    [[nodiscard]] String getUniqID() const;
-    /// The number in `getUniqID`, unique within the query.
-    [[nodiscard]] size_t getStepIndex() const { return step_index.value; }
-
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(SharedHeaders input_headers_);
     void updateInputHeader(SharedHeader input_header, size_t idx = 0);
@@ -269,17 +271,7 @@ protected:
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 
 private:
-    /// A copy is a separate step, so it takes a new index; a move keeps it.
-    struct StepIndex
-    {
-        size_t value = 0;
-
-        StepIndex();
-        StepIndex(const StepIndex &) : StepIndex() {}
-        StepIndex(StepIndex &&) = default;
-    };
-
-    StepIndex step_index;
+    PlanStepIndex step_index;
 };
 
 }

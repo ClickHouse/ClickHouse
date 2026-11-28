@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_threads">
-  ## max_threads
-</div>
+## max_threads {#max_threads}
 
 <SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
@@ -36,17 +34,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Для пользователей ClickHouse Cloud значение по умолчанию отображается как `auto(N)`, где N соответствует размеру vCPU вашего сервиса, например 2vCPU/8GiB, 4vCPU/16GiB и т. д.
 Список всех размеров сервиса см. на вкладке настроек в консоли Cloud.
 
-<div id="max_threads_for_indexes">
-  ## max_threads_for_indexes
-</div>
+## max_threads_for_indexes {#max_threads_for_indexes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Максимальное количество потоков, обрабатывающих индексы.
 
-<div id="max_threads_min_free_memory_per_thread">
-  ## max_threads_min_free_memory_per_thread
-</div>
+## max_threads_min_free_memory_per_thread {#max_threads_min_free_memory_per_thread}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -54,7 +48,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Уменьшает `max_threads`, когда сервер испытывает нехватку памяти, чтобы не запускать сильно распараллеленные запросы, которые с высокой вероятностью достигнут лимита памяти.
 
-Свободная память вычисляется как `max_server_memory_usage` сервера за вычетом объёма памяти, который в данный момент отслеживается глобальным трекером памяти. Если этой свободной памяти меньше, чем `max_threads`, умноженное на это значение, `max_threads` уменьшается до наибольшего N, такого что `N * value <= free_memory`, с минимумом `1`.
+Свободная память вычисляется как `max_server_memory_usage` сервера за вычетом объёма памяти, который в данный момент отслеживается глобальным трекером памяти. Если этой свободной памяти меньше, чем `max_threads`, умноженное на это значение, `max_threads` уменьшается до наибольшего N, такого что `N * value <= free_memory`, с минимумом `1`. Объём свободной памяти определяется один раз для каждого запроса — при построении его плана, — чтобы все части запроса планировались с одинаковым числом потоков.
 
 Установите `0`, чтобы отключить это ограничение.
 

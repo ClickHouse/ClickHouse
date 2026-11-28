@@ -116,7 +116,7 @@ String BaseSettingsHelpers::formatValueForErrorMessage(const Field & value)
 
 String BaseSettingsHelpers::formatValueForErrorMessage(String str)
 {
-    maskURIPassword(&str);
+    maskURIPassword(str);
     return str;
 }
 

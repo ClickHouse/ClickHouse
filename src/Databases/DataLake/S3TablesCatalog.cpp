@@ -19,6 +19,7 @@
 #include <IO/S3/URI.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/parseURI.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -144,11 +145,13 @@ CatalogTables S3TablesCatalog::getTables() const
 {
     auto namespaces = listChildNamespaces("");
 
-    auto & pool = getContext()->getIcebergCatalogThreadpool();
-    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_REST_CATALOG);
-
+    /// Must outlive `runner`: its jobs capture them by reference.
     DB::Names tables;
     std::mutex mutex;
+
+    auto & pool = getContext()->getIcebergCatalogThreadpool();
+    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_REST_CATALOG);
+    runner.reserve(namespaces.size());
     for (const auto & ns : namespaces)
     {
         runner.enqueueAndKeepTrack(
@@ -303,7 +306,7 @@ DB::ReadWriteBufferFromHTTPPtr S3TablesCatalog::createReadBuffer(
     const auto & context = getContext();
 
     /// enable_url_encoding=false to allow using tables with encoded sequences in names like 'foo%2Fbar'
-    Poco::URI url(base_url / endpoint, /* enable_url_encoding */ false);
+    Poco::URI url = DB::parseURI(base_url / endpoint, /* enable_url_encoding */ false);
     if (!params.empty())
         url.setQueryParameters(params);
 
