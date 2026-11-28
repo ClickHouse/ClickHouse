@@ -46,7 +46,7 @@ RabbitMQPublisher::RabbitMQPublisher(
         {
             std::vector<String> matching;
             boost::split(matching, header, [](char c){ return c == '='; });
-            key_arguments.emplace_back(matching[0], matching[1]);
+            key_arguments.addString(matching[0], matching[1]);
         }
     }
 }
@@ -152,11 +152,15 @@ void RabbitMQPublisher::publish(Payloads & messages, bool republishing, bool wai
         if (!popped)
             break;
 
+        /// The message is recorded right away, so that it is published again if anything below fails.
+        ++delivery_tag;
+        delivery_record.insert(delivery_record.end(), {delivery_tag, payload});
+        ++num_published;
+
         AMQP::MessageProperties properties;
 
         /// if headers exchange is used, routing keys are added here via headers, if not - it is just empty
-        for (const auto & [key, value] : key_arguments)
-            properties.headers.addString(key, value);
+        properties.headers = key_arguments;
 
         /* There is the case when connection is lost in the period after some messages were published and before ack/nack was sent by the
          * server, then it means that publisher will never know whether those messages were delivered or not, and therefore those records
@@ -177,14 +181,9 @@ void RabbitMQPublisher::publish(Payloads & messages, bool republishing, bool wai
 
         String routing_key;
         if (exchange_type == AMQP::ExchangeType::ConsistentHash)
-            routing_key = std::to_string(delivery_tag);
+            routing_key = std::to_string(delivery_tag - 1);
         else if (exchange_type != AMQP::ExchangeType::Headers)
             routing_key = routing_keys[0];
-
-        /// The message is recorded before it is sent, so that it is republished if sending fails.
-        ++delivery_tag;
-        delivery_record.insert(delivery_record.end(), {delivery_tag, payload});
-        ++num_published;
 
         channel.publish(exchange_name, routing_key, payload.message, properties);
     }

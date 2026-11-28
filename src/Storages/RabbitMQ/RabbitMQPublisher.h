@@ -72,8 +72,8 @@ private:
     const bool persistent;
     LoggerPtr log;
 
-    /// The routing keys of the `headers` exchange.
-    std::vector<std::pair<String, String>> key_arguments;
+    /// The routing keys of the `headers` exchange, encoded once, so that a wrong one fails the `INSERT` at once.
+    AMQP::FieldTable key_arguments;
 
     bool channel_ready = false;
 

@@ -17,9 +17,6 @@
 namespace DB
 {
 
-class ReadBufferFromPocoSocket;
-class WriteBufferFromPocoSocket;
-
 /// A minimal synchronous client of AMQP 0-9-1 with the RabbitMQ extensions, enough for the `RabbitMQ` table engine:
 /// https://www.rabbitmq.com/resources/specs/amqp0-9-1.pdf
 ///
@@ -189,6 +186,13 @@ private:
     void handshake();
     void openChannel();
 
+    /// The socket is non-blocking: every read and write waits with `poll` against a deadline, also with TLS,
+    /// where a blocking read would wait inside the TLS library for the rest of a record as long as bytes trickle in.
+    void writeRaw(const char * data, size_t size);
+    void flushOutput();
+    /// Waits until some input is available (received bytes, or decrypted data in the TLS library). Returns false on timeout.
+    bool waitForInput(std::chrono::steady_clock::time_point deadline);
+
     void sendFrame(UInt8 type, UInt16 channel, std::string_view payload);
     void sendMethod(UInt16 channel, UInt16 class_id, UInt16 method_id, std::string_view arguments);
 
@@ -222,8 +226,9 @@ private:
     String address_for_log;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
-    std::unique_ptr<ReadBufferFromPocoSocket> in;
-    std::unique_ptr<WriteBufferFromPocoSocket> out;
+    String input;
+    size_t input_pos = 0;
+    String output;
 
     /// Negotiated in `connection.tune`. Before that, the default of RabbitMQ, so that `connection.start` fits.
     UInt32 frame_max = 131072;

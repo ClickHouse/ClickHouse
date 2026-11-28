@@ -62,6 +62,11 @@ bool RabbitMQConnection::isConnected()
 
 void RabbitMQConnection::connect()
 {
+    {
+        std::lock_guard lock(mutex);
+        if (interrupted)
+            throw Exception(ErrorCodes::ABORTED, "The connection to RabbitMQ {} is interrupted", connectionInfoForLog());
+    }
     disconnect();
     const auto settings = configuration.getConnectionSettings();
     LOG_DEBUG(log, "Connecting to RabbitMQ {} (user: {}, vhost: {})", connectionInfoForLog(), settings.address.user, settings.address.vhost);

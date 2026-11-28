@@ -471,6 +471,14 @@ Chunk RabbitMQSource::generateImpl()
         return {};
     }
 
+    /// `checkConnection` reads, so the consumption may have been cancelled in the meantime.
+    if (storage.isConsumeCancelRequested(cancel_epoch))
+    {
+        consumption_aborted = true;
+        LOG_TRACE(log, "Consumption interrupted: discarding in-flight block of {} rows", total_rows);
+        return {};
+    }
+
     auto result_columns = executor.getResultColumns();
     for (auto & column : virtual_columns)
         result_columns.push_back(std::move(column));

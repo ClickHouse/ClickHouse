@@ -4,8 +4,6 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/WriteBufferFromPocoSocket.h>
 #include <base/unaligned.h>
 
 #include "config.h"
@@ -396,7 +394,7 @@ Connection::Connection(const ConnectionSettings & settings_, LoggerPtr log_)
 #if USE_SSL
                 auto secure_socket = std::make_unique<Poco::Net::SecureStreamSocket>(getTLSContext());
                 secure_socket->setPeerHostName(settings.address.host);
-                /// The handshake is postponed until the first read or write, which are bounded by the request timeout.
+                /// The handshake is done explicitly after connecting.
                 secure_socket->setLazyHandshake(true);
                 return secure_socket;
 #else
@@ -430,28 +428,28 @@ Connection::Connection(const ConnectionSettings & settings_, LoggerPtr log_)
         socket->setSendTimeout(settings.request_timeout);
         socket->setNoDelay(true);
 
-        in = std::make_unique<ReadBufferFromPocoSocket>(*socket);
-        out = std::make_unique<WriteBufferFromPocoSocket>(*socket);
+#if USE_SSL
+        if (auto * secure_socket = dynamic_cast<Poco::Net::SecureStreamSocket *>(socket.get()))
+        {
+            /// The handshake is bounded by the socket timeouts. Everything after it waits with `poll` against deadlines.
+            secure_socket->completeHandshake();
+        }
+#endif
+        socket->setBlocking(false);
 
         handshake();
         openChannel();
     }
     catch (...)
     {
-        if (out)
-            out->cancel();
+        output.clear();
         throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "Cannot connect to RabbitMQ {}: {}", address_for_log, getCurrentExceptionMessage(false));
     }
 
     LOG_TRACE(log, "Connected to RabbitMQ {} (maximum frame size {})", address_for_log, frame_max);
 }
 
-Connection::~Connection()
-{
-    /// Unsent data is not needed anymore: the connection is not usable or was closed already.
-    if (out)
-        out->cancel();
-}
+Connection::~Connection() = default;
 
 void Connection::fail(const String & message)
 {
@@ -491,9 +489,10 @@ void Connection::sendFrame(UInt8 type, UInt16 channel, std::string_view payload)
     unalignedStoreBigEndian<UInt16>(header + 1, channel);
     unalignedStoreBigEndian<UInt32>(header + 3, static_cast<UInt32>(payload.size()));
 
-    out->write(header, FRAME_HEADER_SIZE);
-    out->write(payload.data(), payload.size());
-    out->write(static_cast<char>(FRAME_END));
+    writeRaw(header, FRAME_HEADER_SIZE);
+    writeRaw(payload.data(), payload.size());
+    const char end = static_cast<char>(FRAME_END);
+    writeRaw(&end, 1);
 }
 
 void Connection::sendMethod(UInt16 channel, UInt16 class_id, UInt16 method_id, std::string_view arguments)
@@ -515,30 +514,86 @@ void Connection::interrupt()
 
 std::optional<Connection::Frame> Connection::receiveFrame(Poco::Timespan timeout)
 {
-    if (!in->poll(static_cast<size_t>(std::max<Int64>(timeout.totalMicroseconds(), 0))))
+    if (!waitForInput(Clock::now() + std::chrono::microseconds(std::max<Int64>(timeout.totalMicroseconds(), 0))))
         return {};
     return receiveFrameOrThrow();
+}
+
+void Connection::writeRaw(const char * data, size_t size)
+{
+    output.append(data, size);
+}
+
+void Connection::flushOutput()
+{
+    const auto deadline = Clock::now() + std::chrono::microseconds(settings.request_timeout.totalMicroseconds());
+    size_t pos = 0;
+    while (pos < output.size())
+    {
+        const int rc = socket->sendBytes(output.data() + pos, static_cast<int>(std::min<size_t>(output.size() - pos, 1 << 20)));
+        if (rc > 0)
+        {
+            pos += rc;
+            continue;
+        }
+
+        /// Would block. TLS may need to read before it can write (renegotiation).
+        int mode = Poco::Net::Socket::SELECT_WRITE;
+#if USE_SSL
+        if (rc == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_READ)
+            mode = Poco::Net::Socket::SELECT_READ;
+#endif
+        const auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(deadline - Clock::now()).count();
+        if (remaining <= 0 || !socket->poll(Poco::Timespan(remaining), mode | Poco::Net::Socket::SELECT_ERROR))
+        {
+            if (error.empty())
+                error = "timeout while writing to the socket";
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while writing to RabbitMQ {}", address_for_log);
+        }
+    }
+    output.clear();
+}
+
+bool Connection::waitForInput(Clock::time_point deadline)
+{
+    static constexpr size_t READ_SIZE = 65536;
+    while (input_pos == input.size())
+    {
+        input.resize(READ_SIZE);
+        input_pos = 0;
+        const int rc = socket->receiveBytes(input.data(), static_cast<int>(READ_SIZE));
+        input.resize(rc > 0 ? rc : 0);
+        if (rc > 0)
+            return true;
+        if (rc == 0)
+            fail("the broker closed the connection");
+
+        /// Would block: nothing complete has arrived yet (with TLS, possibly a part of a record).
+        int mode = Poco::Net::Socket::SELECT_READ;
+#if USE_SSL
+        if (rc == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_WRITE)
+            mode = Poco::Net::Socket::SELECT_WRITE;
+#endif
+        const auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(deadline - Clock::now()).count();
+        if (remaining <= 0 || !socket->poll(Poco::Timespan(remaining), mode | Poco::Net::Socket::SELECT_ERROR))
+            return false;
+    }
+    return true;
 }
 
 void Connection::readExact(char * to, size_t size, Clock::time_point deadline)
 {
     while (size)
     {
-        if (!in->hasPendingData())
+        if (!waitForInput(deadline))
         {
-            const auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(deadline - Clock::now()).count();
-            if (remaining <= 0 || !in->poll(static_cast<size_t>(remaining)))
-            {
-                if (error.empty())
-                    error = "timeout while reading a frame";
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while reading a frame from RabbitMQ {}", address_for_log);
-            }
-            if (!in->next())
-                fail("the broker closed the connection");
+            if (error.empty())
+                error = "timeout while reading a frame";
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while reading a frame from RabbitMQ {}", address_for_log);
         }
-        const size_t bytes = std::min(size, in->available());
-        memcpy(to, in->position(), bytes);
-        in->position() += bytes;
+        const size_t bytes = std::min(size, input.size() - input_pos);
+        memcpy(to, input.data() + input_pos, bytes);
+        input_pos += bytes;
         to += bytes;
         size -= bytes;
     }
@@ -663,7 +718,7 @@ std::optional<Connection::Method> Connection::processFrame(Frame frame)
         {
             const String reason = formatReply(args);
             sendMethod(0, Class::CONNECTION, ConnectionMethod::CLOSE_OK, {});
-            out->next();
+            flushOutput();
             fail(fmt::format("the broker closed the connection: {}", reason));
         }
         if (method.class_id == Class::CONNECTION
@@ -717,7 +772,7 @@ std::optional<Connection::Method> Connection::processFrame(Frame frame)
     {
         channel_close_reason = formatReply(args);
         sendMethod(CHANNEL, Class::CHANNEL, ChannelMethod::CLOSE_OK, {});
-        out->next();
+        flushOutput();
         fail(fmt::format("the broker closed the channel: {}", channel_close_reason));
     }
 
@@ -726,7 +781,7 @@ std::optional<Connection::Method> Connection::processFrame(Frame frame)
         String reply;
         writeOctet(reply, args.readOctet());
         sendMethod(CHANNEL, Class::CHANNEL, ChannelMethod::FLOW_OK, reply);
-        out->next();
+        flushOutput();
         return {};
     }
 
@@ -755,7 +810,7 @@ bool Connection::processIncoming(Poco::Timespan timeout)
 
 Connection::Method Connection::waitForReply(UInt16 channel, UInt16 class_id, UInt16 reply_method_id)
 {
-    out->next();
+    flushOutput();
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(settings.request_timeout.totalMicroseconds());
     while (true)
@@ -803,7 +858,7 @@ Connection::Method Connection::call(UInt16 class_id, UInt16 method_id, std::stri
 
 void Connection::handshake()
 {
-    out->write("AMQP\x00\x00\x09\x01", 8);
+    writeRaw("AMQP\x00\x00\x09\x01", 8);
 
     {
         auto start = waitForReply(0, Class::CONNECTION, ConnectionMethod::START);
@@ -892,7 +947,7 @@ void Connection::close(Poco::Timespan timeout)
             writeShort(arguments, 0);
             writeShort(arguments, 0);
             sendMethod(0, Class::CONNECTION, ConnectionMethod::CLOSE, arguments);
-            out->next();
+            flushOutput();
 
             /// Everything else that the broker sends before the reply is not needed anymore.
             const auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(timeout.totalMicroseconds());
@@ -917,7 +972,7 @@ void Connection::close(Poco::Timespan timeout)
                 {
                     /// The broker is closing the connection at the same time.
                     sendMethod(0, Class::CONNECTION, ConnectionMethod::CLOSE_OK, {});
-                    out->next();
+                    flushOutput();
                     break;
                 }
             }
@@ -929,7 +984,7 @@ void Connection::close(Poco::Timespan timeout)
         error = "the connection is closed";
     }
 
-    out->cancel();
+    output.clear();
     try
     {
         socket->close();
@@ -1035,7 +1090,7 @@ void Connection::ack(UInt64 delivery_tag, bool multiple)
         writeLongLong(args, delivery_tag);
         writeOctet(args, multiple ? 1 : 0);
         sendMethod(CHANNEL, Class::BASIC, BasicMethod::ACK, args);
-        out->next();
+        flushOutput();
     }
     catch (...)
     {
@@ -1054,7 +1109,7 @@ void Connection::nack(UInt64 delivery_tag, bool multiple, bool requeue)
         writeLongLong(args, delivery_tag);
         writeOctet(args, static_cast<UInt8>((multiple ? 1 : 0) | (requeue ? 2 : 0)));
         sendMethod(CHANNEL, Class::BASIC, BasicMethod::NACK, args);
-        out->next();
+        flushOutput();
     }
     catch (...)
     {
@@ -1073,7 +1128,7 @@ void Connection::reject(UInt64 delivery_tag, bool requeue)
         writeLongLong(args, delivery_tag);
         writeOctet(args, requeue ? 1 : 0);
         sendMethod(CHANNEL, Class::BASIC, BasicMethod::REJECT, args);
-        out->next();
+        flushOutput();
     }
     catch (...)
     {
@@ -1113,7 +1168,7 @@ void Connection::receiveAvailable(size_t max_deliveries)
     checkUsable();
     try
     {
-        while (deliveries.size() < max_deliveries && in->poll(0))
+        while (deliveries.size() < max_deliveries && waitForInput(Clock::now()))
         {
             if (auto method = processFrame(receiveFrameOrThrow()))
                 fail(fmt::format("unexpected method {}.{}", method->class_id, method->method_id));
@@ -1185,7 +1240,7 @@ void Connection::flush()
     checkUsable();
     try
     {
-        out->next();
+        flushOutput();
     }
     catch (...)
     {
