@@ -2049,7 +2049,7 @@ def test_shutdown_interrupts_long_poll(pulsar_cluster):
             "test.pulsar_long_poll",
             "long_poll_topic",
             "long_poll_group",
-            extra_settings=", pulsar_poll_timeout_ms = 600000",
+            extra_settings=", pulsar_poll_timeout_ms = 600000, pulsar_poll_max_batch_size = 1",
         )
     )
     instance.query(pulsar_table("test.pulsar_writer", "long_poll_topic", "long_poll_writer_group"))
@@ -2066,7 +2066,8 @@ def test_shutdown_interrupts_long_poll(pulsar_cluster):
         """
     )
 
-    # After the only message of the topic is polled, the streaming task polls again
+    # A poll returns once the batch is full, so with a batch of one message the only
+    # message of the topic is returned right away. The streaming task then polls again
     # and stays there: the block is not full and there is nothing more to receive.
     instance.query("INSERT INTO test.pulsar_writer VALUES (1, 1)")
     instance.wait_for_log_line(
@@ -2074,7 +2075,9 @@ def test_shutdown_interrupts_long_poll(pulsar_cluster):
         timeout=120,
     )
 
-    instance.query("DROP TABLE test.consumer SYNC")
+    # The view is dropped only after the table is detached: dropping it first would
+    # wait for the streaming cycle, that is, for the poll itself.
     instance.query("DETACH TABLE test.pulsar_long_poll SYNC", timeout=60)
+    instance.query("DROP TABLE test.consumer SYNC")
     instance.query("ATTACH TABLE test.pulsar_long_poll")
-    instance.query("DROP TABLE test.pulsar_long_poll SYNC", timeout=60)
+    instance.query("DROP TABLE test.pulsar_long_poll SYNC")
