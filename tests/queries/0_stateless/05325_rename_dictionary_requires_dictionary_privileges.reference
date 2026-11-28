@@ -1,0 +1,33 @@
+-- table privileges do not move a dictionary
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- each side of a move needs its own dictionary privilege
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- on a cluster, a name this host does not have may be a dictionary on another host
+ACCESS_DENIED
+-- a JSON query cannot set the interpreter-only mode that turns a rename into an exchange
+BAD_ARGUMENTS
+-- an earlier element of the query decides what a later one moves
+ACCESS_DENIED
+OK
+-- an element skipped by IF EXISTS leaves its target as it was
+ACCESS_DENIED
+-- table privileges still move tables and views
+OK
+OK
+-- dictionary privileges move a dictionary
+OK
+atomic	d_moved	Dictionary
+atomic	t_moved	MergeTree
+atomic	tmp	Dictionary
+atomic	v_moved	View
+replicated	d	Dictionary
