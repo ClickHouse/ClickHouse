@@ -238,6 +238,10 @@ public:
     [[nodiscard]] std::optional<JoinAlgorithm> getPlannedAlgorithm() const { return planned_algorithm; }
     void setPlannedAlgorithm(JoinAlgorithm algorithm) { planned_algorithm = algorithm; }
 
+    /// Both inputs are stored sorted by one of the equality keys.
+    [[nodiscard]] bool inputsSortedByKey() const { return inputs_sorted_by_key; }
+    void setInputsSortedByKey(bool value) { inputs_sorted_by_key = value; }
+
     /// For a join planned as `full_sorting_merge`: the output column its result is sorted by, and whether it is sharded.
     struct PlannedMergeOrder
     {
@@ -358,6 +362,7 @@ private:
 
     bool disjunctions_optimization_applied = false;
     std::optional<JoinAlgorithm> planned_algorithm;
+    bool inputs_sorted_by_key = false;
     std::optional<PlannedMergeOrder> planned_merge_order;
 };
 

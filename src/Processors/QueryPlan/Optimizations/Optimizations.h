@@ -456,6 +456,9 @@ bool convertLogicalJoinToPhysical(
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 
+/// Marks a logical join whose inputs are both stored sorted by one of its equality keys.
+void markJoinInputsSortedByKey(QueryPlan::Node & node);
+
 /// Skip the deduplication of the `DISTINCT` after `EXCEPT DISTINCT` executed as RIGHT ANTI. Needs the physical join.
 void skipDeduplicationAfterSetOperationJoin(QueryPlan::Node & node);
 

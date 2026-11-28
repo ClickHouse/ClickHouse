@@ -262,6 +262,8 @@ struct JoinAlgorithmParams
     UInt64 max_bytes_before_external_join = 0;
 
     bool enable_hash_join_row_store = true;
+    /// Both inputs are stored sorted by one of the equality keys.
+    bool inputs_sorted_by_join_key = false;
     Float64 min_rows_ratio_for_hash_join_row_store = 0;
     UInt64 min_rows_for_packed_string_keys_in_hash_join = 0;
     UInt64 min_string_column_bytes_for_hash_join_row_store = 0;
