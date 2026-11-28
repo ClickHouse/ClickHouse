@@ -12,7 +12,8 @@ CONFIG_FILE="${CLICKHOUSE_TMP}/05234_config_${CLICKHOUSE_DATABASE}.yaml"
 rm -rf "${CACHE_DIR}"
 
 # Each cache holds two entries of the queries below (about 32 KiB each, uncompressed), not three. `LRU` has a single queue, so
-# what gets evicted is predictable; the default `SLRU` admits new entries only into its probationary queue, which is smaller.
+# what gets evicted is predictable; the default `SLRU` admits new entries into its probationary queue, which is smaller, but which can
+# use the part of the protected queue that is unused.
 cat > "${CONFIG_FILE}" <<EOF_CONFIG
 filesystem_caches:
     lru:
@@ -54,12 +55,17 @@ ${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "
     SELECT count() FROM (SELECT number, hex(sipHash64(number)) FROM numbers(10000) SETTINGS use_query_cache = true, query_cache_on_disk_codec = 'NONE', query_cache_on_disk_cache_name = 'lru');
     SELECT event, value FROM system.events WHERE event LIKE 'QueryCacheOnDisk%' ORDER BY event;"
 
-echo "-- An entry which does not fit into the probationary queue of an SLRU cache is not stored and leaves no file segments behind"
+echo "-- An entry bigger than the whole SLRU cache is not stored and leaves no file segments behind"
+${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "
+    SELECT count() FROM (SELECT number, hex(sipHash64(number)) FROM numbers(10000) SETTINGS use_query_cache = true, query_cache_on_disk_codec = 'NONE', query_cache_on_disk_cache_name = 'slru');
+    SELECT count() FROM system.filesystem_cache WHERE cache_name = 'slru';"
+
+echo "-- With the protected queue unused, an entry bigger than the probationary queue of an SLRU cache is stored and served"
 ${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "
     ${query} 'slru', query_cache_tag = 'a';
-    SELECT count() FROM system.filesystem_cache WHERE cache_name = 'slru';
+    SELECT count() > 0 FROM system.filesystem_cache WHERE cache_name = 'slru';
     ${query} 'slru', query_cache_tag = 'a';
-    SELECT event, value FROM system.events WHERE event LIKE 'QueryCacheOnDisk%' ORDER BY event;"
+    ${events_query};"
 
 echo "-- SYSTEM DROP FILESYSTEM CACHE '<name>' removes the entries"
 ${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "
