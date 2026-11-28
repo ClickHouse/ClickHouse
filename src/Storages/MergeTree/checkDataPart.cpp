@@ -15,6 +15,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
+#include <DataTypes/Serializations/PrefixReadCancellationChecker.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/SipHash.h>
@@ -88,6 +89,11 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     try
     {
         rethrow_exception(exception_ptr);
+    }
+    /// A query cancelled inside a structure-prefix read: nothing is known about the part's data.
+    catch (const PrefixReadCancelledException &)
+    {
+        return true;
     }
 #if USE_AWS_S3
     catch (const S3Exception & s3_exception)
