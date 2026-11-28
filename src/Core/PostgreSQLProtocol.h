@@ -300,6 +300,12 @@ public:
     {
         out->next();
     }
+
+    /// A failed write cancels the output buffer. After that no message can be sent to the client.
+    bool isOutputCanceled() const
+    {
+        return out->isCanceled();
+    }
 };
 
 /** Basic class for messages sent by client or server. */
@@ -2063,6 +2069,13 @@ public:
         }
         catch (const Exception & e)
         {
+            /// A failed write to the client (it went away in the middle of the authentication) cancels the
+            /// output buffer, and nothing can be written into a canceled buffer any more. There is nobody
+            /// to deliver `ErrorResponse` to, so rethrow the exception being handled and let the
+            /// connection be torn down. See `PostgreSQLHandler::sendErrorResponseOrRethrow`.
+            if (mt.isOutputCanceled())
+                throw;
+
             const bool unsupported_authentication_configuration = e.code() == ErrorCodes::NOT_IMPLEMENTED;
             mt.send(Messaging::ErrorOrNoticeResponse(
                 Messaging::ErrorOrNoticeResponse::ERROR,
