@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/PrefixPath.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -84,6 +85,13 @@ PrefixPathContents parsePrefixPath(std::string_view contents)
 
         if (file.name.empty() || file.blob_key.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Empty file name or blob key in the file list of the directory '{}'", result.logical_path);
+
+        /// The blobs of a directory are deleted with it (also by the reclamation on the initial load), so a key that
+        /// would name an object outside of the blobs of this disk (in another prefix, or in `__meta`) is never taken
+        /// from a damaged or forged file list.
+        if (!PlainRewritableLayout::isValidBlobKey(file.blob_key))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid blob key '{}' of the file '{}' in the file list of the directory '{}'",
+                file.blob_key, file.name, result.logical_path);
 
         result.files.push_back(std::move(file));
     }

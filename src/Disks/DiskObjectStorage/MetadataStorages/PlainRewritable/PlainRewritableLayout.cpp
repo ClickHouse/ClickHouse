@@ -1,8 +1,12 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <Common/getRandomASCIIString.h>
 #include <base/find_symbols.h>
 
@@ -121,10 +125,54 @@ std::string PlainRewritableLayout::makePendingTombstoneContent(const std::string
 
 std::string PlainRewritableLayout::makePendingReplaceTombstoneContent(const PendingReplace & pending_replace)
 {
-    if (pending_replace.directory_remote_path.contains('\n') || pending_replace.file_name.contains('\n'))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot replace '{}' on a plain_rewritable disk: the name contains a line feed", pending_replace.file_name);
+    /// The remote path of a directory is generated, so it never contains a line feed.
+    if (pending_replace.directory_remote_path.contains('\n'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot replace '{}' on a plain_rewritable disk: the remote path of its directory contains a line feed", pending_replace.file_name);
 
-    return fmt::format("{}{}\n{}\n{}\n", PENDING_REPLACE_TOMBSTONE_PREFIX, pending_replace.directory_remote_path, pending_replace.file_name, pending_replace.size);
+    /// The name of a file may contain a line feed, which separates the fields. Only such a name is written escaped,
+    /// under another prefix: the content for any other name stays the one that older versions write and read.
+    if (!pending_replace.file_name.contains('\n'))
+        return fmt::format("{}{}\n{}\n{}\n", PENDING_REPLACE_TOMBSTONE_PREFIX, pending_replace.directory_remote_path, pending_replace.file_name, pending_replace.size);
+
+    WriteBufferFromOwnString out;
+    writeString(PENDING_REPLACE_ESCAPED_TOMBSTONE_PREFIX, out);
+    writeString(pending_replace.directory_remote_path, out);
+    writeChar('\n', out);
+    writeEscapedString(pending_replace.file_name, out);
+    writeChar('\n', out);
+    writeIntText(pending_replace.size, out);
+    writeChar('\n', out);
+    return out.str();
+}
+
+std::string PlainRewritableLayout::makeBlobRemovalTombstoneContent(const std::string & blob_key)
+{
+    /// The key is escaped the same way as in the file list of `prefix.path`: the name of a file may contain a line
+    /// feed, and so may the key of its blob, while a line feed terminates the content.
+    WriteBufferFromOwnString out;
+    writeString(BLOB_REMOVAL_TOMBSTONE_PREFIX, out);
+    writeEscapedString(blob_key, out);
+    writeChar('\n', out);
+    return out.str();
+}
+
+bool PlainRewritableLayout::isValidBlobKey(std::string_view blob_key)
+{
+    if (blob_key.empty() || blob_key.starts_with('/') || blob_key.contains('\0'))
+        return false;
+
+    /// An object storage takes a fully qualified path (`s3://bucket/key`) as a key in another bucket, see
+    /// `S3ObjectStorage::splitBucketAndKey`. With an empty common key prefix the key of a blob is passed as is.
+    /// A key of this disk is never of this form: it has no empty components.
+    if (trySplitFullyQualifiedObjectPath(blob_key))
+        return false;
+
+    std::vector<std::string> parts;
+    splitInto<'/'>(parts, blob_key);
+    if (parts.front() == METADATA_DIRECTORY_TOKEN)
+        return false;
+
+    return std::none_of(parts.begin(), parts.end(), [](const std::string & part) { return part == "." || part == ".."; });
 }
 
 PlainRewritableLayout::TombstoneMarker PlainRewritableLayout::parseTombstoneMarkerContent(std::string_view content, std::string_view removed_name)
@@ -132,7 +180,7 @@ PlainRewritableLayout::TombstoneMarker PlainRewritableLayout::parseTombstoneMark
     using Kind = TombstoneMarker::Kind;
 
     if (content == removed_name)
-        return {.kind = Kind::Committed, .pending_original_path = {}, .pending_replace = {}};
+        return {.kind = Kind::Committed, .pending_original_path = {}, .pending_replace = {}, .blob_key = {}};
 
     if (content.starts_with(PENDING_TOMBSTONE_PREFIX))
     {
@@ -145,12 +193,13 @@ PlainRewritableLayout::TombstoneMarker PlainRewritableLayout::parseTombstoneMark
         if (path.empty() || path.contains('\n') || !path.ends_with('/'))
             return {};
 
-        return {.kind = Kind::PendingRemoval, .pending_original_path = std::string(path), .pending_replace = {}};
+        return {.kind = Kind::PendingRemoval, .pending_original_path = std::string(path), .pending_replace = {}, .blob_key = {}};
     }
 
-    if (content.starts_with(PENDING_REPLACE_TOMBSTONE_PREFIX))
+    const bool is_pending_replace_escaped = content.starts_with(PENDING_REPLACE_ESCAPED_TOMBSTONE_PREFIX);
+    if (is_pending_replace_escaped || content.starts_with(PENDING_REPLACE_TOMBSTONE_PREFIX))
     {
-        auto rest = content.substr(PENDING_REPLACE_TOMBSTONE_PREFIX.size());
+        auto rest = content.substr(is_pending_replace_escaped ? PENDING_REPLACE_ESCAPED_TOMBSTONE_PREFIX.size() : PENDING_REPLACE_TOMBSTONE_PREFIX.size());
         if (!rest.ends_with('\n'))
             return {};
         rest.remove_suffix(1);
@@ -162,9 +211,63 @@ PlainRewritableLayout::TombstoneMarker PlainRewritableLayout::parseTombstoneMark
         if (lines.size() != 3 || lines[0].empty() || lines[1].empty() || !tryParse(pending_replace.size, lines[2]))
             return {};
 
+        if (is_pending_replace_escaped)
+        {
+            /// An escaped name has no line feeds and no tabs, so the whole line must be read as one string, see
+            /// `makePendingReplaceTombstoneContent`. Anything else was not written by it.
+            std::string file_name;
+            ReadBufferFromString in(lines[1]);
+            try
+            {
+                readEscapedString(file_name, in);
+            }
+            catch (const Exception &)
+            {
+                return {};
+            }
+            if (!in.eof() || file_name.empty())
+                return {};
+
+            lines[1] = std::move(file_name);
+        }
+
+        /// The backup is copied over the target, so the target must be a file of this disk, see `isValidBlobKey`.
+        if (lines[1].contains('/') || !isValidBlobKey(lines[0] + "/" + lines[1]))
+            return {};
+
         pending_replace.directory_remote_path = std::move(lines[0]);
         pending_replace.file_name = std::move(lines[1]);
-        return {.kind = Kind::PendingReplace, .pending_original_path = {}, .pending_replace = std::move(pending_replace)};
+        return {.kind = Kind::PendingReplace, .pending_original_path = {}, .pending_replace = std::move(pending_replace), .blob_key = {}};
+    }
+
+    if (content.starts_with(BLOB_REMOVAL_TOMBSTONE_PREFIX))
+    {
+        auto escaped_blob_key = content.substr(BLOB_REMOVAL_TOMBSTONE_PREFIX.size());
+        if (!escaped_blob_key.ends_with('\n'))
+            return {};
+        escaped_blob_key.remove_suffix(1);
+
+        /// The key is escaped, see `makeBlobRemovalTombstoneContent`. An escaped key has no line feeds and no tabs, so
+        /// the whole content must be read as one string. Anything else was not written by it.
+        std::string blob_key;
+        ReadBufferFromString in(escaped_blob_key);
+        try
+        {
+            readEscapedString(blob_key, in);
+        }
+        catch (const Exception &)
+        {
+            return {};
+        }
+        if (!in.eof())
+            return {};
+
+        /// The blob of a marker is deleted, so a key that would name an object outside of the blobs of this disk
+        /// (in another prefix, or in `__meta`) is never taken from a damaged or forged marker.
+        if (!isValidBlobKey(blob_key))
+            return {};
+
+        return {.kind = Kind::BlobRemoval, .pending_original_path = {}, .pending_replace = {}, .blob_key = std::move(blob_key)};
     }
 
     return {};

@@ -49,9 +49,10 @@ struct WriteSettings
     /// `object_storage_write_if_none_match` may be dropped where the storage cannot express it (a multipart upload to GCS).
     bool object_storage_write_if_none_match_best_effort = false;
 
-    /// A reader must never see a partially written object: it has to see either the previous version or the new one.
-    /// Object storages like S3 and Azure always publish an object at once; a local object storage writes to a
-    /// temporary file and renames it over the target.
+    /// A reader must never see a partially written object, even if the writing process is killed: it has to see either
+    /// the previous version or the new one. Object storages like S3 and Azure always publish an object at once; a local
+    /// object storage writes to a temporary file and renames it over the target. HDFS does not honor it: `libhdfs3` has
+    /// no rename that replaces an existing file, so a rewrite there truncates the file first.
     bool object_storage_write_atomically = false;
 
     /// Store a file of at most this many bytes inline in its metadata instead of uploading a blob.
