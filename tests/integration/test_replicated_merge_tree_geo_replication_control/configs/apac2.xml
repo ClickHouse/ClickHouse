@@ -1,0 +1,6 @@
+<clickhouse>
+    <replicated_merge_tree>
+        <geo_replication_control_region>APAC</geo_replication_control_region>
+        <geo_replication_control_leader_wait>20</geo_replication_control_leader_wait>
+    </replicated_merge_tree>
+</clickhouse>

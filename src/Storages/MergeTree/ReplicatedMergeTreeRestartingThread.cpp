@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Interpreters/Context.h>
+#include <Common/ZooKeeper/Types.h>
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -170,6 +171,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
 
     setNotReadonly();
 
+
     /// Start queue processing
     storage.background_operations_assignee.start();
     storage.background_streaming_assignee.start();
@@ -193,7 +195,14 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     try
     {
         removeFailedQuorumParts();
+
+        /// Publishes this replica's region membership atomically with `is_active` (see
+        /// `ReplicatedMergeTreeGeoReplicationController::addPublishRegionRequests`), so peers never see this replica
+        /// as active without its region, and the region is published before this replica's own queue starts.
         activateReplica();
+
+        /// Enter the regional leader election only after this startup owns the replica name.
+        storage.geo_replication_controller.start();
 
         const auto & zookeeper = storage.getZooKeeper();
         const auto storage_settings = storage.getSettings();
@@ -250,6 +259,12 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     }
     catch (...)
     {
+        /// `geo_replication_controller.start` may acquire the regional leader lease before the remaining startup
+        /// steps finish. A readonly replica must not keep that state alive: it would prevent an active peer in the
+        /// same region from becoming leader and fetching remote parts. The `region` node is removed before
+        /// `is_active`, while it is still guaranteed to be ours.
+        storage.geo_replication_controller.stop();
+        storage.replica_region_node = nullptr;
         storage.replica_is_active_node = nullptr;
 
         try
@@ -352,6 +367,8 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(is_active_path, active_node_identifier, zkutil::CreateMode::Ephemeral));
     ops.emplace_back(zkutil::makeSetRequest(fs::path(storage.replica_path) / "host", address.toString(), -1));
+    /// Must go after the creation of `is_active`: if another server owns the replica name, the `multi` fails there.
+    String region_path = storage.geo_replication_controller.addPublishRegionRequests(ops, *zookeeper);
 
     try
     {
@@ -379,6 +396,8 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     /// `current_zookeeper` lives for the lifetime of `replica_is_active_node`,
     ///  since before changing `current_zookeeper`, `replica_is_active_node` object is destroyed in `partialShutdown` method.
     storage.replica_is_active_node = zkutil::EphemeralNodeHolder::existing(is_active_path, *storage.current_zookeeper);
+    if (!region_path.empty())
+        storage.replica_region_node = zkutil::EphemeralNodeHolder::existing(region_path, *storage.current_zookeeper);
 }
 
 
