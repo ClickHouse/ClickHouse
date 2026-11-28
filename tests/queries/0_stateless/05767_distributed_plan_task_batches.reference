@@ -1,0 +1,32 @@
+-- Every task is sent and runs (tasks = sent = ran), and both results equal local. Without batching each task has its own
+-- request (batches_without_batching = tasks). With batching and streaming exchanges each plan sends one request per worker
+-- (batches = workers; workers adds up the workers of each plan, and the subquery of query 3 is a plan of its own), more with
+-- flush_per_stage. With persisted exchanges a plan sends one request per worker before each wait for producers and at the end.
+
+-- query 1, a shuffle aggregation: SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_task_batches GROUP BY k)
+┌─exchange──┬─arm─────────────┬─tasks─┬─sent─┬─ran─┬─workers─┬─batches─┬─batches_without_batching─┬─result_same─┐
+│ Persisted │ default         │     9 │    9 │   9 │       2 │       5 │                        9 │           1 │
+│ Persisted │ flush_per_stage │     9 │    9 │   9 │       2 │       5 │                        9 │           1 │
+│ Persisted │ one_sender      │     9 │    9 │   9 │       2 │       5 │                        9 │           1 │
+│ Streaming │ default         │     9 │    9 │   9 │       2 │       2 │                        9 │           1 │
+│ Streaming │ flush_per_stage │     9 │    9 │   9 │       2 │       5 │                        9 │           1 │
+│ Streaming │ one_sender      │     9 │    9 │   9 │       2 │       2 │                        9 │           1 │
+└───────────┴─────────────────┴───────┴──────┴─────┴─────────┴─────────┴──────────────────────────┴─────────────┘
+-- query 2, a shuffle join: SELECT count(), sum(a.k) FROM t_task_batches AS a INNER JOIN t_task_batches AS b ON a.v = b.v
+┌─exchange──┬─arm─────────────┬─tasks─┬─sent─┬─ran─┬─workers─┬─batches─┬─batches_without_batching─┬─result_same─┐
+│ Persisted │ default         │    13 │   13 │  13 │       2 │       5 │                       13 │           1 │
+│ Persisted │ flush_per_stage │    13 │   13 │  13 │       2 │       7 │                       13 │           1 │
+│ Persisted │ one_sender      │    13 │   13 │  13 │       2 │       5 │                       13 │           1 │
+│ Streaming │ default         │    13 │   13 │  13 │       2 │       2 │                       13 │           1 │
+│ Streaming │ flush_per_stage │    13 │   13 │  13 │       2 │       7 │                       13 │           1 │
+│ Streaming │ one_sender      │    13 │   13 │  13 │       2 │       2 │                       13 │           1 │
+└───────────┴─────────────────┴───────┴──────┴─────┴─────────┴─────────┴──────────────────────────┴─────────────┘
+-- query 3, an IN set: SELECT count() FROM t_task_batches WHERE v IN (SELECT number * 2 FROM numbers(50000))
+┌─exchange──┬─arm─────────────┬─tasks─┬─sent─┬─ran─┬─workers─┬─batches─┬─batches_without_batching─┬─result_same─┐
+│ Persisted │ default         │     6 │    6 │   6 │       3 │       4 │                        6 │           1 │
+│ Persisted │ flush_per_stage │     6 │    6 │   6 │       3 │       4 │                        6 │           1 │
+│ Persisted │ one_sender      │     6 │    6 │   6 │       3 │       4 │                        6 │           1 │
+│ Streaming │ default         │     6 │    6 │   6 │       3 │       3 │                        6 │           1 │
+│ Streaming │ flush_per_stage │     6 │    6 │   6 │       3 │       4 │                        6 │           1 │
+│ Streaming │ one_sender      │     6 │    6 │   6 │       3 │       3 │                        6 │           1 │
+└───────────┴─────────────────┴───────┴──────┴─────┴─────────┴─────────┴──────────────────────────┴─────────────┘

@@ -173,6 +173,8 @@ private:
 
     const bool use_external_buffer;
     const bool http_skip_not_found_url;
+    /// See `BuilderRWBufferFromHTTP::withoutQueryCancellationCheck`.
+    const bool check_query_cancellation;
     bool has_not_found_url = false;
 
     OutStreamCallback out_stream_callback;
@@ -299,6 +301,7 @@ private:
         HTTPHeaderEntries http_header_entries_,
         RedirectCallback redirect_callback_,
         bool delay_initialization,
+        bool check_query_cancellation_,
         std::optional<HTTPFileInfo> file_info_,
         String expected_etag_);
 
@@ -366,6 +369,7 @@ class BuilderRWBufferFromHTTP
     ReadWriteBufferFromHTTP::CancellationPtr cancellation;
     bool delay_initialization = true;
     String expected_etag;
+    bool check_query_cancellation = true;
 
 public:
     explicit BuilderRWBufferFromHTTP(Poco::URI uri_)
@@ -399,6 +403,13 @@ public:
     setterMember(withDelayInit, delay_initialization)
     setterMember(withSkipNotFound, http_skip_not_found_url)
     setterMember(withExpectedETag, expected_etag)
+
+    /// Sends the request even when the thread's query is killed or past its time limit, which otherwise stops it before it is sent.
+    BuilderRWBufferFromHTTP & withoutQueryCancellationCheck()
+    {
+        check_query_cancellation = false;
+        return *this;
+    }
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 

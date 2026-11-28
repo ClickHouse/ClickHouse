@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <tuple>
 #include <vector>
 #include <memory>
 #include <mutex>
@@ -828,6 +829,7 @@ String serializeTaskWithDescriptors(VectorWithMemoryTracking<RuntimeFilterReceiv
     description.serialization_version = DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS;
     description.initial_query_id = "q1";
     description.task.task_id = "t0";
+    description.serialized_query_plan = std::make_shared<const String>();
     description.task.runtime_filter_descriptors = std::move(descriptors);
     WriteBufferFromOwnString out;
     serializeTask(description, out);
@@ -880,4 +882,109 @@ TEST(DistributedTaskSerialization, InvalidRuntimeFilterDescriptorsAreRejected)
             EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << what;
         }
     }
+}
+
+/// Every field of a task survives the round trip; the maps have one entry each, since their order is not fixed.
+TEST(DistributedTaskSerialization, EveryFieldRoundTrip)
+{
+    DistributedQueryTaskDescription description;
+    description.initial_query_id = "q1";
+    description.serialized_query_plan = std::make_shared<const String>("plan bytes");
+    description.task.task_id = "stage_1_0";
+    description.task.parameters.parameters["bucket"] = Field(UInt64(3));
+    description.task.input_exchange_streams = {ExchangeStreamId("exchange_0", "1", "0"), ExchangeStreamId("exchange_0", "2", "0")};
+    description.task.output_exchange_streams = {ExchangeStreamId("exchange_1", "0", "4")};
+    description.task.runtime_filter_descriptors
+        = {makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), ExchangeStreamId("exchange_2", "0", "0"))};
+    ExchangeDescription exchange;
+    exchange.name = "exchange_0";
+    exchange.kind = ExchangeDescription::Kind::Streaming;
+    exchange.source_bucket_count = 2;
+    exchange.destination_bucket_count = 1;
+    description.exchanges[exchange.name] = exchange;
+    description.exchange_stream_sources.stream_hosts["exchange_0_1_0"] = StreamSourceAddress{.host = "host-a", .port = 9001};
+    description.settings_changes.emplace_back("max_threads", Field(UInt64(4)));
+    description.settings_changes.emplace_back("max_block_size", Field(UInt64(1000)));
+
+    WriteBufferFromOwnString out;
+    serializeTask(description, out);
+    const String bytes = out.str();
+
+    ReadBufferFromString in(bytes);
+    DistributedQueryTaskDescription restored;
+    deserializeTask(restored, in);
+    EXPECT_TRUE(in.eof());
+    EXPECT_EQ(restored.task.task_id, "stage_1_0");
+    EXPECT_EQ(*restored.serialized_query_plan, "plan bytes");
+    EXPECT_EQ(restored.exchanges.at("exchange_0").name, "exchange_0");
+    EXPECT_EQ(restored.exchange_stream_sources.stream_hosts.at("exchange_0_1_0").port, 9001);
+    ASSERT_EQ(restored.settings_changes.size(), 2u);
+
+    WriteBufferFromOwnString again;
+    serializeTask(restored, again);
+    EXPECT_EQ(again.str(), bytes);
+}
+
+namespace
+{
+
+DistributedQueryTaskBatch::Task makeBatchTask(const String & task_id, const String & input_exchange)
+{
+    DistributedQueryTaskBatch::Task batch_task;
+    batch_task.task.task_id = task_id;
+    batch_task.task.parameters.parameters["bucket"] = Field(UInt64(1));
+    batch_task.task.input_exchange_streams = {ExchangeStreamId(input_exchange, "0", "0")};
+    batch_task.task.output_exchange_streams = {ExchangeStreamId("exchange_9", "0", "0")};
+    batch_task.exchange_stream_sources.stream_hosts[input_exchange + "_0_0"] = StreamSourceAddress{.host = "host-a", .port = 9001};
+    return batch_task;
+}
+
+/// Two stages: `stage_1` with two tasks, `main` with one.
+DistributedQueryTaskBatch makeBatch()
+{
+    DistributedQueryTaskBatch batch;
+    batch.initial_query_id = "q1";
+    ExchangeDescription exchange;
+    exchange.name = "exchange_0";
+    exchange.kind = ExchangeDescription::Kind::Streaming;
+    batch.exchanges[exchange.name] = exchange;
+    batch.settings_changes.emplace_back("max_threads", Field(UInt64(4)));
+    batch.stages.push_back({"stage_1", std::make_shared<const String>("plan of stage_1"),
+        {makeBatchTask("stage_1_0", "exchange_0"), makeBatchTask("stage_1_1", "exchange_0")}});
+    batch.stages.push_back({"main", std::make_shared<const String>("plan of main"), {makeBatchTask("main", "exchange_1")}});
+    return batch;
+}
+
+String serializeBatch(const DistributedQueryTaskBatch & batch)
+{
+    WriteBufferFromOwnString out;
+    serializeTaskBatch(batch, out);
+    return out.str();
+}
+
+}
+
+/// Each stage's plan is written once, and every field of every task comes back.
+TEST(DistributedTaskSerialization, TaskBatchRoundTrip)
+{
+    const String bytes = serializeBatch(makeBatch());
+
+    ReadBufferFromString in(bytes);
+    DistributedQueryTaskBatch restored;
+    deserializeTaskBatch(restored, in);
+    EXPECT_TRUE(in.eof());
+    ASSERT_EQ(restored.stages.size(), 2u);
+    EXPECT_EQ(restored.stages[0].name, "stage_1");
+    EXPECT_EQ(*restored.stages[0].serialized_query_plan, "plan of stage_1");
+    ASSERT_EQ(restored.stages[0].tasks.size(), 2u);
+    EXPECT_EQ(restored.stages[0].tasks[1].task.task_id, "stage_1_1");
+    EXPECT_EQ(restored.stages[1].tasks[0].exchange_stream_sources.stream_hosts.at("exchange_1_0_0").port, 9001);
+    EXPECT_EQ(restored.exchanges.at("exchange_0").name, "exchange_0");
+    EXPECT_EQ(serializeBatch(restored), bytes);
+
+    /// The plan of `stage_1` appears once although the stage has two tasks.
+    size_t plan_occurrences = 0;
+    for (size_t pos = bytes.find("plan of stage_1"); pos != String::npos; pos = bytes.find("plan of stage_1", pos + 1))
+        ++plan_occurrences;
+    EXPECT_EQ(plan_occurrences, 1u);
 }

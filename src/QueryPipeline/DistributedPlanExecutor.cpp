@@ -7,6 +7,7 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <utility>
 #include <Common/scope_guard_safe.h>
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/getMultipleKeysFromConfig.h>
@@ -79,11 +80,16 @@ namespace CurrentMetrics
     extern const Metric TaskTrackerThreads;
     extern const Metric TaskTrackerThreadsActive;
     extern const Metric TaskTrackerThreadsScheduled;
+    extern const Metric DistributedPlanTaskDispatchThreads;
+    extern const Metric DistributedPlanTaskDispatchThreadsActive;
+    extern const Metric DistributedPlanTaskDispatchThreadsScheduled;
 }
 
 namespace ProfileEvents
 {
     extern const Event DistributedPlanRemoteTasks;
+    extern const Event DistributedPlanTaskBatches;
+    extern const Event DistributedPlanRemoteTasksSent;
     extern const Event DistributedPlanLocalExecution;
     extern const Event DistributedPlanHostsUsed;
     extern const Event RuntimeFilterReceiveBranchFailures;
@@ -98,6 +104,9 @@ static_assert(MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES == StreamingExchangePro
 
 namespace Setting
 {
+    extern const SettingsUInt64 distributed_plan_task_dispatch_threads;
+    extern const SettingsBool distributed_plan_task_dispatch_batching;
+    extern const SettingsUInt64 distributed_plan_task_dispatch_stages_per_flush;
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsUInt64 distributed_plan_workers_num;
@@ -116,6 +125,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int CANNOT_SCHEDULE_TASK;
+    extern const int FAULT_INJECTED;
     extern const int SW_SERVER_NO_WORKERS_AVAILABLE;
     extern const int EXCHANGE_PEER_DISCONNECTED;
 }
@@ -124,6 +134,7 @@ namespace FailPoints
 {
     extern const char distributed_plan_status_check_reenqueue_fault[];
     extern const char distributed_plan_record_failure_while_starting_tasks[];
+    extern const char distributed_plan_local_start_stage_fails_after_first_task[];
     extern const char distributed_plan_runtime_filter_receive_branch_fails_before_connect[];
 }
 
@@ -947,8 +958,9 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     for (const auto & stream_id : task.output_exchange_streams)
         output_exchange_streams.push_back(stream_id.toString());
 
+    chassert(task_description.serialized_query_plan);
     /// Identifies the plan fragment in the span and in the query log alike.
-    const UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
+    const UInt64 query_plan_hash = sipHash64(*task_description.serialized_query_plan);
 
     addTaskSpanAttributes(*query_span, task_description, context, query_plan_hash, execute_locally, input_exchange_streams, output_exchange_streams);
 
@@ -998,7 +1010,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     QueryPipeline pipeline;
 
     {
-        QueryPlan query_plan = deserializeQueryPlan(task_description.serialized_query_plan, context);
+        QueryPlan query_plan = deserializeQueryPlan(*task_description.serialized_query_plan, context);
 
         if (context->getSettingsRef()[Setting::enable_join_runtime_filters_index_analysis] && !task.runtime_filter_descriptors.empty())
         {
@@ -1179,7 +1191,7 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
     {
         ClientInfo client_info = task_context->getClientInfo();
         client_info.initial_query_id = logicalQueryId(client_info);
-        client_info.current_query_id = toString(unique_query_id) + "::" + task.task.task_id;
+        client_info.current_query_id = makeUniqueTaskId(unique_query_id, task.task.task_id);
         client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         client_info.distributed_depth += 1;
         task_context->setClientInfo(client_info);
@@ -1190,7 +1202,7 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
 
     /// A query's log row reports the profile counters of its process-list entry's thread group.
     auto process_list_entry = task_context->getProcessList().insert(
-        task.task.task_id, sipHash64(task.serialized_query_plan), /*ast=*/ nullptr, task_context,
+        task.task.task_id, sipHash64(*task.serialized_query_plan), /*ast=*/ nullptr, task_context,
         clock_gettime_ns(CLOCK_MONOTONIC), /*is_internal=*/ true);
     task_context->setProcessListElement(process_list_entry->getQueryStatus());
 
@@ -1276,7 +1288,7 @@ protected:
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
         DistributedQueryTaskDescription task_description;
-        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
+        task_description.serialized_query_plan = std::make_shared<const String>(serializeQueryPlan(stage.query_plan_fragment, context));
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
 
         /// Owned by the members before the first thread starts, so `cleanup` joins it if anything below throws.
@@ -1289,6 +1301,11 @@ protected:
         {
             task_description.task = task;
             started_tasks.emplace_back(startTask(task_description, started_threads).share());
+            /// Fails the stage once its first task has started (05407).
+            fiu_do_on(FailPoints::distributed_plan_local_start_stage_fails_after_first_task,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while starting the local tasks of stage {}", stage_name);
+            });
         }
     }
 
@@ -1443,6 +1460,16 @@ size_t getCascadesPlanningNodeCount(ContextPtr context)
 
 TaskToHostMap::~TaskToHostMap() = default;
 
+String makeUniqueTaskId(const UUID & unique_query_id, const String & task_id)
+{
+    return makeUniqueTaskId(toString(unique_query_id), task_id);
+}
+
+String makeUniqueTaskId(const String & unique_query_id, const String & task_id)
+{
+    return unique_query_id + "::" + task_id;
+}
+
 void TaskToHostMap::fillWorkerAddresses(ContextPtr context)
 {
     /// No `enabled` check here: a query that already resolved its provider drains on it even if the
@@ -1458,14 +1485,15 @@ void TaskToHostMap::fillWorkerAddresses(ContextPtr context)
 
 void TaskToHostMap::assignHostsForTasks(const DistributedQueryPlan & distributed_query_plan)
 {
-    size_t current_host = 0;
+    WorkerIndex current_host = 0;
     for (const auto & [stage_id, stage] : distributed_query_plan.stages)
     {
         for (const auto & task : stage.tasks)
         {
             const auto & assigned_worker = worker_addresses[current_host];
+            task_worker_indices[task.task_id] = current_host;
+            // TODO it would be better to split this logic of assigned worker to host assignment so we have dedicated function with logic
             current_host = (current_host + 1) % worker_addresses.size();
-            task_hosts[task.task_id] = assigned_worker;
             for (const auto & output_stream : task.output_exchange_streams)
                 exchange_stream_source_hosts[output_stream.toString()] = {assigned_worker.host, assigned_worker.streaming_exchange_port};
         }
@@ -1487,19 +1515,41 @@ public:
         : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, std::move(context_), std::move(cancellation_), std::move(stage_wakeup_))
         , task_to_host_map(std::move(task_to_host_map_))
         , running_tasks(8, context, cancellation, stage_wakeup, logger)
+        , batch_dispatch(context->getSettingsRef()[Setting::distributed_plan_task_dispatch_batching])
+        , stages_per_flush(stagesPerFlush(context))
     {
         /// A null map belongs to an in-process plan, which createDistributedQueryExecutor routes to
         /// the local executor instead.
         chassert(task_to_host_map);
+        /// One sender per worker at a time, so more threads than workers would stay idle.
+        const size_t workers = std::max<size_t>(task_to_host_map->getWorkerAddresses().size(), 1);
+        const UInt64 dispatch_threads = context->getSettingsRef()[Setting::distributed_plan_task_dispatch_threads];
+        const size_t sender_threads = dispatch_threads == 0 ? workers : std::min<size_t>(dispatch_threads, workers);
+        /// No free threads: the batches usually go out at the start, and an idle sender would hold a global pool thread until the query ends.
+        task_senders.emplace(CurrentMetrics::DistributedPlanTaskDispatchThreads, CurrentMetrics::DistributedPlanTaskDispatchThreadsActive,
+            CurrentMetrics::DistributedPlanTaskDispatchThreadsScheduled, sender_threads, /*max_free_threads=*/ 0, /*queue_size=*/ 0);
         QueryStatusPtr query_status = context->getProcessListElement();
         Strings worker_hosts;
         for (const auto & worker : task_to_host_map->getWorkerAddresses())
             worker_hosts.push_back(worker.host);
         LOG_DEBUG(logger, "Hosts for running distributed query: [{}]", fmt::join(worker_hosts, ", "));
         UnorderedSetWithMemoryTracking<String> distinct_hosts;
-        for (const auto & [task_id, host] : task_to_host_map->getTaskHosts())
-            distinct_hosts.insert(host.host);
+        for (const auto & [task_id, worker_index] : task_to_host_map->getTaskWorkerIndices())
+            distinct_hosts.insert(task_to_host_map->getWorkerAddresses()[worker_index].host);
         ProfileEvents::increment(ProfileEvents::DistributedPlanHostsUsed, distinct_hosts.size());
+
+        String default_endpoint = context->getConfigRef().getString("stateless_worker_server.endpoint", "localhost");
+        auto endpoint = context->getConfigRef().getString("stateless_worker_client.endpoint", "stateless_worker/" + default_endpoint);
+        for (const auto & worker : task_to_host_map->getWorkerAddresses())
+        {
+            Poco::URI stateless_worker_uri;
+            /// Match the interserver scheme so a server with interserver_https_port is not sent plaintext.
+            stateless_worker_uri.setScheme(context->getInterserverScheme());
+            stateless_worker_uri.setHost(worker.host);
+            stateless_worker_uri.setPort(worker.stateless_worker_port);
+            stateless_worker_uri.addQueryParameter("endpoint", endpoint);
+            worker_endpoint_uris.push_back(stateless_worker_uri.toString());
+        }
     }
 
     void cleanup() override
@@ -1554,21 +1604,27 @@ protected:
         /// Whether forwarded worker logs have somewhere to go: the initiator's `send_logs_level` queue.
         bool receivesWorkerLogs() const { return initiator_logs_queue != nullptr; }
 
-        /// Add started task to be tracked
-        void addTask(const String & stage_name, RunningTaskInfo task_info)
+        /// Tracks a task whose start is still to be sent: `waitForStage` counts it and `cancel` cancels it, nothing polls it.
+        /// Never runs after `cancel`: `start` and `cleanup` both hold the source's `executor_mutex`.
+        void registerTask(const String & stage_name, RunningTaskInfo task_info)
         {
             auto task_name = task_info.task_id;
+            std::lock_guard g(lock);
+            stage_tasks[stage_name][task_name] = std::move(task_info);
 
+            if (!all_stages.contains(stage_name))
+                all_stages[stage_name] = std::make_shared<StageInfo>(stage_name);
+            all_stages[stage_name]->started_tasks++;
+        }
+
+        /// Polls a registered task once its worker has replied to the start: before that the worker answers `Unknown task`.
+        void startPolling(const String & stage_name, const String & task_name)
+        {
             {
                 std::lock_guard g(lock);
-                stage_tasks[stage_name][task_name] = std::move(task_info);
-
-                /// Create stage info if this stage was not known before
-                if (!all_stages.contains(stage_name))
-                    all_stages[stage_name] = std::make_shared<StageInfo>(stage_name);
-                all_stages[stage_name]->started_tasks++;
+                if (cancel_started)
+                    return;
             }
-
             addTaskToCheckQueue(stage_name, task_name);
             enqueueGetStatus();
         }
@@ -1612,9 +1668,9 @@ protected:
             return stage_finished;
         }
 
-        /// Cancel all unfinished tasks. Collects task info under lock, then
-        /// sends HTTP cancel requests without holding lock so that
-        /// `checkStatusFunc` threads can observe the cancellation and exit.
+        /// Cancels the tasks still tracked, once: they leave `stage_tasks` here. Collects them under the lock and sends the
+        /// requests without it, so that the `checkStatusFunc` threads can exit. It can run on the killed query's own thread, so
+        /// its requests skip the query cancellation check.
         void cancel()
         {
             VectorWithMemoryTracking<RunningTaskInfo> tasks_to_cancel;
@@ -1665,26 +1721,6 @@ protected:
                     LOG_WARNING(logger, "Task {} on {} did not reach a terminal state after cancellation; "
                         "leaving it for the worker to reclaim", task.task_id, task.endpoint_uri);
             }
-        }
-
-        /// Cancel a task that is not tracked yet (its start request failed) and forget it only once
-        /// the worker reports it terminal, so a start that partially reached the worker is not orphaned.
-        void cancelAndForgetUntracked(const RunningTaskInfo & task)
-        {
-            try
-            {
-                cancelTask(task.endpoint_uri, task.task_id, context);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-
-            if (waitForTaskTerminal(task))
-                tryForgetTask(task);
-            else
-                LOG_WARNING(logger, "Task {} on {} did not reach a terminal state after a failed start; "
-                    "leaving it for the worker to reclaim", task.task_id, task.endpoint_uri);
         }
 
     private:
@@ -2038,88 +2074,62 @@ protected:
         InternalTextLogsQueuePtr initiator_logs_queue = CurrentThread::getInternalTextLogsQueue();
     };
 
-    RunningTaskInfo buildTaskInfo(const DistributedQueryTaskDescription & task_description) const
+    static std::optional<UInt64> stagesPerFlush(const ContextPtr & query_context)
     {
-        const auto & worker = task_to_host_map->getTaskHosts().at(task_description.task.task_id);
-        String stateless_worker_endpoint_uri;
-        {
-            String default_endpoint = context->getConfigRef().getString("stateless_worker_server.endpoint", "localhost");
-            auto endpoint = context->getConfigRef().getString("stateless_worker_client.endpoint", "stateless_worker/" + default_endpoint);
-            Poco::URI stateless_worker_uri;
-            /// Match the interserver scheme so a server with interserver_https_port is not sent plaintext.
-            stateless_worker_uri.setScheme(context->getInterserverScheme());
-            stateless_worker_uri.setHost(worker.host);
-            stateless_worker_uri.setPort(worker.stateless_worker_port);
-            stateless_worker_uri.addQueryParameter("endpoint", endpoint);
-            stateless_worker_endpoint_uri = stateless_worker_uri.toString();
-        }
+        if (const UInt64 stages = query_context->getSettingsRef()[Setting::distributed_plan_task_dispatch_stages_per_flush])
+            return stages;
+        return std::nullopt;
+    }
 
-        String unique_task_id = toString(unique_query_id) + "::" + task_description.task.task_id;
-        return {stateless_worker_endpoint_uri, unique_task_id};
+    RunningTaskInfo buildTaskInfo(const String & task_id) const
+    {
+        return {worker_endpoint_uris.at(task_to_host_map->getTaskWorkerIndex(task_id)), makeUniqueTaskId(unique_query_id, task_id)};
     }
 
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
         DistributedQueryTaskDescription task_description;
         task_description.initial_query_id = logicalQueryId(context->getClientInfo());
-        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
+        task_description.serialized_query_plan = std::make_shared<const String>(serializeQueryPlan(stage.query_plan_fragment, context));
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = getTaskSettingsChanges(context);
-
-        /// Ask for worker logs only when the initiator has a queue to receive them (e.g. not over
-        /// HTTP without a framing format); the worker attaches its log collector accordingly.
-        TaskCollectors collectors;
-        collectors.logs = running_tasks.receivesWorkerLogs();
-
-        const String unique_temp_file_path = toString(unique_query_id);
-
-        for (const auto & task : stage.tasks)
+        queueStageTasks(stage_name, stage, task_description);
+        if (stages_per_flush && ++stages_since_flush >= *stages_per_flush)
         {
-            /// Reproduce the ordering a failing worker task creates: a task fails and records its
-            /// exception while this loop is still dispatching the rest of the stage, so the next
-            /// `checkCancelled` observes the cancellation. It must report the recorded failure.
-            fiu_do_on(FailPoints::distributed_plan_record_failure_while_starting_tasks,
-            {
-                try
-                {
-                    throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected task failure while starting tasks");
-                }
-                catch (...)
-                {
-                    /// `recordCurrentException` stores it as the query's first failure. Ok.
-                    cancellation->recordCurrentException();
-                }
-            });
+            stages_since_flush = 0;
+            dispatchQueuedTasks();
+        }
+    }
 
-            checkCancelled();
-
-            task_description.task = task;
-
-            /// Add exchange destinations for output streams
-            task_description.exchange_stream_sources = {};
-            for (const auto & input_stream : task.input_exchange_streams)
-            {
-                String input_stream_name = input_stream.toString();
-                task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
-            }
-            /// Send the task before registering it: status polling does not tolerate
-            /// UnknownTaskId, so a tracker poll racing the start would abort the query.
-            /// On send failure clean up directly in case the worker did accept the start;
-            /// cancel/forget tolerate UnknownTaskId.
-            auto task_info = buildTaskInfo(task_description);
-            LOG_DEBUG(logger, "Sending task {} to {}", task_info.task_id, task_info.endpoint_uri);
+    void checkBeforeStartingTask()
+    {
+        /// Stands for a task that fails while the stage is queued: the next `checkCancelled` must report its failure.
+        fiu_do_on(FailPoints::distributed_plan_record_failure_while_starting_tasks,
+        {
             try
             {
-                sendTask(task_info.endpoint_uri, task_info.task_id, task_description, unique_temp_file_path, collectors, context);
+                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected task failure while starting tasks");
             }
             catch (...)
             {
-                running_tasks.cancelAndForgetUntracked(task_info);
-                throw;
+                /// `recordCurrentException` stores it as the query's first failure. Ok.
+                cancellation->recordCurrentException();
             }
-            running_tasks.addTask(stage_name, task_info);
-            ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
+        });
+
+        checkCancelled();
+    }
+
+    /// The hosts that serve the input streams of `task`.
+    ExchangeStreamSources getExchangeStreamSources(const DistributedQueryTask & task) const
+    {
+        ExchangeStreamSources exchange_stream_sources;
+        for (const auto & input_stream : task.input_exchange_streams)
+        {
+            String input_stream_name = input_stream.toString();
+            exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
         }
+        return exchange_stream_sources;
     }
 
     bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) override
@@ -2127,8 +2137,206 @@ protected:
         return running_tasks.waitForStage(stage_name, timeout_ms);
     }
 
+    /// The batches of one worker, sent by one sender at a time, so the worker gets them in order.
+    struct WorkerSendQueue
+    {
+        std::mutex mutex;
+        DequeWithMemoryTracking<DistributedQueryTaskBatch> batches TSA_GUARDED_BY(mutex);
+        /// A sender job drains the queue: only the flush that sets it starts one, and the job clears it when it finds the queue
+        /// empty, so every batch has a sender and the next one goes only after the worker scheduled the previous one. The worker
+        /// then starts its stages in the walk's order, consumers before their streaming producers.
+        bool send_in_flight TSA_GUARDED_BY(mutex) = false;
+    };
+
+    using StagePerWorker = MapWithMemoryTracking<WorkerIndex, DistributedQueryTaskBatch::Stage>;
+
+    /// Appends the tasks of a stage to the batch of their worker, or one batch per task when batching is off;
+    /// `dispatchQueuedTasks` sends them.
+    void queueStageTasks(const String & stage_name, const DistributedQueryStage & stage, const DistributedQueryTaskDescription & stage_description)
+    {
+        if (batch_dispatch)
+        {
+            appendStagesToBatches(groupStageTasksByWorker(stage_name, stage, stage_description.serialized_query_plan), stage_description);
+            return;
+        }
+
+        for (const auto & task : stage.tasks)
+        {
+            checkBeforeStartingTask();
+            auto & batch = addBatch(task_to_host_map->getTaskWorkerIndex(task.task_id), stage_description);
+            batch.stages.push_back({stage_name, stage_description.serialized_query_plan, {{task, getExchangeStreamSources(task)}}});
+        }
+    }
+
+    /// The tasks of a stage grouped by their worker, as one batch stage per worker.
+    StagePerWorker groupStageTasksByWorker(const String & stage_name, const DistributedQueryStage & stage, const SerializedQueryPlanPtr & serialized_query_plan)
+    {
+        StagePerWorker stage_per_worker;
+        for (const auto & task : stage.tasks)
+        {
+            checkBeforeStartingTask();
+            auto & batch_stage = stage_per_worker[task_to_host_map->getTaskWorkerIndex(task.task_id)];
+            batch_stage.name = stage_name;
+            batch_stage.serialized_query_plan = serialized_query_plan;
+            batch_stage.tasks.push_back({task, getExchangeStreamSources(task)});
+        }
+        return stage_per_worker;
+    }
+
+    /// Appends each worker's stage to the worker's batch of this flush.
+    void appendStagesToBatches(StagePerWorker stage_per_worker, const DistributedQueryTaskDescription & stage_description)
+    {
+        for (auto & [worker, batch_stage] : stage_per_worker)
+        {
+            auto & batches = queued_batches[worker];
+            auto & batch = batches.empty() ? addBatch(worker, stage_description) : batches.back();
+            batch.stages.push_back(std::move(batch_stage));
+        }
+    }
+
+    /// A new queued batch of `worker`, with the query's fields.
+    DistributedQueryTaskBatch & addBatch(WorkerIndex worker, const DistributedQueryTaskDescription & stage_description)
+    {
+        auto & batch = queued_batches[worker].emplace_back();
+        batch.initial_query_id = stage_description.initial_query_id;
+        batch.exchanges = stage_description.exchanges;
+        batch.settings_changes = stage_description.settings_changes;
+        return batch;
+    }
+
+    /// Tracks the tasks of `batches` before they are sent, so the teardown cancels a task whose start is in flight.
+    void registerQueuedTasks(const VectorWithMemoryTracking<DistributedQueryTaskBatch> & batches)
+    {
+        for (const auto & batch : batches)
+        {
+            for (const auto & batch_stage : batch.stages)
+            {
+                for (const auto & batch_task : batch_stage.tasks)
+                {
+                    auto task_info = buildTaskInfo(batch_task.task.task_id);
+                    LOG_DEBUG(logger, "Queueing task {} for {}", task_info.task_id, task_info.endpoint_uri);
+                    running_tasks.registerTask(batch_stage.name, std::move(task_info));
+                    ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
+                }
+            }
+        }
+    }
+
+    void dispatchQueuedTasks() override
+    {
+        for (auto & [worker, batches] : queued_batches)
+        {
+            registerQueuedTasks(batches);
+
+            auto & queue = send_queues[worker];
+            if (!queue)
+                queue = std::make_shared<WorkerSendQueue>();
+            bool start_sender = false;
+            {
+                std::lock_guard lock(queue->mutex);
+                for (auto & batch : batches)
+                    queue->batches.push_back(std::move(batch));
+                start_sender = !std::exchange(queue->send_in_flight, true);
+            }
+
+            if (!start_sender)
+                continue;
+
+            try
+            {
+                task_senders->scheduleOrThrow(
+                    [this, worker, queue, query_cancellation = cancellation, task_logger = logger, thread_group = CurrentThread::getGroup()]
+                    {
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
+                        try
+                        {
+                            sendQueuedBatches(worker, queue);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(task_logger, fmt::format("Cannot send a batch of tasks to {}", worker_endpoint_uris[worker]));
+                            query_cancellation->recordCurrentException();
+                        }
+                    });
+            }
+            catch (...)
+            {
+                /// The tasks are tracked, so the teardown cancels them on their worker.
+                {
+                    std::lock_guard lock(queue->mutex);
+                    queue->batches.clear();
+                    queue->send_in_flight = false;
+                }
+                cancellation->recordCurrentException();
+                throw;
+            }
+        }
+        queued_batches.clear();
+    }
+
+    /// Pops the next batch of `queue` or returns nullopt when none is available
+    /// Clears the flag to enable new thread to send tasks over the same worker queue
+    std::optional<DistributedQueryTaskBatch> takeNextBatch(WorkerSendQueue & queue)
+    {
+        std::lock_guard lock(queue.mutex);
+        /// A cancelled query needs no more tasks; the teardown cancels the tracked ones on their worker.
+        if (queue.batches.empty() || cancellation->isCancelled())
+        {
+            queue.batches.clear();
+            queue.send_in_flight = false;
+            return std::nullopt;
+        }
+        auto batch = std::move(queue.batches.front());
+        queue.batches.pop_front();
+        return batch;
+    }
+
+    /// Sends the batches of one worker in order until its queue is empty.
+    void sendQueuedBatches(const WorkerIndex worker, const std::shared_ptr<WorkerSendQueue> & queue)
+    {
+        TaskCollectors collectors;
+        collectors.logs = running_tasks.receivesWorkerLogs();
+        const String unique_query_id_string = toString(unique_query_id);
+        try
+        {
+            while (auto batch = takeNextBatch(*queue))
+            {
+                size_t task_count = 0;
+                for (const auto & batch_stage : batch->stages)
+                    task_count += batch_stage.tasks.size();
+                LOG_DEBUG(logger, "Sending a batch of {} tasks of {} stages to {}", task_count, batch->stages.size(), worker_endpoint_uris[worker]);
+                sendTaskBatch(worker_endpoint_uris[worker], unique_query_id_string, *batch, unique_query_id_string, collectors, context);
+                ProfileEvents::increment(ProfileEvents::DistributedPlanTaskBatches);
+                ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasksSent, task_count);
+                for (const auto & batch_stage : batch->stages)
+                    for (const auto & batch_task : batch_stage.tasks)
+                        running_tasks.startPolling(batch_stage.name, makeUniqueTaskId(unique_query_id, batch_task.task.task_id));
+            }
+        }
+        catch (...)
+        {
+            std::lock_guard lock(queue->mutex);
+            queue->batches.clear();
+            queue->send_in_flight = false;
+            throw;
+        }
+    }
+
     TaskToHostMapPtr task_to_host_map;
+    /// The stateless worker endpoint of each worker, in the order of `TaskToHostMap::getWorkerAddresses`.
+    VectorWithMemoryTracking<String> worker_endpoint_uris;
     TaskTracker running_tasks;
+    const bool batch_dispatch;
+    const std::optional<UInt64> stages_per_flush;
+    /// Stages queued since `startStage` last flushed; query thread only.
+    size_t stages_since_flush = 0;
+    /// The batches `startStage` built and `dispatchQueuedTasks` has not handed over yet; query thread only.
+    UnorderedMapWithMemoryTracking<WorkerIndex, VectorWithMemoryTracking<DistributedQueryTaskBatch>> queued_batches;
+    /// The send queue of each worker that got batches; query thread only, a sender job holds its own queue.
+    UnorderedMapWithMemoryTracking<WorkerIndex, std::shared_ptr<WorkerSendQueue>> send_queues;
+    /// Sends the batches, so the query thread never waits for a worker; set in the constructor. Declared last, so its jobs are
+    /// joined before the other members are destroyed.
+    std::optional<ThreadPool> task_senders;
 };
 
 
@@ -2284,6 +2492,9 @@ void DistributedQueryPlanExecutor::startStageWithDependencies(const String & sta
             }
         }
 
+        if (!dependencies_to_wait.empty())
+            dispatchQueuedTasks();
+
         /// Wait in bounded steps so cancellation interrupts the wait. The caller holds the
         /// source's executor mutex, so blocking here unboundedly would also block onCancel.
         for (const auto & dependency : dependencies_to_wait)
@@ -2330,6 +2541,7 @@ void DistributedQueryPlanExecutor::start()
         for (const auto & [stage_name, _] : distributed_query_plan.stages)
             startStageWithDependencies(stage_name, executed_stages);
     }
+    dispatchQueuedTasks();
 
     /// Wait for all data stages to finish. Whether the filter-only stages are waited for depends on
     /// the executor, see `DistributedQueryStage::filter_only`.

@@ -7,11 +7,12 @@
 namespace DB
 {
 
-struct DistributedQueryTaskDescription;
+struct DistributedQueryTaskBatch;
 
-/// `collectors` names what the worker should collect for the task (the `collect` URL parameter of
-/// the `start` request); the worker appends only their payloads to status replies.
-String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context);
+/// Sends `start_tasks` with the tasks of `batch`, all of the query `unique_query_id` and for this worker. `collectors` names
+/// what the worker collects for them (the `collect` URL parameter); status replies carry only those payloads.
+String sendTaskBatch(const String & endpoint_uri, const String & unique_query_id, const DistributedQueryTaskBatch & batch,
+    const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context);
 
 /// `for_cleanup` uses short HTTP timeouts and no retries so best-effort cleanup cannot block for the
 /// normal multi-minute request budget when a worker is slow or unreachable.
