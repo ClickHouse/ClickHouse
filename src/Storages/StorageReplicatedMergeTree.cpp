@@ -2073,11 +2073,6 @@ void StorageReplicatedMergeTree::adoptCommittedMetadataFromPendingAlter(const zk
         applyMetadataInMemory(
             getContext(), *current_metadata, std::move(columns_from_entry), metadata_diff, current_metadata->getMetadataVersion());
     }
-
-    {
-        auto parts_lock = lockParts();
-        resetSerializationHints(parts_lock);
-    }
 }
 
 
