@@ -108,10 +108,15 @@ void recordHypotheticalOutcome(
 size_t filterPartsByProjection(
     ReadFromMergeTree::AnalysisResult & reading_select_result, const UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> & valid_parts);
 
+/// The mutations snapshot of the read with the pending alter mutations, such as `MODIFY COLUMN`, for `analyzeProjectionCandidate`:
+/// a part with a pending change of the type of a column that its projection computes from is read from the parent part.
+[[nodiscard]] MergeTreeData::MutationsSnapshotPtr getMutationsSnapshotForProjections(const ReadFromMergeTree & reading);
+
 /// This function fills ProjectionCandidate structure for specified projection.
 /// It returns false if for some reason we cannot read from projection.
-/// `parent_mutations_snapshot` is the snapshot of the parent read: a part with a pending
-/// `RENAME COLUMN` / `DROP COLUMN` mutation is read from the parent part, not from its projection part.
+/// `parent_mutations_snapshot` is the snapshot of the parent read from `getMutationsSnapshotForProjections`: a part with a pending
+/// `RENAME COLUMN` / `DROP COLUMN` mutation, or a pending change of the type of a column that the projection computes from, is read
+/// from the parent part, not from its projection part.
 /// `top_k_filter_info` is the TopK stamp of the read the projection would replace (if any), so
 /// that the query condition cache consult inside the candidate analysis observes the same TopK
 /// gating and key salting as the read itself.

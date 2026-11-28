@@ -19,6 +19,7 @@
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 #include <algorithm>
@@ -416,6 +417,49 @@ static bool partHasPendingMetadataMutationsOnColumns(
     return false;
 }
 
+/// A pending `MODIFY COLUMN` that changes the type of a column is applied at read time by converting what the parent part stores,
+/// or by computing the default of a column that the part does not store with the new type, but a projection part keeps what it
+/// computed from the column with the old type until the mutation rebuilds it: an aggregate projection by `toHour(dt)` keeps the
+/// hours of the old time zone. Such a part is read from the parent part instead. The decision whether the projection keeps what it
+/// computed from the column is the one of the mutation, which rebuilds the projection when it does, see
+/// `MutationsInterpreter::projectionComputesFromColumn`. The pending mutation is the one to tell, not the type that the part
+/// stores: a conversion that a part skips, such as an extension of a `Variant`, keeps the old type after the mutation.
+static bool partHasPendingTypeChangeOfProjectionInput(
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const MergeTreeData::DataPartPtr & part,
+    const ProjectionDescription & projection,
+    const StorageMetadataPtr & parent_metadata)
+{
+    if (!mutations_snapshot->hasAlterMutations())
+        return false;
+
+    const auto & columns = parent_metadata->getColumns();
+    auto is_computed_for_part = [&](const String & name) { return !part->getColumns().contains(name); };
+
+    for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part))
+    {
+        if (command.type == MutationCommand::READ_COLUMN && command.data_type
+            && MutationsInterpreter::projectionComputesFromColumn(projection, command.column_name, columns, is_computed_for_part))
+            return true;
+    }
+
+    return false;
+}
+
+MergeTreeData::MutationsSnapshotPtr getMutationsSnapshotForProjections(const ReadFromMergeTree & reading)
+{
+    /// The snapshot of the read has the pending alter mutations if the read applies them or patch parts, see
+    /// `MergeTreeData::getStorageSnapshot`.
+    const auto & settings = reading.getContext()->getSettingsRef();
+    if (settings[Setting::apply_mutations_on_fly] || settings[Setting::apply_patch_parts])
+        return reading.getMutationsSnapshot();
+
+    return reading.getMergeTreeData().getMutationsSnapshot({
+        .metadata_version = reading.getStorageMetadata()->getMetadataVersion(),
+        .need_alter_mutations = true,
+    });
+}
+
 /// Projection candidate analysis is an optional optimization: when the filter does not constrain
 /// a projection's primary key, the candidate is rejected, not the query. The `force_primary_key`
 /// and `force_index_by_date` guardrails apply to the main table read, which is analyzed with the
@@ -472,7 +516,9 @@ bool analyzeProjectionCandidate(
             && projectionPartHasRequiredColumns(
                 *projection_part, *part_with_ranges.data_part, *candidate.projection, parent_metadata, part_column_names)
             && !partHasPendingMetadataMutationsOnColumns(
-                parent_mutations_snapshot, part_with_ranges.data_part, *candidate.projection, part_column_names))
+                parent_mutations_snapshot, part_with_ranges.data_part, *candidate.projection, part_column_names)
+            && !partHasPendingTypeChangeOfProjectionInput(
+                parent_mutations_snapshot, part_with_ranges.data_part, *candidate.projection, parent_metadata))
         {
             projection_parts.push_back(RangesInDataPart(
                 projection_part,
@@ -573,6 +619,7 @@ void filterPartsAndCollectProjectionCandidates(
     /// Defensive: such a part cannot currently reach here (a projection sort/INDEX column may not be an
     /// ALIAS, the only known drift source).
     const auto parent_metadata = reading.getStorageMetadata();
+    const auto mutations_snapshot = getMutationsSnapshotForProjections(reading);
     Names filter_required_columns;
     if (projection_query_info.filter_actions_dag)
     {
@@ -590,8 +637,8 @@ void filterPartsAndCollectProjectionCandidates(
         if (it != created_projections.end() && !it->second->is_broken
             && projectionPartHasRequiredColumns(
                 *it->second, *part_with_ranges.data_part, projection, parent_metadata, filter_required_columns)
-            && !partHasPendingMetadataMutationsOnColumns(
-                reading.getMutationsSnapshot(), part_with_ranges.data_part, projection, filter_required_columns))
+            && !partHasPendingMetadataMutationsOnColumns(mutations_snapshot, part_with_ranges.data_part, projection, filter_required_columns)
+            && !partHasPendingTypeChangeOfProjectionInput(mutations_snapshot, part_with_ranges.data_part, projection, parent_metadata))
         {
             RangesInDataPart projection_part(
                 it->second,
