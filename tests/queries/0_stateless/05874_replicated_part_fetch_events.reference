@@ -1,0 +1,4 @@
+--- the source replica refuses to send the part
+failed fetches increased: 1
+--- no active replica has the part
+fetches without source replica increased: 1

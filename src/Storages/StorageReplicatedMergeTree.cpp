@@ -156,6 +156,7 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event ReplicatedPartFailedFetches;
+    extern const Event ReplicatedPartFetchesNoSourceReplica;
     extern const Event ReplicatedPartFetchesOfMerged;
     extern const Event ObsoleteReplicatedParts;
     extern const Event ReplicatedPartFetches;
@@ -2968,7 +2969,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
 
             if (replica.empty())
             {
-                ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
+                ProfileEvents::increment(ProfileEvents::ReplicatedPartFetchesNoSourceReplica);
 
                 if (!need_to_check_missing_part)
                     return false;
@@ -5947,10 +5948,13 @@ bool StorageReplicatedMergeTree::fetchPart(
             return false;
         }
 
+        ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
         throw;
     }
     catch (...)
     {
+        ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
+
         if (!to_detached)
             write_part_log(ExecutionStatus::fromCurrentException("", true));
 
@@ -6063,10 +6067,12 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
             return nullptr;
         }
 
+        ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
         throw;
     }
     catch (...)
     {
+        ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
         write_part_log(ExecutionStatus::fromCurrentException("", true));
         throw;
     }
