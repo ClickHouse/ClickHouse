@@ -58,3 +58,21 @@ SELECT match(concat(repeat('a', 64), 'b'), 'a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?b');
 SELECT match(repeat('x', 100000), '.*.*.*.*y');
 SELECT match(repeat('x', 100000), '^(a*)*b$');
 SELECT replaceRegexpAll(repeat('a', 1000), 'a?a?a?a?a?a?a?a?b', 'Z') = repeat('a', 1000);
+
+SELECT '-- replaceRegexpOne with a single-group replacement';
+SELECT replaceRegexpOne(materialize('https://www.example.com/path?q=1'), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1');
+SELECT replaceRegexpOne(materialize('ftp://example.com/x'), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1');
+SELECT replaceRegexpOne(materialize(''), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1');
+SELECT replaceRegexpOne(materialize('xx-ab-yy-cd'), '-([a-z]+)-', '\\1');
+SELECT replaceRegexpOne(materialize('abc123def'), '[0-9]+', '\\0');
+SELECT replaceRegexpOne(materialize('abc'), '(x)?b', '\\1');
+SELECT hex(replaceRegexpOne(materialize(concat('a\n', char(0), 'b\n', char(0), 'c')), 'b(.+)', '\\1'));
+SELECT
+    (SELECT sum(cityHash64(number, replaceRegexpOne(s, '^([a-z]+)/(.*)$', '\\1'))) FROM (SELECT number, repeat(concat(if(number % 5 = 0, 'X', char(97 + number % 26)), '/'), number % 40) AS s FROM numbers(3000)) SETTINGS compile_regular_expressions = 1, max_block_size = 7)
+  = (SELECT sum(cityHash64(number, replaceRegexpOne(s, '^([a-z]+)/(.*)$', '\\1'))) FROM (SELECT number, repeat(concat(if(number % 5 = 0, 'X', char(97 + number % 26)), '/'), number % 40) AS s FROM numbers(3000)) SETTINGS compile_regular_expressions = 0, max_block_size = 7);
+SELECT
+    (SELECT sum(cityHash64(number, replaceRegexpOne(s, '^([a-z]+)/(.*)$', '\\2'))) FROM (SELECT number, repeat(concat(if(number % 5 = 0, 'X', char(97 + number % 26)), '/'), number % 40) AS s FROM numbers(3000)) SETTINGS compile_regular_expressions = 1)
+  = (SELECT sum(cityHash64(number, replaceRegexpOne(s, '^([a-z]+)/(.*)$', '\\2'))) FROM (SELECT number, repeat(concat(if(number % 5 = 0, 'X', char(97 + number % 26)), '/'), number % 40) AS s FROM numbers(3000)) SETTINGS compile_regular_expressions = 0);
+SELECT
+    (SELECT sum(cityHash64(number, replaceRegexpOne(s, '(?:x)?([0-9]+)', '\\1'))) FROM (SELECT number, multiIf(number % 11 = 0, '', number % 7 = 0, 'no digits in this row at all', concat('id', if(number % 2 = 0, 'x', ''), toString(number), '/', repeat('y', number % 30))) AS s FROM numbers(3000)) SETTINGS compile_regular_expressions = 1)
+  = (SELECT sum(cityHash64(number, replaceRegexpOne(s, '(?:x)?([0-9]+)', '\\1'))) FROM (SELECT number, multiIf(number % 11 = 0, '', number % 7 = 0, 'no digits in this row at all', concat('id', if(number % 2 = 0, 'x', ''), toString(number), '/', repeat('y', number % 30))) AS s FROM numbers(3000)) SETTINGS compile_regular_expressions = 0);

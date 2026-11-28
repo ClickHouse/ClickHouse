@@ -13,4 +13,6 @@
 
     <query>SELECT count() FROM test.hits WHERE match(URL, '^https?://(?:www\\.)?([^/]+)/.*$') SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(Referer, '^https?://([^/]+)')) SETTINGS max_threads = 1</query>
+
+    <query>SELECT count() FROM numbers_mt(20000000) WHERE NOT ignore(replaceRegexpOne(materialize('https://www.example.com/some/path/page.html'), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
 </test>

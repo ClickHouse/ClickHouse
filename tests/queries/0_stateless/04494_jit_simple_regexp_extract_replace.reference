@@ -38,3 +38,14 @@ X X X
 0
 0
 1
+-- replaceRegexpOne with a single-group replacement
+example.com
+ftp://example.com/x
+
+xxabyy-cd
+abc123def
+ac
+610A000A0063
+1
+1
+1
