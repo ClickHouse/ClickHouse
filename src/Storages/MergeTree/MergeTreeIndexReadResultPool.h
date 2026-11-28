@@ -56,6 +56,7 @@ public:
     MergeTreeSkipIndexReader(
         UsefulSkipIndexes skip_indexes_,
         ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template_,
+        ConditionTemplate<KeyCondition>::Ptr primary_key_condition_,
         bool use_for_disjunctions_,
         MarkCachePtr mark_cache_,
         UncompressedCachePtr uncompressed_cache_,
@@ -92,6 +93,7 @@ public:
 private:
     UsefulSkipIndexes skip_indexes;
     ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template;
+    ConditionTemplate<KeyCondition>::Ptr primary_key_condition;
     bool use_for_disjunctions;
     MarkCachePtr mark_cache;
     UncompressedCachePtr uncompressed_cache;
