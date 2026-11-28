@@ -5,31 +5,17 @@
 #include <Common/Scheduler/ISchedulerConstraint.h>
 #include <Common/Scheduler/ISchedulerQueue.h>
 #include <Common/Scheduler/ResourceRequest.h>
+#include <Common/Scheduler/ResourceSchedulingContext.h>
 #include <Common/Scheduler/ResourceLink.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 
+#include <atomic>
 #include <condition_variable>
 #include <exception>
 #include <mutex>
 
-
-namespace ProfileEvents
-{
-    extern const Event SchedulerIOReadRequests;
-    extern const Event SchedulerIOReadBytes;
-    extern const Event SchedulerIOReadWaitMicroseconds;
-    extern const Event SchedulerIOWriteRequests;
-    extern const Event SchedulerIOWriteBytes;
-    extern const Event SchedulerIOWriteWaitMicroseconds;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric SchedulerIOReadScheduled;
-    extern const Metric SchedulerIOWriteScheduled;
-}
 
 namespace DB
 {
@@ -57,27 +43,13 @@ public:
         const ProfileEvents::Event wait_microseconds = ProfileEvents::end();
         const CurrentMetrics::Metric scheduled_count = CurrentMetrics::end();
 
-        static const Metrics * getIORead()
-        {
-            static Metrics metrics{
-                .requests = ProfileEvents::SchedulerIOReadRequests,
-                .cost = ProfileEvents::SchedulerIOReadBytes,
-                .wait_microseconds = ProfileEvents::SchedulerIOReadWaitMicroseconds,
-                .scheduled_count = CurrentMetrics::SchedulerIOReadScheduled
-            };
-            return &metrics;
-        }
+        /// Defined out of line: a static local in a header-defined function gives every
+        /// shared object its own copy.
+        static const Metrics * getIORead();
 
-        static const Metrics * getIOWrite()
-        {
-            static Metrics metrics{
-                .requests = ProfileEvents::SchedulerIOWriteRequests,
-                .cost = ProfileEvents::SchedulerIOWriteBytes,
-                .wait_microseconds = ProfileEvents::SchedulerIOWriteWaitMicroseconds,
-                .scheduled_count = CurrentMetrics::SchedulerIOWriteScheduled
-            };
-            return &metrics;
-        }
+        /// Defined out of line: a static local in a header-defined function gives every
+        /// shared object its own copy.
+        static const Metrics * getIOWrite();
     };
 
     enum RequestState
@@ -100,6 +72,10 @@ public:
             // spuriously throw even though this (new) request was granted via `execute()`.
             exception = {};
             ResourceRequest::reset(cost_);
+            // Tag this request with the query's scheduling context + per-resource state, which the
+            // classifier stamped onto the link (reset() cleared any stale ones from a previous reuse).
+            scheduling.context = link_.scheduling_context;
+            scheduling.state = link_.scheduling_state;
             estimated_cost = link_.queue->enqueueRequestUsingBudget(this); // NOTE: it modifies `cost` and enqueues request
         }
 
@@ -133,6 +109,16 @@ public:
             state = Finished;
             if (estimated_cost != real_cost_)
                 link_.queue->adjustBudget(estimated_cost, real_cost_);
+            // Now that the real cost is known, correct the per-query service charged at the enqueue
+            // estimate. Applied unconditionally (every enqueued request carries a valid per-query
+            // state): `fair` reads `attained_cost` for its thresholds and drains `vruntime_correction`,
+            // `las` reads `attained_cost` for its level, `fifo`/`priority` read neither (harmless).
+            const Int64 service_delta = static_cast<Int64>(real_cost_) - static_cast<Int64>(scheduling.cost);
+            if (service_delta != 0) // common case real == estimate: both adds are no-ops, skip the RMWs
+            {
+                scheduling.state->attained_cost.fetch_add(service_delta, std::memory_order_relaxed);
+                scheduling.state->fair.vruntime_correction.fetch_add(service_delta, std::memory_order_relaxed);
+            }
             ResourceRequest::finish();
             ProfileEvents::increment(metrics->requests);
             ProfileEvents::increment(metrics->cost, real_cost_);
@@ -182,14 +168,9 @@ public:
             chassert(state == Finished);
         }
 
-        static Request & local(const Metrics * metrics)
-        {
-            // Since single thread cannot use more than one resource request simultaneously,
-            // we can reuse thread-local request to avoid allocations
-            static thread_local Request instance;
-            instance.metrics = metrics;
-            return instance;
-        }
+        /// Defined out of line: a static local in a header-defined function gives every
+        /// shared object its own copy.
+        static Request & local(const Metrics * metrics);
 
         const Metrics * metrics = nullptr; // Must be initialized before use
 

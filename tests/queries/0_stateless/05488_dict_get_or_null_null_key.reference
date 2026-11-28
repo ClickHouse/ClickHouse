@@ -1,0 +1,19 @@
+const NULL key
+\N	Nullable(Float64)
+\N
+\N	Nullable(String)
+materialized NULL key
+\N
+\N
+Nullable key column, flat
+0	0.5	Nullable(Float64)	zero
+5	1.5	Nullable(Float64)	five
+\N	\N	Nullable(Float64)	\N
+7	\N	Nullable(Float64)	\N
+Nullable key column, hashed
+0	0.5	Nullable(Float64)	zero
+5	1.5	Nullable(Float64)	five
+\N	\N	Nullable(Float64)	\N
+7	\N	Nullable(Float64)	\N
+Nullable key column without NULLs
+1.5

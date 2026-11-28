@@ -70,7 +70,6 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
-    bool supportsParallelInsert() const override { return true; }
     bool supportsDelete() const override { return true; }
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -138,7 +137,7 @@ private:
 
     TableStatus getTableStatus(const ContextPtr & context) const;
 
-    bool isMetadataStringEqual(
+    bool isMetadataStringCompatible(
         const std::string & zk_metadata_string,
         const std::string & local_metadata_string,
         bool throw_on_error) const;

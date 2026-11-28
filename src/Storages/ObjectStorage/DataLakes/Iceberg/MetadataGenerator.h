@@ -14,18 +14,40 @@ namespace DB
 
 #if USE_AVRO
 
+/// Files the snapshot takes out of the table. A `replace` snapshot both adds and removes, and
+/// the table-wide `total-*` counters only stay right if the removals are subtracted from them.
+struct SnapshotRemovals
+{
+    Int64 data_files = 0;
+    Int64 records = 0;
+    Int64 files_size = 0;
+    Int64 position_delete_files = 0;
+    Int64 position_deletes = 0;
+};
+
+Int32 getLastAssignedFieldId(const Poco::JSON::Object::Ptr & metadata_object);
+
+/// Appends `metadata_file` to `metadata-log` and drops the oldest entries so that at most `max_entries` remain.
+/// The table property `write.metadata.previous-versions-max` takes precedence over `max_entries`.
+void appendToMetadataLog(Poco::JSON::Object::Ptr metadata_object, const String & metadata_file, Int64 timestamp, std::optional<UInt64> max_entries);
+
 class MetadataGenerator
 {
 public:
-    explicit MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_);
+    /// `metadata_previous_versions_max` bounds `metadata-log` unless the table sets `write.metadata.previous-versions-max`.
+    MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_, std::optional<UInt64> metadata_previous_versions_max_);
 
     struct NextMetadataResult
     {
         Poco::JSON::Object::Ptr snapshot = nullptr;
-        /// Metadata path for the manifest list file (e.g. "wasb://container@account/table/metadata/snap-xxx.avro").
-        /// Use IcebergPathResolver::resolve to get storage path for I/O.
-        /// Use .serialize() to get the path for writing into Iceberg metadata.
+        /// Metadata path for the manifest list file; resolve for I/O, serialize for writing into Iceberg metadata.
         Iceberg::IcebergPathFromMetadata manifest_list_path;
+    };
+
+    enum class SnapshotOperation
+    {
+        Append,
+        Replace,
     };
 
     NextMetadataResult generateNextMetadata(
@@ -39,7 +61,20 @@ public:
         Int64 added_delete_files,
         Int64 num_deleted_rows,
         std::optional<Int64> user_defined_snapshot_id = std::nullopt,
-        std::optional<Int64> user_defined_timestamp = std::nullopt);
+        std::optional<Int64> user_defined_timestamp = std::nullopt,
+        SnapshotOperation operation = SnapshotOperation::Append,
+        /// Incremental refreshable-MV cursor to embed in the summary of an `append` snapshot (see `f_refresh_cursor`).
+        const std::optional<String> & refresh_cursor = std::nullopt,
+        const SnapshotRemovals & removals = {});
+
+    /// Create a manifest-only rewrite snapshot (`replace` operation) carrying `total-*` counters forward so `OPTIMIZE ... MANIFEST` is idempotent.
+    NextMetadataResult generateManifestOnlySnapshot(
+        FileNamesGenerator & generator,
+        const Iceberg::IcebergPathFromMetadata & metadata_file_path,
+        Int64 parent_snapshot_id);
+
+    /// Callers that retry a commit generate the id once so their manifests stay valid across attempts.
+    Int64 generateSnapshotId();
 
     void generateAddColumnMetadata(const String & column_name, DataTypePtr type);
     void generateDropColumnMetadata(const String & column_name);
@@ -48,6 +83,7 @@ public:
 
 private:
     Poco::JSON::Object::Ptr metadata_object;
+    std::optional<UInt64> metadata_previous_versions_max;
 
     pcg64_fast gen;
     std::uniform_int_distribution<Int64> dis;

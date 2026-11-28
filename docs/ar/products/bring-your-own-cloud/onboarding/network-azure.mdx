@@ -1,0 +1,253 @@
+---
+title: 'إعداد الشبكات الخاصة لـ BYOC على Azure'
+slug: /cloud/reference/byoc/onboarding/network-azure
+sidebarTitle: 'إعداد الشبكات الخاصة على Azure'
+keywords: ['BYOC', 'cloud', 'استخدم سحابتك الخاصة', 'azure', 'اقتران شبكات VNet', 'private link']
+description: 'إعداد اقتران شبكات VNet أو Private Link لـ BYOC على Azure'
+doc_type: 'reference'
+---
+
+يدعم ClickHouse BYOC on Azure خيارين للاتصال الخاص: [اقتران شبكات VNet](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview) و[Azure Private Link](https://learn.microsoft.com/azure/private-link/private-link-overview). يُبقي كلا الخيارين حركة المرور ضمن البنية الأساسية لـ Azure، بحيث لا تمر عبر الإنترنت العام مطلقًا.
+
+<div id="common-prerequisites">
+  ## المتطلبات المسبقة {#common-prerequisites}
+</div>
+
+الخطوات المشتركة المطلوبة لكلٍّ من اقتران شبكات VNet وPrivate Link.
+
+### تفعيل موازن التحميل الخاص لـ ClickHouse BYOC {#step-enable-private-load-balancer-for-clickhouse-byoc}
+
+في وحدة تحكم ClickHouse Cloud، فعّل **موازن التحميل الخاص** لبنية BYOC التحتية. يمر خيارا الاتصال عبر موازن التحميل الداخلي هذا، لذا لن يعمل أيّ منهما حتى يتم تفعيله.
+
+<div className="ch-image-md">
+  <Frame>
+    ![BYOC تفعيل موازن التحميل الخاص](/images/cloud/reference/byoc-private-load-balancer-azure.webp)
+  </Frame>
+</div>
+
+دوّن **الاسم المنطوق** للبنية التحتية. ينشر ClickHouse بنية BYOC التحتية في اشتراك Azure الخاص بك ضمن مجموعة موارد مُدارة باسم `clickhouse-cloud-<spoken-name>-default`. ستجد شبكة BYOC الافتراضية (VNet) في مجموعة الموارد هذه في الخطوات التالية.
+
+<div id="azure-vnet-peering">
+  ## إعداد اقتران شبكات VNet {#azure-vnet-peering}
+</div>
+
+يُرجى التعرّف على [اقتران شبكات VNet](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview) و[متطلباته وقيوده](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#requirements-and-constraints) قبل البدء. يستخدم ClickHouse BYOC موازن تحميل خاصًا لإتاحة الاتصال بالشبكة عبر التناظر بخدمات ClickHouse.
+
+<Note>
+  تنطبق الخطوات الواردة في المثال على سيناريو بسيط، حيث تقترن إحدى شبكات VNet لديك مباشرةً بشبكة VNet الخاصة بـ BYOC. أما السيناريوهات المتقدمة، مثل بنيات المحور والأطراف أو الاتصال بالبيئات المحلية، فتتطلب بعض التعديلات — راجع [القيود](#vnet-peering-limitations).
+</Note>
+
+<div id="vnet-peering-prerequisites">
+  ### المتطلبات الأساسية الإضافية لاقتران الشبكات {#vnet-peering-prerequisites}
+</div>
+
+**مساحات عناوين غير متداخلة.** لا يمكن للشبكات الظاهرية المقترنة أن تتضمن نطاقات عناوين IP متداخلة. قارن مساحة عناوين VNet لديك بمساحة عناوين BYOC VNet، المعروضة في صفحة **Overview** الخاصة بـ BYOC VNet في بوابة Azure. إذا كانتا متداخلتين، فاستخدم Private Link بدلًا من ذلك.
+
+**الأذونات.** يتطلب إنشاء اقتران منح الأذونين `Microsoft.Network/virtualNetworks/virtualNetworkPeerings/write` و`Microsoft.Network/virtualNetworks/peer/action` على *كلتا* الشبكتين الظاهريتين. يتضمن الدور المضمّن **Network Contributor** هذين الإذنين. راجع [أذونات اقتران الشبكات الظاهرية](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#permissions).
+
+<Steps>
+  <Step title="إنشاء الربط التناظري من الشبكة الظاهرية لـ BYOC" id="step-1-create-peering-from-byoc-vnet">
+    1. سجّل الدخول إلى [بوابة Azure](https://portal.azure.com) وانتقل إلى **اشتراك BYOC**.
+    2. ابحث عن **الشبكات الظاهرية** وحدد شبكة VNet الخاصة بـ BYOC، الموجودة في مجموعة الموارد `clickhouse-cloud-<spoken-name>-default`.
+    3. ضمن **الإعدادات**، حدد **الاقترانات**، ثم حدد **+ إضافة**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![إنشاء اقتران شبكات VNet لـ BYOC](/images/cloud/reference/byoc-vnetpeering-azure-1.webp)
+      </Frame>
+    </div>
+
+    4. املأ جزأي الربط التناظري:
+
+    <div className="ch-image-md">
+      <Frame>
+        ![تهيئة اقتران شبكات VNet لـ BYOC](/images/cloud/reference/byoc-vnetpeering-azure-2.webp)
+      </Frame>
+    </div>
+
+    5. انقر على **إضافة**.
+  </Step>
+
+  <Step title="إنشاء الربط التناظري العكسي إذا لم يُنشأ تلقائيًا" id="step-2-create-reverse-peering">
+    يتكون الربط التناظري في Azure من جزأين، جزء لكل اتجاه، ولا تتدفق حركة المرور حتى يتوفر كلاهما. إذا أنشأت البوابة الجزأين في الخطوة السابقة، فتجاوز هذه الخطوة.
+
+    إذا أنشأت الجزء الموجود على جانب BYOC فقط — لأن شبكة VNet الخاصة بك تقع في اشتراك أو مستأجر آخر — فستكون حالته **Initiated**. أنشئ الجزء المطابق من شبكة VNet الخاصة بك:
+
+    1. انتقل إلى الاشتراك الذي يملك شبكة VNet الخاصة بك، وسجّل الدخول بحساب لديه دور **Network Contributor** عليها.
+    2. حدد شبكة VNet الخاصة بك، ثم **الاقترانات** → **+ Add**.
+    3. حدد **I know my resource ID**، والصق **معرّف مورد VNet الخاص بـ BYOC**، واختر **Directory** الذي يملك اشتراك BYOC. حدد **Authenticate** إذا طُلب منك ذلك.
+    4. حدد **Add**.
+  </Step>
+
+  <Step title="التحقق من اتصال جزأي الربط التناظري" id="step-3-verify-peering">
+    افتح **الاقترانات** على أي من الشبكتين الظاهريتين. يجب أن تعرض **حالة الربط التناظري** الحالة **Connected** على كلا الجانبين. إذا بقي أحد الجزأين في حالة **Initiated**، فهذا يعني أن الجزء المقابل مفقود؛ وإذا ظهرت حالته **Disconnected**، فهذا يعني أن الجزء المقابل قد حُذف.
+
+    لا يلزم إجراء أي تغييرات على جدول التوجيه. يضيف Azure تلقائيًا مسارات النظام لمساحة العناوين المرتبطة تناظريًا على كلا الجانبين. يمكنك تأكيد ذلك من أي واجهة شبكة في شبكة VNet الخاصة بك ضمن **Effective routes**، حيث تظهر مساحة عناوين BYOC بنوع القفزة التالية **اقتران شبكات VNet**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![التحقق من اقتران شبكات VNet لـ BYOC](/images/cloud/reference/byoc-vnetpeering-azure-3.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="السماح بالوصول من VNet المرتبطة تناظريًا عبر مجموعة أمان الشبكة" id="step-4-allow-address-space-through-nsg">
+    تخضع الشبكات الفرعية لـ BYOC للحماية بواسطة [مجموعة أمان شبكة](https://learn.microsoft.com/azure/virtual-network/network-security-groups-overview) يديرها ClickHouse، وتمنع حركة المرور الداخلية لشبكة VNet افتراضيًا. ولأن [علامة الخدمة `VirtualNetwork`](https://learn.microsoft.com/azure/virtual-network/service-tags-overview#available-service-tags) تشمل مساحة عناوين شبكات VNet المرتبطة تناظريًا، تُسقط حركة المرور الواردة عبر الربط التناظري إلى أن تُضاف قاعدة سماح واردة.
+
+    يرجى التواصل مع ClickHouse Support لطلب إضافة قواعد واردة تشمل نطاقات CIDR لشبكة VNet المرتبطة تناظريًا الخاصة بك. بدون هذه الخطوة، ستظهر حالة الربط التناظري **Connected**، لكن ستنتهي مهلة الاتصالات.
+  </Step>
+
+  <Step title="الوصول إلى خدمة ClickHouse عبر الربط التناظري" id="step-5-access-ch-service-via-peering">
+    للوصول إلى ClickHouse بشكل خاص، يتم توفير موازن تحميل خاص ونقطة نهاية خاصة لاتصال آمن من شبكة VNet المرتبطة تناظريًا الخاصة بك. تتبع نقطة النهاية الخاصة تنسيق نقطة النهاية العامة مع اللاحقة `-private`. على سبيل المثال:
+
+    * **نقطة النهاية العامة**: `h5ju65kv87.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`
+    * **نقطة النهاية الخاصة**: `h5ju65kv87-private.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`
+  </Step>
+</Steps>
+
+<div id="vnet-peering-limitations">
+  ### القيود {#vnet-peering-limitations}
+</div>
+
+**إقران الشبكات غير متعدٍ.** لا تستطيع الوصول إلى خدماتك إلا شبكة VNet المقترنة مباشرةً بشبكة VNet الخاصة بـ BYOC. لا يغطي الإقران الواحد العملاء في شبكة VNet فرعية خلف شبكة محورية، أو العملاء المحليين الذين يصلون عبر ExpressRoute أو بوابة VPN. تتطلب هذه البُنى إعدادات إضافية، مثل **السماح بحركة المرور المُمرَّرة** وعبور البوابة — راجع [البوابات والاتصال المحلي](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview#gateways-and-on-premises-connectivity) — أو استخدم Private Link بدلًا من ذلك.
+
+**يعمل الإقران عبر المناطق، لكنه أكثر تكلفة.** يُعد الإقران بين شبكات VNet في مناطق مختلفة إقرانًا عالميًا. ويصل إلى ClickHouse بشكل طبيعي — إذ إن موازن التحميل الخاص بـ BYOC هو موازن تحميل داخلي من SKU Standard، وقيد Azure على الوصول إلى الواجهات الأمامية لموازنات التحميل عبر الإقران العالمي ينطبق فقط على موازنات التحميل من SKU Basic. ما ستتحمله هو زمن انتقال إضافي للرحلة ذهابًا وإيابًا و[رسوم نقل البيانات عبر المناطق](https://azure.microsoft.com/pricing/details/virtual-network). يُفضَّل الإقران ضمن المنطقة نفسها لأحمال العمل الحساسة لزمن الانتقال. إذا كان الإقران عبر المناطق يعرض **Connected** لكن الاتصالات لا تزال تفشل، فليست المنطقة هي السبب — إذ إن السبب الأكثر شيوعًا هو عدم وجود قاعدة واردة في مجموعة أمان الشبكة لمساحة عناوينك، لذا تواصل مع ClickHouse Support.
+
+**تتطلب تغييرات مساحة العناوين إعادة مزامنة.** إذا غيّرت حجم مساحة عناوين VNet بعد إنشاء الإقران، [زامن الإقران](https://learn.microsoft.com/azure/virtual-network/update-virtual-network-peering-address-space) للإعلان عن النطاقات الجديدة، وتواصل مع ClickHouse Support لتوسيع قاعدة مجموعة أمان الشبكة الواردة لتشملها.
+
+**تُفرض رسوم على حركة مرور الإقران.** تفرض Azure رسومًا على حركة الدخول والخروج عبر الإقران. راجع [تسعير الشبكة الظاهرية](https://azure.microsoft.com/pricing/details/virtual-network).
+
+<div id="delete-vnet-peering">
+  ### احذف اتصال الاقتران {#delete-vnet-peering}
+</div>
+
+احذف اتصال الاقتران من أيٍّ من الجانبين. يؤدي حذف أحد الطرفين إلى قطع الاتصال وترك الطرف الآخر في حالة **Disconnected**، لذا احذف الطرفين لتنظيف الموارد بالكامل. راجع [حذف اتصال اقتران](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#delete-a-peering).
+
+<div id="setup-privatelink">
+  ## إعداد Private Link {#setup-privatelink}
+</div>
+
+يوفر Azure Private Link اتصالاً آمناً وخاصاً بخدمات ClickHouse BYOC لديك. وتبقى جميع حركة البيانات ضمن شبكة Azure، مما يضمن عدم عبورها الإنترنت العام مطلقاً.
+
+<Steps>
+  <Step title="تمكين Private Link في وحدة تحكم ClickHouse" id="step-1-enable-private-link">
+    <Note>
+      تأكد من تفعيل **موازن الحمل الخاص** كمتطلب مسبق.
+    </Note>
+
+    <div className="ch-image-md">
+      <Frame>
+        ![تمكين BYOC PrivateLink](/images/cloud/reference/byoc-privatelink.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title={<>احصل على <code>اسم الخدمة</code> الخاص بنقطة النهاية</>} id="step-2-obtain-endpoint-service-name">
+    1. في وحدة تحكم ClickHouse Cloud، انتقل إلى صفحة الإعدادات الخاصة بالخدمة التي تريد الاتصال بها عبر Private Link.
+    2. انقر على &quot;إعداد نقطة نهاية خاصة&quot;.
+    3. في اللوحة المنبثقة الجانبية التي تظهر، انسخ قيمتي `Service name` (الاسم البديل لخدمة Private Link) و`DNS name`، إذ ستحتاج إليهما في الخطوات التالية. (قد يستغرق توليد هاتين القيمتين بعض الوقت بعد تفعيل Private Link.)
+
+       <div className="ch-image-md">
+         <Frame>
+           ![نقاط النهاية الخاصة](/images/cloud/security/azure-privatelink-pe-create.webp)
+         </Frame>
+       </div>
+  </Step>
+
+  <Step title="أنشئ نقطة نهاية خاصة في شبكتك" id="step-3-create-endpoint">
+    1. افتح **بوابة Azure الخاصة بك** (أي اشتراك Azure الذي يوجد فيه تطبيق العميل لديك) ← **Network Foundation** ← **Private endpoints** ← **Create**.
+    2. في علامة التبويب **Basics**، اختر الاشتراك ومجموعة الموارد والاسم والمنطقة لنقطة النهاية الخاصة. يجب أن تكون المنطقة هي نفسها منطقة الشبكة الافتراضية (VNet) التي يتصل منها تطبيق العميل لديك.
+
+       <div className="ch-image-md">
+         <Frame>
+           ![إنشاء نقطة نهاية خاصة - الإعدادات الأساسية](/images/cloud/security/azure-pe-create-basic.webp)
+         </Frame>
+       </div>
+    3. في علامة التبويب **Resource**، اختر **Connect to an Azure resource by resource ID or alias** وأدخل قيمة `Service name` التي حصلت عليها في الخطوة السابقة.
+
+       <div className="ch-image-md">
+         <Frame>
+           ![تحديد مورد نقطة النهاية الخاصة](/images/cloud/security/azure-pe-resource.webp)
+         </Frame>
+       </div>
+    4. في علامة التبويب **Virtual Network**، اختر الشبكة الافتراضية والشبكة الفرعية اللتين ستُنشأ فيهما نقطة النهاية الخاصة. ويمكنك أيضًا، إن شئت، إرفاق مجموعة أمان تطبيقات لتصفية حركة المرور المتجهة إلى نقطة النهاية الخاصة.
+
+       <div className="ch-image-md">
+         <Frame>
+           ![تحديد الشبكة الافتراضية لنقطة النهاية الخاصة](/images/cloud/security/azure-pe-create-vnet.webp)
+         </Frame>
+       </div>
+    5. أكمل بقية علامات التبويب ثم انقر على **Create**. ستبقى قيمة **Connection status** لنقطة النهاية الخاصة التي أنشأتها في الحالة **Pending** إلى أن تضيف `Resource ID` الخاص بها إلى قائمة السماح لخدمة ClickHouse في الخطوات اللاحقة.
+    6. افتح واجهة الشبكة المرتبطة بنقطة النهاية الخاصة وانسخ قيمة **Private IPv4 address**، إذ ستحتاج إليها في خطوة إعداد DNS.
+
+       <div className="ch-image-lg">
+         <Frame>
+           ![عنوان IP لنقطة النهاية الخاصة](/images/cloud/security/azure-pe-ip.webp)
+         </Frame>
+       </div>
+  </Step>
+
+  <Step title={<>أضف <code>معرّف المورد</code> الخاص بنقطة النهاية الخاصة إلى قائمة السماح لخدمة ClickHouse</>} id="step-4-add-endpoint-id-to-services-allow-list">
+    للحصول على معرّف مورد نقطة النهاية الخاصة، افتح نقطة النهاية الخاصة التي أنشأتها سابقًا في بوابة Azure وانقر على **JSON View**، ثم انسخ حقل `id` الموجود في المستوى الأعلى (وهو **Resource ID** المعروض أعلى العرض، بالصيغة `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`). لا تستخدم حقول `id` المتداخلة داخل الكائن `properties`:
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![معرّف مورد نقطة النهاية الخاصة](/images/cloud/security/azure-pe-resource-id.webp)
+      </Frame>
+    </div>
+
+    1. في وحدة تحكم ClickHouse Cloud، انتقل إلى صفحة الإعدادات الخاصة بالخدمة التي تريد الاتصال بها عبر Private Link.
+    2. انقر على «Set up private endpoint».
+    3. في اللوحة المنبثقة الجانبية التي تظهر، أدخل قيمة `Resource ID` التي حصلت عليها أعلاه في حقل `Endpoint ID`، مع إضافة وصف اختياري.
+    4. انقر على «Create endpoint».
+
+    <Note>
+      إذا أردت السماح بالوصول من اتصال Private Link قائم، فاستخدم القائمة المنسدلة الخاصة بنقاط النهاية القائمة.
+      تعرض القائمة المنسدلة اتصالات Private Link القائمة بالخدمات ضمن البنية التحتية نفسها.
+    </Note>
+
+    <div className="ch-image-md">
+      <Frame>
+        ![عامل تصفية نقاط النهاية الخاصة](/images/cloud/security/azure-privatelink-pe-filter.webp)
+      </Frame>
+    </div>
+
+    <Note>
+      لا حاجة إلى أي موافقة يدوية في بوابة Azure؛ فبمجرد إضافة `Resource ID` إلى قائمة السماح، تتم الموافقة على اتصال نقطة النهاية تلقائيًا، ويُضاف `LinkID` الخاص بها تلقائيًا إلى `AuthorizationPolicy` الخاصة بـ Istio لخدمة ClickHouse. وتتغير **Connection status** لنقطة النهاية الخاصة في اشتراكك إلى **Approved**.
+    </Note>
+  </Step>
+
+  <Step title="عيّن اسم DNS خاصًا لنقطة النهاية" id="step-5-set-private-dns-name-for-endpoint">
+    <Note>
+      توجد طرق متعددة لتهيئة DNS. يُرجى إعداد DNS بما يتوافق مع حالة الاستخدام الخاصة بك.
+    </Note>
+
+    يجب توجيه جميع النطاقات الفرعية (باستخدام حرف بدل) لـ &quot;اسم DNS&quot; (أي كل ما يلي معرّف الخدمة، مثل `privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`) إلى عنوان IP الخاص بنقطة النهاية الخاصة. يضمن ذلك أن تتمكن الخدمات/المكوّنات داخل VNet من تحليل هذا الاسم بشكل صحيح. فيما يلي إعداد نموذجي باستخدام Azure Private DNS:
+
+    1. [أنشئ منطقة DNS خاصة](https://learn.microsoft.com/en-us/azure/dns/private-dns-getstarted-portal) يكون اسمها هو &quot;اسم DNS&quot; بعد حذف معرّف الخدمة من بدايته، على سبيل المثال `privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`.
+    2. داخل المنطقة، أنشئ مجموعة سجلات بحرف بدل: اكتب `*` في حقل **Name**، وأدخل في حقل **IP Address** عنوان IP الخاص بنقطة النهاية الخاصة الذي نسخته سابقًا.
+    3. [اربط منطقة DNS الخاصة بشبكتك الافتراضية](https://learn.microsoft.com/en-us/azure/dns/private-dns-getstarted-portal#link-the-virtual-network) حتى يتمكن العملاء داخل VNet من تحليل أسماء المنطقة.
+
+    تحقّق من إعداد DNS من مضيف داخل VNet، إذ يجب أن يُحلَّل &quot;اسم DNS&quot; إلى عنوان IP الخاص بنقطة النهاية الخاصة:
+
+    ```bash
+    nslookup h5ju65kv87.privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com
+    ```
+  </Step>
+
+  <Step title="الوصول إلى مثيل باستخدام Private Link" id="step-6-connect-via-privatelink">
+    1. في وحدة تحكم ClickHouse Cloud، انتقل إلى صفحة الإعدادات الخاصة بالخدمة.
+    2. انقر على &quot;إعداد نقطة نهاية خاصة&quot;.
+    3. في اللوحة المنبثقة الجانبية التي تظهر، انسخ قيمة `DNS name`.
+
+       <div className="ch-image-md">
+         <Frame>
+           ![اسم DNS لنقطة النهاية الخاصة](/images/cloud/security/azure-privatelink-pe-dns.webp)
+         </Frame>
+       </div>
+
+       <Note>
+         يخضع الوصول إلى خدمات ClickHouse عبر Private Link لسياسة **Istio Authorization Policy** على مستوى الخدمة، والتي تديرها ClickHouse ضمن البنية التحتية لـ BYOC الخاصة بك.
+       </Note>
+  </Step>
+</Steps>

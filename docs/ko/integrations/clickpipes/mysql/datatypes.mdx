@@ -11,26 +11,35 @@ integration:
 
 다음은 MySQL ClickPipe에서 지원되는 데이터 타입 매핑입니다.
 
-| MySQL 타입                             | ClickHouse 타입          | 참고                                                                |
-| ------------------------------------ | ---------------------- | ----------------------------------------------------------------- |
-| Enum                                 | LowCardinality(String) |                                                                   |
-| Set                                  | String                 |                                                                   |
-| Decimal                              | Decimal                |                                                                   |
-| TinyInt                              | Int8                   | unsigned를 지원합니다.                                                  |
-| SmallInt                             | Int16                  | unsigned를 지원합니다.                                                  |
-| MediumInt, Int                       | Int32                  | unsigned를 지원합니다.                                                  |
-| BigInt                               | Int64                  | unsigned를 지원합니다.                                                  |
-| Year                                 | Int16                  |                                                                   |
-| TinyText, Text, MediumText, LongText | String                 |                                                                   |
-| TinyBlob, Blob, MediumBlob, LongBlob | String                 |                                                                   |
-| Char, Varchar                        | String                 |                                                                   |
-| Binary, VarBinary                    | String                 |                                                                   |
-| TinyInt(1)                           | Bool                   |                                                                   |
-| JSON                                 | String                 | MySQL 전용입니다. MariaDB의 `json`은 CONSTRAINT가 있는 `text`의 alias일 뿐입니다. |
-| Geometry &amp; Geometry Types        | String                 | WKT(Well-Known Text)입니다. WKT에서는 미세한 정밀도 손실이 발생할 수 있습니다.           |
-| Vector                               | Array(Float32)         | MySQL 전용입니다. MariaDB도 곧 지원을 추가할 예정입니다.                            |
-| Float                                | Float32                | 텍스트 프로토콜 때문에 초기 적재 중 ClickHouse의 정밀도가 MySQL과 다를 수 있습니다.           |
-| Double                               | Float64                | 텍스트 프로토콜 때문에 초기 적재 중 ClickHouse의 정밀도가 MySQL과 다를 수 있습니다.           |
-| Date                                 | Date32                 | 일/월이 00이면 01로 매핑됩니다.                                              |
-| Time                                 | DateTime64(6)          | unix epoch 기준 시간 오프셋입니다.                                          |
-| Datetime, Timestamp                  | DateTime64(6)          | 일/월이 00이면 01로 매핑됩니다.                                              |
+| MySQL 타입                             | ClickHouse 타입          | 참고                                                                                                                        |
+| ------------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Enum                                 | LowCardinality(String) |                                                                                                                           |
+| Set                                  | String                 |                                                                                                                           |
+| Decimal                              | Decimal(76,38)         | 정수 자릿수가 38자를 초과하는 값은 0으로 수집됩니다.                                                                                           |
+| Bit                                  | UInt64                 |                                                                                                                           |
+| TinyInt                              | Int8                   | unsigned를 지원합니다.                                                                                                          |
+| SmallInt                             | Int16                  | unsigned를 지원합니다.                                                                                                          |
+| MediumInt, Int                       | Int32                  | unsigned를 지원합니다.                                                                                                          |
+| BigInt                               | Int64                  | unsigned를 지원합니다.                                                                                                          |
+| Serial                               | UInt64                 |                                                                                                                           |
+| Year                                 | Int16                  |                                                                                                                           |
+| TinyInt(1)                           | Bool                   |                                                                                                                           |
+| Float                                | Float32                | 텍스트 프로토콜 때문에 초기 적재 중 ClickHouse의 정밀도가 MySQL과 다를 수 있습니다. `Float(p)`는 `p <= 24`이면 `Float32`에, `p >= 25`이면 `Float64`에 매핑됩니다. |
+| Double                               | Float64                | 텍스트 프로토콜 때문에 초기 적재 중 ClickHouse의 정밀도가 MySQL과 다를 수 있습니다.                                                                   |
+| TinyText, Text, MediumText, LongText | String                 |                                                                                                                           |
+| TinyBlob, Blob, MediumBlob, LongBlob | String                 |                                                                                                                           |
+| Char, Varchar                        | String                 |                                                                                                                           |
+| Long, Long Varchar                   | String                 |                                                                                                                           |
+| Binary, VarBinary                    | String                 |                                                                                                                           |
+| Long VarBinary                       | String                 |                                                                                                                           |
+| JSON                                 | String                 | MySQL 전용입니다. MariaDB의 `json`은 CONSTRAINT가 있는 `text`의 alias일 뿐입니다.                                                         |
+| Geometry &amp; Geometry Types        | String                 | WKT(Well-Known Text)입니다. WKT에서는 미세한 정밀도 손실이 발생할 수 있습니다.                                                                   |
+| UUID                                 | UUID                   | MariaDB 전용입니다. CDC 중에 추가되는 컬럼은 원시 16바이트를 담는 `String`으로 추가됩니다.                                                             |
+| INET4, INET6                         | String                 | MariaDB 전용입니다.                                                                                                            |
+| Vector                               | Array(Float32)         | MySQL 전용입니다. MariaDB도 곧 지원을 추가할 예정입니다.                                                                                    |
+| Char Byte, Raw                       | String                 | 바이너리 타입에 대한 MariaDB/Oracle-mode alias입니다.                                                                                 |
+| Clob, Varchar2, XMLType              | String                 | 텍스트 타입에 대한 MariaDB/Oracle-mode alias입니다.                                                                                  |
+| Number                               | Decimal                | `Decimal`에 대한 MariaDB/Oracle-mode alias입니다.                                                                               |
+| Date                                 | Date32                 | 일/월이 00이면 01로 매핑됩니다.                                                                                                      |
+| Time                                 | DateTime64(6)          | unix epoch 기준 시간 오프셋입니다.                                                                                                  |
+| Datetime, Timestamp                  | DateTime64(6)          | 일/월이 00이면 01로 매핑됩니다.                                                                                                      |

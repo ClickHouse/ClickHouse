@@ -1,0 +1,132 @@
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_nullif_pruning)
+        Indexes:
+          PrimaryKey
+            Keys:
+              team
+              k
+            Condition: and((k in [5, 5]), (team in [1, 1]))
+            Parts: 1/1
+            Granules: 2/245
+            Search Algorithm: binary search
+          Ranges: 1
+--- NEGATIVE TESTS (Should fallback to full scan) ---
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_nullif_pruning)
+        Indexes:
+          PrimaryKey
+            Keys:
+              team
+            Condition: (team in [1, 1])
+            Parts: 1/1
+            Granules: 245/245
+            Search Algorithm: binary search
+          Ranges: 1
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_nullif_pruning)
+        Indexes:
+          PrimaryKey
+            Keys:
+              team
+            Condition: (team in [1, 1])
+            Parts: 1/1
+            Granules: 245/245
+            Search Algorithm: binary search
+          Ranges: 1
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_nullif_pruning)
+        Indexes:
+          PrimaryKey
+            Keys:
+              team
+            Condition: (team in [1, 1])
+            Parts: 1/1
+            Granules: 245/245
+            Search Algorithm: binary search
+          Ranges: 1
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_nullif_fixedstring)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+0
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_nullif_partition)
+        Indexes:
+          Min-Max
+            Keys:
+              p
+            Condition: (p in [5, 5])
+            Parts: 1/10
+            Granules: 25/250
+          Partition
+            Keys:
+              p
+            Condition: (p in [5, 5])
+            Parts: 1/1
+            Granules: 25/25
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 25/25
+          Ranges: 1
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_nullif_skip_index)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 245/245
+          Skip
+            Name: idx_s
+            Description: minmax GRANULARITY 1
+            Condition: (s in [50, 50])
+            Parts: 1/1
+            Granules: 1/245
+          Ranges: 1
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_nullif_coalesce)
+        Indexes:
+          PrimaryKey
+            Keys:
+              b
+            Condition: (b in [5, 5])
+            Parts: 1/1
+            Granules: 2/3
+            Search Algorithm: binary search
+          Skip
+            Name: idx_b
+            Description: minmax GRANULARITY 1
+            Condition: (b in [5, 5])
+            Parts: 1/1
+            Granules: 1/2
+          Ranges: 1
+1
+1

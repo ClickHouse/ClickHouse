@@ -1,0 +1,79 @@
+---
+date: 2025-11-19
+title: Как восстановить реплику после сбоя хранилища
+tags: ['Развертывания и масштабирование']
+keywords: ['восстановление', 'реплика', 'сбой хранилища', 'база данных Atomic']
+description: 'В этой статье объясняется, как восстановить данные при использовании реплицируемых таблиц в базах данных Atomic в ClickHouse, если диск или хранилище на одной из реплик утеряны или повреждены.'
+---
+
+<Note>
+  Это руководство предполагает, что параметр `<path>` в файле `config.xml` задан следующим образом:
+
+  ```text
+  <path>/var/lib/clickhouse/</path>
+  ```
+
+  Если у вас настроен другой путь к данным, замените все вхождения `/var/lib/clickhouse` в приведенных ниже командах на фактическое значение параметра `<path>`.
+</Note>
+
+<Steps>
+  <Step title="Скопируйте настройки доступа с исправной реплики" id="copy-access-config">
+    Скопируйте содержимое каталога `access`, в котором хранятся локальные пользователи, с исправной реплики:
+
+    ```text
+    /var/lib/clickhouse/access
+    ```
+  </Step>
+
+  <Step title="Сделайте резервную копию каталога metadata с исправной реплики" id="back-up-the-metadata-folder-from-the-healthy-replica">
+    1. Перейдите в каталог данных ClickHouse:
+
+    ```text
+    cd /var/lib/clickhouse
+    ```
+
+    2. Создайте резервную копию каталога `metadata` (включая символические ссылки): каталог `metadata` содержит DDL-запросы для баз данных и таблиц.
+       Каталог базы данных содержит символические ссылки на `/var/lib/clickhouse/store/..`, где находятся все DDL-запросы таблиц.
+
+    ```bash
+    { find metadata -type f; find metadata -type l; find metadata -type l | xargs readlink -f; } | tar -cPf backup.tar --files-from=-
+    ```
+
+    <Note>
+      Эта команда гарантирует, что в резервной копии будут сохранены и **файлы metadata**, и структура символических ссылок.
+    </Note>
+  </Step>
+
+  <Step title="Восстановите metadata на неисправной реплике" id="restore-the-metadata-on-the-faulty-replica">
+    1. Скопируйте созданный файл `backup.tar` на неисправную реплику.
+    2. Распакуйте его в каталог данных ClickHouse:
+
+    ```text
+    cd /var/lib/clickhouse/
+    tar -xvPf backup.tar
+    ```
+  </Step>
+
+  <Step title="Создайте флаг принудительного восстановления" id="create-force-restore-flag">
+    Чтобы запустить автоматическую синхронизацию данных с других реплик, создайте следующий флаг:
+
+    ```text
+    sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
+    ```
+  </Step>
+
+  <Step title="Перезапустите неисправную реплику" id="restart-faulty-replica">
+    1. Перезапустите сервер ClickHouse на неисправном узле.
+    2. Проверьте серверный журнал: вы должны увидеть, что части загружаются с исправных реплик:
+
+    ```bash
+    2025.11.02 00:00:04.047097 [ 682 ] {} <Debug> analytics.events_local (...) (Fetcher): Downloading files 23
+    2025.11.02 00:00:04.055542 [ 682 ] {} <Debug> analytics.events_local (...) (Fetcher): Download of part 202511_0_0_0 onto disk disk2 finished.
+    2025.11.02 00:00:04.101888 [ 687 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2025_0_0_1 onto disk default.
+    2025.11.02 00:00:04.102005 [ 687 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading files 11
+    2025.11.02 00:00:04.102210 [ 690 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2022_0_0_1 onto disk disk1.
+    2025.11.02 00:00:04.102247 [ 688 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2021_0_0_1 onto disk disk2.
+    2025.11.02 00:00:04.102331 [ 690 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading files 11
+    ```
+  </Step>
+</Steps>

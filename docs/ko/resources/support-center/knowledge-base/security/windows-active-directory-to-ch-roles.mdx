@@ -6,11 +6,9 @@ tags: ['도구 및 유틸리티']
 keywords: ['Windows']
 ---
 
-<div id="example">
-  ## 예시
-</div>
+## 예시 {#example}
 
-이 예시에서는 서로 다른 AD 보안 그룹에 속한 AD 사용자에게 ClickHouse에서 역할 기반 접근 권한을 부여하는 방법을 보여줍니다. 또한 여러 역할에서 제공하는 접근 권한을 사용할 수 있도록 하나의 사용자를 여러 AD 사용자 그룹에 추가하는 방법도 보여줍니다.
+이 예시에서는 서로 다른 AD 보안 그룹에 속한 AD 사용자에게 ClickHouse에서 역할 기반 액세스 권한을 부여하는 방법을 보여줍니다. 또한 여러 역할에서 제공하는 액세스 권한을 사용할 수 있도록 하나의 사용자를 여러 AD 사용자 그룹에 추가하는 방법도 보여줍니다.
 
 이 환경은 다음과 같습니다:
 
@@ -21,29 +19,41 @@ keywords: ['Windows']
 | AD User                     | 설명                                           |
 | --------------------------- | -------------------------------------------- |
 | clickhouse&#95;ad&#95;admin | ClickHouse 관리자 사용자                           |
-| clickhouse&#95;db1&#95;user | db1.table1에 대한 접근 권한이 있는 사용자                 |
-| clickhouse&#95;db2&#95;user | db2.table1에 대한 접근 권한이 있는 사용자                 |
-| ch&#95;db1&#95;db2&#95;user | db1.table1 및 db2.table1 모두에 대한 접근 권한이 있는 사용자 |
+| clickhouse&#95;db1&#95;user | db1.table1에 대한 액세스 권한이 있는 사용자                 |
+| clickhouse&#95;db2&#95;user | db2.table1에 대한 액세스 권한이 있는 사용자                 |
+| ch&#95;db1&#95;db2&#95;user | db1.table1 및 db2.table1 모두에 대한 액세스 권한이 있는 사용자 |
 
 * AD 보안 그룹 3개
 
 | AD Group                            | 설명                        |
 | ----------------------------------- | ------------------------- |
 | clickhouse&#95;ad&#95;admins        | ClickHouse 관리자 그룹         |
-| clickhouse&#95;ad&#95;db1&#95;users | db1.table1 접근 권한에 매핑되는 그룹 |
-| clickhouse&#95;ad&#95;db2&#95;users | db2.table1 접근 권한에 매핑되는 그룹 |
+| clickhouse&#95;ad&#95;db1&#95;users | db1.table1 액세스 권한에 매핑되는 그룹 |
+| clickhouse&#95;ad&#95;db2&#95;users | db2.table1 액세스 권한에 매핑되는 그룹 |
 
 * 예시 AD 환경 및 UO 구조:
 
-<Image img={ad_env} size="md" alt="예시 AD 환경 및 UO 구조" />
+<div className="ch-image-md">
+  <Frame>
+    ![예시 AD 환경 및 UO 구조](/images/knowledgebase/windows-ad-ch-roles/AD_Env_and_UO_structure.webp)
+  </Frame>
+</div>
 
 * 예시 AD 보안 그룹 구성:
 
-<Image img={ad_group} size="md" alt="예시 AD 보안 그룹 구성" />
+<div className="ch-image-md">
+  <Frame>
+    ![예시 AD 보안 그룹 구성](/images/knowledgebase/windows-ad-ch-roles/AD_Group_clickhouse_ad_db1_users.webp)
+  </Frame>
+</div>
 
 * 예시 AD 사용자 구성:
 
-<Image img={ad_user} size="md" alt="예시 AD 사용자 구성" />
+<div className="ch-image-md">
+  <Frame>
+    ![예시 AD 사용자 구성](/images/knowledgebase/windows-ad-ch-roles/AD_user_clickhouse_db1_user.webp)
+  </Frame>
+</div>
 
 1. Windows AD Users and Groups에서 각 사용자를 해당 그룹에 추가하십시오. 그러면 사용자가 ClickHouse 역할에 매핑됩니다(예시는 다음 단계 참조).
 
@@ -56,7 +66,11 @@ keywords: ['Windows']
 
 * 예시 사용자 그룹 멤버십:
 
-<Image img={ad_user_group} size="md" alt="예시 사용자 그룹 멤버십" />
+<div className="ch-image-md">
+  <Frame>
+    ![예시 사용자 그룹 멤버십](/images/knowledgebase/windows-ad-ch-roles/AD_user_to_group.webp)
+  </Frame>
+</div>
 
 2. ClickHouse `config.xml`에서 각 ClickHouse 노드에 `ldap_servers` 구성을 추가하십시오.
 
@@ -89,7 +103,7 @@ keywords: ['Windows']
 전체 옵션은 다음 문서를 참조하십시오:
 [https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition](https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition)
 
-3. ClickHouse `config.xml`에서 각 ClickHouse 노드에 `<ldap>` 항목이 포함된 `<user_directories>` 구성을 추가하십시오.
+3. 각 ClickHouse 노드의 ClickHouse `config.xml`에 `<ldap>` 엔트리가 포함된 `<user_directories>` 구성을 추가합니다.
 
 ```
 <user_directories>

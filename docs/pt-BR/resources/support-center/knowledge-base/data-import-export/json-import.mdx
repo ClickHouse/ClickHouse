@@ -20,7 +20,7 @@ Usando a [interface HTTP](/pt-BR/concepts/features/interfaces/http):
 $ echo '{"foo":"bar"}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20test%20FORMAT%20JSONEachRow' --data-binary @-
 ```
 
-Usando a [interface CLI](/pt-BR/concepts/features/interfaces/cli):
+Usando o [clickhouse-client](/pt-BR/concepts/features/interfaces/client):
 
 ```bash
 $ echo '{"foo":"bar"}'  | clickhouse-client --query="INSERT INTO test FORMAT JSONEachRow"

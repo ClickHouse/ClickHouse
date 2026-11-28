@@ -1,10 +1,10 @@
+-- Tags: no-msan
+
 set explain_query_plan_default = 'legacy';
 set optimize_read_in_order=1;
-set enable_analyzer=1;
 set optimize_use_projections=1;
 set optimize_use_implicit_projections=1;
 set optimize_sorting_by_input_stream_properties=1;
-set query_plan_optimize_prewhere=1;
 set optimize_move_to_prewhere=1;
 set optimize_on_insert=1;
 set optimize_trivial_count_query=1;
@@ -26,58 +26,58 @@ insert into test select number, tuple(tuple(number % 2, 'str_' || number % 3, ra
 insert into test select number, tuple(tuple(number % 2 + 4, 'str_' || number % 3 + 4, range(number))), 'Hello, World!' from numbers(4, 4);
 
 select * from test order by a.b.c, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c settings enable_parallel_replicas = 0);
 select * from test order by a.b.c desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc settings enable_parallel_replicas = 0);
 select * from test order by a.b.c, a.b.d, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c, a.b.d);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c, a.b.d settings enable_parallel_replicas = 0);
 select * from test order by a.b.c desc, a.b.d, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc, a.b.d);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc, a.b.d settings enable_parallel_replicas = 0);
 select * from test order by a.b.c, a.b.d desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c, a.b.d desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c, a.b.d desc settings enable_parallel_replicas = 0);
 select * from test order by a.b.c desc, a.b.d desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc, a.b.d desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc, a.b.d desc settings enable_parallel_replicas = 0);
 
 select * from test where a.b.c = 0 order by id;
-select trimLeft(explain) from (explain indexes=1 select * from test where a.b.c = 0);
+select trimLeft(explain) from (explain indexes=1 select * from test where a.b.c = 0 settings enable_parallel_replicas = 0);
 select * from test where a.b.c = 0 and a.b.d = 'str_0' order by id;
-select trimLeft(explain) from (explain indexes=1 select * from test where a.b.c = 0 and a.b.d = 'str_0');
+select trimLeft(explain) from (explain indexes=1 select * from test where a.b.c = 0 and a.b.d = 'str_0' settings enable_parallel_replicas = 0);
 
 select count() from test where a.b.c = 0 settings optimize_use_implicit_projections = 1;
-select trimLeft(explain) from (explain indexes=1 select count() from test where a.b.c = 0 settings optimize_use_implicit_projections = 1);
+select trimLeft(explain) from (explain indexes=1 select count() from test where a.b.c = 0 settings optimize_use_implicit_projections = 1, enable_parallel_replicas = 0);
 select count() from test where a.b.c = 0 and a.b.d = 'str_0' settings optimize_use_implicit_projections = 1;
-select trimLeft(explain) from (explain indexes=1 select count() from test where a.b.c = 0 and a.b.d = 'str_0' settings optimize_use_implicit_projections = 1);
+select trimLeft(explain) from (explain indexes=1 select count() from test where a.b.c = 0 and a.b.d = 'str_0' settings optimize_use_implicit_projections = 1, enable_parallel_replicas = 0);
 
 system start merges test;
 optimize table test final;
 select count() from system.parts where active and table = 'test' and database = currentDatabase();
 
 select * from test order by a.b.c, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c settings enable_parallel_replicas = 0);
 select * from test order by a.b.c desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc settings enable_parallel_replicas = 0);
 select * from test order by a.b.d, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.d);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.d settings enable_parallel_replicas = 0);
 select * from test order by a.b.d desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.d desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.d desc settings enable_parallel_replicas = 0);
 select * from test order by a.b.c, a.b.d, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c, a.b.d);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c, a.b.d settings enable_parallel_replicas = 0);
 select * from test order by a.b.c desc, a.b.d, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc, a.b.d);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc, a.b.d settings enable_parallel_replicas = 0);
 select * from test order by a.b.c, a.b.d desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c, a.b.d desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c, a.b.d desc settings enable_parallel_replicas = 0);
 select * from test order by a.b.c desc, a.b.d desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc, a.b.d desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc, a.b.d desc settings enable_parallel_replicas = 0);
 
 select * from test where a.b.c = 0 order by id;
-select trimLeft(explain) from (explain indexes=1 select * from test where a.b.c = 0);
+select trimLeft(explain) from (explain indexes=1 select * from test where a.b.c = 0 settings enable_parallel_replicas = 0);
 select * from test where a.b.c = 0 and a.b.d = 'str_0' order by id;
-select trimLeft(explain) from (explain indexes=1 select * from test where a.b.c = 0 and a.b.d = 'str_0');
+select trimLeft(explain) from (explain indexes=1 select * from test where a.b.c = 0 and a.b.d = 'str_0' settings enable_parallel_replicas = 0);
 
 select count() from test where a.b.c = 0 settings optimize_use_implicit_projections = 1;
-select trimLeft(explain) from (explain indexes=1 select count() from test where a.b.c = 0 settings optimize_use_implicit_projections = 1);
+select trimLeft(explain) from (explain indexes=1 select count() from test where a.b.c = 0 settings optimize_use_implicit_projections = 1, enable_parallel_replicas = 0);
 select count() from test where a.b.c = 0 and a.b.d = 'str_0' settings optimize_use_implicit_projections = 1;
-select trimLeft(explain) from (explain indexes=1 select count() from test where a.b.c = 0 and a.b.d = 'str_0' settings optimize_use_implicit_projections = 1);
+select trimLeft(explain) from (explain indexes=1 select count() from test where a.b.c = 0 and a.b.d = 'str_0' settings optimize_use_implicit_projections = 1, enable_parallel_replicas = 0);
 
 drop table test;
 

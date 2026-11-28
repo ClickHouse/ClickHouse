@@ -59,9 +59,9 @@ SELECT * FROM dt;
 
 **See Also**
 
-- [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
-- [Operators for working with dates and times](../../sql-reference/operators#operators-for-working-with-dates-and-times)
-- [`DateTime` data type](../../sql-reference/data-types/datetime.md)
+- [Functions for working with dates and times](/reference/functions/regular-functions/date-time-functions)
+- [Operators for working with dates and times](/reference/operators/index#operators-for-working-with-dates-and-times)
+- [`DateTime` data type](/reference/data-types/datetime)
 )DOCS_MD",
             .syntax = "Date",
             .related = {"Date32", "DateTime"},

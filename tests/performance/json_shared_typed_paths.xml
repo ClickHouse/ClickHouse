@@ -1,0 +1,30 @@
+<test>
+    <!-- SHARED typed paths against typed paths: 100 paths in 10 groups of 10, UInt64 values. The single-path read is
+         the case the shared layout trades against, the whole-column read the one it pays for; the sub-object read
+         touches one group of 10 paths. Braces are doubled because perf.py expands every query through Python's
+         string formatter. -->
+    <substitutions>
+        <substitution>
+            <name>table</name>
+            <values>
+                <value>json_shared_typed_paths_typed</value>
+                <value>json_shared_typed_paths_shared</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>create table json_shared_typed_paths_typed (json JSON(g0.p0 UInt64, g0.p1 UInt64, g0.p2 UInt64, g0.p3 UInt64, g0.p4 UInt64, g0.p5 UInt64, g0.p6 UInt64, g0.p7 UInt64, g0.p8 UInt64, g0.p9 UInt64, g1.p0 UInt64, g1.p1 UInt64, g1.p2 UInt64, g1.p3 UInt64, g1.p4 UInt64, g1.p5 UInt64, g1.p6 UInt64, g1.p7 UInt64, g1.p8 UInt64, g1.p9 UInt64, g2.p0 UInt64, g2.p1 UInt64, g2.p2 UInt64, g2.p3 UInt64, g2.p4 UInt64, g2.p5 UInt64, g2.p6 UInt64, g2.p7 UInt64, g2.p8 UInt64, g2.p9 UInt64, g3.p0 UInt64, g3.p1 UInt64, g3.p2 UInt64, g3.p3 UInt64, g3.p4 UInt64, g3.p5 UInt64, g3.p6 UInt64, g3.p7 UInt64, g3.p8 UInt64, g3.p9 UInt64, g4.p0 UInt64, g4.p1 UInt64, g4.p2 UInt64, g4.p3 UInt64, g4.p4 UInt64, g4.p5 UInt64, g4.p6 UInt64, g4.p7 UInt64, g4.p8 UInt64, g4.p9 UInt64, g5.p0 UInt64, g5.p1 UInt64, g5.p2 UInt64, g5.p3 UInt64, g5.p4 UInt64, g5.p5 UInt64, g5.p6 UInt64, g5.p7 UInt64, g5.p8 UInt64, g5.p9 UInt64, g6.p0 UInt64, g6.p1 UInt64, g6.p2 UInt64, g6.p3 UInt64, g6.p4 UInt64, g6.p5 UInt64, g6.p6 UInt64, g6.p7 UInt64, g6.p8 UInt64, g6.p9 UInt64, g7.p0 UInt64, g7.p1 UInt64, g7.p2 UInt64, g7.p3 UInt64, g7.p4 UInt64, g7.p5 UInt64, g7.p6 UInt64, g7.p7 UInt64, g7.p8 UInt64, g7.p9 UInt64, g8.p0 UInt64, g8.p1 UInt64, g8.p2 UInt64, g8.p3 UInt64, g8.p4 UInt64, g8.p5 UInt64, g8.p6 UInt64, g8.p7 UInt64, g8.p8 UInt64, g8.p9 UInt64, g9.p0 UInt64, g9.p1 UInt64, g9.p2 UInt64, g9.p3 UInt64, g9.p4 UInt64, g9.p5 UInt64, g9.p6 UInt64, g9.p7 UInt64, g9.p8 UInt64, g9.p9 UInt64)) engine=MergeTree order by tuple() settings min_bytes_for_wide_part=0, min_rows_for_wide_part=0</create_query>
+    <create_query do_not_check_in_pr="127000">create table json_shared_typed_paths_shared (json JSON(SHARED g0.p0 UInt64, SHARED g0.p1 UInt64, SHARED g0.p2 UInt64, SHARED g0.p3 UInt64, SHARED g0.p4 UInt64, SHARED g0.p5 UInt64, SHARED g0.p6 UInt64, SHARED g0.p7 UInt64, SHARED g0.p8 UInt64, SHARED g0.p9 UInt64, SHARED g1.p0 UInt64, SHARED g1.p1 UInt64, SHARED g1.p2 UInt64, SHARED g1.p3 UInt64, SHARED g1.p4 UInt64, SHARED g1.p5 UInt64, SHARED g1.p6 UInt64, SHARED g1.p7 UInt64, SHARED g1.p8 UInt64, SHARED g1.p9 UInt64, SHARED g2.p0 UInt64, SHARED g2.p1 UInt64, SHARED g2.p2 UInt64, SHARED g2.p3 UInt64, SHARED g2.p4 UInt64, SHARED g2.p5 UInt64, SHARED g2.p6 UInt64, SHARED g2.p7 UInt64, SHARED g2.p8 UInt64, SHARED g2.p9 UInt64, SHARED g3.p0 UInt64, SHARED g3.p1 UInt64, SHARED g3.p2 UInt64, SHARED g3.p3 UInt64, SHARED g3.p4 UInt64, SHARED g3.p5 UInt64, SHARED g3.p6 UInt64, SHARED g3.p7 UInt64, SHARED g3.p8 UInt64, SHARED g3.p9 UInt64, SHARED g4.p0 UInt64, SHARED g4.p1 UInt64, SHARED g4.p2 UInt64, SHARED g4.p3 UInt64, SHARED g4.p4 UInt64, SHARED g4.p5 UInt64, SHARED g4.p6 UInt64, SHARED g4.p7 UInt64, SHARED g4.p8 UInt64, SHARED g4.p9 UInt64, SHARED g5.p0 UInt64, SHARED g5.p1 UInt64, SHARED g5.p2 UInt64, SHARED g5.p3 UInt64, SHARED g5.p4 UInt64, SHARED g5.p5 UInt64, SHARED g5.p6 UInt64, SHARED g5.p7 UInt64, SHARED g5.p8 UInt64, SHARED g5.p9 UInt64, SHARED g6.p0 UInt64, SHARED g6.p1 UInt64, SHARED g6.p2 UInt64, SHARED g6.p3 UInt64, SHARED g6.p4 UInt64, SHARED g6.p5 UInt64, SHARED g6.p6 UInt64, SHARED g6.p7 UInt64, SHARED g6.p8 UInt64, SHARED g6.p9 UInt64, SHARED g7.p0 UInt64, SHARED g7.p1 UInt64, SHARED g7.p2 UInt64, SHARED g7.p3 UInt64, SHARED g7.p4 UInt64, SHARED g7.p5 UInt64, SHARED g7.p6 UInt64, SHARED g7.p7 UInt64, SHARED g7.p8 UInt64, SHARED g7.p9 UInt64, SHARED g8.p0 UInt64, SHARED g8.p1 UInt64, SHARED g8.p2 UInt64, SHARED g8.p3 UInt64, SHARED g8.p4 UInt64, SHARED g8.p5 UInt64, SHARED g8.p6 UInt64, SHARED g8.p7 UInt64, SHARED g8.p8 UInt64, SHARED g8.p9 UInt64, SHARED g9.p0 UInt64, SHARED g9.p1 UInt64, SHARED g9.p2 UInt64, SHARED g9.p3 UInt64, SHARED g9.p4 UInt64, SHARED g9.p5 UInt64, SHARED g9.p6 UInt64, SHARED g9.p7 UInt64, SHARED g9.p8 UInt64, SHARED g9.p9 UInt64)) engine=MergeTree order by tuple() settings min_bytes_for_wide_part=0, min_rows_for_wide_part=0</create_query>
+
+    <!-- The same JSON text for both tables: path gX.pY of row n holds n * (10 X + Y + 1) + 10 X + Y. -->
+    <fill_query>insert into {table} select concat('{{', arrayStringConcat(arrayMap(g -> concat('"g', toString(g), '":{{', arrayStringConcat(arrayMap(p -> concat('"p', toString(p), '":', toString(number * (g * 10 + p + 1) + g * 10 + p)), range(10)), ','), '}}'), range(10)), ','), '}}') from numbers(1000000)</fill_query>
+    <fill_query>optimize table {table} final</fill_query>
+
+    <query>select sum(json.g1.p7) from {table} format Null</query>
+    <query>select json.g0.p1, json.g5.p0, json.g9.p9 from {table} format Null</query>
+    <query>select json from {table} format Null settings max_block_size = 8192</query>
+    <query>select json from {table} format Null settings max_block_size = 65536</query>
+    <query>select json.^g3 from {table} format Null</query>
+
+    <drop_query>drop table if exists {table}</drop_query>
+</test>

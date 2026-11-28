@@ -8,6 +8,9 @@ namespace DB::PrometheusQueryToSQL
 
 /// Applies a binary operator.
 SQLQueryPiece applyBinaryOperator(
-    const PQT::BinaryOperator * operator_node, SQLQueryPiece && left_argument, SQLQueryPiece && right_argument, ConverterContext & context);
+    const PrometheusQueryTree::BinaryOperator * operator_node,
+    SQLQueryPiece && left_argument,
+    SQLQueryPiece && right_argument,
+    ConverterContext & context);
 
 }

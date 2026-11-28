@@ -1,4 +1,8 @@
 #include <algorithm>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
@@ -10,7 +14,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
-#include <Processors/QueryPlan/Optimizations/removeUnusedColumns.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -22,15 +25,12 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
+    extern const SettingsBool enable_multiple_prewhere_read_steps;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_prewhere_after_pushdown;
     extern const SettingsBool vector_search_with_rescoring;
-}
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
 }
 
 namespace QueryPlanOptimizations
@@ -50,13 +50,53 @@ static void removeFromOutput(ActionsDAG & dag, const std::string name)
     }
 }
 
+static bool shouldSuppressPrewhereForVectorSearch(const ReadFromMergeTree & read_from_merge_tree_step, const Settings & settings)
+{
+    if (!read_from_merge_tree_step.getVectorSearchParameters().has_value())
+        return false;
+
+    if (read_from_merge_tree_step.isParallelReadingFromReplicas())
+        return false;
+
+    auto analyzed_result = read_from_merge_tree_step.getAnalyzedResult();
+    analyzed_result = analyzed_result ? analyzed_result : read_from_merge_tree_step.selectRangesToRead();
+    if (!analyzed_result)
+        return false;
+
+    if (settings[Setting::vector_search_with_rescoring])
+    {
+        if (read_from_merge_tree_step.isQueryWithFinal())
+            return false;
+
+        for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
+        {
+            if (!part_with_ranges.ranges.empty() && !part_with_ranges.read_hints.vector_search_results.has_value())
+                return false;
+        }
+
+        return true;
+    }
+
+    for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
+    {
+        if (!part_with_ranges.ranges.empty()
+            && (!part_with_ranges.read_hints.vector_search_results.has_value()
+                || !part_with_ranges.read_hints.vector_search_results->distances.has_value()))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 ActionsDAG splitAndFillPrewhereInfo(
     PrewhereInfoPtr & prewhere_info,
     bool remove_prewhere_column,
     ActionsDAG filter_expression,
     const String & filter_column_name,
-    const std::unordered_set<const ActionsDAG::Node *> & prewhere_nodes,
-    const std::list<const ActionsDAG::Node *> & prewhere_nodes_list)
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & prewhere_nodes,
+    const ListWithMemoryTracking<const ActionsDAG::Node *> & prewhere_nodes_list)
 {
     prewhere_info->need_filter = true;
     prewhere_info->remove_prewhere_column = remove_prewhere_column;
@@ -86,7 +126,7 @@ ActionsDAG splitAndFillPrewhereInfo(
     ///
     /// So, here we restore removed inputs for PREWHERE actions
     {
-        std::unordered_set<const ActionsDAG::Node *> first_outputs(
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> first_outputs(
             split_result.first.getOutputs().begin(), split_result.first.getOutputs().end());
         for (const auto * input : split_result.first.getInputs())
         {
@@ -134,7 +174,7 @@ ActionsDAG splitAndFillPrewhereInfo(
     return std::move(split_result.second);
 }
 
-void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_columns)
+void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_columns, const bool suppress_for_vector_search)
 {
     /// Assume that there are at least 2 nodes:
     /// 1. FilterNode - parent_node
@@ -175,22 +215,12 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (!optimize)
         return;
 
-    auto column_sizes = storage.getColumnSizes();
-    if (column_sizes.empty())
-        return;
-
-    /// These two optimizations conflict:
-    /// - vector search lookups with disabled rescoring
-    /// - PREWHERE
-    /// The former is more impactful, therefore disable PREWHERE if both may be used.
     auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
-    if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value() && !settings[Setting::vector_search_with_rescoring])
-        return;
 
-    /// Extract column compressed sizes
-    std::unordered_map<std::string, UInt64> column_compressed_sizes;
-    for (const auto & [name, sizes] : column_sizes)
-        column_compressed_sizes[name] = sizes.data_compressed;
+    /// If PREWHERE is deferred after FINAL, moving conditions cannot save any reads, and the moved conditions
+    /// would escape the already-made deferral decision and run before a deferred row policy
+    if (is_final && read_from_merge_tree_step && read_from_merge_tree_step->isPrewhereDeferredAfterFinal())
+        return;
 
     const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
 
@@ -199,18 +229,79 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     const bool has_multiple_conditions = filter_root_node.type == ActionsDAG::ActionType::FUNCTION
         && filter_root_node.function_base && filter_root_node.function_base->getName() == "and";
 
+    /// Candidate parallel-replica plans have not applied filters yet. Keep their existing
+    /// column-size estimates until pruning filters or analyzed parts are available.
+    const bool use_pruned_parts = read_from_merge_tree_step
+        && (read_from_merge_tree_step->getIndexes() || read_from_merge_tree_step->getAnalyzedResult());
+    ReadFromMergeTree::PartsForPrewhere prewhere_parts;
+    if (use_pruned_parts)
+        prewhere_parts = read_from_merge_tree_step->getPartsForPrewhere(has_multiple_conditions ? &queried_columns : nullptr);
+    auto column_sizes = use_pruned_parts
+        ? read_from_merge_tree_step->getColumnSizesForPrewhere(queried_columns, prewhere_parts.parts)
+        : storage.getColumnSizes(queried_columns, settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
+    if (column_sizes.empty())
+        return;
+
+    /// These two optimizations conflict:
+    /// - vector search lookups
+    /// - PREWHERE
+    /// The former is more impactful, therefore disable PREWHERE if the vector
+    /// second pass can actually use the vector-search read hints.
+    if (suppress_for_vector_search && read_from_merge_tree_step && shouldSuppressPrewhereForVectorSearch(*read_from_merge_tree_step, settings))
+        return;
+
+    /// Extract column compressed sizes
+    UnorderedMapWithMemoryTracking<std::string, UInt64> column_compressed_sizes;
+    for (const auto & [name, sizes] : column_sizes)
+        column_compressed_sizes[name] = sizes.data_compressed;
+
+    /// Without statistics for a small read, the conditions are ordered by the sizes of their columns.
+    ConditionSelectivityEstimatorPtr selectivity_estimator;
+    if (has_multiple_conditions && read_from_merge_tree_step)
+    {
+        if (!use_pruned_parts)
+            selectivity_estimator = read_from_merge_tree_step->getConditionSelectivityEstimatorForPrewhere(queried_columns, &filter_root_node);
+        else if (prewhere_parts.use_statistics)
+            selectivity_estimator = read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns, prewhere_parts.parts);
+    }
+
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
         storage_snapshot,
-        (has_multiple_conditions && read_from_merge_tree_step) ? read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns) : nullptr,
+        std::move(selectivity_estimator),
         queried_columns,
         storage.supportedPrewhereColumns(),
+        storage.supportedPrewhereColumnsIncludeSubcolumns(),
         getLogger("QueryPlanOptimizePrewhere")};
+
+    /// The existing PREWHERE and the row policy observe the values of the columns they read
+    /// before the moved conditions are applied, so these columns cannot be filtered during the scan.
+    NameSet columns_read_before_filter;
+    if (existing_prewhere_info)
+        for (const auto & input : existing_prewhere_info->prewhere_actions.getInputs())
+            columns_read_before_filter.insert(input->result_name);
+    if (auto row_level_filter = source_step_with_filter->getRowLevelFilter())
+        for (const auto & input : row_level_filter->actions.getInputs())
+            columns_read_before_filter.insert(input->result_name);
+    /// `installTopKDynamicFilter` runs later and prepends `__topKFilter` to PREWHERE, so it reads its column too.
+    String top_k_filter_column;
+    if (read_from_merge_tree_step && read_from_merge_tree_step->hasPendingTopKDynamicFilter())
+    {
+        const auto & column = read_from_merge_tree_step->getTopKFilterInfo()->column_name;
+        columns_read_before_filter.insert(column);
+        /// Only then a condition on that column alone gets its own read step after `__topKFilter` (see `tryBuildPrewhereSteps`).
+        if (settings[Setting::enable_multiple_prewhere_read_steps]
+            && read_from_merge_tree_step->canReadColumnsAhead({column}, read_from_merge_tree_step->getParts()))
+            top_k_filter_column = column;
+    }
 
     auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),
         filter_step->getFilterColumnName(),
         source_step_with_filter->getContext(),
-        is_final);
+        is_final,
+        columns_read_before_filter,
+        top_k_filter_column,
+        existing_prewhere_info ? &existing_prewhere_info->prewhere_actions : nullptr);
 
     if (optimize_result.prewhere_nodes.empty())
         return;
@@ -274,11 +365,13 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     QueryPlanStepPtr new_step;
     if (!optimize_result.fully_moved_to_prewhere)
     {
-        new_step = std::make_unique<FilterStep>(
+        auto new_filter_step = std::make_unique<FilterStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
+        new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
+        new_step = std::move(new_filter_step);
     }
     else
     {
@@ -294,56 +387,15 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (!remove_unused_columns)
         return;
 
-    auto & parent_step = parent_node.step;
-    if (source_step_with_filter->canRemoveUnusedColumns() && source_step_with_filter->canRemoveColumnsFromOutput()
-        && parent_step->canRemoveUnusedColumns())
-    {
-        /// Pass all output positions (we want to keep the same outputs, just prune inputs).
-        const auto & parent_output = parent_step->getOutputHeader();
-        std::vector<size_t> all_positions;
-        all_positions.reserve(parent_output->columns());
-        for (size_t i = 0; i < parent_output->columns(); ++i)
-            all_positions.push_back(i);
-
-        const auto unused_column_removal_result = parent_step->removeUnusedColumns(all_positions, true);
-
-        if (unused_column_removal_result.changed && !unused_column_removal_result.required_input_positions.empty())
-        {
-            /// The parent step returned the positions it needs from its child (child 0).
-            /// Pass them directly to the source step.
-            chassert(unused_column_removal_result.required_input_positions.size() == 1);
-            const auto & required_positions = unused_column_removal_result.required_input_positions[0];
-            auto source_removal_result = source_step_with_filter->removeUnusedColumns(required_positions, true);
-
-            const auto effective_kept_positions = effectiveKeptOutputPositions(
-                source_removal_result.changed,
-                std::move(source_removal_result.kept_output_positions),
-                source_step_with_filter->getOutputHeader()->columns());
-
-            /// The source step might keep extra columns it cannot remove (e.g., `ReadFromMergeTree` with
-            /// FINAL must keep sort key columns for merging). If so, absorb them into the parent's DAG.
-            /// The parent step is always an ExpressionStep or FilterStep (created above), so absorption
-            /// must succeed.
-            if (!blocksHaveEqualStructure(*parent_step->getInputHeaders().at(0), *source_step_with_filter->getOutputHeader()))
-            {
-                if (!absorbExtraChildColumns(parent_node, 0, required_positions, effective_kept_positions))
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Input-output header mismatch after removing unused columns after pushing down filters to prewhere "
-                        "and failed to absorb extra columns. Input header: {}, output header: {}",
-                        parent_step->getInputHeaders().at(0)->dumpStructure(),
-                        source_step_with_filter->getOutputHeader()->dumpStructure());
-            }
-        }
+    /// Keep the outputs as they are, and prune what the new step and the read below it no longer need. A column the
+    /// read keeps anyway - `ReadFromMergeTree` with FINAL keeps the sorting key for the merge - is consumed by the step.
+    removeUnusedColumns(parent_node, RemoveUnusedColumnsMode::Local);
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-        {
-            assertBlocksHaveEqualStructure(
-                *source_step_with_filter->getOutputHeader(),
-                *parent_step->getInputHeaders()[0],
-                "after removing unused columns in optimizePrewhere");
-        }
+    assertBlocksHaveEqualStructure(
+        *source_step_with_filter->getOutputHeader(),
+        *parent_node.step->getInputHeaders()[0],
+        "after removing unused columns in optimizePrewhere");
 #endif
-    }
 }
 
 }

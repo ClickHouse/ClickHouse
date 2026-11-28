@@ -9,22 +9,28 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
 يدعم ClickHouse التكامل مع عدة كتالوجات (Unity وGlue وPolaris وغيرها). يوضح هذا الدليل الخطوات اللازمة للاستعلام عن بياناتك المُدارة في Databricks باستخدام ClickHouse و[Unity Catalog](https://www.databricks.com/product/unity-catalog).
 
-يدعم Databricks عدة تنسيقات بيانات في بيئة lakehouse الخاصة به. وباستخدام ClickHouse، يمكنك الاستعلام عن جداول Unity Catalog بصيغتَي Delta وIceberg.
+يدعم Databricks عدة تنسيقات بيانات في بيئة lakehouse الخاصة به. وباستخدام ClickHouse، يمكنك الاستعلام عن جداول Delta وIceberg في Unity Catalog التي تستخدم مواقع تخزين خارجية.
 
 <Note>
-  نظرًا إلى أن هذه الميزة تجريبية، ستحتاج إلى تفعيلها باستخدام:
-  `SET allow_experimental_database_unity_catalog = 1;`
+  لا يوفر Unity Catalog ميزة [credential vending](https://docs.databricks.com/aws/en/external-access/credential-vending) لجداول Delta Lake أو Iceberg المخزّنة على [Databricks managed storage](https://docs.databricks.com/aws/en/data-governance/unity-catalog/managed-versus-external). يعتمد ClickHouse على credential vending لقراءة بيانات الجداول من Unity Catalog.
 </Note>
 
-<div id="configuring-unity-in-databricks">
-  ## تهيئة Unity في Databricks
-</div>
+<Note>
+  هذه الميزة في مرحلة تجريبية. فعّلها باستخدام:
+  `SET allow_database_unity_catalog = 1;`
+
+  يستخدم مثال [قراءة Iceberg](#read-iceberg) الإعداد `catalog_type = 'rest'`، الذي يتطلب بدلًا من ذلك `SET allow_database_iceberg = 1;`.
+
+  في الإصدارات السابقة للإصدار 25.8، حيث كانت هذه الميزات تجريبية، يُستخدم الإعدادان `allow_experimental_database_unity_catalog` و`allow_experimental_database_iceberg`.
+</Note>
+
+## تهيئة Unity في Databricks {#configuring-unity-in-databricks}
 
 للسماح لـ ClickHouse بالتفاعل مع Unity Catalog، عليك التأكد من أن Unity Catalog مُعَدّ للسماح بالتفاعل مع قارئ خارجي. ويمكن تحقيق ذلك باتباع دليل [«تمكين الوصول إلى البيانات الخارجية في Unity Catalog»](https://docs.databricks.com/aws/en/external-access/admin).
 
@@ -34,21 +40,15 @@ import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 * بالنسبة إلى عملاء Delta، استخدم رمز وصول شخصي ([PAT](https://docs.databricks.com/aws/en/dev-tools/auth/pat)).
 
-<div id="required-pat-token-permissions">
-  ### أذونات رمز PAT المطلوبة
-</div>
+### أذونات رمز PAT المطلوبة {#required-pat-token-permissions}
 
 عند استخدام PAT للوصول للقراءة، يجب أن يمتلك الرمز المميز أذونات تتيح لـ ClickHouse إدراج البيانات الوصفية في Unity Catalog وقراءتها. تأكد من أن PAT يمتلك على الأقل [امتياز](https://docs.databricks.com/aws/en/external-access/admin#grant-a-principal-unity-catalog-privileges) `EXTERNAL USE SCHEMA`، بالإضافة إلى إذن `SELECT` على الجدول، و`USE CATALOG` على الكتالوج الأصل، و`USE SCHEMA` على المخطط الأصل.
 
-<div id="creating-a-connection-between-unity-catalog-and-clickhouse">
-  ## إنشاء connection بين Unity Catalog وClickHouse
-</div>
+## إنشاء connection بين Unity Catalog وClickHouse {#creating-a-connection-between-unity-catalog-and-clickhouse}
 
 بعد إعداد Unity Catalog وتفعيل authentication، أنشئ connection بين ClickHouse وUnity Catalog.
 
-<div id="read-delta">
-  ### قراءة Delta
-</div>
+### قراءة Delta {#read-delta}
 
 ```sql
 CREATE DATABASE unity
@@ -56,11 +56,9 @@ ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/un
 SETTINGS warehouse = 'CATALOG_NAME', catalog_credential = '<PAT>', catalog_type = 'unity'
 ```
 
-<div id="read-iceberg">
-  ### قراءة جداول Iceberg
-</div>
+### قراءة جداول Iceberg {#read-iceberg}
 
-للوصول إلى جداول Iceberg المُدارة:
+للوصول إلى جداول Iceberg الخارجية:
 
 ```sql
 CREATE DATABASE unity
@@ -69,9 +67,7 @@ SETTINGS catalog_type = 'rest', catalog_credential = '<client-id>:<client-secret
 oauth_server_uri = 'https://<workspace-id>.cloud.databricks.com/oidc/v1/token', auth_scope = 'all-apis,sql'
 ```
 
-<div id="querying-unity-catalog-tables-using-clickhouse">
-  ## الاستعلام عن جداول Unity Catalog باستخدام ClickHouse
-</div>
+## الاستعلام عن جداول Unity Catalog باستخدام ClickHouse {#querying-unity-catalog-tables-using-clickhouse}
 
 الآن وبعد إعداد الاتصال، يمكنك البدء في الاستعلام عبر Unity Catalog. على سبيل المثال:
 
@@ -165,9 +161,7 @@ ENGINE = Iceberg('s3://<path>);
 
 ```
 
-<div id="loading-data-from-your-data-lake-into-clickhouse">
-  ## تحميل البيانات من بحيرة البيانات لديك إلى ClickHouse
-</div>
+## تحميل البيانات من بحيرة البيانات لديك إلى ClickHouse {#loading-data-from-your-data-lake-into-clickhouse}
 
 إذا كنت بحاجة إلى تحميل البيانات من Databricks إلى ClickHouse، فابدأ بإنشاء جدول محلي في ClickHouse:
 

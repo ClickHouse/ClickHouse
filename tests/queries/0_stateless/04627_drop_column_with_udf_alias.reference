@@ -1,0 +1,7 @@
+array(length(event) AS l1, (l1 + l1) AS l2)
+before drop	1	ab	[2,4]
+before drop	2	abcd	[4,8]
+time added	1
+time dropped	0
+after drop	1	ab	[2,4]
+after drop	2	abcd	[4,8]

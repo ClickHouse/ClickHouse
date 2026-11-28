@@ -12,14 +12,11 @@ set(CRC32C_SOURCES
     "${CRC32C_DIR}/src/crc32c.cc"
 )
 
-if(ARCH_AARCH64)
-  include_directories(${CRC32C_CMAKE_DIR}/aarch64)
-
+if(ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER)
   # crc32c_arm64.cc uses the vmull_p64 instruction, which requires the AES extension.
   # The default ARM profile includes +crypto (which implies AES), the compat profile does not.
-  if (NOT NO_ARMV81_OR_HIGHER)
-    list(APPEND CRC32C_SOURCES "${CRC32C_DIR}/src/crc32c_arm64.cc")
-  endif()
+  include_directories(${CRC32C_CMAKE_DIR}/aarch64)
+  list(APPEND CRC32C_SOURCES "${CRC32C_DIR}/src/crc32c_arm64.cc")
 elseif(ARCH_AMD64)
   if(X86_ARCH_LEVEL VERSION_GREATER_EQUAL 2)
     include_directories(${CRC32C_CMAKE_DIR}/x86_64/sse42)
@@ -27,6 +24,12 @@ elseif(ARCH_AMD64)
   else()
     include_directories(${CRC32C_CMAKE_DIR}/x86_64/no_sse42)
   endif()
+elseif(ARCH_S390X)
+  # s390x is big-endian; the portable implementation needs the right byte order define.
+  include_directories(${CRC32C_CMAKE_DIR}/generic_be)
+else()
+  # Portable little-endian fallback for ARMv8.0 compat, ppc64le, riscv64, loongarch64, etc.
+  include_directories(${CRC32C_CMAKE_DIR}/generic)
 endif()
 
 add_library(_crc32c ${CRC32C_SOURCES})

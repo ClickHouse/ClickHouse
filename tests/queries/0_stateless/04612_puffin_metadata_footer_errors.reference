@@ -1,0 +1,40 @@
+--- inflated_lz4_content_size.puffin ---
+Puffin footer LZ4 content size
+--- lz4_content_size_over_absolute_cap.puffin ---
+absolute decompression limit
+--- missing_lz4_content_size.puffin ---
+Puffin footer LZ4 frame must declare content size
+--- lz4_trailing_bytes.puffin ---
+trailing bytes
+--- incomplete_lz4_footer.puffin ---
+Puffin footer LZ4 frame is incomplete
+--- missing_type.puffin ---
+missing required field
+--- missing_blobs.puffin ---
+missing required field 'blobs'
+--- null_blobs.puffin ---
+missing required field 'blobs'
+--- null_blob_entry.puffin ---
+must be an object
+--- invalid_blob_entry.puffin ---
+must be an object
+--- missing_properties.puffin ---
+missing required field
+--- missing_referenced_data_file.puffin ---
+missing required property
+--- missing_cardinality.puffin ---
+missing required property
+--- invalid_properties_array.puffin ---
+field 'properties' must be an object
+--- null_properties.puffin ---
+field 'properties' must be an object
+--- invalid_file_properties_array.puffin ---
+Puffin footer field 'properties' must be an object
+--- null_file_properties.puffin ---
+Puffin footer field 'properties' must be an object
+--- invalid_file_property_number.puffin ---
+Puffin footer property
+--- missing_footer_leading_magic.puffin ---
+Invalid Puffin footer length
+--- oversized_raw_footer.puffin ---
+exceeds absolute limit

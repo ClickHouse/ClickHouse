@@ -5,7 +5,7 @@
 When a PR is opened on the public repository, a sync PR may be created in a downstream
 repository. The downstream CI runs additional tests against the same code.
 
-The `json.html` report page can display these downstream results alongside the upstream
+The `praktika.html` report page can display these downstream results alongside the upstream
 results in a single merged table — for team members connected to a VPN with a configured
 proxy.
 
@@ -21,14 +21,14 @@ proxy.
    }
    ```
 
-2. The public `json.html` page (at top level):
+2. The public `praktika.html` page (at top level):
    - Renders public results immediately
    - If a proxy URL is configured, fetches the sync metadata via the proxy
    - If metadata exists, fetches the downstream `result_pr.json`
    - Merges downstream results into the table with a `Downstream:` name prefix
    - Shows error messages if any step fails
 
-3. Clicking a downstream result name opens the downstream `json.html` served from the
+3. Clicking a downstream result name opens the downstream `praktika.html` served from the
    proxy (in a new tab), where further drill-down works automatically.
 
 ## Setup
@@ -42,7 +42,7 @@ proxy.
 
 **Option A: URL parameter** (one-time, gets persisted to localStorage):
 ```
-https://s3.amazonaws.com/<bucket>/json.html?PR=123&sha=abc&name_0=PR&proxy=https://<proxy-host>/<private-bucket>
+https://s3.amazonaws.com/<bucket>/praktika.html?PR=123&sha=abc&name_0=PR&proxy=https://<proxy-host>/<private-bucket>
 ```
 
 **Option B: Footer toggle** — click the link icon in the page footer and enter the
@@ -71,7 +71,7 @@ localStorage.removeItem('privateBaseUrl');
 ## Architecture
 
 ```
-Browser (json.html on S3)
+Browser (praktika.html on S3)
     |
     |-- fetch result_pr.json from S3 (public, immediate)
     |-- render public results

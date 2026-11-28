@@ -13,6 +13,7 @@ struct ConverterContext;
 bool isOneArgumentMathFunction(std::string_view function_name);
 
 /// Applies a one-argument math function.
-SQLQueryPiece applyOneArgumentMathFunction(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+SQLQueryPiece applyOneArgumentMathFunction(
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

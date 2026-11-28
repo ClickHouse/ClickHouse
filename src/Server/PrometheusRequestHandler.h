@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Core/Defines.h>
+#include <Interpreters/Context_fwd.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/PrometheusRequestHandlerConfig.h>
+#include <Common/OpenTelemetryTraceContext.h>
 
 
 namespace DB
@@ -10,6 +12,7 @@ namespace DB
 class AsynchronousMetrics;
 class IServer;
 class PrometheusMetricsWriter;
+class WriteBuffer;
 class WriteBufferFromHTTPServerResponse;
 
 /// Handles requests for prometheus protocols (/metrics and /api/v1/*).
@@ -36,6 +39,15 @@ private:
     /// Calls onException() in a try-catch block.
     void tryCallOnException();
 
+    /// Parses the client's trace context from the request.
+    void parseClientTraceContext(const HTTPServerRequest & request);
+
+    /// Starts the server span of the current thread, sampled by the given context's settings if there is no client trace.
+    OpenTelemetry::TracingContextHolderPtr startTracing(const HTTPServerRequest & request, const ContextPtr & settings_context);
+
+    /// Returns the request URI with the values of sensitive parameters and PromQL expressions hidden.
+    [[nodiscard]] String getURIForLogging(const HTTPServerRequest & request) const;
+
     IServer & server;
     const PrometheusRequestHandlerConfig config;
     const AsynchronousMetrics & async_metrics;
@@ -52,7 +64,15 @@ private:
     std::unique_ptr<Impl> impl;
 
     String http_method;
+
+    OpenTelemetry::TracingContext client_trace_context;
+    OpenTelemetry::TracingContextHolderPtr thread_trace_context;
+
     std::unique_ptr<WriteBufferFromHTTPServerResponse> write_buffer_from_response;
+    /// Compresses the response body into `write_buffer_from_response` when the client accepts it.
+    std::unique_ptr<WriteBuffer> compressed_write_buffer;
+    /// The compressor dropped by an error response; it is cancelled after the response is finished.
+    std::unique_ptr<WriteBuffer> dropped_compressed_write_buffer;
     size_t http_response_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     ProfileEvents::Event write_event;
     bool send_stacktrace = false;

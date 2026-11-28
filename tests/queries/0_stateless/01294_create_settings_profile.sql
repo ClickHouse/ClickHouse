@@ -112,7 +112,7 @@ CREATE PROFILE s3_01294 SETTINGS max_memory_usage=5000000 MIN 4000000 MAX 600000
 CREATE PROFILE s4_01294 SETTINGS max_memory_usage=5000000 TO r1_01294;
 CREATE PROFILE s5_01294 SETTINGS INHERIT default, readonly=0, max_memory_usage MAX 6000000 WRITABLE TO u1_01294;
 CREATE PROFILE s6_01294 TO ALL EXCEPT u1_01294, r1_01294;
-SELECT name, storage, num_elements, apply_to_all, apply_to_list, apply_to_except FROM system.settings_profiles WHERE name LIKE 's%\_01294' ORDER BY name;
+SELECT name, if(storage = 'replicated', 'local_directory', storage), num_elements, apply_to_all, apply_to_list, apply_to_except FROM system.settings_profiles WHERE name LIKE 's%\_01294' ORDER BY name;
 
 SELECT '-- system.settings_profile_elements';
 SELECT * FROM system.settings_profile_elements WHERE profile_name LIKE 's%\_01294' ORDER BY profile_name, index;

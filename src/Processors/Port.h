@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -32,7 +33,7 @@ class Port
 public:
     struct UpdateInfo
     {
-        using UpdateList = std::vector<void *>;
+        using UpdateList = VectorWithMemoryTracking<void *>;
 
         UpdateList * update_list = nullptr;
         void * id = nullptr;
@@ -62,7 +63,7 @@ protected:
             Chunk chunk;
             std::exception_ptr exception;
 
-            bool isEmpty() const { return chunk.empty() && !exception; }
+            [[nodiscard]] bool isEmpty() const { return chunk.empty() && !exception; }
         };
 
     private:
@@ -103,7 +104,7 @@ protected:
             Data * operator->() const { return data; }
             Data & operator*()  const { return *data; }
 
-            Data * get() const { return data; }
+            [[nodiscard]] Data * get() const { return data; }
             explicit operator bool() const { return data; }
 
             Data * release()
@@ -224,11 +225,17 @@ public:
     Port(Block header_, IProcessor * processor_) : header(std::make_shared<const Block>(std::move(header_))), processor(processor_) { }
 
     void setUpdateInfo(UpdateInfo * info) { update_info = info; }
-    bool hasUpdateInfo() const { return update_info != nullptr; }
+    [[nodiscard]] bool hasUpdateInfo() const { return update_info != nullptr; }
 
-    const Block & getHeader() const { return *header; }
-    const SharedHeader & getSharedHeader() const { return header; }
-    bool ALWAYS_INLINE isConnected() const { return state != nullptr; }
+    [[nodiscard]] const Block & getHeader() const { return *header; }
+    [[nodiscard]] const SharedHeader & getSharedHeader() const { return header; }
+    [[nodiscard]] bool ALWAYS_INLINE isConnected() const { return state != nullptr; }
+
+    /// Identity of the shared state of two connected ports (both sides return the same value).
+    /// Lets diagnostics match an output port to its peer input port without dereferencing the
+    /// peer processor, whose lifetime is not guaranteed during pipeline teardown. Opaque on
+    /// purpose: only pointer identity is meaningful.
+    [[nodiscard]] const void * getConnectionId() const { return state.get(); }
 
     void ALWAYS_INLINE assumeConnected() const
     {
@@ -236,7 +243,7 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Port is not connected");
     }
 
-    bool ALWAYS_INLINE hasData() const
+    [[nodiscard]] bool ALWAYS_INLINE hasData() const
     {
         assumeConnected();
         return state->getFlags() & State::HAS_DATA;
@@ -249,7 +256,7 @@ public:
         return *processor;
     }
 
-    const IProcessor & getProcessor() const
+    [[nodiscard]] const IProcessor & getProcessor() const
     {
         if (!processor)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Port does not belong to Processor");
@@ -456,19 +463,19 @@ public:
             updateVersion();
     }
 
-    bool ALWAYS_INLINE isNeeded() const
+    [[nodiscard]] bool ALWAYS_INLINE isNeeded() const
     {
         assumeConnected();
         return state->getFlags() & State::IS_NEEDED;
     }
 
-    bool ALWAYS_INLINE isFinished() const
+    [[nodiscard]] bool ALWAYS_INLINE isFinished() const
     {
         assumeConnected();
         return state->getFlags() & State::IS_FINISHED;
     }
 
-    bool ALWAYS_INLINE canPush() const
+    [[nodiscard]] bool ALWAYS_INLINE canPush() const
     {
         assumeConnected();
         auto flags = state->getFlags();
@@ -481,7 +488,7 @@ public:
         return *input_port;
     }
 
-    const InputPort & getInputPort() const
+    [[nodiscard]] const InputPort & getInputPort() const
     {
         assumeConnected();
         return *input_port;

@@ -30,7 +30,7 @@ def test_s3_non_deterministic_partition_by(started_cluster):
         (
             s String
         )
-        ENGINE = S3('http://minio1:9001/{started_cluster.minio_bucket}/{{_partition_id}}.parquet', 'minio', 'ClickHouse_Minio_P@ssw0rd')
+        ENGINE = S3('http://minio1:9001/{started_cluster.minio_bucket}/{{_partition_id}}.parquet', 'minio', 'ClickHouse_Minio_P@ssw0rd', partition_strategy='wildcard')
         PARTITION BY concat(s, toString(now64(9)))
         """
     )

@@ -10,8 +10,10 @@ namespace CompactionStatistics
 {
 
 /** Estimate approximate amount of disk space needed for merge or mutation. With a surplus.
+  * `current_time` is the moment expired parts are recognized at; 0 means the local clock.
   */
-UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted = false);
+UInt64 estimateNeededDiskSpace(
+    const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted = false, time_t current_time = 0);
 
 /** Estimate approximate amount of disk space needed to be free before schedule such merge.
   */
@@ -19,13 +21,15 @@ UInt64 estimateAtLeastAvailableSpace(const PartsRange & range);
 
 /** Get maximum total size of parts to do merge, at current moment of time.
   * It depends on number of free threads in background_pool and amount of free space in disk.
+  * `respect_min_unreserved_space` keeps the min_unreserved_disk_space_for_merge headroom out of the limit.
   */
-UInt64 getMaxSourcePartsBytesForMerge(const MergeTreeData & data);
+UInt64 getMaxSourcePartsBytesForMerge(const MergeTreeData & data, bool respect_min_unreserved_space = true);
 
 /** For explicitly passed size of pool and number of used tasks.
   * This method could be used to calculate threshold depending on number of tasks in replication queue.
   */
-UInt64 getMaxSourcePartsBytesForMerge(const MergeTreeData & data, size_t max_count, size_t scheduled_tasks_count);
+UInt64 getMaxSourcePartsBytesForMerge(
+    const MergeTreeData & data, size_t max_count, size_t scheduled_tasks_count, bool respect_min_unreserved_space = true);
 
 /** Same as above but with settings specification.
   */

@@ -1,0 +1,2 @@
+A module whose memory starts at zero pages but can grow still splits the block
+1

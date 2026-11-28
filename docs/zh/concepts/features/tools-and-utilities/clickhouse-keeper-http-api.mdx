@@ -9,9 +9,7 @@ doc_type: 'reference'
 ClickHouse Keeper 提供 HTTP API 和内置 Web 仪表板，用于监控、健康检查和存储管理。
 该接口允许运维人员通过 Web 浏览器或 HTTP 客户端检查集群状态、执行命令，并管理 Keeper 存储。
 
-<div id="configuration">
-  ## 配置
-</div>
+## 配置 {#configuration}
 
 要启用 HTTP API，请在 `keeper_server` 配置中添加 `http_control` 部分：
 
@@ -26,9 +24,7 @@ ClickHouse Keeper 提供 HTTP API 和内置 Web 仪表板，用于监控、健�
 </keeper_server>
 ```
 
-<div id="configuration-options">
-  ### 配置选项
-</div>
+### 配置选项 {#configuration-options}
 
 | 配置项                                       | 默认值      | 描述                    |
 | ----------------------------------------- | -------- | --------------------- |
@@ -37,13 +33,9 @@ ClickHouse Keeper 提供 HTTP API 和内置 Web 仪表板，用于监控、健�
 | `http_control.readiness.endpoint`         | `/ready` | 就绪探针的自定义 path         |
 | `http_control.storage.session_timeout_ms` | `30000`  | 存储 API 操作的会话超时时间      |
 
-<div id="endpoints">
-  ## 端点
-</div>
+## 端点 {#endpoints}
 
-<div id="dashboard">
-  ### 仪表板
-</div>
+### 仪表板 {#dashboard}
 
 * **路径**: `/dashboard`
 * **方法**: GET
@@ -56,9 +48,18 @@ ClickHouse Keeper 提供 HTTP API 和内置 Web 仪表板，用于监控、健�
 * 存储浏览器
 * 命令执行界面
 
-<div id="readiness-probe">
-  ### 就绪探针
-</div>
+#### 集群选项卡 {#dashboard-cluster-tab}
+
+**集群**选项卡会以拓扑图和表格的形式展示 Raft 成员关系。每个成员会以不同颜色标示其健康状态：
+
+* **绿色** — 存活且与 leader 保持同步
+* **黄色** — 存活，但比 leader 落后超过 `stale_log_gap` 条日志条目
+* **红色** — 不可达 (心跳过期窗口内未收到成功的 Raft 响应) 
+* **灰色** — 未知 (只有从 leader 才能查看 peer 的健康状态；跟随者看到的 peer 状态均为未知) 
+
+表格还会显示每个成员的角色 (leader、follower 或 observer) 、Raft priority、最新日志索引、相对于 leader 的复制延迟，以及距上次成功收到 Raft 响应的时间。当当前节点不是 leader 时，此选项卡会提供一个深层链接，用于打开 leader 的仪表板，那里可查看完整的 peer 健康状态。也可通过 `/dashboard?tab=cluster` 直接打开此选项卡。
+
+### 就绪探针 {#readiness-probe}
 
 * **路径**: `/ready` (可配置) 
 * **方法**: GET
@@ -76,9 +77,7 @@ ClickHouse Keeper 提供 HTTP API 和内置 Web 仪表板，用于监控、健�
 }
 ```
 
-<div id="commands-api">
-  ### 命令 API
-</div>
+### 命令 API {#commands-api}
 
 * **路径**: `/api/v1/commands/{command}`
 * **方法**: GET, POST
@@ -87,21 +86,19 @@ ClickHouse Keeper 提供 HTTP API 和内置 Web 仪表板，用于监控、健�
 查询参数：
 
 * `command` - 要执行的命令
-* `cwd` - 基于路径的命令所使用的当前工作目录 (默认：`/`) 
+* `cwd` - 基于路径的命令所使用的当前工作目录，必须为绝对路径 (默认：`/`)
 
 示例：
 
 ```bash
-# 四字命令
+# Four-Letter Word command
 curl http://localhost:9182/api/v1/commands/stat
 
-# ZooKeeper CLI 命令
+# ZooKeeper CLI command
 curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
 ```
 
-<div id="storage-api">
-  ### Storage API
-</div>
+### Storage API {#storage-api}
 
 * **基础路径**: `/api/v1/storage`
 * **说明**: 用于 Keeper 存储操作的 REST API

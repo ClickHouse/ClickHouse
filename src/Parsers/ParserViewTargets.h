@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/// Parses information about target tables (external or inner) of a materialized view or a window view.
+/// Parses information about target tables (external or inner) of a materialized view.
 /// The function parses one or multiple parts of a CREATE query looking like this:
 ///     TO db.table_name
 ///     TO INNER UUID 'XXX'
@@ -22,9 +22,9 @@ public:
     }
 
 protected:
-    const char * getName() const override { return "ViewTargets"; }
+    [[nodiscard]] const char * getName() const override { return "ViewTargets"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    bool canAccept(ViewTarget::Kind kind) const;
+    [[nodiscard]] bool canAccept(ViewTarget::Kind kind) const;
 
     std::vector<ViewTarget::Kind> accept_kinds;
 };

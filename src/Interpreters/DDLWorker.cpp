@@ -17,11 +17,13 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Storages/IStorage.h>
 
@@ -85,6 +87,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int NO_ZOOKEEPER;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
@@ -267,6 +270,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         return nullptr;
     };
 
+    std::optional<ExecutionStatus> parse_error;
     try
     {
         /// Stage 1: parse entry
@@ -275,11 +279,30 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     }
     catch (...)
     {
+        parse_error = ExecutionStatus::fromCurrentException();
+    }
+
+    if (parse_error)
+    {
+        out_reason = "Incorrect task format";
+
+        /// An entry of an unsupported version still has its hosts parsed, so report the error under the one of this host.
+        if (parse_error->code == ErrorCodes::UNKNOWN_FORMAT_VERSION && !task->entry.hosts.empty())
+        {
+            updateHostIDs(task->entry.hosts);
+            if (!task->findCurrentHostID(context, log, zookeeper, config_host_name))
+            {
+                out_reason = "There is no a local address in host list";
+                return add_to_skip_set();
+            }
+            write_error_status(task->host_id_str, *parse_error, out_reason);
+            return add_to_skip_set();
+        }
+
         /// What should we do if we even cannot parse host name and therefore cannot properly submit execution status?
         /// We can try to create fail node using FQDN if it equal to host name in cluster config attempt will be successful.
         /// Otherwise, that node will be ignored by DDLQueryStatusSource.
-        out_reason = "Incorrect task format";
-        write_error_status(host_fqdn_id, ExecutionStatus::fromCurrentException(), out_reason);
+        write_error_status(host_fqdn_id, *parse_error, out_reason);
         return add_to_skip_set();
     }
 
@@ -588,7 +611,22 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
             query_scope = QueryScope::create(query_context);
 
         NullWriteBuffer nullwb;
-        executeQuery(istr, nullwb, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
+        /// A server-owned handler query lifts the parser limits by sending `max_parser_depth = 0` /
+        /// `max_parser_backtracks = 0` with the entry settings (see `executeQueryImpl`), which
+        /// `makeQueryContext` has applied to `query_context` clamped to this host's constraints.
+        /// Ordinary distributed DDL therefore keeps this host's parser limits. `query_to_execute` is SQL
+        /// this server formatted rather than text the initiator typed, so `makeQueryContext` resets `dialect`
+        /// on the replay context and the parse of the text is not bounded by the entry's `max_query_size`
+        /// (the setting itself is kept: it also bounds the metadata size an `ALTER` may produce).
+        executeQuery(
+            istr,
+            nullwb,
+            query_context,
+            {},
+            QueryFlags{
+                .internal = internal,
+                .distributed_backup_restore = task.entry.is_backup_restore,
+                .parse_server_formatted_query_text = true });
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
@@ -821,11 +859,16 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
     if (auto * query = ast_ddl->as<ASTDropQuery>(); query && query->kind != ASTDropQuery::Kind::Truncate)
         return false;
 
+    /// These queries run on one replica per shard of a replicated table, and replication carries
+    /// the result to the other replicas. `UPDATE` must be here: it is not idempotent, so running
+    /// it on every replica would apply `SET v = v + 1` once per replica.
     if (!ast_ddl->as<ASTAlterQuery>() &&
         !ast_ddl->as<ASTOptimizeQuery>() &&
         !ast_ddl->as<ASTDropQuery>() &&
         !ast_ddl->as<ASTCreateIndexQuery>() &&
-        !ast_ddl->as<ASTDropIndexQuery>())
+        !ast_ddl->as<ASTDropIndexQuery>() &&
+        !ast_ddl->as<ASTDeleteQuery>() &&
+        !ast_ddl->as<ASTUpdateQuery>())
         return false;
 
     if (auto * alter = ast_ddl->as<ASTAlterQuery>())
@@ -857,6 +900,7 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
     String shard_path = task.getShardNodePath();
     String is_executed_path = fs::path(shard_path) / "executed";
     String tries_to_execute_path = fs::path(shard_path) / "tries_to_execute";
+    String max_tries_exceeded_path = fs::path(shard_path) / "max_tries_exceeded";
     chassert(shard_path.starts_with(String(fs::path(task.entry_path) / "shards" / "")));
     zookeeper->createIfNotExists(fs::path(task.entry_path) / "shards", "");
     zookeeper->createIfNotExists(shard_path, "");
@@ -894,6 +938,8 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
     bool executed_by_other_leader = false;
 
     bool extra_attempt_for_replicated_database = false;
+    bool max_tries_exceeded = false;
+    const bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task) != nullptr;
 
     /// Defensive programming. One hour is more than enough to execute almost all DDL queries.
     /// If it will be very long query like ALTER DELETE for a huge table it's still will be executed,
@@ -933,11 +979,14 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
             if (counter > MAX_TRIES_TO_EXECUTE)
             {
                 /// Replicated databases have their own retries, limiting retries here would break outer retries
-                bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task);
                 if (is_replicated_database_task)
                     extra_attempt_for_replicated_database = true;
                 else
+                {
+                    zookeeper->createIfNotExists(max_tries_exceeded_path, task.host_id_str);
+                    max_tries_exceeded = true;
                     break;
+                }
             }
 
             zookeeper->set(tries_to_execute_path, toString(counter + 1));
@@ -966,13 +1015,21 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
             break;
         }
 
+        if (zookeeper->exists(max_tries_exceeded_path))
+        {
+            LOG_WARNING(log, "Maximum retries count for task {} exceeded, cannot execute replicated DDL query", task.entry_name);
+            max_tries_exceeded = true;
+            break;
+        }
+
         String tries_count;
         zookeeper->tryGet(tries_to_execute_path, tries_count);
         if (parse<int>(tries_count) > MAX_TRIES_TO_EXECUTE)
         {
-            /// Nobody will try to execute query again
-            LOG_WARNING(log, "Maximum retries count for task {} exceeded, cannot execute replicated DDL query", task.entry_name);
-            break;
+            LOG_WARNING(
+                log,
+                "Maximum retries count for task {} exceeded, waiting until the shard lock holder confirms no attempt is in flight",
+                task.entry_name);
         }
 
         /// Will try to wait or execute
@@ -998,7 +1055,7 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
             if (!keep_original_error)
                 task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, maximum retries exceeded");
         }
-        return false;
+        return max_tries_exceeded;
     }
 
     if (executed_by_us)
@@ -1093,7 +1150,9 @@ bool DDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordinatio
 
     /// If too many nodes in task queue (> max_tasks_in_queue), delete oldest one
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
-    bool node_is_outside_max_window = entry_number + max_tasks_in_queue < max_id.load(std::memory_order_relaxed);
+    /// Subtract rather than add, so that a huge `max_tasks_in_queue` does not wrap around.
+    const UInt32 current_max_id = max_id.load(std::memory_order_relaxed);
+    bool node_is_outside_max_window = entry_number < current_max_id && current_max_id - entry_number > max_tasks_in_queue;
 
     return node_lifetime_is_expired || node_is_outside_max_window;
 }
@@ -1387,7 +1446,7 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         {
             HostID interserver_io_secure_host_id = {host_port.first, *maybe_secure_port};
             all_host_ids.emplace(interserver_io_secure_host_id.toString());
-            LOG_INFO(log, "Add interserver IO secure host ID  {}", interserver_io_secure_host_id.toString());
+            LOG_INFO(log, "Add interserver IO secure host ID {}", interserver_io_secure_host_id.toString());
         }
     }
     catch (const Exception & e)
@@ -1482,6 +1541,12 @@ void DDLWorker::markReplicasActive(bool reinitialized)
                 }
 
                 auto code = zookeeper->tryRemove(active_path, stat.version);
+                if (code == Coordination::Error::ZBADVERSION)
+                {
+                    // The node was rewritten after it was read, so the check above no longer describes it.
+                    LOG_TRACE(log, "Loopback host {} was rewritten while it was being claimed, skipping it", host_id);
+                    continue;
+                }
                 if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
                     throw Coordination::Exception::fromPath(code, active_path);
             }

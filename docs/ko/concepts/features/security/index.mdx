@@ -4,9 +4,23 @@ title: '보안 및 인증'
 description: '보안 및 인증 랜딩 페이지'
 doc_type: 'landing-page'
 keywords: ['보안 및 인증', '접근 제어', 'RBAC', '사용자 관리', 'SRE 가이드']
+mode: wide
 ---
 
-| 페이지                                                                                  | 설명                                                        |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------- |
-| [Users and Roles](/ko/concepts/features/security/access-rights)                         | ClickHouse가 RBAC 기반의 접근 제어 관리를 어떻게 지원하는지 자세히 알아보십시오.      |
-| [External Authenticators](/ko/concepts/features/security/external-authenticators/index) | OSS ClickHouse가 외부 서비스를 통해 사용자를 인증하고 관리하는 방식을 자세히 알아보십시오. |
+<CardGroup cols={2}>
+  <Card title="Users and Roles" icon="users" href="/ko/concepts/features/security/access-rights">
+    ClickHouse가 RBAC 기반의 접근 제어 관리를 어떻게 지원하는지 자세히 알아보십시오.
+  </Card>
+
+  <Card title="네트워크 포트" icon="ethernet" href="/ko/concepts/features/security/network-ports">
+    ClickHouse에서 사용하는 네트워크 포트에 대한 참고 문서입니다.
+  </Card>
+
+  <Card title="TLS" icon="lock" href="/ko/concepts/features/security/tls/index">
+    ClickHouse에 대한 보안 연결을 위해 TLS를 구성하십시오.
+  </Card>
+
+  <Card title="External Authenticators" icon="id-badge" href="/ko/concepts/features/security/external-authenticators/index">
+    OSS ClickHouse가 외부 서비스를 통해 사용자를 인증하고 관리하는 방식을 자세히 알아보십시오.
+  </Card>
+</CardGroup>

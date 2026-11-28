@@ -1,0 +1,29 @@
+-- range counts long bounds exactly above 2^53 --
+2
+9007199254740993	9007199254740994
+3
+0
+-- the floor still rounds toward minus infinity --
+4
+4
+0
+-- real ranges still work --
+3
+-- aggregates only in the aggregation of a summarize --
+-- ... where they still work, also composed and nested --
+12
+1
+-- let binds a bare physical table --
+3
+6
+-- also through a parameterless function body --
+3
+-- a bare scalar binding stays scalar --
+5
+true
+-- in (Table) reads the first column when the name is bound tabular --
+1
+-- kqlRangeCount: exact, and a constant nullable argument --
+2
+2
+5

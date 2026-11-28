@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableFunctionNode.h>
 
 namespace DB

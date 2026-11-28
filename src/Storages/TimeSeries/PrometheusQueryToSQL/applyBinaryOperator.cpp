@@ -18,7 +18,10 @@ namespace DB::PrometheusQueryToSQL
 {
 
 SQLQueryPiece applyBinaryOperator(
-    const PQT::BinaryOperator * operator_node, SQLQueryPiece && left_argument, SQLQueryPiece && right_argument, ConverterContext & context)
+    const PrometheusQueryTree::BinaryOperator * operator_node,
+    SQLQueryPiece && left_argument,
+    SQLQueryPiece && right_argument,
+    ConverterContext & context)
 {
     std::string_view operator_name = operator_node->operator_name;
 
@@ -37,7 +40,7 @@ SQLQueryPiece applyBinaryOperator(
     if (isBinaryOperatorUnless(operator_name))
         return applyBinaryOperatorUnless(operator_node, std::move(left_argument), std::move(right_argument), context);
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary operator {} is not implemented", operator_name);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not implemented", operator_node->getTypeAndName());
 }
 
 }

@@ -14,15 +14,11 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
 </Warning>
 
 <Steps>
-  <Step>
-    ## 권장 사항 검토
-
+  <Step title="권장 사항 검토" id="review-recommendations">
     <Recommendations />
   </Step>
 
-  <Step>
-    ## 커뮤니티 Homebrew formula를 사용해 설치
-
+  <Step title="커뮤니티 Homebrew formula를 사용해 설치" id="install-using-community-homebrew-formula">
     [Homebrew](https://brew.sh/)를 사용해 macOS에 ClickHouse를 설치하려면
     ClickHouse 커뮤니티 [homebrew formula](https://formulae.brew.sh/cask/clickhouse)를 사용할 수 있습니다.
 
@@ -31,15 +27,17 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## macOS에서 개발자 확인 오류 수정
-
+  <Step title="macOS에서 개발자 확인 오류 수정" id="fix-developer-verification-error-macos">
     `brew`를 사용해 ClickHouse를 설치하면 macOS에서 오류가 발생할 수 있습니다.
     기본적으로 macOS는 확인할 수 없는 개발자가 만든 애플리케이션이나 도구를 실행하지 않습니다.
 
     `clickhouse` 명령을 실행하려고 하면 다음과 같은 오류가 표시될 수 있습니다:
 
-    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="sm" alt="macOS 개발자 확인 오류 대화 상자" border />
+    <div className="ch-image-sm">
+      <Frame>
+        <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" alt="macOS 개발자 확인 오류 대화 상자" />
+      </Frame>
+    </div>
 
     이 확인 오류를 우회하려면 시스템 설정 창에서 관련 설정을 찾거나, 터미널을 사용하거나, ClickHouse를 다시 설치하여 macOS의 격리 빈에서 앱을 제거해야 합니다.
 
@@ -51,13 +49,21 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
 
     2. **Privacy &amp; Security**로 이동합니다:
 
-       <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="기본 보기의 macOS Privacy & Security 설정" border />
+       <div className="ch-image-md">
+         <Frame>
+           <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" alt="기본 보기의 macOS Privacy & Security 설정" />
+         </Frame>
+       </div>
 
     3. 창 맨 아래로 스크롤하여 &#95;&quot;clickhouse-macos-aarch64&quot; was blocked from use because it isn&#39;t from an identified developer&quot;&#95;라는 메시지를 찾습니다.
 
     4. **Allow Anyway**를 클릭합니다.
 
-       <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="Allow Anyway 버튼이 표시된 macOS Privacy & Security 설정" border />
+       <div className="ch-image-md">
+         <Frame>
+           <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" alt="Allow Anyway 버튼이 표시된 macOS Privacy & Security 설정" />
+         </Frame>
+       </div>
 
     5. macOS 사용자 비밀번호를 입력합니다.
 
@@ -102,9 +108,7 @@ import Recommendations from '/snippets/ko/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## ClickHouse를 다시 설치하여 문제 해결
-
+  <Step title="ClickHouse를 다시 설치하여 문제 해결" id="fix-issue">
     Brew에는 설치된 바이너리가 처음부터 격리되지 않도록 하는 명령줄 옵션이 있습니다.
 
     먼저 ClickHouse를 제거합니다:

@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -15,6 +16,7 @@
 
 #include <limits>
 #include <optional>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -104,16 +106,16 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDigits>(); }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isDeterministic() const override { return true; }
-    bool canBeExecutedOnDefaultArguments() const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return true; }
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const bool has_nullable = getNullPresense(arguments).has_nullable;
 
@@ -148,6 +150,7 @@ public:
         return result;
     }
 
+    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (arguments[0].column->onlyNull())
@@ -200,7 +203,7 @@ public:
                         T num = data[i];
                         UInt64 magnitude = 0;
                         if constexpr (std::is_signed_v<T>)
-                            magnitude = num < 0 ? -static_cast<UInt64>(num) : static_cast<UInt64>(num);
+                            magnitude = num < 0 ? common::negateIgnoreOverflow(static_cast<UInt64>(num)) : static_cast<UInt64>(num);
                         else
                             magnitude = static_cast<UInt64>(num);
                         Int64 offset = getClampedInt64(*offset_column, i);
@@ -251,6 +254,8 @@ Counting starts from 1 with the following logic:
 An optional argument `length` uses the following logic:
 - If `length` is positive, it means number of digits to take from offset
 - If `length` is negative, it means number of digits from the right of the number to exclude
+
+See also the [`substring`](/reference/functions/regular-functions/string-functions#substring) function, which performs the analogous operation on strings.
     )";
     FunctionDocumentation::Syntax syntax = "digits(n, offset[, length])";
     FunctionDocumentation::Arguments arguments

@@ -7,18 +7,16 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', '指标', 'OTEL', 'ClickStack', '数据库监控']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
   **简而言之**
 
-  使用 OTel PostgreSQL 接收器在 ClickStack 中监控 PostgreSQL 性能指标。包含演示数据集和预置仪表板。
+  使用 OTel PostgreSQL 接收器在 ClickStack 中监控 PostgreSQL 性能指标。包含演示数据集和预构建仪表板。
 </Info>
 
 <div id="existing-postgres">
-  ## 与现有 PostgreSQL 集成
+  ## 与现有 PostgreSQL 集成 {#existing-postgres}
 </div>
 
 本节介绍如何通过将 ClickStack OTel collector 配置为使用 PostgreSQL 接收器，使现有的 PostgreSQL 安装将指标发送到 ClickStack。
@@ -26,18 +24,16 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 如果您想在配置自己的现有环境之前先测试 PostgreSQL 指标集成，可以在[下一节](#demo-dataset)中使用我们预先配置的演示数据集进行测试。
 
 <div id="prerequisites">
-  ##### 前置条件
+  ##### 前置条件 {#prerequisites}
 </div>
 
 * 正在运行的 ClickStack 实例
 * 已安装 PostgreSQL (版本 9.6 或更高)
-* ClickStack 能够通过网络访问 PostgreSQL (默认端口 5432)
+* ClickStack 可通过网络访问 PostgreSQL (默认端口 5432)
 * 具有相应权限的 PostgreSQL 监控用户
 
 <Steps>
-  <Step>
-    #### 确保监控用户具有所需权限
-
+  <Step title="确保监控用户具有所需权限" id="monitoring-permissions">
     PostgreSQL 接收器需要一个对统计信息视图具有读取权限的用户。将 `pg_monitor` 角色授予你的监控用户：
 
     ```sql
@@ -45,10 +41,8 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 创建自定义 OTel collector 配置
-
-    ClickStack 支持通过挂载自定义配置文件并设置环境变量，来扩展基础 OpenTelemetry collector 配置。
+  <Step title="创建自定义 OTel collector 配置" id="create-custom-config">
+    ClickStack 支持通过挂载自定义配置文件并设置环境变量，扩展基础 OpenTelemetry collector 配置。
 
     创建 `postgres-metrics.yaml`：
 
@@ -93,9 +87,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 使用自定义配置部署 ClickStack
-
+  <Step title="使用自定义配置部署 ClickStack" id="deploy-clickstack">
     挂载你的自定义配置：
 
     ```bash
@@ -111,21 +103,19 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 验证指标采集
-
-    配置完成后，登录 HyperDX 并确认指标已开始流入：
+  <Step title="验证指标采集" id="verify-metrics">
+    配置完成后，登录 ClickStack 用户界面 并确认指标已开始流入：
 
     1. 进入指标浏览器
     2. 搜索以 postgresql 开头的指标 (例如：postgresql.backends、postgresql.commits)
     3. 你应该会看到指标数据点按所配置的采集间隔持续出现
 
-    确认指标正常流入后，继续前往[仪表盘与可视化](#dashboards)部分导入预置仪表盘。
+    确认指标正常流入后，继续前往[仪表板与可视化](#dashboards)部分导入预构建仪表板。
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## 演示数据集
+  ## 演示数据集 {#demo-dataset}
 </div>
 
 对于希望在配置生产系统之前先测试 PostgreSQL 指标集成的用户，我们提供了一个预先生成的数据集，其中包含逼真的 PostgreSQL 指标模式。
@@ -137,10 +127,8 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <Steps>
-  <Step>
-    #### 下载样本指标数据集
-
-    下载预先生成的指标文件 (包含 24 小时的 PostgreSQL 指标和逼真的变化模式) ：
+  <Step title="下载样本指标数据集" id="download-sample">
+    下载预先生成的指标文件 (包含 24 小时的 PostgreSQL 指标和逼真的变化模式)：
 
     ```bash
     # 下载 Gauge 指标（连接数、数据库大小）
@@ -152,15 +140,13 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 
     该数据集包含以下逼真的模式：
 
-    * **早晨连接高峰 (08:00)&#x20;**&#x20;- 登录高峰期
-    * **缓存性能问题 (11:00)&#x20;**&#x20;- `Blocks_read` 激增
-    * **应用程序缺陷 (14:00-14:30)&#x20;**&#x20;- 回滚率飙升至 15%
-    * **死锁事件 (14:15、16:30)&#x20;**&#x20;- 罕见死锁
+    * **早晨连接高峰 (08:00)** - 登录高峰期
+    * **缓存性能问题 (11:00)** - `Blocks_read` 激增
+    * **应用程序缺陷 (14:00-14:30)** - 回滚率飙升至 15%
+    * **死锁事件 (14:15、16:30)** - 罕见死锁
   </Step>
 
-  <Step>
-    #### 启动 ClickStack
-
+  <Step title="启动 ClickStack" id="start-clickstack">
     启动一个 ClickStack 实例：
 
     ```bash
@@ -172,9 +158,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     等待大约 30 秒，让 ClickStack 完全启动。
   </Step>
 
-  <Step>
-    #### 将指标加载到 ClickStack 中
-
+  <Step title="将指标加载到 ClickStack 中" id="load-metrics">
     将指标直接加载到 ClickHouse：
 
     ```bash
@@ -188,51 +172,55 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证指标
+  <Step title="在 ClickStack 用户界面中验证指标" id="verify-metrics-demo">
+    加载完成后，查看这些指标的最快方式是使用预构建仪表板。
 
-    加载完成后，查看这些指标的最快方式是使用预置仪表盘。
-
-    继续前往 [Dashboards and visualization](#dashboards) 部分，导入仪表盘，一次查看多个 PostgreSQL 指标。
+    继续前往 [仪表板与可视化](#dashboards) 部分，导入仪表盘，一次查看多个 PostgreSQL 指标。
 
     <Info>
       **时区显示**
 
-      HyperDX 会按浏览器的本地时区显示时间戳。演示数据覆盖 **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**。请将时间范围设置为 **2025-11-09 00:00:00 - 2025-11-12 00:00:00**，以确保无论你身处何地都能看到演示指标。看到指标后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
+      ClickStack 用户界面会按浏览器的本地时区显示时间戳。演示数据覆盖 **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**。请将时间范围设置为 **2025-11-09 00:00:00 - 2025-11-12 00:00:00**，以确保无论你身处何地都能看到演示指标。看到指标后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
     </Info>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## 仪表盘与可视化
-</div>
+## 仪表板与可视化 {#dashboards}
 
 为帮助你快速开始使用 ClickStack 监控 PostgreSQL，我们提供了 PostgreSQL 指标的核心可视化内容。
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">下载</TrackedLink>仪表盘配置
+  <Step title="下载仪表盘配置" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
   </Step>
 
-  <Step>
-    #### 导入预置仪表盘
+  <Step title="导入预构建仪表板" id="import-dashboard">
+    1. 打开 ClickStack 用户界面并进入仪表盘部分
+    2. 点击右上角省略号菜单中的 **导入仪表盘**
 
-    1. 打开 HyperDX 并进入仪表盘部分
-    2. 点击右上角省略号菜单中的 **Import Dashboard**
+    <div className="ch-image-lg">
+      <Frame>
+        ![导入仪表盘按钮](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘按钮" />
+    3. 上传 `postgres-metrics-dashboard.json` 文件，然后点击 **完成导入**
 
-    3. 上传 `postgres-metrics-dashboard.json` 文件，然后点击 **Finish Import**
-
-    <Image img="/images/clickstack/postgres/import-dashboard.webp" alt="完成导入对话框" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![完成导入对话框](/images/clickstack/postgres/import-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 
-  <Step>
-    #### 查看仪表盘
-
+  <Step title="查看仪表盘" id="created-dashboard">
     仪表盘创建后，所有可视化内容都已预先配置好：
 
-    <Image img="/images/clickstack/postgres/postgres-metrics-dashboard.webp" alt="PostgreSQL 指标仪表盘" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![PostgreSQL 指标仪表盘](/images/clickstack/postgres/postgres-metrics-dashboard.webp)
+      </Frame>
+    </div>
 
     <Note>
       对于演示数据集，请将时间范围设置为 **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (请根据你的本地时区进行调整) 。默认情况下，导入的仪表盘不会预设时间范围。
@@ -241,11 +229,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="troubleshooting">
-  ## 故障排查
+  ## 故障排查 {#troubleshooting}
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### 自定义配置未生效
+  ### 自定义配置未生效 {#troubleshooting-not-loading}
 </div>
 
 请确认环境变量已设置：
@@ -260,9 +248,7 @@ docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml
 ```
 
-<div id="no-metrics">
-  ### HyperDX 中没有显示任何指标
-</div>
+### ClickStack 用户界面中没有显示任何指标 {#no-metrics}
 
 请确认 PostgreSQL 可访问：
 
@@ -277,7 +263,7 @@ docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i postgr
 ```
 
 <div id="auth-errors">
-  ### 身份验证错误
+  ### 身份验证错误 {#auth-errors}
 </div>
 
 确认密码是否已正确设置：
@@ -293,15 +279,13 @@ psql -h postgres-host -U otel_monitor -d postgres -c "SELECT version();"
 ```
 
 <div id="next-steps">
-  ## 后续步骤
+  ## 后续步骤 {#next-steps}
 </div>
 
 * 为关键阈值 (连接数限制、回滚率过高、缓存命中率过低) 配置[告警](/zh/clickstack/features/alerts)
 * 启用 `pg_stat_statements` 扩展，以实现查询级监控
 * 复制 receiver 配置，并为其指定不同的端点和服务名称，以监控多个 PostgreSQL 实例
 
-<div id="going-to-production">
-  ## 投入生产环境
-</div>
+## 进入生产环境 {#going-to-production}
 
-本指南利用 ClickStack 内置的 OpenTelemetry Collector 实现快速设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南基于 ClickStack 内置的 OpenTelemetry Collector，可帮助您快速完成设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

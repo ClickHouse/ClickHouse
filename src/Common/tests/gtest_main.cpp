@@ -5,7 +5,10 @@
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <IO/SharedThreadPools.h>
+#include <Parsers/SecretArguments.h>
 #include <Common/tests/gtest_global_context.h>
+
+#include <Poco/ThreadPool.h>
 
 class ContextEnvironment : public testing::Environment
 {
@@ -19,11 +22,15 @@ int main(int argc, char ** argv)
     /// Join global-pool threads before the statics they may have accessed are destroyed.
     /// That way, accesses happen-before destruction.
     SCOPE_EXIT_SAFE({
+        Poco::ThreadPool::defaultPool().stopAll();
         DB::StaticThreadPool::shutdownAll();
         GlobalThreadPool::shutdown();
     });
 
     testing::InitGoogleTest(&argc, argv);
+
+    /// No engine is registered, so the secrets of their arguments are shown.
+    DB::setSecretArgumentsFinder(&DB::NoSecretArgumentsFinder::instance());
 
     auto & options = getTestCommandLineOptions();
     options.argc = argc;

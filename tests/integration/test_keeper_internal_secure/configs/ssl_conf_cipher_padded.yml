@@ -1,0 +1,21 @@
+openSSL:
+  server:
+    certificateFile: '/etc/clickhouse-server/config.d/WithoutPassPhrase.crt'
+    privateKeyFile: '/etc/clickhouse-server/config.d/WithoutPassPhrase.key'
+    caConfig: '/etc/clickhouse-server/config.d/rootCA.pem'
+    loadDefaultCAFile: true
+    verificationMode: 'none'
+    cacheSessions: true
+    disableProtocols: 'sslv2,sslv3'
+    preferServerCiphers: true
+    # The value sits on its own line, as an XML/YAML auto-formatter writes it.
+    cipherList: "\n            ECDHE-RSA-AES256-GCM-SHA384\n        "
+  client:
+    certificateFile: '/etc/clickhouse-server/config.d/WithoutPassPhrase.crt'
+    caConfig: '/etc/clickhouse-server/config.d/rootCA.pem'
+    loadDefaultCAFile: true
+    verificationMode: 'relaxed'
+    cacheSessions: true
+    disableProtocols: 'sslv2,sslv3'
+    preferServerCiphers: true
+    cipherList: "\n            ECDHE-RSA-AES256-GCM-SHA384\n        "

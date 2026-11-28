@@ -1,0 +1,11 @@
+<clickhouse>
+    <zookeeper>
+        <node index="1">
+            <host>localhost</host>
+            <port>9181</port>
+        </node>
+        <max_request_size>65536</max_request_size>
+        <use_compression>1</use_compression>
+    </zookeeper>
+    <allow_zookeeper_write>1</allow_zookeeper_write>
+</clickhouse>

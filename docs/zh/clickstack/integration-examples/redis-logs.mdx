@@ -6,8 +6,6 @@ description: '使用 ClickStack 监控 Redis 日志'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -17,14 +15,14 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-redis">
-  ## 与现有 Redis 集成
+  ## 与现有 Redis 集成 {#existing-redis}
 </div>
 
 本节介绍如何通过修改 ClickStack OTel collector 的配置，将现有 Redis 安装配置为向 ClickStack 发送日志。
 如果你想在配置自己现有的环境之前先测试 Redis 集成，可以在[“演示数据集”](/zh/clickstack/integration-examples/redis-logs#demo-dataset)部分使用我们预先配置的环境和示例数据进行测试。
 
 <div id="prerequisites">
-  ### 前置条件
+  ### 前置条件 {#prerequisites}
 </div>
 
 * 正在运行的 ClickStack 实例
@@ -32,9 +30,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 * 可访问 Redis 日志文件
 
 <Steps>
-  <Step>
-    #### 验证 Redis 日志配置
-
+  <Step title="验证 Redis 日志配置" id="verify-redis">
     首先，检查 Redis 的日志配置。连接到 Redis，并查看日志文件的位置：
 
     ```bash
@@ -50,28 +46,26 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     如果 Redis 将日志输出到 stdout，可通过修改 `redis.conf` 将其配置为写入文件：
 
     ```bash
-    # 记录到文件而非标准输出
+    # Log to file instead of stdout
     logfile /var/log/redis/redis-server.log
 
-    # 设置日志级别（选项：debug、verbose、notice、warning）
+    # Set log level (options: debug, verbose, notice, warning)
     loglevel notice
     ```
 
     更改配置后，重新启动 Redis：
 
     ```bash
-    # 对于 systemd
+    # For systemd
     sudo systemctl restart redis
 
-    # 对于 Docker
+    # For Docker
     docker restart <redis-container>
     ```
   </Step>
 
-  <Step>
-    #### 创建自定义 OTel collector 配置
-
-    ClickStack 支持通过挂载自定义配置文件并设置环境变量来扩展基础 OpenTelemetry Collector 配置。自定义配置会与 HyperDX 通过 OpAMP 管理的基础配置合并。
+  <Step title="创建自定义 OTel collector 配置" id="custom-otel">
+    ClickStack 支持通过挂载自定义配置文件并设置环境变量来扩展基础 OpenTelemetry Collector 配置。自定义配置会与 ClickStack 用户界面通过 OpAMP 管理的基础配置合并。
 
     创建一个名为 `redis-monitoring.yaml` 的文件，内容如下：
 
@@ -115,7 +109,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 
     * 从 Redis 日志的标准位置读取日志
     * 使用正则表达式解析 Redis 的日志格式，提取结构化字段 (`pid`、`role`、`timestamp`、`log_level`、`message`)
-    * 添加 `source: redis` 属性，便于在 HyperDX 中进行过滤
+    * 添加 `source: redis` 属性，便于在 ClickStack 用户界面中进行过滤
     * 通过专用管道将日志路由到 ClickHouse 导出器
 
     <Note>
@@ -126,33 +120,31 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 配置 ClickStack 以加载自定义配置
-
+  <Step title="配置 ClickStack 以加载自定义配置" id="load-custom">
     要在现有的 ClickStack 部署中启用自定义 collector 配置，你必须：
 
     1. 将自定义配置文件挂载到 `/etc/otelcol-contrib/custom.config.yaml`
     2. 设置环境变量 `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
     3. 挂载 Redis 的日志目录，以便 collector 读取这些日志
 
-    ##### 选项 1：Docker Compose
+##### 选项 1：Docker Compose {#docker-compose}
 
     更新 ClickStack 部署配置：
 
     ```yaml
     services:
       clickstack:
-        # ... 现有配置 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... 其他环境变量 ...
+          # ... other environment variables ...
         volumes:
           - ./redis-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/redis:/var/log/redis:ro
-          # ... 其他挂载卷 ...
+          # ... other volumes ...
     ```
 
-    ##### 选项 2：Docker Run (一体化镜像)
+##### 选项 2：Docker Run (一体化镜像) {#all-in-one}
 
     如果你使用 Docker 的一体化镜像，请运行：
 
@@ -170,27 +162,29 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证日志
+  <Step title="在 ClickStack 用户界面中验证日志" id="verifying-logs">
+    配置完成后，登录 ClickStack 用户界面，确认日志已开始流入：
 
-    配置完成后，登录 HyperDX，确认日志已开始流入：
+    <div className="ch-image-lg">
+      <Frame>
+        ![日志视图](/images/clickstack/redis/redis-log-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="日志视图" />
-
-    <Image img="/images/clickstack/redis/redis-log.webp" alt="日志" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![日志](/images/clickstack/redis/redis-log.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="demo-dataset">
-  ## 演示数据集
-</div>
+## 演示数据集 {#demo-dataset}
 
 对于希望在配置生产系统之前先测试 Redis 集成的用户，我们提供了一个预先生成的 Redis 日志示例数据集，其中包含逼真的模式。
 
 <Steps>
-  <Step>
-    #### 下载示例数据集
-
+  <Step title="下载示例数据集" id="download-sample">
     下载示例日志文件：
 
     ```bash
@@ -198,9 +192,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 创建测试 collector 配置
-
+  <Step title="创建测试 collector 配置" id="test-config">
     创建一个名为 `redis-demo.yaml` 的文件，内容如下：
 
     ```yaml
@@ -242,9 +234,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 使用演示配置运行 ClickStack
-
+  <Step title="使用演示配置运行 ClickStack" id="run-demo">
     使用演示日志和配置运行 ClickStack：
 
     ```bash
@@ -258,70 +248,83 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 
     <Note>
       **这会将日志文件直接挂载到容器中。这么做是为了使用静态演示数据进行测试。**
-
     </Note>
 
-    ## 在 HyperDX 中验证日志
+## 在 ClickStack 用户界面中验证日志 {#verify-demo-logs}
 
     ClickStack 运行后：
 
-    1. 打开 [HyperDX](http://localhost:8080/) 并登录你的账户 (你可能需要先创建账户)
+    1. 打开 [ClickStack 用户界面](http://localhost:8080/) 并登录你的账户 (你可能需要先创建账户)
     2. 进入搜索视图，并将 source 设置为 `Logs`
     3. 将时间范围设置为 **2025-10-26 10:00:00 - 2025-10-29 10:00:00**
 
     <Info>
       **时区显示**
 
-      HyperDX 会按浏览器的本地时区显示时间戳。演示数据覆盖 **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**。较宽的时间范围可确保你无论身在何处都能看到这些演示日志。看到日志后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
+      ClickStack 用户界面会按浏览器的本地时区显示时间戳。演示数据覆盖 **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**。较宽的时间范围可确保你无论身在何处都能看到这些演示日志。看到日志后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
     </Info>
 
-    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="日志视图" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![日志视图](/images/clickstack/redis/redis-log-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/redis/redis-log.webp" alt="日志" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![日志](/images/clickstack/redis/redis-log.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## 仪表盘与可视化
-</div>
+## 仪表盘与可视化 {#dashboards}
 
 为帮助你快速开始使用 ClickStack 监控 Redis，我们提供了用于 Redis 日志的关键可视化内容。
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json'} download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">下载</TrackedLink>仪表盘配置
+  <Step title="下载仪表盘配置" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json'} download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
   </Step>
 
-  <Step>
-    #### 导入预构建仪表盘
+  <Step title="导入预构建仪表盘" id="import-dashboard">
+    1. 打开 ClickStack 用户界面，进入“仪表盘”部分。
+    2. 点击右上角省略号菜单中的“导入仪表盘”。
 
-    1. 打开 HyperDX，进入“仪表盘”部分。
-    2. 点击右上角省略号菜单中的“Import Dashboard”。
+    <div className="ch-image-lg">
+      <Frame>
+        ![导入仪表盘](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘" />
+    3. 上传 redis-logs-dashboard.json 文件，然后点击 完成导入。
 
-    3. 上传 redis-logs-dashboard.json 文件，然后点击 Finish Import。
-
-    <Image img="/images/clickstack/redis/redis-import-dashboard.webp" alt="完成导入" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![完成导入](/images/clickstack/redis/redis-import-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 
-  <Step>
-    #### 系统将创建一个已预先配置好所有可视化的仪表盘
-
+  <Step title="系统将创建一个已预先配置好所有可视化的仪表盘" id="created-dashboard">
     <Note>
       对于演示数据集，请将时间范围设置为 **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)** (根据你的本地时区进行调整) 。默认情况下，导入的仪表盘不会预先指定时间范围。
     </Note>
 
-    <Image img="/images/clickstack/redis/redis-logs-dashboard.webp" alt="示例仪表盘" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![示例仪表盘](/images/clickstack/redis/redis-logs-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## 故障排查
+  ## 故障排查 {#troubleshooting}
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### 自定义配置未生效
+  ### 自定义配置未生效 {#troubleshooting-not-loading}
 </div>
 
 **确认环境变量已正确设置：**
@@ -352,49 +355,47 @@ docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 1
 # 应显示您的 filelog/redis receiver 配置
 ```
 
-<div id="no-logs">
-  ### HyperDX 中没有显示日志
-</div>
+### ClickStack 用户界面中没有显示日志 {#no-logs}
 
 **请确保 Redis 正在将日志写入文件：**
 
 ```bash
 redis-cli CONFIG GET logfile
-# 预期输出：应显示文件路径，而非空字符串
-# 示例：1) "logfile" 2) "/var/log/redis/redis-server.log"
+# Expected output: Should show a file path, not empty string
+# Example: 1) "logfile" 2) "/var/log/redis/redis-server.log"
 ```
 
 **检查 Redis 是否正在输出日志：**
 
 ```bash
 tail -f /var/log/redis/redis-server.log
-# 应显示 Redis 格式的最新日志条目
+# Should show recent log entries in Redis format
 ```
 
 **确认 collector 能够读取日志：**
 
 ```bash
 docker exec <container> cat /var/log/redis/redis-server.log
-# 应显示 Redis 日志条目
+# Should display Redis log entries
 ```
 
 **检查 collector 日志中是否有错误：**
 
 ```bash
 docker exec <container> cat /etc/otel/supervisor-data/agent.log
-# 查找与 filelog 或 Redis 相关的错误信息
+# Look for any error messages related to filelog or Redis
 ```
 
 **如果使用 docker-compose，请确认共享卷配置是否正确：**
 
 ```bash
-# 检查两个容器是否使用相同的卷
+# Check both containers are using the same volume
 docker volume inspect <volume-name>
-# 验证两个容器是否均已挂载该卷
+# Verify both containers have the volume mounted
 ```
 
 <div id="logs-not-parsing">
-  ### 日志未正确解析
+  ### 日志未正确解析 {#logs-not-parsing}
 </div>
 
 **确认 Redis 日志格式与预期模式一致：**
@@ -411,14 +412,12 @@ tail -5 /var/log/redis/redis-server.log
 * 示例：`12345:M 28 Oct 2024 14:23:45.123 * Server started`
 
 <div id="next-steps">
-  ## 后续步骤
+  ## 后续步骤 {#next-steps}
 </div>
 
 * 为关键指标 (错误率、延迟阈值) 配置[告警](/zh/clickstack/features/alerts)
 * 针对特定用例 (API 监控、安全事件) 创建更多[仪表盘](/zh/clickstack/features/dashboards/overview)
 
-<div id="going-to-production">
-  ## 生产环境部署
-</div>
+## 投入生产环境 {#going-to-production}
 
-本指南使用 ClickStack 内置的 OpenTelemetry Collector 进行快速设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南基于 ClickStack 内置的 OpenTelemetry Collector，帮助您快速完成设置。对于生产环境部署，我们建议自行运行 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

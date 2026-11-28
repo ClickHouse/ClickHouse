@@ -37,7 +37,7 @@ quantileExactInclusive(level)(expr)
 
 **Arguments**
 
-* `expr` — 针对列值的表达式，结果必须为数值 data types、Date 或 DateTime。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal*`](/zh/reference/data-types/decimal) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime)
+* `expr` — 针对列值的表达式，结果必须为数值 data types、`Date` 或 `DateTime`。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime)
 
 **返回值**
 
@@ -57,7 +57,7 @@ SELECT quantileExactInclusive(0.25)(number) FROM numbers(5);
 └──────────────────────────────────────┘
 ```
 
-**计算多个分位数的级别**
+**计算多个分位数级别**
 
 ```sql title=Query
 SELECT quantileExactInclusive(0.1)(number), quantileExactInclusive(0.9)(number) FROM numbers(10);
@@ -65,7 +65,7 @@ SELECT quantileExactInclusive(0.1)(number), quantileExactInclusive(0.9)(number) 
 
 ```response title=Response
 ┌─quantileExactInclusive(0.1)(number)─┬─quantileExactInclusive(0.9)(number)─┐
-│                                 0.9 │                                 8.1 │
+│                  0.8999999999999999 │                                 8.1 │
 └─────────────────────────────────────┴─────────────────────────────────────┘
 ```
 

@@ -24,10 +24,10 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionColorOKLABToSRGB>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     /// OKLAB -> sRGB conversion. Follows the step-by-step pipeline described in Ottosson's article. See ColorConversion.h
-    ColorConversion::Color convertToSrgb(const ColorConversion::Color & oklab, Float64 gamma) const
+    [[nodiscard]] ColorConversion::Color convertToSrgb(const ColorConversion::Color & oklab, Float64 gamma) const
     {
         return ColorConversion::oklabToSrgb(oklab, gamma);
     }
@@ -88,9 +88,9 @@ WITH colorOKLABToSRGB((0.7, 0.1, 0.54)) AS t
 SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB;
                         )",
             R"(
-┌─RGB──────────┐
-│ (255,0,0)    │
-└──────────────┘
+┌─RGB───────┐
+│ (255,0,0) │
+└───────────┘
                         )"
             }
     };

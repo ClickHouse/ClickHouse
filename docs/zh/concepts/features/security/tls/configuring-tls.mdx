@@ -9,8 +9,6 @@ doc_type: 'guide'
 
 import SelfManaged from '/snippets/zh/_self_managed_only_automated.mdx';
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <SelfManaged />
 
 本指南介绍如何以简单、最少的配置，让 ClickHouse 使用 OpenSSL 证书验证连接。为便于演示，这里会创建自签名的证书颁发机构 (CA) 证书和密钥，以及节点证书，并使用适当的配置建立连接。
@@ -22,9 +20,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Note>
 
 <Steps>
-  <Step>
-    ## 创建 ClickHouse 部署
-
+  <Step title="创建 ClickHouse 部署" id="1-create-a-clickhouse-deployment">
     本指南基于 Ubuntu 20.04 编写，且 ClickHouse 是在以下主机上通过 DEB 软件包 (使用 apt) 安装的。域名为 `marsnet.local`：
 
     | Host      | IP Address    |
@@ -38,9 +34,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </Note>
   </Step>
 
-  <Step>
-    ## 创建 TLS 证书
-
+  <Step title="创建 TLS 证书" id="2-create-tls-certificates">
     <Note>
       自签名证书仅用于演示，不应在生产环境中使用。应创建证书签名请求，并由组织进行签名，再使用将在设置中配置的 CA 证书链进行验证。不过，这些步骤可用于配置和测试相关设置，之后再替换为实际使用的证书。
     </Note>
@@ -90,9 +84,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## 创建并配置用于存储证书和密钥的目录
-
+  <Step title="创建并配置用于存储证书和密钥的目录" id="3-create-and-configure-a-directory-to-store-certificates-and-keys">
     <Note>
       这一步必须在每个节点上执行。请在每台主机上使用相应的证书和密钥。
     </Note>
@@ -123,9 +115,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## 使用 ClickHouse Keeper 配置基础版集群环境
-
+  <Step title="使用 ClickHouse Keeper 配置基础版集群环境" id="4-configure-the-environment-with-basic-clusters-using-clickhouse-keeper">
     在此部署环境中，每个节点均使用以下 ClickHouse Keeper 配置。每台服务器都有其独立的 `<server_id>`。 (例如，节点 `chnode1` 对应 `<server_id>1</server_id>`，其余节点以此类推。)
 
     <Note>
@@ -250,9 +240,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## 在 ClickHouse 节点上配置 TLS 接口
-
+  <Step title="在 ClickHouse 节点上配置 TLS 接口" id="5-configure-tls-interfaces-on-clickhouse-nodes">
     以下设置需要在 ClickHouse server 的 `config.xml` 中配置：
 
     1. 为部署设置显示名称 (可选) ：
@@ -315,7 +303,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </openSSL>
     ```
 
-    如需了解更多信息，请访问[此页面](/zh/reference/settings/server-settings/settings#openssl)
+    如需了解更多信息，请访问[此页面](/zh/reference/settings/server-settings/settings/other#openssl)
 
     7. 在每个节点上为 gRPC 配置 TLS：
 
@@ -330,7 +318,6 @@ import { Image } from "/snippets/zh/components/Image.jsx";
            <transport_compression_level>0</transport_compression_level>
            <max_send_message_size>-1</max_send_message_size>
            <max_receive_message_size>-1</max_receive_message_size>
-           <verbose_logs>false</verbose_logs>
        </grpc>
        ```
 
@@ -359,9 +346,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## 测试
-
+  <Step title="测试" id="6-testing">
     1. 逐个启动所有节点：
        ```bash
        service clickhouse-server start
@@ -473,7 +458,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     5. 使用 `https` 接口登录位于 `https://chnode1.marsnet.local:8443/play` 的 Play UI。
 
-       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="配置 TLS" size="md" border />
+       <div className="ch-image-md">
+         <Frame>
+           ![配置 TLS](/images/guides/sre/configuring-ssl_01.webp)
+         </Frame>
+       </div>
 
     <Note>
       浏览器会显示证书不受信任，因为这是从工作站访问的，而这些证书并不在客户端机器的根 CA 存储中。
@@ -525,7 +514,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Steps>
 
 <div id="configure-openssl-for-standalone-clickhouse-keeper">
-  ## 为独立运行的 ClickHouse Keeper 配置 OpenSSL
+  ## 为独立运行的 ClickHouse Keeper 配置 OpenSSL {#configure-openssl-for-standalone-clickhouse-keeper}
 </div>
 
 当 ClickHouse Keeper 以独立进程方式运行时 (而不是嵌入在 ClickHouse server 中) ，必须在 Keeper 配置文件中单独配置 OpenSSL 证书和相关设置。否则，Keeper 将无法为客户端通信 (`tcp_port_secure`) 或 Keeper 节点之间的 Raft 复制建立安全连接。
@@ -569,13 +558,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Note>
 
 <div id="openssl-verification-modes">
-  ## OpenSSL 验证模式和证书处理器
+  ## OpenSSL 验证模式和证书处理器 {#openssl-verification-modes}
 </div>
 
 `<openSSL>` 配置支持多种 `<verificationMode>` 和 `<invalidCertificateHandler>` 选项，用于控制 ClickHouse 如何验证 TLS 证书。这些设置适用于 clickhouse-server、clickhouse-client 以及独立运行的 ClickHouse Keeper。
 
 <div id="verification-modes">
-  ### 验证模式
+  ### 验证模式 {#verification-modes}
 </div>
 
 在 `<openSSL>` 的 `<server>` 或 `<client>` 部分中设置 `<verificationMode>`：
@@ -588,7 +577,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 | `strict`  | 要求提供对端证书并进行完整验证。如果证书缺失、已过期，或不是由受信任的 CA 签发，连接将失败。建议在生产环境中使用。 |
 
 <div id="invalid-certificate-handlers">
-  ### 无效证书处理器
+  ### 无效证书处理器 {#invalid-certificate-handlers}
 </div>
 
 在 `<openSSL>` 的 `<server>` 或 `<client>` 部分中设置 `<invalidCertificateHandler>`。该处理程序用于确定证书验证失败时如何处理。在服务器端，它控制对无效客户端证书的响应；在客户端，它控制对无效服务器证书的响应。
@@ -599,7 +588,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 | `AcceptCertificateHandler` | 即使证书无效，也接受连接。仅用于测试。      |
 
 <div id="disabling-certificate-verification">
-  ### 示例：禁用证书验证
+  ### 示例：禁用证书验证 {#disabling-certificate-verification}
 </div>
 
 <Warning>
@@ -679,8 +668,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </openSSL>
 ```
 
+## 无需重启即可轮换证书和 CA 证书 {#rotating-certificates-without-restart}
+
+ClickHouse server 和 ClickHouse Keeper 会监视 `openSSL.server` 和 `openSSL.client` 配置段 (以及可组合协议的 `protocols.*` 配置段) 中由 `certificateFile`、`privateKeyFile` 和 `caConfig` 引用的文件；如果 `caConfig` 指向的是一个目录，则监视该目录下的文件。当其中任一文件发生变化，或执行 `SYSTEM RELOAD CONFIG` 时，证书会被重新加载，并用于所有新建立的 TLS 连接，包括 HTTPS、安全的原生协议、服务器间连接、到 Keeper 的连接，以及 Keeper 节点之间的 Raft 连接。已建立的连接仍会继续使用其建立时所用的证书。
+
+若要在不停机的情况下轮换 CA，请先将 `caConfig` 文件替换为同时包含旧 CA 证书和新 CA 证书的证书包，然后将节点证书和客户端证书切换为由新 CA 签发的证书，最后再将该证书包替换为仅包含新 CA 证书的文件。
+
 <div id="summary">
-  ## 总结
+  ## 总结 {#summary}
 </div>
 
 本文重点介绍了如何为 ClickHouse 环境配置 TLS。生产环境中的具体设置会因需求不同而有所差异，例如证书验证级别、协议、密码套件等。不过，相信你现在已经对配置和建立安全连接所需的步骤有了较为清晰的认识。

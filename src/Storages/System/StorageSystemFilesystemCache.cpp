@@ -110,13 +110,10 @@ protected:
                 col_cache_name->insert(cache_name);
                 col_cache_base_path->insert(cache->getBasePath());
 
-                /// Do not use `file_segment->getPath` here because it will lead to nullptr dereference
-                /// (because file_segments in getSnapshot do not have `cache` field set)
-                const auto path = cache->getFileSegmentPath(
-                    file_segment.key, file_segment.offset, file_segment.kind,
-                    file_segment.origin);
-
-                col_path->insert(path);
+                /// `file_segment.path` is captured when the snapshot is taken and reflects the real
+                /// on-disk name (including the `_<size>` suffix for downloaded segments). Do not
+                /// recompute it from the offset here, as that cannot know the size suffix.
+                col_path->insert(file_segment.path);
                 col_key->insert(file_segment.key.toString());
                 col_range_begin->insert(file_segment.range_left);
                 col_range_end->insert(file_segment.range_right);
@@ -132,7 +129,7 @@ protected:
                 col_file_origin->insert(toString(file_segment.origin.segment_type));
 
                 std::error_code ec;
-                auto size = fs::file_size(path, ec);
+                auto size = fs::file_size(file_segment.path, ec);
                 if (!ec)
                     col_file_size->insert(size);
                 else
@@ -215,7 +212,7 @@ public:
     {
     }
 
-    String getName() const override { return "ReadFromSystemFilesystemCache"; }
+    [[nodiscard]] String getName() const override { return "ReadFromSystemFilesystemCache"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
@@ -246,7 +243,7 @@ StorageSystemFilesystemCache::StorageSystemFilesystemCache(const StorageID & tab
         {"key", std::make_shared<DataTypeString>(), "Cache key of the file segment"},
         {"file_segment_range_begin", std::make_shared<DataTypeUInt64>(), "Offset corresponding to the beginning of the file segment range"},
         {"file_segment_range_end", std::make_shared<DataTypeUInt64>(), "Offset corresponding to the (including) end of the file segment range"},
-        {"size", std::make_shared<DataTypeUInt64>(), "Size of the file segment"},
+        {"size", std::make_shared<DataTypeUInt64>(), "Size of the file segment: the logical size of its range. It is not affected by the `use_real_disk_size` cache setting, which only changes how reservations are accounted in the cache size metrics. Use `downloaded_size` for the number of bytes actually written for this segment"},
         {"state", std::make_shared<DataTypeString>(), "File segment state (DOWNLOADED, DOWNLOADING, PARTIALLY_DOWNLOADED, ...)"},
         {"finished_download_time", std::make_shared<DataTypeDateTime>(), "Time when file segment finished downloading."},
         {"cache_hits", std::make_shared<DataTypeUInt64>(), "Number of cache hits of corresponding file segment"},

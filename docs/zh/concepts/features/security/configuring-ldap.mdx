@@ -14,9 +14,7 @@ import SelfManaged from '/snippets/zh/_self_managed_only_no_roadmap.mdx';
 ClickHouse 可以配置为使用 LDAP 对 ClickHouse 数据库用户进行身份验证。本指南提供了一个简单示例，说明如何将 ClickHouse 与使用公开可访问目录服务进行身份验证的 LDAP 系统集成。
 
 <Steps>
-  <Step>
-    ## 在 ClickHouse 中配置 LDAP 连接设置
-
+  <Step title="在 ClickHouse 中配置 LDAP 连接设置" id="1-configure-ldap-connection-settings-in-clickhouse">
     1. 测试与此公共 LDAP 服务器的连接：
 
        ```bash
@@ -116,9 +114,7 @@ ClickHouse 可以配置为使用 LDAP 对 ClickHouse 数据库用户进行身份
     4. 重启 ClickHouse server 以应用这些设置。
   </Step>
 
-  <Step>
-    ## 配置 ClickHouse 数据库角色和权限
-
+  <Step title="配置 ClickHouse 数据库角色和权限" id="2-configure-clickhouse-database-roles-and-permissions">
     <Note>
       本节中的操作步骤假定 ClickHouse 中已启用 SQL 访问控制与账户管理。要启用该功能，请参阅 [SQL Users and Roles 指南](/zh/concepts/features/security/access-rights)。
     </Note>
@@ -134,9 +130,7 @@ ClickHouse 可以配置为使用 LDAP 对 ClickHouse 数据库用户进行身份
        ```
   </Step>
 
-  <Step>
-    ## 测试 LDAP 配置
-
+  <Step title="测试 LDAP 配置" id="3-test-the-ldap-configuration">
     1. 使用 ClickHouse 客户端登录
        ```bash
        $ clickhouse-client --user einstein --password password

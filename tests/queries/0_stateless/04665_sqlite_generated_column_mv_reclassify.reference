@@ -1,0 +1,2 @@
+The first access after recovery is a materialized-view target write; SQLite computes the generated column:
+5|6

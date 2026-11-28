@@ -47,13 +47,15 @@ public:
       * existing covering entry already implies coverage of the new one).
       *
       * `out_skipped_reason`, if non-null, receives the human-readable description from
-      * `ActiveDataPartSet::tryAddPart` when a part lands in the overlapping list. Empty when the
+      * `ActiveDataPartSet::tryAdd` when a part lands in the overlapping list. Empty when the
       * part is added to the primary set or when the part is already covered.
       */
     void add(const MergeTreePartInfo & part_info, const String & part_name, String * out_skipped_reason = nullptr)
     {
         String reason;
-        const auto outcome = set.tryAddPart(part_info, &reason);
+        /// A part name cannot be derived from a part info in the V0 (date-based) name format, so only
+        /// the name-taking overload is usable here.
+        const auto outcome = set.tryAdd(part_name, &reason);
         if (outcome == ActiveDataPartSet::AddPartOutcome::HasIntersectingPart)
         {
             overlapping.emplace_back(part_info, part_name);
@@ -75,7 +77,7 @@ public:
       * `part_info`, or an empty string if none. Considers both the primary set and the
       * overlapping list, so coverage detection is independent of insertion order.
       */
-    String getContainingPart(const MergeTreePartInfo & part_info) const
+    [[nodiscard]] String getContainingPart(const MergeTreePartInfo & part_info) const
     {
         if (auto candidate = set.getContainingPart(part_info); !candidate.empty())
             return candidate;
@@ -87,23 +89,23 @@ public:
         return {};
     }
 
-    String getContainingPart(const String & part_name) const
+    [[nodiscard]] String getContainingPart(const String & part_name) const
     {
         return getContainingPart(MergeTreePartInfo::fromPartName(part_name, set.getFormatVersion()));
     }
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         return set.size() + overlapping.size();
     }
 
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         return size() == 0;
     }
 
     /** Names of all parts in this index, primary set first, overlapping list after. */
-    Strings getParts() const
+    [[nodiscard]] Strings getParts() const
     {
         Strings result = set.getParts();
         result.reserve(result.size() + overlapping.size());
@@ -115,7 +117,7 @@ public:
     /** Names of just the parts that landed in the overlapping list (intersected an existing
       * entry on `add`). Useful for diagnostics — most workloads should produce an empty list.
       */
-    Strings getOverlappingParts() const
+    [[nodiscard]] Strings getOverlappingParts() const
     {
         Strings result;
         result.reserve(overlapping.size());

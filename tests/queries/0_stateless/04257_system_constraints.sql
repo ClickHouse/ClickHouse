@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: the fast test build has no `encrypt` (no SSL), whose key it then does not mask
+
 -- Test the system.constraints table: creation, ALTER ADD/DROP, and secret hiding.
 DROP TABLE IF EXISTS test_constraints;
 

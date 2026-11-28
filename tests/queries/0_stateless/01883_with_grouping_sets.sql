@@ -1,3 +1,4 @@
+
 -- Specific value doesn't matter, we just need it to be fixed, because it is a part of `EXPLAIN PIPELINE` output.
 SET max_threads = 8;
 

@@ -1,0 +1,306 @@
+---
+title: 'DataStore 配置'
+sidebarTitle: '概览'
+slug: /chdb/configuration
+description: '配置 DataStore 的执行引擎、日志、缓存、性能分析和 Dtype 修正'
+keywords: ['chdb', 'datastore', '配置', 'config', '设置']
+doc_type: 'reference'
+---
+
+DataStore 提供了丰富的配置选项，可用于设置执行引擎选择、兼容模式、日志、缓存、性能分析和 Dtype 修正。
+
+<div id="quick-reference">
+  ## 快速参考
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# Quick setup presets
+config.enable_debug()           # Enable verbose logging
+config.use_chdb()               # Force ClickHouse engine
+config.use_pandas()             # Force pandas engine
+config.use_auto()               # Auto-select engine (default)
+config.use_performance_mode()   # SQL-first, max throughput
+config.use_pandas_compat()      # Full pandas compatibility (default)
+config.enable_profiling()       # Enable performance profiling
+```
+
+<div id="all-options">
+  ## 所有配置选项
+</div>
+
+| 类别        | 选项                       | 值                                                      | 默认值                | 描述                       |
+| --------- | ------------------------ | ------------------------------------------------------ | ------------------ | ------------------------ |
+| **日志**    | `log_level`              | DEBUG/INFO/WARNING/ERROR                               | WARNING            | 日志详细级别                   |
+|           | `log_format`             | &quot;simple&quot;, &quot;verbose&quot;                | &quot;simple&quot; | 日志消息格式                   |
+| **缓存**    | `cache_enabled`          | True/False                                             | True               | 启用结果缓存                   |
+|           | `cache_ttl`              | float (seconds)                                        | 0.0                | 缓存生存时间 (TTL)             |
+| **引擎**    | `execution_engine`       | &quot;auto&quot;, &quot;chdb&quot;, &quot;pandas&quot; | &quot;auto&quot;   | 执行引擎                     |
+|           | `cross_datastore_engine` | &quot;auto&quot;, &quot;chdb&quot;, &quot;pandas&quot; | &quot;auto&quot;   | 跨 DataStore 操作           |
+| **兼容性**   | `compat_mode`            | &quot;pandas&quot;, &quot;performance&quot;            | &quot;pandas&quot; | 侧重 Pandas 兼容性或 SQL 优先吞吐量 |
+| **性能分析**  | `profiling_enabled`      | True/False                                             | False              | 启用性能分析                   |
+| **Dtype** | `correction_level`       | NONE/CRITICAL/HIGH/MEDIUM/ALL                          | HIGH               | Dtype 校正级别               |
+
+***
+
+<div id="methods">
+  ## 配置方式
+</div>
+
+<div id="logging">
+  ### 日志配置
+</div>
+
+```python
+from chdb.datastore.config import config
+import logging
+
+# Set log level
+config.set_log_level(logging.DEBUG)
+config.set_log_level(logging.INFO)
+config.set_log_level(logging.WARNING)  # Default
+config.set_log_level(logging.ERROR)
+
+# Set log format
+config.set_log_format("simple")   # Default
+config.set_log_format("verbose")  # More details
+
+# Quick enable debug mode
+config.enable_debug()  # Sets DEBUG level + verbose format
+```
+
+详见[日志](/zh/chdb/debugging/logging)。
+
+<div id="cache">
+  ### 缓存配置
+</div>
+
+```python
+# Enable/disable caching
+config.set_cache_enabled(True)   # Default
+config.set_cache_enabled(False)  # Disable caching
+
+# Set cache TTL (time-to-live)
+config.set_cache_ttl(60.0)  # Cache expires after 60 seconds
+config.set_cache_ttl(0.0)   # No expiration (default)
+
+# Check current settings
+print(config.cache_enabled)
+print(config.cache_ttl)
+```
+
+<div id="engine">
+  ### 引擎配置
+</div>
+
+```python
+# Set execution engine
+config.set_execution_engine('auto')    # Auto-select (default)
+config.set_execution_engine('chdb')    # Force ClickHouse
+config.set_execution_engine('pandas')  # Force pandas
+
+# Quick presets
+config.use_auto()     # Auto-select
+config.use_chdb()     # Force ClickHouse
+config.use_pandas()   # Force pandas
+
+# Cross-DataStore engine (for operations between different DataStores)
+config.set_cross_datastore_engine('auto')
+config.set_cross_datastore_engine('chdb')
+config.set_cross_datastore_engine('pandas')
+
+# Check current engine
+print(config.execution_engine)
+```
+
+详情请参见[执行引擎](/zh/chdb/configuration/execution-engine)。
+
+<div id="compat-mode">
+  ### 兼容模式
+</div>
+
+```python
+# Performance mode: SQL-first, no pandas compatibility overhead
+config.use_performance_mode()
+# or: config.set_compat_mode('performance')
+
+# Pandas compatibility mode (default)
+config.use_pandas_compat()
+# or: config.set_compat_mode('pandas')
+
+# Check current mode
+print(config.compat_mode)  # 'pandas' or 'performance'
+```
+
+有关详情，请参阅[性能模式](/zh/chdb/configuration/performance-mode)。
+
+<div id="profiling">
+  ### 性能分析配置
+</div>
+
+```python
+# Enable profiling
+config.enable_profiling()
+config.set_profiling_enabled(True)
+
+# Disable profiling
+config.set_profiling_enabled(False)
+
+# Check if profiling is enabled
+print(config.profiling_enabled)
+```
+
+详见[性能分析](/zh/chdb/debugging/profiling)。
+
+<div id="dtype">
+  ### Dtype 修正
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+
+# Set correction level
+config.set_correction_level(CorrectionLevel.NONE)      # No correction
+config.set_correction_level(CorrectionLevel.CRITICAL)  # Critical types only
+config.set_correction_level(CorrectionLevel.HIGH)      # Default
+config.set_correction_level(CorrectionLevel.MEDIUM)    # More corrections
+config.set_correction_level(CorrectionLevel.ALL)       # All corrections
+```
+
+***
+
+<div id="config-object">
+  ## 使用 config 对象
+</div>
+
+`config` 对象是一个管理所有配置的单例：
+
+```python
+from chdb.datastore.config import config
+
+# Read settings
+print(config.log_level)
+print(config.execution_engine)
+print(config.cache_enabled)
+print(config.profiling_enabled)
+
+# Modify settings
+config.set_log_level(logging.DEBUG)
+config.set_execution_engine('chdb')
+config.set_cache_enabled(False)
+config.enable_profiling()
+```
+
+***
+
+<div id="in-code">
+  ## 代码中的配置
+</div>
+
+<div id="per-script">
+  ### 按脚本配置
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+# Configure at script start
+config.enable_debug()
+config.use_chdb()
+config.enable_profiling()
+
+# Your DataStore code
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'mean'})
+```
+
+<div id="context-manager">
+  ### 上下文管理器 (未来功能)
+</div>
+
+```python
+# Planned feature: temporary configuration
+with config.override(execution_engine='pandas'):
+    result = ds.process()
+# Original settings restored
+```
+
+***
+
+<div id="scenarios">
+  ## 常见配置场景
+</div>
+
+<div id="dev-config">
+  ### 开发/调试
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.enable_debug()        # Verbose logging
+config.enable_profiling()    # Performance tracking
+config.set_cache_enabled(False)  # Disable caching for fresh results
+```
+
+<div id="prod-config">
+  ### 生产环境
+</div>
+
+```python
+from chdb.datastore.config import config
+import logging
+
+config.set_log_level(logging.WARNING)  # Minimal logging
+config.set_execution_engine('auto')    # Optimal engine selection
+config.set_cache_enabled(True)         # Enable caching
+config.set_profiling_enabled(False)    # Disable profiling overhead
+```
+
+<div id="max-throughput-config">
+  ### 最大吞吐量
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_performance_mode()    # SQL-first, no pandas overhead
+config.set_cache_enabled(False)  # Disable cache for streaming
+```
+
+<div id="perf-config">
+  ### 性能测试
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_chdb()            # Force ClickHouse for benchmarks
+config.enable_profiling()    # Track performance
+config.set_cache_enabled(False)  # Disable cache for accurate timing
+```
+
+<div id="compat-config">
+  ### Pandas 兼容性测试
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_pandas()          # Force pandas engine
+config.enable_debug()        # See what operations are used
+```
+
+***
+
+<div id="related">
+  ## 相关文档
+</div>
+
+* [执行引擎](/zh/chdb/configuration/execution-engine) - 引擎选择说明
+* [性能模式](/zh/chdb/configuration/performance-mode) - 以 SQL 为先、实现最大吞吐量的模式
+* [函数配置](/zh/chdb/configuration/function-config) - 按函数设置执行引擎
+* [日志](/zh/chdb/debugging/logging) - 日志配置
+* [性能分析](/zh/chdb/debugging/profiling) - 性能分析

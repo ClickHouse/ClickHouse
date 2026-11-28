@@ -115,63 +115,11 @@ select 1 intersect (select 1 except select 2);
 select 1 union all select 2  except (select 2 except select 1 union all select 1) except select 4;
 select 1 intersect select count() from (select 1 except select 2 intersect select 2 union all select 1);
 explain syntax select 1 intersect select 1;
-(
-    SELECT 1
-    FROM system.one
-)
-INTERSECT ALL
-(
-    SELECT 1
-    FROM system.one
-)
+(\n    SELECT 1\n    FROM system.one\n)\nINTERSECT ALL\n(\n    SELECT 1\n    FROM system.one\n)
 explain syntax select 1 except select 1;
-(
-    SELECT 1
-    FROM system.one
-)
-EXCEPT ALL
-(
-    SELECT 1
-    FROM system.one
-)
+(\n    SELECT 1\n    FROM system.one\n)\nEXCEPT ALL\n(\n    SELECT 1\n    FROM system.one\n)
 explain syntax select 1 union all select 2  except (select 2 except select 1 union all select 1) except select 4;
-(
-    (
-        (
-            SELECT 1
-            FROM system.one
-        )
-        UNION ALL
-        (
-            SELECT 2
-            FROM system.one
-        )
-    )
-    EXCEPT ALL
-    (
-        (
-            (
-                SELECT 2
-                FROM system.one
-            )
-            EXCEPT ALL
-            (
-                SELECT 1
-                FROM system.one
-            )
-        )
-        UNION ALL
-        (
-            SELECT 1
-            FROM system.one
-        )
-    )
-)
-EXCEPT ALL
-(
-    SELECT 4
-    FROM system.one
-)
+(\n    (\n        (\n            SELECT 1\n            FROM system.one\n        )\n        UNION ALL\n        (\n            SELECT 2\n            FROM system.one\n        )\n    )\n    EXCEPT ALL\n    (\n        (\n            (\n                SELECT 2\n                FROM system.one\n            )\n            EXCEPT ALL\n            (\n                SELECT 1\n                FROM system.one\n            )\n        )\n        UNION ALL\n        (\n            SELECT 1\n            FROM system.one\n        )\n    )\n)\nEXCEPT ALL\n(\n    SELECT 4\n    FROM system.one\n)
 set limit=1;
 select 1 intersect select 1;
 1

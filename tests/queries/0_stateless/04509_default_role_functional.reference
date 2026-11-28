@@ -1,0 +1,23 @@
+set_default_role
+[]	[]	[]
+['role_x_04509_default','role_y_04509_default']	[0,0]	[1,1]
+[]	[]	[]
+['role_x_04509_default']	[0]	[1]
+['role_y_04509_default']	[0]	[1]
+['role_x_04509_default','role_y_04509_default']	[0,0]	[1,1]
+['role_y_04509_default']	[0]	[1]
+
+alter_user
+[]	[]	[]
+['role_x_04509_default','role_y_04509_default']	[0,0]	[1,1]
+[]	[]	[]
+['role_x_04509_default']	[0]	[1]
+['role_x_04509_default','role_y_04509_default']	[0,0]	[1,1]
+['role_y_04509_default']	[0]	[1]
+
+errors
+UNKNOWN_USER
+UNKNOWN_USER
+UNKNOWN_ROLE
+UNKNOWN_ROLE
+UNKNOWN_ROLE

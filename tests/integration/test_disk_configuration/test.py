@@ -32,11 +32,14 @@ def start_cluster():
             with_minio=True,
             macros={"replica": "node1", "shard": "shard1"},
         )
+        # node2: the substitutions file lives at /etc/metrika.xml, which has no special
+        # meaning any more, so `include_from` has to point at it explicitly.
         cluster.add_instance(
             "node2",
             main_configs=[
                 "configs/config.d/storage_configuration.xml",
                 "configs/config.d/remote_servers.xml",
+                "configs/config.d/include_from_metrika_path.xml",
             ],
             user_configs=[
                 "configs/users.d/dynamic_disk_settings.xml",
@@ -258,6 +261,11 @@ def test_merge_tree_custom_disk_setting(start_cluster):
                     secret_access_key='{minio_secret_key}');
         """
         )
+
+        for disk in node1.query(
+            f"SELECT DISTINCT disk_name FROM system.parts WHERE table IN ('{TABLE_NAME}', '{TABLE_NAME}_2')"
+        ).split():
+            node1.query(f"SYSTEM WAIT BLOBS CLEANUP '{disk}'")
 
         list1 = list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))
         count1 = len(list1)

@@ -325,6 +325,12 @@ bool MetadataStorageFromDisk::hasPendingRemovalBlobs(const StoredObjects & blobs
     return objects_to_remove.containsAny(blobs);
 }
 
+int64_t MetadataStorageFromDisk::getDeadBlobsQueueEstimate()
+{
+    std::lock_guard guard(removed_objects_mutex);
+    return std::ssize(objects_to_remove);
+}
+
 MetadataStorageFromDiskTransaction::MetadataStorageFromDiskTransaction(MetadataStorageFromDisk & metadata_storage_)
     : metadata_storage(metadata_storage_)
 {
@@ -391,11 +397,6 @@ void MetadataStorageFromDiskTransaction::setLastModified(const std::string & pat
     operations.addOperation(std::make_unique<SetLastModifiedOperation>(path, timestamp, *metadata_storage.getDisk()));
 }
 
-void MetadataStorageFromDiskTransaction::chmod(const String & path, mode_t mode)
-{
-    operations.addOperation(std::make_unique<ChmodOperation>(path, mode, *metadata_storage.getDisk()));
-}
-
 void MetadataStorageFromDiskTransaction::unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects)
 {
     operations.addOperation(std::make_unique<UnlinkFileOperation>(path, if_exists, should_remove_objects, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk(), objects_to_remove));
@@ -453,7 +454,7 @@ void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & 
 
 void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, const StoredObject & object)
 {
-    operations.addOperation(std::make_unique<AddBlobOperation>(path, object, metadata_storage.compatible_key_prefix, *metadata_storage.disk));
+    operations.addOperation(std::make_unique<AddBlobOperation>(path, object, metadata_storage.compatible_key_prefix, *metadata_storage.disk, objects_to_remove));
 }
 
 void MetadataStorageFromDiskTransaction::truncateFile(const std::string & src_path, size_t target_size)

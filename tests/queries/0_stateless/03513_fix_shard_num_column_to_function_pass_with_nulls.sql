@@ -8,5 +8,6 @@ CREATE TABLE t1 (c0 Int) ENGINE = Distributed('test_cluster_two_shards', current
 SELECT t1._shard_num % t1._shard_num FROM t1 FULL JOIN (SELECT 1 AS c0) tx ON TRUE;
 SELECT t1._shard_num % shardNum() FROM t1 FULL JOIN (SELECT 1 AS c0) tx ON TRUE;
 
--- This doesn't work, but it is a separate bug https://github.com/ClickHouse/ClickHouse/issues/80691
--- SELECT t1._shard_num % t1._shard_num FROM t1 FULL JOIN (SELECT 1 AS c0) tx ON TRUE ORDER BY t1._shard_num;
+-- Regression for https://github.com/ClickHouse/ClickHouse/issues/80691
+SELECT t1._shard_num % t1._shard_num FROM t1 FULL JOIN (SELECT 1 AS c0) tx ON TRUE ORDER BY t1._shard_num;
+SELECT t1._shard_num % t1._shard_num FROM t1 FULL JOIN (SELECT 1 AS c0) tx ON TRUE ORDER BY c0;

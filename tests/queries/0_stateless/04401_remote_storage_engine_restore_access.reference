@@ -1,0 +1,6 @@
+-- restore without SELECT/INSERT on the protected local target: rejected like CREATE
+1
+-- the table was not created by the rejected restore
+0
+-- restore with both SELECT and INSERT on the protected local target: allowed
+42

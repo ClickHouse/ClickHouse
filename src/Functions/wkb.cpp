@@ -27,17 +27,20 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionWKB>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(Any) -> String";
+    }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnString::create();
@@ -49,6 +52,8 @@ public:
             transform = std::make_shared<WKBLineStringTransform>();
         else if (arguments[0].type->getName() == WKBPolygonTransform::name)
             transform = std::make_shared<WKBPolygonTransform>();
+        else if (arguments[0].type->getName() == WKBMultiPointTransform::name)
+            transform = std::make_shared<WKBMultiPointTransform>();
         else if (arguments[0].type->getName() == WKBMultiLineStringTransform::name)
             transform = std::make_shared<WKBMultiLineStringTransform>();
         else if (arguments[0].type->getName() == WKBMultiPolygonTransform::name)
@@ -67,7 +72,7 @@ public:
         return res_column;
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 };
 
 }
@@ -82,13 +87,13 @@ REGISTER_FUNCTION(WKB)
         .arguments{{"geometry", "The input geometry type to convert into WKB."}},
         .examples{
             {"first call",
-             "CREATE TABLE IF NOT EXISTS geom1 (a Point) ENGINE = Memory();"
-             "INSERT INTO geom1 VALUES((0, 0));"
+             "CREATE TABLE IF NOT EXISTS geom1 (a Point) ENGINE = Memory();\n"
+             "INSERT INTO geom1 VALUES((0, 0));\n"
              "SELECT hex(wkb(a)) FROM geom1;",
              R"(
-    ┌─hex(wkb(a))─-----------------------------------------┐
-    │ 010100000000000000000000000000000000003440           │
-    └──────────────────────────────────────────────────────┘
+┌─hex(wkb(a))────────────────────────────────┐
+│ 010100000000000000000000000000000000000000 │
+└────────────────────────────────────────────┘
                 )"},
         },
         .introduced_in = {25, 7},

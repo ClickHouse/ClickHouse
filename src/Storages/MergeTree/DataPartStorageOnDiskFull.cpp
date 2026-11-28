@@ -38,6 +38,9 @@ MutableDataPartStoragePtr DataPartStorageOnDiskFull::create(
 
 MutableDataPartStoragePtr DataPartStorageOnDiskFull::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
 {
+    /// Not arena-scoped: most callers use this only as a short-lived filesystem handle (CHECK TABLE,
+    /// mutation hardlink/copy, existence probes). The part-lifetime projection storage is created via
+    /// `getProjectionPartBuilder`, which scopes the arena itself.
     return std::shared_ptr<DataPartStorageOnDiskFull>(new DataPartStorageOnDiskFull(volume, std::string(fs::path(root_path) / part_dir), name, use_parent_transaction ? transaction : nullptr));
 }
 
@@ -70,10 +73,10 @@ public:
     }
 
     void next() override { it->next(); }
-    bool isValid() const override { return it->isValid(); }
-    bool isFile() const override { return isValid() && disk->existsFile(it->path()); }
-    std::string name() const override { return it->name(); }
-    std::string path() const override { return it->path(); }
+    [[nodiscard]] bool isValid() const override { return it->isValid(); }
+    [[nodiscard]] bool isFile() const override { return isValid() && disk->existsFile(it->path()); }
+    [[nodiscard]] std::string name() const override { return it->name(); }
+    [[nodiscard]] std::string path() const override { return it->path(); }
 
 private:
     DiskPtr disk;
@@ -252,6 +255,18 @@ void DataPartStorageOnDiskFull::commitTransaction()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot commit shared transaction");
 
     transaction->commit();
+    transaction.reset();
+}
+
+void DataPartStorageOnDiskFull::undoTransaction()
+{
+    if (!transaction)
+        return;
+
+    if (has_shared_transaction)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot undo shared transaction");
+
+    transaction->undo();
     transaction.reset();
 }
 

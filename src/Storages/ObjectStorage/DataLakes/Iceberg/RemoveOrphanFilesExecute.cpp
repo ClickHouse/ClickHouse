@@ -2,6 +2,7 @@
 #if USE_AVRO
 
 #include <chrono>
+#include <filesystem>
 #include <unordered_set>
 
 #include <Common/Exception.h>
@@ -12,6 +13,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -35,6 +37,7 @@ extern const int BAD_ARGUMENTS;
 namespace Setting
 {
 extern const SettingsUInt64 iceberg_orphan_files_older_than_seconds;
+extern const SettingsUInt64 iceberg_orphan_files_min_retention_seconds;
 }
 
 namespace Iceberg
@@ -96,7 +99,7 @@ String resolveScanPath(const String & table_path, const RemoveOrphanFilesParams 
     if (params.location.has_value())
     {
         String loc = *params.location;
-        if (loc.find("..") != String::npos || loc.starts_with('/'))
+        if (loc.contains("..") || loc.starts_with('/'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "location must be a relative path under the table root, got '{}'", loc);
 
         while (loc.starts_with("./"))
@@ -119,11 +122,35 @@ OrphanScanResult findOrphanFiles(
 {
     OrphanScanResult scan;
 
+    /// A filesystem names `a//b` and `a/./b` as `a/b`; an object key is a byte string.
+    const auto storage_type = object_storage->getType();
+    const bool is_filesystem = storage_type == ObjectStorageType::Local || storage_type == ObjectStorageType::HDFS;
+    const String key_prefix = object_storage->getCommonKeyPrefix();
+    /// The local storage opens a relative key as `resolvePathRelativelyToBase` maps it, from the current directory.
+    auto normalize = [&](const String & path)
+    {
+        std::filesystem::path file(path);
+        if (storage_type == ObjectStorageType::Local && file.is_relative())
+            file = std::filesystem::absolute(resolvePathRelativelyToBase(path, key_prefix));
+        return file.lexically_normal().string();
+    };
+    std::unordered_set<String> normalized_reachable;
+    if (is_filesystem)
+        for (const auto & reachable_path : reachable)
+            normalized_reachable.insert(normalize(reachable_path));
+
+    auto is_reachable = [&](const String & path)
+    {
+        if (is_filesystem)
+            return normalized_reachable.contains(normalize(path));
+        return reachable.contains(path);
+    };
+
     for (const auto & file_ptr : actual_files)
     {
         const String & path = file_ptr->relative_path;
 
-        if (reachable.contains(path))
+        if (is_reachable(path))
             continue;
 
         std::optional<ObjectMetadata> fetched_metadata;
@@ -256,12 +283,14 @@ RemoveOrphanFilesResult removeOrphanFiles(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_table_components)
+    const PersistentTableComponents & persistent_table_components,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const String & table_name)
 {
     auto log = getLogger("IcebergRemoveOrphanFiles");
 
-    auto [reachable, metadata_version] = collectReachableFiles(
-        object_storage, persistent_table_components, data_lake_settings, context, log);
+    auto [reachable, metadata_version, metadata_path] = collectReachableFiles(
+        object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
 
     String scan_path = resolveScanPath(persistent_table_components.table_path, params);
     if (!object_storage->existsOrHasAnyChild(scan_path))
@@ -277,13 +306,13 @@ RemoveOrphanFilesResult removeOrphanFiles(
     if (params.dry_run || scan.orphan_paths.empty())
         return tallyByCategory(scan.orphan_paths, scan.skipped_missing_metadata);
 
-    auto [_recheck_files, recheck_version] = collectReachableFiles(
-        object_storage, persistent_table_components, data_lake_settings, context, log);
-    if (recheck_version != metadata_version)
+    auto [_recheck_files, recheck_version, recheck_path] = collectReachableFiles(
+        object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
+    if (recheck_path != metadata_path)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Metadata version changed during orphan scan (v{} -> v{}); "
+            "Current metadata file changed during orphan scan ('{}' v{} -> '{}' v{}); "
             "aborting to avoid deleting files referenced by a concurrent commit",
-            metadata_version, recheck_version);
+            metadata_path, metadata_version, recheck_path, recheck_version);
 
     auto delete_result = deleteOrphanFiles(scan.orphan_paths, object_storage, log);
     LOG_INFO(log, "Deleted {}/{} orphan files ({} failed)",
@@ -306,15 +335,19 @@ Pipe executeRemoveOrphanFiles(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_components)
+    const PersistentTableComponents & persistent_components,
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const String & table_name)
 {
     /// `persistent_components.format_version` is captured when the table was opened and
     /// can become stale if an external tool (e.g. Spark) upgrades the table v1 -> v2
-    /// between queries. Read the latest metadata file to get the authoritative version
-    /// for this command gate.
+    /// between queries. Resolve the same metadata file the scan below roots at, so the
+    /// gate and the scan judge one table state.
     auto log = getLogger("IcebergRemoveOrphanFiles");
-    auto [_metadata_version, latest_metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    auto [_metadata_version, latest_metadata_path, compression_method, _] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
+        catalog,
+        table_name,
         persistent_components.table_path,
         data_lake_settings,
         persistent_components.metadata_cache,
@@ -322,8 +355,7 @@ Pipe executeRemoveOrphanFiles(
         log.get(),
         persistent_components.table_uuid,
         persistent_components.metadata_compression_method,
-        /* force_fetch_latest_metadata */ true,
-        /* ignore_explicit_metadata_file_path */ true);
+        /* ignore_metadata_pointer_overrides */ true);
 
     auto latest_metadata = getMetadataJSONObject(
         latest_metadata_path,
@@ -345,6 +377,8 @@ Pipe executeRemoveOrphanFiles(
     auto parsed = makeSchema().parse(args);
 
     RemoveOrphanFilesParams params;
+    const auto now_tp = std::chrono::system_clock::now();
+    const time_t now = std::chrono::system_clock::to_time_t(now_tp);
     if (parsed.has("older_than"))
     {
         String older_than_str = parsed.getAs<String>("older_than");
@@ -352,7 +386,6 @@ Pipe executeRemoveOrphanFiles(
         time_t ts = 0;
         readDateTimeText(ts, buf);
 
-        auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         if (ts > now)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -363,14 +396,24 @@ Pipe executeRemoveOrphanFiles(
     else
     {
         UInt64 threshold_seconds = context->getSettingsRef()[Setting::iceberg_orphan_files_older_than_seconds].value;
-        auto now = std::chrono::system_clock::now();
-        params.older_than = std::chrono::system_clock::to_time_t(now - std::chrono::seconds(threshold_seconds));
+        params.older_than = std::chrono::system_clock::to_time_t(now_tp - std::chrono::seconds(threshold_seconds));
     }
+
+    /// Files of a write that has not committed yet are unreferenced by the table metadata, so only their age keeps them out of the orphan set.
+    UInt64 min_retention = context->getSettingsRef()[Setting::iceberg_orphan_files_min_retention_seconds];
+    if (*params.older_than > now || static_cast<UInt64>(now - *params.older_than) < min_retention)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "older_than must be at least {} seconds before now (setting iceberg_orphan_files_min_retention_seconds), got {} seconds: "
+            "files of a write that has not committed yet are not referenced by the table metadata and would be deleted. "
+            "Use an earlier older_than, or lower the setting if no write to the table can be in progress",
+            min_retention,
+            *params.older_than > now ? 0 : now - *params.older_than);
     if (parsed.has("location"))
         params.location = parsed.getAs<String>("location");
     params.dry_run = parsed.getAs<UInt64>("dry_run") != 0;
 
-    auto result = removeOrphanFiles(params, context, object_storage, data_lake_settings, persistent_components);
+    auto result = removeOrphanFiles(params, context, object_storage, data_lake_settings, persistent_components, catalog, table_name);
 
     return resultToPipe(result);
 }

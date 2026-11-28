@@ -7,7 +7,7 @@ Polygon: Straight Segment
 0
 Polygon: Empty Bound Hole
 1
-0
+1
 Polygon: Empty Bound Outer Ring
 0
 0
@@ -28,5 +28,11 @@ MultiPolygon: Some Empty Bound Polygon, Others good
 27	3	poly-1 | hole-1	0
 25	7	poly-1 | hole-2	0
 MultiPolygon: All Empty Bound Polygon
+0
+0
+Polygon: Empty Ring
+0
+0
+MultiPolygon: Empty Ring
 0
 0

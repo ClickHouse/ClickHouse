@@ -1,0 +1,42 @@
+Round trip with the default setting:
+	\N		['','x']	['',NULL]	(1,'')	FF00
+ascii	ascii	ascii	['ascii','x']	['ascii',NULL]	(1,'ascii')	FF00
+Привет	Привет	Привет	['Привет','x']	['Привет',NULL]	(1,'Привет')	FF00
+😀	😀	😀	['😀','x']	['😀',NULL]	(1,'😀')	FF00
+s	String					
+ns	Nullable(String)					
+lc	String					
+arr	Array(String)					
+arr_n	Array(Nullable(String))					
+t	Tuple(\n    a UInt64,\n    b String)					
+f	String					
+The Utf8 file is smaller: 1
+utf8, s = unhex('FF'): 0	0, pushed and dropped conjuncts: 0	1
+utf8, s = 'str42': 1	940737701754556427, pushed and dropped conjuncts: 1	0
+utf8, s IN ('str1', 'str2'): 2	8857025785287738006, pushed and dropped conjuncts: 1	0
+utf8, s LIKE 'str9%': 111	6098505139878754081, pushed and dropped conjuncts: 1	0
+utf8, startsWith(s, 'str10'): 111	1340001321753894655, pushed and dropped conjuncts: 1	0
+utf8, f = unhex('FF00'): 1500	4049042483103700053, pushed and dropped conjuncts: 1	0
+binary, s = unhex('FF'): 0	0, pushed and dropped conjuncts: 1	0
+binary, s = 'str42': 1	940737701754556427, pushed and dropped conjuncts: 1	0
+binary, s IN ('str1', 'str2'): 2	8857025785287738006, pushed and dropped conjuncts: 1	0
+binary, s LIKE 'str9%': 111	6098505139878754081, pushed and dropped conjuncts: 1	0
+binary, startsWith(s, 'str10'): 111	1340001321753894655, pushed and dropped conjuncts: 1	0
+binary, f = unhex('FF00'): 1500	4049042483103700053, pushed and dropped conjuncts: 1	0
+Values that are not valid UTF-8 are rejected:
+String: rejected
+Array(String): rejected
+Tuple: rejected
+LowCardinality(String): rejected
+Nullable(String): rejected
+Two rows of one character: rejected
+Two rows of one character, three bytes: rejected
+Two rows of one character with a NULL between: rejected
+Two elements of one character: rejected
+INSERT INTO FUNCTION file: rejected
+Not rejected:
+aé	61C3A9
+FF
+\N	[NULL]
+With output_format_vortex_string_as_string = 0 the same values are written as Binary:
+FF	['C3','A9']

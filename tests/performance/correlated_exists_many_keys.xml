@@ -1,0 +1,18 @@
+<test>
+    <create_query>CREATE TABLE correlated_exists_outer (k Int64, c1 Int64, c2 Int64, c3 Int64, c4 Int64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE correlated_exists_inner (k Int64, c1 Int64, c2 Int64, c3 Int64, c4 Int64) ENGINE = MergeTree ORDER BY k</create_query>
+
+    <fill_query>INSERT INTO correlated_exists_outer SELECT number, rand64(1) % 10, rand64(2) % 10, rand64(3) % 10, rand64(4) % 10 FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO correlated_exists_inner SELECT number, rand64(5) % 10, rand64(6) % 10, rand64(7) % 10, rand64(8) % 10 FROM numbers_mt(10000000)</fill_query>
+
+    <query>
+        SELECT count()
+        FROM correlated_exists_outer AS a
+        WHERE EXISTS (SELECT 1 FROM correlated_exists_inner AS b WHERE a.k = b.k AND a.c1 = b.c1 AND a.c2 = b.c2 AND a.c3 = b.c3 AND a.c4 = b.c4)
+        SETTINGS collect_hash_table_stats_during_joins = 0
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS correlated_exists_outer</drop_query>
+    <drop_query>DROP TABLE IF EXISTS correlated_exists_inner</drop_query>
+</test>

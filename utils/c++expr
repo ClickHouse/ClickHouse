@@ -47,7 +47,7 @@ RUN_PERFTOP=
 BENCHMARK_TESTS=5
 USE_CMAKE=
 USE_CLICKHOUSE=
-CXX=g++
+CXX=clang++
 CXX_OPTS=
 CMD_PARAMS=
 KEEP_WORKTREE=0
@@ -113,7 +113,7 @@ find_clickhouse_root () {
         fi
         DIR="`dirname $DIR`"
     done
-    echo "error: unable to find Clickhouse root folder"
+    echo "error: unable to find ClickHouse root folder"
     return 1
 }
 

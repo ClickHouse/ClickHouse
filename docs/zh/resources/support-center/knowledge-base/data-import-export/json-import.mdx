@@ -20,7 +20,7 @@ ClickHouse 支持多种用于输入和输出的[数据格式](/zh/reference/form
 $ echo '{"foo":"bar"}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20test%20FORMAT%20JSONEachRow' --data-binary @-
 ```
 
-通过 [接口](/zh/concepts/features/interfaces/cli)：
+使用 [ClickHouse 客户端](/zh/concepts/features/interfaces/client)：
 
 ```bash
 $ echo '{"foo":"bar"}'  | clickhouse-client --query="INSERT INTO test FORMAT JSONEachRow"

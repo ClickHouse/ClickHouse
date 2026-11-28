@@ -1,6 +1,7 @@
 import os
 import re
 import socket
+import struct
 import subprocess
 import time
 
@@ -388,3 +389,224 @@ def test_ssh_interactive_pty_with_high_fds(started_cluster):
                 s.close()
             except OSError:
                 pass
+
+
+# Matches SGR / cursor-control sequences, OSC sequences, and NUL bytes that
+# replxx interleaves throughout the PTY output stream.
+ANSI_ESCAPE_RE = re.compile(rb"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07|\x00")
+
+
+def _read_channel_until(channel, timeout, marker=None):
+    """Read PTY output for up to `timeout` seconds and return it with ANSI
+    escapes stripped. When `marker` is given, return as soon as it appears
+    in the cleaned output."""
+    buf = b""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if channel.recv_ready():
+            buf += channel.recv(65536)
+            if marker is not None and marker.encode() in ANSI_ESCAPE_RE.sub(b"", buf):
+                break
+        else:
+            time.sleep(0.05)
+    return ANSI_ESCAPE_RE.sub(b"", buf).decode(errors="replace")
+
+
+def test_interactive_tab_completion_respects_session_user(started_cluster):
+    """TAB completion in the embedded SSH client must be fed from the session's own user.
+
+    Suggestions used to be loaded through a separate `LocalConnection` that
+    re-authenticated as the `default` user with an empty password. That broke
+    completion entirely on servers where `default` has a password or does not
+    exist, and otherwise leaked names of entities the SSH user has no access
+    to. Suggestions must be loaded through the SSH-authenticated session
+    itself: words for accessible entities must be completed, and words for
+    inaccessible ones must not even be known to the client.
+    """
+    instance.query(
+        "CREATE TABLE default.visible_completion_target (visible_column UInt64) ENGINE = Memory"
+    )
+    instance.query(
+        "CREATE TABLE default.hidden_completion_target (hidden_column UInt64) ENGINE = Memory"
+    )
+    # A SQL-created user with restricted grants; reuses lucy's key pair.
+    with open(f"{SCRIPT_DIR}/keys/lucy_ed25519.pub") as pub_key_file:
+        pub_key_base64 = pub_key_file.read().split()[1]
+    instance.query(
+        f"CREATE USER completer IDENTIFIED WITH ssh_key BY KEY '{pub_key_base64}' TYPE 'ssh-ed25519'"
+    )
+    instance.query("GRANT SELECT ON default.visible_completion_target TO completer")
+
+    try:
+        pkey = paramiko.Ed25519Key.from_private_key_file(
+            f"{SCRIPT_DIR}/keys/lucy_ed25519"
+        )
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(
+            hostname=instance.ip_address,
+            port=9022,
+            username="completer",
+            pkey=pkey,
+            timeout=30,
+        )
+        try:
+            channel = client.invoke_shell(term="xterm", width=200, height=24)
+            channel.settimeout(20)
+            try:
+                # Wait for the prompt; suggestions are loaded synchronously
+                # before the embedded client shows it.
+                output = _read_channel_until(channel, timeout=20, marker=":) ")
+                assert ":) " in output, (
+                    f"no prompt from the embedded client: {output!r}"
+                )
+
+                # The full table name can only appear if it was loaded from
+                # `system.completions` through the authenticated session
+                # (either TAB completion or the ghost-text hint prints it).
+                channel.sendall("SELECT * FROM visible_completion_ta\t")
+                output = _read_channel_until(
+                    channel, timeout=10, marker="visible_completion_target"
+                )
+                assert "visible_completion_target" in output, (
+                    "TAB did not complete a table name the user has access to; "
+                    f"suggestions were not loaded. raw output: {output!r}"
+                )
+
+                # Ctrl-U clears the line.
+                channel.sendall("\x15")
+                _read_channel_until(channel, timeout=1)
+
+                # A table the user has no grants on is not visible in
+                # `system.completions` for this user, so it must not be
+                # completed. Before the fix, suggestions were loaded under the
+                # `default` user and leaked names of inaccessible tables.
+                channel.sendall("SELECT * FROM hidden_completion_ta\t")
+                output = _read_channel_until(channel, timeout=5)
+                assert "hidden_completion_target" not in output, (
+                    "TAB completed a table name the user has no access to; "
+                    "suggestions were loaded under a wrong (more privileged) "
+                    f"user. raw output: {output!r}"
+                )
+            finally:
+                channel.close()
+        finally:
+            client.close()
+    finally:
+        instance.query("DROP USER IF EXISTS completer")
+        instance.query("DROP TABLE IF EXISTS default.visible_completion_target")
+        instance.query("DROP TABLE IF EXISTS default.hidden_completion_target")
+
+
+def test_interactive_session_torn_down_with_a_dead_pty(started_cluster):
+    """Losing the pty while the embedded client is shutting down must not kill the server.
+
+    `ReplxxLineReader::~ReplxxLineReader` writes an escape sequence to the
+    terminal to reset cursor blinking when overwrite mode was ever enabled.
+    `Replxx::print` throws `std::runtime_error("write failed")` when that write
+    does not go through, and a destructor is implicitly `noexcept`, so the
+    exception used to `std::terminate` the whole server process.
+
+    Reproduce it the way a real disconnect does: turn overwrite mode on with
+    the `Insert` key, then drop the TCP connection with a RST so that the
+    server's side of the pty is gone by the time the line reader is destroyed.
+    """
+    # The daemon watchdog restarts the server after `std::terminate`, so "the
+    # server answers queries again" is not evidence of anything, and neither is
+    # a growing `uptime()`: on a fresh cluster the uptime before the disconnect
+    # is only a few seconds, so a restarted server reaches a larger value well
+    # within the sampling window below. Pin the process identity instead: the
+    # watchdog restarts the server by forking a new child, so the set of
+    # `clickhouse-server` pids in the container changes and cannot recover.
+    # The pattern is anchored at argv0 so that the shell running `pgrep` (whose
+    # own command line contains the pattern) does not match itself.
+    def server_pids():
+        return instance.exec_in_container(
+            ["bash", "-c", "pgrep -f '^[^ ]*clickhouse(-| )server' | sort -n"],
+            nothrow=True,
+        ).split()
+
+    pids_before = server_pids()
+    assert pids_before, "no `clickhouse-server` process in the container"
+    uptime_before = float(instance.query("SELECT uptime()").strip())
+
+    pkey = paramiko.Ed25519Key.from_private_key_file(f"{SCRIPT_DIR}/keys/lucy_ed25519")
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.connect(
+        hostname=instance.ip_address,
+        port=9022,
+        username="lucy",
+        pkey=pkey,
+        timeout=30,
+    )
+    try:
+        channel = client.invoke_shell(term="xterm", width=80, height=24)
+        channel.settimeout(20)
+        output = _read_channel_until(channel, timeout=20, marker=":) ")
+        assert ":) " in output, f"no prompt from the embedded client: {output!r}"
+
+        # `Insert` toggles overwrite mode, which is what makes the destructor
+        # print the "reset cursor blinking" sequence in the first place. Wait
+        # for the raw `\033[5 q` ("blinking cursor") escape the key handler
+        # prints: it is the only observable proof that the server really
+        # consumed the key and that `overwrite_mode` became true. Without it
+        # the destructor writes nothing and the test would pass even unfixed.
+        channel.sendall("\x1b[2~")
+        raw = b""
+        deadline = time.time() + 10
+        while time.time() < deadline and b"\x1b[5 q" not in raw:
+            if channel.recv_ready():
+                raw += channel.recv(65536)
+            else:
+                time.sleep(0.05)
+        assert (
+            b"\x1b[5 q" in raw
+        ), f"overwrite mode was not enabled, the destructor would write nothing: {raw!r}"
+
+        # Abort the connection with a RST instead of a graceful shutdown, so
+        # writes on the server side fail rather than being silently discarded.
+        sock = client.get_transport().sock
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        sock.close()
+    finally:
+        client.close()
+
+    # The session teardown is asynchronous, so keep sampling for a while. A
+    # sample that fails only means the teardown is still in flight, but the
+    # *last* sample of the window must succeed and must still show the very
+    # same process: the server that survived the disconnect, not a fresh one.
+    last_failure = None
+    last_uptime = None
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        try:
+            uptime = float(instance.query("SELECT uptime()").strip())
+        except Exception as e:  # down or restarting — the next sample decides
+            last_failure = e
+            last_uptime = None
+            time.sleep(0.5)
+            continue
+        last_uptime = uptime
+        pids = server_pids()
+        assert pids == pids_before, (
+            "the server process was replaced after the SSH disconnect, i.e. it "
+            "died while tearing the session down and was started again "
+            f"(pids {pids} != {pids_before})"
+        )
+        assert uptime >= uptime_before, (
+            "the server restarted after the SSH disconnect, i.e. it died while "
+            f"tearing the session down (uptime {uptime} < {uptime_before})"
+        )
+        time.sleep(0.5)
+
+    assert last_uptime is not None, (
+        "the server did not answer a query at the end of the 30 s window after "
+        f"the SSH disconnect, i.e. it died while tearing the session down: {last_failure}"
+    )
+
+    # `from_host=True` also greps the rotated logs, so a restart cannot hide the
+    # fatal line by rotating it out of the active `clickhouse-server.log`.
+    assert not instance.contains_in_log(
+        "std::terminate", from_host=True
+    ), "the server called `std::terminate` while tearing down the SSH session"

@@ -371,12 +371,12 @@ static INLINE void *memcpy_tiny_avx(void * __restrict dst, const void * __restri
 //---------------------------------------------------------------------
 // main routine
 //---------------------------------------------------------------------
+void* memcpy_fast_avx(void * __restrict destination, const void * __restrict source, size_t size);
 void* memcpy_fast_avx(void * __restrict destination, const void * __restrict source, size_t size) /// NOLINT(misc-definitions-in-headers)
 {
     unsigned char *dst = reinterpret_cast<unsigned char*>(destination);
     const unsigned char *src = reinterpret_cast<const unsigned char*>(source);
     static size_t cachesize = 0x200000; // L3-cache size
-    size_t padding;
 
     // small memory copy
     if (size <= 256)
@@ -387,7 +387,7 @@ void* memcpy_fast_avx(void * __restrict destination, const void * __restrict sou
     }
 
     // align destination to 16 bytes boundary
-    padding = (32 - (((size_t)dst) & 31)) & 31;
+    size_t padding = (32 - (((size_t)dst) & 31)) & 31;
 
 #if 0
     if (padding > 0)

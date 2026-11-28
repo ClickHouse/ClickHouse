@@ -1,0 +1,22 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <local_object>
+                <type>object_storage</type>
+                <object_storage_type>local</object_storage_type>
+                <metadata_type>local</metadata_type>
+                <path>/var/lib/clickhouse/disks/local_object/</path>
+                <persistent_removal_log>true</persistent_removal_log>
+            </local_object>
+        </disks>
+        <policies>
+            <local_object>
+                <volumes>
+                    <main>
+                        <disk>local_object</disk>
+                    </main>
+                </volumes>
+            </local_object>
+        </policies>
+    </storage_configuration>
+</clickhouse>

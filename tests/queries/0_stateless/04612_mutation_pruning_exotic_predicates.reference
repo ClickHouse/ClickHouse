@@ -1,0 +1,16 @@
+virtual column in predicate
+2024-02-01	2	200
+2024-02-01	2	10
+subquery in predicate
+2024-02-01	2	11
+replicated, virtual column in predicate
+2024-02-01	2	200
+replicated, subquery in predicate
+2024-02-01	2	201
+replicated, MATERIALIZED column in predicate
+2024-02-01	2	202
+replicated, set operations in predicate
+2024-02-01	2	203
+2024-02-01	2	204
+2024-02-01	2	205
+2024-02-01	2	205

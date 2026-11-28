@@ -6,8 +6,6 @@ description: 'Additional information relative to migrating from PostgreSQL'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Postgres vs ClickHouse: Equivalent and different concepts {#postgres-vs-clickhouse-equivalent-and-different-concepts}
 
 Users coming from OLTP systems who are used to ACID transactions should be aware that ClickHouse makes deliberate compromises in not fully providing these in exchange for performance. ClickHouse semantics can deliver high durability guarantees and high write throughput if well understood. We highlight some key concepts below that you should be familiar with prior to working with ClickHouse from Postgres.
@@ -34,7 +32,15 @@ ClickHouse uses ClickHouse Keeper (C++ ZooKeeper implementation, ZooKeeper can a
 
 The replication process in ClickHouse (1) starts when data is inserted into any replica. This data, in its raw insert form, is (2) written to disk along with its checksums. Once written, the replica (3) attempts to register this new data part in Keeper by allocating a unique block number and logging the new part's details. Other replicas, upon (4) detecting new entries in the replication log, (5) download the corresponding data part via an internal HTTP protocol, verifying it against the checksums listed in ZooKeeper. This method ensures that all replicas eventually hold consistent and up-to-date data despite varying processing speeds or potential delays. Moreover, the system is capable of handling multiple operations concurrently, optimizing data management processes, and allowing for system scalability and robustness against hardware discrepancies.
 
-<Image img="/images/integrations/data-ingestion/dbms/postgres-replicas.webp" size="md" alt="Eventual consistency"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Eventual consistency](/images/integrations/data-ingestion/dbms/postgres-replicas.webp)
+
+</Frame>
+
+</div>
 
 Note that ClickHouse Cloud uses a [cloud-optimized replication mechanism](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates) adapted to its separation of storage and compute architecture. By storing data in shared object storage, data is automatically available for all compute nodes without the need to physically replicate data between nodes. Instead, Keeper is used to only share metadata (which data exists where in object storage) between compute nodes.
 
@@ -76,7 +82,7 @@ When you have only one shard and replicas (common since ClickHouse vertically sc
 
 While topologies with multiple shards and replicas are possible without a distributed table, these advanced deployments typically have their own routing infrastructure. We therefore assume deployments with more than one shard are using a Distributed table (distributed tables can be used with single shard deployments but are usually unnecessary).
 
-In this case, you should ensure consistent node routing is performed based on a property e.g. `session_id` or `user_id`. The settings [`prefer_localhost_replica=0`](/reference/settings/session-settings#prefer_localhost_replica), [`load_balancing=in_order`](/reference/settings/session-settings#load_balancing) should be [set in the query](/concepts/features/configuration/settings/settings-query-level). This will ensure any local replicas of shards are preferred, with replicas preferred as listed in the configuration otherwise - provided they have the same number of errors - failover will occur with random selection if errors are higher. [`load_balancing=nearest_hostname`](/reference/settings/session-settings#load_balancing) can also be used as an alternative for this deterministic shard selection.
+In this case, you should ensure consistent node routing is performed based on a property e.g. `session_id` or `user_id`. The settings [`prefer_localhost_replica=0`](/reference/settings/session-settings/prefer#prefer_localhost_replica), [`load_balancing=in_order`](/reference/settings/session-settings/load-balancing#load_balancing) should be [set in the query](/concepts/features/configuration/settings/settings-query-level). This will ensure any local replicas of shards are preferred, with replicas preferred as listed in the configuration otherwise - provided they have the same number of errors - failover will occur with random selection if errors are higher. [`load_balancing=nearest_hostname`](/reference/settings/session-settings/load-balancing#load_balancing) can also be used as an alternative for this deterministic shard selection.
 
 > When creating a Distributed table, you will specify a cluster. This cluster definition, specified in config.xml, will list the shards (and their replicas) - thus allowing users to control the order in which they're used from each node. Using this, you can ensure selection is deterministic.
 
@@ -89,9 +95,9 @@ Sequential consistency in databases is where the operations on a database appear
 From a user's perspective this typically manifests itself as the need to write data into ClickHouse and when reading data, to guarantee that the latest inserted rows are returned.
 This can be achieved in several ways (in order of preference):
 
-1. **Read/Write to the same node** - If you're using native protocol, or a [session to do your write/read via HTTP](/concepts/features/interfaces/http#default-database), you should then be connected to the same replica: in this scenario you're reading directly from the node where you're writing, then your read will always be consistent.
+1. **Read/Write to the same node** - If you're using native protocol, or a [session to do your write/read via HTTP](/concepts/features/connect-to-clickhouse/protocols/http#default-database), you should then be connected to the same replica: in this scenario you're reading directly from the node where you're writing, then your read will always be consistent.
 1. **Sync replicas manually** - If you write to one replica and read from another, you can use issue `SYSTEM SYNC REPLICA LIGHTWEIGHT` prior to reading.
-1. **Enable sequential consistency** - via the query setting [`select_sequential_consistency = 1`](/reference/settings/session-settings#select_sequential_consistency). In OSS, the setting `insert_quorum = 'auto'` must also be specified.
+1. **Enable sequential consistency** - via the query setting [`select_sequential_consistency = 1`](/reference/settings/session-settings/other#select_sequential_consistency). In OSS, the setting `insert_quorum = 'auto'` must also be specified.
 
 <br />
 
@@ -183,6 +189,5 @@ The following table shows the equivalent ClickHouse data types for Postgres.
 | `HSTORE` | [Map(K, V)](/reference/data-types/map), [Map](/reference/data-types/map)(K,[Variant](/reference/data-types/variant)) |
 | `UUID` | [UUID](/reference/data-types/uuid) |
 | `ARRAY<T>` | [ARRAY(T)](/reference/data-types/array) |
-| `JSON` | [String](/reference/data-types/string), [Variant](/reference/data-types/variant), [Nested](/reference/data-types/nested-data-structures/index), [Tuple](/reference/data-types/tuple) |
 | `JSON` | [String](/reference/data-types/string), [Variant](/reference/data-types/variant), [Nested](/reference/data-types/nested-data-structures), [Tuple](/reference/data-types/tuple) |
 | `JSONB` | [String](/reference/data-types/string) |

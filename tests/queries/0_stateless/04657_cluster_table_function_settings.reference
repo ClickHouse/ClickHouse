@@ -1,0 +1,7 @@
+1
+1
+1
+CREATE TABLE default.table_over_cluster_function\n(\n    `dummy` UInt8\n) AS clusterAllReplicas(\'test_unavailable_shard\', \'system.one\', SETTINGS skip_unavailable_shards = 1)
+1
+CREATE TABLE default.table_over_cluster_function\n(\n    `dummy` UInt8\n) AS clusterAllReplicas(\'test_unavailable_shard\', \'system.one\', SETTINGS skip_unavailable_shards = 1)
+1

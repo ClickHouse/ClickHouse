@@ -7,7 +7,6 @@ config:
   MD040: true # Fenced code blocks should have a language specified
   custom-anchor-headings: true # Headings must have a custom anchor which is unique per page eg. # A Heading {#a-heading}
 ignores:
-  - "docs/en/"
   - "changelogs/"
 customRules:
   - "./markdownlint/custom_rules/headings_have_custom_anchors.js"

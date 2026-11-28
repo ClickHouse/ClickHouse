@@ -24,13 +24,11 @@ description: '実運用の事例と検証済みの手法に基づく、ClickHous
 
 *[ClickHouse Cloud が運用コストの管理にどのように役立つか](/ja/products/cloud/getting-started/intro)についてはこちらをご覧ください。*
 
-<div id="compression-strategy">
-  ## 圧縮戦略: 本番環境におけるLZ4とZSTD
-</div>
+## 圧縮戦略: 本番環境におけるLZ4とZSTD {#compression-strategy}
 
 Microsoft Clarityが数百TB規模のデータを扱う必要に迫られた際、圧縮方式の選択がコストに大きく影響することがわかりました。この規模では、ストレージを少しでも節約できるかが重要であり、パフォーマンスとストレージコストの典型的なトレードオフに直面していました。Microsoft Clarityは、全アカウント合計で毎月2 PBの非圧縮データを処理し、8ノードで1時間あたり約60,000件のクエリをさばき、数百万のWebサイトからの数十億件のページビューに対応しています。この規模になると、圧縮戦略は重要なコスト要因になります。
 
-当初はClickHouseのデフォルトである[LZ4](/ja/reference/statements/create/table#lz4)圧縮を使用していましたが、[ZSTD](/ja/reference/statements/create/table#zstd)を使うことで大幅なコスト削減が可能であることがわかりました。LZ4のほうが高速である一方、ZSTDはわずかに性能が低下する代わりに、より高い圧縮率を実現します。両方のアプローチを検証した結果、ストレージ削減を優先するという戦略的な判断を下しました。その結果は顕著で、大規模テーブルでストレージを50%削減しつつ、インジェストとクエリへの性能影響は許容可能な範囲に収まりました。
+当初はClickHouseのデフォルトである[LZ4](/ja/reference/statements/create/table/codec#lz4)圧縮を使用していましたが、[ZSTD](/ja/reference/statements/create/table/codec#zstd)を使うことで大幅なコスト削減が可能であることがわかりました。LZ4のほうが高速である一方、ZSTDはわずかに性能が低下する代わりに、より高い圧縮率を実現します。両方のアプローチを検証した結果、ストレージ削減を優先するという戦略的な判断を下しました。その結果は顕著で、大規模テーブルでストレージを50%削減しつつ、インジェストとクエリへの性能影響は許容可能な範囲に収まりました。
 
 **主な結果:**
 
@@ -39,9 +37,7 @@ Microsoft Clarityが数百TB規模のデータを扱う必要に迫られた際�
 * インジェストとクエリへの性能影響は許容可能
 * 数百TB規模で大幅なコスト削減
 
-<div id="column-retention">
-  ## カラムベースの保持戦略
-</div>
+## カラムベースの保持戦略 {#column-retention}
 
 コスト最適化における最も強力な手法の 1 つは、実際に利用されているカラムを分析することです。Microsoft Clarity は、ClickHouse に組み込まれた高度なテレメトリー機能を活用して、洗練されたカラムベースの保持戦略を実装しています。ClickHouse は、カラムごとのストレージ使用量に関する詳細なメトリクスに加え、どのカラムにアクセスされているか、その頻度、クエリの所要時間、全体的な利用統計など、包括的なクエリパターンを提供します。
 
@@ -58,9 +54,7 @@ Microsoft Clarityが数百TB規模のデータを扱う必要に迫られた際�
 
 * [データ管理 - カラムレベルの有効期限 (TTL)](/ja/guides/use-cases/observability/build-your-own/managing-data)
 
-<div id="partition-management">
-  ## パーティションベースのデータ管理
-</div>
+## パーティションベースのデータ管理 {#partition-management}
 
 Microsoft Clarity は、パーティション化戦略がパフォーマンスと運用の容易さの両方に影響することを見出しました。彼らのアプローチは、日付でパーティション化し、時間で並べ替えることです。この戦略には、クリーンアップ効率の向上にとどまらない複数の利点があります。データのクリーンアップを容易にし、顧客向けサービスの請求計算を簡素化し、さらに行単位の削除に関する GDPR のコンプライアンス要件にも対応できます。
 
@@ -75,9 +69,7 @@ Microsoft Clarity は、パーティション化戦略がパフォーマンス�
 
 * [データ管理 - パーティション](/ja/guides/use-cases/observability/build-your-own/managing-data#partitions)
 
-<div id="string-integer-conversion">
-  ## 文字列から整数への変換戦略
-</div>
+## 文字列から整数への変換戦略 {#string-integer-conversion}
 
 分析プラットフォームでは、数百万行にわたって繰り返し現れるカテゴリーデータが、しばしばストレージ上の課題になります。Microsoft のエンジニアリングチームは、検索分析データでこの問題に直面し、影響を受けるデータセットのストレージ使用量を 60% 削減する効果的な解決策を開発しました。
 
@@ -98,9 +90,7 @@ Microsoft は、別の MySQL データベースを使って、文字列と整数
   これは Microsoft Clarity のデータシナリオに特化した例です。すべてのデータが ClickHouse にある場合、またはデータを ClickHouse に移動することに制約がない場合は、代わりに [dictionaries](/ja/concepts/features/dictionaries/index) の使用を検討してください。
 </Note>
 
-<div id="video-sources">
-  ## 関連動画
-</div>
+## 関連動画 {#video-sources}
 
 * **[Microsoft Clarity と ClickHouse](https://www.youtube.com/watch?v=rUVZlquVGw0)** - Microsoft Clarity チーム
 * **[Contentsquare における ClickHouse 活用の歩み](https://www.youtube.com/watch?v=zvuCBAl2T0Q)** - Doron Hoffman &amp; Guram Sigua (ContentSquare)

@@ -34,11 +34,11 @@ quantileBFloat16[(level)](expr)
 
 **Аргументы**
 
-* `expr` — Столбец с числовыми данными. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float)
+* `expr` — Выражение над значениями столбца, результатом которого являются числовые типы данных, `Date` или `DateTime`. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
 
 **Возвращаемое значение**
 
-Приближённый квантиль указанного уровня. [`Float64`](/ru/reference/data-types/float)
+Приближённый квантиль указанного уровня. Для входных значений `Date` и `DateTime` выходной формат совпадает с входным. [`Float64`](/ru/reference/data-types/float) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
 
 **Примеры**
 

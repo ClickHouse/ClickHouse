@@ -466,7 +466,7 @@ template <typename Iter, typename RandType>
 void shuffle(Iter from, Iter to, RandType&& rng) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
     typedef typename std::iterator_traits<Iter>::difference_type delta_t;
-    typedef typename std::remove_reference<RandType>::type::result_type result_t;
+    typedef typename std::remove_reference_t<RandType>::result_type result_t;
     auto count = to - from;
     while (count > 1) {
         delta_t chosen = delta_t(bounded_rand(rng, result_t(count)));
@@ -511,7 +511,7 @@ public:
             *i = result_type(rng_());
     }
 
-    constexpr size_t size() const
+    [[nodiscard]] constexpr size_t size() const
     {
         return (sizeof(typename RngType::result_type) > sizeof(result_type)
                 && RngType::max() > ~size_t(0UL))

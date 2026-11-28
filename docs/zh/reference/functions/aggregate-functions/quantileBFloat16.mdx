@@ -33,11 +33,11 @@ quantileBFloat16[(level)](expr)
 
 **参数**
 
-* `expr` — 包含数值数据的列。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float)
+* `expr` — 基于列值计算后得到数值数据类型、`Date` 或 `DateTime` 的表达式。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime)
 
 **返回值**
 
-指定级别的近似分位数值。[`Float64`](/zh/reference/data-types/float)
+指定级别的近似分位数值。对于 `Date` 和 `DateTime` 类型的输入，输出格式与输入格式一致。[`Float64`](/zh/reference/data-types/float) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime)
 
 **示例**
 

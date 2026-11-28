@@ -35,129 +35,119 @@ JDBC コネクタは、[Confluent Community License](https://www.confluent.io/co
 
 <ConnectionDetails />
 
-<div id="1-install-kafka-connect-and-connector">
-  #### 1. Kafka Connect とコネクタをインストールする
-</div>
+<Steps>
+  <Step title="Kafka Connect とコネクタをインストールする" id="1-install-kafka-connect-and-connector">
+    Confluent パッケージをダウンロードし、ローカル環境にインストール済みであることを前提としています。コネクタのインストールについては、[こちら](https://docs.confluent.io/kafka-connect-jdbc/current/#install-the-jdbc-connector)に記載されている手順に従ってください。
 
-Confluent パッケージをダウンロードし、ローカル環境にインストール済みであることを前提としています。コネクタのインストールについては、[こちら](https://docs.confluent.io/kafka-connect-jdbc/current/#install-the-jdbc-connector)に記載されている手順に従ってください。
+    `confluent-hub` を使用してインストールする場合、ローカルの設定ファイルが更新されます。
 
-`confluent-hub` を使ったインストール方法を使用する場合は、ローカルの設定ファイルが更新されます。
+    Kafka から ClickHouse にデータを送信するには、コネクタの Sink コンポーネントを使用します。
+  </Step>
 
-Kafka から ClickHouse にデータを送信するには、コネクタの sink コンポーネントを使用します。
+  <Step title="JDBC ドライバーをダウンロードしてインストールする" id="2-download-and-install-the-jdbc-driver">
+    [こちら](https://github.com/ClickHouse/clickhouse-java/releases)から ClickHouse JDBCドライバー `clickhouse-jdbc-<version>-shaded.jar` をダウンロードしてインストールしてください。Kafka Connect へのインストールは、[こちら](https://docs.confluent.io/kafka-connect-jdbc/current/#installing-jdbc-drivers)の手順に従ってください。他のドライバーでも動作する可能性はありますが、テストは行っていません。
 
-<div id="2-download-and-install-the-jdbc-driver">
-  #### 2. JDBCドライバーをダウンロードしてインストールする
-</div>
+    <Note>
+      よくある問題: ドキュメントでは jar を `share/java/kafka-connect-jdbc/` にコピーするよう案内されています。Connect がドライバーを見つけられない場合は、ドライバーを `share/confluent-hub-components/confluentinc-kafka-connect-jdbc/lib/` にコピーしてください。あるいは、`plugin.path` を変更してドライバーを含めてください。詳細は以下を参照してください。
+    </Note>
+  </Step>
 
-[こちら](https://github.com/ClickHouse/clickhouse-java/releases)から ClickHouse JDBCドライバー `clickhouse-jdbc-<version>-shaded.jar` をダウンロードしてインストールします。これを、[こちら](https://docs.confluent.io/kafka-connect-jdbc/current/#installing-jdbc-drivers)の手順に従って Kafka Connect にインストールしてください。ほかのドライバーでも動作する可能性はありますが、テストは行われていません。
+  <Step title="設定を準備する" id="3-prepare-configuration">
+    インストール形態に応じた Connect の設定については、スタンドアロン クラスターと 分散 クラスターの違いに注意しつつ、[こちらの手順](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#set-up-a-local-connect-worker-with-cp-install)に従ってください。Confluent Cloud を使用する場合は、分散 構成が該当します。
 
-<Note>
-  よくある問題: ドキュメントでは、jar を `share/java/kafka-connect-jdbc/` にコピーするよう案内されています。Connect がドライバーを検出できない場合は、ドライバーを `share/confluent-hub-components/confluentinc-kafka-connect-jdbc/lib/` にコピーしてください。あるいは、ドライバーが含まれるように `plugin.path` を変更してください。詳細は以下を参照してください。
-</Note>
+    以下のパラメータは、ClickHouse で JDBC コネクタを使用する際に重要です。パラメータの完全な一覧は[こちら](https://docs.confluent.io/kafka-connect-jdbc/current/sink-connector/index.html)で確認できます。
 
-<div id="3-prepare-configuration">
-  #### 3. 設定を準備する
-</div>
+    * `_connection.url_` - `jdbc:clickhouse://&lt;clickhouse host>:&lt;clickhouse http port>/&lt;target database>` の形式で指定する必要があります
+    * `connection.user` - 移行先データベースへの書き込み権限を持つユーザー
+    * `table.name.format`- データの挿入先となる ClickHouse テーブル。事前に存在している必要があります。
+    * `batch.size` - 1 回のバッチで送信する行数です。適切に大きな値を設定してください。ClickHouse の[推奨事項](/ja/reference/statements/insert-into#performance-considerations)では、1000 を最低値の目安とすることを推奨しています。
+    * `tasks.max` - JDBC Sink コネクタは 1 つ以上の task の実行をサポートしています。これはパフォーマンス向上に利用できます。batch size とあわせて、パフォーマンス改善の主要な手段となります。
+    * `value.converter.schemas.enable` - スキーマレジストリを使用する場合は false、メッセージ内にスキーマを埋め込む場合は true に設定します。
+    * `value.converter` - データ型に応じて設定します。たとえば JSON の場合は `io.confluent.connect.json.JsonSchemaConverter` です。
+    * `key.converter` - `org.apache.kafka.connect.storage.StringConverter` に設定します。String の key を利用します。
+    * `pk.mode` - ClickHouse では関係ありません。none に設定します。
+    * `auto.create` - サポートされていないため、false にする必要があります。
+    * `auto.evolve` - 将来的にサポートされる可能性はありますが、この設定は false を推奨します。
+    * `insert.mode` - &quot;insert&quot; に設定します。現在、他のモードはサポートされていません。
+    * `key.converter` - key の型に応じて設定します。
+    * `value.converter` - topic 上のデータ型に応じて設定します。このデータには、JSON、Avro、または Protobuf フォーマットのいずれかでサポートされるスキーマが必要です。
 
-インストール形態に応じた Connect の設定については、スタンドアロン クラスターと 分散 クラスターの違いに注意しつつ、[こちらの手順](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#set-up-a-local-connect-worker-with-cp-install)に従ってください。Confluent Cloud を使用する場合は、分散 構成が該当します。
+    テストにサンプルデータセットを使用する場合は、以下が設定されていることを確認してください。
 
-以下のパラメータは、ClickHouse で JDBC コネクタを使用する際に重要です。パラメータの完全な一覧は[こちら](https://docs.confluent.io/kafka-connect-jdbc/current/sink-connector/index.html)で確認できます。
+    * `value.converter.schemas.enable` - スキーマレジストリを利用するため false に設定します。各メッセージにスキーマを埋め込む場合は true に設定します。
+    * `key.converter` - &quot;org.apache.kafka.connect.storage.StringConverter&quot; に設定します。String の key を利用します。
+    * `value.converter` - &quot;io.confluent.connect.json.JsonSchemaConverter&quot; に設定します。
+    * `value.converter.schema.registry.url` - スキーマサーバーの URL を設定し、あわせてパラメータ `value.converter.schema.registry.basic.auth.user.info` でスキーマサーバーの認証情報を設定します。
 
-* `_connection.url_` - `jdbc:clickhouse://&lt;clickhouse host>:&lt;clickhouse http port>/&lt;target database>` の形式で指定する必要があります
-* `connection.user` - 移行先データベースへの書き込み権限を持つユーザー
-* `table.name.format`- データの挿入先となる ClickHouse テーブル。事前に存在している必要があります。
-* `batch.size` - 1 回のバッチで送信する行数です。適切に大きな値を設定してください。ClickHouse の[推奨事項](/ja/reference/statements/insert-into#performance-considerations)では、1000 を最低値の目安とすることを推奨しています。
-* `tasks.max` - JDBC Sink コネクタは 1 つ以上の task の実行をサポートしています。これはパフォーマンス向上に利用できます。batch size とあわせて、パフォーマンス改善の主要な手段となります。
-* `value.converter.schemas.enable` - スキーマレジストリを使用する場合は false、メッセージ内にスキーマを埋め込む場合は true に設定します。
-* `value.converter` - データ型に応じて設定します。たとえば JSON の場合は `io.confluent.connect.json.JsonSchemaConverter` です。
-* `key.converter` - `org.apache.kafka.connect.storage.StringConverter` に設定します。String の key を利用します。
-* `pk.mode` - ClickHouse では関係ありません。none に設定します。
-* `auto.create` - サポートされていないため、false にする必要があります。
-* `auto.evolve` - 将来的にサポートされる可能性はありますが、この設定は false を推奨します。
-* `insert.mode` - &quot;insert&quot; に設定します。現在、他のモードはサポートされていません。
-* `key.converter` - key の型に応じて設定します。
-* `value.converter` - topic 上のデータ型に応じて設定します。このデータには、JSON、Avro、または Protobuf フォーマットのいずれかでサポートされるスキーマが必要です。
+    GitHub のサンプルデータ用の設定ファイル例は[こちら](https://github.com/ClickHouse/kafka-samples/tree/main/github_events/jdbc_sink)にあります。これは、Connect を スタンドアロン モードで実行し、Kafka を Confluent Cloud でホストしていることを前提としています。
+  </Step>
 
-テストにサンプルデータセットを使用する場合は、以下が設定されていることを確認してください。
+  <Step title="ClickHouse テーブルを作成する" id="4-create-the-clickhouse-table">
+    テーブルが作成されていることを確認し、以前の例ですでに存在している場合は削除してください。縮小版の GitHub dataset に対応した例を以下に示します。現在サポートされていない Array 型や Map 型が含まれていない点に注意してください:
 
-* `value.converter.schemas.enable` - スキーマレジストリを利用するため false に設定します。各メッセージにスキーマを埋め込む場合は true に設定します。
-* `key.converter` - &quot;org.apache.kafka.connect.storage.StringConverter&quot; に設定します。String の key を利用します。
-* `value.converter` - &quot;io.confluent.connect.json.JsonSchemaConverter&quot; に設定します。
-* `value.converter.schema.registry.url` - スキーマサーバーの URL を設定し、あわせてパラメータ `value.converter.schema.registry.basic.auth.user.info` でスキーマサーバーの認証情報を設定します。
+    ```sql
+    CREATE TABLE github
+    (
+        file_time DateTime,
+        event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+        actor_login LowCardinality(String),
+        repo_name LowCardinality(String),
+        created_at DateTime,
+        updated_at DateTime,
+        action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+        comment_id UInt64,
+        path String,
+        ref LowCardinality(String),
+        ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+        creator_user_login LowCardinality(String),
+        number UInt32,
+        title String,
+        state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+        assignee LowCardinality(String),
+        closed_at DateTime,
+        merged_at DateTime,
+        merge_commit_sha String,
+        merged_by LowCardinality(String),
+        review_comments UInt32,
+        member_login LowCardinality(String)
+    ) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at)
+    ```
+  </Step>
 
-GitHub のサンプルデータ用の設定ファイル例は[こちら](https://github.com/ClickHouse/kafka-samples/tree/main/github_events/jdbc_sink)にあります。これは、Connect を スタンドアロン モードで実行し、Kafka を Confluent Cloud でホストしていることを前提としています。
+  <Step title="Kafka Connect を起動する" id="5-start-kafka-connect">
+    Kafka Connect を [スタンドアロン](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#standalone-cluster) モードまたは [分散](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#distributed-cluster) モードで起動します。
 
-<div id="4-create-the-clickhouse-table">
-  #### 4. ClickHouseテーブルを作成する
-</div>
+    ```bash
+    ./bin/connect-standalone connect.properties.ini github-jdbc-sink.properties.ini
+    ```
+  </Step>
 
-テーブルが作成されていることを確認し、前の例ですでに存在する場合は削除してください。縮小版のGitHubデータセットに対応した例を以下に示します。現時点ではサポートされていない Array 型や Map 型が含まれていない点に注意してください。
+  <Step title="Kafka にデータを投入する" id="6-add-data-to-kafka">
+    提供されている[スクリプトと設定](https://github.com/ClickHouse/kafka-samples/tree/main/producer)を使用して、Kafka にメッセージを送信します。`github.config` を変更して、Kafka の認証情報を含める必要があります。このスクリプトは現在、Confluent Cloud で使用するように設定されています。
 
-```sql
-CREATE TABLE github
-(
-    file_time DateTime,
-    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
-    actor_login LowCardinality(String),
-    repo_name LowCardinality(String),
-    created_at DateTime,
-    updated_at DateTime,
-    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
-    comment_id UInt64,
-    path String,
-    ref LowCardinality(String),
-    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
-    creator_user_login LowCardinality(String),
-    number UInt32,
-    title String,
-    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
-    assignee LowCardinality(String),
-    closed_at DateTime,
-    merged_at DateTime,
-    merge_commit_sha String,
-    merged_by LowCardinality(String),
-    review_comments UInt32,
-    member_login LowCardinality(String)
-) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at)
-```
+    ```bash
+    python producer.py -c github.config
+    ```
 
-<div id="5-start-kafka-connect">
-  #### 5. Kafka Connect を起動する
-</div>
+    このスクリプトを使うと、任意の ndjson ファイルを Kafka topic に挿入できます。スキーマの自動推論も試みます。提供されているサンプル config では 10k 件のメッセージしか挿入されません。必要に応じて[こちらで変更](https://github.com/ClickHouse/clickhouse-docs/tree/main/docs/integrations/data-ingestion/kafka/code/producer/github.config#L25)してください。この設定では、Kafka への挿入時にデータセットから互換性のない Array フィールドも削除されます。
 
-Kafka Connect を [スタンドアロン](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#standalone-cluster) または [分散](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#distributed-cluster) モードで起動します。
+    これは、JDBC コネクタがメッセージを INSERT 文に変換するために必要です。独自のデータを使用する場合は、すべてのメッセージにスキーマを含めて挿入する (&#95;value.converter.schemas.enable &#95;を true に設定する) か、client がスキーマレジストリ内のスキーマを参照するメッセージを公開するようにしてください。
 
-```bash
-./bin/connect-standalone connect.properties.ini github-jdbc-sink.properties.ini
-```
+    Kafka Connect はメッセージの消費を開始し、ClickHouse への行の挿入を開始するはずです。&quot;[JDBC Compliant Mode] Transaction isn&#39;t supported.&quot; に関する警告は想定内であり、無視してかまいません。
 
-<div id="6-add-data-to-kafka">
-  #### 6. Kafka にデータを追加する
-</div>
+    ターゲットテーブル &quot;Github&quot; を単純に読み取れば、データが挿入されたことを確認できるはずです。
 
-提供されている[スクリプトと設定ファイル](https://github.com/ClickHouse/kafka-samples/tree/main/producer)を使用して、Kafka にメッセージを投入します。`github.config`を編集して、Kafka の認証情報を含める必要があります。このスクリプトは現在、Confluent Cloud で使用するよう設定されています。
+    ```sql
+    SELECT count() FROM default.github;
+    ```
 
-```bash
-python producer.py -c github.config
-```
-
-このスクリプトを使うと、任意の ndjson ファイルを Kafka トピックに挿入できます。スキーマは自動的に推論されます。付属のサンプル設定で挿入されるのは 10k メッセージのみです。必要に応じて [こちらで変更](https://github.com/ClickHouse/clickhouse-docs/tree/main/docs/integrations/data-ingestion/kafka/code/producer/github.config#L25) してください。この設定では、Kafka への挿入時に、互換性のない Array フィールドもデータセットから削除されます。
-
-これは、JDBC コネクタがメッセージを INSERT ステートメントに変換するために必要です。独自のデータを使用する場合は、各メッセージにスキーマを含めて挿入する (&#95;value.converter.schemas.enable &#95;を true に設定する) か、クライアントがレジストリ内のスキーマを参照するメッセージをパブリッシュするようにしてください。
-
-Kafka Connect は、メッセージの消費を開始し、ClickHouse に行を挿入し始めるはずです。&quot;[JDBC Compliant Mode] Transaction isn&#39;t supported.&quot; に関する警告は想定内であり、無視して問題ありません。
-
-ターゲットテーブル &quot;Github&quot; に対して単純な読み取りを行えば、データが挿入されたことを確認できるはずです。
-
-```sql
-SELECT count() FROM default.github;
-```
-
-```response
-| count\(\) |
-| :--- |
-| 10000 |
-```
+    ```response
+    | count\(\) |
+    | :--- |
+    | 10000 |
+    ```
+  </Step>
+</Steps>
 
 <div id="recommended-further-reading">
   ### 参考情報

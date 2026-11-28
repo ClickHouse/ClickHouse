@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/RegexpJIT/RegexpProgram.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -26,6 +27,11 @@
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
+
+namespace ProfileEvents
+{
+    extern const Event CompileRegexpFunction;
+}
 
 namespace DB
 {
@@ -48,7 +54,7 @@ namespace
     /// `SYSTEM DROP COMPILED EXPRESSION CACHE`), so the default-enabled path cannot accumulate unbounded
     /// process-wide state for workloads with many unique patterns.
     std::mutex regexp_seen_counter_mutex;
-    std::unordered_map<UInt128, UInt64, UInt128Hash> regexp_seen_counter;
+    [[clang::no_destroy]] std::unordered_map<UInt128, UInt64, UInt128Hash> regexp_seen_counter;
     constexpr size_t MAX_SEEN_COUNTER_ENTRIES = 10000;
 
     /// Members of a set listed individually are only used when the set (or its complement) is small.
@@ -158,6 +164,7 @@ public:
         auto * i8_ptr_ptr = i8_ptr->getPointerTo();
         auto * func_type = llvm::FunctionType::get(b.getInt8Ty(), {i8_ptr, i8_ptr, i8_ptr, i8_ptr_ptr, i8_ptr_ptr}, false);
         function = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "regexp_match", module);
+        setJITFunctionType<JITRegexpMatcherFunc>(*function);
 
         begin_arg = function->getArg(0);
         end_arg = function->getArg(1);
@@ -679,15 +686,18 @@ std::shared_ptr<CompiledRegexpHolder> compileMatcher(const RegexpProgram & progr
     /// The raw pointer stays valid even after `jit` is moved from, because `regexp_jit_instance` keeps the
     /// `CHJIT` alive.
     CHJIT * jit_ptr = jit.get();
+    std::shared_ptr<CompiledRegexpHolder> holder;
     try
     {
-        return std::make_shared<CompiledRegexpHolder>(compiled_module, std::move(jit), func, program.num_captures);
+        holder = std::make_shared<CompiledRegexpHolder>(compiled_module, std::move(jit), func, program.num_captures);
     }
     catch (...)
     {
         jit_ptr->deleteCompiledModule(compiled_module);
         throw;
     }
+
+    return holder;
 }
 
 }
@@ -699,6 +709,12 @@ RegexpJITMatcher getRegexpJITMatcher(
     /// Return before doing any work, so a disabled JIT neither parses patterns nor grows the seen-count
     /// map - some callers (`extractAll`, `replaceRegexp*`) invoke this unconditionally.
     if (min_count_to_compile == std::numeric_limits<size_t>::max())
+        return {};
+
+    /// Without a compiled-expression cache nothing outlives the call that compiled the matcher, so a hot
+    /// pattern pays a full LLVM compile on every call, serialised on one process-wide lock. Stay on RE2.
+    auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache();
+    if (!compiled_expression_cache)
         return {};
 
     ParseFlags flags;
@@ -721,21 +737,18 @@ RegexpJITMatcher getRegexpJITMatcher(
             return {};
     }
 
+    /// Set inside the loader, so it stays false on a cache hit, where nothing is compiled.
+    bool compiled_here = false;
     std::shared_ptr<CompiledRegexpHolder> holder;
     try
     {
-        if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+        auto [entry, _] = compiled_expression_cache->getOrSet(key, [&]() -> std::shared_ptr<CompiledExpressionCacheEntry>
         {
-            auto [entry, _] = cache->getOrSet(key, [&]() -> std::shared_ptr<CompiledExpressionCacheEntry>
-            {
-                return compileMatcher(*program);
-            });
-            holder = std::static_pointer_cast<CompiledRegexpHolder>(entry);
-        }
-        else
-        {
-            holder = compileMatcher(*program);
-        }
+            auto compiled = compileMatcher(*program);
+            compiled_here = true;
+            return compiled;
+        });
+        holder = std::static_pointer_cast<CompiledRegexpHolder>(entry);
     }
     catch (...)
     {
@@ -743,6 +756,10 @@ RegexpJITMatcher getRegexpJITMatcher(
         tryLogCurrentException(getLogger("CompileRegexp"), "Failed to JIT-compile a regular expression, falling back to RE2");
         return {};
     }
+
+    /// Must stay below the catch above: every throw it swallows leaves the caller on the interpreted loop.
+    if (compiled_here)
+        ProfileEvents::increment(ProfileEvents::CompileRegexpFunction);
 
     RegexpJITMatcher result;
     result.func = holder->func;

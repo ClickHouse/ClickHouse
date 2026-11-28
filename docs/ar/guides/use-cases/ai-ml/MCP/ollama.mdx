@@ -11,15 +11,13 @@ doc_type: 'guide'
 > يشرح هذا الدليل كيفية استخدام ClickHouse MCP server مع Ollama.
 
 <Steps>
-  <Step>
-    ## ثبّت Ollama
-
+  <Step title="ثبّت Ollama" id="install-ollama">
     Ollama عبارة عن مكتبة لتشغيل نماذج اللغة الكبيرة (LLMs) على جهازك الخاص.
     وهي توفّر [مجموعة واسعة من النماذج](https://ollama.com/library) كما أنها سهلة الاستخدام.
 
     يمكنك تنزيل Ollama لنظام Mac أو Windows أو Linux من [صفحة التنزيل](https://ollama.com/download).
 
-    بمجرد تشغيل Ollama، سيُشغِّل خادمًا محليًا في الخلفية يمكنك استخدامه لتشغيل النماذج.
+    بمجرد تشغيل Ollama، سيُشغِّل خادمًا محليًا في الخلفية يمكنك استخدامه لتشغيل النماذج.
     كما يمكنك تشغيل الخادم يدويًا باستخدام `ollama serve`.
 
     بعد التثبيت، يمكنك تنزيل نموذج إلى جهازك كما يلي:
@@ -84,9 +82,7 @@ doc_type: 'guide'
     يمكننا أن نرى من هذا الناتج أن نموذج qwen3 الافتراضي يحتوي على أكثر قليلًا من 8 مليارات مُعامِل.
   </Step>
 
-  <Step>
-    ## تثبيت MCPHost
-
+  <Step title="تثبيت MCPHost" id="install-mcphost">
     حتى وقت كتابة هذا النص (يوليو 2025)، لا تتوفر وظيفة مدمجة لاستخدام Ollama مع خوادم MCP.
     ومع ذلك، يمكننا استخدام [MCPHost](https://github.com/mark3labs/mcphost) لتشغيل نماذج Ollama مع خوادم MCP.
 
@@ -97,12 +93,10 @@ doc_type: 'guide'
     go install github.com/mark3labs/mcphost@latest
     ```
 
-    سيُثبَّت الملف التنفيذي ضمن `~/go/bin`، لذا نحتاج إلى التأكد من أن هذا المجلد مُضاف إلى مسار `PATH` لدينا.
+    سيُثبَّت الملف التنفيذي ضمن `~/go/bin`، لذا نحتاج إلى التأكد من أن هذا المجلد مُضاف إلى مسار `PATH` لدينا.
   </Step>
 
-  <Step>
-    ## إعداد ClickHouse MCP server
-
+  <Step title="إعداد ClickHouse MCP server" id="configure-clickhouse-mcp-server">
     يمكننا إعداد خوادم MCP باستخدام MCPHost في ملفات YAML أو JSON.
     سيبحث MCPHost عن ملفات التهيئة في دليلك الرئيسي بالترتيب التالي:
 
@@ -150,9 +144,7 @@ doc_type: 'guide'
     </Note>
   </Step>
 
-  <Step>
-    ## تشغيل MCPHost
-
+  <Step title="تشغيل MCPHost" id="running-mcphost">
     بمجرد تكوين ClickHouse MCP server، يمكنك تشغيل MCPHost بتنفيذ الأمر التالي:
 
     ```bash
@@ -166,7 +158,7 @@ doc_type: 'guide'
     ```
 
     <Warning>
-      إذا لم تُحدِّد `--model`، فسيبحث MCPHost في متغيرات البيئة عن `ANTHROPIC_API_KEY` وسيستخدم النموذج `anthropic:claude-sonnet-4-20250514`.
+      إذا لم تُحدِّد `--model`، فسيبحث MCPHost في متغيرات البيئة عن `ANTHROPIC_API_KEY` وسيستخدم النموذج `anthropic:claude-sonnet-4-20250514`.
     </Warning>
 
     يُفترض أن تظهر المخرجات التالية:

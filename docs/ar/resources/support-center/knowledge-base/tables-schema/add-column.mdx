@@ -6,15 +6,11 @@ tags: ['نمذجة البيانات']
 keywords: ['إضافة عمود']
 ---
 
-{frontMatter.description}
-
-{/* truncate */}
-
 <div id="adding-a-column-to-a-table">
   ## إضافة عمود إلى جدول
 </div>
 
-سنستخدم clickhouse-local:
+سنستخدم `clickhouse-local`:
 
 ```bash
 clickhouse -m --output_format_pretty_row_numbers=
@@ -31,13 +27,13 @@ ENGINE = MergeTree
 ORDER BY date;
 ```
 
-لنُضِف سجلًا واحدًا:
+لنُضِفْ سجلًا واحدًا:
 
 ```sql
 INSERT INTO events (name) VALUES ('Alexey');
 ```
 
-والآن نفّذ استعلامًا على جدول `events`:
+والآن استعلم من جدول `events`:
 
 ```sql
 SELECT *
@@ -54,15 +50,15 @@ FROM events;
   ## إضافة عمود جديد
 </div>
 
-لنفترض الآن أننا سنضيف عمودًا جديدًا باسم `favoriteNumber`، وسيكون من النوع `Float64`.
-يمكننا القيام بذلك باستخدام عبارة [`ALTER TABLE...ADD COLUMN`](/ar/reference/statements/alter/column#add-column):
+لنفترض الآن أننا سنضيف عمودًا جديدًا باسم `favoriteNumber`، وسيكون من نوع `Float64`.
+يمكننا إجراء ذلك باستخدام عبارة [`ALTER TABLE...ADD COLUMN`](/ar/reference/statements/alter/column#add-column):
 
 ```sql
 ALTER TABLE events 
 ADD COLUMN favoriteNumber Float64 DEFAULT 7;
 ```
 
-إذا نفّذنا استعلامًا على جدول `events`، فسيظهر الناتج التالي:
+إذا أجرينا استعلامًا على الجدول `events`، فسنرى المخرجات التالية:
 
 ```text
 ┌───────date─┬─name───┬─favoriteNumber─┐
@@ -70,14 +66,14 @@ ADD COLUMN favoriteNumber Float64 DEFAULT 7;
 └────────────┴────────┴────────────────┘
 ```
 
-تكون القيمة الافتراضية للصف `Alexey` هي 7، لأن هذا العمود لم يكن موجودًا عند إضافة ذلك الصف.
+تكون القيمة الافتراضية للصف `Alexey` هي 7 لأن هذا العمود لم يكن موجودًا عند إضافة ذلك الصف.
 بعد ذلك، لنُضِف عمودًا آخر:
 
 ```sql
 INSERT INTO events (name) VALUES ('Tyler');
 ```
 
-إذا نفّذنا استعلامًا على جدول `events`، فسنرى الناتج التالي:
+إذا أجرينا استعلامًا على جدول `events`، فسنرى الناتج التالي:
 
 ```text
 ┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
@@ -93,7 +89,7 @@ INSERT INTO events (name) VALUES ('Tyler');
   ## تعديل القيمة الافتراضية لعمود
 </div>
 
-إذا عدّلنا العمود `favoriteNumber` ليصبح من نوع مختلف باستخدام عبارة [`ALTER TABLE...MODIFY COLUMN`](/ar/reference/statements/alter/column#modify-column)، فتصبح الأمور أكثر إثارة للاهتمام:
+إذا عدّلنا نوع العمود `favoriteNumber` باستخدام عبارة [`ALTER TABLE...MODIFY COLUMN`](/ar/reference/statements/alter/column#modify-column)، تصبح الأمور أكثر إثارة للاهتمام:
 
 ```sql
 ALTER TABLE events 
@@ -112,8 +108,8 @@ MODIFY COLUMN favoriteNumber Float64 DEFAULT 99;
 └────────────┴────────┴────────────────┘
 ```
 
-يحتفظ `Tyler` بالقيمة `7`، وهي القيمة الافتراضية التي كانت محددة عند إنشاء ذلك الصف.
-أما `Alexey` فيأخذ القيمة الافتراضية الجديدة `99` لأن العمود `favoriteNumber` لم يكن موجودًا عند إنشاء ذلك الصف.
+يحتفظ `Tyler` بالقيمة `7`، وهي القيمة الافتراضية التي كانت مُطبَّقة عند إنشاء ذلك الصف.
+ويأخذ `Alexey` القيمة الافتراضية الجديدة `99` لأن العمود `favoriteNumber` لم يكن موجودًا عند إنشاء ذلك الصف.
 
 إذا أردنا أن يستخدم الصف `Alexey` القيمة الافتراضية الحالية فورًا، فعلينا استدعاء [`OPTIMIZE TABLE` ](/ar/reference/statements/optimize) لفرض كتابة القيم الافتراضية الحالية على القرص:
 
@@ -121,7 +117,7 @@ MODIFY COLUMN favoriteNumber Float64 DEFAULT 99;
 OPTIMIZE TABLE events;
 ```
 
-بعد إتمام ذلك، لنفترض أننا غيّرنا القيمة الافتراضية مرة أخرى:
+بعد أن نفعل ذلك، لنفترض أننا غيّرنا القيمة الافتراضية مرة أخرى:
 
 ```sql
 ALTER TABLE events 
@@ -134,7 +130,7 @@ MODIFY COLUMN favoriteNumber Float64 DEFAULT 21;
 INSERT INTO events (name) VALUES ('Tanya');
 ```
 
-أخيرًا، لنُجري استعلامًا على `events` مرةً أخرى:
+أخيرًا، لنُنفِّذ استعلامًا على `events` مرةً أخيرة:
 
 ```text
 ┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
@@ -148,16 +144,16 @@ INSERT INTO events (name) VALUES ('Tanya');
 └────────────┴────────┴────────────────┘
 ```
 
-يتخذ `Tanya` القيمة الافتراضية الجديدة `21`، بينما يحتفظ `Alexey` بالقيمة الافتراضية القديمة `99`.
+يعتمد `Tanya` القيمة الافتراضية الجديدة `21`، لكن `Alexey` لديه القيمة الافتراضية القديمة `99`.
 
 <div id="controlling-column-position-in-table">
-  ## التحكم في موضع العمود داخل الجدول
+  ## التحكم في موضع العمود في الجدول
 </div>
 
 عند إضافة عمود جديد، يُضاف افتراضيًا إلى نهاية الجدول.
-لكن يمكننا استخدام العبارتين `FIRST` و`AFTER` للتحكم في موضع العمود.
+ولكن يمكننا استخدام العبارتين `FIRST` و`AFTER` للتحكم في موضع العمود.
 
-على سبيل المثال، إذا أردنا إضافة عمود باسم `favoriteColor` بعد العمود `name`، فيمكننا فعل ذلك على النحو التالي:
+على سبيل المثال، إذا أردنا إضافة عمود باسم `favoriteColor` بعد العمود `name`، فيمكننا القيام بذلك كما يلي:
 
 ```sql
 ALTER TABLE events
@@ -178,7 +174,7 @@ ADD COLUMN favoriteColor String DEFAULT 'Yellow' AFTER name;
 └────────────┴────────┴───────────────┴────────────────┘
 ```
 
-وإذا أردنا إضافة عمود `favoriteDatabase` وجعله الأول في القائمة، فيمكننا فعل ذلك على النحو التالي:
+وإذا أردنا إضافة العمود `favoriteDatabase` وجعله أول عمود في القائمة، فيمكننا فعل ذلك على النحو التالي:
 
 ```sql
 ALTER TABLE events

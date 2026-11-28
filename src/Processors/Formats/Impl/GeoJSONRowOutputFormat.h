@@ -1,8 +1,8 @@
 #pragma once
 
 #include <array>
+#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
-#include <vector>
 
 #include <Columns/ColumnVariant.h>
 #include <Core/Names.h>
@@ -22,8 +22,8 @@ class ISerialization;
 /// Writes a result set as a single GeoJSON `FeatureCollection`, one `Feature` per row (RFC 7946).
 ///
 /// Column mapping:
-///   - geometry: the single geo-typed column (`Point`, `Ring`, `LineString`, `MultiLineString`,
-///     `Polygon`, `MultiPolygon`, or `Geometry`). Exactly one is required.
+///   - geometry: the single geo-typed column (`Point`, `MultiPoint`, `Ring`, `LineString`,
+///     `MultiLineString`, `Polygon`, `MultiPolygon`, or `Geometry`). Exactly one is required.
 ///   - id: a column named `id`, emitted as the Feature `id` when present and non-NULL.
 ///   - properties: the remaining columns. A lone object-typed column named `properties` is emitted
 ///     directly as the `properties` object (so GeoJSON read by the input format round-trips);
@@ -101,7 +101,7 @@ private:
 
     /// Columns forming `properties`. When `emit_properties_column_directly` is set there is exactly one such column,
     /// emitted directly as the properties object.
-    std::vector<size_t> property_col_indices;
+    VectorWithMemoryTracking<size_t> property_col_indices;
     Names property_json_names;
     bool emit_properties_column_directly = false;
 };

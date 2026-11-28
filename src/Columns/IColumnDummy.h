@@ -31,10 +31,6 @@ public:
 #else
     int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
 #endif
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
-    {
-    }
-
     bool hasEqualValues() const override { return true; }
 
     Field operator[](size_t) const override;
@@ -43,6 +39,7 @@ public:
     void insert(const Field &) override;
     bool tryInsert(const Field &) override { return false; }
     bool isDefaultAt(size_t) const override;
+    bool hasOnlyTypeDefaults() const override { return false; }
 
     std::string_view getDataAt(size_t) const override
     {
@@ -57,8 +54,6 @@ public:
     std::string_view serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-
-    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t /*n*/, SipHash & /*hash*/) const override
     {

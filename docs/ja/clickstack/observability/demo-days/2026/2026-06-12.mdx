@@ -1,0 +1,172 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-06-12
+title: 'デモデイズ - 2026-06-12'
+sidebarTitle: '2026-06-12'
+description: '2026-06-12 の ClickStack デモデー'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+---
+
+## スキーマ移行ツール {#schema-migration-tool}
+
+*デモ担当者: [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/jRKTN30ghAo" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+スキーマ移行ツールは、現在活発に開発が進められている ClickStack の新機能で、UI から直接 ClickHouse のスキーマ移行を実行・監視できます。デモでは、Warren がマイグレーターを有効にして `body` カラムに全文検索索引を作成し、その後、リアルタイムのログ出力で進捗を確認しながらその索引を削除しています。
+
+今後はデプロイメント全体を対象としたスキーマ変更への対応が予定されており、これにより本機能は一般提供に向けてさらに前進します。
+
+## アラートと MCP 向けのソースレベルフィルター {#source-level-filters-for-alerts-and-mcp}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/z0Lbggcy6dU" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Drew が、ClickStack 全体でのソースフィルター対応の大幅な拡張をデモします。ソースフィルターを必要とするダッシュボードタイルや生のSQLタイルにもアラートを設定できるようになりました。フィルタが指定されていない場合や、クエリに挿入用のフィルタマクロが含まれていない場合には、わかりやすいインラインガイダンスが表示されます。保存済み検索のアラートも同様に動作します。
+
+ソースフィルターはサービスマップ全体で適用されるようになり、選択内容は関連付けられた検索ページやトレースのサイドパネルにも引き継がれます。
+
+MCP もソースフィルターに対応しました。エージェントはフィルタの要件を自動検出し、利用可能な値を取得して、フィルタをクエリツールに渡せます。フィルタの値は相互にプルーニングされるため、あるフィルタでの選択に応じて、他のフィルタで選択可能な値が絞り込まれます。必須フィルタが省略された場合、MCP はそれらを自動的に選択し、適用した値を報告します。初期の評価結果では、ソースフィルターを使用しないソースへの目立った影響は確認されていません。
+
+**関連 プルリクエスト:** [#2459](https://github.com/hyperdxio/hyperdx/pull/2459) feat: show icon on tiles with excluded source-scoped filters, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: Add source scoping to dashboard filters
+
+## ログソース作成時の候補カラム {#candidate-columns-when-building-sources}
+
+*デモ担当者: [@karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/PA-6sDjdjIM" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ログソースの作成時に、ClickStack が基になるテーブルから候補フィールドを提案し、設定フォームへの入力を支援するようになりました。提案はクリック可能なチップとして表示されます。また検証時には、存在しないフィールドと、有効ではあるものの解決にログソースフィルターが必要なフィールドとが区別されます。
+
+さらに、暗黙的カラムを指定せずにボディ expression が設定されている場合に、それを知らせる新しい警告も追加されました。この機能はほぼ完成しており、残るのは UI の細かな調整と検証の改善のみです。
+
+**関連 プルリクエスト:** [#2436](https://github.com/hyperdxio/hyperdx/pull/2436) feat: add source field suggestions
+
+## group-by を使用した異常アラート (作業中) {#anomaly-alerts-with-group-by} 
+
+*デモ担当者: [@fleon](https://github.com/fleon)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/70UzCRUTK7M" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+この取り組みは、グループ化された時系列に対する異常検知のユーザビリティ上の課題を解決するものです。すべての系列の異常範囲を同時に表示すると、たちまち判読が困難になります。Himanshu のアプローチでは、凡例にホバーすると異常範囲が表示され、単一の系列を選択した場合は従来どおりチャート上に直接描画されます。
+
+この機能は現在も開発が進められており、リリースまでにさらなる改善が予定されています。
+
+## MCP eval のマルチモデルセレクター {#mcp-eval-multi-model-selector}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/1O47NXHDzUY" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+MCP 評価フレームワークで、1 つの評価スイートを複数のモデルに対して同時に実行できるようになりました。デモでは、Brandon が Fable のリリースを受けて、Fable、Opus、Sonnet を 1 回の実行で比較しています。
+
+ClickHouse と HyperDX のどちらの評価スイートでも、Fable は ClickStack 固有の質問において大幅に優れた結果を出しました。このモデルが使えたらよかったのですが :)
+
+**関連 プルリクエスト:** [#2438](https://github.com/hyperdxio/hyperdx/pull/2438) feat(hdx-eval): support multi-model comparison in eval batches、[#2414](https://github.com/hyperdxio/hyperdx/pull/2414) feat: AI eval framework for benchmarking MCP servers
+
+## すべてのノートブックツールが MCP を使用するように {#all-notebook-tools-now-use-the-mcp}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/lJnrfmQswpQ" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ノートブックのすべての調査ツールは、個別の実装ではなく ClickStack MCP を通じて実行されるようになりました。ユーザーから見た動作に変更はありませんが、この統合によって重複していたコードパスが解消され、今後ノートブックとローカルエージェントを相互運用するための基盤が整いました。
+
+次は、生のSQL を使ったノートブックタイルに対応する予定です。
+
+## Datadogレシーバー {#datadog-receiver}
+
+*デモ担当者: [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/P0VVuN_yL6Q" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Spencer が Datadogレシーバーの改善点をデモで紹介します。
+
+これまで Datadog のログペイロードは、その大部分がメッセージ本文内の非構造化 JSON として取り込まれていました。現在は、この receiver がトレースID、スパンID、タイムスタンプ、HTTPリクエストのメタデータといった主要なフィールドを抽出し、標準の OpenTelemetry リソース属性およびログ属性に昇格させるようになりました。
+
+さらに、Datadog の 64 ビットの数値トレースIDが 128 ビットの OpenTelemetry フォーマットに拡張されるため、ClickStack 内でトレースを正しく相関付けられるようになります。この receiver は ClickStack コレクターのディストリビューションに同梱される予定で、エンドツーエンドのトレース相関に関する追加テストも計画されています。
+
+## イベントパターン: 任意のカラムに対応 {#event-patterns-any-column}
+
+*デモ担当者: [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/5uGZ69YNV74" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+イベントパターン分析を、`Body` に限らず任意の文字列カラムに対して実行できるようになりました。新たに追加されたカラムセレクターは、既存の動作を維持するためにデフォルトで `Body` が選択されていますが、文字列として表現可能なカラムであればどれでも選択できます。
+
+また Aaron は、Drain アルゴリズムがイベントをパターンにグループ化する前に、可変部分を正規化するためのマスキングロジックについても解説しています。この機能は現在レビュー中ですが、近日中に利用可能になる予定です。
+
+**関連するプルリクエスト:** [#2460](https://github.com/hyperdxio/hyperdx/pull/2460) feat: add pattern column selector for event pattern matching on any column
+
+## スパンリンク (作業中) {#span-links} 
+
+*デモ担当者: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/SK-T5J3YcQE" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Alex が、ClickStack のトレースビューアーで開発中のスパンリンク対応をデモします。スパンリンクは、あるスパンから別のトレース内の関連スパンを参照できるようにする OpenTelemetry の概念で、トレーシング機能の中でも特に要望の多いものです。
+
+現在の実装では、リンクされたスパンとその属性がトレースパネル内に直接表示されます。デザインや表示方法は引き続き改良中のため、あくまで開発途上の機能としてご覧ください。
+
+**関連プルリクエスト:** [#2463](https://github.com/hyperdxio/hyperdx/pull/2463) feat(traces): surface span links in the trace viewer
+
+## ホバー時の時系列ハイライト {#time-series-highlighting-on-hover}
+
+*デモ担当者: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/QhyWYDE-stY" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+複数系列の時系列チャートで、カーソルに最も近い系列がハイライト表示されるようになりました。これにより、group-by の値が多く系列が密集したチャートでも、個々の線を格段に見分けやすくなります。
+
+この機能は、Grafana から ClickStack へ移行中のチームから寄せられたフィードバックをもとに実装されました。
+
+**関連プルリクエスト:** [#2456](https://github.com/hyperdxio/hyperdx/pull/2456) feat: highlight the series nearest the cursor in time chart tooltips
+
+## 系列の複製 {#duplicate-series}
+
+*デモ担当者: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/PnhU_CtRFc4" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+チャートビルダーに複製アクションが追加されました。似たような系列をスクラッチから作り直さなくても、既存の系列設定をコピーして一部を調整するだけで済むようになりました。
+
+Alex が P50 と P95 の比較チャートを作成しながら、この操作の流れを実演します。
+
+**関連 プルリクエスト:** [#2453](https://github.com/hyperdxio/hyperdx/pull/2453) feat(chart-explorer): duplicate a series in the chart builder
+
+## 編集可能なピルフィルタ (作業中) {#editable-pill-filters} 
+
+*デモ担当者: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/T7q_qkhWjUU" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+検索インターフェイス上で、フィルタピルを直接編集できるようになりつつあります。初期段階では、包含モードと除外モードの切り替え、値のインライン編集、ピルからのフィルタの直接コピーといった機能が利用できます。
+
+実装はまだ進行中で、リリースまでにさらなる機能追加や改良を予定しています。
+
+**関連するプルリクエスト:** [#2455](https://github.com/hyperdxio/hyperdx/pull/2455) feat(search): editable filter pills、[#2471](https://github.com/hyperdxio/hyperdx/pull/2471) feat(search): allow free-text values when editing a filter pill

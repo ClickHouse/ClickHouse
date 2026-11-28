@@ -2,13 +2,13 @@
 
 #include "config.h"
 
-#if USE_BASE64
+#if USE_SIMDUTF
 
 #include <Core/Defines.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 
-#include <libbase64.h>
+#include <cstdint>
 
 namespace DB
 {
@@ -28,7 +28,11 @@ private:
     void finalizeImpl() override;
 
     WriteBuffer & out;
-    base64_state state{};
+
+    /// simdutf has no streaming base64 API, but base64 encodes independent 3-byte groups, so we encode
+    /// whole groups eagerly and carry the trailing 0-2 bytes that do not yet form a group across writes.
+    uint8_t carry[2]{};
+    size_t carry_size = 0;
 };
 
 }

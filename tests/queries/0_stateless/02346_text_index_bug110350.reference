@@ -1,0 +1,15 @@
+ILIKE uses the index (force_data_skipping_indices must not throw)
+3
+index results match a full scan
+3
+3
+3
+3
+the index prunes granules with no matching token
+Description: text GRANULARITY 100000000
+Parts: 1/2
+Granules: 3/2005
+a non-matching needle prunes every granule
+Description: text GRANULARITY 100000000
+Parts: 0/2
+Granules: 0/2005

@@ -1,0 +1,57 @@
+single_dotted_key
+1
+10
+nested_dotted_key
+2
+20
+multi_dot_key
+\N
+hello
+non_dotted_key
+3
+30
+equivalence_bracket_vs_backtick
+1	1	1
+10	10	1
+typed_dotted_key
+1	UInt32
+2	UInt32
+explain_dotted_optimized
+QUERY id: 0
+  PROJECTION COLUMNS
+    arrayElement(json, \'a.b\') Dynamic
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: json.@`a%2Eb`, result_type: Dynamic, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test_json_dots
+  SETTINGS optimize_functions_to_subcolumns=1
+explain_dotted_chain_optimized
+QUERY id: 0
+  PROJECTION COLUMNS
+    arrayElement(arrayElement(json, \'c\'), \'d.e\') Dynamic
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: json.@`c`.d%2Ee, result_type: Dynamic, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test_json_dots
+  SETTINGS optimize_functions_to_subcolumns=1
+explain_dotted_no_optimization
+QUERY id: 0
+  PROJECTION COLUMNS
+    arrayElement(json, \'a.b\') Dynamic
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: arrayElement, function_type: ordinary, result_type: Dynamic
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            COLUMN id: 4, column_name: json, result_type: JSON, source_id: 5
+            CONSTANT id: 6, constant_value: \'a.b\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: default.test_json_dots
+  SETTINGS optimize_functions_to_subcolumns=0
+where_dotted
+10
+no_escape_nested
+42
+42

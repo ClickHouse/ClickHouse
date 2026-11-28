@@ -33,11 +33,11 @@ quantileBFloat16[(level)](expr)
 
 **Arguments**
 
-* `expr` — Colonne contenant des données numériques. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float)
+* `expr` — Expression sur les valeurs de la colonne produisant des types de données numériques, `Date` ou `DateTime`. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime)
 
 **Valeur renvoyée**
 
-Quantile approximatif du niveau spécifié. [`Float64`](/fr/reference/data-types/float)
+Quantile approximatif du niveau spécifié. Pour les entrées `Date` et `DateTime`, le format de sortie correspond au format d’entrée. [`Float64`](/fr/reference/data-types/float) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime)
 
 **Exemples**
 

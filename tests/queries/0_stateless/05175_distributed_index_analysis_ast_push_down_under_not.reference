@@ -1,0 +1,8 @@
+the answer does not change with distributed index analysis
+570
+570
+a nested AND under a top-level AND, where dropping a conjunct is still sound
+687
+687
+the weakened conjunct is not pushed	0
+a convertible predicate is still pushed	1

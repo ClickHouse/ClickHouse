@@ -4,15 +4,49 @@ title: 'データモデリングの概要'
 description: 'データモデリングの概要'
 keywords: ['データモデリング', 'スキーマ設計', 'Dictionary', 'materialized view', 'データ圧縮', 'データの非正規化']
 doc_type: 'landing-page'
+mode: wide
 ---
 
-このセクションでは、ClickHouse におけるデータモデリングを扱っており、以下のトピックが含まれます。
+このセクションでは ClickHouse のデータモデリングについて、次のトピックを紹介します。
 
-| Page                                                                             | Description                                                                              |
-| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| [スキーマ設計](/ja/guides/clickhouse/data-modelling/schema-design)                        | クエリ、データ更新、レイテンシ、データ量などの要素を考慮しながら、最適なパフォーマンスを得るための ClickHouse のスキーマ設計について説明します。           |
-| [Dictionary](/ja/concepts/features/dictionaries/index)                              | クエリパフォーマンスの向上やデータの拡充に役立つ Dictionary の定義方法と使い方を説明します。                                     |
-| [materialized view](/ja/concepts/features/materialized-views/index)                 | ClickHouse における materialized view とリフレッシュ可能なマテリアライズドビューに関する情報です。                         |
-| [プロジェクション](/ja/concepts/features/projections/projections)                           | ClickHouse のプロジェクションに関する情報です。                                                            |
-| [データ圧縮](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) | ClickHouse のさまざまな圧縮モードと、特定のデータ型やワークロードに適した圧縮方式を選んで、データストレージとクエリパフォーマンスを最適化する方法について説明します。 |
-| [データの非正規化](/ja/guides/clickhouse/data-modelling/denormalization)                    | 関連データを 1 つのテーブルに格納することでクエリパフォーマンスの向上を目指す、ClickHouse で用いられる非正規化アプローチについて説明します。            |
+<CardGroup cols={2}>
+  <Card title="スキーマ設計" icon="pen-ruler" href="/ja/guides/clickhouse/data-modelling/schema-design">
+    クエリ、データ更新、レイテンシ、データ量などの要素を考慮した、最適なパフォーマンスのための ClickHouse スキーマ設計。
+  </Card>
+
+  <Card title="スパースプライマリインデックス" icon="key" href="/ja/guides/clickhouse/data-modelling/sparse-primary-indexes">
+    ClickHouse におけるプライマリインデックスの実践的な入門。
+  </Card>
+
+  <Card title="データの非正規化" icon="table-list" href="/ja/guides/clickhouse/data-modelling/denormalization">
+    関連データを 1 つのテーブルに格納することでクエリパフォーマンスの向上を目指す、非正規化のアプローチ。
+  </Card>
+
+  <Card title="データのバックフィル" icon="clock-rotate-left" href="/ja/guides/clickhouse/data-modelling/backfilling">
+    ClickHouse テーブルに効率よくデータをバックフィルする手法。
+  </Card>
+
+  <Card title="Merge テーブル関数" icon="code-merge" href="/ja/guides/clickhouse/data-modelling/merge-table-function">
+    `merge` テーブル関数を使用して、複数のテーブルを 1 つとしてクエリする方法。
+  </Card>
+
+  <Card title="ストアドプロシージャとプリペアドステートメント" icon="database" href="/ja/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements">
+    ClickHouse におけるストアドプロシージャとクエリパラメータ。
+  </Card>
+
+  <Card title="テストデータの生成" icon="flask" href="/ja/guides/clickhouse/data-modelling/generating-test-data">
+    ClickHouse でランダムなテストデータを生成する方法。
+  </Card>
+
+  <Card title="データ圧縮" icon="file-zipper" href="/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse">
+    ClickHouse における圧縮と利用可能な圧縮モード、および自分のデータ型やワークロードに適したものを選ぶ方法。
+  </Card>
+
+  <Card title="配列の操作" icon="list-ol" href="/ja/guides/clickhouse/working-with-arrays">
+    ClickHouse での配列の操作。
+  </Card>
+
+  <Card title="JOIN の操作" icon="link" href="/ja/guides/clickhouse/working-with-joins">
+    ClickHouse での JOIN の操作。
+  </Card>
+</CardGroup>

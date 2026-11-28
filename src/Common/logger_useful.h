@@ -68,10 +68,10 @@ namespace impl
 
 constexpr bool constexprContains(std::string_view haystack, std::string_view needle)
 {
-    return haystack.find(needle) != std::string_view::npos;
+    return haystack.contains(needle);
 }
 
-#define LOG_IMPL(logger, priority, PRIORITY, ...) do                                                                \
+#define LOG_IMPL_AT(logger, priority, PRIORITY, SOURCE_FILE, SOURCE_FUNCTION, SOURCE_LINE, ...) do                  \
 {                                                                                                                   \
     static_assert(!constexprContains(#__VA_ARGS__, "formatWithSecretsOneLine"), "Think twice!");                    \
     static_assert(!constexprContains(#__VA_ARGS__, "formatWithSecretsMultiLine"), "Think twice!");                  \
@@ -124,16 +124,14 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
     catch (const std::bad_alloc & logger_exception)                                                                 \
     {                                                                                                               \
         (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
-        const char * logger_exception_message = logger_exception.what();                                            \
-        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
+        std::string_view logger_exception_message = logger_exception.what();                                        \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size()); \
     }                                                                                                               \
                                                                                                                     \
     try                                                                                                             \
     {                                                                                                               \
-        std::string _file_function = __FILE__ "; ";                                                                 \
-        _file_function += __PRETTY_FUNCTION__;                                                                      \
         Poco::Message _poco_message(_logger->name(), std::move(_formatted_message),                                 \
-            (PRIORITY), std::move(_file_function), __LINE__, _format_string, _format_string_args);                  \
+            (PRIORITY), (SOURCE_FILE), (SOURCE_FUNCTION), (SOURCE_LINE), _format_string, _format_string_args);      \
         _channel->log(std::move(_poco_message));                                                                               \
     }                                                                                                               \
     catch (const Poco::Exception & logger_exception)                                                                \
@@ -145,8 +143,8 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
     catch (const std::exception & logger_exception)                                                                 \
     {                                                                                                               \
         (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
-        const char * logger_exception_message = logger_exception.what();                                            \
-        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
+        std::string_view logger_exception_message = logger_exception.what();                                        \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size()); \
     }                                                                                                               \
     catch (...)                                                                                                     \
     {                                                                                                               \
@@ -154,6 +152,9 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
     }                                                                                                               \
     ProfileEvents::incrementLoggerElapsedNanoseconds(_logger_watch.elapsedNanoseconds());                           \
 } while (false)
+
+#define LOG_IMPL(logger, priority, PRIORITY, ...) \
+    LOG_IMPL_AT(logger, priority, PRIORITY, __FILE__, __PRETTY_FUNCTION__, __LINE__, __VA_ARGS__)
 
 
 #define LOG_TEST(logger, ...)    LOG_IMPL(logger, DB::LogsLevel::test, Poco::Message::PRIO_TEST, __VA_ARGS__)

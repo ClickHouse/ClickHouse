@@ -1,5 +1,6 @@
 ---
-sidebarTitle: 'テーブルの作成'
+sidebarTitle: 'ClickHouse でのテーブルの作成'
+searchable: true
 title: 'ClickHouse でのテーブルの作成'
 slug: /guides/creating-tables
 description: 'ClickHouse でのテーブルの作成について学びます'
@@ -37,15 +38,15 @@ CREATE DATABASE IF NOT EXISTS helloworld
 次の `my_first_table` という名前のテーブルは、`helloworld` データベースに作成されます。
 
 ```sql
-  CREATE TABLE helloworld.my_first_table
-  (
-      user_id UInt32,
-      message String,
-      timestamp DateTime,
-      metric Float32
-  )
-  ENGINE = MergeTree()
-  PRIMARY KEY (user_id, timestamp)
+CREATE TABLE helloworld.my_first_table
+(
+    user_id UInt32,
+    message String,
+    timestamp DateTime,
+    metric Float32
+)
+ENGINE = MergeTree()
+PRIMARY KEY (user_id, timestamp)
 ```
 
 上の例では、`my_first_table` は 4 つのカラムを持つ `MergeTree` テーブルです。
@@ -66,7 +67,7 @@ CREATE DATABASE IF NOT EXISTS helloworld
 </Note>
 
 <div id="a-brief-intro-to-primary-keys">
-  ## 主キーの簡単な紹介
+  ## 主キーの簡単な紹介 {#a-brief-intro-to-primary-keys}
 </div>
 
 先に進む前に、ClickHouse で主キーがどのように機能するのかを理解しておくことが重要です (主キーの実装は
@@ -74,7 +75,7 @@ CREATE DATABASE IF NOT EXISTS helloworld
 
 * ClickHouse の主キーは、テーブル内の各行に対して ***一意ではありません***
 
-ClickHouseテーブルの主キーは、データがディスクに書き込まれる際のソート順を決定します。8,192 行ごと、または 10MB の
+ClickHouse テーブルの主キーは、データがディスクに書き込まれる際のソート順を決定します。8,192 行ごと、または 10MB の
 データごと (これを **インデックス粒度** と呼びます) に、主キーの索引ファイルに 1 つのエントリが作成されます。この粒度の概念によって、
 メモリに容易に収まる **スパースインデックス** が作られます。また、グラニュールは `SELECT` クエリの実行時に処理される
 最小単位のカラムデータのストライプを表します。
@@ -86,7 +87,7 @@ ClickHouseテーブルの主キーは、データがディスクに書き込ま�
 カラムファイルに格納されるデータは、まず `user_id`、次に `timestamp` の順にソートされます。
 
 <Tip>
-  詳細については、ClickHouse Academy の [Modeling Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328860/?utm_source=clickhouse\&utm_medium=docs) をご覧ください。
+  詳細については、ClickHouse Academy の [Modeling Data トレーニングモジュール](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550440) を参照してください。
 </Tip>
 
 <div className="mt-8">

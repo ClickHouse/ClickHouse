@@ -42,9 +42,9 @@ TEST(DataTypeFactoryTryGet, GetStillThrowsOnOutOfRangeEnum)
     auto & factory = DataTypeFactory::instance();
 
     /// The non-try get() path must keep rejecting out-of-range enum values.
-    EXPECT_THROW(factory.get("Enum8('a' = 200)"), Exception);
-    EXPECT_THROW(factory.get("Enum8('a' = 18446744073709551615)"), Exception);
-    EXPECT_THROW(factory.get("Enum8('z' = 9223372036854775807, 'a')"), Exception);
+    EXPECT_THROW((void)factory.get("Enum8('a' = 200)"), Exception);
+    EXPECT_THROW((void)factory.get("Enum8('a' = 18446744073709551615)"), Exception);
+    EXPECT_THROW((void)factory.get("Enum8('z' = 9223372036854775807, 'a')"), Exception);
 }
 
 TEST(DataTypeFactoryTryGet, ValidEnumStillParses)

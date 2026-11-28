@@ -86,16 +86,80 @@ FailuresCount countFailures(const ::testing::TestResult & test_result)
 
 }
 
+TEST(DateLUTTest, hasFixedOffset)
+{
+    EXPECT_TRUE(DateLUT::instance("UTC").hasFixedOffset());
+    EXPECT_TRUE(DateLUT::instance("Etc/GMT-5").hasFixedOffset());
+    EXPECT_TRUE(DateLUT::instance("Etc/GMT+5").hasFixedOffset());
+    EXPECT_FALSE(DateLUT::instance("Europe/Berlin").hasFixedOffset());
+    EXPECT_FALSE(DateLUT::instance("America/New_York").hasFixedOffset());
+    /// No DST nowadays, but the offset changed within the LUT range (e.g. in 1942).
+    EXPECT_FALSE(DateLUT::instance("Asia/Kolkata").hasFixedOffset());
+}
+
+TEST(DateLUTTest, dayShiftStaysWithinLUT)
+{
+    const DateLUTImpl & lut = DateLUT::instance("UTC");
+    const time_t lut_min = -2208988800; /// 1900-01-01 00:00:00 UTC, the first second of the LUT
+    const time_t lut_max = 10413792000 - 1; /// 2299-12-31 23:59:59 UTC, the last second of the LUT
+
+    EXPECT_TRUE(lut.dayShiftStaysWithinLUT(0, 1));
+    EXPECT_TRUE(lut.dayShiftStaysWithinLUT(0, -1));
+    EXPECT_TRUE(lut.dayShiftStaysWithinLUT(lut_min, 0));
+    EXPECT_TRUE(lut.dayShiftStaysWithinLUT(lut_min, 1));
+    EXPECT_TRUE(lut.dayShiftStaysWithinLUT(lut_max, -1));
+    EXPECT_TRUE(lut.dayShiftStaysWithinLUT(lut_min, 146096)); /// 1900-01-01 -> 2299-12-31, the last LUT day
+
+    /// Input outside the LUT.
+    EXPECT_FALSE(lut.dayShiftStaysWithinLUT(lut_min - 1, 0));
+    EXPECT_FALSE(lut.dayShiftStaysWithinLUT(lut_max + 1, 0));
+    EXPECT_FALSE(lut.dayShiftStaysWithinLUT(std::numeric_limits<time_t>::min(), 0));
+    EXPECT_FALSE(lut.dayShiftStaysWithinLUT(std::numeric_limits<time_t>::max(), 0));
+
+    /// Result outside the LUT.
+    EXPECT_FALSE(lut.dayShiftStaysWithinLUT(lut_min, -1));
+    EXPECT_FALSE(lut.dayShiftStaysWithinLUT(lut_max, 1));
+    EXPECT_FALSE(lut.dayShiftStaysWithinLUT(lut_min, 146097));
+    EXPECT_FALSE(lut.dayShiftStaysWithinLUT(0, std::numeric_limits<Int64>::min()));
+    EXPECT_FALSE(lut.dayShiftStaysWithinLUT(0, std::numeric_limits<Int64>::max()));
+
+    /// Scaled values (raw DateTime64 representation).
+    EXPECT_TRUE(lut.dayShiftStaysWithinLUT(lut_min * 1000, 1, 1000));
+    EXPECT_FALSE(lut.dayShiftStaysWithinLUT(lut_min * 1000, -1, 1000));
+    EXPECT_FALSE(lut.dayShiftStaysWithinLUT(lut_min * 1000 - 1000, 0, 1000));
+    EXPECT_TRUE(lut.dayShiftStaysWithinLUT((lut_max + 1) * 1000 - 1, -1, 1000));
+    EXPECT_FALSE(lut.dayShiftStaysWithinLUT((lut_max + 1) * 1000, 0, 1000));
+    /// Negative sub-second values shifted to the upper LUT edge: the calendar path truncates the
+    /// division towards zero, so the fast path must decline to keep the results identical.
+    EXPECT_FALSE(lut.dayShiftStaysWithinLUT(-1, 120530, 1000));
+    EXPECT_FALSE(lut.dayShiftStaysWithinLUT(-259200001, 17219 * 7, 1000));
+    /// For scale 9 the end of the LUT exceeds Int64, so only the lower bound and Int64 overflow apply.
+    EXPECT_TRUE(lut.dayShiftStaysWithinLUT(0, 1, 1000000000));
+    EXPECT_FALSE(lut.dayShiftStaysWithinLUT(0, -25568, 1000000000));
+    EXPECT_TRUE(lut.dayShiftStaysWithinLUT(std::numeric_limits<Int64>::max() - 86400 * 1000000000L, 1, 1000000000));
+    EXPECT_FALSE(lut.dayShiftStaysWithinLUT(std::numeric_limits<Int64>::max(), 1, 1000000000));
+}
+
 TEST(DateLUTTest, makeDayNumTest)
 {
     const DateLUTImpl & lut = DateLUT::instance("UTC");
-    EXPECT_EQ(0, lut.makeDayNum(1899, 12, 31));
-    EXPECT_EQ(-1, lut.makeDayNum(1899, 12, 31, -1));
+    /// Valid dates outside the LUT years take the cctz escape path instead of clamping.
+    EXPECT_EQ(-25568, lut.makeDayNum(1899, 12, 31));
+    EXPECT_EQ(-25568, lut.makeDayNum(1899, 12, 31, -1));
     EXPECT_EQ(-25567, lut.makeDayNum(1900, 1, 1));
     EXPECT_EQ(-16436, lut.makeDayNum(1925, 1, 1));
     EXPECT_EQ(0, lut.makeDayNum(1970, 1, 1));
-    EXPECT_EQ(120529, lut.makeDayNum(2300, 12, 31));
-    EXPECT_EQ(120529, lut.makeDayNum(2500, 12, 25));
+    EXPECT_EQ(120894, lut.makeDayNum(2300, 12, 31));
+    EXPECT_EQ(193937, lut.makeDayNum(2500, 12, 25));
+
+    /// The whole representable window [0000-01-01, 9999-12-31]; years outside are clamped.
+    EXPECT_EQ(DATE_LUT_MIN_EXTEND_DAY_NUM, lut.makeDayNum(0, 1, 1));
+    EXPECT_EQ(DATE_LUT_MAX_EXTEND_DAY_NUM, lut.makeDayNum(9999, 12, 31));
+    EXPECT_EQ(lut.makeDayNum(9999, 1, 1), lut.makeDayNum(10000, 1, 1));
+
+    /// A calendar-invalid date still yields the error default.
+    EXPECT_EQ(0, lut.makeDayNum(2000, 13, 1));
+    EXPECT_EQ(-1, lut.makeDayNum(2000, 13, 1, -1));
 }
 
 
@@ -539,6 +603,27 @@ TEST_P(DateLUTWithTimeZone, getTimeZone)
     const auto & lut = DateLUT::instance(GetParam());
 
     EXPECT_EQ(GetParam(), lut.getTimeZone());
+}
+
+TEST_P(DateLUTWithTimeZone, FixedOffsetImpliesArithmeticDayAddition)
+{
+    /// The day/week addition fast path relies on this property for every time zone that reports a fixed offset.
+    const DateLUTImpl & lut = DateLUT::instance(GetParam());
+    if (!lut.hasFixedOffset())
+        return;
+
+    const size_t max_failures_per_tz = 3;
+    const auto * test_info = ::testing::UnitTest::GetInstance()->current_test_info();
+
+    /// Keep t + delta * 86400 within the LUT range [1900-01-01, 2299-12-31].
+    for (time_t t = -2199999999; t < 10300000000; t += 11 * 13 * 17 * 19 * 23)
+    {
+        for (Int64 delta : {-100, -7, -1, 0, 1, 7, 100})
+            EXPECT_EQ(lut.addDays(t, delta), t + delta * 86400) << "timezone: " << GetParam() << ", timestamp: " << t << ", delta: " << delta;
+
+        if (countFailures(*test_info->result()).total >= max_failures_per_tz)
+            break;
+    }
 }
 
 

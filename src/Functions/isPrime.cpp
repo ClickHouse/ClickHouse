@@ -26,14 +26,14 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsPrime>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isDeterministic() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"n", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), nullptr, "UInt8/UInt16/UInt32/UInt64"},
@@ -42,7 +42,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * column = arguments[0].column.get();
         auto result = ColumnUInt8::create(input_rows_count);
@@ -74,7 +74,7 @@ Returns `1` if the argument is a prime number, otherwise `0`.
 Uses an exact lookup bitmap for small values and a deterministic [Miller-Rabin test](https://en.wikipedia.org/wiki/Miller-Rabin_primality_test)
 for larger values. The result is exact for every supported input type.
 
-For wider unsigned integer types (`UInt128`, `UInt256`), use [`isProbablePrime`](/sql-reference/functions/math-functions#isProbablePrime) instead.
+For wider unsigned integer types (`UInt128`, `UInt256`), use [`isProbablePrime`](/reference/functions/regular-functions/math-functions#isProbablePrime) instead.
     )";
     FunctionDocumentation::Syntax syntax = "isPrime(n)";
     FunctionDocumentation::Arguments arguments

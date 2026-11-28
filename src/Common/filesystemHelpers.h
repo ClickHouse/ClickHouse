@@ -2,10 +2,12 @@
 
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Common/Logger.h>
 
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <Poco/TemporaryFile.h>
 
@@ -70,9 +72,32 @@ size_t getSizeFromFileDescriptor(int fd, const String & file_name = "");
 
 std::optional<size_t> tryGetSizeFromFilePath(const String & path);
 
+/// Existence probe over the throwing `std::filesystem` overloads. A path whose component exceeds
+/// NAME_MAX names no file, so for such a probe that is a normal "not found under this name".
+/// Every other stat() failure keeps throwing: callers rely on it to tell "missing" from "broken"
+/// (e.g. MergeTreeData::loadFormatVersion, IMergeTreeDataPart::loadColumns).
+template <typename Func>
+bool existsOrFileNameTooLong(Func && func)
+try
+{
+    return func();
+}
+catch (const fs::filesystem_error & e)
+{
+    if (e.code() == std::errc::filename_too_long)
+        return false;
+    throw;
+}
+
 /// Get inode number for a file path.
 /// Will not work correctly if filesystem does not support inodes.
 Int64 getINodeNumberFromPath(const String & path);
+
+/// Version token of a local file: modification time with nanoseconds, inode number and size.
+String computeFileCacheVersionToken(const struct stat & file_stat);
+
+/// Whether the last modification is far enough in the past that any later write changes the token.
+bool isFileCacheVersionTokenSettled(const struct stat & file_stat);
 
 }
 
@@ -87,9 +112,9 @@ namespace FS
 bool createFile(const std::string & path);
 
 bool exists(const std::string & path);
-bool canRead(const std::string & path);
-bool canWrite(const std::string & path);
-bool canExecute(const std::string & path);
+bool canRead(const std::string & path, bool allow_throw = true);
+bool canWrite(const std::string & path, bool allow_throw = true);
+bool canExecute(const std::string & path, bool allow_throw = true);
 
 /// st_mtime
 time_t getModificationTime(const std::string & path);
@@ -101,5 +126,8 @@ time_t getChangeTime(const std::string & path);
 bool isSymlink(const fs::path & path);
 bool isSymlinkNoThrow(const fs::path & path);
 fs::path readSymlink(const fs::path & path);
+
+/// Returns false and logs a warning if the file cannot be removed (a missing file is not an error).
+bool tryDelete(const fs::path & path, LoggerPtr log);
 
 }

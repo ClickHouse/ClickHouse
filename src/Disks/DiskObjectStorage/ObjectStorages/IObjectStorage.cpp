@@ -1,4 +1,5 @@
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IOSchedulingSettings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -20,6 +21,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+ObjectMetadata ObjectMetadata::fromTableRecords(std::optional<UInt64> size, String immutable_content_id)
+{
+    ObjectMetadata metadata;
+    metadata.size_bytes = size.value_or(0);
+    metadata.is_size_known = size.has_value();
+    metadata.is_fetched = false;
+    metadata.is_from_table_records = true;
+    metadata.is_last_modified_known = false;
+    metadata.immutable_content_id = std::move(immutable_content_id);
+    return metadata;
+}
+
 bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
     RelativePathsWithMetadata files;
@@ -30,6 +43,17 @@ bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
 void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata &, size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjects() is not supported");
+}
+
+ObjectStorageListResult IObjectStorage::listObjectsSingleLevel(
+    const std::string &, const std::string &, size_t, bool, const std::string &, const std::string &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjectsSingleLevel() is not supported");
+}
+
+size_t IObjectStorage::getListedObjectPayloadBytesUpperBound(bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getListedObjectPayloadBytesUpperBound() is not supported");
 }
 
 /// Read single object
@@ -80,7 +104,10 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     std::optional<ObjectAttributes> object_to_attributes)
 {
     if (&object_storage_to == this)
+    {
         copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
+        return;
+    }
 
     auto in = readObject(object_from, read_settings);
     auto out = object_storage_to.writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
@@ -93,14 +120,36 @@ const std::string & IObjectStorage::getCacheName() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheName is not implemented for object storage");
 }
 
+void IObjectStorage::setIOSchedulingResourceNames(const String & read_resource_name_, const String & write_resource_name_)
+{
+    std::lock_guard lock(io_scheduling_resource_names->mutex);
+    io_scheduling_resource_names->read_resource_name = read_resource_name_;
+    io_scheduling_resource_names->write_resource_name = write_resource_name_;
+}
+
+std::pair<String, String> IObjectStorage::getIOSchedulingResourceNames() const
+{
+    std::lock_guard guard(io_scheduling_resource_names->mutex);
+    return {io_scheduling_resource_names->read_resource_name, io_scheduling_resource_names->write_resource_name};
+}
+
+ObjectStoragePtr IObjectStorage::clone() const
+{
+    auto copy = cloneImpl();
+    copy->io_scheduling_resource_names = io_scheduling_resource_names;
+    return copy;
+}
+
 ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    return read_settings;
+    const auto [read_resource, write_resource] = getIOSchedulingResourceNames();
+    return updateIOSchedulingSettings(read_settings, read_resource, write_resource);
 }
 
 WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings) const
 {
-    return write_settings;
+    const auto [read_resource, write_resource] = getIOSchedulingResourceNames();
+    return updateIOSchedulingSettings(write_settings, read_resource, write_resource);
 }
 
 void IObjectStorage::prepareRead(
@@ -110,7 +159,7 @@ void IObjectStorage::prepareRead(
     std::optional<size_t> read_hint,
     ReadPipeline & pipeline) const
 {
-    pipeline.setSource(std::move(storage), objects, read_settings, read_hint);
+    pipeline.setSource(std::move(storage), objects, patchSettings(read_settings), read_hint);
 }
 
 }

@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -16,6 +17,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -106,10 +108,23 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
+        const auto add_counter = [&](Counter & lhs, Counter value)
+        {
+            Counter sum = 0;
+            if (common::addOverflow(lhs, value, sum))
+                throw Exception(
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "Cannot merge states of aggregate function {}: the number of rows ({} + {}) does not fit into UInt64",
+                    getName(),
+                    lhs,
+                    value);
+            lhs = sum;
+        };
+
         for (size_t i = 0; i <= category_count; ++i)
         {
-            counter(place, i, false) += counter(rhs, i, false);
-            counter(place, i, true) += counter(rhs, i, true);
+            add_counter(counter(place, i, false), counter(rhs, i, false));
+            add_counter(counter(place, i, true), counter(rhs, i, true));
         }
     }
 
@@ -209,27 +224,32 @@ The result indicates how much each discrete (categorical) feature `[category1, c
     {
         "Basic usage analyzing age groups vs mobile usage",
         R"(
--- Using the metrica.hits dataset (available on https://sql.clickhouse.com/) to analyze age-mobile relationship
-SELECT categoricalInformationValue(Age < 15, IsMobile)
-FROM metrica.hits;
+CREATE TABLE visits (is_young UInt8, is_female UInt8, is_mobile UInt8) ENGINE = Memory;
+
+-- 80 of the 100 young visitors browse on a mobile device, and only 20 of the 100 older ones do,
+-- while the sex of a visitor says nothing about the device.
+INSERT INTO visits SELECT 1, number % 2, number < 80 FROM numbers(100);
+INSERT INTO visits SELECT 0, number % 2, number < 20 FROM numbers(100);
+
+SELECT round(categoricalInformationValue(is_young, is_mobile)[1], 4) AS iv FROM visits;
         )",
         R"(
-[0.0014814694805292418]
+┌─────iv─┐
+│ 0.8318 │
+└────────┘
         )"
     },
     {
         "Multiple categorical features with user demographics",
         R"(
-SELECT categoricalInformationValue(
-    Sex,                 -- 0=male, 1=female
-    toUInt8(Age < 25),   -- 0=25+, 1=under 25
-    toUInt8(IsMobile)    -- 0=desktop, 1=mobile
-) AS iv_values
-FROM metrica.hits
-WHERE Sex IN (0, 1);
+-- The age of a visitor predicts the device, the sex of a visitor does not.
+SELECT arrayMap(x -> round(x, 4), categoricalInformationValue(is_young, is_female, is_mobile)) AS iv
+FROM visits;
         )",
         R"(
-[0.00018965785460692887,0.004973668839403392]
+┌─iv─────────┐
+│ [0.8318,0] │
+└────────────┘
         )"
     }
     };

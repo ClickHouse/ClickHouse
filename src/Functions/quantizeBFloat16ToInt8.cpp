@@ -1,7 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/LloydMaxQuantization.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnQBit.h>
@@ -13,6 +12,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/LloydMaxQuantizer.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 
@@ -23,7 +23,9 @@
 /** quantizeBFloat16ToInt8 / dequantizeInt8ToBFloat16
   *
   * A scalar codec pair for compressing embedding components with a 256-level Gaussian
-  * Lloyd-Max quantizer (the MSE-optimal scalar quantizer for a standard-normal source).
+  * Lloyd-Max quantizer (the MSE-optimal scalar quantizer for a standard-normal source). The
+  * quantizer tables and the scalar quantize/dequantize live in Common/LloydMaxQuantizer.h, shared
+  * with the `int8` vector quantization method.
   *
   * It is intended for values that are approximately N(0, 1). A random orthogonal (randomized
   * Hadamard) rotation preserves the norm, so for a d-dimensional unit-norm embedding each rotated
@@ -150,13 +152,13 @@ public:
     static constexpr auto name = "quantizeBFloat16ToInt8";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionQuantizeBFloat16ToInt8>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypePtr & arg = arguments[0];
 
@@ -179,7 +181,7 @@ public:
             "Argument of function {} must be BFloat16, Array(BFloat16) or QBit(BFloat16, ...), got {}", getName(), arg->getName());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * col = arguments[0].column.get();
         const std::array<Int8, 65536> & lut = LloydMax::quantizeCodeLUT();
@@ -212,13 +214,13 @@ public:
     static constexpr auto name = "dequantizeInt8ToBFloat16";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDequantizeInt8ToBFloat16>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypePtr & arg = arguments[0];
 
@@ -241,7 +243,7 @@ public:
             "Argument of function {} must be Int8, Array(Int8) or QBit(Int8, ...), got {}", getName(), arg->getName());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * col = arguments[0].column.get();
         const std::array<BFloat16, 256> & levels = LloydMax::dequantizeLevels();

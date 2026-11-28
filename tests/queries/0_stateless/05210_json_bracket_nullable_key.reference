@@ -1,0 +1,25 @@
+nullable_string_key
+1	Nullable(UInt32)	x	Dynamic	[1,2]	Array(UInt32)
+2	Nullable(UInt32)	5	Dynamic	[]	Array(UInt32)
+nullable_string_key_values_match_plain_key
+1	1	1
+1	1	1
+null_key
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+nullable_json_and_nullable_key
+{"a":1}	1	Nullable(UInt32)
+\N	\N	Nullable(UInt32)
+non_constant_key_is_rejected
+lowcardinality_typed_path
+x	LowCardinality(Nullable(String))	1
+y	LowCardinality(Nullable(String))	1
+x	LowCardinality(Nullable(String))	1
+y	LowCardinality(Nullable(String))	1
+lowcardinality_typed_path_constant_source
+x	LowCardinality(String)	x	LowCardinality(Nullable(String))	['x']	Array(LowCardinality(String))
+lowcardinality_typed_path_nullable_json
+{"s":"x"}	x	LowCardinality(Nullable(String))
+\N	\N	LowCardinality(Nullable(String))

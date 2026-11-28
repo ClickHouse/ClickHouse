@@ -4,26 +4,27 @@ ExpressionTransform × 16
   ExpressionTransform × 16
     (Join)
     SimpleSquashingTransform × 16
-      JoiningTransform × 16 2 → 1
-        Resize 1 → 16
-          (Expression)
-          ExpressionTransform
-            (Expression)
-            ExpressionTransform
-              (Limit)
-              Limit
-                (ReadFromSystemNumbers)
-                NumbersRange 0 → 1
-          (Expression)
-          Resize 1 → 16
-            Resize 16 → 1
-              FillingRightJoinSide          │
-                SimpleSquashingTransform    │ × 16
-                  Resize 1 → 16
-                    ExpressionTransform
+      Resize 1 → 16
+        Resize 16 → 1
+          FillingRightJoinSide          │
+            SimpleSquashingTransform    │ × 16
+              Resize 1 → 16
+                JoiningTransform 2 → 1        │
+                  SimpleSquashingTransform    │ × 16
+                    Resize 1 → 16
                       (Expression)
                       ExpressionTransform
-                        (Limit)
-                        Limit
-                          (ReadFromSystemNumbers)
-                          NumbersRange 0 → 1
+                        (Expression)
+                        ExpressionTransform
+                          (Limit)
+                          Limit
+                            (ReadFromSystemNumbers)
+                            NumbersRange 0 → 1
+                      (Expression)
+                      ExpressionTransform
+                        (Expression)
+                        ExpressionTransform
+                          (Limit)
+                          Limit
+                            (ReadFromSystemNumbers)
+                            NumbersRange 0 → 1

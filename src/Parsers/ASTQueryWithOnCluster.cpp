@@ -2,6 +2,8 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ParserOnCluster.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>

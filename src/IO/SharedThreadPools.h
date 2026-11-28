@@ -24,7 +24,7 @@ public:
     ThreadPool & get();
 
     void initialize(size_t max_threads, size_t max_free_threads, size_t queue_size);
-    bool isInitialized() const;
+    [[nodiscard]] bool isInitialized() const;
     void reloadConfiguration(size_t max_threads, size_t max_free_threads, size_t queue_size);
 
     void shutdown();
@@ -68,8 +68,12 @@ private:
     M(UnexpectedPartsLoading, "MergeTreeUnexpectedPartsLoaderThreadPool", MergeTreeUnexpectedPartsLoader) \
     M(DatabaseReplicatedCreateTables, "CreateTablesThreadPool", DatabaseReplicatedCreateTables) \
     M(DatabaseCatalogDropTables, "DropTablesThreadPool", DatabaseCatalog) \
+    M(DatabaseCatalogShutdownTables, "ShutdownTablesThreadPool", DatabaseCatalog) \
     M(MergeTreePrefixesDeserialization, "MergeTreePrefixesDeserializationThreadPool", MergeTreeSubcolumnsReader) \
-    M(FormatParsing, "FormatParsingThreadPool", FormatParsing)
+    M(DropDistributedCache, "DropDistributedCacheThreadPool", DropDistributedCache) \
+    M(FormatParsing, "FormatParsingThreadPool", FormatParsing) \
+    M(ParquetEncoder, "ParquetEncoderThreadPool", ParquetEncoder) \
+    M(AIRequest, "AIRequestThreadPool", AIRequest)
 
 #define DECLARE_STATIC_THREAD_POOL_GETTER(SUFFIX, NAME, METRIC) StaticThreadPool & get##SUFFIX##ThreadPool();
 APPLY_FOR_STATIC_THREAD_POOLS(DECLARE_STATIC_THREAD_POOL_GETTER)

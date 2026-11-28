@@ -1,20 +1,17 @@
-#include <Storages/System/StorageSystemProjections.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Parsers/ASTIndexDeclaration.h>
+#include <Interpreters/ProcessList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/ISource.h>
@@ -22,6 +19,16 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageProxy.h>
+#include <Storages/System/DatabaseTablesCursor.h>
+#include <Storages/System/StorageSystemPartsBase.h>
+#include <Storages/System/StorageSystemProjections.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
+#include <Storages/System/extractTablesFilter.h>
+#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
+#include <Storages/VirtualColumnUtils.h>
 
 
 namespace DB
@@ -43,6 +50,9 @@ StorageSystemProjections::StorageSystemProjections(const StorageID & table_id_)
         {"table", std::make_shared<DataTypeString>(), "Table name."},
         {"name", std::make_shared<DataTypeString>(), "Projection name."},
         {"type", std::move(projection_type_datatype), "Projection type."},
+        {"total_rows", std::make_shared<DataTypeUInt64>(), "Total number of rows."},
+        {"data_compressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of compressed data, in bytes."},
+        {"data_uncompressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
         {"sorting_key", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Projection sorting key."},
         {"query", std::make_shared<DataTypeString>(), "Projection query."},
         {"settings",
@@ -69,13 +79,14 @@ public:
         SharedHeader header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
-        ContextPtr context_)
+        ContextPtr context_,
+        IDatabase::FilterByNameFunction table_name_filter_)
         : ISource(header)
         , column_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
-        , databases(std::move(databases_))
+        , databases_cursor(std::move(databases_))
         , context(Context::createCopy(context_))
-        , database_idx(0)
+        , table_name_filter(std::move(table_name_filter_))
     {}
 
     String getName() const override { return "Projections"; }
@@ -83,7 +94,7 @@ public:
 protected:
     Chunk generate() override
     {
-        if (database_idx >= databases->size())
+        if (!databases_cursor.advanceToNextDatabase())
             return {};
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
@@ -91,43 +102,78 @@ protected:
         const auto access = context->getAccess();
         const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
+        /// Positions of `total_rows`, `data_compressed_bytes` and `data_uncompressed_bytes` in the table structure.
+        const bool need_projection_sizes = column_mask[4] || column_mask[5] || column_mask[6];
+
+        /// Collecting the parts for the size columns can take long on a large catalog, so stop it on cancellation or the time limit,
+        /// as `system.parts` does. `checkTimeLimit` throws in the 'throw' overflow mode and returns false in the 'break' mode,
+        /// where the query finishes without the rows of this chunk, because they may be built from a partial snapshot.
+        const QueryStatusPtr query_status = context->getProcessListElement();
+        const auto time_limit_exceeded = [&query_status] { return query_status && !query_status->checkTimeLimit(); };
+        std::function<bool()> need_stop;
+        if (query_status)
+            need_stop = time_limit_exceeded;
+
         size_t rows_count = 0;
         while (rows_count < max_block_size)
         {
-            if (tables_it && !tables_it->isValid())
-                ++database_idx;
-
-            while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
-            {
-                database_name = databases->getDataAt(database_idx);
-                database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-
-                if (database)
-                    break;
-                ++database_idx;
-            }
-
-            if (database_idx >= databases->size())
+            if (!databases_cursor.advanceToNextDatabase())
                 break;
 
-            if (!tables_it || !tables_it->isValid())
-                tables_it = database->getTablesIterator(context);
+            const String & database_name = databases_cursor.getDatabaseName();
+
+            if (!databases_cursor.hasTablesIterator())
+                databases_cursor.setTablesIterator(
+                    databases_cursor.getDatabase()->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false));
 
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
-            for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
+            auto & tables_it = databases_cursor.getTablesIterator();
+            for (; rows_count < max_block_size && tables_it.isValid(); tables_it.next())
             {
-                auto table_name = tables_it->name();
+                auto table_name = tables_it.name();
                 if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                const auto table = tables_it->table();
+                const auto table = tables_it.table();
                 if (!table)
                     continue;
+
+                if (const auto * alias = table->as<StorageAlias>();
+                    alias && !alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}))
+                    continue;
+
                 const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (!metadata_snapshot)
                     continue;
                 const auto & projections = metadata_snapshot->getProjections();
+
+                /// A part references its storage, also in its destructor, so the storage must outlive `parts`.
+                /// For an `Alias` nothing else here holds the target, so keep it in `parts_storage`, declared before `parts`.
+                std::shared_ptr<const MergeTreeData> parts_storage;
+                /// Collecting the parts is only needed for the size columns, and only when there is a projection to report.
+                MergeTreeData::DataPartsVector parts;
+                if (need_projection_sizes && !projections.empty())
+                {
+                    /// An `Alias` reports the projections of the table at the end of its chain, so read the parts from there.
+                    StoragePtr data_table = table;
+                    if (const auto * alias = table->as<StorageAlias>())
+                    {
+                        const auto chain = alias->getTargetChain();
+                        data_table = DatabaseCatalog::instance().tryGetTable(StorageID(chain.back().first, chain.back().second), context);
+                    }
+
+                    /// `StorageAlias::isMergeTree` forwards to its target, so check the actual type.
+                    /// The end of a cyclic chain is an `Alias` and is skipped here, as is a table not loaded yet.
+                    parts_storage = castStorage<const MergeTreeData>(data_table, DeferredTable::Skip);
+                    if (parts_storage)
+                        parts = parts_storage->getDataPartsVectorForInternalUsage(
+                            {MergeTreeData::DataPartState::Active}, {MergeTreeData::DataPartKind::Regular}, nullptr, need_stop);
+
+                    /// The snapshot may have stopped early on the time limit, so do not report sums over a partial snapshot.
+                    if (time_limit_exceeded())
+                        return {};
+                }
 
                 for (const auto & projection : projections)
                 {
@@ -148,6 +194,40 @@ protected:
                     // 'type' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(projection.type);
+
+                    size_t total_rows = 0;
+                    size_t data_compressed = 0;
+                    size_t data_uncompressed = 0;
+                    for (const auto & part : parts)
+                    {
+                        if (time_limit_exceeded())
+                            return {};
+
+                        slowDownSystemPartsEnumeration(table_name);
+
+                        const auto & projection_parts = part->getProjectionParts();
+                        auto projection_part_it = projection_parts.find(projection.name);
+                        if (projection_part_it == projection_parts.end() || !projection_part_it->second)
+                            continue;
+
+                        const auto & projection_part = projection_part_it->second;
+                        auto column_size = projection_part->getTotalColumnsSize();
+
+                        total_rows += projection_part->rows_count;
+                        data_compressed += column_size.data_compressed;
+                        data_uncompressed += column_size.data_uncompressed;
+                    }
+
+                    // 'total_rows' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(total_rows);
+                    // 'data_compressed_bytes' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(data_compressed);
+                    // 'data_uncompressed_bytes' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(data_uncompressed);
+
                     // 'sorting_key' column
                     if (column_mask[src_index++])
                     {
@@ -192,12 +272,9 @@ protected:
 private:
     std::vector<UInt8> column_mask;
     UInt64 max_block_size;
-    ColumnPtr databases;
+    DatabaseTablesCursor databases_cursor;
     ContextPtr context;
-    size_t database_idx;
-    DatabasePtr database;
-    std::string database_name;
-    DatabaseTablesIteratorPtr tables_it;
+    IDatabase::FilterByNameFunction table_name_filter;
 };
 
 class ReadFromSystemProjections : public SourceStepWithFilter
@@ -234,6 +311,8 @@ private:
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
     ExpressionActionsPtr virtual_columns_filter;
+    IDatabase::FilterByNameFunction database_name_filter;
+    IDatabase::FilterByNameFunction table_name_filter;
 };
 
 void ReadFromSystemProjections::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -246,6 +325,15 @@ void ReadFromSystemProjections::applyFilters(ActionDAGNodes added_filter_nodes)
         {
             { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
         };
+
+        /// A condition on `table` prunes the enumeration the same way the one on `database` does.
+        /// It is read before the filter below is built: that build drops the elements of an `IN`
+        /// over a subquery, and the extraction needs them (it builds such a set itself, keeping them).
+        table_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "table", context);
+        /// The filter below only sees `database`, so it cannot use a condition that names the
+        /// database together with the table, such as `(database, table) IN ((db, t))`; the
+        /// extraction reads that shape too, and shortlists the databases first.
+        database_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "database", context);
 
         auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
         if (dag)
@@ -288,6 +376,8 @@ void ReadFromSystemProjections::initializePipeline(QueryPipelineBuilder & pipeli
             continue;
         if (database->isExternal())
             continue;
+        if (database_name_filter && !database_name_filter(database_name))
+            continue;
         column->insert(database_name);
     }
 
@@ -298,7 +388,7 @@ void ReadFromSystemProjections::initializePipeline(QueryPipelineBuilder & pipeli
 
     ColumnPtr & filtered_databases = block.getByPosition(0).column;
     pipeline.init(Pipe(std::make_shared<ProjectionsSource>(
-        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases), context)));
+        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases), context, std::move(table_name_filter))));
 }
 
 }

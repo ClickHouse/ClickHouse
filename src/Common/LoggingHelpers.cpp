@@ -6,7 +6,7 @@
 
 #include <fmt/format.h>
 
-std::unordered_map<UInt64, std::pair<time_t, size_t>> LogFrequencyLimiterImpl::logged_messages;
+[[clang::no_destroy]] std::unordered_map<UInt64, std::pair<time_t, size_t>> LogFrequencyLimiterImpl::logged_messages;
 time_t LogFrequencyLimiterImpl::last_cleanup = 0;
 std::mutex LogFrequencyLimiterImpl::mutex;
 
@@ -70,6 +70,12 @@ void LogFrequencyLimiterImpl::cleanup(time_t too_old_threshold_s)
 
 std::mutex LogSeriesLimiter::mutex;
 time_t LogSeriesLimiter::last_cleanup = 0;
+
+LogSeriesLimiter::SeriesRecords & LogSeriesLimiter::getSeriesRecords()
+{
+    static SeriesRecords records;
+    return records;
+}
 
 LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, time_t interval_s_)
     : logger(std::move(logger_))

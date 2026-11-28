@@ -15,9 +15,7 @@ title: Windows へのインストール
 </Note>
 
 <Steps>
-  <Step>
-    ## WSL をインストールする
-
+  <Step title="WSL をインストールする" id="install-wsl">
     Windows PowerShell を管理者として開き、次のコマンドを実行します。
 
     ```bash
@@ -31,9 +29,7 @@ title: Windows へのインストール
     ```
   </Step>
 
-  <Step>
-    ## curl を使ってスクリプト経由で ClickHouse をインストールする
-
+  <Step title="curl を使ってスクリプト経由で ClickHouse をインストールする" id="install-clickhouse-via-script-using-curl">
     curl を使ってスクリプト経由で ClickHouse をインストールするには、次のコマンドを実行します。
 
     ```bash
@@ -48,9 +44,7 @@ title: Windows へのインストール
     ```
   </Step>
 
-  <Step>
-    ## clickhouse-local を起動する
-
+  <Step title="clickhouse-local を起動する" id="start-clickhouse-local">
     `clickhouse-local` を使うと、設定不要で ClickHouse の強力な SQL 構文を利用してローカルファイルやリモートファイルを処理できます。テーブルデータは一時的な場所に保存されるため、`clickhouse-local` を再起動すると、以前に作成したテーブルは利用できなくなります。
 
     [clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) を起動するには、次のコマンドを実行します。
@@ -60,9 +54,7 @@ title: Windows へのインストール
     ```
   </Step>
 
-  <Step>
-    ## clickhouse-server を起動する
-
+  <Step title="clickhouse-server を起動する" id="start-clickhouse-server">
     データを永続化したい場合は、`clickhouse-server` を実行します。ClickHouse サーバーは次のコマンドで起動できます。
 
     ```bash
@@ -70,9 +62,7 @@ title: Windows へのインストール
     ```
   </Step>
 
-  <Step>
-    ## clickhouse-client を起動する
-
+  <Step title="clickhouse-client を起動する" id="start-clickhouse-client">
     サーバーが起動したら、新しいターミナルウィンドウを開き、`clickhouse-client` を起動するために次のコマンドを実行します。
 
     ```bash

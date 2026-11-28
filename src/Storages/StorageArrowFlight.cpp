@@ -5,12 +5,14 @@
 
 #if USE_ARROWFLIGHT
 #include <Common/Logger.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/parseAddress.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
-#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
+#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCMessages.h>
+#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCSchemaReader.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/ArrowFlightSource.h>
 #include <QueryPipeline/Pipe.h>
@@ -21,7 +23,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
-#include <arrow/flight/client.h>
 
 
 const int ARROWFLIGHT_DEFAULT_PORT = 8815;
@@ -40,6 +41,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsArrowFlightDescriptorType arrow_flight_request_descriptor_type;
+    extern const SettingsUInt64 arrow_flight_request_timeout_sec;
 }
 
 StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & args, ContextPtr context_, const StorageID * table_id)
@@ -71,6 +73,11 @@ StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & ar
             configuration.password = checkAndGetLiteralArgument<String>(args[3], "password");
         }
     }
+
+    /// Enforce <remote_url_allow_hosts> before any connection is established.
+    context_->getGlobalContext()->getRemoteHostFilter().checkHostAndPort(
+        configuration.host, std::to_string(configuration.port));
+
     return configuration;
 }
 
@@ -145,39 +152,61 @@ VirtualColumnsDescription StorageArrowFlight::createVirtuals()
     return desc;
 }
 
+namespace
+{
+
+/// The descriptor of a dataset: its path, or a query reading it with `arrow_flight_request_descriptor_type = 'command'`.
+arrow::flight::protocol::FlightDescriptor makeDescriptor(const String & dataset_name, const ContextPtr & context)
+{
+    arrow::flight::protocol::FlightDescriptor descriptor;
+    if (context && context->getSettingsRef()[Setting::arrow_flight_request_descriptor_type] == ArrowFlightDescriptorType::Command)
+    {
+        descriptor.set_type(arrow::flight::protocol::FlightDescriptor::CMD);
+        descriptor.set_cmd("SELECT * FROM " + dataset_name);
+    }
+    else
+    {
+        descriptor.set_type(arrow::flight::protocol::FlightDescriptor::PATH);
+        descriptor.add_path(dataset_name);
+    }
+    return descriptor;
+}
+
+}
+
 ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     std::shared_ptr<ArrowFlightConnection> connection_,
     const String & dataset_name_,
     ContextPtr context_)
 {
-    auto client = connection_->getClient();
-    auto options = connection_->getOptions();
+    UInt64 timeout_sec = context_->getSettingsRef()[Setting::arrow_flight_request_timeout_sec];
+    auto stub = connection_->getStub(timeout_sec);
 
-    arrow::flight::FlightDescriptor descriptor;
-    if (context_->getSettingsRef()[Setting::arrow_flight_request_descriptor_type] == ArrowFlightDescriptorType::Command)
-    {
-        String query = "SELECT * FROM " + dataset_name_;
-        descriptor = arrow::flight::FlightDescriptor::Command(query);
-    }
-    else
-    {
-        descriptor = arrow::flight::FlightDescriptor::Path({dataset_name_});
-    }
-    auto status = client->GetSchema(*options, descriptor);
+    auto descriptor = makeDescriptor(dataset_name_, context_);
+    grpc::ClientContext call;
+    connection_->prepareCall(call, timeout_sec);
+    arrow::flight::protocol::SchemaResult schema_result;
+    auto status = stub->GetSchema(&call, descriptor, &schema_result);
     if (!status.ok())
-    {
-        throw Exception(ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR, "Failed to get table schema: {}", status.status().ToString());
-    }
-    arrow::ipc::DictionaryMemo dict;
-    auto schema_result = status.ValueOrDie()->GetSchema(&dict);
-    if (!schema_result.ok())
-    {
-        throw Exception(ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR, "Failed to get table schema: {}", schema_result.status().ToString());
-    }
-    auto schema = std::move(schema_result).ValueOrDie();
+        throw Exception(ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR, "Failed to get table schema: {}", ArrowFlightConnection::formatError(status, call));
 
-    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, nullptr, "Arrow", /* format_settings= */ {});
-    return ColumnsDescription::fromNamesAndTypes(header.getNamesAndTypes());
+    /// The schema is a serialized `Schema` message; it is read as a stream of that message only.
+    auto schema_message = ArrowIPC::splitStream(schema_result.schema());
+    if (schema_message.empty())
+        throw Exception(ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR, "Failed to get table schema: the server returned an empty schema");
+    ArrowIPC::IPCMessagesReadBuffer buffer([&schema_message, done = false](ArrowIPC::IPCMessage & message) mutable
+    {
+        if (done)
+            return false;
+        message = schema_message.front();
+        done = true;
+        return true;
+    });
+    auto format_settings = getFormatSettings(context_);
+    /// The `geo` metadata of a schema is not interpreted: a binary column stays binary, as `ArrowFlightSource` reads it.
+    format_settings.parquet.allow_geoparquet_parser = false;
+    ArrowIPCSchemaReader schema_reader(buffer, /* stream_ */ true, format_settings);
+    return ColumnsDescription(schema_reader.readSchema());
 }
 
 Pipe StorageArrowFlight::read(
@@ -216,6 +245,7 @@ public:
         , connection(connection_)
         , dataset_name(dataset_name_)
         , context(context_)
+        , request_timeout_sec(context_ ? context_->getSettingsRef()[Setting::arrow_flight_request_timeout_sec] : 0)
     {
     }
 
@@ -223,87 +253,64 @@ public:
 
     void consume(Chunk & chunk) override
     {
-        auto client = connection->getClient();
-        auto options = connection->getOptions();
+        if (chunk.getNumRows() == 0)
+            return;
 
-        auto block = getHeader().cloneWithColumns(chunk.getColumns());
+        auto stub = connection->getStub(request_timeout_sec);
+        auto descriptor = makeDescriptor(dataset_name, context);
 
-        arrow::flight::FlightDescriptor descriptor;
-        if (context && context->getSettingsRef()[Setting::arrow_flight_request_descriptor_type] == ArrowFlightDescriptorType::Command)
+        /// Mirrors `ArrowFlight::flightFormatSettings`, including which schema settings it does not read from the
+        /// context; see the note there.
+        FormatSettings format_settings;
+        /// Without a context there are no settings to read: reject a type with no Arrow mapping rather than
+        /// silently push it to the remote server as opaque bytes.
+        auto unsupported_types = FormatSettings::ArrowUnsupportedTypes::THROW;
+        if (context)
         {
-            String query = "SELECT * FROM " + dataset_name;
-            descriptor = arrow::flight::FlightDescriptor::Command(query);
+            format_settings = getFormatSettings(context);
+            unsupported_types = format_settings.arrow.output_unsupported_types;
         }
-        else
-        {
-            descriptor = arrow::flight::FlightDescriptor::Path({dataset_name});
-        }
+        format_settings.arrow = FormatSettings{}.arrow;
+        format_settings.arrow.output_string_as_string = true;
+        format_settings.arrow.output_unsupported_types = unsupported_types;
 
-        CHColumnToArrowColumn::Settings arrow_settings;
-        arrow_settings.output_string_as_string = true;
-
-        CHColumnToArrowColumn converter(getHeader(), "Arrow", arrow_settings);
-        std::shared_ptr<arrow::Table> table;
-        std::vector<Chunk> chunks;
+        Chunks chunks;
         chunks.emplace_back(std::move(chunk));
-        converter.chChunkToArrowTable(table, chunks, getHeader().columns());
+        auto encoded = ArrowIPC::encodeStream(getHeader(), chunks, format_settings);
 
-        auto reader_res = arrow::RecordBatchReader::MakeFromIterator(
-            arrow::Iterator<std::shared_ptr<arrow::RecordBatch>>{arrow::TableBatchReader{table}}, converter.getArrowSchema());
-        if (!reader_res.ok())
+        grpc::ClientContext call;
+        connection->prepareCall(call, request_timeout_sec);
+        auto stream = stub->DoPut(&call);
+
+        auto write = [&](const ArrowIPC::IPCMessage & message, bool with_descriptor)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot convert chunk to arrow stream: {}", reader_res.status().ToString());
+            arrow::flight::protocol::FlightData data;
+            if (with_descriptor)
+                *data.mutable_flight_descriptor() = descriptor;
+            data.set_data_header(message.header);
+            data.set_data_body(message.body);
+            return stream->Write(data);
+        };
+
+        /// A failed write means that the call has ended: its status says why.
+        bool written = write(encoded.schema, /* with_descriptor */ true);
+        for (size_t i = 0; written && i < encoded.batches.size(); ++i)
+            written = write(encoded.batches[i], /* with_descriptor */ false);
+        if (written)
+            stream->WritesDone();
+
+        arrow::flight::protocol::PutResult result;
+        while (stream->Read(&result))
+        {
         }
-        const auto & reader = reader_res.ValueOrDie();
-
-        std::shared_ptr<arrow::RecordBatch> batch;
-        bool first_batch = true;
-        std::unique_ptr<arrow::flight::FlightStreamWriter> writer;
-
-        while (true)
-        {
-            auto status = reader->ReadNext(&batch);
-            if (!status.ok())
-            {
-                throw Exception(ErrorCodes::ARROWFLIGHT_WRITE_ERROR, "Failed to read record batch: {}", status.ToString());
-            }
-
-            if (!batch)
-                break;
-
-            if (first_batch)
-            {
-                auto write_result = client->DoPut(*options, descriptor, batch->schema());
-                if (!write_result.ok())
-                {
-                    throw Exception(ErrorCodes::ARROWFLIGHT_WRITE_ERROR, "DoPut failed: {}", write_result.status().ToString());
-                }
-
-                auto stream = std::move(write_result).ValueOrDie();
-                writer = std::move(stream.writer);
-                if (!writer)
-                {
-                    throw Exception(ErrorCodes::ARROWFLIGHT_WRITE_ERROR, "No data was written: writer was never initialized.");
-                }
-                first_batch = false;
-            }
-
-            auto write_result = writer->WriteRecordBatch(*batch);
-            if (!write_result.ok())
-            {
-                throw Exception(
-                    ErrorCodes::ARROWFLIGHT_WRITE_ERROR,
-                    "Failed to write record batch to Arrow Flight server: {}",
-                    write_result.ToString());
-            }
-        }
-
-        auto close_result = writer->Close();
-        if (!close_result.ok())
-        {
+        auto status = stream->Finish();
+        if (!status.ok())
             throw Exception(
-                ErrorCodes::ARROWFLIGHT_WRITE_ERROR, "Failed to close writer after sending record batches: {}", close_result.ToString());
-        }
+                ErrorCodes::ARROWFLIGHT_WRITE_ERROR,
+                "Failed to write record batch to Arrow Flight server: {}",
+                ArrowFlightConnection::formatError(status, call));
+        if (!written)
+            throw Exception(ErrorCodes::ARROWFLIGHT_WRITE_ERROR, "Failed to write record batch to Arrow Flight server: the stream was closed");
     }
 
 
@@ -312,6 +319,7 @@ private:
     std::shared_ptr<ArrowFlightConnection> connection;
     String dataset_name;
     ContextPtr context;
+    UInt64 request_timeout_sec;
 };
 
 SinkToStoragePtr
@@ -336,8 +344,10 @@ void registerStorageArrowFlight(StorageFactory & factory)
                 config.dataset_name,
                 args.columns,
                 args.constraints,
-                args.getContext());
+                args.getLocalContext());
         },
+        /// ArrowFlight('host:port', 'dataset', 'username', 'password')
+        SecretArgumentsSpec{.positional_secret_slots = {3}, .secret_keys = {"password"}},
         {
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::ARROW_FLIGHT,
@@ -356,10 +366,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
 
 **Engine Parameters**
 
-- `host:port` — Address of the remote Arrow Flight server. If the port is omitted, the default port `8815` is used.
-- `dataset_name` — Identifier of the dataset on the Flight server (used as a PATH descriptor or in a `SELECT *` query depending on the `arrow_flight_request_descriptor_type` setting).
-- `username` — Username for basic HTTP authentication.
-- `password` — Password for basic HTTP authentication.
+- `host:port` — Address of the remote Arrow Flight server. If the port is omitted, the default port `8815` is used. [String](/reference/data-types/string).
+- `dataset_name` — Identifier of the dataset on the Flight server (used as a PATH descriptor or in a `SELECT *` query depending on the `arrow_flight_request_descriptor_type` setting). [String](/reference/data-types/string).
+- `username` — Username for basic HTTP authentication. [String](/reference/data-types/string).
+- `password` — Password for basic HTTP authentication. [String](/reference/data-types/string).
 
 If `username` and `password` are omitted, authentication is not used (this works only if the Arrow Flight server allows unauthenticated access).
 
@@ -367,19 +377,31 @@ The column list is optional — if omitted, the schema is inferred from the remo
 
 ## Named Collections {#named-collections}
 
-The engine supports [named collections](/operations/named-collections) for storing connection parameters:
+The engine supports [named collections](/concepts/features/configuration/server-config/named-collections) for storing connection parameters:
 
 ```sql
 CREATE TABLE remote_flight_data
     ENGINE = ArrowFlight(named_collection_name);
 ```
 
-Named collection parameters: `host`/`hostname`, `port` (required), `dataset`, `use_basic_authentication`,
-`user`/`username`, `password`, `enable_ssl`, `ssl_ca`, `ssl_override_hostname`.
+Named collection parameters:
+
+| Parameter | Required | Default | Description |
+|---|---|---|---|
+| `host` or `hostname` | No | `""` | Server hostname. |
+| `port` | Yes | — | Server port. |
+| `dataset` | No | `""` | Dataset name or descriptor. |
+| `use_basic_authentication` | No | `true` | Enable basic authentication. |
+| `user` or `username` | If auth enabled | — | Username for authentication. |
+| `password` | No | `""` | Password for authentication. |
+| `enable_ssl` | No | `false` | Enable TLS encryption. |
+| `ssl_ca` | No | `""` | Path to the CA certificate file for TLS verification. |
+| `ssl_override_hostname` | No | `""` | Override the hostname checked during TLS verification. |
 
 ## Settings {#settings}
 
 - `arrow_flight_request_descriptor_type` — Controls how the dataset name is sent to the Flight server. Possible values: `path` (default, sends as a PATH descriptor) or `command` (sends as a CMD descriptor with `SELECT * FROM <dataset>`). Use `command` for Flight servers that expect SQL commands (e.g., Dremio).
+- `arrow_flight_request_timeout_sec` — Timeout in seconds for a single Arrow Flight request, default `300`. It bounds the whole request: for a `SELECT` that is the entire result stream, not just the wait for the first record batch. `0` means no timeout, in which case a Flight server that accepts a request and never answers blocks the query until the connection is closed.
 
 ## Usage Example {#usage-example}
 
@@ -419,9 +441,10 @@ INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
 
 ## See Also {#see-also}
 
-- [arrowFlight table function](/sql-reference/table-functions/arrowflight)
+- [arrowFlight table function](/reference/functions/table-functions/arrowflight)
+- [Arrow Flight Interface](/concepts/features/interfaces/arrowflight)
 - [Apache Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html)
-- [Arrow format integration in ClickHouse](/interfaces/formats/Arrow)
+- [Arrow format integration in ClickHouse](/reference/formats/Arrow/Arrow)
 )DOCS_MD",
             .syntax = "ENGINE = ArrowFlight('host:port', 'dataset_name' [, 'username', 'password'])",
         });

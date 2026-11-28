@@ -1,0 +1,118 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "bed033c8-301a-4f2b-b18a-dbe85348dc67",
+  "location" : "s3://test-bucket-time-travel/timetravel",
+  "last-sequence-number" : 3,
+  "last-updated-ms" : 1688274219586,
+  "last-column-id" : 1,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "data",
+      "required" : false,
+      "type" : "int"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.format.default" : "PARQUET"
+  },
+  "current-snapshot-id" : 6153714018221937993,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 6153714018221937993,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 3669526782178248824,
+    "timestamp-ms" : 1688101306265,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20230630_050145_00001_9ikf4",
+      "changed-partition-count" : "0",
+      "total-records" : "0",
+      "total-files-size" : "0",
+      "total-data-files" : "0",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3://test-bucket-time-travel/timetravel/metadata/snap-3669526782178248824-1-cde47a04-b45e-4057-b872-aca0841fe99c.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 2,
+    "snapshot-id" : 583816926071139654,
+    "parent-snapshot-id" : 3669526782178248824,
+    "timestamp-ms" : 1688187763954,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20230701_050241_00000_yfcmj",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "201",
+      "changed-partition-count" : "1",
+      "total-records" : "1",
+      "total-files-size" : "201",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3://test-bucket-time-travel/timetravel/metadata/snap-583816926071139654-1-45793deb-f275-4821-8a19-70d710cc6982.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 3,
+    "snapshot-id" : 6153714018221937993,
+    "parent-snapshot-id" : 583816926071139654,
+    "timestamp-ms" : 1688274219586,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20230702_050337_00000_6kfs7",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "201",
+      "changed-partition-count" : "1",
+      "total-records" : "2",
+      "total-files-size" : "402",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3://test-bucket-time-travel/timetravel/metadata/snap-6153714018221937993-1-9652064e-0fca-47ae-b0a6-5e1a0beea45a.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1688101306265,
+    "snapshot-id" : 3669526782178248824
+  }, {
+    "timestamp-ms" : 1688187763954,
+    "snapshot-id" : 583816926071139654
+  }, {
+    "timestamp-ms" : 1688274219586,
+    "snapshot-id" : 6153714018221937993
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1688101306265,
+    "metadata-file" : "s3://test-bucket-time-travel/timetravel/metadata/00000-e57ff5b7-992d-4030-a592-0cac0f224830.metadata.json"
+  }, {
+    "timestamp-ms" : 1688187763954,
+    "metadata-file" : "s3://test-bucket-time-travel/timetravel/metadata/00001-c95e08ca-c369-43d0-9f52-dd2b76f131c3.metadata.json"
+  } ]
+}

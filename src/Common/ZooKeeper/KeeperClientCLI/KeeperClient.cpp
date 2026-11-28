@@ -1,5 +1,4 @@
 #include <Common/StringUtils.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/parseQuery.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
@@ -8,6 +7,8 @@
 
 namespace DB
 {
+
+[[clang::no_destroy]] std::map<String, Command> KeeperClientBase::commands;
 
 namespace ErrorCodes
 {
@@ -90,11 +91,7 @@ void KeeperClientBase::askConfirmation(const String & prompt, std::function<void
 
 fs::path KeeperClientBase::getAbsolutePath(const String & relative) const
 {
-    String result;
-    if (relative.starts_with('/'))
-        result = fs::weakly_canonical(relative);
-    else
-        result = fs::weakly_canonical(cwd / relative);
+    String result = (cwd / relative).lexically_normal();
 
     if (result.ends_with('/') && result.size() > 1)
         result.pop_back();
@@ -112,7 +109,7 @@ void KeeperClientBase::loadCommands(std::vector<Command> && new_commands)
     }
 
     for (const auto & command : four_letter_word_commands)
-        registered_commands_and_four_letter_words.push_back(command);
+        registered_commands_and_four_letter_words.push_back(String(command));
 
     std::sort(registered_commands_and_four_letter_words.begin(), registered_commands_and_four_letter_words.end());
 }

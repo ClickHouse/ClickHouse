@@ -10,9 +10,7 @@ doc_type: 'guide'
 
 다음 예시는 구조화된 JSON 데이터와 반정형 JSON 데이터를 로드하는 아주 간단한 방법을 보여줍니다. 중첩 구조를 포함한 더 복잡한 JSON은 [**JSON 스키마 설계**](/ko/guides/clickhouse/data-formats/json/schema) 가이드를 참조하십시오.
 
-<div id="loading-structured-json">
-  ## 구조화된 JSON 로딩
-</div>
+## 구조화된 JSON 로딩 {#loading-structured-json}
 
 이 섹션에서는 JSON 데이터가 [`NDJSON`](https://github.com/ndjson/ndjson-spec) (줄바꿈으로 구분된 JSON) 포맷, 즉 ClickHouse에서 [`JSONEachRow`](/ko/reference/formats/JSON/JSONEachRow)로 알려진 포맷으로 제공되고, 컬럼 이름과 타입이 고정된 구조화된 형태임을 가정합니다. `NDJSON`은 간결하고 공간 효율이 높아 JSON 로딩에 권장되는 포맷이지만, [입력 및 출력](/ko/reference/formats/JSON/JSON) 모두에서 다른 포맷도 지원됩니다.
 
@@ -72,7 +70,7 @@ ClickHouse는 확장자와 내용을 기반으로 유형을 자동으로 추론�
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 LIMIT 1
 ```
 
@@ -87,7 +85,7 @@ LIMIT 1
 파일 포맷을 별도로 지정하지 않아도 된다는 점에 주목하십시오. 대신 glob 패턴을 사용하여 버킷 내의 모든 `*.json.gz` 파일을 읽습니다. ClickHouse는 파일 확장자와 내용을 바탕으로 포맷이 `JSONEachRow` (ndjson)임을 자동으로 추론합니다. ClickHouse가 포맷을 감지하지 못하는 경우, 매개변수 함수를 통해 포맷을 수동으로 지정할 수 있습니다.
 
 ```sql
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
 ```
 
 <Info>
@@ -99,7 +97,7 @@ SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi
 이 파일의 행을 불러오려면 [`INSERT INTO SELECT`](/ko/reference/statements/insert-into#inserting-the-results-of-select)를 사용할 수 있습니다:
 
 ```sql
-INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 ```
 
 ```response
@@ -131,9 +129,7 @@ FORMAT JSONEachRow
 
 이 예시에서는 `JSONEachRow` 포맷을 사용한다고 가정합니다. 널리 사용되는 다른 JSON 포맷도 지원하며, 이러한 포맷을 로드하는 예시는 [여기](/ko/guides/clickhouse/data-formats/json/formats)에서 확인할 수 있습니다.
 
-<div id="loading-semi-structured-json">
-  ## 반정형 JSON 로드하기
-</div>
+## 반정형 JSON 로딩하기 {#loading-semi-structured-json}
 
 이전 예시에서는 키 이름과 타입이 고정되어 있고 잘 알려진 JSON을 로드했습니다. 하지만 실제로는 그렇지 않은 경우가 많습니다. 키가 추가되거나 타입이 변경될 수 있습니다. 이는 관측성 데이터와 같은 사용 사례에서 흔히 발생합니다.
 
@@ -159,11 +155,9 @@ ClickHouse는 전용 [`JSON`](/ko/reference/data-types/newjson) 타입으로 이
 
 ```
 
-여기서 tags 컬럼은 예측이 불가능하므로 모델링할 수 없습니다. 이 데이터를 로드하려면 이전에 사용한 스키마를 그대로 사용하되, [`JSON`](/ko/reference/data-types/newjson) 타입의 `tags` 컬럼을 추가로 제공하면 됩니다:
+여기서 tags 컬럼은 예측할 수 없으므로 모델링할 수 없습니다. 이 데이터를 로드하려면 이전에 사용한 스키마를 그대로 사용하되, [`JSON`](/ko/reference/data-types/newjson) 타입의 `tags` 컬럼을 추가로 제공하면 됩니다:
 
 ```sql
-SET enable_json_type = 1;
-
 CREATE TABLE pypi_with_tags
 (
     `date` Date,
@@ -180,15 +174,19 @@ ENGINE = MergeTree
 ORDER BY (project, date);
 ```
 
+<Note>
+  24.8부터 25.2까지의 버전에서는 테이블을 생성하기 전에 `SET allow_experimental_json_type = 1;`로 `JSON` 타입을 활성화하십시오.
+</Note>
+
 원본 데이터셋과 동일한 방식으로 테이블을 채웁니다:
 
 ```sql
-INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```sql
 INSERT INTO pypi_with_tags SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```response
@@ -213,11 +211,9 @@ LIMIT 2
 2 rows in set. Elapsed: 0.149 sec.
 ```
 
-여기서는 데이터를 로드할 때의 성능 차이에 주목하십시오. JSON 컬럼은 삽입 시점에 타입 추론이 필요하며, 두 개 이상의 타입을 갖는 컬럼이 있으면 추가 저장 공간도 필요합니다. JSON 타입은 명시적으로 컬럼을 선언한 것과 동등한 성능을 내도록 구성할 수 있지만([JSON 스키마 설계](/ko/guides/clickhouse/data-formats/json/schema) 참조), 기본적으로는 의도적으로 유연하게 설계되어 있습니다. 하지만 이러한 유연성에는 비용이 따릅니다.
+여기서는 데이터를 로딩할 때의 성능 차이에 주목하십시오. JSON 컬럼은 삽입 시점에 타입 추론이 필요하며, 두 개 이상의 타입을 갖는 컬럼이 있으면 추가 저장 공간도 필요합니다. JSON 타입은 명시적으로 컬럼을 선언한 것과 동등한 성능을 내도록 구성할 수 있지만([JSON 스키마 설계](/ko/guides/clickhouse/data-formats/json/schema) 참조), 기본적으로는 의도적으로 유연하게 설계되어 있습니다. 하지만 이러한 유연성에는 비용이 따릅니다.
 
-<div id="when-to-use-the-json-type">
-  ### JSON 타입을 사용해야 하는 경우
-</div>
+### JSON 타입을 사용해야 하는 경우 {#when-to-use-the-json-type}
 
 데이터가 다음과 같은 경우 JSON 타입을 사용합니다.
 

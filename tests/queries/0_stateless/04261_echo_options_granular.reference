@@ -1,0 +1,14 @@
+-- echo_formatted=true from config, no CLI override (blank lines surround the formatted query)
+
+SELECT 1
+
+1
+-- echo_formatted=true from config, CLI --echo-formatted=false wins (no surrounding blank lines)
+SELECT 1
+1
+-- echo_query_id=true from config, no CLI override (query ID line present)
+Query id: test-query-123
+
+1
+-- echo_query_id=true from config, CLI --echo-query-id=false wins (no query ID line)
+1

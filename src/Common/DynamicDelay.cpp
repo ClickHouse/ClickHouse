@@ -37,6 +37,7 @@ void DynamicDelay::setConfiguration(double min_delay_, double max_delay_, double
 
 void DynamicDelay::setConfiguration(double min_delay_, double max_delay_, double factor_up_, double factor_lower_)
 {
+    std::lock_guard guard(mutex);
     min_delay = getMinDelay(min_delay_, max_delay_);
     max_delay = getMaxDelay(min_delay_, max_delay_);
     delay = calibrateDelay(delay, min_delay_, max_delay_);
@@ -46,31 +47,36 @@ void DynamicDelay::setConfiguration(double min_delay_, double max_delay_, double
 
 uint64_t DynamicDelay::getCurrentDelay() const
 {
+    std::lock_guard guard(mutex);
     return static_cast<uint64_t>(delay);
 }
 
 uint64_t DynamicDelay::getCurrentDelayWithJitter(int64_t min_deviation, int64_t max_deviation) const
 {
-    return DelayWithJitter(static_cast<int64_t>(delay)).getDelayWithJitter(min_deviation, max_deviation);
+    return DelayWithJitter(static_cast<int64_t>(getCurrentDelay())).getDelayWithJitter(min_deviation, max_deviation);
 }
 
 void DynamicDelay::up()
 {
+    std::lock_guard guard(mutex);
     delay = calibrateDelay(delay * factor_up, min_delay, max_delay);
 }
 
 void DynamicDelay::lower()
 {
+    std::lock_guard guard(mutex);
     delay = calibrateDelay(delay / factor_lower, min_delay, max_delay);
 }
 
 void DynamicDelay::rotateToMin()
 {
+    std::lock_guard guard(mutex);
     delay = min_delay;
 }
 
 void DynamicDelay::rotateToMax()
 {
+    std::lock_guard guard(mutex);
     delay = max_delay;
 }
 

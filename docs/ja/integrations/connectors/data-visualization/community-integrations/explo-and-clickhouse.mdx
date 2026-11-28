@@ -10,22 +10,23 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
 
-import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
 あらゆるプラットフォーム向けの顧客向け分析。美しい可視化を実現するために設計され、シンプルさを追求して構築されています。
 
-<div id="goal">
-  ## 目標
+## 目標 {#goal}
+
+このガイドでは、ClickHouse のデータを Explo に接続して、結果を可視化します。チャートは次のようになります。
+
+<div className="ch-image-md">
+  <Frame>
+    ![Explo ダッシュボード](/images/integrations/data-visualization/explo_15.webp)
+  </Frame>
 </div>
-
-このガイドでは、ClickHouse のデータを Explo に接続して、結果を可視化します。グラフは次のようになります。
-
-<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
 
 <p />
 
@@ -35,101 +36,157 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
   使用するデータセットがない場合は、サンプルの 1 つを追加できます。このガイドでは [UK Price Paid](/ja/get-started/sample-datasets/uk-price-paid) データセットを使用しているため、それを選ぶとよいでしょう。同じドキュメントカテゴリには、ほかにもいくつかサンプルがあります。
 </Tip>
 
-<div id="1-gather-your-connection-details">
-  ## 1. 接続情報を確認する
-</div>
+<Steps>
+  <Step title="接続情報を確認する" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Explo を ClickHouse に接続する" id="2--connect-explo-to-clickhouse">
+    1. Explo のアカウントを作成します。
 
-<div id="2--connect-explo-to-clickhouse">
-  ## 2.  Explo を ClickHouse に接続する
-</div>
+    2. 左側のサイドバーにある Explo の **data** タブをクリックします。
 
-1. Explo アカウントにサインアップします。
+    <div className="ch-image-sm">
+      <Frame>
+        ![Data タブ](/images/integrations/data-visualization/explo_01.webp)
+      </Frame>
+    </div>
 
-2. 左側のサイドバーにある Explo の **Data** タブをクリックします。
+    3. 右上にある **データソースを接続** をクリックします。
 
-<Image img="/images/integrations/data-visualization/explo_01.webp" size="sm" alt="Data Tab" border />
+    <div className="ch-image-sm">
+      <Frame>
+        ![データソースを接続](/images/integrations/data-visualization/explo_02.webp)
+      </Frame>
+    </div>
 
-3. 右上の **Connect Data Source** をクリックします。
+    4. **はじめに** ページで必要な情報を入力します。
 
-<Image img="/images/integrations/data-visualization/explo_02.webp" size="sm" alt="Connect Data Source" border />
+    <div className="ch-image-md">
+      <Frame>
+        ![はじめに](/images/integrations/data-visualization/explo_03.webp)
+      </Frame>
+    </div>
 
-4. **Getting Started** ページで情報を入力します
+    5. **ClickHouse** を選択します。
 
-<Image img="/images/integrations/data-visualization/explo_03.webp" size="md" alt="Getting Started" border />
+    <div className="ch-image-md">
+      <Frame>
+        ![ClickHouse](/images/integrations/data-visualization/explo_04.webp)
+      </Frame>
+    </div>
 
-5. **ClickHouse** を選択します
+    6. **ClickHouse 認証情報** に ClickHouse の認証情報を入力します。
 
-<Image img="/images/integrations/data-visualization/explo_04.webp" size="md" alt="Clickhouse" border />
+    <div className="ch-image-md">
+      <Frame>
+        ![認証情報](/images/integrations/data-visualization/explo_05.webp)
+      </Frame>
+    </div>
 
-6. **ClickHouse の認証情報** を入力します。
+    7. **セキュリティ** を設定します。
 
-<Image img="/images/integrations/data-visualization/explo_05.webp" size="md" alt="Credentials" border />
+    <div className="ch-image-md">
+      <Frame>
+        ![セキュリティ](/images/integrations/data-visualization/explo_06.webp)
+      </Frame>
+    </div>
 
-7. **Security** を設定します
+    8. ClickHouse 側で、**Explo の IP アドレスを許可リストに追加します**。
+       `54.211.43.19, 52.55.98.121, 3.214.169.94, and 54.156.141.148`
+  </Step>
 
-<Image img="/images/integrations/data-visualization/explo_06.webp" size="md" alt="Security" border />
+  <Step title="ダッシュボードを作成する" id="3-create-a-dashboard">
+    1. 左側のナビゲーションバーにある **ダッシュボード** タブを開きます。
 
-8. ClickHouse 側で、**Explo の IP アドレスを許可リストに追加** します。
-   `54.211.43.19, 52.55.98.121, 3.214.169.94, and 54.156.141.148`
+    <div className="ch-image-sm">
+      <Frame>
+        ![ダッシュボード](/images/integrations/data-visualization/explo_07.webp)
+      </Frame>
+    </div>
 
-<div id="3-create-a-dashboard">
-  ## 3. ダッシュボードを作成する
-</div>
+    2. 右上の **ダッシュボードを作成** をクリックし、ダッシュボードに名前を付けます。これでダッシュボードが作成されました。
 
-1. 左側のナビゲーションバーにある **Dashboard** タブを開きます。
+    <div className="ch-image-sm">
+      <Frame>
+        ![ダッシュボードを作成](/images/integrations/data-visualization/explo_08.webp)
+      </Frame>
+    </div>
 
-<Image img="/images/integrations/data-visualization/explo_07.webp" size="sm" alt="ダッシュボード" border />
+    3. 次のような画面が表示されます。
 
-2. 右上の **Create Dashboard** をクリックし、ダッシュボード名を入力します。これでダッシュボードの作成は完了です。
+    <div className="ch-image-md">
+      <Frame>
+        ![Explo ダッシュボード](/images/integrations/data-visualization/explo_09.webp)
+      </Frame>
+    </div>
+  </Step>
 
-<Image img="/images/integrations/data-visualization/explo_08.webp" size="sm" alt="ダッシュボードを作成" border />
+  <Step title="SQLクエリを実行する" id="4-run-a-sql-query">
+    1. 右側のサイドバーで、スキーマ名の下に表示されているテーブル名を確認します。次に、データセットエディタに以下のコマンドを入力します。
+       `SELECT * FROM YOUR_TABLE_NAME
+       LIMIT 100`
 
-3. 次のような画面が表示されます。
+    <div className="ch-image-md">
+      <Frame>
+        ![Explo ダッシュボード](/images/integrations/data-visualization/explo_10.webp)
+      </Frame>
+    </div>
 
-<Image img="/images/integrations/data-visualization/explo_09.webp" size="md" alt="Explo Dashboard" border />
+    2. 実行をクリックし、プレビュータブを開いてデータを確認します。
 
-<div id="4-run-a-sql-query">
-  ## 4. SQLクエリを実行する
-</div>
+    <div className="ch-image-md">
+      <Frame>
+        ![Explo ダッシュボード](/images/integrations/data-visualization/explo_11.webp)
+      </Frame>
+    </div>
+  </Step>
 
-1. スキーマのタイトルの下にある右側のサイドバーでテーブル名を確認します。次に、dataset editor に以下のコマンドを入力してください。
-   `SELECT * FROM YOUR_TABLE_NAME
-   LIMIT 100`
+  <Step title="チャートを作成する" id="5-build-a-chart">
+    1. 左側から棒グラフのアイコンを画面上にドラッグします。
 
-<Image img="/images/integrations/data-visualization/explo_10.webp" size="md" alt="Explo Dashboard" border />
+    <div className="ch-image-sm">
+      <Frame>
+        ![Explo ダッシュボード](/images/integrations/data-visualization/explo_16.webp)
+      </Frame>
+    </div>
 
-2. run をクリックし、preview タブに移動してデータを確認します。
+    2. データセットを選択します。次のような画面が表示されます。
 
-<Image img="/images/integrations/data-visualization/explo_11.webp" size="md" alt="Explo Dashboard" border />
+    <div className="ch-image-sm">
+      <Frame>
+        ![Explo ダッシュボード](/images/integrations/data-visualization/explo_12.webp)
+      </Frame>
+    </div>
 
-<div id="5-build-a-chart">
-  ## 5. チャートを作成
-</div>
+    3. 次のように、X 軸に **county**、Y 軸に **Price** を設定します。
 
-1. 左側の棒グラフアイコンを画面にドラッグします。
+    <div className="ch-image-sm">
+      <Frame>
+        ![Explo ダッシュボード](/images/integrations/data-visualization/explo_13.webp)
+      </Frame>
+    </div>
 
-<Image img="/images/integrations/data-visualization/explo_16.webp" size="sm" alt="Explo Dashboard" border />
+    4. 次に、集約を **AVG** に変更します。
 
-2. データセットを選択します。すると、次のような画面が表示されます。
+    <div className="ch-image-sm">
+      <Frame>
+        ![Explo ダッシュボード](/images/integrations/data-visualization/explo_14.webp)
+      </Frame>
+    </div>
 
-<Image img="/images/integrations/data-visualization/explo_12.webp" size="sm" alt="Explo Dashboard" border />
+    5. これで、住宅の平均価格を価格別に表示できました。
 
-3. 次のように、X Axis に **county**、Y Axis Section に **Price** を設定します。
-
-<Image img="/images/integrations/data-visualization/explo_13.webp" size="sm" alt="Explo Dashboard" border />
-
-4. 次に、集計方法を **AVG** に変更します。
-
-<Image img="/images/integrations/data-visualization/explo_14.webp" size="sm" alt="Explo Dashboard" border />
-
-5. これで、郡ごとの住宅の平均価格が表示されます。
-
-<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+    <div className="ch-image-md">
+      <Frame>
+        ![Explo ダッシュボード](/images/integrations/data-visualization/explo_15.webp)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
 
 <div id="learn-more">
-  ## 詳細情報
+  ## 詳細情報 {#learn-more}
 </div>
 
 Explo の詳細やダッシュボードの作成方法については、<a href="https://docs.explo.co/" target="_blank">Explo のドキュメントをご覧ください</a>。

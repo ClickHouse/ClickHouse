@@ -10,11 +10,10 @@ doc_type: 'reference'
 
 Introduced in: v21.10.0
 
-
 Like [`quantilesBFloat16`](/reference/functions/aggregate-functions/quantilesBFloat16) but takes into account the weight of each value.
 
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers at different levels simultaneously, in a single pass.
-
+    
 
 **Syntax**
 
@@ -26,12 +25,10 @@ quantilesBFloat16Weighted(level1, level2, ...)(expr, weight)
 
 - `level` — Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`. [`Float*`](/reference/data-types/float)
 
-
 **Arguments**
 
 - `expr` — Expression over the column values resulting in numeric data types, `Date` or `DateTime`. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime)
 - `weight` — Column with weights of sequence members. Weight is a number of value occurrences. [`UInt*`](/reference/data-types/int-uint)
-
 
 **Returned value**
 

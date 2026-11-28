@@ -1,53 +1,57 @@
 ---
-title: إعداد MySQL في ClickHouse Cloud
+title: إعداد ClickHouse Cloud لـ MySQL
 ---
 
 <Steps>
-  <Step>
-    #### اختر `Connect your app`
+  <Step title={<>حدّد <code>Connect your app</code></>} id="select-connect-your-app">
+    بعد إنشاء خدمة ClickHouse Cloud الخاصة بك، في شاشة `Connect your app`، حدّد MySQL من القائمة المنسدلة.
 
-    بعد إنشاء خدمة ClickHouse Cloud، في شاشة `Connect your app`، اختر MySQL من القائمة المنسدلة.
-
-    <Image size="lg" img="/images/_snippets/mysql1.webp" alt="شاشة بيانات اعتماد ClickHouse Cloud تعرض القائمة المنسدلة لاختيار واجهة MySQL" border />
+    <Frame>
+      <img src="/images/_snippets/mysql1.webp" alt="شاشة بيانات اعتماد ClickHouse Cloud التي تعرض قائمة منسدلة لاختيار واجهة MySQL" />
+    </Frame>
   </Step>
 
-  <Step>
-    #### فعِّل واجهة MySQL
+  <Step title="فعّل واجهة MySQL" id="enable-mysql-interface">
+    بدّل المفتاح لتفعيل واجهة MySQL لهذه الخدمة.
+    سيؤدي ذلك إلى إتاحة المنفذ `3306` لهذه الخدمة، وستظهر لك شاشة اتصال MySQL تتضمن اسم مستخدم MySQL الفريد الخاص بك.
 
-    بدِّل المفتاح لتفعيل واجهة MySQL لهذه الخدمة.
-    سيؤدي ذلك إلى إتاحة المنفذ `3306` لهذه الخدمة، كما سيعرض لك شاشة اتصال MySQL التي تتضمن اسم مستخدم MySQL الفريد الخاص بك.
+    <Frame>
+      <img src="/images/_snippets/mysql2.webp" alt="مفتاح تفعيل واجهة MySQL في ClickHouse Cloud وتفاصيل الاتصال" />
+    </Frame>
 
-    <Image size="lg" img="/images/_snippets/mysql2.webp" alt="مفتاح تفعيل واجهة MySQL في ClickHouse Cloud وتفاصيل الاتصال" border />
-
-    بدلاً من ذلك، لتمكين واجهة MySQL لخدمة موجودة:
+    بدلًا من ذلك، لتفعيل واجهة MySQL لخدمة موجودة:
   </Step>
 
-  <Step>
-    #### اختر `Connect`
-
+  <Step title={<>حدّد <code>Connect</code></>} id="select-connect">
     تأكد من أن خدمتك في حالة `Running`، ثم انقر على الخدمة التي تريد تفعيل واجهة MySQL لها.
-    اختر &quot;Connect&quot; من القائمة اليمنى:
+    حدّد &quot;Connect&quot; من القائمة اليسرى:
 
-    <Image size="lg" img="/images/_snippets/mysql3.webp" alt="شاشة اتصال خدمة ClickHouse Cloud مع تمييز خيار Connect" border />
+    <Frame>
+      <img src="/images/_snippets/mysql3.webp" alt="شاشة اتصال خدمة ClickHouse Cloud مع تمييز خيار Connect" />
+    </Frame>
   </Step>
 
-  <Step>
-    #### اختر `MySQL`
+  <Step title={<>اختر <code>MySQL</code></>} id="choose-mysql">
+    حدّد `MySQL` من القائمة المنسدلة `Connect With`.
 
-    اختر `MySQL` من القائمة المنسدلة `Connect With`.
-
-    <Image size="md" img="/images/_snippets/mysql4.webp" alt="شاشة اتصال ClickHouse Cloud التي تعرض اختيار خيار MySQL" border />
+    <div className="ch-image-md">
+      <Frame>
+        <img src="/images/_snippets/mysql4.webp" alt="شاشة اتصال ClickHouse Cloud التي تعرض اختيار خيار MySQL" />
+      </Frame>
+    </div>
   </Step>
 
-  <Step>
-    #### فعِّل واجهة MySQL
-
-    بدِّل المفتاح لتفعيل واجهة MySQL لهذه الخدمة.
-    سيؤدي ذلك إلى إتاحة المنفذ `3306` لهذه الخدمة، كما سيعرض لك شاشة اتصال MySQL التي تتضمن اسم مستخدم MySQL الفريد الخاص بك.
+  <Step title="فعّل واجهة MySQL" id="enable-mysql-interface-existing-service">
+    بدّل المفتاح لتفعيل واجهة MySQL لهذه الخدمة.
+    سيؤدي ذلك إلى إتاحة المنفذ `3306` لهذه الخدمة، وستظهر لك شاشة اتصال MySQL التي تتضمن اسم مستخدم MySQL الفريد الخاص بك.
   </Step>
 </Steps>
 
-<Image size="md" img="/images/_snippets/mysql5.webp" alt="شاشة اتصال ClickHouse Cloud مع تفعيل واجهة MySQL وعرض تفاصيل الاتصال" border />
+<div className="ch-image-md">
+  <Frame>
+    <img src="/images/_snippets/mysql5.webp" alt="شاشة اتصال ClickHouse Cloud مع تفعيل واجهة MySQL تعرض تفاصيل الاتصال" />
+  </Frame>
+</div>
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
   ## إنشاء مستخدم MySQL للقراءة فقط في ClickHouse Cloud
@@ -69,9 +73,7 @@ title: إعداد MySQL في ClickHouse Cloud
 </Note>
 
 <Steps>
-  <Step>
-    #### إنشاء ملف تعريف إعدادات للقراءة فقط
-
+  <Step title="إنشاء ملف تعريف إعدادات للقراءة فقط" id="create-a-custom-settings-user">
     أنشئ [ملف تعريف إعدادات](/ar/reference/statements/create/settings-profile) لتطبيقه على مستخدمك المخصّص للقراءة فقط،
     مع ضبط الإعداد `readonly` على `1`:
 
@@ -80,9 +82,7 @@ title: إعداد MySQL في ClickHouse Cloud
     ```
   </Step>
 
-  <Step>
-    #### إنشاء مستخدم MySQL جديد للقراءة فقط
-
+  <Step title="إنشاء مستخدم MySQL جديد للقراءة فقط" id="create-a-readonly-mysql-user">
     [أنشئ مستخدمًا](/ar/reference/statements/create/user) باسم يتبع هذه الصيغة:
 
     ```sql
@@ -98,9 +98,7 @@ title: إعداد MySQL في ClickHouse Cloud
     ```
   </Step>
 
-  <Step>
-    #### منح المستخدم الجديد أذونات الوصول إلى الجداول المطلوبة
-
+  <Step title="منح المستخدم الجديد أذونات الوصول إلى الجداول المطلوبة" id="grant-the-new-user-the-necessary-permissions">
     [امنح](/ar/reference/statements/grant) المستخدم الجديد الأذونات اللازمة للوصول إلى الجداول أو قواعد البيانات المطلوبة.
     على سبيل المثال، إذا كنت تريد منح الوصول إلى `system.query_log` فقط:
 

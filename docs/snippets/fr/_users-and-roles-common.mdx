@@ -55,17 +55,13 @@ Créez ces tables et ces utilisateurs pour les exemples.
 </div>
 
 <Steps>
-  <Step>
-    ##### Créer une base de données de test
-
+  <Step title="Créer une base de données de test" id="create-a-test-database">
     ```sql
     CREATE DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### Créer une table
-
+  <Step title="Créer une table" id="create-a-table">
     ```sql
     CREATE TABLE db1.table1 (
        id UInt64,
@@ -77,9 +73,7 @@ Créez ces tables et ces utilisateurs pour les exemples.
     ```
   </Step>
 
-  <Step>
-    ##### Insérer des lignes d’exemple dans la table
-
+  <Step title="Remplir la table avec des lignes d’exemple" id="populate">
     ```sql
     INSERT INTO db1.table1
        (id, column1, column2)
@@ -91,9 +85,7 @@ Créez ces tables et ces utilisateurs pour les exemples.
     ```
   </Step>
 
-  <Step>
-    ##### Vérifier la table
-
+  <Step title="Vérifier la table" id="verify">
     ```sql title="Requête"
     SELECT *
     FROM db1.table1
@@ -111,20 +103,16 @@ Créez ces tables et ces utilisateurs pour les exemples.
     ```
   </Step>
 
-  <Step>
-    ##### Créer `column_user`
-
-    Créez un utilisateur standard qui servira à démontrer la restriction de l’accès à certaines colonnes :
+  <Step title={<>Créer <code>column_user</code></>} id="create-a-user-with-restricted-access-to-columns">
+    Créez un utilisateur standard qui servira à illustrer la restriction de l’accès à certaines colonnes :
 
     ```sql
     CREATE USER column_user IDENTIFIED BY 'password';
     ```
   </Step>
 
-  <Step>
-    ##### Créer `row_user`
-
-    Créez un utilisateur standard qui servira à démontrer la restriction de l’accès aux lignes contenant certaines valeurs :
+  <Step title={<>Créer <code>row_user</code></>} id="create-a-user-with-restricted-access-to-rows-with-certain-values">
+    Créez un utilisateur standard qui servira à illustrer la restriction de l’accès aux lignes ayant certaines valeurs :
 
     ```sql
     CREATE USER row_user IDENTIFIED BY 'password';
@@ -145,65 +133,49 @@ Avec cet ensemble d’exemples :
 Les rôles servent à définir des groupes d’utilisateurs disposant de privilèges spécifiques, au lieu de gérer chaque utilisateur individuellement.
 
 <Steps>
-  <Step>
-    ##### Créer un rôle pour limiter les utilisateurs de ce rôle à la consultation de `column1` uniquement dans la base de données `db1` et la table `table1` :
-
+  <Step title={<>Créer un rôle pour limiter les utilisateurs de ce rôle à la consultation de <code>column1</code> uniquement dans la base de données <code>db1</code> et la table <code>table1</code> :</>} id="create-column-role">
     ```sql
     CREATE ROLE column1_users;
     ```
   </Step>
 
-  <Step>
-    ##### Définir les privilèges pour autoriser l’accès à `column1`
-
+  <Step title={<>Définir les privilèges pour autoriser l’accès à <code>column1</code></>} id="set-column-privileges">
     ```sql
     GRANT SELECT(id, column1) ON db1.table1 TO column1_users;
     ```
   </Step>
 
-  <Step>
-    ##### Ajouter l’utilisateur `column_user` au rôle `column1_users`
-
+  <Step title={<>Ajouter l’utilisateur <code>column_user</code> au rôle <code>column1_users</code></>} id="add-column-user-to-role">
     ```sql
     GRANT column1_users TO column_user;
     ```
   </Step>
 
-  <Step>
-    ##### Créer un rôle pour limiter les utilisateurs de ce rôle à la consultation de certaines lignes uniquement, en l’occurrence celles contenant `A` dans `column1`
-
+  <Step title={<>Créer un rôle pour limiter les utilisateurs de ce rôle à la consultation de certaines lignes uniquement, en l’occurrence celles contenant <code>A</code> dans <code>column1</code></>} id="create-row-role">
     ```sql
     CREATE ROLE A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### Ajouter l’utilisateur `row_user` au rôle `A_rows_users`
-
+  <Step title={<>Ajouter l’utilisateur <code>row_user</code> au rôle <code>A_rows_users</code></>} id="add-row-user-to-role">
     ```sql
     GRANT A_rows_users TO row_user;
     ```
   </Step>
 
-  <Step>
-    ##### Créer une politique pour autoriser l’accès uniquement aux lignes où `column1` a la valeur `A`
-
+  <Step title={<>Créer une politique pour autoriser l’accès uniquement aux lignes où <code>column1</code> a la valeur <code>A</code></>} id="create-row-policy">
     ```sql
     CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### Définir les privilèges sur la base de données et la table
-
+  <Step title="Définir les privilèges sur la base de données et la table" id="set-db-table-privileges">
     ```sql
     GRANT SELECT(id, column1, column2) ON db1.table1 TO A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### Accorder des permissions explicites aux autres rôles afin qu’ils conservent l’accès à toutes les lignes
-
+  <Step title="Accorder des permissions explicites aux autres rôles afin qu’ils conservent l’accès à toutes les lignes" id="grant-other-roles-access">
     ```sql
     CREATE ROW POLICY allow_other_users_filter 
     ON db1.table1 FOR SELECT USING 1 TO clickhouse_admin, column1_users;
@@ -224,17 +196,13 @@ Les rôles servent à définir des groupes d’utilisateurs disposant de privil�
 </div>
 
 <Steps>
-  <Step>
-    ##### Connectez-vous au client ClickHouse avec l’utilisateur `clickhouse_admin`
-
+  <Step title={<>Connectez-vous au client ClickHouse avec l’utilisateur <code>clickhouse_admin</code></>} id="login-admin-user">
     ```bash
     clickhouse-client --user clickhouse_admin --password password
     ```
   </Step>
 
-  <Step>
-    ##### Vérifiez l’accès à la base de données, à la table et à toutes les lignes avec l’utilisateur admin.
-
+  <Step title="Vérifiez l’accès à la base de données, à la table et à toutes les lignes avec l’utilisateur admin." id="verify-admin-access">
     ```sql
     SELECT *
     FROM db1.table1
@@ -252,17 +220,13 @@ Les rôles servent à définir des groupes d’utilisateurs disposant de privil�
     ```
   </Step>
 
-  <Step>
-    ##### Connectez-vous au client ClickHouse avec l’utilisateur `column_user`
-
+  <Step title={<>Connectez-vous au client ClickHouse avec l’utilisateur <code>column_user</code></>} id="login-column-user">
     ```bash
     clickhouse-client --user column_user --password password
     ```
   </Step>
 
-  <Step>
-    ##### Testez `SELECT` en utilisant toutes les colonnes
-
+  <Step title={<>Testez <code>SELECT</code> en utilisant toutes les colonnes</>} id="test-select-all-columns">
     ```sql
     SELECT *
     FROM db1.table1
@@ -285,9 +249,7 @@ Les rôles servent à définir des groupes d’utilisateurs disposant de privil�
     </Note>
   </Step>
 
-  <Step>
-    ##### Vérifiez la requête `SELECT` avec uniquement les colonnes spécifiées et autorisées :
-
+  <Step title={<>Vérifiez la requête <code>SELECT</code> avec uniquement les colonnes spécifiées et autorisées :</>} id="verify-allowed-columns">
     ```sql
     SELECT
         id,
@@ -313,17 +275,13 @@ Les rôles servent à définir des groupes d’utilisateurs disposant de privil�
 </div>
 
 <Steps>
-  <Step>
-    ##### Connectez-vous au client ClickHouse avec `row_user`
-
+  <Step title={<>Connectez-vous au client ClickHouse avec <code>row_user</code></>} id="login-row-user">
     ```bash
     clickhouse-client --user row_user --password password
     ```
   </Step>
 
-  <Step>
-    ##### Affichez les lignes disponibles
-
+  <Step title="Affichez les lignes disponibles" id="view-available-rows">
     ```sql
     SELECT *
     FROM db1.table1
@@ -353,41 +311,31 @@ Les utilisateurs peuvent se voir attribuer plusieurs rôles afin d&#39;obtenir l
 Par exemple, si `role1` autorise uniquement select sur `column1` et que `role2` autorise select sur `column1` et `column2`, l&#39;utilisateur aura accès aux deux colonnes.
 
 <Steps>
-  <Step>
-    ##### À l&#39;aide du compte Admin, créez un nouvel utilisateur avec des rôles par défaut afin de restreindre l&#39;accès à la fois par ligne et par colonne
-
+  <Step title="À l'aide du compte Admin, créez un nouvel utilisateur avec des rôles par défaut afin de restreindre l'accès à la fois par ligne et par colonne" id="create-restricted-user">
     ```sql
     CREATE USER row_and_column_user IDENTIFIED BY 'password' DEFAULT ROLE A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### Supprimez les privilèges précédents du rôle `A_rows_users`
-
+  <Step title={<>Supprimez les privilèges précédents du rôle <code>A_rows_users</code></>} id="remove-prior-privileges">
     ```sql
     REVOKE SELECT(id, column1, column2) ON db1.table1 FROM A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### Autorisez le rôle `A_row_users` à sélectionner uniquement `column1`
-
+  <Step title={<>Autorisez le rôle <code>A_row_users</code> à sélectionner uniquement <code>column1</code></>} id="allow-column1-select">
     ```sql
     GRANT SELECT(id, column1) ON db1.table1 TO A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### Connectez-vous au client ClickHouse avec `row_and_column_user`
-
+  <Step title={<>Connectez-vous au client ClickHouse avec <code>row_and_column_user</code></>} id="login-restricted-user">
     ```bash
     clickhouse-client --user row_and_column_user --password password;
     ```
   </Step>
 
-  <Step>
-    ##### Testez avec toutes les colonnes :
-
+  <Step title="Testez avec toutes les colonnes :" id="test-all-columns-restricted">
     ```sql
     SELECT *
     FROM db1.table1
@@ -406,9 +354,7 @@ Par exemple, si `role1` autorise uniquement select sur `column1` et que `role2` 
     ```
   </Step>
 
-  <Step>
-    ##### Testez avec les colonnes autorisées uniquement :
-
+  <Step title="Testez avec les colonnes autorisées uniquement :" id="test-limited-columns">
     ```sql
     SELECT
         id,

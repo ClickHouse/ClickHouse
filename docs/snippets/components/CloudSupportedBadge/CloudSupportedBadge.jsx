@@ -3,7 +3,7 @@
  * in ClickHouse Cloud. Mintlify shim of clickhouse-docs's
  * `src/theme/badges/CloudSupportedBadge`.
  */
-const CloudSupportedBadge = () => (
+export const CloudSupportedBadge = () => (
   <div className="cloudBadge">
     <div className="cloudIcon">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">

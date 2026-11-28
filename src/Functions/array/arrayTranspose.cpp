@@ -31,12 +31,17 @@ public:
     static constexpr auto name = "arrayTranspose";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayTranspose>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(A : Array(Array)) -> A";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypeArray * outer_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!outer_type)
@@ -54,7 +59,7 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnArray * outer_col = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         if (!outer_col)
@@ -79,16 +84,16 @@ public:
         size_t total_inner_size = 0;
         for (size_t i = 0; i != input_rows_count; ++i)
         {
-            ColumnArray::Offset outer_start = outer_offsets[i - 1];
+            ColumnArray::Offset outer_start = outer_offsets[static_cast<ssize_t>(i) - 1];
             ColumnArray::Offset outer_end = outer_offsets[i];
 
             if (outer_start == outer_end)
                 continue;
 
-            size_t inner_size = inner_offsets[outer_start] - inner_offsets[outer_start - 1];
+            size_t inner_size = inner_offsets[outer_start] - inner_offsets[static_cast<ssize_t>(outer_start) - 1];
             for (ColumnArray::Offset j = outer_start + 1; j < outer_end; ++j)
             {
-                size_t current_inner_size = inner_offsets[j] - inner_offsets[j - 1];
+                size_t current_inner_size = inner_offsets[j] - inner_offsets[static_cast<ssize_t>(j) - 1];
                 if (current_inner_size != inner_size)
                     throw Exception(
                         ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
@@ -116,10 +121,10 @@ public:
         /// Fill result offsets (same for all types: result has inner_size outer arrays of outer_size each).
         for (size_t i = 0; i != input_rows_count; ++i)
         {
-            ColumnArray::Offset outer_start = outer_offsets[i - 1];
+            ColumnArray::Offset outer_start = outer_offsets[static_cast<ssize_t>(i) - 1];
             ColumnArray::Offset outer_end = outer_offsets[i];
             size_t outer_size = outer_end - outer_start;
-            size_t inner_size = outer_size > 0 ? inner_offsets[outer_start] - inner_offsets[outer_start - 1] : 0;
+            size_t inner_size = outer_size > 0 ? inner_offsets[outer_start] - inner_offsets[static_cast<ssize_t>(outer_start) - 1] : 0;
 
             for (size_t j = 0; j < inner_size; ++j)
             {
@@ -310,19 +315,19 @@ private:
 
         for (size_t i = 0; i != input_rows_count; ++i)
         {
-            ColumnArray::Offset outer_start = outer_offsets[i - 1];
+            ColumnArray::Offset outer_start = outer_offsets[static_cast<ssize_t>(i) - 1];
             ColumnArray::Offset outer_end = outer_offsets[i];
             size_t outer_size = outer_end - outer_start;
 
             if (outer_size == 0)
                 continue;
 
-            size_t inner_size = inner_offsets[outer_start] - inner_offsets[outer_start - 1];
+            size_t inner_size = inner_offsets[outer_start] - inner_offsets[static_cast<ssize_t>(outer_start) - 1];
 
             if (inner_size == 0)
                 continue;
 
-            size_t src_offset = inner_offsets[outer_start - 1];
+            size_t src_offset = inner_offsets[static_cast<ssize_t>(outer_start) - 1];
 
             transposeBlock<T>(
                 src_vec.data() + src_offset,
@@ -357,19 +362,19 @@ private:
 
         for (size_t i = 0; i != input_rows_count; ++i)
         {
-            ColumnArray::Offset outer_start = outer_offsets[i - 1];
+            ColumnArray::Offset outer_start = outer_offsets[static_cast<ssize_t>(i) - 1];
             ColumnArray::Offset outer_end = outer_offsets[i];
             size_t outer_size = outer_end - outer_start;
 
             if (outer_size == 0)
                 continue;
 
-            size_t inner_size = inner_offsets[outer_start] - inner_offsets[outer_start - 1];
+            size_t inner_size = inner_offsets[outer_start] - inner_offsets[static_cast<ssize_t>(outer_start) - 1];
 
             if (inner_size == 0)
                 continue;
 
-            size_t src_offset = inner_offsets[outer_start - 1];
+            size_t src_offset = inner_offsets[static_cast<ssize_t>(outer_start) - 1];
 
             transposeBlockFixedString(
                 src_chars.data() + src_offset * n,
@@ -413,14 +418,14 @@ private:
 
         for (size_t i = 0; i != input_rows_count; ++i)
         {
-            ColumnArray::Offset outer_start = outer_offsets[i - 1];
+            ColumnArray::Offset outer_start = outer_offsets[static_cast<ssize_t>(i) - 1];
             ColumnArray::Offset outer_end = outer_offsets[i];
             size_t outer_size = outer_end - outer_start;
 
             if (outer_size == 0)
                 continue;
 
-            size_t inner_size = inner_offsets[outer_start] - inner_offsets[outer_start - 1];
+            size_t inner_size = inner_offsets[outer_start] - inner_offsets[static_cast<ssize_t>(outer_start) - 1];
 
             if (inner_size == 0)
                 continue;
@@ -429,8 +434,8 @@ private:
             {
                 for (ColumnArray::Offset k = outer_start; k < outer_end; ++k)
                 {
-                    size_t string_idx = inner_offsets[k - 1] + j;
-                    size_t src_start = src_string_offsets[string_idx - 1];
+                    size_t string_idx = inner_offsets[static_cast<ssize_t>(k) - 1] + j;
+                    size_t src_start = src_string_offsets[static_cast<ssize_t>(string_idx) - 1];
                     size_t string_size = src_string_offsets[string_idx] - src_start;
 
                     memcpySmallAllowReadWriteOverflow15(&res_chars[result_chars_offset], &src_chars[src_start], string_size);
@@ -454,18 +459,18 @@ private:
     {
         for (size_t i = 0; i != input_rows_count; ++i)
         {
-            ColumnArray::Offset outer_start = outer_offsets[i - 1];
+            ColumnArray::Offset outer_start = outer_offsets[static_cast<ssize_t>(i) - 1];
             ColumnArray::Offset outer_end = outer_offsets[i];
             size_t outer_size = outer_end - outer_start;
 
             if (outer_size == 0)
                 continue;
 
-            size_t inner_size = inner_offsets[outer_start] - inner_offsets[outer_start - 1];
+            size_t inner_size = inner_offsets[outer_start] - inner_offsets[static_cast<ssize_t>(outer_start) - 1];
 
             for (size_t j = 0; j < inner_size; ++j)
                 for (ColumnArray::Offset k = outer_start; k < outer_end; ++k)
-                    res_data.insertFrom(src_data, inner_offsets[k - 1] + j);
+                    res_data.insertFrom(src_data, inner_offsets[static_cast<ssize_t>(k) - 1] + j);
         }
 
         return true;
@@ -489,9 +494,9 @@ All inner arrays must have the same length.
         {"Array(Array(T))"}
     };
     FunctionDocumentation::Examples examples = {
-        {"Square matrix", "SELECT arrayTranspose([[1, 2], [3, 4]])", "[[1, 3], [2, 4]]"},
-        {"Non-square matrix", "SELECT arrayTranspose([[1, 2, 3], [4, 5, 6]])", "[[1, 4], [2, 5], [3, 6]]"},
-        {"String elements", "SELECT arrayTranspose([['a', 'b'], ['c', 'd']])", "[['a', 'c'], ['b', 'd']]"},
+        {"Square matrix", "SELECT arrayTranspose([[1, 2], [3, 4]])", "[[1,3],[2,4]]"},
+        {"Non-square matrix", "SELECT arrayTranspose([[1, 2, 3], [4, 5, 6]])", "[[1,4],[2,5],[3,6]]"},
+        {"String elements", "SELECT arrayTranspose([['a', 'b'], ['c', 'd']])", "[['a','c'],['b','d']]"},
     };
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

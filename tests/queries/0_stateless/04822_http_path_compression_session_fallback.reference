@@ -1,0 +1,11 @@
+-- set a session-level compression default
+-- the path extension wins over the session default (gzip payload, decompressed):
+1
+2
+3
+-- an explicit request parameter still conflicts:
+Conflicting compression
+-- an explicit request parameter matching the path is not a conflict (gzip payload, decompressed):
+1
+2
+3

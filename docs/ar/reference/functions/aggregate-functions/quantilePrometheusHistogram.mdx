@@ -35,12 +35,12 @@ quantilePrometheusHistogram(level)(bucket_upper_bound, cumulative_bucket_value)
 
 **الوسيطات**
 
-* `bucket_upper_bound` — الحدود العليا لفئات المُدرَّج التكراري. يجب أن يكون لأعلى فئة حد أعلى مقداره `+Inf`. [`Float64`](/ar/reference/data-types/float)
-* `cumulative_bucket_value` — القيم التراكمية لفئات المُدرَّج التكراري. يجب أن تكون القيم متزايدة باطراد مع ازدياد الحد الأعلى للفئة. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float64`](/ar/reference/data-types/float)
+* `bucket_upper_bound` — الحدود العليا لفئات المُدرَّج التكراري. يجب أن يكون لأعلى فئة حد أعلى مقداره `+Inf`. [`Float*`](/ar/reference/data-types/float)
+* `cumulative_bucket_value` — القيم التراكمية لفئات المُدرَّج التكراري. يجب أن تكون القيم متزايدة باطراد مع ازدياد الحد الأعلى للفئة. [`UInt*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
 
 **القيمة المُعادة**
 
-تعيد قيمة الكوانتايل للمستوى المحدد. [`Float64`](/ar/reference/data-types/float)
+تعيد قيمة الكوانتايل للمستوى المحدد. يطابق النوع العشري للنتيجة نوع `bucket_upper_bound`. [`Float32`](/ar/reference/data-types/float) أو [`Float64`](/ar/reference/data-types/float)
 
 **أمثلة**
 

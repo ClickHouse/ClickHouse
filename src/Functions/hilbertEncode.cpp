@@ -23,9 +23,13 @@ public:
         return std::make_shared<FunctionHilbertEncode>();
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    /// `hilbertEncode` only implements the one- and two-dimensional curves; `executeImpl` below
+    /// rejects anything wider. Declare that limit so the call is rejected during analysis.
+    [[nodiscard]] size_t getMaxDimensions() const override { return 2; }
+
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return ColumnUInt64::create();
@@ -106,8 +110,8 @@ Accepts up to 2 unsigned integers as arguments and produces a UInt64 code.
 
 **Expanded mode**
 
-Accepts a range mask ([Tuple](../../sql-reference/data-types/tuple.md)) as the
-first argument and up to 2 [unsigned integers](../../sql-reference/data-types/int-uint.md)
+Accepts a range mask ([Tuple](/reference/data-types/tuple)) as the
+first argument and up to 2 [unsigned integers](/reference/data-types/int-uint)
 as other arguments.
 
 Each number in the mask configures the number of bits by which the corresponding

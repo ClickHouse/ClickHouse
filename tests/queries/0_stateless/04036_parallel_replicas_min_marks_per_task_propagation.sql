@@ -41,8 +41,6 @@ FROM system.parts
 WHERE (database = currentDatabase()) AND (table = 't_pr_task_prop') AND active
 FORMAT Null;
 
-SET enable_analyzer = 1;
-
 -- Lower all floors so the heuristic in `calculateMinMarksPerTask` is the effective constraint.
 -- Use a small `merge_tree_min_bytes_per_task_for_remote_reading` (48Ki) so that the bytes-based estimate
 -- for light parts is meaningful: 48Ki / (small avg_mark_bytes) → large `min_marks_per_task`.

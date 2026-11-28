@@ -28,6 +28,31 @@ namespace ErrorCodes
 namespace
 {
 
+template <typename Data>
+AggregateFunctionPtr createUniqWithNumericType(const IDataType & argument_type, const DataTypes & argument_types)
+{
+    WhichDataType which(argument_type);
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) return std::make_shared<AggregateFunctionUniq<TYPE, ColumnVector<TYPE>, Data>>(argument_types);
+    FOR_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+    if (which.idx == TypeIndex::Enum8) return std::make_shared<AggregateFunctionUniq<Int8, ColumnVector<Int8>, Data>>(argument_types);
+    if (which.idx == TypeIndex::Enum16) return std::make_shared<AggregateFunctionUniq<Int16, ColumnVector<Int16>, Data>>(argument_types);
+    return nullptr;
+}
+
+template <template <typename, bool> typename Data, bool is_able_to_parallelize_merge>
+AggregateFunctionPtr createUniqWithNumericType(const IDataType & argument_type, const DataTypes & argument_types)
+{
+    WhichDataType which(argument_type);
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) return std::make_shared<AggregateFunctionUniq<TYPE, ColumnVector<TYPE>, Data<TYPE, is_able_to_parallelize_merge>>>(argument_types);
+    FOR_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+    if (which.idx == TypeIndex::Enum8) return std::make_shared<AggregateFunctionUniq<Int8, ColumnVector<Int8>, Data<Int8, is_able_to_parallelize_merge>>>(argument_types);
+    if (which.idx == TypeIndex::Enum16) return std::make_shared<AggregateFunctionUniq<Int16, ColumnVector<Int16>, Data<Int16, is_able_to_parallelize_merge>>>(argument_types);
+    return nullptr;
+}
 
 /** `DataForVariadic` is a data structure that will be used for `uniq` aggregate function of multiple arguments.
   * It differs, for example, in that it uses a trivial hash function, since `uniq` of many arguments first hashes them out itself.
@@ -48,29 +73,58 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
     {
         const IDataType & argument_type = *argument_types[0];
 
-        AggregateFunctionPtr res(createWithNumericType<AggregateFunctionUniq, Data>(*argument_types[0], argument_types));
+        AggregateFunctionPtr res(createUniqWithNumericType<Data>(*argument_types[0], argument_types));
 
         WhichDataType which(argument_type);
         if (res)
+        {
             return res;
+        }
         if (which.isDate())
-            return std::make_shared<AggregateFunctionUniq<DataTypeDate::FieldType, Data>>(argument_types);
+        {
+            using T = DataTypeDate::FieldType;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, Data>>(argument_types);
+        }
         if (which.isDate32())
-            return std::make_shared<AggregateFunctionUniq<DataTypeDate32::FieldType, Data>>(argument_types);
+        {
+            using T = DataTypeDate32::FieldType;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, Data>>(argument_types);
+        }
         if (which.isDateTime())
-            return std::make_shared<AggregateFunctionUniq<DataTypeDateTime::FieldType, Data>>(argument_types);
-        if (which.isStringOrFixedString())
-            return std::make_shared<AggregateFunctionUniq<String, Data>>(argument_types);
+        {
+            using T = DataTypeDateTime::FieldType;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, Data>>(argument_types);
+        }
+        if (which.isString())
+        {
+            using T = std::string_view;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnString, Data>>(argument_types);
+        }
+        if (which.isFixedString())
+        {
+            using T = std::string_view;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnFixedString, Data>>(argument_types);
+        }
         if (which.isUUID())
-            return std::make_shared<AggregateFunctionUniq<DataTypeUUID::FieldType, Data>>(argument_types);
+        {
+            using T = DataTypeUUID::FieldType;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, Data>>(argument_types);
+        }
         if (which.isIPv4())
-            return std::make_shared<AggregateFunctionUniq<DataTypeIPv4::FieldType, Data>>(argument_types);
+        {
+            using T = DataTypeIPv4::FieldType;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, Data>>(argument_types);
+        }
         if (which.isIPv6())
-            return std::make_shared<AggregateFunctionUniq<DataTypeIPv6::FieldType, Data>>(argument_types);
+        {
+            using T = DataTypeIPv6::FieldType;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, Data>>(argument_types);
+        }
         if (which.isTuple())
         {
             if (use_exact_hash_function)
                 return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<true, true>>>(argument_types);
+
             return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<false, true>>>(argument_types);
         }
     }
@@ -99,50 +153,65 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
     {
         const IDataType & argument_type = *argument_types[0];
 
-        AggregateFunctionPtr res(createWithNumericType<AggregateFunctionUniq, Data, is_able_to_parallelize_merge>(*argument_types[0], argument_types));
+        AggregateFunctionPtr res(createUniqWithNumericType<Data, is_able_to_parallelize_merge>(*argument_types[0], argument_types));
 
-        WhichDataType which(argument_type);
         if (res)
             return res;
+
+        WhichDataType which(argument_type);
         if (which.isDate())
-            return std::make_shared<
-                AggregateFunctionUniq<DataTypeDate::FieldType, Data<DataTypeDate::FieldType, is_able_to_parallelize_merge>>>(
-                argument_types);
+        {
+            using T = DataTypeDate::FieldType;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, Data<T, is_able_to_parallelize_merge>>>(argument_types);
+        }
         if (which.isDate32())
-            return std::make_shared<
-                AggregateFunctionUniq<DataTypeDate32::FieldType, Data<DataTypeDate32::FieldType, is_able_to_parallelize_merge>>>(
-                argument_types);
+        {
+            using T = DataTypeDate32::FieldType;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, Data<T, is_able_to_parallelize_merge>>>(argument_types);
+        }
         if (which.isDateTime())
-            return std::make_shared<
-                AggregateFunctionUniq<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType, is_able_to_parallelize_merge>>>(
-                argument_types);
-        if (which.isStringOrFixedString())
-            return std::make_shared<AggregateFunctionUniq<String, Data<String, is_able_to_parallelize_merge>>>(argument_types);
+        {
+            using T = DataTypeDateTime::FieldType;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, Data<T, is_able_to_parallelize_merge>>>(argument_types);
+        }
+        if (which.isString())
+        {
+            using T = std::string_view;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnString, Data<T, is_able_to_parallelize_merge>>>(argument_types);
+        }
+        if (which.isFixedString())
+        {
+            using T = std::string_view;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnFixedString, Data<T, is_able_to_parallelize_merge>>>(argument_types);
+        }
         if (which.isUUID())
-            return std::make_shared<
-                AggregateFunctionUniq<DataTypeUUID::FieldType, Data<DataTypeUUID::FieldType, is_able_to_parallelize_merge>>>(
-                argument_types);
+        {
+            using T = DataTypeUUID::FieldType;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, Data<T, is_able_to_parallelize_merge>>>(argument_types);
+        }
         if (which.isIPv4())
-            return std::make_shared<
-                AggregateFunctionUniq<DataTypeIPv4::FieldType, Data<DataTypeIPv4::FieldType, is_able_to_parallelize_merge>>>(
-                argument_types);
+        {
+            using T = DataTypeIPv4::FieldType;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, Data<T, is_able_to_parallelize_merge>>>(argument_types);
+        }
         if (which.isIPv6())
-            return std::make_shared<
-                AggregateFunctionUniq<DataTypeIPv6::FieldType, Data<DataTypeIPv6::FieldType, is_able_to_parallelize_merge>>>(
-                argument_types);
+        {
+            using T = DataTypeIPv6::FieldType;
+            return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, Data<T, is_able_to_parallelize_merge>>>(argument_types);
+        }
         if (which.isTuple())
         {
             if (use_exact_hash_function)
-                return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<true, true, is_able_to_parallelize_merge>>>(
-                    argument_types);
-            return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<false, true, is_able_to_parallelize_merge>>>(
-                argument_types);
+                return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<true, true, is_able_to_parallelize_merge>>>(argument_types);
+
+            return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<false, true, is_able_to_parallelize_merge>>>(argument_types);
         }
     }
 
     /// "Variadic" method also works as a fallback generic case for single argument.
     if (use_exact_hash_function)
         return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<true, false, is_able_to_parallelize_merge>>>(argument_types);
+
     return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<false, false, is_able_to_parallelize_merge>>>(argument_types);
 }
 
@@ -159,20 +228,24 @@ Calculates the approximate number of different values of the argument.
 
 The function uses an adaptive sampling algorithm. For the calculation state, the function uses a sample of element hash values up to 65536. This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using uniq is almost as fast as using other aggregate functions.
 
-<details>
-<summary>Implementation details</summary>
-
+<Accordion title="Implementation details">
 This function calculates a hash for all parameters in the aggregate, then uses it in calculations.
 It uses an adaptive sampling algorithm.
 For the calculation state, the function uses a sample of element hash values up to 65536.
 This algorithm is very accurate and very efficient on the CPU.
 When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
 
-</details>
+The sample keeps 32-bit hashes, which cannot distinguish more than a few billion values, so in addition
+a small heavily-thinned-out sample of full 64-bit hashes is maintained (about one hash per 262144 values,
+bounded by 16384 hashes), and the estimate switches to it at around two billion. This keeps the estimate
+accurate (within about 1%) for cardinalities of hundreds of billions and more, where servers older
+than 26.8 returned garbage (issue #6078). States written by those servers carry no 64-bit sample,
+so merging with them keeps only the 32-bit precision for the merged-in values.
+</Accordion>
 
-:::tip
+<Tip>
 We recommend using this function over other variants in almost all scenarios.
-:::
+</Tip>
     )";
     FunctionDocumentation::Syntax syntax_uniq = R"(
 uniq(x[, ...])
@@ -232,12 +305,11 @@ FROM example_table;
     FunctionDocumentation::Description description_uniqHLL12 = R"(
 Calculates the approximate number of different argument values, using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
 
-:::warning
-We do not recommend using this function. In most cases, use the [uniq](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniq) or [uniqCombined](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqcombined) function.
-:::
+<Warning>
+We do not recommend using this function. In most cases, use the [uniq](/reference/functions/aggregate-functions/uniq) or [uniqCombined](/reference/functions/aggregate-functions/uniqCombined) function.
+</Warning>
 
-<details>
-<summary>Implementation details</summary>
+<Accordion title="Implementation details">
 This function calculates a hash for all parameters in the aggregate, then uses it in calculations.
 It uses the HyperLogLog algorithm to approximate the number of different argument values.
 
@@ -248,7 +320,7 @@ However, the result is fairly accurate for high-cardinality data sets (10K-100M)
 Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
 Provides a determinate result (it does not depend on the query processing order).
-</details>
+</Accordion>
     )";
     FunctionDocumentation::Syntax syntax_uniqHLL12 = R"(
 uniqHLL12(x[, ...])
@@ -305,11 +377,11 @@ FROM example_hll;
     FunctionDocumentation::Description description_uniqExact = R"(
 Calculates the exact number of different argument values.
 
-:::warning
+<Warning>
 The `uniqExact` function uses more memory than `uniq`, because the size of the state has unbounded growth as the number of different values increases.
 Use the `uniqExact` function if you absolutely need an exact result.
-Otherwise use the [`uniq`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniq) function.
-:::
+Otherwise use the [`uniq`](/reference/functions/aggregate-functions/uniq) function.
+</Warning>
     )";
     FunctionDocumentation::Syntax syntax_uniqExact = R"(
 uniqExact(x[, ...])
@@ -365,9 +437,7 @@ FROM example_data;
     FunctionDocumentation::Description description_uniqTheta = R"(
 Calculates the approximate number of different argument values, using the [Theta Sketch Framework](https://datasketches.apache.org/docs/Theta/ThetaSketches.html#theta-sketch-framework).
 
-<details>
-<summary>Implementation details</summary>
-
+<Accordion title="Implementation details">
 This function calculates a hash for all parameters in the aggregate, then uses it in calculations.
 It uses the [KMV](https://datasketches.apache.org/docs/Theta/InverseEstimate.html) algorithm to approximate the number of different argument values.
 
@@ -375,7 +445,7 @@ It uses the [KMV](https://datasketches.apache.org/docs/Theta/InverseEstimate.htm
 The size of the state is about 41 KB.
 
 The relative error is 3.125% (95% confidence), see the [relative error table](https://datasketches.apache.org/docs/Theta/ThetaErrorTable.html) for detail.
-</details>
+</Accordion>
     )";
     FunctionDocumentation::Syntax syntax_uniqTheta = R"(
 uniqTheta(x[, ...])

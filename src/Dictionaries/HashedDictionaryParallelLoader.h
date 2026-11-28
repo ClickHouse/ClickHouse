@@ -7,7 +7,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
 #include <Core/Block.h>
@@ -27,7 +27,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
-template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded> class HashedDictionary;
+template <DictionaryKeyType dictionary_key_type, bool sparse> class HashedDictionary;
 
 namespace ErrorCodes
 {
@@ -66,10 +66,8 @@ public:
 
             try
             {
-                pool.scheduleOrThrowOnError([this, shard, thread_group = getCurrentThreadGroup()]
+                pool.scheduleOrThrowOnError(attachedJob(ThreadName::HASHED_DICT_LOAD, [this, shard]
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_LOAD);
-
                     WorkerStatistic statistic;
                     SCOPE_EXIT_SAFE(
                         LOG_TRACE(dictionary.log, "Finished worker for dictionary {} shard {}, processed {} blocks, {} rows, total time {}ms",
@@ -77,12 +75,12 @@ public:
                     );
 
                     /// Do not account memory that was occupied by the dictionaries for the query/user context.
-                    MemoryTrackerBlockerInThread memory_blocker;
+                    ServerOwnedMemoryScope memory_blocker;
 
                     LOG_TRACE(dictionary.log, "Starting worker for dictionary {}, shard {}", dictionary_name, shard);
 
                     threadWorker(shard, statistic);
-                });
+                }));
             }
             catch (...)
             {

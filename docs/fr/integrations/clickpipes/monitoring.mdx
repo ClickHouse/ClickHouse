@@ -1,5 +1,6 @@
 ---
 sidebarTitle: 'Surveillance'
+icon: 'chart-line'
 description: 'Surveillez ClickPipes à l’aide des métriques Prometheus.'
 slug: /integrations/clickpipes/monitoring
 title: 'Surveillance de ClickPipes'
@@ -9,29 +10,25 @@ keywords: ['ClickPipes', 'monitoring', 'metrics', 'Prometheus', 'observability']
 
 En plus de la surveillance dans la Console, ClickPipes expose des métriques via un [endpoint compatible Prometheus](/fr/products/cloud/features/monitoring/prometheus) pour le scraping. Ces métriques sont publiées avec les autres métriques du service ClickHouse Cloud et vous permettent d’intégrer la surveillance de ClickPipes à votre stack d’observabilité existante (par ex. [Grafana](/fr/products/cloud/features/monitoring/prometheus#integrating-with-grafana), [Datadog](/fr/products/cloud/features/monitoring/prometheus#integrating-with-datadog)).
 
-<div id="metric-labels">
-  ## Labels de métriques
-</div>
+## Labels de métriques {#metric-labels}
 
-Les métriques ClickPipes utilisent les [labels standard de niveau service](/fr/products/cloud/features/monitoring/prometheus#metric-labels) (`clickhouse_org`, `clickhouse_service`, `clickhouse_service_name`), ainsi que les labels spécifiques à ClickPipes suivants :
+Les métriques ClickPipes utilisent les [labels standard de niveau service](/fr/products/cloud/features/monitoring/prometheus#metric-labels) (`clickhouse_org`, `clickhouse_service`, `clickhouse_service_name`), ainsi que les labels spécifiques à ClickPipes suivants :
 
 | Label              | Description                                                        |
 | ------------------ | ------------------------------------------------------------------ |
 | `clickpipe_id`     | L’identifiant unique du ClickPipe                                  |
 | `clickpipe_name`   | Le nom du ClickPipe                                                |
 | `clickpipe_source` | Le type de source (par ex. `kafka`, `postgres`, `s3`)              |
-| `clickpipe_state`  | L’état du ClickPipe (par ex. `Stopped`, `Provisioning`, `Running`) |
+| `clickpipe_status` | L’état du ClickPipe (par ex. `Stopped`, `Provisioning`, `Running`) |
 
-<div id="sample-response">
-  ### Exemple de réponse
-</div>
+### Exemple de réponse {#sample-response}
 
-Voici à quoi ressemblent les métriques ClickPipes dans une réponse de scraping Prometheus :
+Voici à quoi ressemblent les métriques ClickPipes dans une réponse de scraping Prometheus pour un Kafka ClickPipe. L’ensemble des métriques exposées varie selon le type de pipe — voir [Available metrics](#available-metrics) pour connaître les métriques applicables à chaque type de pipe :
 
 ```response
-# HELP ClickPipes_Info Always equal to 1. Label "clickpipe_state" contains the current state of the pipe: Stopped/Provisioning/Running/Paused/Failed
+# HELP ClickPipes_Info Always equal to 1. Label "clickpipe_status" contains the current state of the pipe: Stopped/Provisioning/Running/Paused/Failed
 # TYPE ClickPipes_Info gauge
-ClickPipes_Info{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent",clickpipe_state="Running"} 1
+ClickPipes_Info{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent",clickpipe_status="Running"} 1
 
 # HELP ClickPipes_FetchedEvents_Total Total number of records fetched from the source.
 # TYPE ClickPipes_FetchedEvents_Total counter
@@ -58,74 +55,76 @@ ClickPipes_Errors_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",cl
 ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent"} 340
 ```
 
-<div id="available-metrics">
-  ## Métriques disponibles
-</div>
+## Métriques disponibles {#available-metrics}
 
-<div id="metrics-data-transfer">
-  ### Transfert de données
-</div>
+Toutes les métriques ne sont pas émises pour chaque type de pipe. En particulier, les ClickPipes CDC exposent un sous-ensemble de métriques différent de celui des ClickPipes de streaming et de stockage d’objets.
 
-| Métrique                                   | Type     | Description                                                                                                                                                                 |
-| ------------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ClickPipes_FetchedBytes_Total`            | Compteur | Nombre total d’octets non compressés récupérés depuis la source.                                                                                                            |
-| `ClickPipes_FetchedBytesCompressed_Total`  | Compteur | Nombre total d’octets compressés récupérés depuis la source. Si les données source ne sont pas compressées, cette valeur est équivalente à `ClickPipes_FetchedBytes_Total`. |
-| `ClickPipes_FetchedBytesInitialLoad_Total` | Compteur | **CDC ClickPipes** Nombre total d’octets non compressés récupérés pendant la phase de chargement initial.                                                                   |
-| `ClickPipes_FetchedBytesResync_Total`      | Compteur | **CDC ClickPipes** Nombre total d’octets non compressés récupérés lors d’une opération de resynchronisation.                                                                |
-| `ClickPipes_SentBytes_Total`               | Compteur | Nombre total d’octets non compressés envoyés à ClickHouse.                                                                                                                  |
-| `ClickPipes_SentBytesCompressed_Total`     | Compteur | Nombre total d’octets compressés envoyés à ClickHouse.                                                                                                                      |
+* **Streaming, stockage d’objets** — Kafka, Kinesis, Pub/Sub, S3 et GCS
+* **CDC** — Postgres, MySQL, MongoDB et BigQuery
+* **Tous** — tous les types de pipe
 
-<div id="metrics-events">
-  ### Événements et enregistrements
-</div>
+### Transfert de données {#metrics-data-transfer}
 
-| Métrique                            | Type      | Description                                                                                                                                                                     |
-| ----------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ClickPipes_FetchedEvents_Total`    | Compteur  | Nombre total d’enregistrements récupérés depuis la source.                                                                                                                      |
-| `ClickPipes_SentEvents_Total`       | Compteur  | Nombre total d’enregistrements envoyés à ClickHouse.                                                                                                                            |
-| `ClickPipes_FetchedEvents_PerTable` | Gauge     | **CDC ClickPipes** Nombre d’enregistrements récupérés par table de destination et par type d’événement. Utilise des labels supplémentaires `destination_table` et `event_type`. |
+| Métrique                                   | Type     | Disponible pour                  | Description                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------ | -------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ClickPipes_FetchedBytes_Total`            | Compteur | Streaming, stockage d&#39;objets | Nombre total d&#39;octets non compressés récupérés depuis la source.                                                                                                                                                                                                                                                                                                 |
+| `ClickPipes_FetchedBytesCompressed_Total`  | Compteur | Tous                             | Nombre total d&#39;octets récupérés depuis la source, tels que lus sur le réseau. Si les données source ne sont pas compressées, cette métrique équivaut à `ClickPipes_FetchedBytes_Total`. Pour les ClickPipes CDC, cela exclut les octets récupérés lors du chargement initial, qui sont comptabilisés séparément dans `ClickPipes_FetchedBytesInitialLoad_Total`. |
+| `ClickPipes_FetchedBytesInitialLoad_Total` | Compteur | CDC                              | Nombre total d&#39;octets récupérés pendant la phase de chargement initial, y compris les resynchronisations.                                                                                                                                                                                                                                                        |
+| `ClickPipes_SentBytes_Total`               | Compteur | Streaming, stockage d&#39;objets | Nombre total d&#39;octets non compressés envoyés à ClickHouse.                                                                                                                                                                                                                                                                                                       |
+| `ClickPipes_SentBytesCompressed_Total`     | Compteur | Streaming, stockage d&#39;objets | Nombre total d&#39;octets compressés envoyés à ClickHouse.                                                                                                                                                                                                                                                                                                           |
 
-<div id="metrics-errors">
-  ### Erreurs
-</div>
+### Événements et enregistrements {#metrics-events}
 
-| Métrique                  | Type     | Description                                                                                            |
-| ------------------------- | -------- | ------------------------------------------------------------------------------------------------------ |
-| `ClickPipes_Errors_Total` | Compteur | Nombre total d’[erreurs](/fr/integrations/clickpipes/home#error-reporting) survenues lors de l’ingestion. |
+| Métrique                         | Type     | Disponible pour              | Description                                                |
+| -------------------------------- | -------- | ---------------------------- | ---------------------------------------------------------- |
+| `ClickPipes_FetchedEvents_Total` | Compteur | Streaming, stockage d’objets | Nombre total d’enregistrements récupérés depuis la source. |
+| `ClickPipes_SentEvents_Total`    | Compteur | Streaming, stockage d’objets | Nombre total d’enregistrements envoyés à ClickHouse.       |
 
-<div id="metrics-latency">
-  ### Latence
-</div>
+### Erreurs {#metrics-errors}
 
-| Métrique                                  | Type          | Description                                                                                                                                   |
-| ----------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ClickPipes_Latency`                      | Gauge (*avg*) | Temps écoulé, en millisecondes, entre le moment où un enregistrement est produit à la source et celui où il est écrit dans ClickHouse.        |
-| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | **CDC ClickPipes** Retard de réplication à la source, en Mio. Pour les ClickPipes Postgres, cela correspond au retard du slot de réplication. |
+| Métrique                  | Type     | Disponible pour | Description                                                                                            |
+| ------------------------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------ |
+| `ClickPipes_Errors_Total` | Compteur | Tous            | Nombre total d’[erreurs](/fr/integrations/clickpipes/home#error-reporting) survenues lors de l’ingestion. |
 
-<div id="metrics-resources">
-  ### Utilisation des ressources
-</div>
+### Latence {#metrics-latency}
 
-| Métrique                         | Type           | Description                                                            |
-| -------------------------------- | -------------- | ---------------------------------------------------------------------- |
-| `ClickPipes_Replica_CPUUsage`    | Gauge (*avg*)  | Utilisation moyenne du CPU des réplicas d’ingestion, en millicœurs.    |
-| `ClickPipes_Replica_CPULimit`    | Gauge (*last*) | Limite de CPU configurée pour les réplicas d’ingestion, en millicœurs. |
-| `ClickPipes_Replica_MemoryUsage` | Gauge (*avg*)  | Utilisation moyenne de la mémoire des réplicas d’ingestion, en octets. |
-| `ClickPipes_Replica_MemoryLimit` | Gauge (*last*) | Limite de mémoire configurée pour les réplicas d’ingestion, en octets. |
+| Métrique                                  | Type          | Disponible pour           | Description                                                                                                                            |
+| ----------------------------------------- | ------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `ClickPipes_Latency`                      | Gauge (*avg*) | Tous                      | Temps écoulé, en millisecondes, entre le moment où un enregistrement est produit à la source et celui où il est écrit dans ClickHouse. |
+| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | CDC (Postgres uniquement) | Retard du slot de réplication à la source, en Mio. Émis uniquement par les ClickPipes Postgres.                                        |
+| `ClickPipes_CDC_SourceLatency`            | Gauge (*avg*) | CDC                       | Délai, en millisecondes, entre l’horodatage d’un événement à la source et son traitement par ClickPipes.                               |
+| `ClickPipes_CDC_DestinationLatency`       | Gauge (*avg*) | CDC                       | Délai, en millisecondes, entre la réception d’un événement dans un ClickPipe et son écriture dans une table ClickHouse.                |
 
-<div id="metrics-state">
-  ### État et progression
-</div>
+### Utilisation des ressources {#metrics-resources}
 
-| Métrique                        | Type  | Description                                                                                                          |
-| ------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------- |
-| `ClickPipes_Info`               | Gauge | Toujours égal à `1`. Utilisez le label `clickpipe_state` pour filtrer ou déclencher une alerte selon l’état du pipe. |
-| `ClickPipes_LastFetchedBatchId` | Gauge | ID du dernier batch récupéré depuis la source.                                                                       |
-| `ClickPipes_LastSentBatchId`    | Gauge | ID du dernier batch envoyé à ClickHouse.                                                                             |
+Les métriques `ClickPipes_Replica_*` indiquent l’utilisation des ressources pour les ClickPipes de streaming et de stockage d’objets. Chaque ClickPipe dispose de **ressources de calcul dédiées** ; ces valeurs reflètent donc l’utilisation de chaque ClickPipe individuellement.
 
-<div id="related">
-  ## Pages connexes
-</div>
+| Metric                           | Type           | Available for             | Description                                                             |
+| -------------------------------- | -------------- | ------------------------- | ----------------------------------------------------------------------- |
+| `ClickPipes_Replica_CPUUsage`    | Gauge (*avg*)  | Streaming, stockage d’objets | Utilisation moyenne du CPU des répliques d’ingestion, en millicœurs.    |
+| `ClickPipes_Replica_CPULimit`    | Gauge (*last*) | Streaming, stockage d’objets | Limite CPU configurée pour les répliques d’ingestion, en millicœurs.    |
+| `ClickPipes_Replica_MemoryUsage` | Gauge (*avg*)  | Streaming, stockage d’objets | Utilisation moyenne de la mémoire des répliques d’ingestion, en octets. |
+| `ClickPipes_Replica_MemoryLimit` | Gauge (*last*) | Streaming, stockage d’objets | Limite mémoire configurée pour les répliques d’ingestion, en octets.    |
+
+Les métriques `ClickPipes_CDC_*` indiquent l’utilisation des ressources pour les ClickPipes CDC. Tous les ClickPipes CDC d’un même service **partagent les ressources de calcul** ; ces valeurs reflètent donc l’utilisation combinée de tous les ClickPipes CDC du service.
+
+| Metric                               | Type           | Available for | Description                                                                                                             |
+| ------------------------------------ | -------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `ClickPipes_CDC_CPUUsage`            | Gauge (*avg*)  | CDC           | Utilisation moyenne du CPU, en millicœurs. Partagée entre tous les ClickPipes CDC du service.                           |
+| `ClickPipes_CDC_CPULimit`            | Gauge (*last*) | CDC           | Limite CPU configurée, en millicœurs. Partagée entre tous les ClickPipes CDC du service.                                |
+| `ClickPipes_CDC_MemoryUsage`         | Gauge (*avg*)  | CDC           | Utilisation moyenne de la mémoire, en octets. Partagée entre tous les ClickPipes CDC du service.                        |
+| `ClickPipes_CDC_MemoryLimit`         | Gauge (*last*) | CDC           | Limite mémoire configurée, en octets. Partagée entre tous les ClickPipes CDC du service.                                |
+| `ClickPipes_CDC_NetworkReceiveBytes` | Gauge          | CDC           | Débit réseau entrant, en octets (delta par intervalle de scrutation). Partagé entre tous les ClickPipes CDC du service. |
+
+### État et progression {#metrics-state}
+
+| Métrique                        | Type  | Disponible pour | Description                                                                                                           |
+| ------------------------------- | ----- | --------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `ClickPipes_Info`               | Gauge | Tous            | Toujours égal à `1`. Utilisez le label `clickpipe_status` pour filtrer ou déclencher une alerte selon l’état du pipe. |
+| `ClickPipes_LastFetchedBatchId` | Gauge | CDC             | ID du dernier batch récupéré depuis la source.                                                                        |
+| `ClickPipes_LastSentBatchId`    | Gauge | CDC             | ID du dernier batch envoyé à ClickHouse.                                                                              |
+
+## Pages connexes {#related}
 
 * [Endpoint Prometheus](/fr/products/cloud/features/monitoring/prometheus) — Référence de l&#39;endpoint, authentification et configuration pour les outils externes (p. ex., Grafana, Datadog)
 * [Signalement des erreurs](/fr/integrations/clickpipes/home#error-reporting) — Emplacement de stockage des erreurs liées aux enregistrements et des erreurs système

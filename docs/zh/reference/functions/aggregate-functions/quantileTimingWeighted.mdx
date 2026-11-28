@@ -50,7 +50,7 @@ quantileTimingWeighted(level)(expr, weight)
 
 **Arguments**
 
-* `expr` — 作用于列值并返回 Float* 类型数值的表达式。如果向函数传入负值，则其行为未定义。如果该值大于 30,000 (页面加载时间超过 30 秒) ，则按 30,000 处理。[`Float*`](/zh/reference/data-types/float)
+* `expr` — 作用于列值并产生数值数据类型、`Date` 或 `DateTime` 的表达式。如果向函数传入负值，则其行为未定义。如果该值大于 30,000 (页面加载时间超过 30 秒) ，则按 30,000 处理。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime)
 * `weight` — 表示序列元素权重的列。权重即该值出现的次数。[`UInt*`](/zh/reference/data-types/int-uint)
 
 **返回值**

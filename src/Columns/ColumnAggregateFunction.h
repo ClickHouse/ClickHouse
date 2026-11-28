@@ -91,9 +91,13 @@ private:
     /// Create a new column that has another column as a source.
     MutablePtr createView() const;
 
+    /// Whether a state named `state_type_name` can be inserted into this column. The name may differ
+    /// from `type_string` and still denote the same state, see DataTypeAggregateFunction::nameMatchesState.
+    bool acceptsStateTypeName(const String & state_type_name) const;
+
     explicit ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_);
+    ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_, std::optional<size_t> version_ = std::nullopt);
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_);
 
@@ -131,6 +135,18 @@ public:
         return getData().size();
     }
 
+    /// Real reserve (base IColumn::reserve is a no-op): lets a caller make a run of `push_back`
+    /// non-throwing.
+    void reserve(size_t n) override
+    {
+        data.reserve(n);
+    }
+
+    size_t capacity() const override
+    {
+        return data.capacity();
+    }
+
     MutableColumnPtr cloneEmpty() const override;
 
     Field operator[](size_t n) const override;
@@ -145,6 +161,8 @@ public:
         /// This is consistent with getNumberOfDefaultRows returning 0.
         return false;
     }
+
+    bool hasOnlyTypeDefaults() const override { return false; }
 
     std::string_view getDataAt(size_t n) const override;
 
@@ -179,7 +197,8 @@ public:
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    void skipSerializedInArena(ReadBuffer & in) const override;
+    /// A state is serialized only by `serializeValueIntoArena`, as its size is known only once it is serialized.
+    std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -209,6 +228,10 @@ public:
 
     void popBack(size_t n) override;
 
+    /// Removes the last n rows without destroying the states they point to, for rows that alias a state
+    /// owned elsewhere.
+    void popBackWithoutDestroy(size_t n);
+
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
 
     void filter(const Filter & filt) override;
@@ -233,11 +256,6 @@ public:
 #endif
     {
         return 0;
-    }
-
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareColumn is not supported for ColumnAggregateFunction");
     }
 
     bool hasEqualValues() const override

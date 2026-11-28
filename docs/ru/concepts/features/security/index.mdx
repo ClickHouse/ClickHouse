@@ -4,9 +4,23 @@ title: 'Безопасность и аутентификация'
 description: 'Главная страница раздела «Безопасность и аутентификация»'
 doc_type: 'landing-page'
 keywords: ['безопасность и аутентификация', 'управление доступом', 'RBAC', 'управление пользователями', 'руководство для SRE']
+mode: wide
 ---
 
-| Страница                                                                             | Описание                                                                                                           |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| [Пользователи и роли](/ru/concepts/features/security/access-rights)                     | Подробнее о том, как ClickHouse поддерживает управление доступом на основе модели RBAC.                            |
-| [Внешние аутентификаторы](/ru/concepts/features/security/external-authenticators/index) | Подробнее о том, как OSS ClickHouse поддерживает аутентификацию и управление пользователями через внешние сервисы. |
+<CardGroup cols={2}>
+  <Card title="Пользователи и роли" icon="users" href="/ru/concepts/features/security/access-rights">
+    Подробнее о том, как ClickHouse поддерживает управление доступом на основе модели RBAC.
+  </Card>
+
+  <Card title="Сетевые порты" icon="ethernet" href="/ru/concepts/features/security/network-ports">
+    Справочник по сетевым портам, используемым ClickHouse.
+  </Card>
+
+  <Card title="TLS" icon="lock" href="/ru/concepts/features/security/tls/index">
+    Настройте TLS для защищённых подключений к ClickHouse.
+  </Card>
+
+  <Card title="Внешние аутентификаторы" icon="id-badge" href="/ru/concepts/features/security/external-authenticators/index">
+    Подробнее о том, как OSS ClickHouse поддерживает аутентификацию и управление пользователями через внешние сервисы.
+  </Card>
+</CardGroup>

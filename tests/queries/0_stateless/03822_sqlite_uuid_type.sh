@@ -15,8 +15,15 @@ sqlite3 "${DB_PATH}" "INSERT INTO t0 VALUES ('f5c9d035-cb46-9811-92c1-169d868ba2
 sqlite3 "${DB_PATH}" "INSERT INTO t0 VALUES ('00000000-0000-0000-0000-000000000000');"
 sqlite3 "${DB_PATH}" "INSERT INTO t0 VALUES (NULL);"
 
+sqlite3 "${DB_PATH}" 'CREATE TABLE t1 (c0 TEXT);'
+sqlite3 "${DB_PATH}" "INSERT INTO t1 VALUES ('f5c9d035-cb46-9811-92c1-169d868ba2db');"
+sqlite3 "${DB_PATH}" "INSERT INTO t1 VALUES ('00000000-0000-0000-0000-000000000000');"
+
 echo "Test UUID column type"
-${CLICKHOUSE_LOCAL} --query="CREATE TABLE test_sqlite_uuid (c0 UUID) ENGINE = SQLite('${DB_PATH}', 't0'); SELECT c0 FROM test_sqlite_uuid ORDER BY c0"
+${CLICKHOUSE_LOCAL} --query="CREATE TABLE test_sqlite_uuid (c0 UUID) ENGINE = SQLite('${DB_PATH}', 't1'); SELECT c0 FROM test_sqlite_uuid ORDER BY c0"
+
+echo "Test UUID column type over a remote NULL"
+${CLICKHOUSE_LOCAL} --query="CREATE TABLE test_sqlite_uuid_null (c0 UUID) ENGINE = SQLite('${DB_PATH}', 't0'); SELECT c0 FROM test_sqlite_uuid_null ORDER BY c0" 2>&1 | grep -o "CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN" | head -1
 
 echo "Test Nullable(UUID) column type"
 ${CLICKHOUSE_LOCAL} --query="CREATE TABLE test_sqlite_uuid_nullable (c0 Nullable(UUID)) ENGINE = SQLite('${DB_PATH}', 't0'); SELECT c0 FROM test_sqlite_uuid_nullable ORDER BY c0 NULLS LAST"

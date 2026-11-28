@@ -4,15 +4,49 @@ title: 'نظرة عامة على نمذجة البيانات'
 description: 'نظرة عامة على نمذجة البيانات'
 keywords: ['نمذجة البيانات', 'تصميم المخطط', 'القاموس', 'العرض المادي', 'ضغط البيانات', 'إلغاء تطبيع البيانات']
 doc_type: 'landing-page'
+mode: wide
 ---
 
 يتناول هذا القسم نمذجة البيانات في ClickHouse، ويشمل الموضوعات التالية:
 
-| Page                                                                                    | Description                                                                                                                                                        |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [تصميم المخطط](/ar/guides/clickhouse/data-modelling/schema-design)                         | يناقش تصميم المخطط في ClickHouse لتحقيق أفضل أداء، مع مراعاة عوامل مثل الاستعلامات وتحديثات البيانات وزمن الاستجابة والحجم.                                        |
-| [القاموس](/ar/concepts/features/dictionaries/index)                                        | شرح لكيفية تعريف القواميس واستخدامها لتحسين أداء الاستعلامات وإثراء البيانات.                                                                                      |
-| [العروض المادية](/ar/concepts/features/materialized-views/index)                           | معلومات حول العروض المادية والعروض المادية القابلة للتحديث في ClickHouse.                                                                                          |
-| [الإسقاطات](/ar/concepts/features/projections/projections)                                 | معلومات حول الإسقاطات في ClickHouse.                                                                                                                               |
-| [ضغط البيانات](/ar/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) | يناقش أساليب الضغط المختلفة في ClickHouse وكيفية تحسين تخزين البيانات وأداء الاستعلامات من خلال اختيار طريقة الضغط المناسبة لأنواع بياناتك وأحمال العمل الخاصة بك. |
-| [إلغاء تطبيع البيانات](/ar/guides/clickhouse/data-modelling/denormalization)               | يناقش نهج إلغاء التطبيع المستخدم في ClickHouse، والذي يهدف إلى تحسين أداء الاستعلامات من خلال تخزين البيانات المرتبطة في جدول واحد.                                |
+<CardGroup cols={2}>
+  <Card title="تصميم المخطط" icon="pen-ruler" href="/ar/guides/clickhouse/data-modelling/schema-design">
+    تصميم مخطط ClickHouse لتحقيق أفضل أداء، مع مراعاة عوامل مثل الاستعلامات وتحديثات البيانات وزمن الاستجابة والحجم.
+  </Card>
+
+  <Card title="الفهارس الأولية المتفرقة" icon="key" href="/ar/guides/clickhouse/data-modelling/sparse-primary-indexes">
+    مقدمة عملية إلى الفهارس الأولية في ClickHouse.
+  </Card>
+
+  <Card title="إلغاء تطبيع البيانات" icon="table-list" href="/ar/guides/clickhouse/data-modelling/denormalization">
+    نهج إلغاء التطبيع، الذي يهدف إلى تحسين أداء الاستعلامات من خلال تخزين البيانات المرتبطة في جدول واحد.
+  </Card>
+
+  <Card title="تحميل البيانات التاريخية" icon="clock-rotate-left" href="/ar/guides/clickhouse/data-modelling/backfilling">
+    تقنيات لتحميل البيانات التاريخية بكفاءة إلى جداول ClickHouse.
+  </Card>
+
+  <Card title="دالة الجدول Merge" icon="code-merge" href="/ar/guides/clickhouse/data-modelling/merge-table-function">
+    استخدام دالة الجدول `merge` للاستعلام من عدة جداول كما لو كانت جدولًا واحدًا.
+  </Card>
+
+  <Card title="الإجراءات المخزنة والعبارات المُعدّة مسبقًا" icon="database" href="/ar/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements">
+    الإجراءات المخزنة ومعلمات الاستعلام في ClickHouse.
+  </Card>
+
+  <Card title="إنشاء بيانات اختبار" icon="flask" href="/ar/guides/clickhouse/data-modelling/generating-test-data">
+    كيفية إنشاء بيانات اختبار عشوائية في ClickHouse.
+  </Card>
+
+  <Card title="ضغط البيانات" icon="file-zipper" href="/ar/guides/clickhouse/data-modelling/compression/compression-in-clickhouse">
+    الضغط في ClickHouse، وأوضاع الضغط المتاحة، وكيفية اختيار الأنسب منها لأنواع بياناتك وأحمال العمل لديك.
+  </Card>
+
+  <Card title="العمل مع المصفوفات" icon="list-ol" href="/ar/guides/clickhouse/working-with-arrays">
+    العمل مع المصفوفات في ClickHouse.
+  </Card>
+
+  <Card title="العمل مع JOINs" icon="link" href="/ar/guides/clickhouse/working-with-joins">
+    العمل مع JOINs في ClickHouse.
+  </Card>
+</CardGroup>

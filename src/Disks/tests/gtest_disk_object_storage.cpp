@@ -1,12 +1,10 @@
-#include <gtest/gtest.h>
-
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskEncrypted.h>
 #include <Disks/registerDisks.h>
 #include <Disks/IDiskTransaction.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
-#include <IO/FileEncryptionCommon.h>
 
+#include <IO/FileEncryptionCommon.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -15,15 +13,19 @@
 #include <IO/ReadSettings.h>
 #include <IO/SharedThreadPools.h>
 
+#include <Common/PageCache.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/FailPoint.h>
 #include <Common/thread_local_rng.h>
+
 #include <Core/Defines.h>
 #include <Core/ServerUUID.h>
 
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
+
+#include <gtest/gtest.h>
 
 #include <filesystem>
 #include <string>
@@ -81,7 +83,6 @@ void setUpConfig(const std::string & file_name)
                 <path>local_blob_storage_dir/</path>
                 <metadata_path>metadata_storage_dir</metadata_path>
                 <metadata_type>local</metadata_type>
-                <use_fake_transaction>false</use_fake_transaction>
                 <persistent_removal_log>true</persistent_removal_log>
                 <data_background_cleanup>
                     <enabled>true</enabled>
@@ -94,7 +95,6 @@ void setUpConfig(const std::string & file_name)
                 <object_storage_type>local_blob_storage</object_storage_type>
                 <path>local_plain_rewritable_dir/</path>
                 <metadata_type>plain_rewritable</metadata_type>
-                <use_fake_transaction>false</use_fake_transaction>
             </local_plain_rewritable_disk>
         </disks>
     </storage_configuration>
@@ -117,6 +117,18 @@ std::string readAll(DB::ReadBuffer & rb)
     std::string str;
     DB::readStringUntilEOF(str, rb);
     return str;
+}
+
+DB::PageCachePtr makePageCacheForTest()
+{
+    return std::make_shared<DB::PageCache>(
+        std::chrono::milliseconds(0),
+        "SLRU",
+        /*size_ratio=*/ 0.5,
+        /*min_size_in_bytes=*/ 64 << 20,
+        /*max_size_in_bytes=*/ 64 << 20,
+        /*free_memory_ratio=*/ 0.0,
+        /*num_shards=*/ 1);
 }
 
 }
@@ -225,7 +237,7 @@ public:
             getContext().context,
             initialized_disks,
             /*attach*/ false,
-            /*custom_disk*/ true,
+            /*custom_disk*/ false,
             /*skip_types*/ {});
 
         initialized_disks.emplace(name, disk);
@@ -469,11 +481,41 @@ TEST_F(DiskObjectStorageTest, AppendFileTxReadFailDoesNotDeleteFile)
     // Commit fails because the failpoint fires during WriteFileOperation::execute()
     EXPECT_THROW(tx->commit(), DB::Exception);
 
-    // Without the fix: WriteFileOperation::undo() sees !prev_data and deletes the file.
-    // With the fix: undo() sees file_existed==true and preserves the file.
+    // The read fails before the write, so WriteFileOperation::undo() has nothing to revert and keeps the file.
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
     waitBlobsCount(disk, 1);
+}
+
+TEST_F(DiskObjectStorageTest, EmptyAppendLeavesNoBlob)
+{
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+    std::string empty_file_name = getTestName() + "_empty_file";
+    std::string file_content = getTestName() + "_content";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+    waitBlobsCount(disk, 1);
+
+    for (const auto & name : {file_name, empty_file_name})
+    {
+        auto wb = disk->writeFile(name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Append, DB::WriteSettings{});
+        wb->finalize();
+    }
+
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_TRUE(disk->existsFile(empty_file_name));
+    EXPECT_EQ(disk->getFileSize(empty_file_name), 0);
+    waitBlobsCount(disk, 1);
+
+    disk->removeFile(file_name);
+    disk->removeFile(empty_file_name);
+    waitBlobsCount(disk, 0);
 }
 
 TEST_F(DiskObjectStorageTest, MoveAndRewriteFile)
@@ -835,6 +877,89 @@ TEST_F(DiskObjectStorageTest, TruncateFileToNotZero)
     waitBlobsCount(disk, 1);
 }
 
+TEST_F(DiskObjectStorageTest, RewriteFileOnPlainRewritableWithPageCache)
+{
+    auto disk = getDiskObjectStorage("local_plain_rewritable_disk");
+
+    auto page_cache = makePageCacheForTest();
+
+    DB::ReadSettings read_settings;
+    read_settings.page_cache_settings.cache = page_cache;
+    read_settings.use_page_cache_for_disks_without_file_cache = true;
+
+    std::string directory_name = getTestName() + "_dir";
+    std::string file_name = fs::path(directory_name) / (getTestName() + "_file");
+    std::string file_content = getTestName() + "_file_content_v1";
+
+    disk->createDirectories(directory_name);
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+
+    /// Blob paths are deterministic and a rewrite reuses them, so the page cache must be bypassed.
+    EXPECT_EQ(readAll(*disk->readFile(file_name, read_settings)), file_content);
+    EXPECT_EQ(readAll(*disk->readFile(file_name, read_settings)), file_content);
+    EXPECT_EQ(page_cache->count(), 0);
+
+    std::string rewrite_file_content = getTestName() + "_file_content_v2";
+    ASSERT_EQ(file_content.size(), rewrite_file_content.size());
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(rewrite_file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, read_settings)), rewrite_file_content);
+}
+
+TEST_F(DiskObjectStorageTest, RewriteFileWithPageCache)
+{
+    auto disk = getDiskObjectStorage();
+
+    auto page_cache = makePageCacheForTest();
+
+    DB::ReadSettings read_settings;
+    read_settings.page_cache_settings.cache = page_cache;
+    read_settings.use_page_cache_for_disks_without_file_cache = true;
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = getTestName() + "_file_content_v1";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+
+    /// Blob paths are random, so the page cache is used.
+    EXPECT_EQ(readAll(*disk->readFile(file_name, read_settings)), file_content);
+    EXPECT_EQ(readAll(*disk->readFile(file_name, read_settings)), file_content);
+    EXPECT_EQ(page_cache->count(), 1);
+
+    std::string rewrite_file_content = getTestName() + "_file_content_v2";
+    ASSERT_EQ(file_content.size(), rewrite_file_content.size());
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(rewrite_file_content, *wb);
+        wb->finalize();
+    }
+
+    /// The rewritten file lives at a new random blob path, so cached data of the old blob
+    /// cannot be returned for it.
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, read_settings)), rewrite_file_content);
+}
+
 
 /// -- ReadPipeline integration tests --
 
@@ -1066,7 +1191,7 @@ try
     auto disk = getDiskObjectStorage();
 
     /// Wrap with encryption.
-    String key = "1234567890123456"; /// 16 bytes = AES-128-CTR
+    DB::SecretString key{"1234567890123456"}; /// 16 bytes = AES-128-CTR
     auto enc_settings = std::make_unique<DB::DiskEncryptedSettings>();
     enc_settings->wrapped_disk = disk;
     enc_settings->current_algorithm = DB::FileEncryption::Algorithm::AES_128_CTR;

@@ -1,8 +1,10 @@
-#include <Compression/CompressionFactory.h>
-#include <Compression/ICompressionCodec.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/IStorage.h>
+
+#include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
+
 #include <Common/quoteString.h>
 
 #include <base/StringViewHash.h>
@@ -39,7 +41,36 @@ StorageSnapshot::StorageSnapshot(
 
 std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
 {
-    return std::make_shared<StorageSnapshot>(storage, metadata, std::move(data_));
+    auto res = std::make_shared<StorageSnapshot>(storage, metadata, std::move(data_));
+    res->storage_holder = storage_holder;
+    return res;
+}
+
+std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(StorageMetadataPtr metadata_, DataPtr data_) const
+{
+    auto res = std::make_shared<StorageSnapshot>(storage, std::move(metadata_), std::move(data_));
+    res->storage_holder = storage_holder;
+    return res;
+}
+
+std::shared_ptr<StorageSnapshot> StorageSnapshot::withStorageHolder(ConstStoragePtr holder) const
+{
+    /// Returning a new snapshot rather than installing the holder in place: a snapshot can be shared
+    /// between call sites within one query (the query metadata cache and the pinned snapshot of
+    /// `CREATE MATERIALIZED VIEW ... POPULATE` both hand the same object to several readers).
+    auto res = std::make_shared<StorageSnapshot>(storage, metadata, data);
+    if (storage_holder)
+    {
+        /// An alias chain resolves innermost-first, so an existing holder already owns the storage this
+        /// snapshot references, while `holder` is only an intermediate alias on the way to it.
+        res->storage_holder = storage_holder;
+    }
+    else
+    {
+        chassert(holder && holder.get() == &storage);
+        res->storage_holder = std::move(holder);
+    }
+    return res;
 }
 
 ColumnsDescription StorageSnapshot::getAllColumnsDescription() const
@@ -113,6 +144,11 @@ NameAndTypePair StorageSnapshot::getColumn(const GetColumnsOptions & options, co
     return *column;
 }
 
+Names StorageSnapshot::getColumnNamesForSelectAccessCheck(const Names & column_names, const ContextPtr & context, const StorageID & table_id) const
+{
+    return metadata->getColumns().getColumnNamesForSelectAccessCheck(column_names, context, table_id);
+}
+
 Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) const
 {
     Block res;
@@ -173,17 +209,17 @@ namespace
     using DenseHashSet = google::dense_hash_set<std::string_view, StringViewHash>;
 }
 
-void StorageSnapshot::check(const Names & column_names) const
+void StorageSnapshot::check(const Names & column_names, bool list_columns_in_error) const
 {
     const auto & columns = metadata->getColumns();
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+    auto list_of_columns = [&]
+    {
+        return list_columns_in_error ? fmt::format(". There are columns: {}", listOfColumns(columns.get(options))) : String{};
+    };
 
     if (column_names.empty())
-    {
-        auto list_of_columns = listOfColumns(columns.get(options));
-        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
-            "Empty list of columns queried. There are columns: {}", list_of_columns);
-    }
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED, "Empty list of columns queried{}", list_of_columns());
 
     DenseHashSet unique_names;
     unique_names.set_empty_key(std::string_view());
@@ -193,12 +229,9 @@ void StorageSnapshot::check(const Names & column_names) const
         bool has_column = columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name) || metadata->virtuals.has(name);
 
         if (!has_column)
-        {
-            auto list_of_columns = listOfColumns(columns.get(options));
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                "There is no column with name {} in table {}. There are columns: {}",
-                backQuote(name), storage.getStorageID().getNameForLogs(), list_of_columns);
-        }
+                "There is no column with name {} in table {}{}",
+                backQuote(name), storage.getStorageID().getNameForLogs(), list_of_columns());
 
         if (unique_names.count(name))
             throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE, "Column {} queried more than once", name);

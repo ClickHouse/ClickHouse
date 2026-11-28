@@ -1,0 +1,17 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- `UTC` never changes its offset at all; `Asia/Kolkata` is a fixed +05:30 since 1945, but had
+         both an LMT offset and DST before that; `Pacific/Chatham` steps its +12:45 offset by a whole
+         hour for DST every year, so its minute of the hour is constant while its hour is not. Those
+         three properties are what decide, per accessor, whether the calendar table has to be read. -->
+
+    <query>SELECT sum(toHour(t, 'UTC')) FROM (SELECT toDateTime(1600000000 + number % 50000000, 'UTC') AS t FROM numbers(50000000))</query>
+    <query>SELECT sum(toHour(t, 'Asia/Kolkata')) FROM (SELECT toDateTime(1600000000 + number % 50000000, 'UTC') AS t FROM numbers(50000000))</query>
+    <query>SELECT sum(toMinute(t, 'Pacific/Chatham')) FROM (SELECT toDateTime(1600000000 + number % 50000000, 'UTC') AS t FROM numbers(50000000))</query>
+
+    <query>SELECT sum(toHour(t, 'Pacific/Chatham')) FROM (SELECT toDateTime(1600000000 + number % 50000000, 'UTC') AS t FROM numbers(50000000))</query>
+    <query>SELECT sum(toMinute(t, 'UTC')) FROM (SELECT toDateTime(1600000000 + number % 50000000, 'UTC') AS t FROM numbers(50000000))</query>
+</test>

@@ -161,7 +161,7 @@ FORMAT Parquet
   ## ClickHouse와 Parquet 데이터 타입
 </div>
 
-ClickHouse와 Parquet의 데이터 타입은 대부분 동일하지만, [약간의 차이](/ko/reference/formats/Parquet/Parquet#data-types-matching-parquet)가 있습니다. 예를 들어 ClickHouse는 `DateTime` 타입을 Parquet의 `int64`로 내보냅니다. 그런 다음 이를 다시 ClickHouse로 가져오면 숫자로 표시됩니다([time.parquet file](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/time.parquet)):
+ClickHouse와 Parquet의 데이터 타입은 대부분 동일하지만, [약간의 차이](/ko/reference/formats/Parquet/Parquet#data-types-matching-parquet)가 있습니다. 예를 들어 ClickHouse는 `DateTime` 타입을 Parquet의 `int64`로 내보냅니다. 그런 다음 이를 다시 ClickHouse로 가져오면 숫자가 표시됩니다([time.parquet file](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/time.parquet)):
 
 ```sql
 SELECT * FROM file('time.parquet', Parquet);
@@ -182,7 +182,7 @@ SELECT * FROM file('time.parquet', Parquet);
 ```sql
 SELECT
     n,
-    toDateTime(time)                 <--- int를 time으로 변환
+    toDateTime(time)                 <--- int to time
 FROM file('time.parquet', Parquet);
 ```
 

@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/MySQLDumpRowInputFormat.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Common/assert_cast.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
@@ -22,6 +23,9 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Storages/IStorage.h>
 
+#include <Common/isValidUTF8.h>
+#include <Poco/String.h>
+#include <Poco/UTF8String.h>
 #include <boost/algorithm/string.hpp>
 #include <base/find_symbols.h>
 
@@ -64,7 +68,9 @@ static String readTableName(ReadBuffer & in)
 
     String table_name;
     if (*in.position() == '`')
-        readBackQuotedString(table_name, in);
+        readBackQuotedStringWithSQLStyle(table_name, in);
+    else if (*in.position() == '"')
+        readDoubleQuotedStringWithSQLStyle(table_name, in);
     else
         readStringUntilWhitespace(table_name, in);
     return table_name;
@@ -144,7 +150,7 @@ static void skipQuery(ReadBuffer & in)
 }
 
 
-static bool skipUntilRowStartedWithOneOfKeywords(const std::unordered_set<String> & keywords, ReadBuffer & in, String * keyword_out = nullptr)
+static bool skipUntilRowStartedWithOneOfKeywords(const UnorderedSetWithMemoryTracking<String> & keywords, ReadBuffer & in, String * keyword_out = nullptr)
 {
     while (true)
     {
@@ -214,8 +220,13 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
                     data_type_node->name = type_name_upper + " UNSIGNED";
             }
 
+            /// A dump writes `SET` values as strings of comma-separated members, e.g. 'a,b'. `SET` is also a ClickHouse
+            /// alias of `UInt64`, so name the type explicitly, as the `mysql` table engine reads it.
             if (type_name_upper == "SET")
+            {
+                data_type_node->name = "String";
                 data_type_node->resetArguments();
+            }
 
             /// Transforms MySQL ENUM's list of strings to ClickHouse string-integer pairs
             /// For example ENUM('a', 'b', 'c') -> ENUM('a'=1, 'b'=2, 'c'=3)
@@ -223,12 +234,18 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
             /// Note: Enum would be transformed to Enum8 if number of elements is less then 128, otherwise it would be transformed to Enum16.
             if (type_name_upper.contains("ENUM"))
             {
+                ASTPtr arguments = data_type_node->getArguments();
+                if (!arguments)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Type {} in MySQL dump requires a list of values", data_type_node->name);
+
                 UInt16 i = 0;
-                for (ASTPtr & child : data_type_node->getArguments()->children)
+                for (ASTPtr & child : arguments->children)
                 {
                     auto new_child = make_intrusive<ASTFunction>();
                     new_child->name = "equals";
                     auto * literal = child->as<ASTLiteral>();
+                    if (!literal || literal->value.getType() != Field::Types::String)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Values of type {} in MySQL dump must be string literals", data_type_node->name);
 
                     new_child->arguments = make_intrusive<ASTExpressionList>();
                     new_child->arguments->children.push_back(make_intrusive<ASTLiteral>(literal->value.safeGet<String>()));
@@ -254,7 +271,7 @@ static void readUnquotedColumnName(String & name, ReadBuffer & in)
     name.clear();
     while (!in.eof())
     {
-        char * pos = find_first_symbols<',', ')', ' '>(in.position(), in.buffer().end());
+        char * pos = find_first_symbols<',', ')', ' ', '\t', '\n', '\r', '\f', '\v'>(in.position(), in.buffer().end());
         name.append(in.position(), pos - in.position());
         in.position() = pos;
 
@@ -265,7 +282,7 @@ static void readUnquotedColumnName(String & name, ReadBuffer & in)
 
 /// Try to read column names from a list in INSERT query.
 /// Like '(x, `column name`, z)'
-static void tryReadColumnNames(ReadBuffer & in, std::vector<String> * column_names)
+static void tryReadColumnNames(ReadBuffer & in, Names * column_names)
 {
     skipWhitespaceIfAny(in);
     /// Check that we have the list of columns.
@@ -287,7 +304,9 @@ static void tryReadColumnNames(ReadBuffer & in, std::vector<String> * column_nam
 
         String name;
         if (!in.eof() && *in.position() == '`')
-            readBackQuotedString(name, in);
+            readBackQuotedStringWithSQLStyle(name, in);
+        else if (!in.eof() && *in.position() == '"')
+            readDoubleQuotedStringWithSQLStyle(name, in);
         else
             readUnquotedColumnName(name, in);
 
@@ -306,7 +325,7 @@ static MySQLQueryType skipToInsertOrCreateQuery(String & table_name, ReadBuffer 
     String keyword;
     MySQLQueryType type = MySQLQueryType::NONE;
     /// In MySQL dumps INSERT queries might be replaced with REPLACE queries.
-    std::unordered_set<String> keywords = {"insert", "replace"};
+    UnorderedSetWithMemoryTracking<String> keywords = {"insert", "replace"};
     if (!skip_create_query)
         keywords.insert("create");
 
@@ -332,6 +351,11 @@ static MySQLQueryType skipToInsertOrCreateQuery(String & table_name, ReadBuffer 
         current_table_name = readTableName(in);
         if (table_name.empty())
             table_name = current_table_name;
+        else if (current_table_name != table_name)
+        {
+            /// The keyword scan splits at spaces, so it must start at a statement: skip the rest of this one.
+            skipQuery(in);
+        }
     } while (current_table_name != table_name);
 
     /// Note that now position in the buffer is located in CREATE/INSERT query after table name.
@@ -343,7 +367,7 @@ static bool skipToInsertQuery(String & table_name, ReadBuffer & in)
     return skipToInsertOrCreateQuery(table_name, in, true) != MySQLQueryType::NONE;
 }
 
-static void skipToDataInInsertQuery(ReadBuffer & in, std::vector<String> * column_names = nullptr)
+static void skipToDataInInsertQuery(ReadBuffer & in, Names * column_names = nullptr)
 {
     tryReadColumnNames(in, column_names);
     skipWhitespaceIfAny(in);
@@ -371,8 +395,12 @@ static bool tryToExtractStructureFromCreateQuery(ReadBuffer & in, NamesAndTypesL
     if (!create_query)
         return false;
 
+    /// `CREATE TABLE ... LIKE` has no column list, and a column list with only indexes or constraints has no columns.
+    if (!create_query->columns_list)
+        return false;
+
     const auto * create_defines = create_query->columns_list->as<MySQLParser::ASTCreateDefines>();
-    if (!create_defines)
+    if (!create_defines || !create_defines->columns)
         return false;
 
     structure = getColumnsList(create_defines->columns);
@@ -391,6 +419,12 @@ static void skipFieldDelimiter(ReadBuffer & in)
     skipWhitespaceIfAny(in);
     assertChar(',', in);
     skipWhitespaceIfAny(in);
+}
+
+static void skipBinaryIntroducerIfAny(ReadBuffer & in)
+{
+    if (checkStringCaseInsensitive("_binary", in))
+        skipWhitespaceIfAny(in);
 }
 
 static void skipEndOfInsertQueryIfNeeded(ReadBuffer & in, String & table_name)
@@ -418,16 +452,22 @@ static void skipEndOfRow(ReadBuffer & in, String & table_name)
     skipEndOfInsertQueryIfNeeded(in, table_name);
 }
 
-static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name, NamesAndTypesList & structure_from_create, Names & column_names)
+static void readFirstCreateAndInsertQueries(
+    ReadBuffer & in,
+    String & table_name,
+    NamesAndTypesList & structure_from_create,
+    Names & column_names,
+    const BlockNameMap * header_names = nullptr)
 {
     auto type = skipToInsertOrCreateQuery(table_name, in);
     bool insert_query_present = type == MySQLQueryType::INSERT;
     if (type == MySQLQueryType::CREATE)
     {
         /// If we have CREATE query, we can extract columns names and types from it.
+        /// `tryToExtractStructureFromCreateQuery` reads the CREATE query up to and including its `;`,
+        /// so the next query must not be skipped: it can be the first INSERT query.
         if (tryToExtractStructureFromCreateQuery(in, structure_from_create))
             column_names = structure_from_create.getNames();
-        skipQuery(in);
         insert_query_present = skipToInsertQuery(table_name, in);
     }
 
@@ -435,14 +475,44 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There is no INSERT queries{} in MySQL dump file",
                         table_name.empty() ? "" : " for table " + table_name);
 
-    skipToDataInInsertQuery(in, column_names.empty() ? &column_names : nullptr);
+    /// The values are in the order of the INSERT column list, which can differ from CREATE (mysqldump omits generated columns).
+    Names insert_column_names;
+    skipToDataInInsertQuery(in, &insert_column_names);
+    if (insert_column_names.empty())
+        return;
+
+    /// MySQL column names are case-insensitive, so take the spelling from CREATE. A name in the header or not in CREATE stays as is.
+    /// Poco decodes every invalid UTF-8 sequence to the same code point, so a name that is not valid UTF-8 is compared ignoring ASCII case only.
+    auto is_valid_utf8 = [](const String & s) { return UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size()); };
+    auto names_equal = [&](const String & create_name, const String & name)
+    {
+        if (is_valid_utf8(create_name) && is_valid_utf8(name))
+            return Poco::UTF8::icompare(create_name, name) == 0;
+        return Poco::icompare(create_name, name) == 0;
+    };
+
+    if (!structure_from_create.empty())
+    {
+        for (auto & name : insert_column_names)
+        {
+            if (std::ranges::find(column_names, name) != column_names.end())
+                continue;
+            if (header_names && header_names->find(name) != header_names->end())
+                continue;
+            auto it = std::ranges::find_if(column_names, [&](const String & create_name) { return names_equal(create_name, name); });
+            if (it != column_names.end())
+                name = *it;
+        }
+    }
+
+    column_names = std::move(insert_column_names);
 }
 
 void MySQLDumpRowInputFormat::readPrefix()
 {
     NamesAndTypesList structure_from_create;
     Names column_names;
-    readFirstCreateAndInsertQueries(*in, table_name, structure_from_create, column_names);
+    readFirstCreateAndInsertQueries(*in, table_name, structure_from_create, column_names, &column_indexes_by_names);
 
     if (!column_names.empty() && format_settings.mysql_dump.map_column_names)
         column_mapping->addColumns(column_names, column_indexes_by_names, format_settings);
@@ -471,7 +541,7 @@ bool MySQLDumpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     }
     skipEndOfRow(*in, table_name);
 
-    column_mapping->insertDefaultsForNotSeenColumns(columns, ext.read_columns);
+    column_mapping->insertDefaultsForNotSeenColumns(columns, types, ext.read_columns);
 
     /// If defaults_for_omitted_fields is set to 0, we should leave already inserted defaults.
     if (!format_settings.defaults_for_omitted_fields)
@@ -497,8 +567,9 @@ bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
 {
     const auto & type = types[column_idx];
     const auto & serialization = serializations[column_idx];
+    skipBinaryIntroducerIfAny(*in);
     if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-        return SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *in, format_settings, serialization);
+        return SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *in, format_settings, serialization, type.get());
 
     serialization->deserializeTextQuoted(column, *in, format_settings);
     return true;
@@ -507,6 +578,7 @@ bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
 void MySQLDumpRowInputFormat::skipField()
 {
     NullOutput out;
+    skipBinaryIntroducerIfAny(*in);
     readQuotedFieldInto(out, *in);
 }
 
@@ -543,6 +615,7 @@ std::optional<DataTypes> MySQLDumpSchemaReader::readRowAndGetDataTypes()
         if (!data_types.empty())
             skipFieldDelimiter(in);
 
+        skipBinaryIntroducerIfAny(in);
         readQuotedField(value, in);
         auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
         data_types.push_back(std::move(type));
@@ -581,9 +654,9 @@ ClickHouse supports reading MySQL [dumps](https://dev.mysql.com/doc/refman/8.0/e
 It reads all the data from `INSERT` queries belonging to a single table in the dump. 
 If there is more than one table, by default it reads data from the first one.
 
-:::note
+<Note>
 This format supports schema inference: if the dump contains a `CREATE` query for the specified table, the structure is inferred from it, otherwise the schema is inferred from the data of `INSERT` queries.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 
@@ -643,9 +716,9 @@ SETTINGS input_format_mysql_dump_table_name = 'test2'
 
 ## Format settings {#format-settings}
 
-You can specify the name of the table from which to read data from using the [`input_format_mysql_dump_table_name`](/operations/settings/settings-formats.md/#input_format_mysql_dump_table_name) setting.
+You can specify the name of the table from which to read data from using the [`input_format_mysql_dump_table_name`](/reference/settings/formats/input-format#input_format_mysql_dump_table_name) setting.
 If setting `input_format_mysql_dump_map_columns` is set to `1` and the dump contains a `CREATE` query for specified table or column names in the `INSERT` query, the columns from the input data will map to the columns from the table by name.
-Columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
+Columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
 )DOCS_MD"});
 }
 

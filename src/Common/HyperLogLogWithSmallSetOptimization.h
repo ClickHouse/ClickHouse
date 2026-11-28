@@ -32,7 +32,7 @@ private:
     Small small;
     Large * large = nullptr;
 
-    bool isLarge() const
+    [[nodiscard]] bool isLarge() const
     {
         return large != nullptr;
     }
@@ -77,7 +77,36 @@ public:
             large->insert(static_cast<LargeValueType>(value));
     }
 
-    UInt64 size() const
+    /// Equivalent to calling insert for each value, but branches on the small/large state
+    /// once per batch, so the inner loops are tight and the container's insert is inlined.
+    void insertMany(const Key * values, size_t n)
+    {
+        size_t i = 0;
+        if (!isLarge())
+        {
+            for (; i < n; ++i)
+            {
+                if (small.find(values[i]) != small.end())
+                    continue;
+
+                if (small.full())
+                {
+                    toLarge();
+                    break;
+                }
+
+                small.insert(values[i]);
+            }
+        }
+
+        if (isLarge())
+        {
+            for (; i < n; ++i)
+                large->insert(static_cast<LargeValueType>(values[i]));
+        }
+    }
+
+    [[nodiscard]] UInt64 size() const
     {
         return !isLarge() ? small.size() : large->size();
     }

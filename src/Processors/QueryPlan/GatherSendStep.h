@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Core/SortDescription.h>
+
+#include <optional>
 
 
 namespace DB
@@ -10,20 +13,27 @@ namespace DB
 class GatherSendStep final : public IQueryPlanStep
 {
 public:
-    GatherSendStep(SharedHeader input_header_, const String & exchange_id_)
+    /// `maintain_sort_description_`, when set, must match `GatherReceiveStep`'s - see `updatePipeline`.
+    GatherSendStep(SharedHeader input_header_, const String & exchange_id_,
+                   std::optional<SortDescription> maintain_sort_description_ = std::nullopt)
         : exchange_id(exchange_id_)
+        , maintain_sort_description(std::move(maintain_sort_description_))
     {
         updateInputHeaders({std::move(input_header_)});
+        /// The exchange name in `EXPLAIN`, to join the step with the exchanges of the query fragments.
+        setStepDescription(exchange_id, exchange_id.size());
     }
 
-    String getName() const override { return "GatherSend"; }
+    [[nodiscard]] String getName() const override { return "GatherSend"; }
 
-    bool hasOutputStream() const { return false; }
+    [[nodiscard]] const String & getExchangeId() const { return exchange_id; }
+
+    [[nodiscard]] bool hasOutputStream() const { return false; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
@@ -31,6 +41,7 @@ private:
     void updateOutputHeader() override {}
 
     const String exchange_id;
+    const std::optional<SortDescription> maintain_sort_description;
 };
 
 }

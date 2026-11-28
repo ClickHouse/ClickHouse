@@ -109,7 +109,12 @@ ColumnPtr applyComparator(
 
     /// Smaller reserve when K is constant.
     if (isColumnConst(k_column))
-        indexes.reserve(std::min(readK(k_column, k_is_signed, 0, function_name) * size, nested_size));
+    {
+        /// `k * size` overflows for a huge K. The product is only a reserve hint and is clamped to
+        /// `nested_size` regardless, so saturate rather than wrap.
+        const size_t k = readK(k_column, k_is_signed, 0, function_name);
+        indexes.reserve(size != 0 && k > nested_size / size ? nested_size : std::min(k * size, nested_size));
+    }
     else
         indexes.reserve(nested_size);
 
@@ -249,7 +254,7 @@ correspond to the arguments of `f`.
 and may be smaller when the input array contains fewer non-null elements than `K`.
 The element type of the result is the non-nullable counterpart of the input element type.
 
-`arrayTopK` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
+`arrayTopK` is a [higher-order function](/reference/functions/regular-functions/overview#higher-order-functions).
 
 See also `arrayBottomK`, which returns the K smallest elements instead.
     )";
@@ -290,7 +295,7 @@ correspond to the arguments of `f`.
 and may be smaller when the input array contains fewer non-null elements than `K`.
 The element type of the result is the non-nullable counterpart of the input element type.
 
-`arrayBottomK` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
+`arrayBottomK` is a [higher-order function](/reference/functions/regular-functions/overview#higher-order-functions).
 
 See also:
 

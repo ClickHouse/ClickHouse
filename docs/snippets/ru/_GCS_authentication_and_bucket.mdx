@@ -3,41 +3,73 @@ title: Аутентификация GCS и бакет
 ---
 
 <Accordion title="Создание бакетов GCS и ключа HMAC">
-  ### ch_bucket_us_east1
+  ### ch&#95;bucket&#95;us&#95;east1
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-bucket-1.webp" alt="Создание бакета GCS в US East 1" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-bucket-1.webp" alt="Создание бакета GCS в US East 1" />
+    </Frame>
+  </div>
 
-  ### ch_bucket_us_east4
+  ### ch&#95;bucket&#95;us&#95;east4
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-bucket-2.webp" alt="Создание бакета GCS в US East 4" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-bucket-2.webp" alt="Создание бакета GCS в US East 4" />
+    </Frame>
+  </div>
 
   ### Создание ключа доступа
 
-  ### Создание ключа HMAC и секрета для сервисного аккаунта
+  ### Создание ключа и секрета HMAC для сервисного аккаунта
 
   Откройте **Cloud Storage &gt; Settings &gt; Interoperability** и либо выберите существующий **Access key**, либо **CREATE A KEY FOR A SERVICE ACCOUNT**. В этом руководстве рассматривается создание нового ключа для нового сервисного аккаунта.
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-a-service-account-key.webp" alt="Создание ключа HMAC для сервисного аккаунта в GCS" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-create-a-service-account-key.webp" alt="Создание ключа HMAC для сервисного аккаунта в GCS" />
+    </Frame>
+  </div>
 
   ### Добавление нового сервисного аккаунта
 
-  Если в проекте ещё нет сервисного аккаунта, нажмите **CREATE NEW ACCOUNT**.
+  Если в этом проекте ещё нет сервисного аккаунта, выберите **CREATE NEW ACCOUNT**.
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-0.webp" alt="Добавление нового сервисного аккаунта в GCS" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-create-service-account-0.webp" alt="Добавление нового сервисного аккаунта в GCS" />
+    </Frame>
+  </div>
 
-  Создание сервисного аккаунта состоит из трёх шагов; на первом шаге задайте аккаунту понятные имя, ID и описание.
+  Создание сервисного аккаунта состоит из трёх шагов; на первом шаге задайте аккаунту понятные имя, идентификатор и описание.
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-a.webp" alt="Указание имени и ID нового сервисного аккаунта в GCS" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-create-service-account-a.webp" alt="Задание имени и идентификатора нового сервисного аккаунта в GCS" />
+    </Frame>
+  </div>
 
-  В диалоговом окне настроек Interoperability рекомендуется роль IAM **Storage Object Admin**; выберите эту роль на втором шаге.
+  В диалоговом окне настроек Interoperability рекомендуется роль IAM **Storage Object Admin**; выберите её на втором шаге.
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-2.webp" alt="Выбор роли IAM Storage Object Admin в GCS" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-create-service-account-2.webp" alt="Выбор роли IAM Storage Object Admin в GCS" />
+    </Frame>
+  </div>
 
   Третий шаг необязателен и в этом руководстве не используется. Вы можете предоставить пользователям эти привилегии в соответствии с вашими политиками.
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-3.webp" alt="Настройка дополнительных параметров для нового сервисного аккаунта в GCS" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-create-service-account-3.webp" alt="Настройка дополнительных параметров для нового сервисного аккаунта в GCS" />
+    </Frame>
+  </div>
 
-  Будет показан ключ HMAC сервисного аккаунта. Сохраните эту информацию, так как она будет использоваться в конфигурации ClickHouse.
+  Будут показаны ключ HMAC и секрет сервисного аккаунта. Сохраните эти данные, так как они будут использоваться в конфигурации ClickHouse.
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-guide-key.webp" alt="Получение созданного ключа HMAC для GCS" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-guide-key.webp" alt="Получение созданного ключа HMAC для GCS" />
+    </Frame>
+  </div>
 </Accordion>

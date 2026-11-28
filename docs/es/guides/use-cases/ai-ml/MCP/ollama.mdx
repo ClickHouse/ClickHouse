@@ -11,9 +11,7 @@ doc_type: 'guide'
 > Esta guía explica cómo usar el servidor MCP de ClickHouse con Ollama.
 
 <Steps>
-  <Step>
-    ## Instalar Ollama
-
+  <Step title="Instalar Ollama" id="install-ollama">
     Ollama es una biblioteca para ejecutar modelos de lenguaje de gran tamaño (LLM) en tu propia máquina.
     Tiene una [amplia variedad de modelos disponibles](https://ollama.com/library) y es fácil de usar.
 
@@ -84,9 +82,7 @@ doc_type: 'guide'
     Podemos ver en esta salida que el modelo qwen3 predeterminado tiene poco más de 8 mil millones de parámetros.
   </Step>
 
-  <Step>
-    ## Instalar MCPHost
-
+  <Step title="Instalar MCPHost" id="install-mcphost">
     En el momento de escribir esto (julio de 2025), no existe una funcionalidad nativa para usar Ollama con MCP servers.
     Sin embargo, podemos usar [MCPHost](https://github.com/mark3labs/mcphost) para ejecutar modelos de Ollama con MCP servers.
 
@@ -100,9 +96,7 @@ doc_type: 'guide'
     El binario se instalará en `~/go/bin`, por lo que debemos asegurarnos de que ese directorio esté en nuestro `PATH`.
   </Step>
 
-  <Step>
-    ## Configuración del servidor MCP de ClickHouse
-
+  <Step title="Configuración del servidor MCP de ClickHouse" id="configure-clickhouse-mcp-server">
     Podemos configurar servidores MCP con MCPHost en archivos YAML o JSON.
     MCPHost buscará archivos de configuración en tu directorio personal en el siguiente orden:
 
@@ -150,9 +144,7 @@ doc_type: 'guide'
     </Note>
   </Step>
 
-  <Step>
-    ## Ejecutar MCPHost
-
+  <Step title="Ejecutar MCPHost" id="running-mcphost">
     Una vez configurado el ClickHouse MCP server, puedes ejecutar MCPHost con el siguiente comando:
 
     ```bash
@@ -173,21 +165,21 @@ doc_type: 'guide'
 
     ```text
       ┃                                                                                     ┃
-      ┃  Modelo cargado: ollama (qwen3)                                                     ┃
+      ┃  Model loaded: ollama (qwen3)                                                       ┃
       ┃   MCPHost System (09:52)                                                            ┃
       ┃                                                                                     ┃
 
       ┃                                                                                     ┃
-      ┃  Modelo cargado correctamente en la GPU                                             ┃
+      ┃  Model loaded successfully on GPU                                                   ┃
       ┃   MCPHost System (09:52)                                                            ┃
       ┃                                                                                     ┃
 
       ┃                                                                                     ┃
-      ┃  Se cargaron 3 herramientas desde los servidores MCP                                ┃
+      ┃  Loaded 3 tools from MCP servers                                                    ┃
       ┃   MCPHost System (09:52)                                                            ┃
       ┃                                                                                     ┃
 
-      Introduzca su prompt (escriba /help para ver los comandos, Ctrl+C para salir, ESC para cancelar la generación)
+      Enter your prompt (Type /help for commands, Ctrl+C to quit, ESC to cancel generation)
     ```
 
     Podemos usar el comando `/servers` para ver la lista de servidores MCP:

@@ -1,0 +1,29 @@
+-- WITH TOTALS on the right side
+0	p0	4
+1	p1	4
+
+0		20
+0	p0	4
+1	p1	4
+
+0		20
+-- WITH TOTALS on the left side
+0	4	p0
+1	4	p1
+
+0	20	
+0	4	p0
+1	4	p1
+
+0	20	
+-- a remote read
+0	p0	4
+1	p1	4
+
+0		20
+0	p0	4
+1	p1	4
+
+0		20
+-- nothing is read lazily
+0

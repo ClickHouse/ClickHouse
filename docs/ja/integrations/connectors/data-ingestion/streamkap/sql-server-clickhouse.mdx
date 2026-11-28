@@ -7,12 +7,10 @@ title: "SQL ServerからClickHouseへデータをストリーミングして高�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 この記事では、SQL ServerからClickHouseへデータをストリーミングする方法を紹介するチュートリアルを、わかりやすく解説します。ClickHouseは、社内向けまたは顧客向けのダッシュボード用に超高速な分析を行いたい場合に最適です。ここでは、両方のデータベースのセットアップ、接続方法、そして最後に[Streamkap](https://streamkap.com)を使ってデータをストリーミングする方法を、順を追って説明します。日々の業務処理はSQL Serverで行いながら、分析にはClickHouseの速度と高度な機能を活用したいなら、この記事はまさにぴったりです。
 
 <div id="why-stream-data-from-sql-server-to-clickhouse">
-  ## なぜ SQL Server から ClickHouse にデータをストリーミングするのか？
+  ## なぜ SQL Server から ClickHouse にデータをストリーミングするのか？ {#why-stream-data-from-sql-server-to-clickhouse}
 </div>
 
 ここまでたどり着いたということは、おそらくこんな課題を感じているはずです。SQL Server はトランザクション処理には非常に堅牢ですが、高負荷なリアルタイム分析クエリを実行するようには設計されていません。
@@ -26,29 +24,29 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 * 分析のためにユーザーアクティビティログを常に最新に保つようなイベントストリーミング
 
 <div id="what-youll-need-to-get-started">
-  ## 始める前に必要なもの
+  ## 始める前に必要なもの {#what-youll-need-to-get-started}
 </div>
 
 詳細に入る前に、次のものを準備しておいてください。
 
 <div id="prerequisites">
-  ### 前提条件
+  ### 前提条件 {#prerequisites}
 </div>
 
 * 稼働中の SQL Server インスタンス
 
-* このチュートリアルでは AWS RDS for SQL Server を使用しますが、最新の SQL Server インスタンスであれば問題なく使用できます。[AWS SQL Server をゼロからセットアップする](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap%23setting-up-a-new-rds-sql-server-from-scratch)
+* このチュートリアルでは AWS RDS for SQL Server を使用しますが、最新の SQL Server インスタンスであれば問題なく使用できます。[AWS SQL Server をゼロからセットアップする](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap#setting-up-a-new-rds-sql-server-from-scratch)
 
 * ClickHouse インスタンス
 
-* セルフホストまたはクラウドに対応しています。[ClickHouse をゼロからセットアップする](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap%23creating-a-new-clickhouse-account)
+* セルフホストまたはクラウドに対応しています。[ClickHouse をゼロからセットアップする](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap#creating-a-new-clickhouse-account)
 
 * Streamkap
 
 * このツールは、データストリーミングパイプラインの中核を担います。
 
 <div id="connection-info">
-  ### 接続情報
+  ### 接続情報 {#connection-info}
 </div>
 
 以下を確認してください。
@@ -57,158 +55,144 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 * ClickHouse server のアドレス、ポート、ユーザー名、パスワード。ClickHouse の IP Access List では、どのサービスが ClickHouse データベースに接続できるかを制御します。[こちらの手順に従ってください。](https://www.google.com/url?q=https://docs.streamkap.com/docs/clickhouse\&sa=D\&source=editors\&ust=1760992472359060\&usg=AOvVaw3H1XqqwvqAso_TQPNBKEhD)
 * ストリーミングしたいテーブル。まずは 1 つから始めてください
 
-<div id="setting-up-sql-server-as-a-source">
-  ## ソースとして SQL Server を設定する
-</div>
+<Steps>
+  <Step title="Streamkap で SQL Server のソースを作成する" id="step-1-creating-a-sql-server-source-in-streamkap">
+    <a id="setting-up-sql-server-as-a-source" />
 
-では、始めましょう！
+    それでは始めましょう。
 
-<div id="step-1-creating-a-sql-server-source-in-streamkap">
-  ### ステップ 1: Streamkap で SQL Server ソースを作成する
-</div>
+    まずはソース接続を設定します。これにより、Streamkap はどこから変更を取得すればよいかを把握できます。
 
-まず、ソース接続を設定します。これにより、Streamkap はどこから変更を取得すればよいかを認識します。
+    手順は次のとおりです。
 
-手順は次のとおりです。
+    1. Streamkap を開き、SOURCES セクションに移動します。
+    2. 新しいソースを作成します。
 
-1. Streamkap を開き、Sources セクションに移動します。
-2. 新しいソースを作成します。
+    * 識別しやすい名前を付けます (例: sqlserver-demo-source) 。
 
-* わかりやすい名前を付けます (例: sqlserver-demo-source) 。
+    3. SQL Server の接続情報を入力します。
 
-3. SQL Server の接続情報を入力します。
+    * ホスト (例: your-db-instance.rds.amazonaws.com)
+    * ポート (SQL Server のデフォルトは 3306)
+    * ユーザー名とパスワード
+    * データベース名
 
-* Host (例: your-db-instance.rds.amazonaws.com) 
-* Port (SQL Server のデフォルトは 3306) 
-* Username と Password
-* データベース名
+    <div className="ch-image-lg">
+      <Frame>
+        ![](/images/integrations/data-ingestion/etl-tools/image3.webp)
+      </Frame>
+    </div>
 
-<Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />
+#### バックグラウンドで行われること {#whats-happening-behind-the-scenes}
 
-<div id="whats-happening-behind-the-scenes">
-  #### 裏側で何が起きているか
-</div>
+    <div className="ch-image-lg">
+      <Frame>
+        ![](/images/integrations/data-ingestion/etl-tools/image1.webp)
+      </Frame>
+    </div>
 
-<Image img="/images/integrations/data-ingestion/etl-tools/image1.webp" size="lg" />
+    この設定を行うと、Streamkap は SQL Server に接続してテーブルを検出します。このデモでは、events や transactions のように、すでにデータがストリーミングされているテーブルを選びます。
+  </Step>
 
-これを設定すると、Streamkap が SQL Server に接続してテーブルを検出します。このデモでは、イベントやトランザクションのように、すでにデータがストリーミングされているテーブルを選びます。
+  <Step title="StreamkapでClickHouseの宛先を追加する" id="step-2-add-a-clickhouse-destination-in-streamkap">
+    <a id="creating-a-clickhouse-destination" />
 
-<div id="creating-a-clickhouse-destination">
-  ## ClickHouseの宛先を作成する
-</div>
+    それでは、このデータをすべて送信する宛先を設定しましょう。
 
-それでは、このデータの送信先となるClickHouseの宛先を設定しましょう。
+    ソース側と同様に、ClickHouse の接続情報を使って宛先を作成します。
 
-<div id="step-2-add-a-clickhouse-destination-in-streamkap">
-  ### ステップ 2: Streamkap で ClickHouse の宛先を追加する
-</div>
+#### 手順: {#steps}
 
-ソースと同様に、ClickHouse の接続情報を使用して宛先を作成します。
+    1. Streamkap の destinations セクションに移動します。
+    2. 新しい宛先を追加し、宛先タイプとして ClickHouse を選択します。
+    3. ClickHouse の情報を入力します:
 
-<div id="steps">
-  #### 手順:
-</div>
+    * ホスト
+    * ポート (デフォルトは 9000)
+    * ユーザー名とパスワード
+    * データベース名
 
-1. Streamkap の宛先セクションに移動します。
-2. 新しい宛先を追加し、宛先タイプとして ClickHouse を選択します。
-3. ClickHouse の情報を入力します。
+    スクリーンショット例: Streamkap ダッシュボードで新しい ClickHouse 宛先を追加する画面。
 
-* ホスト
-* ポート (デフォルトは 9000) 
-* ユーザー名とパスワード
-* データベース名
+### Upsert モード: これは何ですか? {#upsert-mode-what-is-that}
 
-スクリーンショット例: Streamkap ダッシュボードで新しい ClickHouse 宛先を追加する画面。
+    これは重要なステップです。ここでは ClickHouse の「upsert」モードを使用します。これは内部的に ClickHouse の ReplacingMergeTree engine を利用するものです。これにより、受信レコードを効率よくマージし、ClickHouse でいう「パーツマージ」によって、取り込み後の更新にも対応できます。
 
-<div id="upsert-mode-what-is-that">
-  ### Upsert モードとは？
-</div>
+    * これにより、SQL Server 側で変更があった場合でも、宛先テーブルが重複データで埋まるのを防げます。
 
-これは重要なステップです。ClickHouse の「upsert」モードを使いたいからです。これは (内部的には) ClickHouse の ReplacingMergeTree エンジンを使用しています。これにより、受信レコードを効率的にマージし、ClickHouse で「パーツマージ」と呼ばれる仕組みを使って、取り込み後の更新を処理できます。
+### スキーマ進化への対応 {#handling-schema-evolution}
 
-* これにより、SQL Server 側で変更が発生しても、宛先テーブルが重複データで埋まらないようにできます。
+    ClickHouse と SQL Server では、カラムが完全には一致しないことがあります。特に、アプリが本番稼働中で、開発者がその場でカラムを追加していくような場合はなおさらです。
 
-<div id="handling-schema-evolution">
-  ### スキーマ進化への対応
-</div>
+    * 朗報です。Streamkap は基本的なスキーマ進化に対応しています。つまり、SQL Server で新しいカラムを追加すると、ClickHouse 側にもそのカラムが反映されます。
 
-ClickHouse と SQL Server で、同じカラムが常に揃っているとは限りません。特に、アプリが本番稼働中で、開発者が随時カラムを追加している場合はなおさらです。
+    宛先設定で「schema evolution」を選択するだけです。必要に応じて、あとからいつでも調整できます。
+  </Step>
 
-* 朗報です。Streamkap は基本的なスキーマ進化に対応しています。つまり、SQL Server に新しいカラムを追加すると、そのカラムは ClickHouse 側にも反映されます。
+  <Step title="Streamkapでパイプラインを設定する" id="step-3-set-up-the-pipeline-in-streamkap">
+    <a id="building-the-streaming-pipeline" />
 
-宛先の設定で「schema evolution」を選択するだけです。必要に応じて、あとからいつでも調整できます。
+    ソースと宛先の設定が完了したら、いよいよ楽しい部分、データをストリーミングする段階です。
 
-<div id="building-the-streaming-pipeline">
-  ## ストリーミングパイプラインの構築
-</div>
+#### パイプラインの設定 {#pipeline-setup}
 
-転送元と宛先の設定が完了したら、いよいよデータのストリーミングです。
+    1. Streamkap の Pipelines タブに移動します。
 
-<div id="step-3-set-up-the-pipeline-in-streamkap">
-  ### ステップ 3: Streamkap でパイプラインを設定する
-</div>
+    2. 新しいパイプラインを作成します。
 
-<div id="pipeline-setup">
-  #### パイプラインの設定
-</div>
+    3. SQL Server のソース (sqlserver-demo-source) を選択します。
 
-1. Streamkap の Pipelines タブを開きます。
+    4. ClickHouse の宛先 (clickhouse-tutorial-destination) を選択します。
 
-2. 新しいパイプラインを作成します。
+    5. ストリーミングしたいテーブルを選択します。ここでは `events` とします。
 
-3. SQL Server ソース (sqlserver-demo-source) を選択します。
+    6. CDC (変更データキャプチャ) 用に設定します。
 
-4. ClickHouse の宛先 (clickhouse-tutorial-destination) を選択します。
+    * 今回は新しいデータをストリーミングします (最初はバックフィルを省略し、CDC イベントに集中するとよいでしょう) 。
 
-5. ストリーミングしたいテーブルを選択します。ここでは `events` とします。
+    パイプライン設定のスクリーンショット。ソース、宛先、テーブルを選択している画面です。
 
-6. CDC (変更データキャプチャ) 用に設定します。
+#### バックフィルは必要ですか？ {#should-you-backfill}
 
-* 今回は新しいデータをストリーミングします (最初は履歴データの投入はスキップして、CDC イベントに集中するとよいでしょう) 。
+    <div className="ch-image-lg">
+      <Frame>
+        ![](/images/integrations/data-ingestion/etl-tools/image2.webp)
+      </Frame>
+    </div>
 
-パイプライン設定のスクリーンショット。ソース、宛先、テーブルを選択している画面です。
+    「古いデータもバックフィルしたほうがよいのだろうか？」と思うかもしれません。
 
-<div id="should-you-backfill">
-  #### バックフィルは必要ですか？
-</div>
+    多くの分析用途では、まずはこれ以降の変更をストリーミングするだけで十分ですが、必要になれば後から古いデータを読み込むこともできます。
 
-<Image img="/images/integrations/data-ingestion/etl-tools/image2.webp" size="lg" />
+    明確な必要がない限り、ひとまず「バックフィルしない」を選んでください。
+  </Step>
 
-「古いデータもバックフィルすべきだろうか？」と思うかもしれません。
+  <Step title="データストリームを確認する" id="step-4-watch-the-data-stream">
+    <a id="streaming-in-action-what-to-expect" />
 
-多くの分析用途では、まずは今後の変更をストリーミングするだけで十分です。必要になれば、あとから古いデータを読み込むこともできます。
+    これでパイプラインの設定が完了し、稼働を開始しました。
 
-特別な理由がない限り、ひとまず「バックフィルしない」を選んでください。
+    動作は次のとおりです。
 
-<div id="streaming-in-action-what-to-expect">
-  ## ストリーミングの動作：想定される内容
-</div>
+    * SQL Server のsource tableに新しいデータが入ると、Streamkap パイプラインがその変更をキャプチャして ClickHouse に送信します。
+    * ClickHouse は、ReplacingMergeTree とパーツマージによってこれらの行を取り込み、更新をマージします。
+    * スキーマも自動で追随します。SQL Server でカラムを追加すると、ClickHouse にも反映されます。
 
-これでパイプラインの設定が完了し、アクティブになりました！
+    ClickHouse と SQL Server の行数がリアルタイムで増えていく様子を、ライブダッシュボードやログで確認できます。
 
-<div id="step-4-watch-the-data-stream">
-  ### ステップ 4: データストリームを確認する
-</div>
+    SQL Server にデータが入るのに合わせて、ClickHouse の行数が増えていくのをそのまま確認できます。
 
-ここでは次のことが起こります。
+    ```sql
+    -- Example: Checking rows in ClickHouse 
+    SELECT COUNT(*) FROM analytics.events; |
+    ```
 
-* SQL Server のソーステーブルに新しいデータが入ると、Streamkap のパイプラインがその変更を捉えて ClickHouse に送信します。
-* ClickHouse は (ReplacingMergeTree とパーツマージにより) これらの行を取り込み、更新をマージします。
-* スキーマも追随します。SQL Server でカラムを追加すると、ClickHouse にも反映されます。
-
-ClickHouse と SQL Server の行数がリアルタイムに増えていく様子は、ライブダッシュボードやログで確認できます。
-
-SQL Server にデータが入るにつれて、ClickHouse の行数が実際に増えていくのを確認できます。
-
-```sql
--- 例: ClickHouseの行数を確認する 
-SELECT COUNT(*) FROM analytics.events; |
-```
-
-高負荷時には多少の遅延が発生することがありますが、ほとんどのユースケースではほぼリアルタイムでストリーミングされます。
+    高負荷時には多少の遅延が発生する場合がありますが、ほとんどのユースケースではほぼリアルタイムでストリーミングされます。
+  </Step>
+</Steps>
 
 <div id="under-the-hood-whats-streamkap-actually-doing">
-  ## 内部では何が起きているのか: Streamkap は実際に何をしているのか？
+  ## 内部では何が起きているのか: Streamkap は実際に何をしているのか？ {#under-the-hood-whats-streamkap-actually-doing}
 </div>
 
 その仕組みを少し見てみましょう。
@@ -220,11 +204,11 @@ SELECT COUNT(*) FROM analytics.events; |
 これは単なる ETL ではなく、リアルタイムでストリーミングされる本格的な変更データキャプチャ (CDC) です。
 
 <div id="advanced-options">
-  ## 詳細オプション
+  ## 詳細オプション {#advanced-options}
 </div>
 
 <div id="upsert-vs-insert-modes">
-  ### Upsert モードと Insert モード
+  ### Upsert モードと Insert モード {#upsert-vs-insert-modes}
 </div>
 
 すべての行をそのまま挿入する (Insert モード) のと、更新や削除も反映する (Upsert モード) のでは、何が違うのでしょうか？
@@ -233,7 +217,7 @@ SELECT COUNT(*) FROM analytics.events; |
 * Upsert モード: 既存の行への更新はその内容を上書きするため、分析データを常に最新かつ整った状態に保つのに適しています。
 
 <div id="handling-schema-changes">
-  ### スキーマ変更への対応
+  ### スキーマ変更への対応 {#handling-schema-changes}
 </div>
 
 アプリは変化し、それに伴ってスキーマも変わります。このパイプラインでは、次のように対応できます。
@@ -244,11 +228,11 @@ SELECT COUNT(*) FROM analytics.events; |
   設定によっては移行が必要になることもありますが、追加のほとんどはスムーズに反映されます。
 
 <div id="real-world-monitoring-keeping-tabs-on-the-pipeline">
-  ## 実運用での監視: パイプラインの状態を把握する
+  ## 実運用での監視: パイプラインの状態を把握する {#real-world-monitoring-keeping-tabs-on-the-pipeline}
 </div>
 
 <div id="checking-pipeline-health">
-  ### パイプラインの状態を確認する
+  ### パイプラインの状態を確認する {#checking-pipeline-health}
 </div>
 
 Streamkap には、次のことを確認できるダッシュボードがあります。
@@ -260,7 +244,7 @@ Streamkap には、次のことを確認できるダッシュボードがあり�
 ダッシュボードの例：遅延グラフ、行数、正常性インジケーター。
 
 <div id="common-metrics-to-watch">
-  ### 確認すべき主要なメトリクス
+  ### 確認すべき主要なメトリクス {#common-metrics-to-watch}
 </div>
 
 * 遅延: ClickHouse が SQL Server に対してどれくらい遅れているか
@@ -268,7 +252,7 @@ Streamkap には、次のことを確認できるダッシュボードがあり�
 * エラー率: ほぼゼロであるべき
 
 <div id="going-live-querying-clickhouse">
-  ## 本番運用: ClickHouse のクエリ
+  ## 本番運用: ClickHouse のクエリ {#going-live-querying-clickhouse}
 </div>
 
 データが ClickHouse に入ったので、高速な分析ツールを使ってクエリを実行できます。基本的な例を以下に示します。
@@ -281,7 +265,7 @@ SELECT user\_id, COUNT(*) AS actionsFROM analytics.eventsWHERE event\_time >= no
 Grafana、Superset、Redash などのダッシュボードツールと ClickHouse を組み合わせれば、本格的なレポート作成が可能です。
 
 <div id="next-steps-and-deep-dives">
-  ## 次のステップと詳細ガイド
+  ## 次のステップと詳細ガイド {#next-steps-and-deep-dives}
 </div>
 
 この手順ガイドで紹介したのは、できることのほんの一部にすぎません。基本を押さえたら、次は以下の内容も検討してみてください。
@@ -295,7 +279,7 @@ Grafana、Superset、Redash などのダッシュボードツールと ClickHous
 より詳しいガイドについては、[Streamkap blog](https://streamkap.com/blog)をぜひチェックしてください。
 
 <div id="faq-and-troubleshooting">
-  ## よくある質問とトラブルシューティング
+  ## よくある質問とトラブルシューティング {#faq-and-troubleshooting}
 </div>
 
 Q: クラウド上のデータベースでも動作しますか？
@@ -308,7 +292,7 @@ Q: 削除も処理できますか？
 A: もちろんです。upsert モードでは、削除もフラグ付けされ、ClickHouse 側で処理されます。
 
 <div id="wrapping-up">
-  ## まとめ
+  ## まとめ {#wrapping-up}
 </div>
 
 以上で、Streamkap を使って SQL Server のデータを ClickHouse にストリーミングする方法の概要はひととおり完了です。高速で柔軟性があり、本番データベースに大きな負荷をかけることなく最新の分析を必要とするチームに最適です。

@@ -27,7 +27,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -52,28 +51,25 @@ public:
     explicit FunctionSynonyms(SynonymsExtensions & extensions_)
         : extensions(extensions_) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-        if (!isString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[1]->getName(), getName());
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        /// The extension name (argument 0) is always constant: it is listed in
+        /// `getArgumentsThatAreAlwaysConstant` and `executeImpl` rejects anything but a
+        /// `ColumnConst` before reading it once.
+        return "(const String, String) -> Array(String)";
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto & extcolumn = arguments[0].column;
         const auto & strcolumn = arguments[1].column;
@@ -94,19 +90,19 @@ public:
         /// Create and fill the result array.
         const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*result_type).getNestedType();
 
-        auto out = ColumnArray::create(elem_type->createColumn());
-        IColumn & out_data = out->getData();
-        IColumn::Offsets & out_offsets = out->getOffsets();
+        auto out_data_column = elem_type->createColumn();
+        auto out_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
+        IColumn & out_data = *out_data_column;
+        IColumn::Offsets & out_offsets = out_offsets_column->getData();
 
         const ColumnString::Chars & data = word_col->getChars();
         const ColumnString::Offsets & offsets = word_col->getOffsets();
         out_data.reserve(input_rows_count);
-        out_offsets.resize(input_rows_count);
 
         IColumn::Offset current_offset = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            std::string_view word(reinterpret_cast<const char *>(data.data() + offsets[i - 1]), offsets[i] - offsets[i - 1]);
+            std::string_view word(reinterpret_cast<const char *>(data.data() + offsets[static_cast<ssize_t>(i) - 1]), offsets[i] - offsets[static_cast<ssize_t>(i) - 1]);
 
             const auto * synset = extension->getSynonyms(word);
 
@@ -120,13 +116,21 @@ public:
             out_offsets[i] = current_offset;
         }
 
-        return out;
+        return ColumnArray::create(std::move(out_data_column), std::move(out_offsets_column));
     }
 };
 
 REGISTER_FUNCTION(Synonyms)
 {
     FunctionDocumentation::Description description = R"(
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+<Warning>
+This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
+Set `allow_experimental_nlp_functions = 1` to enable it.
+</Warning>
+
 Finds synonyms of a given word.
 
 There are two types of synonym extensions:
@@ -138,11 +142,6 @@ Words in this line must be separated with space or tab characters.
 
 With the `wordnet` extension type you need to provide a path to a directory with the WordNet thesaurus in it.
 The thesaurus must contain a WordNet sense index.
-
-:::warning
-This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
-Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
 )";
     FunctionDocumentation::Syntax syntax = "synonyms(ext_name, word)";
     FunctionDocumentation::Arguments arguments = {
@@ -151,7 +150,7 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns array of synonyms for the given word.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
-        {"Find synonyms", "SELECT synonyms('list', 'important')", "['important','big','critical','crucial']"}
+        {"Find synonyms", "SET allow_experimental_nlp_functions = 1;\nSELECT synonyms('en', 'important')", "['important','big','critical','crucial','essential']"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;

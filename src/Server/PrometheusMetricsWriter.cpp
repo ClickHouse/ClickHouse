@@ -3,10 +3,13 @@
 #include <Common/HistogramMetrics.h>
 #include <Common/DimensionalMetrics.h>
 #include <Common/AsynchronousMetrics.h>
+#include <unordered_set>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
-#include <Common/re2.h>
+#include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/config_version.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
@@ -54,15 +57,21 @@ void writeOutLine(DB::WriteBuffer & wb, T && val, TArgs &&... args)
     writeOutLine(wb, std::forward<TArgs>(args)...);
 }
 
-/// Returns false if name is not valid
-bool replaceInvalidChars(std::string & metric_name)
+template <typename T>
+void writeMetricLine(DB::WriteBuffer & wb, const std::string & key, const std::string & labels_suffix, T && value)
 {
-    /// dirty solution:
-    static const re2::RE2 regexp1("[^a-zA-Z0-9_:]");
-    static const re2::RE2 regexp2("^[^a-zA-Z]*");
-    re2::RE2::GlobalReplace(&metric_name, regexp1, "_");
-    re2::RE2::GlobalReplace(&metric_name, regexp2, "");
-    return !metric_name.empty();
+    DB::writeText(key, wb);
+    DB::writeText(labels_suffix, wb);
+    DB::writeChar(' ', wb);
+    writeOutLine(wb, std::forward<T>(value));
+}
+
+/// Escapes a metric or label name, see `writePrometheusLabelName`.
+std::string escapeName(std::string_view name)
+{
+    DB::WriteBufferFromOwnString out;
+    DB::writePrometheusLabelName(name, out);
+    return out.str();
 }
 
 void convertHelpToSingleLine(std::string & help)
@@ -77,7 +86,7 @@ constexpr auto error_metrics_prefix = "ClickHouseErrorMetric_";
 constexpr auto histogram_prefix = "ClickHouseHistogramMetrics_";
 constexpr auto dimensional_metrics_prefix = "ClickHouseDimensionalMetrics_";
 
-void writeEvent(DB::WriteBuffer & wb, ProfileEvents::Event event)
+void writeEvent(DB::WriteBuffer & wb, ProfileEvents::Event event, const std::string & labels_suffix)
 {
     const auto counter = ProfileEvents::global_counters[event];
 
@@ -86,17 +95,16 @@ void writeEvent(DB::WriteBuffer & wb, ProfileEvents::Event event)
 
     convertHelpToSingleLine(metric_doc);
 
-    if (!replaceInvalidChars(metric_name))
-        return;
+    metric_name = escapeName(metric_name);
 
     std::string key{profile_events_prefix + metric_name};
 
     writeOutLine(wb, "# HELP", key, metric_doc);
     writeOutLine(wb, "# TYPE", key, "counter");
-    writeOutLine(wb, key, counter);
+    writeMetricLine(wb, key, labels_suffix, counter);
 }
 
-void writeMetric(DB::WriteBuffer & wb, size_t metric)
+void writeMetric(DB::WriteBuffer & wb, size_t metric, const std::string & labels_suffix)
 {
     const auto value = CurrentMetrics::values[metric].load(std::memory_order_relaxed);
 
@@ -105,33 +113,56 @@ void writeMetric(DB::WriteBuffer & wb, size_t metric)
 
     convertHelpToSingleLine(metric_doc);
 
-    if (!replaceInvalidChars(metric_name))
-        return;
+    metric_name = escapeName(metric_name);
 
     std::string key{current_metrics_prefix + metric_name};
 
     writeOutLine(wb, "# HELP", key, metric_doc);
     writeOutLine(wb, "# TYPE", key, "gauge");
-    writeOutLine(wb, key, value);
+    writeMetricLine(wb, key, labels_suffix, value);
 }
 
-void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues & values)
+void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues & values,
+    const std::string & constant_labels, const std::string & constant_labels_suffix)
 {
     for (const auto & name_value : values)
     {
         std::string key{asynchronous_metrics_prefix + name_value.first};
 
-        if (!replaceInvalidChars(key))
-            continue;
+        key = escapeName(key);
 
-        auto value = name_value.second;
+        const auto & value = name_value.second;
 
         std::string metric_doc{value.documentation};
         convertHelpToSingleLine(metric_doc);
 
         writeOutLine(wb, "# HELP", key, metric_doc);
         writeOutLine(wb, "# TYPE", key, "gauge");
-        writeOutLine(wb, key, value.value);
+
+        if (value.isMap())
+        {
+            /// A key-value metric is exported as one line per key, with the key as a label,
+            /// e.g. `ClickHouseAsyncMetrics_BlockReadBytes{device="sda"} 123`.
+            std::string label_name{value.key_label};
+            label_name = escapeName(label_name);
+
+            for (const auto & [map_key, map_value] : value.key_values)
+            {
+                DB::WriteBufferFromOwnString labels_wb;
+                DB::writeChar('{', labels_wb);
+                DB::writeText(constant_labels, labels_wb);
+                if (!constant_labels.empty())
+                    DB::writeChar(',', labels_wb);
+                DB::writeText(label_name, labels_wb);
+                DB::writeText("=\"", labels_wb);
+                DB::writePrometheusLabelValue(map_key, labels_wb);
+                DB::writeText("\"}", labels_wb);
+
+                writeMetricLine(wb, key, labels_wb.str(), map_value);
+            }
+        }
+        else
+            writeMetricLine(wb, key, constant_labels_suffix, value.value);
     }
 }
 
@@ -141,42 +172,94 @@ void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues 
 namespace DB
 {
 
+void writePrometheusLabelName(std::string_view name, WriteBuffer & out)
+{
+    for (size_t pos = 0; pos < name.size();)
+    {
+        char first_byte = name[pos];
+        bool valid = isAlphaASCII(first_byte) || (first_byte == '_') || (first_byte == ':') || (isNumericASCII(first_byte) && pos > 0);
+        writeChar(valid ? first_byte : '_', out);
+
+        /// A multi-byte character is replaced as a whole; a sequence cut off at the end of the name is not read past it.
+        pos += std::min<size_t>(UTF8::seqLength(static_cast<UInt8>(first_byte)), name.size() - pos);
+    }
+}
+
+void writePrometheusLabelValue(std::string_view value, WriteBuffer & out)
+{
+    for (char c : value)
+    {
+        if (c == '\\' || c == '"')
+        {
+            writeChar('\\', out);
+            writeChar(c, out);
+        }
+        else if (c == '\n')
+        {
+            writeChar('\\', out);
+            writeChar('n', out);
+        }
+        else
+            writeChar(c, out);
+    }
+}
+
+PrometheusMetricsWriter::PrometheusMetricsWriter(const std::map<std::string, std::string> & constant_labels_)
+{
+    if (constant_labels_.empty())
+        return;
+
+    WriteBufferFromOwnString wb;
+    bool first = true;
+    for (const auto & [label_name, label_value] : constant_labels_)
+    {
+        if (!first)
+            wb << ',';
+        first = false;
+        wb << label_name << '=';
+        writeDoubleQuotedString(label_value, wb);
+    }
+    constant_labels = wb.str();
+    constant_labels_suffix = "{" + constant_labels + "}";
+}
+
 void PrometheusMetricsWriter::writeEvents(WriteBuffer & wb) const
 {
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
-        writeEvent(wb, i);
+        writeEvent(wb, i, constant_labels_suffix);
 }
 
 void PrometheusMetricsWriter::writeMetrics(WriteBuffer & wb) const
 {
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-        writeMetric(wb, i);
+        writeMetric(wb, i, constant_labels_suffix);
 }
 
 void PrometheusMetricsWriter::writeAsynchronousMetrics(WriteBuffer & wb, const AsynchronousMetrics & async_metrics) const
 {
-    writeAsyncMetrics(wb, async_metrics.getValues());
+    writeAsyncMetrics(wb, async_metrics.getValues(), constant_labels, constant_labels_suffix);
 }
 
 void PrometheusMetricsWriter::writeErrors(WriteBuffer & wb) const
 {
     size_t total_count = 0;
 
-    for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
+    for (const auto code : ErrorCodes::getCodes())
     {
-        const auto & error = ErrorCodes::values[i].get();
-        std::string_view name = ErrorCodes::getName(static_cast<ErrorCodes::ErrorCode>(i));
+        std::string_view name = ErrorCodes::getName(code);
 
+        /// Custom error codes have no name, and are not exported.
         if (name.empty())
             continue;
 
+        const auto & error = ErrorCodes::values[code].get();
         std::string key{error_metrics_prefix + toString(name)};
         std::string help = fmt::format("The number of {} errors since last server restart", name);
 
         writeOutLine(wb, "# HELP", key, help);
         writeOutLine(wb, "# TYPE", key, "counter");
         /// We are interested in errors which are happened only on this server.
-        writeOutLine(wb, key, error.local.count);
+        writeMetricLine(wb, key, constant_labels_suffix, error.local.count);
 
         total_count += error.local.count;
     }
@@ -185,14 +268,13 @@ void PrometheusMetricsWriter::writeErrors(WriteBuffer & wb) const
     std::string key{error_metrics_prefix + toString("ALL")};
     writeOutLine(wb, "# HELP", key, "The total number of errors since last server restart");
     writeOutLine(wb, "# TYPE", key, "counter");
-    writeOutLine(wb, key, total_count);
+    writeMetricLine(wb, key, constant_labels_suffix, total_count);
 }
 
-void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const HistogramMetrics::MetricFamily & family)
+void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const HistogramMetrics::MetricFamily & family, const std::string & extra_labels)
 {
     std::string base_name = histogram_prefix + family.getName();
-    if (!replaceInvalidChars(base_name))
-        return;
+    base_name = escapeName(base_name);
 
     std::string help_text = family.getDocumentation();
     convertHelpToSingleLine(help_text);
@@ -200,7 +282,7 @@ void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histo
     writeOutLine(wb, "# HELP", base_name, help_text);
     writeOutLine(wb, "# TYPE", base_name, "histogram");
 
-    family.forEachMetric([&wb, &family, &base_name](const HistogramMetrics::LabelValues & label_values, const HistogramMetrics::Metric & metric)
+    family.forEachMetric([&wb, &family, &base_name, &extra_labels](const HistogramMetrics::LabelValues & label_values, const HistogramMetrics::Metric & metric)
     {
         const auto & buckets = family.getBuckets();
         const auto & labels = family.getLabels();
@@ -211,6 +293,9 @@ void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histo
             cumulative_count += metric.getCounter(i);
 
             wb << base_name << "_bucket{";
+
+            if (!extra_labels.empty())
+                wb << extra_labels << ',';
 
             for (size_t j = 0; j < labels.size(); ++j)
             {
@@ -233,12 +318,12 @@ void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histo
         }
 
         wb << base_name << "_count";
-        if (!labels.empty())
+        if (!labels.empty() || !extra_labels.empty())
         {
-            wb << '{';
+            wb << '{' << extra_labels;
             for (size_t j = 0; j < labels.size(); ++j)
             {
-                if (j != 0)
+                if (j != 0 || !extra_labels.empty())
                 {
                     wb << ',';
                 }
@@ -250,12 +335,12 @@ void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histo
         wb << ' ' << cumulative_count << '\n';
 
         wb << base_name << "_sum";
-        if (!labels.empty())
+        if (!labels.empty() || !extra_labels.empty())
         {
-            wb << '{';
+            wb << '{' << extra_labels;
             for (size_t j = 0; j < labels.size(); ++j)
             {
-                if (j > 0)
+                if (j > 0 || !extra_labels.empty())
                 {
                     wb << ',';
                 }
@@ -270,17 +355,16 @@ void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histo
 
 void PrometheusMetricsWriter::writeHistogramMetrics(WriteBuffer & wb) const
 {
-    HistogramMetrics::Factory::instance().forEachFamily([&wb](const HistogramMetrics::MetricFamily & family)
+    HistogramMetrics::Factory::instance().forEachFamily([this, &wb](const HistogramMetrics::MetricFamily & family)
     {
-        writeHistogramMetric(wb, family);
+        writeHistogramMetric(wb, family, constant_labels);
     });
 }
 
-void PrometheusMetricsWriter::writeDimensionalMetric(WriteBuffer & wb, const DimensionalMetrics::MetricFamily & family)
+void PrometheusMetricsWriter::writeDimensionalMetric(WriteBuffer & wb, const DimensionalMetrics::MetricFamily & family, const std::string & extra_labels)
 {
     std::string base_name = dimensional_metrics_prefix + family.getName();
-    if (!replaceInvalidChars(base_name))
-        return;
+    base_name = escapeName(base_name);
 
     std::string help_text = family.getDocumentation();
     convertHelpToSingleLine(help_text);
@@ -288,16 +372,16 @@ void PrometheusMetricsWriter::writeDimensionalMetric(WriteBuffer & wb, const Dim
     writeOutLine(wb, "# HELP", base_name, help_text);
     writeOutLine(wb, "# TYPE", base_name, family.getTypeString());
 
-    family.forEachMetric([&wb, &family, &base_name](const DimensionalMetrics::LabelValues & label_values, const DimensionalMetrics::Metric & metric)
+    family.forEachMetric([&wb, &family, &base_name, &extra_labels](const DimensionalMetrics::LabelValues & label_values, const DimensionalMetrics::Metric & metric)
     {
         wb << base_name;
         const auto & labels = family.getLabels();
-        if (!labels.empty())
+        if (!labels.empty() || !extra_labels.empty())
         {
-            wb << '{';
+            wb << '{' << extra_labels;
             for (size_t i = 0; i < labels.size(); ++i)
             {
-                if (i != 0)
+                if (i != 0 || !extra_labels.empty())
                 {
                     wb << ',';
                 }
@@ -312,9 +396,9 @@ void PrometheusMetricsWriter::writeDimensionalMetric(WriteBuffer & wb, const Dim
 
 void PrometheusMetricsWriter::writeDimensionalMetrics(WriteBuffer & wb) const
 {
-    DimensionalMetrics::Factory::instance().forEachFamily([&wb](const DimensionalMetrics::MetricFamily & family)
+    DimensionalMetrics::Factory::instance().forEachFamily([this, &wb](const DimensionalMetrics::MetricFamily & family)
     {
-        writeDimensionalMetric(wb, family);
+        writeDimensionalMetric(wb, family, constant_labels);
     });
 }
 
@@ -326,6 +410,8 @@ void PrometheusMetricsWriter::writeInfo(WriteBuffer & wb) const
     writeOutLine(wb, "# TYPE", key, "gauge");
 
     wb << key << '{';
+    if (!constant_labels.empty())
+        wb << constant_labels << ',';
     wb << "name=\"" << VERSION_NAME << "\"";
     wb << ",version=\"" << VERSION_STRING << "\"";
     wb << ",version_describe=\"" << VERSION_DESCRIBE << "\"";
@@ -336,11 +422,52 @@ void PrometheusMetricsWriter::writeInfo(WriteBuffer & wb) const
 }
 
 
+std::unordered_set<std::string> PrometheusMetricsWriter::getReservedLabelNames(
+    bool expose_info,
+    bool expose_asynchronous_metrics,
+    AsynchronousMetricsKeyValuesMode async_metrics_mode,
+    bool expose_histograms,
+    bool expose_dimensional_metrics) const
+{
+    std::unordered_set<std::string> reserved_names;
+
+    if (expose_info)
+        reserved_names.insert({"name", "version", "version_describe", "version_major", "version_minor", "version_patch"});
+
+    /// Every one of these labels belongs to a metric family that also has a pre-26.8 scalar name, so in
+    /// `legacy_names` mode none of them is written and a configuration that was valid before 26.8 - a
+    /// constant `device` label, for example - is valid again.
+    if (expose_asynchronous_metrics && async_metrics_mode != AsynchronousMetricsKeyValuesMode::LegacyNames)
+        reserved_names.insert({"channel", "cpu", "device", "disk", "interface", "mc", "sensor"});
+
+    if (expose_histograms)
+    {
+        reserved_names.insert("le");
+        HistogramMetrics::Factory::instance().forEachFamily(
+            [&reserved_names](const HistogramMetrics::MetricFamily & family)
+            {
+                for (const auto & label : family.getLabels())
+                    reserved_names.insert(label);
+            });
+    }
+
+    if (expose_dimensional_metrics)
+        DimensionalMetrics::Factory::instance().forEachFamily(
+            [&reserved_names](const DimensionalMetrics::MetricFamily & family)
+            {
+                for (const auto & label : family.getLabels())
+                    reserved_names.insert(label);
+            });
+
+    return reserved_names;
+}
+
+
 void KeeperPrometheusMetricsWriter::writeEvents([[maybe_unused]] WriteBuffer & wb) const
 {
 #if USE_NURAFT
     for (auto event : ProfileEvents::keeper_profile_events)
-        writeEvent(wb, event);
+        writeEvent(wb, event, constant_labels_suffix);
 #endif
 }
 
@@ -348,7 +475,7 @@ void KeeperPrometheusMetricsWriter::writeMetrics([[maybe_unused]] WriteBuffer & 
 {
 #if USE_NURAFT
     for (auto metric : CurrentMetrics::keeper_metrics)
-        writeMetric(wb, metric);
+        writeMetric(wb, metric, constant_labels_suffix);
 #endif
 }
 
@@ -356,7 +483,7 @@ void KeeperPrometheusMetricsWriter::writeAsynchronousMetrics([[maybe_unused]] Wr
                                                              [[maybe_unused]] const AsynchronousMetrics & async_metrics) const
 {
 #if USE_NURAFT
-    writeAsyncMetrics(wb, async_metrics.getValues());
+    writeAsyncMetrics(wb, async_metrics.getValues(), constant_labels, constant_labels_suffix);
 #endif
 }
 
@@ -365,7 +492,7 @@ void KeeperPrometheusMetricsWriter::writeHistogramMetrics([[maybe_unused]] Write
 #if USE_NURAFT
     for (const auto * histogram : HistogramMetrics::keeper_histograms)
     {
-        writeHistogramMetric(wb, *histogram);
+        writeHistogramMetric(wb, *histogram, constant_labels);
     }
 #endif
 }
@@ -375,13 +502,51 @@ void KeeperPrometheusMetricsWriter::writeDimensionalMetrics([[maybe_unused]] Wri
 #if USE_NURAFT
     for (const auto * metric : DimensionalMetrics::keeper_dimensional_metrics)
     {
-        writeDimensionalMetric(wb, *metric);
+        writeDimensionalMetric(wb, *metric, constant_labels);
     }
 #endif
 }
 
 void KeeperPrometheusMetricsWriter::writeErrors(WriteBuffer &) const
 {
+}
+
+std::unordered_set<std::string> KeeperPrometheusMetricsWriter::getReservedLabelNames(
+    [[maybe_unused]] bool expose_info,
+    [[maybe_unused]] bool expose_asynchronous_metrics,
+    [[maybe_unused]] AsynchronousMetricsKeyValuesMode async_metrics_mode,
+    [[maybe_unused]] bool expose_histograms,
+    [[maybe_unused]] bool expose_dimensional_metrics) const
+{
+    std::unordered_set<std::string> reserved_names;
+
+    /// writeInfo() is not overridden for Keeper, so ClickHouse_Info is still exposed when enabled.
+    if (expose_info)
+        reserved_names.insert({"name", "version", "version_describe", "version_major", "version_minor", "version_patch"});
+
+#if USE_NURAFT
+    /// As above: these labels disappear together with the key-value form.
+    if (expose_asynchronous_metrics && async_metrics_mode != AsynchronousMetricsKeyValuesMode::LegacyNames)
+        reserved_names.insert({"channel", "cpu", "device", "disk", "interface", "mc", "sensor"});
+#endif
+
+#if USE_NURAFT
+    /// Keeper only exposes the curated keeper_* families, not every family registered in the process.
+    if (expose_histograms)
+    {
+        reserved_names.insert("le");
+        for (const auto * histogram : HistogramMetrics::keeper_histograms)
+            for (const auto & label : histogram->getLabels())
+                reserved_names.insert(label);
+    }
+
+    if (expose_dimensional_metrics)
+        for (const auto * metric : DimensionalMetrics::keeper_dimensional_metrics)
+            for (const auto & label : metric->getLabels())
+                reserved_names.insert(label);
+#endif
+
+    return reserved_names;
 }
 
 }

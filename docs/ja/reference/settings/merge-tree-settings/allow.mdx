@@ -1,0 +1,143 @@
+---
+title: 'allow_* MergeTree テーブル設定'
+sidebarTitle: 'allow_*'
+toc_max_heading_level: 2
+description: 'allow_* グループに含まれる ClickHouse MergeTree テーブル設定。'
+doc_type: 'reference'
+---
+
+{/*自動生成開始*/}
+
+import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
+import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
+
+これらの設定は [system.merge&#95;tree&#95;settings](/ja/reference/system-tables/merge_tree_settings) で参照でき、ClickHouseのソースコードから自動生成されています。
+
+## allow_coalescing_columns_in_partition_or_order_key {#allow_coalescing_columns_in_partition_or_order_key}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "パーティションキーまたはソートキーのカラムを coalescing の対象にできるようにする新しい設定。"}]}]} />
+
+有効にすると、CoalescingMergeTree テーブルで、パーティションキーまたはソートキーに含まれるカラムを
+coalescing カラムとして使用できるようになります。
+
+## allow_commit_order_projection {#allow_commit_order_projection}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+`_block_number` と `_block_offset` の仮想カラムを格納し、マージ後も元の挿入順序を維持する commit-order プロジェクション を有効にします。
+これを使用するには、`enable_block_number_column` と `enable_block_offset_column` を有効にする必要があります。
+
+## allow_dimensions_outside_sorting_key {#allow_dimensions_outside_sorting_key}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "AggregatingMergeTree は現在、テーブル作成時に、カラムがソートキーの一部でも集約状態の measure でもないスキーマを拒否します。以前はそのようなスキーマも受け入れられていました（従来の動作は値 'true' に対応します）。"}]}]} />
+
+`AggregatingMergeTree` では、background マージ によってソートキーの値が同じ行が 1 つにまとめられ、それらの aggregate state が結合されます。ソートキーの一部でも aggregate-state の *measure* (`AggregateFunction` または `SimpleAggregateFunction`) でもないカラムは *dimension* です。つまり、マージ 後には、まとめられた行のいずれか 1 行の値が任意に保持されるため、そのカラムに対して `GROUP BY` や filter を行うクエリで、誤った結果が黙って生成される可能性があります (https://github.com/ClickHouse/ClickHouse/issues/751 を参照) 。
+
+デフォルトでは、このようなスキーマはテーブル作成時に拒否されます。この設定は、そのカラムがソートキーに関数従属しており (つまり、まとめられるすべての行で同じ値を共有し) 、この動作が意図したものである場合に有効にしてください。
+
+このチェックは、実際に aggregation を行うテーブル (少なくとも 1 つの aggregate-state カラムを持つもの) にのみ適用され、`allow_tuple_element_aggregation` が有効な場合はスキップされます。
+
+## allow_floating_point_partition_key {#allow_floating_point_partition_key}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+浮動小数点数をパーティションキーとして使用できるようにします。
+
+設定可能な値:
+
+* `0` — 浮動小数点数のパーティションキーは使用できません。
+* `1` — 浮動小数点数のパーティションキーを使用できます。
+
+## allow_minmax_index_for_json {#allow_minmax_index_for_json}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "索引のシリアライゼーションで異種の Field 値を扱えないため、デフォルトでは JSON カラムに minmax スキップ索引を作成することを禁止"}]}]} />
+
+JSON (Object) カラムで minmax スキップ索引を作成できるようにします。JSON カラムには異種の Field 値が含まれる可能性があり、minmax
+索引のシリアライゼーション処理ではそれを扱えないため、デフォルトでは無効になっています。
+
+## allow_nullable_key {#allow_nullable_key}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+主キーとして Nullable 型を使用できるようにします。
+
+## allow_part_offset_column_in_projections {#allow_part_offset_column_in_projections}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "これで、プロジェクションで _part_offset カラムを使用できるようになりました。"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "新しい設定。安定化するまで、親パートのオフセットカラムを含むプロジェクションの作成を防ぎます。"}]}]} />
+
+プロジェクションのSELECTクエリで &#39;&#95;part&#95;offset&#39; カラムの使用を許可します。
+
+## allow_reduce_blocking_parts_task {#allow_reduce_blocking_parts_task}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "SMT はデフォルトで ZooKeeper から古くなったブロッキングパーツを削除するようになりました"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]} />
+
+shared merge tree テーブルのブロッキングパーツを減らすバックグラウンドタスクです。
+ClickHouse Cloud でのみ利用できます
+
+## allow_remote_fs_zero_copy_replication {#allow_remote_fs_zero_copy_replication}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+まだ準備が整っていないため、この設定を本番環境で使用しないでください。
+
+## allow_summing_columns_in_partition_or_order_key {#allow_summing_columns_in_partition_or_order_key}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "パーティションキーまたはソートキーに合計対象カラムを使用できるようにする新しい設定"}]}]} />
+
+有効にすると、SummingMergeTree テーブルの合計対象カラムを
+パーティションキーまたはソートキーとして使用できます。
+
+## allow_suspicious_indices {#allow_suspicious_indices}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+同一の式を持つプライマリ/セカンダリ索引およびソートキーを拒否します
+
+## allow_tuple_element_aggregation {#allow_tuple_element_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+有効にすると、Tupleカラム内の各要素が、SummingMergeTree、AggregatingMergeTree、および
+CoalescingMergeTree での
+マージ時の集計の対象になります。ネストされた Tuple は再帰的に展開されるため、すべての
+末端要素がそれぞれ独立して集計されます。この設定は変更不可であり、
+テーブル作成時に指定する必要があります。
+
+## allow_vector_similarity_index_in_specialized_merge_tree {#allow_vector_similarity_index_in_specialized_merge_tree}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新しい設定。特殊な MergeTree エンジンでは、デフォルトでベクトル類似度索引を作成できなくなりました"}]}]} />
+
+`MergeTree` / `ReplicatedMergeTree` 以外の `MergeTree` ファミリーのエンジン (例: `ReplacingMergeTree` や `CollapsingMergeTree`) で、
+`vector_similarity` 索引の作成を許可するかどうかを指定します。これらのエンジンでは、索引を使用する `SELECT ... FINAL` が誤った結果を返す可能性があります。
+この設定は索引の作成時にのみチェックされるため、既存のテーブルや `ATTACH` には影響しません。
+
+## allow_vertical_merges_from_compact_to_wide_parts {#allow_vertical_merges_from_compact_to_wide_parts}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+compact パーツから wide パーツへの垂直マージを許可します。この設定の値は、すべてのレプリカで同一である必要があります。
+
+{/*AUTOGENERATED_END*/}

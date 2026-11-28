@@ -9,22 +9,21 @@ doc_type: 'guide'
 integration:
   - support_level: 'community'
   - category: 'data_ingestion'
-  - website: 'https://www.streamkap.com/'
+  - website: 'https://streamkap.com/'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
+import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
-<a href="https://www.streamkap.com/" target="_blank">Streamkap</a> は、ストリーミング CDC (変更データキャプチャ) とストリーム処理に特化したリアルタイムデータインテグレーションプラットフォームです。Apache Kafka、Apache Flink、Debezium を活用した高スループットかつスケーラブルなスタック上に構築されており、SaaS または BYOC (Bring Your Own Cloud) 形態の完全マネージド型サービスとして提供されています。
+<a href="https://streamkap.com/" target="_blank">Streamkap</a> は、ストリーミング CDC (変更データキャプチャ) とストリーム処理に特化したリアルタイムデータインテグレーションプラットフォームです。Apache Kafka、Apache Flink、Debezium を活用した高スループットかつスケーラブルなスタック上に構築されており、SaaS または BYOC (Bring Your Own Cloud) 形態の完全マネージド型サービスとして提供されています。
 
-Streamkap を使用すると、PostgreSQL、MySQL、SQL Server、MongoDB、<a href="https://streamkap.com/connectors" target="_blank">そのほか多数</a>のソースデータベースで発生するあらゆる insert、update、delete を、ミリ秒単位のレイテンシで直接 ClickHouse にストリーミングできます。
+Streamkap を使用すると、PostgreSQL、MySQL、SQL Server、MongoDB、<a href="https://streamkap.com/connectors" target="_blank">そのほか多数</a>のソースデータベースで発生するあらゆる insert、更新、削除 を、ミリ秒単位のレイテンシで直接 ClickHouse にストリーミングできます。
 
-そのため、リアルタイム分析ダッシュボード、オペレーショナルアナリティクス、機械学習モデルへのライブデータ供給に最適です。
+そのため、リアルタイム分析ダッシュボード、オペレーショナル分析、機械学習モデルへのライブデータ供給に最適です。
 
 <div id="key-features">
-  ## 主な機能
+  ## 主な機能 {#key-features}
 </div>
 
 * **リアルタイムストリーミング CDC:** Streamkap はデータベースのログから変更を直接取り込み、ClickHouse 内のデータがソースのリアルタイムなレプリカであることを保証します。
@@ -39,71 +38,65 @@ Streamkap を使用すると、PostgreSQL、MySQL、SQL Server、MongoDB、<a hr
 * **耐障害性の高い配信:** このプラットフォームは at-least-once 配信保証を提供し、ソースと ClickHouse 間のデータ整合性を確保します。upsert 操作では、主キーに基づいて重複排除を行います。
 
 <div id="started">
-  ## はじめに
+  ## はじめに {#started}
 </div>
 
 このガイドでは、Streamkap パイプラインを設定して ClickHouse にデータを読み込む方法の概要を説明します。
 
 <div id="prerequisites">
-  ### 前提条件
+  ### 前提条件 {#prerequisites}
 </div>
 
 * <a href="https://app.streamkap.com/account/sign-up" target="_blank">Streamkap アカウント</a>。
-* ClickHouse クラスターの接続情報: Hostname、Port、Username、Password。
-* CDC を有効にしたソースデータベース (例: PostgreSQL、SQL Server) 。詳しい設定手順については、Streamkap のドキュメントを参照してください。
+* ClickHouse クラスターの接続情報: ホスト名、Port、Username、Password。
+* CDC (変更データキャプチャ) を有効にするよう設定されたソースデータベース (例: PostgreSQL、SQL Server) 。詳細なセットアップガイドは Streamkap のドキュメントで確認できます。
 
-<div id="configure-clickhouse-source">
-  ### ステップ 1: Streamkap でログソースを設定する
-</div>
+<Steps>
+  <Step title="Streamkap でソースを設定する" id="configure-clickhouse-source">
+    1. Streamkap アカウントにログインします。
+    2. サイドバーで **Connectors** に移動し、**Sources** タブを選択します。
+    3. **+ Add** をクリックし、ソースデータベースの種類 (例: SQL Server RDS) を選択します。
+    4. endpoint、port、database name、ユーザー認証情報などの接続情報を入力します。
+    5. コネクタを保存します。
+  </Step>
 
-1. Streamkap アカウントにログインします。
-2. サイドバーで **Connectors** に移動し、**Sources** タブを選択します。
-3. **+ Add** をクリックし、ログソースデータベースの種類 (例: SQL Server RDS) を選択します。
-4. エンドポイント、ポート、データベース名、ユーザーの認証情報などの接続情報を入力します。
-5. コネクタを保存します。
+  <Step title="ClickHouse の宛先を設定する" id="configure-clickhouse-dest">
+    1. **Connectors** セクションで、**Destinations** タブを選択します。
+    2. **+ Add** をクリックし、一覧から **ClickHouse** を選択します。
+    3. ClickHouse サービスの接続情報を入力します。
+       * **ホスト名:** ClickHouse インスタンスのホスト名 (例: `abc123.us-west-2.aws.clickhouse.cloud`)
+       * **Port:** 通常は `8443` のセキュアな HTTPS ポート
+       * **Username and Password:** ClickHouse ユーザーの認証情報
+       * **Database:** ClickHouse の対象データベース名
+    4. 宛先を保存します。
+  </Step>
 
-<div id="configure-clickhouse-dest">
-  ### ステップ 2: ClickHouse の宛先を設定する
-</div>
+  <Step title="パイプラインを作成して実行する" id="run-pipeline">
+    1. サイドバーの **Pipelines** に移動し、**+ Create** をクリックします。
+    2. 先ほど設定した ログソース と 宛先 を選択します。
+    3. ストリーミングするスキーマとテーブルを選択します。
+    4. パイプラインに名前を付けて **Save** をクリックします。
 
-1. **Connectors** セクションで、**Destinations** タブを選択します。
-2. **+ Add** をクリックし、一覧から **ClickHouse** を選択します。
-3. ClickHouse サービスの接続情報を入力します。
-   * **Hostname:** ClickHouse インスタンスのホスト名 (例: `abc123.us-west-2.aws.clickhouse.cloud`) 
-   * **Port:** 通常は `8443` のセキュアな HTTPS ポート
-   * **Username and Password:** ClickHouse ユーザーの認証情報
-   * **Database:** ClickHouse の対象データベース名
-4. 宛先を保存します。
+    作成すると、パイプラインはアクティブになります。Streamkap はまず既存データのスナップショットを取得し、その後、新しい変更が発生するとストリーミングを開始します。
+  </Step>
 
-<div id="run-pipeline">
-  ### ステップ 3: パイプラインを作成して実行する
-</div>
+  <Step title="ClickHouse でデータを確認する" id="verify-data-clickhoouse">
+    ClickHouse クラスターに接続し、クエリを実行してターゲットテーブルにデータが取り込まれていることを確認します。
 
-1. サイドバーの **Pipelines** に移動し、**+ Create** をクリックします。
-2. 先ほど設定したログソースと宛先を選択します。
-3. ストリーミングするスキーマとテーブルを選択します。
-4. パイプライン名を入力し、**Save** をクリックします。
-
-作成すると、パイプラインは有効になります。Streamkap はまず既存データのスナップショットを取得し、その後、新しい変更が発生するたびにストリーミングを開始します。
-
-<div id="verify-data-clickhoouse">
-  ### ステップ 4: ClickHouse でデータを確認する
-</div>
-
-ClickHouse クラスターに接続し、クエリを実行してターゲットテーブルにデータが到着していることを確認します。
-
-```sql
-SELECT * FROM your_table_name LIMIT 10;
-```
+    ```sql
+    SELECT * FROM your_table_name LIMIT 10;
+    ```
+  </Step>
+</Steps>
 
 <div id="how-it-works-with-clickhouse">
-  ## ClickHouseでの仕組み
+  ## ClickHouseでの仕組み {#how-it-works-with-clickhouse}
 </div>
 
 Streamkapのインテグレーションは、ClickHouse内のCDC (変更データキャプチャ) データを効率的に管理できるように設計されています。
 
 <div id="table-engine-data-handling">
-  ### テーブルエンジンとデータの扱い
+  ### テーブルエンジンとデータの扱い {#table-engine-data-handling}
 </div>
 
 デフォルトでは、Streamkap は upsert インジェストモードを使用します。ClickHouse にテーブルを作成する際には、ReplacingMergeTree エンジンが使われます。このエンジンは、CDC イベントの処理に適しています。
@@ -116,7 +109,7 @@ Streamkapのインテグレーションは、ClickHouse内のCDC (変更デー�
   * 必要に応じて、削除済みレコードを分析目的で ClickHouse に保持できます
 
 <div id="metadata-columns">
-  ### メタデータカラム
+  ### メタデータカラム {#metadata-columns}
 </div>
 
 Streamkap は、データの状態を管理するために各テーブルに複数のメタデータカラムを追加します。
@@ -129,7 +122,7 @@ Streamkap は、データの状態を管理するために各テーブルに複�
 | `_STREAMKAP_OFFSET`       | Streamkap の内部ログ内のオフセット値で、順序付けやデバッグに役立ちます。        |
 
 <div id="query-latest-data">
-  ### 最新データのクエリ
+  ### 最新データのクエリ {#query-latest-data}
 </div>
 
 ReplacingMergeTree は更新と削除をバックグラウンドで処理するため、単純な SELECT * クエリでは、マージが完了する前の古い行や削除済みの行が表示されることがあります。データの最新の状態を取得するには、削除されたレコードを除外し、各行の最新バージョンのみを選択する必要があります。
@@ -158,7 +151,7 @@ GROUP BY key;
 本番環境のユースケースや、エンドユーザーから同時に繰り返し実行されるクエリに対しては、後続のアクセスパターンにより適した形でデータを構成するために、materialized viewを使用できます。
 
 <div id="further-reading">
-  ## 関連資料
+  ## 関連資料 {#further-reading}
 </div>
 
 * <a href="https://streamkap.com/" target="_blank">Streamkap 公式サイト</a>

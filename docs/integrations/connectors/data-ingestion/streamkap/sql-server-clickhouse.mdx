@@ -7,8 +7,6 @@ title: 'Streaming data from SQL Server to ClickHouse for fast analytics: step-by
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 In this article, we're breaking down a tutorial that shows you how to stream data from SQL Server to ClickHouse. ClickHouse is ideal if you want super fast analytics for reporting internal or customer-facing dashboards. We’ll walk step-by-step through getting both databases set up, how to connect them, and finally, how to use [Streamkap](https://streamkap.com) to stream your data. If SQL Server handles your day-to-day operations but you need the speed and smarts of ClickHouse for analytics, you’re in the right spot.
 
 ## Why Stream Data from SQL Server to ClickHouse? {#why-stream-data-from-sql-server-to-clickhouse}
@@ -31,10 +29,10 @@ Before we get into the weeds, here’s what you should have ready:
 
 - A running SQL Server instance  
 
-- For this tutorial, we’re using AWS RDS for SQL Server, but any modern SQL Server instance works.[Setup AWS SQL Server from Scratch.](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap%23setting-up-a-new-rds-sql-server-from-scratch)
+- For this tutorial, we’re using AWS RDS for SQL Server, but any modern SQL Server instance works.[Setup AWS SQL Server from Scratch.](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap#setting-up-a-new-rds-sql-server-from-scratch)
 - A ClickHouse instance  
 
-- Self-hosted or cloud.[Setup ClickHouse from Scratch.](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap%23creating-a-new-clickhouse-account)
+- Self-hosted or cloud.[Setup ClickHouse from Scratch.](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap#creating-a-new-clickhouse-account)
 - Streamkap  
 
 - This tool will be the backbone of your data streaming pipeline.
@@ -67,11 +65,27 @@ Here’s how you do it:
 - Username and Password
 - Database name
 
-<Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/etl-tools/image3.webp)
+
+</Frame>
+
+</div>
 
 #### What’s Happening Behind the Scenes {#whats-happening-behind-the-scenes}
 
-<Image img="/images/integrations/data-ingestion/etl-tools/image1.webp" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/etl-tools/image1.webp)
+
+</Frame>
+
+</div>
 
 When you set this up, Streamkap will connect to your SQL Server and detect tables. For this demo, we’ll pick a table with some data already streaming in, like events or transactions.
 
@@ -137,7 +151,15 @@ Screenshot of pipeline settings—picking source, destination, and table.
 
 #### Should You Backfill? {#should-you-backfill}
 
-<Image img="/images/integrations/data-ingestion/etl-tools/image2.webp" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/etl-tools/image2.webp)
+
+</Frame>
+
+</div>
 
 You might ask: Should I backfill old data?
 

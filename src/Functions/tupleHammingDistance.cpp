@@ -23,12 +23,20 @@ public:
     explicit FunctionTupleHammingDistance(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleHammingDistance>(context_); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Documentation-only — the result is the sum of `notEquals` results across
+    /// matched tuple elements, so its width depends on the input tuple size
+    /// (e.g. `Tuple` of 1 element → `UInt8`, 2 elements → `UInt16`, etc).
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(Tuple, Tuple) -> UInt";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
@@ -92,7 +100,7 @@ public:
         return res_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
@@ -140,8 +148,8 @@ REGISTER_FUNCTION(TupleHammingDistance)
     FunctionDocumentation::Description description = R"(
 Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between two tuples of the same size.
 
-:::note
-The result type is determined the same way it is for [Arithmetic functions](../../sql-reference/functions/arithmetic-functions.md), based on the number of elements in the input tuples.
+<Note>
+The result type is determined the same way it is for [Arithmetic functions](/reference/functions/regular-functions/arithmetic-functions), based on the number of elements in the input tuples.
 
 ```sql
 SELECT
@@ -157,7 +165,7 @@ SELECT
 │ UInt8 │ UInt16 │ UInt32 │ UInt64 │ UInt64 │
 └───────┴────────┴────────┴────────┴────────┘
 ```
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax = "tupleHammingDistance(t1, t2)";
     FunctionDocumentation::Arguments arguments = {

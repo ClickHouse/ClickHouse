@@ -7,6 +7,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/IASTHash.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
@@ -30,7 +31,7 @@ using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
 struct MaterializedCTE;
 using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
 
-class TableNode : public IQueryTreeNode
+class TableNode : public ITableExpressionNode
 {
 public:
     /// Construct table node with storage, storage id, storage lock, storage snapshot
@@ -64,38 +65,41 @@ public:
       */
     void updateStorage(StoragePtr storage_value, const ContextPtr & context);
 
+    /// Replace the storage that reads the table. Storage id and storage lock stay those of the table.
+    void replaceStorage(StoragePtr storage_value, StorageSnapshotPtr storage_snapshot_value);
+
     /// Get storage
-    const StoragePtr & getStorage() const
+    [[nodiscard]] const StoragePtr & getStorage() const
     {
         return storage;
     }
 
     /// Get storage id
-    const StorageID & getStorageID() const
+    [[nodiscard]] const StorageID & getStorageID() const
     {
         return storage_id;
     }
 
     /// Get storage snapshot
-    const StorageSnapshotPtr & getStorageSnapshot() const
+    [[nodiscard]] const StorageSnapshotPtr & getStorageSnapshot() const
     {
         return storage_snapshot;
     }
 
     /// Get storage lock
-    const TableLockHolder & getStorageLock() const
+    [[nodiscard]] const TableLockHolder & getStorageLock() const
     {
         return storage_lock;
     }
 
     /// Returns true if table was created as a temporary table
-    bool isTemporaryTable() const
+    [[nodiscard]] bool isTemporaryTable() const
     {
         return !temporary_table_name.empty();
     }
 
     /// Get temporary table name
-    const std::string & getTemporaryTableName() const
+    [[nodiscard]] const std::string & getTemporaryTableName() const
     {
         return temporary_table_name;
     }
@@ -107,13 +111,13 @@ public:
     }
 
     /// Return true if table node has table expression modifiers, false otherwise
-    bool hasTableExpressionModifiers() const
+    [[nodiscard]] bool hasTableExpressionModifiers() const
     {
         return table_expression_modifiers.has_value();
     }
 
     /// Get table expression modifiers
-    const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
+    [[nodiscard]] const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
     {
         return table_expression_modifiers;
     }
@@ -124,23 +128,20 @@ public:
         return table_expression_modifiers;
     }
 
-    /// Set table expression modifiers
-    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
-    {
-        table_expression_modifiers = std::move(table_expression_modifiers_value);
-    }
+    /// Set table expression modifiers and update the storage snapshot metadata accordingly
+    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value);
 
-    const MaterializedCTEPtr & getMaterializedCTE() const
+    [[nodiscard]] const MaterializedCTEPtr & getMaterializedCTE() const
     {
         return materialized_cte;
     }
 
-    bool isMaterializedCTE() const
+    [[nodiscard]] bool isMaterializedCTE() const
     {
         return children[materialized_cte_subquery_index] != nullptr;
     }
 
-    const QueryTreeNodePtr & getMaterializedCTESubquery() const
+    [[nodiscard]] const QueryTreeNodePtr & getMaterializedCTESubquery() const
     {
         return children[materialized_cte_subquery_index];
     }
@@ -150,25 +151,40 @@ public:
         return children[materialized_cte_subquery_index];
     }
 
-    QueryTreeNodeType getNodeType() const override
+    [[nodiscard]] QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::TABLE;
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-    boost::intrusive_ptr<ASTTableIdentifier> toASTIdentifier() const;
+    [[nodiscard]] boost::intrusive_ptr<ASTTableIdentifier> toASTIdentifier() const;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & state, CompareOptions) const override;
 
-    QueryTreeNodePtr cloneImpl() const override;
+    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
+    struct CloneTag
+    {
+    };
+
+    /// Construct a copy for `cloneImpl`: the parameterized view query hash is carried over from the
+    /// source node instead of being recomputed, because the traversal of the substituted inner query
+    /// is exactly what the cache is there to avoid, and the analyzer clones subtrees repeatedly.
+    TableNode(
+        CloneTag,
+        StoragePtr storage_,
+        StorageID storage_id_,
+        TableLockHolder storage_lock_,
+        StorageSnapshotPtr storage_snapshot_,
+        std::optional<IASTHash> parameterized_view_query_hash_);
+
     StoragePtr storage;
     StorageID storage_id;
     TableLockHolder storage_lock;
@@ -177,6 +193,8 @@ private:
     std::optional<TableExpressionModifiers> table_expression_modifiers;
     std::string temporary_table_name;
     MaterializedCTEPtr materialized_cte;
+    /// Hash of the substituted inner query if `storage` is a parameterized view, see `isEqualImpl`.
+    std::optional<IASTHash> parameterized_view_query_hash;
 
     static constexpr size_t materialized_cte_subquery_index = 0;
     static constexpr size_t children_size = materialized_cte_subquery_index + 1;
