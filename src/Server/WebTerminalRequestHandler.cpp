@@ -3,6 +3,8 @@
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTPHandler.h>
 #include <Server/HTTPResponseHeaderWriter.h>
+#include <Server/WebUIRequestHandler.h>
+#include <Common/re2.h>
 #include <Server/IServer.h>
 #include <Server/ClientEmbedded/ClientEmbeddedRunner.h>
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
@@ -358,8 +360,15 @@ void WebTerminalRequestHandler::serveHTML(HTTPServerRequest & request, HTTPServe
     setResponseDefaultHeaders(response);
 
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
+    /// The page references its scripts and styles as `/js/...`. Make the links relative to the page and
+    /// carry its routing parameters, so that they keep the path prefix and the backend selection of a
+    /// reverse proxy, the way the WebSocket endpoint does.
+    std::string html(reinterpret_cast<const char *>(resource_webterminal_html), std::size(resource_webterminal_html));
+    static re2::RE2 asset_link = R"re(="/js/([^"?#]+)")re";
+    RE2::GlobalReplace(&html, asset_link, "=\"" + relativeServerRootURL(request) + "js/\\1" + routingQueryOfRequest(request) + "\"");
+
     auto buf = responseWriteBuffer(request, response);
-    buf.get()->write(reinterpret_cast<const char *>(resource_webterminal_html), std::size(resource_webterminal_html));
+    buf.get()->write(html.data(), html.size());
     buf.get()->finalize();
 }
 

@@ -32,10 +32,10 @@ echo "--- test 7: Accept-Encoding: zstd on /schema ---"
 ${CLICKHOUSE_CURL} -sS -I -H "Accept-Encoding: zstd" "${BASE_URL}/schema" | grep -oF 'Content-Encoding: zstd'
 
 echo "--- test 8: zstd response is valid and decompressable ---"
-${CLICKHOUSE_CURL} -sS -H "Accept-Encoding: zstd" "${BASE_URL}/play" | zstd -d | grep -o -F 'clickhouse.com'
+${CLICKHOUSE_CURL} -sS -H "Accept-Encoding: zstd" "${BASE_URL}/play" | zstd -d | grep -o -F '<title>ClickHouse Query</title>'
 
 echo "--- test 9: gzip response is valid and decompressable ---"
-${CLICKHOUSE_CURL} -sS -H "Accept-Encoding: gzip" "${BASE_URL}/play" | gzip -d | grep -o -F 'clickhouse.com'
+${CLICKHOUSE_CURL} -sS -H "Accept-Encoding: gzip" "${BASE_URL}/play" | gzip -d | grep -o -F '<title>ClickHouse Query</title>'
 
 echo "--- test 10: ClickStack still pre-gzipped ---"
 ${CLICKHOUSE_CURL} -sS -I "${BASE_URL}/clickstack" | grep -oF 'Content-Encoding: gzip'
