@@ -31,7 +31,7 @@ clickhouse-local --query "SELECT * FROM file('data.xlsx') SETTINGS input_format_
 
 ClickHouse reads one sheet of the workbook. By default, it is the first visible worksheet; you can select another one by its name or 1-based index with the `input_format_excel_sheet` setting.
 
-By default, ClickHouse reads the whole used range of the sheet: columns start from the leftmost used column, and rows start from the first non-empty row. You can read a part of the sheet with the `input_format_excel_range` setting, for example `B3:F100`. The range can be open-ended: `B3:F` (from row 3 to the end of the data), `A:C` (whole columns), or just the top-left cell `B3`.
+By default, ClickHouse reads the whole used range of the sheet: columns start from the leftmost used column, and rows start from the first non-empty row. You can read a part of the sheet with the `input_format_excel_range` setting, for example `B3:F100`. The range can be open-ended: `B3:F` (from row 3 to the end of the data), `A:C` (whole columns), or just the top-left cell `B3`. An explicit range is read as a rectangle: a range with the last column, like `A:H`, has all its columns even if the last ones are empty, and with `input_format_excel_skip_empty_rows = 0` the empty rows at the top and the bottom of the range are read too.
 
 The first row of the range is the header with column names if all its non-empty cells are strings. This automatic detection can be overridden with the `input_format_excel_header` setting. Without a header, the columns are named `c1`, `c2`, ... in schema inference. Columns are matched by position.
 

@@ -1897,7 +1897,7 @@ The sheet to read from `XLSX` and `XLS` input: its name, or its 1-based index if
 )", 0, \
         {"26.12", "", "", "New setting for the `XLSX` and `XLS` input formats: the sheet to read."}) \
     DECLARE(String, input_format_excel_range, "", R"(
-The range of cells to read from `XLSX` and `XLS` input, like `B2:D10`. The range can be open-ended: `B2:D` (from row 2 to the end of the data), `A:C` (whole columns), `3:10` (whole rows), or just the top-left cell like `B2`. If empty, the used range of the sheet is read.
+The range of cells to read from `XLSX` and `XLS` input, like `B2:D10`. The range can be open-ended: `B2:D` (from row 2 to the end of the data), `A:C` (whole columns), `3:10` (whole rows), or just the top-left cell like `B2`. If empty, the used range of the sheet is read. A range with the last column has all its columns, even if the last ones are empty.
 )", 0, \
         {"26.12", "", "", "New setting for the `XLSX` and `XLS` input formats: the range of cells to read."}) \
     DECLARE(UInt64Auto, input_format_excel_header, "auto", R"(
@@ -1905,7 +1905,7 @@ Whether the first row of the range in `XLSX` and `XLS` input is a header with th
 )", 0, \
         {"26.12", "auto", "auto", "New setting for the `XLSX` and `XLS` input formats: whether the first row is a header."}) \
     DECLARE(Bool, input_format_excel_skip_empty_rows, true, R"(
-Skip empty rows inside the data in `XLSX` and `XLS` input. If disabled, empty rows are read as rows with all values empty (`NULL` or default values). Empty rows before and after the data are always skipped.
+Skip empty rows inside the data in `XLSX` and `XLS` input. If disabled, empty rows are read as rows with all values empty (`NULL` or default values). Empty rows before and after the data are skipped, unless the range is set by `input_format_excel_range`: then the empty rows from its first row and up to its last row are read too.
 )", 0, \
         {"26.12", true, true, "New setting for the `XLSX` and `XLS` input formats: skip empty rows."}) \
     DECLARE(String, output_format_xlsx_sheet_name, "Sheet1", R"(
