@@ -194,12 +194,20 @@ struct Symbol
     uint64_t size;                  /// st_size.
 
     /// st_info packs binding and type together, hence the ELF64_ST_BIND / ELF64_ST_TYPE macros.
-    uint8_t binding() const { return info >> 4; }     /// STB_LOCAL / STB_GLOBAL / STB_WEAK.
-    uint8_t type() const { return info & 0xf; }       /// STT_FUNC / STT_OBJECT / STT_GNU_IFUNC / STT_TLS ...
-    bool isDefined() const { return section_index != SHN_UNDEF; }
-    bool isWeak() const { return binding() == STB_WEAK; }
-    bool isIndirectFunction() const { return type() == STT_GNU_IFUNC; }
-    bool isThreadLocal() const { return type() == STT_TLS; }
+    [[nodiscard]] uint8_t binding() const { return info >> 4; }     /// STB_LOCAL / STB_GLOBAL / STB_WEAK.
+    [[nodiscard]] uint8_t type() const { return info & 0xf; }       /// STT_FUNC / STT_OBJECT / STT_GNU_IFUNC / STT_TLS ...
+    [[nodiscard]] bool isDefined() const { return section_index != SHN_UNDEF; }
+    [[nodiscard]] bool isWeak() const { return binding() == STB_WEAK; }
+    [[nodiscard]] bool isIndirectFunction() const { return type() == STT_GNU_IFUNC; }
+    [[nodiscard]] bool isThreadLocal() const { return type() == STT_TLS; }
+
+    /// st_other keeps the visibility in its two low bits, hence the ELF64_ST_VISIBILITY macro.
+    /// STV_DEFAULT / STV_INTERNAL / STV_HIDDEN / STV_PROTECTED.
+    [[nodiscard]] uint8_t visibilityKind() const { return visibility & 0x3; }
+    /// A hidden or internal symbol cannot be referenced from another object at all.
+    [[nodiscard]] bool isVisibleOutside() const { return visibilityKind() == STV_DEFAULT || visibilityKind() == STV_PROTECTED; }
+    /// References from the defining object to a non-default-visibility symbol are never preempted by another object.
+    [[nodiscard]] bool bindsLocally() const { return binding() == STB_LOCAL || visibilityKind() != STV_DEFAULT; }
 };
 static_assert(sizeof(Symbol) == sizeof(Elf64_Sym));
 
@@ -210,8 +218,8 @@ struct RelocationWithAddend
     uint64_t info;                  /// r_info: packs the symbol index (high 32 bits) and type (low 32 bits).
     int64_t addend;                 /// r_addend: constant added to the computed value.
 
-    uint32_t symbolIndex() const { return static_cast<uint32_t>(info >> 32); }   /// ELF64_R_SYM.
-    uint32_t type() const { return static_cast<uint32_t>(info & 0xffffffff); }   /// ELF64_R_TYPE.
+    [[nodiscard]] uint32_t symbolIndex() const { return static_cast<uint32_t>(info >> 32); }   /// ELF64_R_SYM.
+    [[nodiscard]] uint32_t type() const { return static_cast<uint32_t>(info & 0xffffffff); }   /// ELF64_R_TYPE.
 };
 static_assert(sizeof(RelocationWithAddend) == sizeof(Elf64_Rela));
 
@@ -221,8 +229,8 @@ struct Relocation
     uint64_t offset;
     uint64_t info;
 
-    uint32_t symbolIndex() const { return static_cast<uint32_t>(info >> 32); }
-    uint32_t type() const { return static_cast<uint32_t>(info & 0xffffffff); }
+    [[nodiscard]] uint32_t symbolIndex() const { return static_cast<uint32_t>(info >> 32); }
+    [[nodiscard]] uint32_t type() const { return static_cast<uint32_t>(info & 0xffffffff); }
 };
 static_assert(sizeof(Relocation) == sizeof(Elf64_Rel));
 
@@ -278,7 +286,9 @@ namespace RelocationType
     constexpr uint32_t TLSModuleOffset = R_AARCH64_TLS_DTPREL;
     constexpr uint32_t TLSThreadPointerOffset = R_AARCH64_TLS_TPREL;
     constexpr uint32_t TLSDescriptor = R_AARCH64_TLSDESC;
-    constexpr uint32_t IndirectRelative = R_AARCH64_IRELATIVE;
+    /// R_AARCH64_IRELATIVE. Spelled as a number because the <elf.h> of musl does not define it (musl does not
+    /// implement indirect functions), while the value is fixed by the AArch64 ELF ABI.
+    constexpr uint32_t IndirectRelative = 1032;
 #else
 #error "The dynamic loader supports only x86-64 and AArch64."
 #endif

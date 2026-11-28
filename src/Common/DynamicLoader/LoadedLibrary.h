@@ -26,10 +26,18 @@ struct ResolvedSymbol
 {
     const LoadedLibrary * library = nullptr;    /// The library that defines the symbol (null for a host-provided one).
     const Symbol * symbol = nullptr;            /// The symbol table entry in that library (null for a host-provided one).
-    void * address = nullptr;                   /// Final run-time address (IFUNC already resolved for code symbols).
+    void * address = nullptr;                   /// Run-time address of the symbol itself. For an indirect function (IFUNC)
+                                                /// this is the address of its resolver, see `finalAddress`.
     bool found = false;                         /// Whether a definition was found at all (address may legitimately be null).
 
     explicit operator bool() const { return found; }
+
+    /// Whether the definition is an indirect function, whose real address is chosen by running its resolver.
+    [[nodiscard]] bool isIndirectFunction() const { return symbol != nullptr && symbol->isIndirectFunction(); }
+
+    /// The address a caller must use: for an indirect function this runs its resolver, which is only valid
+    /// once the defining library has had its ordinary relocations applied.
+    [[nodiscard]] void * finalAddress() const;
 };
 
 /// Called by relocation code to find where an imported symbol lives, searching the whole load scope.
@@ -41,7 +49,9 @@ using SymbolResolver = std::function<ResolvedSymbol(const char * name, const Ver
   *   1. map()                - reserve address space and map the PT_LOAD segments.
   *   2. parseDynamicSection() - locate the string/symbol/relocation/hash/version/TLS tables.
   *   3. (DynamicLoader loads dependencies named by neededLibraries())
-  *   4. applyRelocations()   - patch the GOT/data using a resolver over the whole scope.
+  *   4. applyRelocations()   - patch the GOT/data using a resolver over the whole scope, except for the
+  *                             relocations that need an indirect function (IFUNC) resolver to be run.
+  *      applyIndirectRelocations() - apply those, once every object of the scope went through the step above.
   *   5. protectReadOnlyRelocations() - re-protect the RELRO region.
   *   6. runInitializers()    - call DT_INIT and the DT_INIT_ARRAY functions.
   * and on teardown:
@@ -61,46 +71,52 @@ public:
     void mapAndParse();
 
     /// The library names this object requires (from DT_NEEDED), to be loaded by DynamicLoader.
-    const std::vector<std::string> & neededLibraries() const { return needed_libraries; }
+    [[nodiscard]] const std::vector<std::string> & neededLibraries() const { return needed_libraries; }
 
     /// Directories to prepend to the dependency search path (from DT_RUNPATH / DT_RPATH), with $ORIGIN expanded.
-    const std::vector<std::string> & runPaths() const { return run_paths; }
+    [[nodiscard]] const std::vector<std::string> & runPaths() const { return run_paths; }
 
     /// The canonical name this object advertises (DT_SONAME), or its requested name if it has none.
-    const std::string & sharedObjectName() const { return shared_object_name; }
-    const std::string & path() const { return file_path; }
+    [[nodiscard]] const std::string & sharedObjectName() const { return shared_object_name; }
+    [[nodiscard]] const std::string & path() const { return file_path; }
 
     /// Step 4. `resolver` maps an imported name to its definition anywhere in the load scope.
+    /// Relocations that require running an indirect function (IFUNC) resolver are only collected here: a
+    /// resolver is code of a library, and it may run only after the ordinary relocations of that library
+    /// (and of everything else in the scope) are applied. `applyIndirectRelocations` finishes the job.
     void applyRelocations(const SymbolResolver & resolver);
+    void applyIndirectRelocations(const SymbolResolver & resolver);
 
     /// Step 5. Make the RELRO ("relocations read-only") region read-only to harden the GOT.
     void protectReadOnlyRelocations();
 
-    /// Steps 6/7. Run/undo static initializers and finalizers. Idempotent.
+    /// Steps 6/7. Run/undo static initializers and finalizers. Idempotent. Finalizers run only if the
+    /// initializers have completed.
     void runInitializers();
     void runFinalizers();
 
     /// Look up a symbol defined by this object only (used both by dlsym and by the scope-wide resolver).
     ResolvedSymbol lookup(const char * name, const VersionRequirement & version) const;
 
-    /// Turn a symbol into its run-time address, calling the IFUNC resolver for indirect functions.
-    void * addressOfSymbol(const Symbol & symbol) const;
+    /// Turn a symbol of this object into the address a caller must use, calling the IFUNC resolver for
+    /// indirect functions.
+    [[nodiscard]] void * addressOfSymbol(const Symbol & symbol) const;
 
     /// The version name an imported symbol requires (for the resolver to match against), or nullptr.
-    VersionRequirement importedSymbolVersion(uint32_t symbol_index) const;
+    [[nodiscard]] VersionRequirement importedSymbolVersion(uint32_t symbol_index) const;
 
     /// TLS accounting. A library with a PT_TLS segment registers itself and gets a module id in mapAndParse().
-    bool hasThreadLocalStorage() const { return tls_memory_size != 0; }
-    uint64_t threadLocalStorageModuleID() const { return tls_module_id; }
+    [[nodiscard]] bool hasThreadLocalStorage() const { return tls_memory_size != 0; }
+    [[nodiscard]] uint64_t threadLocalStorageModuleID() const { return tls_module_id; }
 
     /// Reference counting so a shared dependency is torn down only once its last user closes it.
     void incrementReferenceCount() { ++reference_count; }
     size_t decrementReferenceCount() { return --reference_count; }
-    size_t referenceCount() const { return reference_count; }
+    [[nodiscard]] size_t referenceCount() const { return reference_count; }
 
     /// The object's direct dependencies (one per DT_NEEDED). Filled in by DynamicLoader.
     std::vector<LoadedLibrary *> & dependencyList() { return dependency_list; }
-    const std::vector<LoadedLibrary *> & dependencyList() const { return dependency_list; }
+    [[nodiscard]] const std::vector<LoadedLibrary *> & dependencyList() const { return dependency_list; }
 
 private:
     std::string file_path;              /// Absolute path we loaded from.
@@ -138,10 +154,13 @@ private:
     std::vector<std::string> version_names_by_index;    /// version index -> version name.
 
     /// Initializers / finalizers.
-    void (*init_function)() = nullptr;
-    void (*fini_function)() = nullptr;
-    std::span<void (* const)()> init_array;
-    std::span<void (* const)()> fini_array;
+    /// glibc passes (argc, argv, envp) to initializers; a plain `void()` initializer simply ignores them.
+    using Initializer = void (*)(int, char **, char **);
+    using Finalizer = void (*)();
+    Initializer init_function = nullptr;
+    Finalizer fini_function = nullptr;
+    std::span<const Initializer> init_array;
+    std::span<const Finalizer> fini_array;
 
     /// Thread-local storage template (the bytes copied into each thread's TLS block).
     std::span<const std::byte> tls_template;
@@ -153,10 +172,11 @@ private:
     std::vector<std::string> run_paths;
     std::vector<LoadedLibrary *> dependency_list;
 
+    /// Relocations against an indirect function, left by `applyRelocations` for `applyIndirectRelocations`.
+    std::vector<const RelocationWithAddend *> deferred_indirect_relocations;
+
     bool text_relocations = false;      /// DT_TEXTREL: relocations write into read-only code.
-    bool dependencies_built = false;    /// DynamicLoader has already followed this object's DT_NEEDED.
-    bool relocated = false;             /// DynamicLoader has already applied this object's relocations.
-    bool initializers_ran = false;
+    bool initializers_ran = false;      /// Every initializer has completed.
     bool finalizers_ran = false;
     size_t reference_count = 0;
 
@@ -166,19 +186,18 @@ private:
     void buildVersionIndex(
         const void * version_definitions, uint16_t definitions_count,
         const void * version_needs, uint16_t needs_count);
-    size_t countSymbols() const;
+    [[nodiscard]] size_t countSymbols() const;
 
     /// Helpers used by lookup(). Walks the appropriate hash chain, honoring symbol versioning.
     const Symbol * findDefinedSymbol(const char * name, const VersionRequirement & version) const;
-    const char * symbolName(const Symbol & symbol) const { return string_table + symbol.name_offset; }
-    const char * versionNameOfSymbol(uint32_t symbol_index) const;
+    [[nodiscard]] const char * symbolName(const Symbol & symbol) const { return string_table + symbol.name_offset; }
+    [[nodiscard]] const char * versionNameOfSymbol(uint32_t symbol_index) const;
 
     /// Relocation helpers.
-    ResolvedSymbol resolveForRelocation(uint32_t symbol_index, const SymbolResolver & resolver) const;
-    void applyOneRelocation(const RelocationWithAddend & relocation, const SymbolResolver & resolver);
+    [[nodiscard]] ResolvedSymbol resolveForRelocation(uint32_t symbol_index, const SymbolResolver & resolver) const;
+    /// Returns false if the relocation needs an indirect function resolver while `allow_indirect` is not set.
+    bool applyOneRelocation(const RelocationWithAddend & relocation, const SymbolResolver & resolver, bool allow_indirect);
     void applyCompactRelativeRelocations();
-
-    friend class DynamicLoader;
 };
 
 }

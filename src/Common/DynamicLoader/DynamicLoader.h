@@ -61,6 +61,13 @@ public:
 
     /// The counterpart of dlopen: map the library at `path`, load its dependencies, relocate, run its
     /// initializers, and return an opaque handle. Repeated opens of the same object share one instance.
+    ///
+    /// "The same object" means the same file: every dependency is first resolved to a canonical path through
+    /// the search path of the object that refers to it, and only then deduplicated. Two different files that
+    /// merely share a name (or a DT_SONAME) are two different objects.
+    ///
+    /// The call is transactional: if it throws, every object it has mapped is unloaded again, so the loader is
+    /// left exactly as it was and the call can be retried (e.g. after fixing the search path).
     LoadedLibrary * open(const std::string & path);
 
     /// The counterpart of dlsym: find `name` in the library and its dependency closure. Returns nullptr if
@@ -83,33 +90,38 @@ private:
     /// The default system library directories for the host architecture (e.g. /usr/lib/aarch64-linux-gnu).
     std::vector<std::string> default_search_paths;
     std::vector<std::string> extra_search_paths;
+    /// The directories of LD_LIBRARY_PATH, as it was when the loader was created.
+    std::vector<std::string> environment_search_paths;
 
     /// Symbols the host provides, consulted only after a library's own dependency closure.
     std::unordered_map<std::string, void *> provided_symbols;
 
-    /// Loaded objects, deduplicated by resolved real path and by shared-object name (DT_SONAME).
+    /// Loaded objects, deduplicated by resolved real path. Every object here went through a successful `open`,
+    /// so it is fully linked: its dependencies are loaded, it is relocated, and its initializers have run.
     std::map<std::string, std::unique_ptr<LoadedLibrary>> libraries_by_real_path;
-    std::unordered_map<std::string, LoadedLibrary *> libraries_by_shared_object_name;
 
     /// Resolve a needed library name to an absolute path using run paths, options, and system directories.
-    std::string findLibrary(const std::string & name, const std::vector<std::string> & run_paths) const;
+    [[nodiscard]] std::string findLibrary(const std::string & name, const std::vector<std::string> & run_paths) const;
 
     /// Load one object (or return the already-loaded instance), mapping and parsing it but not yet relocating.
-    LoadedLibrary * loadObject(const std::string & path, const std::string & requested_name);
+    /// An object that was not loaded before is appended to `newly_loaded`.
+    LoadedLibrary * loadObject(
+        const std::string & path, const std::string & requested_name, std::vector<LoadedLibrary *> & newly_loaded);
 
-    /// Breadth-first over DT_NEEDED starting at `root`, loading every dependency and filling dependency lists.
-    void buildDependencyClosure(LoadedLibrary * root);
+    /// Load `path` with its whole dependency closure, relocate the objects that were not loaded before, and
+    /// run their initializers. Every object mapped along the way is appended to `newly_loaded`.
+    LoadedLibrary * loadAndLink(const std::string & path, std::vector<LoadedLibrary *> & newly_loaded);
+
+    /// Follow DT_NEEDED of every object in `newly_loaded` (which grows along the way), filling dependency lists.
+    void buildDependencyClosure(std::vector<LoadedLibrary *> & newly_loaded);
 
     /// Resolve `name`/`version` across `scope` (a breadth-first dependency list), then the provided symbols.
     ResolvedSymbol resolveSymbol(
         const std::vector<LoadedLibrary *> & scope, const char * name, const VersionRequirement & version) const;
 
-    /// Run initializers depth-first so each object initializes after everything it depends on.
-    void runInitializersInDependencyOrder(LoadedLibrary * root);
-    void runInitializersRecursive(LoadedLibrary * library, std::vector<LoadedLibrary *> & already_initialized);
-
-    /// Tear down `library` and any dependencies whose reference count reaches zero.
-    void unloadRecursive(LoadedLibrary * library);
+    /// Unmap `libraries`, running the finalizers of those whose initializers have completed. Dependents are
+    /// torn down before the objects they depend on, so a finalizer never runs against unmapped code or data.
+    void unload(const std::vector<LoadedLibrary *> & libraries) noexcept;
 };
 
 }

@@ -142,12 +142,12 @@ void LoadedLibrary::mapAndParse()
         }
     } descriptor_closer{file_descriptor};
 
-    struct stat file_status;
+    struct stat file_status{};
     if (::fstat(file_descriptor, &file_status) != 0)
         throw Exception(ErrorCodes::CANNOT_FSTAT, "Cannot fstat shared library '{}'", file_path);
 
     /// Read and validate the ELF header.
-    ElfHeader header;
+    ElfHeader header{};
     if (::pread(file_descriptor, &header, sizeof(header), 0) != static_cast<ssize_t>(sizeof(header)))
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "Cannot read ELF header of '{}'", file_path);
 
@@ -264,6 +264,12 @@ void LoadedLibrary::mapSegments(int file_descriptor, const ProgramHeader * progr
 
         int protection = segmentProtection(segment.flags);
 
+        /// Memory that is writable and executable at once is how an attacker turns a memory corruption into
+        /// code execution. No sane toolchain emits such segments, so refuse them instead of mapping them.
+        if ((protection & PROT_WRITE) && (protection & PROT_EXEC))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Shared object '{}' has a segment that is both writable and executable, which is not supported", file_path);
+
         uint64_t segment_address = load_bias + segment.virtual_address;
         uint64_t mapping_address = roundDownToPage(segment_address);
         uint64_t page_offset = segment_address - mapping_address;
@@ -296,12 +302,14 @@ void LoadedLibrary::mapSegments(int file_descriptor, const ProgramHeader * progr
                 }
                 else
                 {
-                    /// A read-only segment with a .bss tail is unusual; make it writable just for the memset.
+                    /// A read-only segment with a .bss tail is unusual; make it writable (and, meanwhile, not
+                    /// executable) just for the memset.
                     uint64_t page_begin = roundDownToPage(zero_begin);
-                    if (::mprotect(reinterpret_cast<void *>(page_begin), partial_end - page_begin, protection | PROT_WRITE) != 0)
+                    if (::mprotect(reinterpret_cast<void *>(page_begin), partial_end - page_begin, PROT_READ | PROT_WRITE) != 0)
                         throw Exception(ErrorCodes::CANNOT_MPROTECT, "Cannot zero the .bss tail of '{}'", file_path);
                     std::memset(reinterpret_cast<void *>(zero_begin), 0, partial_end - zero_begin);
-                    ::mprotect(reinterpret_cast<void *>(page_begin), partial_end - page_begin, protection);
+                    if (::mprotect(reinterpret_cast<void *>(page_begin), partial_end - page_begin, protection) != 0)
+                        throw Exception(ErrorCodes::CANNOT_MPROTECT, "Cannot restore the protection of the .bss tail of '{}'", file_path);
                 }
             }
 
@@ -334,8 +342,8 @@ void LoadedLibrary::parseDynamicSection(const DynamicEntry * dynamic_section)
 
     uint64_t init_array_size = 0;
     uint64_t fini_array_size = 0;
-    void (**init_array_data)() = nullptr;
-    void (**fini_array_data)() = nullptr;
+    const Initializer * init_array_data = nullptr;
+    const Finalizer * fini_array_data = nullptr;
 
     uint64_t plt_relocations_bytes = 0;
 
@@ -367,10 +375,10 @@ void LoadedLibrary::parseDynamicSection(const DynamicEntry * dynamic_section)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Shared object '{}' uses REL (not RELA) relocations, which are not supported", file_path);
 
-            case DynamicTag::Init:      init_function = reinterpret_cast<void (*)()>(biased); break;
-            case DynamicTag::Fini:      fini_function = reinterpret_cast<void (*)()>(biased); break;
-            case DynamicTag::InitArray: init_array_data = reinterpret_cast<void (**)()>(biased); break;
-            case DynamicTag::FiniArray: fini_array_data = reinterpret_cast<void (**)()>(biased); break;
+            case DynamicTag::Init:      init_function = reinterpret_cast<Initializer>(biased); break;
+            case DynamicTag::Fini:      fini_function = reinterpret_cast<Finalizer>(biased); break;
+            case DynamicTag::InitArray: init_array_data = reinterpret_cast<const Initializer *>(biased); break;
+            case DynamicTag::FiniArray: fini_array_data = reinterpret_cast<const Finalizer *>(biased); break;
             case DynamicTag::InitArraySize: init_array_size = entry->value; break;
             case DynamicTag::FiniArraySize: fini_array_size = entry->value; break;
 
@@ -404,9 +412,9 @@ void LoadedLibrary::parseDynamicSection(const DynamicEntry * dynamic_section)
 
     plt_relocations_count = plt_relocations_bytes / sizeof(RelocationWithAddend);
     if (init_array_data)
-        init_array = std::span<void (* const)()>(init_array_data, init_array_size / sizeof(void (*)()));
+        init_array = std::span<const Initializer>(init_array_data, init_array_size / sizeof(Initializer));
     if (fini_array_data)
-        fini_array = std::span<void (* const)()>(fini_array_data, fini_array_size / sizeof(void (*)()));
+        fini_array = std::span<const Finalizer>(fini_array_data, fini_array_size / sizeof(Finalizer));
 
     symbol_count = countSymbols();
 
@@ -540,7 +548,8 @@ const Symbol * LoadedLibrary::findDefinedSymbol(const char * name, const Version
     auto consider = [&](uint32_t index) -> bool
     {
         const Symbol & symbol = symbol_table[index];
-        if (!symbol.isDefined() || symbol.binding() == STB_LOCAL)
+        /// Local symbols, as well as hidden and internal ones, are not visible to other objects.
+        if (!symbol.isDefined() || symbol.binding() == STB_LOCAL || !symbol.isVisibleOutside())
             return false;
         if (std::strcmp(name, symbolName(symbol)) != 0)
             return false;
@@ -573,7 +582,6 @@ const Symbol * LoadedLibrary::findDefinedSymbol(const char * name, const Version
         return false;
     };
 
-    uint32_t name_hash;
     if (gnu_hash_table != nullptr)
     {
         uint32_t bucket_count = gnu_hash_table[0];
@@ -584,7 +592,7 @@ const Symbol * LoadedLibrary::findDefinedSymbol(const char * name, const Version
         const uint32_t * buckets = reinterpret_cast<const uint32_t *>(bloom + bloom_word_count);
         const uint32_t * chain = buckets + bucket_count;
 
-        name_hash = computeGNUHash(name);
+        uint32_t name_hash = computeGNUHash(name);
 
         /// The Bloom filter cheaply rules out names that are certainly absent.
         uint64_t bloom_word = bloom[(name_hash / 64) % bloom_word_count];
@@ -611,7 +619,7 @@ const Symbol * LoadedLibrary::findDefinedSymbol(const char * name, const Version
         uint32_t bucket_count = sysv_hash_table[0];
         const uint32_t * buckets = sysv_hash_table + 2;
         const uint32_t * chain = buckets + bucket_count;
-        name_hash = computeSystemVHash(name);
+        uint32_t name_hash = computeSystemVHash(name);
         for (uint32_t index = buckets[name_hash % bucket_count]; index != STN_UNDEF; index = chain[index])
             if (consider(index))
                 return exact_match;
@@ -626,7 +634,7 @@ ResolvedSymbol LoadedLibrary::lookup(const char * name, const VersionRequirement
     const Symbol * symbol = findDefinedSymbol(name, version);
     if (symbol == nullptr)
         return {};
-    return ResolvedSymbol{this, symbol, addressOfSymbol(*symbol), true};
+    return ResolvedSymbol{this, symbol, reinterpret_cast<void *>(load_bias + symbol->value), true};
 }
 
 
@@ -636,6 +644,14 @@ void * LoadedLibrary::addressOfSymbol(const Symbol & symbol) const
     if (symbol.isIndirectFunction() && symbol.isDefined())
         return callIndirectFunctionResolver(address);
     return reinterpret_cast<void *>(address);
+}
+
+
+void * ResolvedSymbol::finalAddress() const
+{
+    if (isIndirectFunction())
+        return library->addressOfSymbol(*symbol);
+    return address;
 }
 
 
@@ -653,17 +669,22 @@ ResolvedSymbol LoadedLibrary::resolveForRelocation(uint32_t symbol_index, const 
     const Symbol & symbol = symbol_table[symbol_index];
     const char * name = symbolName(symbol);
 
+    ResolvedSymbol own_definition{this, &symbol, reinterpret_cast<void *>(load_bias + symbol.value), true};
+
     /// A local definition is bound directly; it is not visible to (and need not be searched for in) the scope.
-    if (symbol.isDefined() && symbol.binding() == STB_LOCAL)
-        return ResolvedSymbol{this, &symbol, addressOfSymbol(symbol), true};
+    /// The same holds for a definition with protected, hidden or internal visibility: the ELF rules require
+    /// that references from the defining object bind to its own symbol, so a definition of the same name in an
+    /// object that comes earlier in the scope must not preempt it.
+    if (symbol.isDefined() && symbol.bindsLocally())
+        return own_definition;
 
     ResolvedSymbol resolved = resolver(name, importedSymbolVersion(symbol_index));
     if (resolved)
         return resolved;
 
-    /// A hidden definition present here but absent from the scope resolves to itself.
+    /// A definition present here but absent from the scope resolves to itself.
     if (symbol.isDefined())
-        return ResolvedSymbol{this, &symbol, addressOfSymbol(symbol), true};
+        return own_definition;
 
     /// An unresolved weak reference is allowed and evaluates to the null address.
     if (symbol.isWeak())
@@ -676,7 +697,7 @@ ResolvedSymbol LoadedLibrary::resolveForRelocation(uint32_t symbol_index, const 
 }
 
 
-void LoadedLibrary::applyOneRelocation(const RelocationWithAddend & relocation, const SymbolResolver & resolver)
+bool LoadedLibrary::applyOneRelocation(const RelocationWithAddend & relocation, const SymbolResolver & resolver, bool allow_indirect)
 {
     uint32_t type = relocation.type();
     auto * target = reinterpret_cast<uint64_t *>(load_bias + relocation.offset);
@@ -687,16 +708,27 @@ void LoadedLibrary::applyOneRelocation(const RelocationWithAddend & relocation, 
     }
     else if (type == RelocationType::IndirectRelative)
     {
+        if (!allow_indirect)
+            return false;
         *target = reinterpret_cast<uint64_t>(callIndirectFunctionResolver(load_bias + relocation.addend));
     }
     else if (type == RelocationType::GlobalData || type == RelocationType::JumpSlot || type == RelocationType::Direct64)
     {
         ResolvedSymbol resolved = resolveForRelocation(relocation.symbolIndex(), resolver);
-        *target = reinterpret_cast<uint64_t>(resolved.address) + relocation.addend;
+        /// The address of an indirect function is whatever its resolver returns, and the resolver belongs to
+        /// a library that may not be relocated yet.
+        if (resolved.isIndirectFunction() && !allow_indirect)
+            return false;
+        *target = reinterpret_cast<uint64_t>(resolved.finalAddress()) + relocation.addend;
     }
     else if (type == RelocationType::Copy)
     {
         ResolvedSymbol resolved = resolveForRelocation(relocation.symbolIndex(), resolver);
+        /// An unresolved weak reference has no data to copy.
+        if (resolved.address == nullptr)
+            throw Exception(ErrorCodes::CANNOT_DLOPEN,
+                "Cannot apply a copy relocation against the undefined symbol '{}' in '{}'",
+                symbolName(symbol_table[relocation.symbolIndex()]), file_path);
         std::memcpy(target, resolved.address, symbol_table[relocation.symbolIndex()].size);
     }
     else if (type == RelocationType::TLSModuleID)
@@ -734,6 +766,8 @@ void LoadedLibrary::applyOneRelocation(const RelocationWithAddend & relocation, 
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Unsupported relocation type {} in '{}'", type, file_path);
     }
+
+    return true;
 }
 
 
@@ -754,6 +788,10 @@ void LoadedLibrary::applyCompactRelativeRelocations()
         }
         else
         {
+            if (where == nullptr)
+                throw Exception(ErrorCodes::CANNOT_PARSE_ELF,
+                    "The RELR table of '{}' starts with a bitmap instead of an address", file_path);
+
             uint64_t bitmap = entry >> 1;
             for (uint64_t bit = 0; bitmap != 0; bitmap >>= 1, ++bit)
                 if (bitmap & 1)
@@ -768,22 +806,30 @@ void LoadedLibrary::applyRelocations(const SymbolResolver & resolver)
 {
     applyCompactRelativeRelocations();
 
-    /// Indirect-function (IFUNC) resolvers may depend on the object being otherwise fully relocated, so apply
-    /// them in a second pass after every ordinary relocation of this object.
-    auto applyTable = [&](const RelocationWithAddend * table, size_t count, bool indirect_pass)
+    /// An indirect function (IFUNC) resolver is code, and it may depend on its object being otherwise fully
+    /// relocated. Moreover, the resolver may belong to another object: a `JUMP_SLOT` or `GLOB_DAT` relocation
+    /// against an indirect function imported from a dependency runs the resolver of that dependency. So all
+    /// such relocations are set aside until every object of the scope has its ordinary relocations applied.
+    deferred_indirect_relocations.clear();
+    auto apply_table = [&](const RelocationWithAddend * table, size_t count)
     {
         for (size_t i = 0; i < count; ++i)
-        {
-            bool is_indirect = table[i].type() == RelocationType::IndirectRelative;
-            if (is_indirect == indirect_pass)
-                applyOneRelocation(table[i], resolver);
-        }
+            if (!applyOneRelocation(table[i], resolver, /* allow_indirect = */ false))
+                deferred_indirect_relocations.push_back(&table[i]);
     };
 
-    applyTable(rela_relocations, rela_relocations_count, false);
-    applyTable(plt_relocations, plt_relocations_count, false);
-    applyTable(rela_relocations, rela_relocations_count, true);
-    applyTable(plt_relocations, plt_relocations_count, true);
+    apply_table(rela_relocations, rela_relocations_count);
+    apply_table(plt_relocations, plt_relocations_count);
+}
+
+
+void LoadedLibrary::applyIndirectRelocations(const SymbolResolver & resolver)
+{
+    for (const RelocationWithAddend * relocation : deferred_indirect_relocations)
+        applyOneRelocation(*relocation, resolver, /* allow_indirect = */ true);
+
+    deferred_indirect_relocations.clear();
+    deferred_indirect_relocations.shrink_to_fit();
 }
 
 
@@ -800,25 +846,18 @@ void LoadedLibrary::runInitializers()
 {
     if (initializers_ran)
         return;
-    initializers_ran = true;
 
-    /// glibc passes (argc, argv, envp) to initializers; a plain void() initializer simply ignores them.
-    /// The two signatures differ, so the cast goes through `void *`: casting between function
-    /// pointer types directly is what `-Wcast-function-type-strict` refuses.
-    using Initializer = void (*)(int, char **, char **);
     static char * empty_argv[] = {nullptr};
 
-    auto as_initializer = [](void (*function)()) -> Initializer
-    {
-        return reinterpret_cast<Initializer>(reinterpret_cast<void *>(function));
-    };
-
     if (init_function != nullptr)
-        as_initializer(init_function)(0, empty_argv, environ);
+        init_function(0, empty_argv, environ);
 
-    for (auto * function : init_array)
+    for (Initializer function : init_array)
         if (function != nullptr)
-            as_initializer(function)(0, empty_argv, environ);
+            function(0, empty_argv, environ);
+
+    /// Set only now: an object whose initializers did not complete must not have its finalizers run.
+    initializers_ran = true;
 }
 
 

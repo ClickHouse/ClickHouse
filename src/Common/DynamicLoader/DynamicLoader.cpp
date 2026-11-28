@@ -3,12 +3,13 @@
 
 #include <Common/Exception.h>
 
+#include <algorithm>
 #include <cstring>
 #include <deque>
 #include <unordered_set>
 
+#include <climits>
 #include <cstdlib>
-#include <limits.h>
 #include <unistd.h>
 
 
@@ -90,6 +91,46 @@ namespace
         }
         return result;
     }
+
+    /// The breadth-first list of an object and its whole dependency closure: the symbol resolution scope.
+    std::vector<LoadedLibrary *> breadthFirstScope(LoadedLibrary * root)
+    {
+        std::vector<LoadedLibrary *> scope;
+        std::unordered_set<const LoadedLibrary *> seen;
+        std::deque<LoadedLibrary *> queue{root};
+        seen.insert(root);
+        while (!queue.empty())
+        {
+            LoadedLibrary * library = queue.front();
+            queue.pop_front();
+            scope.push_back(library);
+            for (LoadedLibrary * dependency : library->dependencyList())
+                if (seen.insert(dependency).second)
+                    queue.push_back(dependency);
+        }
+        return scope;
+    }
+
+    void appendInDependencyOrder(
+        LoadedLibrary * library, std::unordered_set<const LoadedLibrary *> & visited, std::vector<LoadedLibrary *> & order)
+    {
+        if (!visited.insert(library).second)
+            return;
+        for (LoadedLibrary * dependency : library->dependencyList())
+            appendInDependencyOrder(dependency, visited, order);
+        order.push_back(library);
+    }
+
+    /// The objects reachable from `roots`, ordered so that every object comes after everything it depends on
+    /// (a depth-first post-order). This is the order of initialization; its reverse is the order of teardown.
+    std::vector<LoadedLibrary *> dependencyOrder(const std::vector<LoadedLibrary *> & roots)
+    {
+        std::vector<LoadedLibrary *> order;
+        std::unordered_set<const LoadedLibrary *> visited;
+        for (LoadedLibrary * root : roots)
+            appendInDependencyOrder(root, visited, order);
+        return order;
+    }
 }
 
 
@@ -106,6 +147,9 @@ DynamicLoader::DynamicLoader(Options options_)
 
     extra_search_paths = options.search_paths;
 
+    /// Read once, here: the environment is not safe to read while other threads may be modifying it.
+    environment_search_paths = splitPathList(::getenv("LD_LIBRARY_PATH")); // NOLINT(concurrency-mt-unsafe)
+
     /// The thread-local storage helper must resolve to our own implementation, never the host's.
     provided_symbols["__tls_get_addr"] = threadLocalStorageAccessor();
 
@@ -120,9 +164,12 @@ DynamicLoader::DynamicLoader(Options options_)
 
 DynamicLoader::~DynamicLoader()
 {
-    /// Release every remaining object. Finalizers and unmapping happen in each destructor.
-    libraries_by_shared_object_name.clear();
-    libraries_by_real_path.clear();
+    /// Release every remaining object, the same way `close` does: dependents before their dependencies.
+    std::vector<LoadedLibrary *> remaining;
+    remaining.reserve(libraries_by_real_path.size());
+    for (const auto & [_, library] : libraries_by_real_path)
+        remaining.push_back(library.get());
+    unload(remaining);
 }
 
 
@@ -140,7 +187,7 @@ void DynamicLoader::addSearchPath(const std::string & directory)
 std::string DynamicLoader::findLibrary(const std::string & name, const std::vector<std::string> & run_paths) const
 {
     /// A name containing a slash is a path, used as given.
-    if (name.find('/') != std::string::npos)
+    if (name.contains('/'))
     {
         std::string resolved = canonicalPath(name);
         if (!resolved.empty())
@@ -151,8 +198,7 @@ std::string DynamicLoader::findLibrary(const std::string & name, const std::vect
     /// Search order: the object's run paths, then explicit paths, then LD_LIBRARY_PATH, then system directories.
     std::vector<std::string> directories = run_paths;
     directories.insert(directories.end(), extra_search_paths.begin(), extra_search_paths.end());
-    std::vector<std::string> environment_paths = splitPathList(::getenv("LD_LIBRARY_PATH"));
-    directories.insert(directories.end(), environment_paths.begin(), environment_paths.end());
+    directories.insert(directories.end(), environment_search_paths.begin(), environment_search_paths.end());
     directories.insert(directories.end(), default_search_paths.begin(), default_search_paths.end());
 
     for (const std::string & directory : directories)
@@ -166,7 +212,8 @@ std::string DynamicLoader::findLibrary(const std::string & name, const std::vect
 }
 
 
-LoadedLibrary * DynamicLoader::loadObject(const std::string & path, const std::string & requested_name)
+LoadedLibrary * DynamicLoader::loadObject(
+    const std::string & path, const std::string & requested_name, std::vector<LoadedLibrary *> & newly_loaded)
 {
     /// Deduplicate by canonical path so a library reached by two different names is loaded once.
     if (auto it = libraries_by_real_path.find(path); it != libraries_by_real_path.end())
@@ -176,23 +223,21 @@ LoadedLibrary * DynamicLoader::loadObject(const std::string & path, const std::s
     LoadedLibrary * pointer = library.get();
     pointer->mapAndParse();
 
+    /// Reserve first, so that an object which got into the map is certainly recorded for a rollback.
+    newly_loaded.reserve(newly_loaded.size() + 1);
     libraries_by_real_path.emplace(path, std::move(library));
-    /// Also index by shared-object name so a DT_NEEDED reaching the same object dedups even via a different path.
-    libraries_by_shared_object_name.emplace(pointer->sharedObjectName(), pointer);
+    newly_loaded.push_back(pointer);
     return pointer;
 }
 
 
-void DynamicLoader::buildDependencyClosure(LoadedLibrary * root)
+void DynamicLoader::buildDependencyClosure(std::vector<LoadedLibrary *> & newly_loaded)
 {
-    std::deque<LoadedLibrary *> queue{root};
-    while (!queue.empty())
+    /// Only the objects mapped by this `open` need their DT_NEEDED followed: every other object went through
+    /// a successful `open` already. `newly_loaded` grows while we iterate, which makes it a breadth-first queue.
+    for (size_t i = 0; i < newly_loaded.size(); ++i)
     {
-        LoadedLibrary * library = queue.front();
-        queue.pop_front();
-        if (library->dependencies_built)
-            continue;
-        library->dependencies_built = true;
+        LoadedLibrary * library = newly_loaded[i];
 
         std::string object_directory = directoryName(library->path());
         std::vector<std::string> run_paths;
@@ -202,15 +247,11 @@ void DynamicLoader::buildDependencyClosure(LoadedLibrary * root)
 
         for (const std::string & needed : library->neededLibraries())
         {
-            /// A dependency already loaded by its shared-object name is reused without touching the filesystem.
-            LoadedLibrary * dependency;
-            if (auto it = libraries_by_shared_object_name.find(needed); it != libraries_by_shared_object_name.end())
-                dependency = it->second;
-            else
-                dependency = loadObject(findLibrary(needed, run_paths), needed);
-
+            /// Resolve the name through the search path of the referring object first, and deduplicate by the
+            /// canonical path only then. A name alone does not identify an object: two plugins may each ship a
+            /// different library under the same name, and each must get its own.
+            LoadedLibrary * dependency = loadObject(findLibrary(needed, run_paths), needed, newly_loaded);
             library->dependencyList().push_back(dependency);
-            queue.push_back(dependency);
         }
     }
 }
@@ -232,32 +273,11 @@ ResolvedSymbol DynamicLoader::resolveSymbol(
 }
 
 
-void DynamicLoader::runInitializersRecursive(LoadedLibrary * library, std::vector<LoadedLibrary *> & already_initialized)
-{
-    for (LoadedLibrary * existing : already_initialized)
-        if (existing == library)
-            return;
-    already_initialized.push_back(library);
-
-    /// Initialize dependencies first, so an object's initializers see a ready environment.
-    for (LoadedLibrary * dependency : library->dependencyList())
-        runInitializersRecursive(dependency, already_initialized);
-
-    library->runInitializers();
-}
-
-void DynamicLoader::runInitializersInDependencyOrder(LoadedLibrary * root)
-{
-    std::vector<LoadedLibrary *> already_initialized;
-    runInitializersRecursive(root, already_initialized);
-}
-
-
-LoadedLibrary * DynamicLoader::open(const std::string & path)
+LoadedLibrary * DynamicLoader::loadAndLink(const std::string & path, std::vector<LoadedLibrary *> & newly_loaded)
 {
     /// Locate and map the requested object (dedup returns an already-open instance).
     std::string resolved_path;
-    if (path.find('/') != std::string::npos)
+    if (path.contains('/'))
     {
         resolved_path = canonicalPath(path);
         if (resolved_path.empty())
@@ -268,52 +288,78 @@ LoadedLibrary * DynamicLoader::open(const std::string & path)
         resolved_path = findLibrary(path, {});
     }
 
-    LoadedLibrary * root = loadObject(resolved_path, baseName(resolved_path));
+    LoadedLibrary * root = loadObject(resolved_path, baseName(resolved_path), newly_loaded);
 
     /// Load the whole dependency closure and compute the breadth-first resolution scope from `root`.
-    buildDependencyClosure(root);
+    buildDependencyClosure(newly_loaded);
+    std::vector<LoadedLibrary *> scope = breadthFirstScope(root);
 
-    std::vector<LoadedLibrary *> scope;
-    {
-        std::unordered_set<const LoadedLibrary *> seen;
-        std::deque<LoadedLibrary *> queue{root};
-        seen.insert(root);
-        while (!queue.empty())
-        {
-            LoadedLibrary * library = queue.front();
-            queue.pop_front();
-            scope.push_back(library);
-            for (LoadedLibrary * dependency : library->dependencyList())
-                if (seen.insert(dependency).second)
-                    queue.push_back(dependency);
-        }
-    }
-
-    /// Relocate every not-yet-relocated object using the shared scope, then harden its RELRO region.
     auto resolver = [&](const char * name, const VersionRequirement & version)
     {
         return resolveSymbol(scope, name, version);
     };
 
-    std::vector<LoadedLibrary *> newly_relocated;
-    for (LoadedLibrary * library : scope)
-    {
-        if (!library->relocated)
-        {
-            library->relocated = true;
-            library->applyRelocations(resolver);
-            newly_relocated.push_back(library);
-        }
-    }
-    for (LoadedLibrary * library : newly_relocated)
-        library->protectReadOnlyRelocations();
+    /// The new objects, each after everything it depends on.
+    std::unordered_set<const LoadedLibrary *> is_new(newly_loaded.begin(), newly_loaded.end());
+    std::vector<LoadedLibrary *> new_in_dependency_order;
+    for (LoadedLibrary * library : dependencyOrder({root}))
+        if (is_new.contains(library))
+            new_in_dependency_order.push_back(library);
 
-    /// Run static initializers (dependencies first), then account for this open in every object's reference count.
-    runInitializersInDependencyOrder(root);
+    /// Relocate every new object using the shared scope. This goes in two phases over all of them: an indirect
+    /// function (IFUNC) resolver is run on behalf of whoever refers to the function, but it is code of the
+    /// object that defines it, so it must not run before that object has its ordinary relocations applied -
+    /// whichever of the two comes first in the scope.
+    for (LoadedLibrary * library : new_in_dependency_order)
+        library->applyRelocations(resolver);
+    /// Dependencies first, so that a resolver calling into a dependency finds it completely relocated.
+    for (LoadedLibrary * library : new_in_dependency_order)
+        library->applyIndirectRelocations(resolver);
+
+    /// Harden the RELRO regions, then run the static initializers so that an object's initializers see a ready
+    /// environment.
+    for (LoadedLibrary * library : new_in_dependency_order)
+        library->protectReadOnlyRelocations();
+    for (LoadedLibrary * library : new_in_dependency_order)
+        library->runInitializers();
+
+    /// Account for this open in the reference count of every object of the scope.
     for (LoadedLibrary * library : scope)
         library->incrementReferenceCount();
 
     return root;
+}
+
+
+LoadedLibrary * DynamicLoader::open(const std::string & path)
+{
+    /// Everything this call maps. If the call fails at any step (a missing dependency, an undefined symbol, an
+    /// unsupported relocation, a throwing initializer), these objects are unloaded again. Otherwise a half-built
+    /// object would stay cached, and a retry would take it for a fully linked one.
+    std::vector<LoadedLibrary *> newly_loaded;
+    try
+    {
+        return loadAndLink(path, newly_loaded);
+    }
+    catch (...)
+    {
+        unload(newly_loaded);
+        throw;
+    }
+}
+
+
+void DynamicLoader::unload(const std::vector<LoadedLibrary *> & libraries) noexcept
+{
+    std::unordered_set<const LoadedLibrary *> to_unload(libraries.begin(), libraries.end());
+
+    /// Destroying an object runs its finalizers (if its initializers have completed) and unmaps it. Going in the
+    /// reverse of the initialization order tears down dependents first, while their dependencies are still mapped.
+    std::vector<LoadedLibrary *> order = dependencyOrder(libraries);
+    std::reverse(order.begin(), order.end());
+    for (LoadedLibrary * library : order)
+        if (to_unload.contains(library))
+            libraries_by_real_path.erase(library->path());
 }
 
 
@@ -329,7 +375,7 @@ void * DynamicLoader::getSymbol(LoadedLibrary * library, const std::string & nam
         queue.pop_front();
 
         if (ResolvedSymbol resolved = current->lookup(name.c_str(), VersionRequirement{}))
-            return resolved.address;
+            return resolved.finalAddress();
 
         for (LoadedLibrary * dependency : current->dependencyList())
             if (seen.insert(dependency).second)
@@ -340,49 +386,21 @@ void * DynamicLoader::getSymbol(LoadedLibrary * library, const std::string & nam
 }
 
 
-void DynamicLoader::unloadRecursive(LoadedLibrary * library)
-{
-    libraries_by_shared_object_name.erase(library->sharedObjectName());
-    /// Erasing the owning unique_ptr runs the destructor, which finalizes and unmaps.
-    libraries_by_real_path.erase(library->path());
-}
-
-
 void DynamicLoader::close(LoadedLibrary * library)
 {
     if (library == nullptr)
         return;
 
-    /// Recompute the same scope the matching open() used, and drop one reference from each object.
-    std::vector<LoadedLibrary *> scope;
-    {
-        std::unordered_set<const LoadedLibrary *> seen;
-        std::deque<LoadedLibrary *> queue{library};
-        seen.insert(library);
-        while (!queue.empty())
-        {
-            LoadedLibrary * current = queue.front();
-            queue.pop_front();
-            scope.push_back(current);
-            for (LoadedLibrary * dependency : current->dependencyList())
-                if (seen.insert(dependency).second)
-                    queue.push_back(dependency);
-        }
-    }
-
     if (library->referenceCount() == 0)
         throw Exception(ErrorCodes::CANNOT_DLSYM, "Closing a library '{}' that is not open", library->path());
 
+    /// Recompute the same scope the matching `open` used, and drop one reference from each object.
     std::vector<LoadedLibrary *> to_unload;
-    for (LoadedLibrary * current : scope)
+    for (LoadedLibrary * current : breadthFirstScope(library))
         if (current->decrementReferenceCount() == 0)
             to_unload.push_back(current);
 
-    /// Finalize dependents before dependencies. `scope` is breadth-first from the root, so its order works.
-    for (LoadedLibrary * current : to_unload)
-        current->runFinalizers();
-    for (LoadedLibrary * current : to_unload)
-        unloadRecursive(current);
+    unload(to_unload);
 }
 
 }

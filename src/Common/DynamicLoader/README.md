@@ -51,7 +51,8 @@ loader.provideSymbol("host_log", reinterpret_cast<void *>(&hostLog));
 For each object it loads, the loader:
 
 1. **Maps the segments.** It reads the ELF header and *program headers*, reserves one contiguous region, and
-   maps every `PT_LOAD` segment into it with the right permissions, zero-filling the `.bss` tail. The
+   maps every `PT_LOAD` segment into it with the right permissions, zero-filling the `.bss` tail. A segment
+   that is both writable and executable is refused. The
    *load bias* — the difference between where the object was mapped and its link-time base address — is added to
    every link-time address afterwards.
 2. **Parses the dynamic section.** It locates the string table, symbol table, symbol hash table (GNU or the
@@ -60,13 +61,23 @@ For each object it loads, the loader:
    libraries.
 3. **Loads dependencies.** It follows `DT_NEEDED` breadth-first, searching run paths (`DT_RUNPATH`/`DT_RPATH`
    with `$ORIGIN` expanded), then explicit and `LD_LIBRARY_PATH` directories, then the default system
-   directories, deduplicating shared dependencies.
+   directories. Each name is resolved to a canonical path through the search path of the object that refers to
+   it, and shared dependencies are deduplicated by that path. Unlike glibc, the loader does not treat a library
+   that merely has the same name (or `DT_SONAME`) as already loaded: two plugins that each ship their own
+   `libcodec.so` get one each.
 4. **Applies relocations.** It rebases pointers (`RELATIVE`/`RELR`), fills the GOT/PLT (`GLOB_DAT`, `JUMP_SLOT`,
-   absolute references), resolves indirect functions (`IRELATIVE`/`STT_GNU_IFUNC`), and wires up dynamic
-   thread-local storage (`DTPMOD`/`DTPOFF`). Symbol lookups honor versioning.
+   absolute references), and wires up dynamic thread-local storage (`DTPMOD`/`DTPOFF`). Symbol lookups honor
+   versioning and visibility: a reference from an object to its own protected, hidden or internal symbol binds
+   to that symbol and is never preempted by another object. Relocations that need an indirect function
+   (`IRELATIVE`, or any reference to a `STT_GNU_IFUNC` symbol) are applied in a second phase, after every object
+   being loaded has its ordinary relocations in place, because the resolver is code of the defining object.
 5. **Hardens and initializes.** It makes the `PT_GNU_RELRO` region read-only, then runs `DT_INIT` and the
-   `DT_INIT_ARRAY` functions with dependencies first. On `close`, finalizers run in reverse and the address
-   space is unmapped once the last reference is gone.
+   `DT_INIT_ARRAY` functions with dependencies first. On `close`, once the last reference is gone, finalizers
+   run and the address space is unmapped, dependents before their dependencies. Destroying the loader tears
+   down whatever is still open in the same order.
+
+`open` is transactional: if any step fails, every object mapped by that call is unloaded again, so the loader is
+left as it was and the call can be retried.
 
 The header `ElfTypes.h` contains a glossary that deciphers the terse Unix/ELF abbreviations (`phdr`, `vaddr`,
 `filesz`, `DT_*`, `PLT`, `GOT`, `RELRO`, `DTV`, `TCB`, `IFUNC`, …) into full names.

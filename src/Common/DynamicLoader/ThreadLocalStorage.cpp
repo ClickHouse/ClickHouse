@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
@@ -60,8 +61,7 @@ namespace
     {
         /// aligned_alloc requires a power-of-two alignment of at least sizeof(void*) and a size that is a
         /// multiple of the alignment.
-        if (alignment < sizeof(void *))
-            alignment = sizeof(void *);
+        alignment = std::max(alignment, sizeof(void *));
         size_t rounded_size = (size + alignment - 1) & ~(alignment - 1);
         if (rounded_size == 0)
             rounded_size = alignment;
