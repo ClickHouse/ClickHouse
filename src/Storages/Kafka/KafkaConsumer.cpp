@@ -632,7 +632,16 @@ KafkaConsumer::Stat KafkaConsumer::getStat() const
 
     if (consumer)
     {
-        cpp_assignments = consumer->get_assignment();
+        try
+        {
+            cpp_assignments = consumer->get_assignment();
+        }
+        catch (const cppkafka::HandleException & e)
+        {
+            /// A consumer with an empty `group.id` has no assignment, librdkafka reports it as an unknown group.
+            if (e.get_error() != RD_KAFKA_RESP_ERR__UNKNOWN_GROUP)
+                throw;
+        }
         cpp_offsets = consumer->get_offsets_position(cpp_assignments);
     }
 
