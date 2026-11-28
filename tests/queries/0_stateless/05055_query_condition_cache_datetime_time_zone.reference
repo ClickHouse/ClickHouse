@@ -1,0 +1,30 @@
+--- an omitted time zone, across sessions
+0
+1000000
+--- an omitted time zone, one session
+0
+0
+0
+1
+--- a time zone omitted from a declared name, across sessions
+0
+1000000
+--- a time zone omitted from a declared name, one session
+0
+0
+0
+1
+--- a time zone omitted under a wrapper, across sessions
+0
+1000000
+--- a time zone omitted under a wrapper, one session
+0
+0
+0
+1
+--- a Dynamic constant stored in its own variant or in the shared one
+0
+1000000
+0
+0
+1

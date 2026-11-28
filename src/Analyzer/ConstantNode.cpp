@@ -349,7 +349,7 @@ bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*comp
 {
     const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
 
-    if (!getResultType()->equals(*rhs_typed.getResultType()))
+    if (!haveSameExpressionIdentity(*getResultType(), *rhs_typed.getResultType()))
         return false;
 
     /// With equal types, the elements of two deferred values are `Field`s of the same types.
@@ -383,10 +383,16 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*c
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash of a deferred constant differs from the hash of its column");
 #endif
     }
+    else if (holdsATypeOfItsOwn(*type))
+    {
+        /// The fast hash can leave out the type such a value holds.
+        updateStoredValueHash(*type, getColumn()->getDataColumn(), hash_state);
+    }
     else
         getColumn()->updateHashFast(hash_state);
 
     type->updateHash(hash_state);
+    updateExpressionIdentityHash(*type, hash_state);
 }
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const

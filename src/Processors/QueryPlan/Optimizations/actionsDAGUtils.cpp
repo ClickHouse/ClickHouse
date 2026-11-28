@@ -164,7 +164,7 @@ static bool foldedLambdasMatch(const IColumn & inner, const IColumn & outer, siz
 static bool constantsMatch(
     const IColumn & inner, const IDataType & inner_type, const IColumn & outer, const IDataType & outer_type, size_t max_set_size)
 {
-    if (!inner_type.equals(outer_type))
+    if (!haveSameExpressionIdentity(inner_type, outer_type))
         return false;
 
     if (const auto * inner_set = typeid_cast<const ColumnSet *>(&inner))
@@ -198,7 +198,11 @@ static bool constantsMatch(
     if (typeid_cast<const ColumnFunction *>(&inner) || typeid_cast<const ColumnFunction *>(&outer))
         return foldedLambdasMatch(inner, outer, max_set_size);
 
-    return inner[0] == outer[0];
+    if (inner[0] != outer[0])
+        return false;
+
+    /// `Field` can lose the type such a value holds.
+    return !holdsATypeOfItsOwn(inner_type) || haveSameStoredValue(inner_type, inner, outer_type, outer);
 }
 
 MatchedTrees::Matches matchTrees(
