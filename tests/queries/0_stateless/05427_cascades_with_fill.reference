@@ -90,10 +90,9 @@ Expression (Project names)
 10	2
 Expression (Project names)
   Filling
-    Expression (Before INTERPOLATE)
-      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-        Sorting
-          ReadFromMergeTree (default.t_cascades_fill)
+    Expression ((Before INTERPOLATE + (Before ORDER BY + (Projection + Change column names to column identifiers))))
+      Sorting
+        ReadFromMergeTree (default.t_cascades_fill)
 -- DateTime WITH FILL STEP INTERVAL
 2020-01-01 00:00:00
 2020-01-01 00:00:01

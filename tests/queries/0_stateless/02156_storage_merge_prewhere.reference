@@ -10,10 +10,10 @@
             Prewhere filter
             Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
 2
-              Prewhere info
-                Prewhere filter
-                Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
-              Prewhere info
-                Prewhere filter
-                Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
+            Prewhere info
+              Prewhere filter
+              Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
+            Prewhere info
+              Prewhere filter
+              Prewhere filter column: and(notEmpty(v), equals(k, 3)) (removed)
 2

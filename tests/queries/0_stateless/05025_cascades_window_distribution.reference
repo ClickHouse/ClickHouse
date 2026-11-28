@@ -94,13 +94,12 @@ Expression (Project names)
 GatherExchange
   Expression ((Project names + Projection))
     Window (Partitioned Window step for window \'PARTITION BY __table1.k\')
-      Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + Projection))) [lifted up part])
-        Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + Projection))))
-          Window (Partitioned Window step for window \'PARTITION BY __table2.k\')
-            Expression ((Before WINDOW + Change column names to column identifiers))
-              Sorting
-                ShuffleExchange
-                  ReadFromMergeTree (ParallelRead default.t_win)
+      Expression (((Before WINDOW + (Change column names to column identifiers + (Project names + Projection))) [lifted up part] + (Before WINDOW + (Change column names to column identifiers + (Project names + Projection)))))
+        Window (Partitioned Window step for window \'PARTITION BY __table2.k\')
+          Expression ((Before WINDOW + Change column names to column identifiers))
+            Sorting
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_win)
 -- 12. same-key stacked window results match the single-node plan
 100000	50050000	49999500000000
 100000	50050000	49999500000000

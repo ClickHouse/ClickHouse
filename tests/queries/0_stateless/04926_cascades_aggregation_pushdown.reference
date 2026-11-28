@@ -63,19 +63,18 @@ GatherExchange
               Expression (Change column names to column identifiers)
                 ReadFromMergeTree (ReplicatedRead default.t_push_dims)
 -- 3b. negative: no guaranteed reduction from the composite key NDV (cardinality gate), classic shape
-Expression (Project names)
-  Expression ((Before ORDER BY + Projection))
-    Sorting
-      MergingAggregated
-        GatherExchange
-          Aggregating
-            Expression (Before GROUP BY)
-              JoinLogical (Broadcast HashJoin )
-                Expression ((Apply runtime join filter + Change column names to column identifiers))
-                  ReadFromMergeTree (ParallelRead default.t_push_facts)
-                BuildRuntimeFilter (Build runtime join filter on __table2.key)
-                  Expression (Change column names to column identifiers)
-                    ReadFromMergeTree (ReplicatedRead default.t_push_dims_multi)
+Expression ((Project names + (Before ORDER BY + Projection)))
+  Sorting
+    MergingAggregated
+      GatherExchange
+        Aggregating
+          Expression (Before GROUP BY)
+            JoinLogical (Broadcast HashJoin )
+              Expression ((Apply runtime join filter + Change column names to column identifiers))
+                ReadFromMergeTree (ParallelRead default.t_push_facts)
+              BuildRuntimeFilter (Build runtime join filter on __table2.key)
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (ReplicatedRead default.t_push_dims_multi)
 -- 4. disabled by the setting: classic shape
 Expression ((Project names + Projection))
   MergingAggregated
@@ -168,17 +167,16 @@ Expression ((Project names + Projection))
 8		50300
 9		50400
 -- 9. duplicate right-side keys: each pushed group is duplicated by the join and merged m times
-Expression (Project names)
-  Expression ((Before ORDER BY + Projection))
-    Sorting
-      Aggregating
-        JoinLogical (Local HashJoin )
-          GatherExchange
-            Aggregating
-              Expression (Change column names to column identifiers)
-                ReadFromMergeTree (ParallelRead default.t_push_facts)
-          Expression (Change column names to column identifiers)
-            ReadFromMergeTree (default.t_push_dims_multi)
+Expression ((Project names + (Before ORDER BY + Projection)))
+  Sorting
+    Aggregating
+      JoinLogical (Local HashJoin )
+        GatherExchange
+          Aggregating
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_push_facts)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_push_dims_multi)
 0	300	148500
 1	300	148800
 2	300	149100
@@ -190,18 +188,17 @@ Expression (Project names)
 8	100	50300
 9	100	50400
 -- 10. mixed condition (equi + non-equi): the pushed side groups by (key, value)
-Expression (Project names)
-  Expression ((Before ORDER BY + Projection))
-    Sorting
-      Aggregating
-        JoinLogical (Local HashJoin  swapped swapped)
-          GatherExchange
-            Aggregating
-              Expression ((Apply runtime join filter + Change column names to column identifiers))
-                ReadFromMergeTree (ParallelRead default.t_push_facts)
-          BuildRuntimeFilter (Build runtime join filter on __table2.key)
-            Expression (Change column names to column identifiers)
-              ReadFromMergeTree (default.t_push_dims_multi)
+Expression ((Project names + (Before ORDER BY + Projection)))
+  Sorting
+    Aggregating
+      JoinLogical (Local HashJoin  swapped swapped)
+        GatherExchange
+          Aggregating
+            Expression ((Apply runtime join filter + Change column names to column identifiers))
+              ReadFromMergeTree (ParallelRead default.t_push_facts)
+        BuildRuntimeFilter (Build runtime join filter on __table2.key)
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (default.t_push_dims_multi)
 0	237
 1	240
 2	240

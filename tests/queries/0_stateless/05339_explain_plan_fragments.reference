@@ -24,9 +24,8 @@ ShuffleSend (exchange_1)
 
 Query fragment 0 (stage_0) · tasks=3
 ShuffleSend (exchange_0)
-  Expression (Calculate left join keys)
-    Expression (Change column names to column identifiers)
-      ReadFromMergeTree (default.big)
+  Expression ((Calculate left join keys + Change column names to column identifiers))
+    ReadFromMergeTree (default.big)
 
 Exchanges:
   exchange_0: hash(modulo(plus(__table1.bid, 1_UInt8), 5000_UInt16)), streaming, F0 -> F2, buckets 3 -> 3

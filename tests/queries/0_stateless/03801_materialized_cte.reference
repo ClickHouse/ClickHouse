@@ -142,15 +142,12 @@ Header: count() UInt64
 MaterializingCTEs (Materialize CTEs before main query execution)
   Expression ((Project names + Projection))
     Aggregating
-      Expression (Before GROUP BY)
-        Expression (Post Join Actions)
-          Join (JOIN FillRightFirst)
-            Expression (Left Pre Join Actions)
-              Expression (Change column names to column identifiers)
-                ReadFromMemoryStorage
-            Expression (Right Pre Join Actions)
-              Expression (Change column names to column identifiers)
-                ReadFromMemoryStorage
+      Expression ((Before GROUP BY + Post Join Actions))
+        Join (JOIN FillRightFirst)
+          Expression ((Left Pre Join Actions + Change column names to column identifiers))
+            ReadFromMemoryStorage
+          Expression ((Right Pre Join Actions + Change column names to column identifiers))
+            ReadFromMemoryStorage
   MaterializingCTE (Materializing CTE: cte)
     Union
       Expression ((Conversion before UNION + (Project names + (Projection + Change column names to column identifiers))))

@@ -37,9 +37,8 @@ Expression ((Project names + Projection))
               Expression (Change column names to column identifiers)
                 ReadFromMergeTree (default.small)
             ShuffleExchange (by hash([modulo(plus(__table2.bid, 1_UInt8), 5000_UInt16)]))
-              Expression (Calculate right join keys)
-                Expression (Change column names to column identifiers)
-                  ReadFromMergeTree (default.big)
+              Expression ((Calculate right join keys + Change column names to column identifiers))
+                ReadFromMergeTree (default.big)
 20000
 ------------
 Expression ((Project names + Projection))

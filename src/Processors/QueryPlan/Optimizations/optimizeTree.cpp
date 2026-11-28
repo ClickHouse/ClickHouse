@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -983,6 +984,22 @@ void optimizeTreeSecondPass(
 
             stack.pop_back();
         }
+    }
+
+    /// The passes after the merge of the expressions leave adjacent expressions: PREWHERE puts one in the place of a filter
+    /// it takes entirely, lazy materialization for joins adds one above `JoinLazyColumnsStep`. Merge them, as optimizing the
+    /// plan again would: a plan fragment of plan-based parallel replicas is optimized again, and automatic parallel replicas
+    /// can't match it with this plan otherwise.
+    if (optimization_settings.merge_expressions)
+    {
+        traverseQueryPlan(stack, root, NoOp{},
+            [&](auto & frame_node)
+            {
+                if (typeid_cast<const ExpressionStep *>(frame_node.step.get()))
+                    while (tryMergeExpressions(&frame_node, nodes, extra_settings))
+                    {
+                    }
+            });
     }
 
     /// The merges above rebuild `FilterStep`s and drop the QCC key, so re-walk to set it again
