@@ -339,9 +339,13 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     if (is_cancelled)
         return {};
 
-    /// No mark was removed and there is no top-k state to attach, so the caller keeps its ranges.
+    /// No mark was removed and there is no skip index or top-k state to attach, so the caller keeps its ranges.
+    /// Skip indexes still need the all-selected bitmap. A null result omits `MergeTreeReaderIndex` from the
+    /// chain, and `RowsReadByPrewhereReaders` then misses parts whose indexes could not exclude a granule
+    /// (a part written before `ALTER ADD INDEX`, or an index that does not apply to the predicate).
     const bool dropped_any_granule = ranges.getNumberOfMarks() < input.ranges.getNumberOfMarks();
     if (!dropped_any_granule && index_granules.empty()
+        && skip_indexes.useful_indices.empty()
         && !skip_indexes.skip_index_for_top_k_filtering
         && !top_k_primary_key_column_position)
         return {};
@@ -398,7 +402,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         }
     }
 
-    if (!dropped_any_granule && res->index_granules.empty() && !res->min_max_index_for_top_k && !res->primary_index_for_top_k)
+    if (!dropped_any_granule && res->index_granules.empty() && !res->min_max_index_for_top_k && !res->primary_index_for_top_k
+        && skip_indexes.useful_indices.empty())
         return {};
 
     return res;
