@@ -1089,6 +1089,13 @@ void optimizeTreeSecondPass(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
 
+    /// `applyOrder` can still convert a window's full sort to `FinishSorting` and `applyStreamDisjointness`
+    /// can still rewrite its scatter, so the shape this pass recognizes is only final here.
+    if (optimization_settings.window_top_k_prefilter)
+    {
+        traverseQueryPlan(stack, root, [&](auto & frame_node) { windowTopKPrefilter(frame_node, nodes, optimization_settings); });
+    }
+
     /// After every pass that changes the plan, so that the plan it measures and switches is the settled one.
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 

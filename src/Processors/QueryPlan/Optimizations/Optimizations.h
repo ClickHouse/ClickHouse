@@ -411,6 +411,7 @@ bool canOptimizeWindowPerPartition(QueryPlan::Node & node);
 /// `PARTITION BY` determines a prefix of the primary key reads the table by ranges of that prefix: every range
 /// holds whole window partitions, so the sorting and the window functions run for each range independently.
 void optimizeWindowByLayers(QueryPlan::Node & root);
+void windowTopKPrefilter(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeCreatingSetPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 void disableTopKQueryConditionCacheUnderNonDeterministicFilters(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);

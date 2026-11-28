@@ -190,6 +190,11 @@ public:
 
     void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_);
 
+    void setWindowTopKPrefilter(
+        SortDescription window_partition_description_,
+        SortDescription window_order_description_,
+        UInt64 window_top_k_);
+
     /// True when `transformPipeline` will attach the per-stream `LIMIT BY` pre-filter for the
     /// order this step currently has. A `FinishSorting` that still has to sort a suffix skips the
     /// pre-filter, because applying `LIMIT BY` before the final order is known could drop the
@@ -216,6 +221,8 @@ private:
     /// This reduces rows processed by the final merge and later pipeline steps.
     /// It is applied only when `LIMIT BY` keys are a prefix of `stream_sort_desc`.
     void addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, const SortDescription & stream_sort_desc);
+
+    void addWindowTopKPrefilterIfNeeded(QueryPipelineBuilder & pipeline);
 
     static void mergeSorting(
         QueryPipelineBuilder & pipeline,
@@ -277,6 +284,11 @@ private:
     Names limit_by_columns;
     UInt64 limit_by_group_length = 0;
     bool limit_by_always_read_till_end = false;
+
+    /// See `windowTopKPrefilter`. Zero `window_top_k` means no hint.
+    SortDescription window_partition_description;
+    SortDescription window_order_description;
+    UInt64 window_top_k = 0;
 
     Processors scatter_stage;
     Processors sorting_stage;
