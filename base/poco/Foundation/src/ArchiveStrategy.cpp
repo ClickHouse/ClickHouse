@@ -23,6 +23,7 @@
 #include "Poco/ActiveMethod.h"
 #include "Poco/Void.h"
 #include "Poco/FileStream.h"
+#include <utility>
 
 
 namespace Poco {
@@ -128,6 +129,81 @@ void ArchiveStrategy::moveFile(const std::string& oldPath, const std::string& ne
 }
 
 
+std::unique_ptr<LogFile> ArchiveStrategy::openFile(const std::string& base, bool streamCompress)
+{
+	if (streamCompress)
+		return std::make_unique<CompressedLogFile>(base);
+	return std::make_unique<LogFile>(base);
+}
+
+
+void ArchiveStrategy::rotateFile(
+	std::unique_ptr<LogFile>& file,
+	const std::string& base,
+	const std::string& ext,
+	const std::string& archived,
+	bool streamCompress,
+	const std::function<void()>& makeRoom)
+{
+	const std::string current = base + ext;
+	if (!File(current).exists())
+	{
+		/// The file was removed from outside, so there is nothing to archive.
+		file = openFile(base, streamCompress);
+		return;
+	}
+
+	/// Open the new file first: if this fails, nothing is renamed and the current file stays as it is.
+	const std::string nextBase = base + ".new.incomplete";
+	File nextFile(nextBase + ext);
+	if (nextFile.exists())
+		nextFile.remove();
+	std::unique_ptr<LogFile> next = openFile(nextBase, streamCompress);
+
+	bool currentArchived = false;
+	try
+	{
+		makeRoom();
+		File(current).renameTo(archived);
+		currentArchived = true;
+		next->renameTo(current);
+	}
+	catch (...)
+	{
+		next.reset();
+		try
+		{
+			nextFile.remove();
+		}
+		catch (...)
+		{
+			/// The original error is more useful; the next attempt removes the leftover.
+		}
+		if (currentArchived)
+		{
+			try
+			{
+				File(archived).renameTo(current);
+			}
+			catch (...)
+			{
+				/// The current file stays archived, so the caller must open a new one.
+				file.reset();
+			}
+		}
+		throw;
+	}
+
+	file = std::move(next);
+
+	if (_compress)
+	{
+		if (!_pCompressor) _pCompressor = new ArchiveCompressor;
+		_pCompressor->compress(archived);
+	}
+}
+
+
 bool ArchiveStrategy::exists(const std::string& name)
 {
 	File f(name);
@@ -161,9 +237,9 @@ ArchiveByNumberStrategy::~ArchiveByNumberStrategy()
 }
 
 
-LogFile* ArchiveByNumberStrategy::archive(LogFile* pFile, bool streamCompress)
+void ArchiveByNumberStrategy::archive(std::unique_ptr<LogFile> & file, bool streamCompress)
 {
-	std::string base = pFile->path();
+	std::string base = file->path();
 	std::string ext = "";
 
 	if (base.ends_with(".lz4"))
@@ -172,40 +248,34 @@ LogFile* ArchiveByNumberStrategy::archive(LogFile* pFile, bool streamCompress)
 		ext = ".lz4";
 	}
 
-	delete pFile;
-	int n = -1;
-	std::string path;
-	do
+	rotateFile(file, base, ext, base + ".0" + ext, streamCompress, [&]
 	{
-		path = base;
-		path.append(".");
-		NumberFormatter::append(path, ++n);
-		path.append(ext);
-	}
-	while (exists(path));
-	
-	while (n >= 0)
-	{
-		std::string oldPath = base;
-		if (n > 0)
+		int n = -1;
+		std::string path;
+		do
 		{
+			path = base;
+			path.append(".");
+			NumberFormatter::append(path, ++n);
+			path.append(ext);
+		}
+		while (exists(path));
+
+		while (n > 0)
+		{
+			std::string oldPath = base;
 			oldPath.append(".");
 			NumberFormatter::append(oldPath, n - 1);
+			oldPath.append(ext);
+
+			std::string newPath = base;
+			newPath.append(".");
+			NumberFormatter::append(newPath, n);
+			newPath.append(ext);
+			moveFile(oldPath, newPath);
+			--n;
 		}
-		oldPath.append(ext);
-
-		std::string newPath = base;
-		newPath.append(".");
-		NumberFormatter::append(newPath, n);
-		newPath.append(ext);
-		moveFile(oldPath, newPath);
-		--n;
-	}
-
-	if (streamCompress)
-		return new CompressedLogFile(base);
-	else
-		return new LogFile(base);
+	});
 }
 
 
