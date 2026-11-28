@@ -3256,6 +3256,12 @@ void ActionsDAG::unite(ActionsDAG && second)
     outputs.append_range(second.outputs);
 }
 
+static bool isLambda(const ActionsDAG::Node & node)
+{
+    return (node.type == ActionsDAG::ActionType::FUNCTION || node.type == ActionsDAG::ActionType::ALIAS)
+        && WhichDataType(node.result_type).isFunction();
+}
+
 ActionsDAG::SplitResult ActionsDAG::split(UnorderedSetWithMemoryTracking<const Node *> split_nodes, bool create_split_nodes_mapping, bool avoid_duplicate_inputs) const
 {
     /// Split DAG into two parts.
@@ -3298,6 +3304,40 @@ ActionsDAG::SplitResult ActionsDAG::split(UnorderedSetWithMemoryTracking<const N
 
     std::stack<Frame> stack;
     std::unordered_map<const Node *, Data> data;
+
+    /// Node from first part is added as new input.
+    auto add_input_to_second = [&](const Node * node) -> Node *
+    {
+        Node input_node;
+        input_node.type = ActionType::INPUT;
+        input_node.result_type = node->result_type;
+        input_node.result_name = node->result_name;
+        auto * second_node = &second_nodes.emplace_back(std::move(input_node));
+        data[node].to_second = second_node;
+
+        if (node->type != ActionType::INPUT)
+            new_inputs.push_back(node);
+
+        return second_node;
+    };
+
+    /// A lambda is not a value: the second part rebuilds it from its captured columns, like a `COLUMN`.
+    auto get_or_add_to_second = [&](this auto && self, const Node * node) -> Node *
+    {
+        auto & node_data = data[node];
+        if (node_data.to_second)
+            return node_data.to_second;
+
+        if (node->type != ActionType::COLUMN && !isLambda(*node))
+            return add_input_to_second(node);
+
+        auto & copy = second_nodes.emplace_back(*node);
+        node_data.to_second = &copy;
+        for (auto & child : copy.children)
+            child = self(child);
+
+        return &copy;
+    };
 
     for (const auto & output_node : outputs)
         data[output_node].used_in_result = true;
@@ -3354,32 +3394,7 @@ ActionsDAG::SplitResult ActionsDAG::split(UnorderedSetWithMemoryTracking<const N
 
                     /// Replace children to newly created nodes.
                     for (auto & child : copy.children)
-                    {
-                        auto & child_data = data[child];
-
-                        /// If children is not created, it may be from split part.
-                        if (!child_data.to_second)
-                        {
-                            if (child->type == ActionType::COLUMN) /// Just create new node for COLUMN action.
-                            {
-                                child_data.to_second = &second_nodes.emplace_back(*child);
-                            }
-                            else
-                            {
-                                /// Node from first part is added as new input.
-                                Node input_node;
-                                input_node.type = ActionType::INPUT;
-                                input_node.result_type = child->result_type;
-                                input_node.result_name = child->result_name;
-                                child_data.to_second = &second_nodes.emplace_back(std::move(input_node));
-
-                                if (child->type != ActionType::INPUT)
-                                    new_inputs.push_back(child);
-                            }
-                        }
-
-                        child = child_data.to_second;
-                    }
+                        child = get_or_add_to_second(child);
                 }
                 else
                 {
@@ -3393,17 +3408,13 @@ ActionsDAG::SplitResult ActionsDAG::split(UnorderedSetWithMemoryTracking<const N
                         chassert(child != nullptr);
                     }
 
+                    /// If this node is needed in result, add it as input.
                     if (cur_data.used_in_result)
                     {
-                        /// If this node is needed in result, add it as input.
-                        Node input_node;
-                        input_node.type = ActionType::INPUT;
-                        input_node.result_type = cur.node->result_type;
-                        input_node.result_name = cur.node->result_name;
-                        cur_data.to_second = &second_nodes.emplace_back(std::move(input_node));
-
-                        if (cur.node->type != ActionType::INPUT)
-                            new_inputs.push_back(cur.node);
+                        if (isLambda(*cur.node))
+                            get_or_add_to_second(cur.node);
+                        else
+                            add_input_to_second(cur.node);
                     }
                 }
             }
@@ -3587,6 +3598,9 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
         if (!depend_on_array_join)
             split_nodes.insert(node);
     });
+
+    /// A lambda is not moved by itself: it goes with the calls that apply it.
+    std::erase_if(split_nodes, [](const Node * node) { return isLambda(*node); });
 
     /// A node moved before ARRAY JOIN may have the name of a joined input, for example when the query and a view
     /// it reads each generate `__array_join_exp_1`. Both columns would then reach ARRAY JOIN under one name.
