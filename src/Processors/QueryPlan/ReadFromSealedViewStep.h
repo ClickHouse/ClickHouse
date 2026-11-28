@@ -39,7 +39,7 @@ public:
     void optimize();
 
     /// Seals the plans of the sets taken out of the view's plan, which are built by the outer plan.
-    void sealSets(const std::vector<FutureSetFromSubqueryPtr> & sets) const;
+    void sealSets(const std::vector<FutureSetFromSubqueryPtr> & sets) const; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- this is `PreparedSets::Subqueries`; naming it here would need the full PreparedSets header
 
 private:
     ReadFromSealedViewStep(QueryPlan view_plan_, QueryPlanOptimizationSettings optimization_settings_, bool show_plan_);

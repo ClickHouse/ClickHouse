@@ -88,7 +88,7 @@ void ReadFromSealedViewStep::optimize()
     view_plan.optimize(optimization_settings);
 }
 
-void ReadFromSealedViewStep::sealSets(const std::vector<FutureSetFromSubqueryPtr> & sets) const
+void ReadFromSealedViewStep::sealSets(const PreparedSets::Subqueries & sets) const
 {
     /// The outer plan runs locally, because this step is not serializable.
     auto set_optimization_settings = optimization_settings;
