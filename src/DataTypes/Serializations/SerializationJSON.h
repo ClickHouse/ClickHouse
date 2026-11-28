@@ -69,8 +69,18 @@ public:
 
     void deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const override;
 
+    void serializeTextJSONSubObject(
+        const IColumn & column, size_t row_num, std::string_view prefix, WriteBuffer & ostr, const FormatSettings & settings) const override;
+
 private:
-    void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, bool pretty = false, size_t indent = 0) const;
+    void serializeTextImpl(
+        const IColumn & column,
+        size_t row_num,
+        WriteBuffer & ostr,
+        const FormatSettings & settings,
+        bool pretty = false,
+        size_t indent = 0,
+        std::string_view prefix = {}) const;
 
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree;
     /// Pool of parser objects to make SerializationJSON thread safe.

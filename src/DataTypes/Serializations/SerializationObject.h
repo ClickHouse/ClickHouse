@@ -121,6 +121,10 @@ public:
 
     virtual void deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const = 0;
 
+    /// Writes the paths of the row that start with `prefix`, without it, as one JSON object; an empty prefix writes the whole object.
+    virtual void serializeTextJSONSubObject(
+        const IColumn & column, size_t row_num, std::string_view prefix, WriteBuffer & ostr, const FormatSettings & settings) const = 0;
+
     static void restoreColumnObject(ColumnObject & column_object, size_t prev_size);
 
     const SerializationPtr & getDynamicPathSerialization() const { return dynamic_serialization; }
