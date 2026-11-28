@@ -1,0 +1,23 @@
+rows	60000
+s	0
+s_lz4	0
+s_nested	0
+s_null	0	0
+fixed	0
+n	0
+hash	1
+point reads	0
+ranges	0
+fixed	CODEC(ByteReverse, ZSTD(3))
+id	
+n	CODEC(ByteReverse, ZSTD(3))
+ref	CODEC(ZSTD(3))
+s	CODEC(ByteReverse, ZSTD(3))
+s_lz4	CODEC(ByteReverse, LZ4)
+s_nested	CODEC(ByteReverse, ZSTD(1))
+s_null	CODEC(ByteReverse, ZSTD(3))
+after merge	80000	0	0
+after codec change	80000	0	0
+after codec removal	80000	0	0
+after attach	80000	0
+columns with the codec	6
