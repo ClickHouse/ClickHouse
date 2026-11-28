@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel-replicas
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option).
+# - no-parallel-replicas: see 04611_iceberg_parquet_schema_evolution_prewhere_rename.sh (explicit `PREWHERE`).
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
