@@ -16,6 +16,7 @@ public:
     {
         WITH,
         SELECT,
+        SKIP_INDICES,
         WHERE,
         GROUP_BY,
         ORDER_BY,
@@ -31,6 +32,7 @@ public:
 
     ASTPtr with() const { return getExpression(Expression::WITH); }
     ASTPtr select() const { return getExpression(Expression::SELECT); }
+    ASTPtr skipIndices() const { return getExpression(Expression::SKIP_INDICES); }
     ASTPtr where() const { return getExpression(Expression::WHERE); }
     ASTPtr groupBy() const { return getExpression(Expression::GROUP_BY); }
     ASTPtr orderBy() const { return getExpression(Expression::ORDER_BY); }
