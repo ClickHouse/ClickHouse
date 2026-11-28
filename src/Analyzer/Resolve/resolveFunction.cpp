@@ -2532,10 +2532,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /// `tryGet` also records the use in the query log, so it is called once.
-    ASTPtr user_defined_function = function_node_ptr->isWindowFunction()
+    ASTPtr user_defined_function = function_node_ptr->hasWindow()
         ? nullptr
         : UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
-    const bool is_lambda_call = !function_node_ptr->isWindowFunction()
+    const bool is_lambda_call = !function_node_ptr->hasWindow()
         && (lambda_expression_untyped || typeid_cast<const ASTCreateSQLFunctionQuery *>(user_defined_function.get()));
 
     if (is_lambda_call)

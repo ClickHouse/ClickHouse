@@ -3057,7 +3057,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             const auto * subtree_node = nodes_to_process.back();
             nodes_to_process.pop_back();
 
-            if (const auto * function = subtree_node->as<FunctionNode>(); function && !function->isWindowFunction())
+            if (const auto * function = subtree_node->as<FunctionNode>(); function && !function->hasWindow())
             {
                 const auto & function_name = function->getFunctionName();
                 if (tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope).resolved_identifier
