@@ -2274,6 +2274,7 @@ Tags:
 - `<disk_name_N>` — Disk name. Names must be different for all disks.
 - `path` — path under which a server will store data (`data` and `shadow` folders), should be terminated with '/'.
 - `keep_free_space_bytes` — the amount of free disk space to be reserved.
+- `disk_space_cache_ttl_ms` — the time in milliseconds during which a `local` disk reuses the total and available space reported by one `statvfs` call instead of probing the file system again (`0` - probe the disk on every check, default value is `0`).
 
 The order of the disk definition is not important.
 

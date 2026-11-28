@@ -88,8 +88,9 @@ try
     }
     if (!has_default_disk)
     {
-        auto tracked_config = DiskFactory::trackImplicitLocalDisk(DEFAULT_DISK_NAME, config, config_prefix + "." + DEFAULT_DISK_NAME, context);
-        auto default_disk = std::make_shared<DiskLocal>(DEFAULT_DISK_NAME, context->getPath(), 0, context, config, config_prefix);
+        const auto default_disk_prefix = config_prefix + "." + DEFAULT_DISK_NAME;
+        auto tracked_config = DiskFactory::trackImplicitLocalDisk(DEFAULT_DISK_NAME, config, default_disk_prefix, context);
+        auto default_disk = std::make_shared<DiskLocal>(DEFAULT_DISK_NAME, context->getPath(), 0, context, config, default_disk_prefix);
         default_disk->keepConfigurationAlive(tracked_config);
         recordDisk(DEFAULT_DISK_NAME, std::move(default_disk));
     }
@@ -97,7 +98,8 @@ try
     if (!has_local_disk && (context->getApplicationType() == Context::ApplicationType::DISKS))
     {
         throw_away_local_on_update = true;
-        recordDisk(LOCAL_DISK_NAME, std::make_shared<DiskLocal>(LOCAL_DISK_NAME, "/", 0, context, config, config_prefix));
+        recordDisk(
+            LOCAL_DISK_NAME, std::make_shared<DiskLocal>(LOCAL_DISK_NAME, "/", 0, context, config, config_prefix + "." + LOCAL_DISK_NAME));
     }
     is_initialized = true;
 }

@@ -209,7 +209,8 @@ DisksClient::DisksClient(const Poco::Util::AbstractConfiguration & config_, Cont
                 [this, config_prefix]() -> DiskPtr
                 {
                     return std::make_shared<DiskLocal>(
-                        DEFAULT_DISK_NAME, this->context->getPath(), 0, this->context, this->config, config_prefix);
+                        DEFAULT_DISK_NAME, this->context->getPath(), 0, this->context, this->config,
+                        config_prefix + "." + DEFAULT_DISK_NAME);
                 },
                 std::nullopt});
     }
@@ -221,7 +222,10 @@ DisksClient::DisksClient(const Poco::Util::AbstractConfiguration & config_, Cont
             LOCAL_DISK_NAME,
             std::pair{
                 [this, config_prefix]()
-                { return std::make_shared<DiskLocal>(LOCAL_DISK_NAME, "/", 0, this->context, this->config, config_prefix); },
+                {
+                    return std::make_shared<DiskLocal>(
+                        LOCAL_DISK_NAME, "/", 0, this->context, this->config, config_prefix + "." + LOCAL_DISK_NAME);
+                },
                 fs::current_path().string()});
     }
 
