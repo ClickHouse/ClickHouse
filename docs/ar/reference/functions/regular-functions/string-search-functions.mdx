@@ -158,17 +158,17 @@ SELECT countSubstrings('abc___abc', 'abc', 4);
 
 ## countSubstringsCaseInsensitive {#countSubstringsCaseInsensitive}
 
-قُدِّمت في: v21.1.0
+أُضيف في: v21.1.0
 
-مثل [`countSubstrings`](#countSubstrings)، لكنه يحسب بغض النظر عن حالة الأحرف.
+مثل [`countSubstrings`](#countSubstrings)، لكنه يحسب دون اعتبار لحالة الأحرف.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 countSubstringsCaseInsensitive(haystack, needle[, start_pos])
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `haystack` — السلسلة التي يُجرى فيها البحث. [`String`](/ar/reference/data-types/string) أو [`Enum`](/ar/reference/data-types/enum)
 * `needle` — السلسلة الفرعية المطلوب البحث عنها. [`String`](/ar/reference/data-types/string)

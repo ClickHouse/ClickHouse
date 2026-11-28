@@ -29,6 +29,7 @@ enum class MetricGroupKey : UInt8
     Output,
     InputLeft,
     InputRight,
+    RuntimeFilter,
 };
 
 enum class MetricKey : UInt8
@@ -79,6 +80,16 @@ enum class MetricKey : UInt8
     Median,
     Max,
     Sum,
+
+    FilterType,
+    ReplacedFilterType,
+    Reason,
+    SetBits,
+    RowsChecked,
+    RowsPassed,
+    PassRate,
+    RowsSkipped,
+    RowsBeforeReady,
 };
 
 enum class MetricFormat : UInt8

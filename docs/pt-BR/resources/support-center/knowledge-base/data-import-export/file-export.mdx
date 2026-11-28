@@ -6,9 +6,7 @@ tags: ['Exportação de dados']
 keywords: ['Exportação de dados', 'INTO OUTFILE', 'motor de tabela File']
 ---
 
-<div id="using-into-outfile-clause">
-  ## Usando a cláusula INTO OUTFILE
-</div>
+## Usando a cláusula INTO OUTFILE {#using-into-outfile-clause}
 
 Adicione uma cláusula [INTO OUTFILE](/pt-BR/reference/statements/select/into-outfile) à sua consulta.
 
@@ -45,9 +43,7 @@ INTO OUTFILE 'taxi_rides.txt'
 FORMAT CSV
 ```
 
-<div id="using-a-file-engine-table">
-  ## Usando o motor de tabela File
-</div>
+## Usando o motor de tabela File {#using-a-file-engine-table}
 
 Outra opção é usar o motor de tabela [File](/pt-BR/reference/engines/table-engines/special/file), no qual o ClickHouse usa o arquivo para armazenar os dados. Você pode executar consultas e inserções diretamente no arquivo.
 
@@ -77,9 +73,7 @@ O arquivo é armazenado na pasta `data` do seu servidor ClickHouse — mais espe
   Usar o motor de tabela `File` é extremamente prático para criar e consultar arquivos no sistema de arquivos, mas lembre-se de que tabelas `File` não são tabelas `MergeTree`, então você não terá todos os benefícios do `MergeTree`. Use `File` pela praticidade ao exportar dados do ClickHouse em formatos convenientes.
 </Note>
 
-<div id="using-command-line-redirection">
-  ## Usando redirecionamento na linha de comando
-</div>
+## Usando redirecionamento na linha de comando {#using-command-line-redirection}
 
 ```bash
 $ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt

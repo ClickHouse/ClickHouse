@@ -9,7 +9,15 @@ endif ()
 
 if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
     # 3rd-party libraries usually not intended to work with UBSan.
-    add_compile_options(-fno-sanitize=undefined)
+    # `unsigned-integer-overflow` is not a part of the `undefined` group and has to be listed
+    # separately. Header-only third-party code, which is compiled as a part of our own translation
+    # units and therefore is not affected by these options, is excluded in `tests/ubsan_ignorelist.txt`.
+    # Only C/C++ (and GNU-style ASM handled by clang) understand these; scope them away from other
+    # languages such as ASM_NASM (ISA-L on amd64), whose nasm assembler reads `-fno-sanitize=undefined`
+    # as `-f no-sanitize=undefined`, an output format, and fails with `unrecognised output format`.
+    add_compile_options(
+        $<$<COMPILE_LANGUAGE:C,CXX,ASM>:-fno-sanitize=undefined>
+        $<$<COMPILE_LANGUAGE:C,CXX,ASM>:-fno-sanitize=unsigned-integer-overflow>)
 endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
@@ -115,9 +123,8 @@ add_contrib (snappy-cmake snappy)
 add_contrib (thrift-cmake thrift)
 add_contrib (StringZilla-cmake StringZilla)
 add_contrib (heks-cmake heks)
-# parquet/arrow
-add_contrib (xsimd-cmake xsimd) # required by arrow's SIMD codepaths
-add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion, xsimd, flatbuffers
+# The definitions of the Parquet, Arrow and Arrow Flight formats; the Apache Arrow C++ library is not built.
+add_contrib (arrow-cmake arrow) # requires: thrift, flatbuffers, and google-protobuf with grpc for Arrow Flight
 add_contrib (avro-cmake avro) # requires: snappy
 add_contrib (openldap-cmake openldap)
 add_contrib (msgpack-c-cmake msgpack-c)

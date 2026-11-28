@@ -10,12 +10,14 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/NullsAction.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -25,6 +27,11 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace QueryPlanSerializationSetting
+{
+    extern const QueryPlanSerializationSettingsUInt64 window_sliding_aggregation_min_frame_rows;
 }
 
 static ITransformingStep::Traits getTraits(bool preserves_sorting)
@@ -51,7 +58,7 @@ static Block addWindowFunctionResultColumns(const Block & block,
     {
         ColumnWithTypeAndName column_with_type;
         column_with_type.name = f.column_name;
-        column_with_type.type = f.aggregate_function->getResultType();
+        column_with_type.type = f.getResultType();
         column_with_type.column = column_with_type.type->createColumn();
 
         result.insert(column_with_type);
@@ -65,12 +72,14 @@ WindowStep::WindowStep(
     const WindowDescription & window_description_,
     const VectorWithMemoryTracking<WindowFunctionDescription> & window_functions_,
     bool streams_fan_out_,
-    const SortingStep::Settings & sort_settings_)
+    const SortingStep::Settings & sort_settings_,
+    const WindowFunctionSettings & function_settings_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(addWindowFunctionResultColumns(*input_header_, window_functions_)), getTraits(!streams_fan_out_))
     , window_description(window_description_)
     , window_functions(window_functions_)
     , streams_fan_out(streams_fan_out_)
     , sort_settings(sort_settings_)
+    , function_settings(function_settings_)
 {
     // We don't remove any columns, only add, so probably we don't have to update
     // the output DataStream::distinct_columns.
@@ -99,8 +108,7 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     pipeline.addSimpleTransform(
         [&](const SharedHeader & /*header*/)
         {
-            return std::make_shared<WindowTransform>(
-                input_headers.front(), output_header, window_description, window_functions);
+            return std::make_shared<WindowTransform>(input_headers.front(), output_header, WindowTransformParams::create(*input_headers.front(), window_description, window_functions, function_settings));
         });
 
     if (streams_fan_out)
@@ -273,7 +281,7 @@ static void serializeWindowFunctions(
         for (const auto & argument_name : func.argument_names)
             ctx.writeColumnName(argument_name);
 
-        writeStringBinary(func.aggregate_function->getName(), out);
+        writeStringBinary(func.getFunctionName(), out);
 
         /// Serialize the parameters the planner preserved, not `aggregate_function->getParameters()`:
         /// some parametric aggregates (e.g. `groupArrayMovingSum`, `groupArrayMovingAvg`,
@@ -328,22 +336,34 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
         for (auto & param : func.function_parameters)
             param = readFieldBinary(in);
 
-        AggregateFunctionProperties properties;
-        func.aggregate_function = AggregateFunctionFactory::instance().get(
-            function_name,
-            NullsAction::EMPTY,
-            func.argument_types,
-            func.function_parameters,
-            properties,
-            AggregateFunctionStateVariant::Window);
+        if (WindowFunctionFactory::instance().isWindowFunctionName(function_name))
+        {
+            func.general_function = WindowFunctionFactory::instance().get(
+                function_name,
+                NullsAction::EMPTY,
+                func.argument_types,
+                func.function_parameters);
+        }
+        else
+        {
+            AggregateFunctionProperties properties;
+            func.aggregate_function = AggregateFunctionFactory::instance().get(
+                function_name,
+                NullsAction::EMPTY,
+                func.argument_types,
+                func.function_parameters,
+                properties);
+        }
     }
 
     return window_functions;
 }
 
-void WindowStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void WindowStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
     sort_settings.updatePlanSettings(settings);
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_SLIDING_AGGREGATION)
+        settings[QueryPlanSerializationSetting::window_sliding_aggregation_min_frame_rows] = function_settings.sliding_aggregation_min_frame_rows;
 }
 
 void WindowStep::serialize(Serialization & ctx) const
@@ -418,7 +438,8 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
         window_description,
         window_description.window_functions,
         streams_fan_out,
-        SortingStep::Settings(ctx.settings));
+        SortingStep::Settings(ctx.settings),
+        WindowFunctionSettings::create(ctx.settings));
 }
 
 void registerWindowStep(QueryPlanStepRegistry & registry);

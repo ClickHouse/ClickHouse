@@ -998,8 +998,14 @@ void MergeJoin::joinBlock(Block & block, std::optional<MergeJoin::NotProcessed> 
                 lowcard_keys.push_back(column_name);
         }
 
-        ScopedSortTimer sort_timer(table_join->collectAnalyzeStats(), probe_sort_time_ns);
-        sortBlock(block, left_sort_description);
+        /// A block that is being continued (its result exceeded `max_joined_block_size_rows`) was sorted by the call
+        /// that started it, and the continuation refers to its rows by their positions. Sorting it again on every
+        /// call would cost a full sort of the block per block of the result.
+        if (!not_processed)
+        {
+            ScopedSortTimer sort_timer(table_join->collectAnalyzeStats(), probe_sort_time_ns);
+            sortBlock(block, left_sort_description);
+        }
     }
 
     if (!not_processed && left_blocks_buffer)

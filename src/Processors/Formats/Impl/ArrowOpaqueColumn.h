@@ -14,11 +14,10 @@ namespace DB
 /// Helpers for a column whose type has no first-class Arrow mapping and is therefore written as an opaque
 /// variable-width column holding one serialized value per row, per `output_format_arrow_unsupported_types`.
 ///
-/// Two writers produce Arrow: the native IPC one (`SchemaConverter` builds the schema, `RecordBatchEncoder`
-/// fills the values) and the one built on the Apache Arrow library (`CHColumnToArrowColumn`, used by Arrow
-/// Flight SQL and DeltaLake). In both, the Arrow type and the values are decided in separate places, so
-/// those decisions live here to keep them in step: a column typed `utf8` must be filled with text, and a
-/// column typed `binary` must not be silently filled with something else.
+/// The writer of Arrow decides the Arrow type and the values in separate places (`SchemaConverter` builds the
+/// schema, `RecordBatchEncoder` fills the values), so those decisions live here to keep them in step: a column
+/// typed `utf8` must be filled with text, and a column typed `binary` must not be silently filled with
+/// something else.
 
 /// Whether an opaque column carries the value's text form, which also makes it `utf8` rather than `binary`:
 /// the Arrow type states which of the two encodings the payload is, so a reader can tell them apart.

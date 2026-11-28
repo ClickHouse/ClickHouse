@@ -29,6 +29,7 @@
 #include <Common/HiddenSecret.h>
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -38,6 +39,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/hasNullable.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -78,7 +80,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int UNKNOWN_FUNCTION;
-    extern const int UNKNOWN_AGGREGATE_FUNCTION;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int TYPE_MISMATCH;
@@ -94,9 +95,11 @@ namespace Setting
     extern const SettingsBool enable_function_early_short_circuit;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool execute_exists_as_scalar_subquery;
+    extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool transform_null_in;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsBool validate_enum_literals_in_operators;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsOverflowMode set_overflow_mode;
@@ -149,6 +152,122 @@ std::optional<size_t> getGroupConcatArgumentsCountWithSeparator(const String & f
     }
 }
 
+/// Whether `exists_node` is reached from the WHERE, HAVING or QUALIFY of the scope's query through unaliased builtin `and`, `or`, `not` only.
+bool isOnlyRowFilter(
+    const IdentifierResolveScope & scope, const IQueryTreeNode * exists_node, const std::function<bool(const String &)> & is_builtin_function)
+{
+    const auto * query_node = scope.scope_node->as<QueryNode>();
+    if (!query_node)
+        return false;
+
+    const auto & stack = scope.expressions_in_resolve_process_stack;
+    if (stack.empty() || stack.getTop().get() != exists_node)
+        return false;
+
+    const auto * root = stack.getRoot().get();
+    if (root != query_node->getWhere().get() && root != query_node->getHaving().get() && root != query_node->getQualify().get())
+        return false;
+
+    for (size_t i = 0; i < stack.size(); ++i)
+    {
+        const auto & node = stack[static_cast<int32_t>(i)];
+        if (node->hasAlias())
+            return false;
+
+        if (i + 1 == stack.size())
+            break;
+
+        const auto * function_node = node->as<FunctionNode>();
+        if (!function_node)
+            return false;
+
+        const auto & name = function_node->getFunctionName();
+        if ((name != "and" && name != "or" && name != "not") || !is_builtin_function(name))
+            return false;
+    }
+
+    return true;
+}
+
+bool hasLimitZero(const QueryNode & query_node)
+{
+    if (!query_node.hasLimit())
+        return false;
+
+    const auto * limit_node = query_node.getLimit()->as<ConstantNode>();
+    if (!limit_node)
+        return false;
+
+    const auto value = limit_node->getValue();
+    return (value.getType() == Field::Types::UInt64 && value.safeGet<UInt64>() == 0)
+        || (value.getType() == Field::Types::Int64 && value.safeGet<Int64>() == 0);
+}
+
+bool readsRowsTillEnd(const IdentifierResolveScope & scope)
+{
+    const auto * query_node = scope.scope_node->as<QueryNode>();
+    return (query_node && query_node->isGroupByWithTotals()) || scope.context->getSettingsRef()[Setting::exact_rows_before_limit];
+}
+
+bool usesParallelReplicas(const IdentifierResolveScope & scope)
+{
+    return scope.context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] != 0;
+}
+
+bool readsRemoteSource(const IQueryTreeNode & node)
+{
+    if (const auto * table_node = node.as<TableNode>())
+        return table_node->getStorage()->isRemote();
+    if (const auto * table_function_node = node.as<TableFunctionNode>())
+        return table_function_node->getStorage() && table_function_node->getStorage()->isRemote();
+
+    for (const auto & child : node.getChildren())
+        if (child && readsRemoteSource(*child))
+            return true;
+
+    return false;
+}
+
+/// Whether the rows the `exists_node` filter selects reach no output: its query is a table expression, at any depth, of a `LIMIT 0` query that reads no remote table, with parallel replicas off on the way.
+bool isExistsResultDiscardedByLimitZero(
+    const IdentifierResolveScope & scope, const IQueryTreeNode * exists_node, const std::function<bool(const String &)> & is_builtin_function)
+{
+    if (!isOnlyRowFilter(scope, exists_node, is_builtin_function))
+        return false;
+
+    for (const auto * current = &scope; current->parent_scope; current = current->parent_scope)
+    {
+        if (readsRowsTillEnd(*current) || usesParallelReplicas(*current))
+            return false;
+
+        const auto & parent = *current->parent_scope;
+        const auto * child = current->scope_node.get();
+        if (const auto * union_node = parent.scope_node->as<UnionNode>())
+        {
+            const auto & branches = union_node->getQueries().getNodes();
+            if (std::ranges::none_of(branches, [child](const auto & branch) { return branch.get() == child; }))
+                return false;
+        }
+        else if (const auto * parent_query_node = parent.scope_node->as<QueryNode>())
+        {
+            if (!parent.table_expressions_in_resolve_process.contains(child))
+                return false;
+
+            if (hasLimitZero(*parent_query_node))
+            {
+                const auto & join_tree = parent_query_node->getJoinTreeNode();
+                return !readsRowsTillEnd(parent) && !usesParallelReplicas(parent) && !(join_tree && readsRemoteSource(*join_tree));
+            }
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    return false;
+}
+
 }
 
 bool isGroupConcatWithSeparatorArgument(const FunctionNode & function_node, const ContextPtr & context)
@@ -159,7 +278,7 @@ bool isGroupConcatWithSeparatorArgument(const FunctionNode & function_node, cons
     const auto & function_name = function_node.getFunctionName();
     auto arguments_count = getGroupConcatArgumentsCountWithSeparator(function_name);
     return arguments_count && function_node.getArguments().getNodes().size() == *arguments_count
-        && (function_node.isWindowFunction()
+        && (function_node.isWindowCall()
             || (!UserDefinedSQLFunctionFactory::instance().tryGet(function_name)
                 && !UserDefinedExecutableFunctionFactory::has(function_name, context))); /// NOLINT(readability-static-accessed-through-instance)
 }
@@ -267,7 +386,7 @@ std::optional<bool> getEarlyShortCircuitResultForAndOr(
         || function_node->getFunctionName() != function_name_to_fold
         || !function_node->getParameters().getNodes().empty()
         || function_node->getNullsAction() != NullsAction::EMPTY
-        || function_node->isWindowFunction())
+        || function_node->isWindowCall())
         return {};
 
     const bool decisive_value = function_name_to_fold == "or";
@@ -1234,10 +1353,12 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
 /// NULL as a value of a `Variant` key and NULL fields as values of a tuple key, while `equals` returns NULL
 /// for them. And the set compares floating-point values by their bits, also inside `Array` and `Map`: a NaN
 /// is a member of a set that holds it, and `-0.0` is not a member of a set of `0.0`, while `equals` compares
-/// the numbers. So the rewrite keeps the semantics only when every key has the type of its column, is
-/// neither a tuple nor a `Variant`, holds no floating-point type, and its column is not `Bool`. A `Nullable`
-/// element of the left tuple is fine, unlike a `Nullable` left operand: the set never matches a NULL element,
-/// neither does `equals`, and `IN` of a plain tuple returns 0 rather than NULL.
+/// the numbers. The set also accepts a key that is not comparable for equality, such as an `AggregateFunction`
+/// state, while `equals` rejects it, even inside a `Variant`. So the rewrite keeps the semantics only when every
+/// key has the type of its column, holds only types comparable for equality, is neither a tuple nor a
+/// `Variant`, holds no floating-point type, and its column is not `Bool`. A `Nullable` element of the left
+/// tuple is fine, unlike a `Nullable` left operand: the set never matches a NULL element, neither does
+/// `equals`, and `IN` of a plain tuple returns 0 rather than NULL.
 static bool existsRewriteKeepsInSemantics(const DataTypePtr & left_type, const NamesAndTypes & subquery_columns)
 {
     if (left_type->hasDynamicStructure() || isNullableOrLowCardinalityNullable(left_type))
@@ -1252,6 +1373,7 @@ static bool existsRewriteKeepsInSemantics(const DataTypePtr & left_type, const N
         const auto key_type_without_nullable = removeNullable(key_types[i]);
         const DataTypePtr & column_type = subquery_columns[i].type;
         if (isTuple(key_type_without_nullable) || isVariant(key_type_without_nullable) || !key_types[i]->equals(*column_type)
+            || anyInTypeTree(*column_type, [](const IDataType & node) { return !node.isComparableForEquality(); })
             || hasTypeThatCanContainFloat(column_type) || isBool(removeNullable(removeLowCardinality(column_type))))
             return false;
     }
@@ -1500,7 +1622,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Only the bracket syntax is rewritten, not an explicit `arrayElement(array, x)` call.
     if (function_name == "arrayElement"
         && function_node_ptr->isOperator()
-        && !function_node_ptr->isWindowFunction()
+        && !function_node_ptr->isWindowCall()
         && function_node_ptr->getParameters().getNodes().empty()
         && function_node_ptr->getArguments().getNodes().size() == 2)
     {
@@ -1539,7 +1661,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     //// If function node is not window function try to lookup function node name as lambda identifier.
     QueryTreeNodePtr lambda_expression_untyped;
-    if (!function_node_ptr->isWindowFunction())
+    if (!function_node_ptr->isWindowCall())
     {
         auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
@@ -1548,7 +1670,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// `groupConcat(x, sep)` is `groupConcat(sep)(x)`. A scoped lambda, a SQL UDF or an executable UDF
     /// with this name keeps its arguments.
     if (isGroupConcatWithSeparatorArgument(*function_node_ptr, scope.context)
-        && (function_node_ptr->isWindowFunction() || !lambda_expression_untyped))
+        && (function_node_ptr->isWindowCall() || !lambda_expression_untyped))
     {
         auto & arguments_nodes = function_node_ptr->getArguments().getNodes();
         const auto * separator_node = arguments_nodes[1]->as<ConstantNode>();
@@ -1605,7 +1727,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         && (function_name == "and" || function_name == "or")
         && parameters.empty()
         && function_node_ptr->getNullsAction() == NullsAction::EMPTY
-        && !function_node_ptr->isWindowFunction()
+        && !function_node_ptr->isWindowCall()
         /// JOIN planning unwraps root constant source expressions. Keep JOIN ON expressions on
         /// the regular path so a preserved scalar-subquery source is never sent to the planner.
         && !(scope.resolving_join_on_expression && scope.resolving_join_on_expression->getNodeType() == QueryTreeNodeType::JOIN)
@@ -2283,7 +2405,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
-            if (only_analyze || !scope.context->getSettingsRef()[Setting::execute_exists_as_scalar_subquery])
+            auto is_builtin_function = [&](const String & name)
+            {
+                return !tryResolveIdentifier({Identifier{name}, IdentifierLookupContext::FUNCTION}, scope).resolved_identifier
+                    && !UserDefinedSQLFunctionFactory::instance().tryGet(name)
+                    && !UserDefinedExecutableFunctionFactory::has(name, scope.context);
+            };
+
+            /// Under a local outer `LIMIT 0` the IN set is never built, while the scalar subquery would run during analysis.
+            if (only_analyze || !scope.context->getSettingsRef()[Setting::execute_exists_as_scalar_subquery]
+                || isExistsResultDiscardedByLimitZero(scope, function_node_ptr.get(), is_builtin_function))
             {
                 /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
                 QueryTreeNodePtr constant = std::make_shared<ConstantNode>(1UL, constant_data_type);
@@ -3095,7 +3226,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         const auto * constant_node = function_argument->as<ConstantNode>();
         if (constant_node)
         {
-            argument_column.column = constant_node->getColumn();
+            /// A deferred right side of `IN` needs no column: it becomes a set, unless the call is folded with a constant left side.
+            if (!(is_special_function_in && function_argument_index == 1 && !all_arguments_constants
+                  && constant_node->tryGetDeferredField()))
+                argument_column.column = constant_node->getColumn();
             argument_column.type = constant_node->getResultType();
             argument_is_deterministic = constant_node->isDeterministic();
             argument_is_constant = true;
@@ -3131,7 +3265,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       *
       * TODO: Provide better error hints.
       */
-    if (!function_node.isWindowFunction())
+    if (!function_node.isWindowCall())
     {
         user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
 
@@ -3282,14 +3416,26 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
-    if (function_node.isWindowFunction())
+    if (function_node.isWindowCall())
     {
-        if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
+        const auto & window_function_factory = WindowFunctionFactory::instance();
+        const auto & aggregate_function_factory = AggregateFunctionFactory::instance();
+        const bool is_window_function = window_function_factory.isWindowFunctionName(function_name);
+        const bool is_aggregate_function = aggregate_function_factory.isAggregateFunctionName(function_name);
+
+        if (!is_window_function && !is_aggregate_function)
         {
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exist{}. In scope {}",
-                            function_name,
-                            getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)),
-                            scope.scope_node->formatASTForErrorMessage());
+            VectorWithMemoryTracking<String> possible_function_names;
+            possible_function_names.append_range(window_function_factory.getAllRegisteredNames());
+            possible_function_names.append_range(aggregate_function_factory.getAllRegisteredNames());
+
+            auto hints = NamePrompter<2>::getHints(function_name, possible_function_names);
+
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
+                "Window function or aggregate function with name {} does not exist{}. In scope {}",
+                backQuote(function_name),
+                getHintsErrorMessageSuffix(hints),
+                scope.scope_node->formatASTForErrorMessage());
         }
 
         if (!function_lambda_arguments_indexes.empty())
@@ -3298,23 +3444,24 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 function_name);
 
         auto action = function_node_ptr->getNullsAction();
-        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
 
-        argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types));
-        for (size_t i = 0; i < argument_types.size(); ++i)
-            function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
+        if (is_window_function)
+        {
+            argument_types = window_function_factory.bindArgumentTypes(function_name, std::move(argument_types));
+            for (size_t i = 0; i < function_arguments.size(); ++i)
+                if (!function_arguments[i]->getResultType()->equals(*argument_types[i]))
+                    function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
 
-        AggregateFunctionProperties properties;
-        auto aggregate_function
-            = AggregateFunctionFactory::instance().get(
-                aggregate_function_name,
-                action,
-                argument_types,
-                parameters,
-                properties,
-                AggregateFunctionStateVariant::Window);
+            function_node.resolveAsWindowFunction(window_function_factory.get(function_name, action, argument_types, parameters));
+        }
+        else
+        {
+            std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, argument_types, parameters, scope.context);
 
-        function_node.resolveAsWindowFunction(std::move(aggregate_function));
+            AggregateFunctionProperties properties;
+            function_node.resolveAsAggregateFunction(
+                aggregate_function_factory.get(aggregate_function_name, action, argument_types, parameters, properties));
+        }
 
         bool window_node_is_identifier = function_node.getWindowNode()->getNodeType() == QueryTreeNodeType::IDENTIFIER;
         ProjectionName window_projection_name = resolveWindow(function_node.getWindowNode(), scope);
@@ -3392,6 +3539,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
     else
     {
+        if (WindowFunctionFactory::instance().isWindowFunctionName(function_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} is a window function and requires an OVER clause", function_name);
+
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
             VectorWithMemoryTracking<std::string> possible_function_names;
@@ -3406,6 +3556,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
 
             function_names = AggregateFunctionFactory::instance().getAllRegisteredNames();
+            possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
+
+            function_names = WindowFunctionFactory::instance().getAllRegisteredNames();
             possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
 
             for (auto & [name, lambda_node] : scope.aliases.alias_name_to_lambda_node)
@@ -3429,7 +3582,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 backQuote(function_name));
 
         auto action = function_node_ptr->getNullsAction();
-        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
+        std::string aggregate_function_name
+            = rewriteAggregateFunctionNameIfNeeded(function_name, action, argument_types, parameters, scope.context);
 
         AggregateFunctionProperties properties;
         auto aggregate_function

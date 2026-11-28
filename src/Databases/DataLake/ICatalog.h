@@ -12,6 +12,7 @@
 #include <Poco/JSON/Object.h>
 
 #include <functional>
+#include <memory>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -218,7 +219,7 @@ struct CatalogSettings
 
 /// Base class for catalog implementation.
 /// Used for communication with the catalog.
-class ICatalog
+class ICatalog : public std::enable_shared_from_this<ICatalog>
 {
 public:
     using Namespaces = std::vector<std::string>;

@@ -9,14 +9,14 @@
 // packing, just reordered for parallel extraction. Used only for b in [1, 31]; b == 0 / 32
 // and partial blocks / uint64 stay on the scalar path.
 //
-// GCC/Clang vector extensions lower each lane op to one SSE/NEON instruction.
+// Vector extensions lower each lane op to one SSE/NEON instruction.
 
 #include <Compression/PFor/common.h>
 
 #include <bit>
 #include <cstring>
 
-#if defined(__GNUC__) || defined(__clang__)
+#if defined(__clang__)
 #    define PFOR_HAS_VERTICAL 1
 #else
 #    define PFOR_HAS_VERTICAL 0

@@ -1,0 +1,52 @@
+nothing to escape
+Cannot parse string '765870abc' as UInt32: syntax error at position 6 (parsed just '765870'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+visible characters are not escaped
+Cannot parse string '765870é' as UInt32: syntax error at position 6 (parsed just '765870'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+Cannot parse string '1你😀' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+byte order mark
+Cannot parse string '\xEF\xBB\xBF765870' as UInt32: syntax error at begin of string. Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+zero width space
+Cannot parse string '765\xE2\x80\x8B870' as UInt32: syntax error at position 3 (parsed just '765'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+right-to-left override
+Cannot parse string '1\xE2\x80\xAE23' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+control characters
+Cannot parse string '765870\x01' as UInt32: syntax error at position 6 (parsed just '765870'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+Cannot parse string '1\x7F' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+combining character
+Cannot parse string '7\xCD\x8F65870' as UInt32: syntax error at position 1 (parsed just '7'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+unassigned, private use and noncharacter code points
+Cannot parse string '1\xCD\xB8' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+Cannot parse string '1\xEE\x80\x80' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+Cannot parse string '1\xEF\xBF\xBE' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+Unicode spaces and Hangul fillers
+Cannot parse string '765870\xC2\xA0' as UInt32: syntax error at position 6 (parsed just '765870'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+Cannot parse string '1\xE3\x80\x80' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+Cannot parse string '765870\xE3\x85\xA4' as UInt32: syntax error at position 6 (parsed just '765870'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+the ASCII space is kept
+Cannot parse string '1 2' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+invalid UTF-8
+Cannot parse string '765870\xFF' as UInt32: syntax error at position 6 (parsed just '765870'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+Cannot parse string '1\x80' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+several characters and a truncated sequence
+Cannot parse string '1\x012\xE2\x80' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+the result is a string literal
+Cannot parse string '1\'\\\n\t\0\x01' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+text that looks like an escape sequence differs from an escaped byte
+Cannot parse string '1\\xEF\xEF' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+other types
+Cannot parse string '1.5\xE2\x80\x8B' as Float64: syntax error at position 3 (parsed just '1.5'). Note: there are toFloat64OrZero and toFloat64OrNull functions, which returns zero/NULL instead of throwing exception
+Cannot parse string '1.5\xE2\x80\x8B' as Decimal(9, 1): syntax error at position 3 (parsed just '1.5')
+Cannot parse string '2020-01-01\xE2\x80\x8B' as Date: syntax error at position 10 (parsed just '2020-01-01')
+Cannot parse string '2020-01-01 00:00:00\xE2\x80\x8B' as DateTime: syntax error at position 19 (parsed just '2020-01-01 00:00:00')
+Cannot parse string '00000000-0000-0000-0000-000000000000\xE2\x80\x8B' as UUID: syntax error at position 36 (parsed just '00000000-0000-0000-0000-000000000000')
+Cannot parse string '127.0.0.1\xE2\x80\x8B' as IPv4: syntax error at position 9 (parsed just '127.0.0.1')
+Cannot parse string '::1\xE2\x80\x8B' as IPv6: syntax error at position 3 (parsed just '::1')
+other sources
+Cannot parse string '1\xE2\x80\x8B' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+Cannot parse string '1\xE2\x80\x8B' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+Cannot parse string '1\xE2\x80\x8B' as UInt32: syntax error at position 1 (parsed just '1'). Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+values from a table
+Cannot parse string '\xEF\xBB\xBF765870' as UInt32: syntax error at begin of string. Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+Cannot parse string '\xEF\xBB\xBF765870' as UInt32: syntax error at begin of string. Note: there are toUInt32OrZero and toUInt32OrNull functions, which returns zero/NULL instead of throwing exception
+functions that do not throw are not affected
+\N	0

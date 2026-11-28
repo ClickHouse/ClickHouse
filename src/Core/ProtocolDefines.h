@@ -62,7 +62,9 @@ static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_TABLE_READS 
 /// The number of rows of a data lake object recorded in the table metadata, to report `total_rows_approx` from the workers.
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_NUM_ROWS = 14;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE = 15;
-static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE;
+/// The size of a data lake object recorded in the table metadata, so that the workers do not request it from the object storage.
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_FILE_SIZE = 16;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_FILE_SIZE;
 
 static constexpr auto DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION = 1;
 
@@ -154,6 +156,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// `IMPORTANT`, so a peer at this version that does not know the name yet rejects the plan instead of
 /// skipping the name and aggregating with another method.
 /// Version 21 also adds `min_string_column_bytes_for_hash_join_row_store` to the join step settings.
+/// Version 22 adds the `window_sliding_aggregation_min_frame_rows` plan setting, written only towards a peer at this
+/// version or above. A peer below it adds the rows of every window frame again, which can change only the speed, the
+/// memory use and the last digits of floating-point results.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -165,8 +170,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///   bumps its own serialization version instead, with the value of the current release as `since_plan_version`
 ///   (see `QueryPlanStepRegistry::StepVersions`).
 ///
-/// Last bumped for release 26.11.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
+/// Last bumped for release 26.12.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 22;
 /// The oldest query-plan serialization version that can be written or read. Below it, the step settings were
 /// encoded in a binary form that is not supported anymore. A plan is not serialized for such a peer, and a plan
 /// from such a peer is not deserialized.
@@ -201,6 +206,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
+/// First query-plan serialization version that knows the `window_sliding_aggregation_min_frame_rows` plan setting
+/// name. Gates writing it in `WindowStep::serializeSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_SLIDING_AGGREGATION = 22;
 /// First query-plan serialization version that knows the `enable_packed_string_keys_in_aggregation`
 /// plan setting name. Gates writing it in `AggregatingStep::serializeSettings` /
 /// `MergingAggregatedStep::serializeSettings`.
@@ -268,6 +276,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_L
 /// name is not written: the older peer does not store `String` columns in the hash join row store, so the setting has
 /// no effect there.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES = 21;
+/// First query-plan serialization version that carries the set operation of `Join` and the `skip_deduplication` and
+/// `deduplicates_except_join` flags of `Distinct`. Below it, the join of a set operation is not sent.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_AS_JOIN = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
@@ -399,6 +410,12 @@ static constexpr auto DBMS_MIN_REVISION_WITH_INSERT_RETURNING = 54495;
 /// `INSERT`) after it has received all the data. Older initiators do not expect it.
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_SECONDARY_INSERT = 54496;
 
+/// Send the number of rows of a block that has no columns. Such a block is not empty: its rows carry
+/// no values, which is what a shard produces for a query whose intermediate result needs nothing from
+/// it, e.g. `SELECT count() OVER () FROM distributed_table WHERE x > 0`. The count cannot be derived
+/// from the columns, and an older receiver rejects a column-less block that declares rows.
+static constexpr auto DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT = 54498;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -407,5 +424,5 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_SECONDARY
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54497;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54498;
 }

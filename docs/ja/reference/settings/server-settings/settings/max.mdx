@@ -69,17 +69,11 @@ HTTP 経由でディレクトリ一覧を表示する際に使用される、HTT
 
 ## max_iceberg_manifest_decode_thread_pool_free_size {#max_iceberg_manifest_decode_thread_pool_free_size}
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
-
-Iceberg のデータマニフェストファイルをデコードするスレッドプールに保持しておく、アイドル状態の待機スレッドの最大数。
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />Iceberg のデータマニフェストファイルをデコードするスレッドプールに保持しておく、アイドル状態の待機スレッドの最大数。この設定は非推奨であり、効果はありません。Iceberg のマニフェストファイルは I/O スレッドプール上で読み取られます。
 
 ## max_iceberg_manifest_decode_thread_pool_size {#max_iceberg_manifest_decode_thread_pool_size}
 
-<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="Yes" />
-
-Iceberg のデータマニフェストファイル のデコードに使用するスレッドの合計最大数。
-
-このスレッドプールは意図的に I/O スレッドプールとは分離されています。デコードタスクは、生成したエントリがクエリによって消費されるまでブロックされることがある一方で、削除マニフェストのデコードはエントリが消費される前に I/O スレッドプール上のタスクの完了を待機します。1 つのスレッドプールを共有すると、デッドロックが発生する可能性があります。
+<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />Iceberg のデータマニフェストファイル のデコードに使用するスレッドの合計最大数。この設定は非推奨であり、効果はありません。Iceberg のマニフェストファイルは I/O スレッドプール上で読み取られます。
 
 ## max_keep_alive_requests {#max_keep_alive_requests}
 

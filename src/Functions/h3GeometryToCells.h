@@ -5,7 +5,7 @@
 #if USE_H3
 
 #include <Columns/ColumnsNumber.h>
-#include <Functions/CancellationBudget.h>
+#include <Interpreters/CancellationBudget.h>
 #include <Functions/geometryConverters.h>
 
 namespace DB

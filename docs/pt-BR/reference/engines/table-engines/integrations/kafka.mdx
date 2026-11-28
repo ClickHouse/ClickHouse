@@ -65,8 +65,10 @@ Parâmetros obrigatórios:
 
 * `kafka_broker_list` — Uma lista de brokers separada por vírgulas (por exemplo, `localhost:9092`).
 * `kafka_topic_list` — Uma lista de tópicos do Kafka.
-* `kafka_group_name` — Um grupo de consumidores do Kafka. Os offsets de leitura são acompanhados separadamente para cada grupo. Se você não quiser que as mensagens sejam duplicadas no cluster, use o mesmo nome de grupo em todos os lugares.
+* `kafka_group_name` — Um grupo de consumidores do Kafka. Os offsets de leitura são acompanhados separadamente para cada grupo. Se você não quiser que as mensagens sejam duplicadas no cluster, use o mesmo nome de grupo em todos os lugares. Suporta expansão de macros (por exemplo, `'consumers_{replica}'`), o que permite que cada réplica use seu próprio grupo de consumidores e leia todas as mensagens.
 * `kafka_format` — Formato da mensagem. Usa a mesma notação da função SQL `FORMAT`, como `JSONEachRow`. Para mais informações, consulte a seção [Formatos](/pt-BR/reference/formats/index).
+
+Os valores de `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_client_id` e `kafka_schema` suportam expansão de macros: `{database}` e `{table}` são substituídos pelo banco de dados e pelo nome da tabela, e outras macros, como `{shard}` e `{replica}`, são obtidas da configuração `macros` do servidor.
 
 Parâmetros opcionais:
 
@@ -107,18 +109,71 @@ Parâmetros opcionais:
 * `kafka_partition_shard_num` — O número atual do shard para afinidade estática entre partição e shard. Deve estar entre 1 e `kafka_shard_count`, inclusive. As partições são atribuídas pela fórmula `partition_id % kafka_shard_count == kafka_partition_shard_num - 1`. Compatível com expansão de macro (por exemplo, `'{shard}'`). Deve ser usado junto com `kafka_shard_count`. Compatível apenas com StorageKafka2 (requer `kafka_keeper_path` e `kafka_replica_name`). Padrão: `''` (desativado).
 * `kafka_shard_count` — Número total de shards que participam do consumo. Usado junto com `kafka_partition_shard_num` para atribuir partições estaticamente. Deve ser usado junto com `kafka_partition_shard_num`. Compatível apenas com StorageKafka2. Padrão: `0` (desativado).
 
+## TLS e SASL com coleções nomeadas {#kafka-tls-sasl-named-collections}
+
+O mecanismo de tabela Kafka expõe apenas um subconjunto das configurações do [librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) como parâmetros `kafka_*` no nível da tabela (por exemplo, `kafka_security_protocol`, `kafka_sasl_mechanism`, `kafka_sasl_username` e `kafka_sasl_password`). **Caminhos de certificados TLS, chaves privadas e senhas de chaves não são configurações da tabela**; configure-os como propriedades estendidas do `librdkafka`.
+
+Para `ENGINE = Kafka(named_collection)`:
+
+* As chaves `kafka_*` de nível superior na coleção nomeada são configurações do mecanismo de tabela Kafka (brokers, tópico, formato e as configurações de protocolo/SASL listadas acima).
+* As chaves com o prefixo `kafka.` em `CREATE NAMED COLLECTION`, ou aninhadas em `<kafka>` no XML, são encaminhadas ao `librdkafka`. Os sublinhados no nome da chave são convertidos em pontos (por exemplo, `kafka.ssl_ca_location` → `ssl.ca.location`, ou `<ssl_ca_location>` dentro de `<kafka>` → `ssl.ca.location`).
+
+Ao usar uma coleção nomeada, **o bloco global `<kafka>` do servidor em `config.xml` não é mesclado**. Cada coleção deve incluir todas as propriedades estendidas de que a tabela precisa (incluindo os arquivos TLS e `security.protocol`, caso essa propriedade não seja definida por meio de `SETTINGS` não vazias da tabela).
+
+Um layout comum para `SASL_SSL` com certificados do cliente: armazene os caminhos TLS e `ssl.key.password` na coleção nomeada; defina `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format` e, opcionalmente, `kafka_sasl_username` / `kafka_sasl_password` na cláusula `SETTINGS` da tabela. Tanto `kafka.security_protocol` quanto `kafka_security_protocol` definem `security.protocol`, e a configuração da tabela, se não estiver vazia, tem precedência. Se a coleção já armazenar essa propriedade, a configuração da tabela passa a ser uma substituição da coleção nomeada: ela exige `SHOW NAMED COLLECTIONS SECRETS` na coleção e falha com `Override not allowed` se a chave for `NOT OVERRIDABLE`. O mesmo vale para `kafka_sasl_mechanism`, `kafka_sasl_username` e `kafka_sasl_password`.
+
+Exemplo (os caminhos dos certificados devem existir em todos os servidores do ClickHouse que executam consumidores da tabela):
+
+```sql
+CREATE NAMED COLLECTION kafka_mtls AS
+    kafka.security_protocol = 'SASL_SSL',
+    kafka.sasl_mechanism = 'PLAIN',
+    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
+    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
+    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_key_password = 'secret';
+
+CREATE TABLE queue (
+    id UInt64,
+    payload String
+) ENGINE = Kafka(kafka_mtls)
+SETTINGS
+    kafka_broker_list = 'broker:9092',
+    kafka_topic_list = 'topic',
+    kafka_group_name = 'group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_username = 'user',
+    kafka_sasl_password = 'password';
+```
+
+As mesmas configurações estendidas em uma coleção nomeada definida em XML:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <kafka_mtls>
+            <kafka>
+                <security_protocol>SASL_SSL</security_protocol>
+                <sasl_mechanism>PLAIN</sasl_mechanism>
+                <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
+                <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
+                <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
+                <ssl_key_password>secret</ssl_key_password>
+            </kafka>
+        </kafka_mtls>
+    </named_collections>
+</clickhouse>
+```
+
+Consulte a [referência de configuração do librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) para ver todas as propriedades relacionadas a TLS. Para definir valores padrão para todo o servidor sem usar coleções nomeadas, consulte [Configuração](#configuration) abaixo.
+
 ## Autenticação OAUTHBEARER/OIDC {#oauthbearer-oidc-authentication}
 
 A autenticação `OAUTHBEARER` utiliza as [propriedades de configuração do librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md). Configure `sasl.oauthbearer.method`, `sasl.oauthbearer.client.id`, `sasl.oauthbearer.client.secret`, `sasl.oauthbearer.token.endpoint.url` e `sasl.oauthbearer.scope` para o fluxo de credenciais de cliente (client credentials) do OIDC.
 
 Ao definir essas propriedades no XML do ClickHouse, substitua os pontos por sublinhados. Por exemplo, use `<sasl_oauthbearer_client_id>` para `sasl.oauthbearer.client.id`.
 
-Para `ENGINE = Kafka(named_collection)`, use dois espaços de nomes na coleção nomeada:
-
-* As chaves `kafka_*` de nível superior são configurações do motor de tabela Kafka, como `kafka_security_protocol` e `kafka_sasl_mechanism`.
-* As chaves aninhadas em `<kafka>` são configurações estendidas do `librdkafka`, incluindo as propriedades OIDC mencionadas acima.
-
-A configuração global `<kafka>` do servidor não é mesclada quando se usa uma coleção nomeada; portanto, cada coleção deve incluir todas as propriedades OIDC necessárias. Consulte [Coleções nomeadas do Kafka](/pt-BR/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication) para ver um exemplo completo.
+Para `ENGINE = Kafka(named_collection)`, as configurações estendidas do `librdkafka` (incluindo as de OIDC) usam o mesmo espaço de nomes `kafka.` / `<kafka>` descrito em [TLS e SASL com coleções nomeadas](#kafka-tls-sasl-named-collections). A configuração global `<kafka>` do servidor não é mesclada quando se usa uma coleção nomeada; portanto, cada coleção deve incluir todas as propriedades OIDC necessárias. Consulte [Coleções nomeadas do Kafka](/pt-BR/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication) para ver um exemplo completo.
 
 Exemplos:
 
@@ -164,7 +219,7 @@ CREATE TABLE queue3 (
 </details>
 
 <Info>
-  O motor de tabela Kafka não oferece suporte a colunas com [valor padrão](/pt-BR/reference/statements/create/table#default_values). Se você precisar de colunas com valor padrão, poderá adicioná-las na visão materializada (veja abaixo).
+  O mecanismo de tabela Kafka não oferece suporte a colunas com [valor padrão](/pt-BR/reference/statements/create/table#default_values). Se você precisar de colunas com valor padrão, poderá adicioná-las na visão materializada (veja abaixo).
 </Info>
 
 ## Descrição {#description}
@@ -305,7 +360,7 @@ A região da AWS é extraída automaticamente do endpoint do broker por correspo
 
 **Credenciais da AWS:**
 
-As credenciais são sempre carregadas de `~/.aws/credentials` e `~/.aws/config` (arquivos de perfil da AWS), quando presentes. Para também habilitar perfis de instância do EC2, variáveis de ambiente (`AWS_ACCESS_KEY_ID`, etc.), roles de tarefa do ECS e outras fontes automáticas de credenciais, adicione à configuração do servidor:
+Por padrão, o servidor não resolve nenhuma credencial da AWS para `AWS_MSK_IAM`, e a autenticação falha com `AWS credentials are empty or expired`. Para permitir que o servidor se autentique com a identidade da AWS obtida do ambiente, adicione à configuração do servidor:
 
 ```xml
 <kafka>
@@ -313,7 +368,15 @@ As credenciais são sempre carregadas de `~/.aws/credentials` e `~/.aws/config` 
 </kafka>
 ```
 
+As fontes de credenciais do ambiente são: variáveis de ambiente (`AWS_ACCESS_KEY_ID`, etc.), perfis de instância do EC2 (IMDS), funções do IAM para service accounts (IRSA), roles de tarefa do ECS, SSO e os arquivos de perfil `~/.aws/credentials` e `~/.aws/config`.
+
 Essa configuração só pode ser definida por administradores do servidor. Padrão: `false`.
+
+<Warning>
+  Essa configuração não é segura. Quando ela está habilitada, todo usuário com a concessão de fonte `KAFKA` e `CREATE TABLE` pode selecionar o mecanismo `AWS_MSK_IAM`, a lista de brokers e a região da AWS nas configurações da tabela. O servidor então assina um token `kafka-cluster:Connect` com sua própria identidade da AWS e envia o token para o broker escolhido pelo usuário. O token contém o ID da chave de acesso da AWS e o token de sessão do STS completo, e o host receptor pode reaplicá-lo contra clusters MSK nessa região, se passando pelo servidor.
+
+  Habilite essa configuração somente se você confiar a identidade da AWS do servidor a todos os usuários que podem criar tabelas Kafka. Restrinja os hosts aos quais as tabelas Kafka podem se conectar com [remote&#95;url&#95;allow&#95;hosts](/pt-BR/reference/settings/server-settings/settings/remote#remote_url_allow_hosts), que fica vazio por padrão (permitindo todos os hosts).
+</Warning>
 
 **PrivateLink e DNS personalizado:**
 

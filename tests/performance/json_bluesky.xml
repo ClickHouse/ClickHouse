@@ -78,7 +78,7 @@
 <fill_query>SELECT throwIf((SELECT sum(length(toString(data))) FROM bluesky) != 4925524234)</fill_query>
 <fill_query>SELECT throwIf((count(), sum(cityHash64(event, count, users))) != (13, 17221227897422865449)) FROM (SELECT collection AS event, count() AS count, uniqExact(did) AS users FROM bluesky_typed WHERE kind = 'commit' AND operation = 'create' GROUP BY event ORDER BY count DESC)</fill_query>
 <fill_query>SELECT throwIf(tuple(*) != (3432447, 5211543, 5852)) FROM (SELECT countIf(subject.String LIKE 'did:plc:%'), countIf(variantElement(subject, 'Tuple(cid String, uri String)').uri LIKE '%/app.bsky.feed.post/%'), countIf(variantElement(subject, 'Tuple(cid String, uri String)').cid ILIKE '%zzz%') FROM bluesky_variant)</fill_query>
-<fill_query>SELECT throwIf(groupArray((toString(t), c, u)) != [('None', 1343721, 1), ('String', 3442451, 854111), ('Tuple(cid String, uri String)', 5213822, 1315895)]) FROM (SELECT variantType(subject) AS t, count() AS c, uniqExact(subject) AS u FROM bluesky_variant GROUP BY t ORDER BY t)</fill_query>
+<fill_query>SELECT throwIf(groupArray((toString(t), c, u)) != [('None', 1343721, 0), ('String', 3442451, 854111), ('Tuple(cid String, uri String)', 5213822, 1315895)]) FROM (SELECT variantType(subject) AS t, count() AS c, uniqExact(subject) AS u FROM bluesky_variant GROUP BY t ORDER BY t)</fill_query>
 
 <query>
     SELECT sum(cityHash64(*)) FROM (SELECT data.commit.collection AS event, count() AS count FROM bluesky GROUP BY event ORDER BY count DESC)

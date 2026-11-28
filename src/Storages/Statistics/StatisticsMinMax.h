@@ -18,12 +18,17 @@ public:
     void build(const ColumnPtr & column) override;
     void merge(const StatisticsPtr & other_stats) override;
 
-    void serialize(WriteBuffer & buf) override;
+    void serialize(WriteBuffer & buf, StatisticsFileVersion version) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
-    [[nodiscard]] std::optional<UInt64> getSerializedSize() const override;
+    [[nodiscard]] std::optional<UInt64> getSerializedSize(StatisticsFileVersion version) const override;
 
     [[nodiscard]] const Field & getMin() const { return min; }
     [[nodiscard]] const Field & getMax() const { return max; }
+
+    /// The statistics read from a file have to be dropped when their bounds are not exact (`V1` stored them as
+    /// `Float64`), or have a type other than the one of the values of the column (e.g. the `Float64` bounds of
+    /// `V1`, which older versions rewrote unchanged in `V4`), or when they were built for another column type.
+    [[nodiscard]] bool isUnusable() const override { return is_unusable; }
 
     [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const override;
     [[nodiscard]] String getNameForLogs() const override;
@@ -34,6 +39,10 @@ private:
     UInt64 row_count = 0;
 
     DataTypePtr data_type;
+    /// `data_type` without `LowCardinality`: the type of the values `min` and `max`, serialized with it.
+    DataTypePtr value_type;
+
+    bool is_unusable = false;
 };
 
 bool minMaxStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);

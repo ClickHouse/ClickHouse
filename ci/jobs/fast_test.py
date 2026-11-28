@@ -12,7 +12,10 @@ sys.path.append(str(repo_path / "ci"))
 from ci.defs.defs import ToolSet
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.find_tests import Targeting
-from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
+from ci.jobs.scripts.functional_tests_results import (
+    ABORTED_RUN_EXIT_CODES,
+    FTResultsProcessor,
+)
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -266,12 +269,17 @@ def main():
     # builds (pr_number == 0) are allowed to write entries.
     if info.pr_number > 0:
         os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
+        # Read-only builds in the main repo use the bucket anonymously; writers and other repos keep credentials.
+        if info.repo_name == "ClickHouse/ClickHouse":
+            os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     if info.is_local_run:
         print("NOTE: It's a local run")
         if os.environ.get("SCCACHE_ENDPOINT"):
             print(f"NOTE: Using custom sccache endpoint: {os.environ['SCCACHE_ENDPOINT']}")
         if os.environ.get("AWS_ACCESS_KEY_ID"):
             print("NOTE: Using custom AWS credentials for sccache")
+            # Explicit credentials and anonymous access are mutually exclusive.
+            os.environ.pop("SCCACHE_S3_NO_CREDENTIALS", None)
         else:
             os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
 
@@ -433,6 +441,13 @@ def main():
         test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run(
             runner_exit_code=test_exit_code,
         )
+        if test_exit_code in ABORTED_RUN_EXIT_CODES:
+            # The crash that aborted the run is only in the server logs.
+            crash_results = [
+                r for r in CH.check_fatal_messages_in_logs() if r.is_failure()
+            ]
+            if crash_results:
+                test_results.extend_sub_results(crash_results)
         fail_slow_new_tests(test_results, info.get_kv_data("new_stateless_test_files"))
         if test_exit_code != 0:
             attach_debug = True

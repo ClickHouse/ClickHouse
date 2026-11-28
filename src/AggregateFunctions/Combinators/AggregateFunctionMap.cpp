@@ -46,7 +46,14 @@ struct CompareHelperEqual
 template <typename T>
 struct CompareHelperLess
 {
-    bool operator()(const T & a, const T & b) const { return CompareHelper<T>::less(a, b, 1); }
+    bool operator()(const T & a, const T & b) const
+    {
+        /// Only floating point keys need `CompareHelper` (to order `NaN`), and it takes the arguments by value.
+        if constexpr (is_floating_point<T>)
+            return CompareHelper<T>::less(a, b, 1);
+        else
+            return a < b;
+    }
 };
 
 /// The hash has to agree with `CompareHelperEqual`, which is used as the equality predicate of `merged_maps`:
@@ -290,39 +297,6 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        mergeNestedStates(place, rhs, arena, [&](AggregateDataPtr nested_place, ConstAggregateDataPtr rhs_nested_place)
-        {
-            nested_func->merge(nested_place, rhs_nested_place, arena);
-        });
-    }
-
-    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        chassert(rhs.getNestedFunction() != nullptr);
-
-        return nested_func->canMergeStateFromDifferentVariant(*rhs.getNestedFunction());
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        chassert(canMergeStateFromDifferentVariant(rhs));
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        mergeNestedStates(place, rhs_place, arena, [&](AggregateDataPtr nested_place, ConstAggregateDataPtr rhs_nested_place)
-        {
-            nested_func->mergeStateFromDifferentVariant(nested_place, *rhs_nested, rhs_nested_place, arena);
-        });
-    }
-
-private:
-    template <typename MergeNested>
-    void mergeNestedStates(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena, MergeNested && merge_nested) const
-    {
         auto & merged_maps = this->data(place).merged_maps;
         const auto & rhs_maps = this->data(rhs).merged_maps;
 
@@ -357,11 +331,10 @@ private:
             }
 
             if (!zero_size_nested)
-                merge_nested(it->second, elem.second);
+                nested_func->merge(it->second, elem.second, arena);
         }
     }
 
-public:
     template <bool up_to_state>
     void destroyImpl(AggregateDataPtr __restrict place) const noexcept
     {
@@ -565,8 +538,8 @@ public:
                 catch (...)
                 {
                     res_offsets.resize_assume_reserved(offsets_before);
-                    for (size_t i = transferred; i-- > 0;)
-                        nested_func->rollbackInsertResult(merged_maps[keys[i]], val_column);
+                    for (size_t i = transferred; i > 0; --i)
+                        nested_func->rollbackInsertResult(merged_maps[keys[i - 1]], val_column);
                     key_column.rollback(*keys_checkpoint);
                     throw;
                 }
@@ -604,9 +577,10 @@ public:
         /// The values were appended in sorted key order while `merged_maps` is unordered, and a row's
         /// undo depends on which place produced it, so recover that order from the keys themselves.
         const size_t appended_end = key_column.size();
-        for (size_t pos = appended_end; pos-- > appended_end - appended;)
+        const size_t appended_begin = appended_end - appended;
+        for (size_t pos = appended_end; pos > appended_begin; --pos)
         {
-            auto it = merged_maps.find(keyAt(key_column, pos));
+            auto it = merged_maps.find(keyAt(key_column, pos - 1));
             if (it == merged_maps.end())
                 abortOnFailedAssertion("AggregateFunctionMap::rollbackInsertResult: appended key is missing from merged_maps");
             nested_func->rollbackInsertResult(it->second, val_column);

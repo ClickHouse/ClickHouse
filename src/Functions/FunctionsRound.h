@@ -21,6 +21,7 @@
 #include <type_traits>
 #include <array>
 #include <base/sort.h>
+#include <base/sanitizer_defs.h>
 #include <algorithm>
 
 
@@ -552,6 +553,7 @@ private:
     using Container = typename ColumnDecimal<T>::Container;
 
 public:
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static NO_INLINE void apply(const Container & in, UInt32 in_scale, Container & out, Scale scale_arg)
     {
         const Int32 digits = static_cast<Int32>(in_scale) - scale_arg;
@@ -583,6 +585,7 @@ public:
         }
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static void applyOne(NativeType in, UInt32 in_scale, NativeType& out, Scale scale_arg)
     {
         const Int32 digits = static_cast<Int32>(in_scale) - scale_arg;
@@ -755,7 +758,16 @@ public:
     [[nodiscard]] String getName() const override { return name; }
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        return arguments.size() > 1 && !arguments[1].is_const;
+    }
+    /// A row whose result is NULL, or an unused dictionary entry of a `LowCardinality` argument, may hold a scale that
+    /// is out of range, and `executeImpl` would throw for it
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return arguments.size() < 2 || isColumnConst(*arguments[1].column);
+    }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     [[nodiscard]] String getSignatureString() const override

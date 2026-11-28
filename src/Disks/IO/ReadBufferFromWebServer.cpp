@@ -48,7 +48,8 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t read_until_position_,
-    HTTPHeaderEntries headers_)
+    HTTPHeaderEntries headers_,
+    String expected_etag_)
     : ReadBufferFromWebServer(
         std::vector<String>{url_},
         context_,
@@ -56,7 +57,8 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
         settings_,
         use_external_buffer_,
         read_until_position_,
-        std::move(headers_))
+        std::move(headers_),
+        std::move(expected_etag_))
 {
 }
 
@@ -67,8 +69,10 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t read_until_position_,
-    HTTPHeaderEntries headers_)
-    : ReadBufferFromFileBase(settings_.remote_fs_settings.buffer_size, nullptr, 0, getKnownFileSize(file_size_))
+    HTTPHeaderEntries headers_,
+    String expected_etag_)
+    /// No own memory: the working buffer is either the external one or the one of `impl`.
+    : ReadBufferFromFileBase(0, nullptr, 0, getKnownFileSize(file_size_))
     , log(getLogger("ReadBufferFromWebServer"))
     , context(context_)
     , urls(std::move(urls_))
@@ -76,6 +80,7 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     , buf_size(settings_.remote_fs_settings.buffer_size)
     , read_settings(settings_)
     , headers(std::move(headers_))
+    , expected_etag(std::move(expected_etag_))
     , use_external_buffer(use_external_buffer_)
     , read_until_position(read_until_position_)
 {
@@ -137,6 +142,7 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
                     .withEnableUrlEncoding(enable_url_encoding)
                     .withHostFilter(&context->getRemoteHostFilter())
                     .withHeaders(headers)
+                    .withExpectedETag(expected_etag)
                     .withExternalBuf(false)
                     .withDelayInit(false)
                     .create(credentials);
@@ -151,6 +157,7 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
                            .withEnableUrlEncoding(enable_url_encoding)
                            .withHostFilter(&context->getRemoteHostFilter())
                            .withHeaders(headers)
+                           .withExpectedETag(expected_etag)
                            .withExternalBuf(use_external_buffer)
                            .withDelayInit(true)
                            .create(credentials);
@@ -205,6 +212,10 @@ bool ReadBufferFromWebServer::nextImpl()
         if (read_until_position < offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
     }
+
+    /// The buffer has no own memory, so an external buffer must be set before reading.
+    if (use_external_buffer && internal_buffer.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "External buffer is not set before reading from `ReadBufferFromWebServer`");
 
     if (!impl)
     {

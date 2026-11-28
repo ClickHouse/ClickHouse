@@ -1,6 +1,5 @@
--- `contingency` and its relatives keep a window function's state in a separate memory layout. A state
--- that a window function returns with `-State` has the same type name as an ordinary state, so it must
--- use the ordinary layout: otherwise a spill, a `CAST` or a distributed plan reads one layout as the other.
+-- A state that a window function of `contingency` and its relatives returns with `-State` has the same
+-- type as an ordinary state. It must pass through a spill, a `CAST` and a distributed plan and give the same values.
 
 DROP TABLE IF EXISTS t_crosstab_window_state;
 CREATE TABLE t_crosstab_window_state (p UInt32, b UInt32, c UInt32, v UInt32) ENGINE = MergeTree ORDER BY (p, v)

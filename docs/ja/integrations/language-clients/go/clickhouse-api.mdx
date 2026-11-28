@@ -270,7 +270,27 @@ for i := 0; i < 100; i++ {
 }
 ```
 
-[完全なサンプル](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/async.go)
+[完全なサンプル](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/async_native.go)
+
+### バッチでの非同期 INSERT {#async-insert-batch}
+
+`WithAsync` は、Native プロトコルおよび HTTP プロトコルでのバッチ挿入にも適用されます。バッチでは、`PrepareBatch` に渡したコンテキストのみが使用されます。`Send` は、そのコンテキストの設定でバッチを送信します。
+
+```go
+ctx := clickhouse.Context(context.Background(), clickhouse.WithAsync(true))
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example") // WithAsync must be on this context
+if err != nil {
+    return err
+}
+for i := 0; i < 100; i++ {
+    if err := batch.Append(uint64(i), "Golang SQL database driver", []uint8{1, 2, 3, 4, 5, 6, 7, 8, 9}, time.Now()); err != nil {
+        return err
+    }
+}
+return batch.Send()
+```
+
+[完全な例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/async_native.go)
 
 ## 列指向での挿入 {#columnar-insert}
 

@@ -6,7 +6,7 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ru/clickstack/_config_e
 
 <img src="/images/clickstack/getting-started/start_ingestion.webp" alt="" />
 
-Выберите &quot;Начать ингестию&quot;, и вам будет предложено выбрать источник ингестии. Управляемый ClickStack поддерживает OpenTelemetry и [Vector](https://vector.dev/) в качестве основных источников ингестии. Однако пользователи также могут отправлять данные напрямую в ClickHouse в собственной схеме, используя любые из [интеграций, поддерживаемых ClickHouse Cloud](/ru/integrations/home).
+Выберите &quot;Начать ингестию&quot;, и вам будет предложено выбрать источник ингестии. Сервис поддерживает OpenTelemetry и [Vector](https://vector.dev/) в качестве основных источников ингестии. Однако пользователи также могут отправлять данные напрямую в ClickHouse в собственной схеме, используя любые из [интеграций, поддерживаемых ClickHouse Cloud](/ru/integrations/home).
 
 <img src="/images/clickstack/getting-started/select_source.webp" alt="" />
 
@@ -19,11 +19,11 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ru/clickstack/_config_e
 
 <Tabs>
   <Tab title="OpenTelemetry">
-    Чтобы отправлять данные OpenTelemetry в Управляемый ClickStack, рекомендуется использовать OpenTelemetry Collector. Коллектор выступает в роли шлюза: он получает данные OpenTelemetry от ваших приложений (и других коллекторов) и пересылает их в ClickHouse Cloud.
+    Чтобы отправлять данные OpenTelemetry в сервис, рекомендуется использовать OpenTelemetry Collector. Коллектор выступает в роли шлюза: он получает данные OpenTelemetry от ваших приложений (и других коллекторов) и пересылает их в ClickHouse Cloud.
 
     Если у вас коллектор еще не запущен, выполните приведенные ниже шаги. Если у вас уже есть существующие коллекторы, ниже также приведен пример конфигурации.
 
-    ### Запуск коллектора
+### Запуск коллектора {#start-a-collector}
 
     Ниже рассматривается рекомендуемый вариант — использование **дистрибутива ClickStack для OpenTelemetry Collector**, который включает дополнительную обработку и специально оптимизирован для ClickHouse Cloud. Если вы хотите использовать собственный OpenTelemetry Collector, см. [&quot;Настройка существующих коллекторов.&quot;](#configure-existing-collectors)
 
@@ -36,12 +36,12 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ru/clickstack/_config_e
     <Info>
       **Развертывание в production**
 
-      Хотя в этой команде для подключения к Управляемому ClickStack используется пользователь `default`, при [переходе в production](/ru/clickstack/managing/production#create-a-database-ingestion-user-managed) и изменении конфигурации следует создать отдельного пользователя.
+      Хотя в этой команде для подключения к сервису используется пользователь `default`, при [переходе в production](/ru/clickstack/self-configured/managing/production#create-a-database-ingestion-user-managed) и изменении конфигурации следует создать отдельного пользователя.
     </Info>
 
     Выполнение этой единственной команды запускает коллектор ClickStack с конечными точками OTLP, доступными на портах 4317 (gRPC) и 4318 (HTTP). Если у вас уже настроены инструментация OpenTelemetry и агенты, вы можете сразу начать отправлять телеметрические данные в эти конечные точки.
 
-    ### Настройка существующих коллекторов
+### Настройка существующих коллекторов {#configure-existing-collectors}
 
     Вы также можете настроить собственные OpenTelemetry Collectors или использовать собственный дистрибутив коллектора.
 
@@ -57,22 +57,22 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ru/clickstack/_config_e
 
     <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
 
-    Дополнительные сведения о настройке коллекторов OpenTelemetry см. в разделе [&quot;Ингестия с OpenTelemetry.&quot;](/ru/clickstack/ingesting-data/opentelemetry)
+    Дополнительные сведения о настройке коллекторов OpenTelemetry см. в разделе [&quot;Ингестия с OpenTelemetry.&quot;](/ru/clickstack/self-configured/ingesting-data/collector)
 
-    ### Запуск ингестии (необязательно)
+### Запуск ингестии (необязательно) {#start-ingestion-optional}
 
     Если у вас есть существующие приложения или инфраструктура, которые нужно инструментировать с помощью OpenTelemetry, перейдите к соответствующим руководствам по ссылкам в интерфейсе.
 
-    Чтобы инструментировать приложения для сбора трассировок и журналов, используйте [поддерживаемые SDK для языков](/ru/clickstack/ingesting-data/sdks/index), которые отправляют данные в ваш OpenTelemetry Collector, выступающий в роли шлюза для ингестии в Управляемый ClickStack.
+    Чтобы инструментировать приложения для сбора трассировок и журналов, следуйте инструкциям для самоуправляемого развертывания в [руководствах по SDK для языков](/ru/clickstack/observability/ingesting-data/sdks/index): эти SDK отправляют данные в ваш OpenTelemetry Collector, выступающий в роли шлюза для ингестии в сервис.
 
-    Журналы можно [собирать с помощью коллекторов OpenTelemetry](/ru/clickstack/integration-examples/host-logs), работающих в режиме агента и пересылающих данные в тот же коллектор. Для мониторинга Kubernetes следуйте [отдельному руководству](/ru/clickstack/integration-examples/kubernetes). Для других интеграций см. наши [краткие руководства](/ru/clickstack/integration-examples/index).
+    Журналы можно [собирать с помощью коллекторов OpenTelemetry](/ru/clickstack/observability/integration-examples/host-logs#self-managed), работающих в режиме агента и пересылающих данные в тот же коллектор. Для мониторинга Kubernetes следуйте [отдельному руководству](/ru/clickstack/observability/integration-examples/kubernetes#self-managed). Для других интеграций см. наши [краткие руководства](/ru/clickstack/observability/integration-examples/index).
 
-    ### Демонстрационные данные
+### Демонстрационные данные {#demo-data}
 
     Если у вас пока нет собственных данных, попробуйте один из наших примеров наборов данных.
 
-    * [Пример набора данных](/ru/clickstack/example-datasets/sample-data) - Загрузите пример набора данных из нашей публичной демоверсии. Диагностируйте простую проблему.
-    * [Локальные файлы и метрики](/ru/clickstack/example-datasets/local-data) - Загрузите локальные файлы и отслеживайте систему в OSX или Linux с помощью локального OTel collector.
+    * [Пример набора данных](/ru/clickstack/observability/example-datasets/sample-data#self-managed) - Загрузите пример набора данных из нашей публичной демоверсии. Диагностируйте простую проблему.
+    * [Локальные файлы и метрики](/ru/clickstack/observability/example-datasets/local-data#self-managed) - Загрузите локальные файлы и отслеживайте систему в OSX или Linux с помощью локального OTel collector.
 
     <br />
   </Tab>
@@ -85,12 +85,12 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ru/clickstack/_config_e
     <Info>
       **Требуется timestamp**
 
-      Единственное строгое требование для Управляемого ClickStack — данные должны содержать **столбец timestamp** (или эквивалентное поле времени), который можно указать при настройке источника данных в интерфейсе ClickStack.
+      Единственное строгое требование для сервиса — данные должны содержать **столбец timestamp** (или эквивалентное поле времени), который можно указать при настройке источника данных в интерфейсе ClickStack.
     </Info>
 
     Ниже предполагается, что у вас уже запущен экземпляр Vector, предварительно настроенный с конвейерами приёма и отправляющий данные.
 
-    ### Создайте базу данных и таблицу
+### Создайте базу данных и таблицу {#create-a-database-and-table}
 
     Для Vector необходимо, чтобы таблица и схема были определены до начала ингестии данных.
 
@@ -126,13 +126,13 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ru/clickstack/_config_e
 
     Ваша таблица должна соответствовать выходной схеме, которую формирует Vector. При необходимости скорректируйте схему под свои данные, следуя рекомендациям из [лучших практик работы со схемой](/ru/concepts/best-practices/select-data-type).
 
-    Мы настоятельно рекомендуем разобраться, как в ClickHouse работают [первичные ключи](/ru/concepts/core-concepts/primary-indexes), и выбрать ключ сортировки с учётом характера доступа к данным. См. [рекомендации для ClickStack](/ru/clickstack/managing/performance-tuning#choosing-a-primary-key) по выбору первичного ключа.
+    Мы настоятельно рекомендуем разобраться, как в ClickHouse работают [первичные ключи](/ru/concepts/core-concepts/primary-indexes), и выбрать ключ сортировки с учётом характера доступа к данным. См. [рекомендации для ClickStack](/ru/clickstack/self-configured/managing/performance-tuning#choosing-a-primary-key) по выбору первичного ключа.
 
     Когда таблица будет создана, скопируйте показанный фрагмент конфигурации. При необходимости настройте вход так, чтобы он использовал существующие конвейеры, а также укажите целевую таблицу и базу данных. Учётные данные должны быть уже подставлены.
 
     <img src="/images/clickstack/getting-started/vector_config.webp" alt="" />
 
-    Больше примеров ингестии данных с Vector см. в разделе [&quot;Ингестия с Vector&quot;](/ru/clickstack/ingesting-data/vector) или в [документации по sink ClickHouse в Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) для расширенных настроек.
+    Больше примеров ингестии данных с Vector см. в разделе [&quot;Ингестия с Vector&quot;](/ru/clickstack/observability/ingesting-data/vector#self-managed) или в [документации по sink ClickHouse в Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) для расширенных настроек.
 
     <br />
   </Tab>

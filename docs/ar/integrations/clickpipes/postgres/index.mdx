@@ -66,37 +66,25 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
     1. في وحدة تحكم ClickHouse Cloud، انتقل إلى خدمة ClickHouse Cloud الخاصة بك.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![خدمة ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
-
-    </Frame>
-
+      <Frame>
+        ![خدمة ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+      </Frame>
     </div>
 
     2. حدّد زر `Data Sources` في القائمة الجانبية اليسرى وانقر على &quot;Set up a ClickPipe&quot;
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![اختيار عمليات الاستيراد](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
-
-    </Frame>
-
+      <Frame>
+        ![اختيار عمليات الاستيراد](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+      </Frame>
     </div>
 
     3. حدّد بطاقة `Postgres CDC`
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![اختر Postgres](/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp)
-
-       </Frame>
-
+         <Frame>
+           ![اختر Postgres](/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp)
+         </Frame>
        </div>
 
 ### إضافة اتصال قاعدة بيانات Postgres المصدر {#adding-your-source-postgres-database-connection}
@@ -109,13 +97,9 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
     </Info>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![أدخل تفاصيل الاتصال](/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg)
-
-    </Frame>
-
+      <Frame>
+        ![أدخل تفاصيل الاتصال](/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg)
+      </Frame>
     </div>
 
 #### (اختياري) إعداد AWS Private Link {#optional-setting-up-aws-private-link}
@@ -137,13 +121,9 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
     2. أدخل تفاصيل اتصال SSH.
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![SSH tunneling](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
-
-       </Frame>
-
+         <Frame>
+           ![SSH tunneling](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+         </Frame>
        </div>
 
     3. لاستخدام المصادقة المعتمدة على المفاتيح، انقر على &quot;Revoke and generate key pair&quot; لإنشاء زوج مفاتيح جديد، ثم انسخ المفتاح العام الذي تم إنشاؤه إلى خادم SSH لديك في الملف `~/.ssh/authorized_keys`.
@@ -161,13 +141,9 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
     5. تأكد من اختيار فتحة النسخ المتماثل التي أنشأتها في خطوة المتطلبات المسبقة من القائمة المنسدلة.
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![اختيار فتحة النسخ المتماثل](/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg)
-
-       </Frame>
-
+         <Frame>
+           ![اختيار فتحة النسخ المتماثل](/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg)
+         </Frame>
        </div>
 
 #### الإعدادات المتقدمة {#advanced-settings}
@@ -185,13 +161,9 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
     6. هنا يمكنك تحديد قاعدة البيانات الهدف الخاصة بـ ClickPipe لديك. يمكنك إما اختيار قاعدة بيانات موجودة أو إنشاء قاعدة بيانات جديدة.
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![اختيار قاعدة البيانات الهدف](/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg)
-
-       </Frame>
-
+         <Frame>
+           ![اختيار قاعدة البيانات الهدف](/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg)
+         </Frame>
        </div>
 
     7. يمكنك تحديد الجداول التي ترغب في نسخها المتماثل من قاعدة بيانات Postgres المصدر. وأثناء تحديد الجداول، يمكنك أيضًا إعادة تسمية الجداول في قاعدة بيانات ClickHouse الوجهة، إضافةً إلى استبعاد أعمدة محددة.
@@ -207,13 +179,9 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
     9. حدّد دور &quot;Full access&quot; من قائمة الأذونات المنسدلة ثم انقر على &quot;Complete Setup&quot;.
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![مراجعة الصلاحيات](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
-
-       </Frame>
-
+         <Frame>
+           ![مراجعة الصلاحيات](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+         </Frame>
        </div>
 
 ## ما الخطوة التالية؟ {#whats-next}

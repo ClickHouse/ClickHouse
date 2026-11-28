@@ -9,6 +9,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <base/sanitizer_defs.h>
 
 #include <base/scope_guard.h>
 
@@ -70,7 +71,8 @@ public:
         return failed_files;
     }
 
-    std::mutex & getMutex(const struct stat & st)
+    /// The hash of the file identity wraps around modulo 2^64 on purpose.
+    NO_SANITIZE_UNSIGNED_OVERFLOW std::mutex & getMutex(const struct stat & st)
     {
         return mutexes[(st.st_dev * 0x9E3779B97F4A7C15ULL + st.st_ino) % num_mutexes];
     }

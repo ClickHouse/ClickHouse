@@ -83,10 +83,18 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
 
 check "partitioned" "${PATH_PARTITIONED}"
 
-# The mutation path writes one data file per manifest and must keep reporting 1.
+# A DELETE touching one data file writes one delete file.
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --mutations_sync=2 --query "
     DELETE FROM ${TABLE_V2} WHERE n = 3"
 
 check "after delete" "${PATH_V2}"
+
+${CLICKHOUSE_CLIENT} --query "SELECT 'rows', count() FROM ${TABLE_V2}"
+
+# A DELETE touching several data files writes a delete file for each, all in one manifest.
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --mutations_sync=2 --query "
+    DELETE FROM ${TABLE_V2} WHERE n IN (0, 4, 8)"
+
+check "after delete of 3 data files" "${PATH_V2}"
 
 ${CLICKHOUSE_CLIENT} --query "SELECT 'rows', count() FROM ${TABLE_V2}"

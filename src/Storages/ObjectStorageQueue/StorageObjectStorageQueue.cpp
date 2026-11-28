@@ -76,6 +76,7 @@ namespace ProfileEvents
 namespace DimensionalMetrics
 {
     extern MetricFamily & ObjectStorageQueueFailures;
+    extern MetricFamily & ObjectStorageQueueLastPollTimestamp;
 }
 
 
@@ -337,6 +338,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     std::optional<FormatSettings> format_settings_,
     ASTStorage * engine_args,
     LoadingStrictnessLevel mode,
+    ObjectStorageQueueTableMetadata::Source source,
+    bool strict_metadata_check,
     bool keep_data_in_keeper_)
     : IStreamingStorage(table_id_)
     , WithContext(context_)
@@ -485,6 +488,11 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         keeper_path_database_name = table_id_.database_name;
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
+    if (strict_metadata_check && source.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot identify the source of the queue: the Azure endpoint is not an `http://` or `https://` URL");
+
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
         zookeeper_name,
         zk_path,
@@ -492,7 +500,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         storage_metadata.getColumns(),
         configuration_->format,
         context_,
-        is_attach,
+        source,
+        strict_metadata_check,
         log);
 
     if (table_metadata.getMode() == ObjectStorageQueueMode::EXCLUSIVE)
@@ -592,6 +601,15 @@ void StorageObjectStorageQueue::startup()
 
     /// Start background tasks.
     metadata->startup();
+
+    /// The value 0 means "not polled yet". It is set before the tasks start, because they set the real time.
+    DimensionalMetrics::set(
+        DimensionalMetrics::ObjectStorageQueueLastPollTimestamp, {getStorageID().getDatabaseName(), getStorageID().getTableName()}, 0);
+    SCOPE_EXIT_SAFE({
+        if (!startup_finished)
+            removeGaugeMetrics(getStorageID(), nullptr);
+    });
+
     for (auto & task : streaming_tasks)
         task->activateAndSchedule();
 
@@ -655,7 +673,31 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
 
         ObjectStorageQueueMetadataFactory::instance().remove(zookeeper_name, zk_path, getStorageID(), is_drop, keep_data_in_keeper);
     }
+
+    /// The table does not consume anymore: remove its gauges, so they do not show stale values.
+    /// After a detach and attach the first poll sets them again.
+    removeGaugeMetrics(getStorageID(), metadata.get());
+
     LOG_TRACE(log, "Shut down storage");
+}
+
+void StorageObjectStorageQueue::removeGaugeMetrics(const StorageID & storage_id, ObjectStorageQueueMetadata * metadata)
+{
+    /// The metadata can be shared with other tables and can outlive this one, so the watermarks of this table
+    /// are removed from it together with their gauges.
+    if (metadata)
+        metadata->removePipelineLagMetrics(storage_id);
+
+    DimensionalMetrics::remove(
+        DimensionalMetrics::ObjectStorageQueueLastPollTimestamp, {storage_id.getDatabaseName(), storage_id.getTableName()});
+}
+
+void StorageObjectStorageQueue::setLastPollTimestamp(const StorageID & storage_id)
+{
+    DimensionalMetrics::set(
+        DimensionalMetrics::ObjectStorageQueueLastPollTimestamp,
+        {storage_id.getDatabaseName(), storage_id.getTableName()},
+        static_cast<DimensionalMetrics::Value>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())));
 }
 
 void StorageObjectStorageQueue::scheduleStreamingTasksImpl()
@@ -679,6 +721,8 @@ void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
     StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID(), /* if_exists */ true);
+    /// The gauges of the old name are not removed here on purpose: they stay until the server restarts.
+    /// A running cycle still uses the old name, so a removal here would not be complete.
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -781,7 +825,13 @@ void StorageObjectStorageQueue::read(
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names,
+        storage_snapshot,
+        local_context,
+        supportsSubsetOfColumns(local_context),
+        /*supports_tuple_elements*/ false,
+        PrepareReadingFromFormatHiveParams{file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
     auto reading = std::make_unique<ReadFromObjectStorageQueue>(
         column_names,
@@ -958,6 +1008,9 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
                 metadata->registerActive(storage_id);
 
+                /// Set before the cycle, so that it advances also when the cycle finds no files or fails.
+                setLastPollTimestamp(storage_id);
+
                 if (streamToViews(streaming_tasks_index, cycle_epoch))
                 {
                     /// Reset the reschedule interval.
@@ -1079,6 +1132,9 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
     while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested(cycle_epoch))
     {
+        /// Set for every batch, so that it advances during a long backlog.
+        setLastPollTimestamp(table_id);
+
         /// All tasks share a single batch size override so that the halving
         /// converges regardless of which task encounters the bad file.
         const auto batch_size_override = max_files_override.get();
@@ -1275,6 +1331,7 @@ void StorageObjectStorageQueue::postProcess(
             type,
             object_storage,
             getName(),
+            getStorageID(),
             metadata.getTableMetadata(),
             after_processing_settings);
     }
@@ -1827,6 +1884,14 @@ void StorageObjectStorageQueue::alter(
         SettingsChanges changed_settings;
         std::set<std::string> new_settings_set;
 
+        std::set<std::string> settings_in_query;
+        for (const auto & command : alter_commands)
+        {
+            for (const auto & change : command.settings_changes)
+                settings_in_query.insert(change.name);
+            settings_in_query.insert(command.settings_resets.begin(), command.settings_resets.end());
+        }
+
         auto metadata = tryGetFilesMetadata();
         if (!metadata)
             throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
@@ -1834,6 +1899,28 @@ void StorageObjectStorageQueue::alter(
         const auto mode = metadata->getTableMetadata().getMode();
         const size_t dependencies_count = getDependencies();
         bool requires_detached_mv = false;
+
+        auto read_settings_in_keeper = [this]()
+        {
+            String metadata_in_keeper;
+            ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop(
+                [&] { metadata_in_keeper = getZooKeeper()->get(zk_path / "metadata"); });
+            const auto table_metadata_in_keeper = ObjectStorageQueueTableMetadata::parse(metadata_in_keeper);
+            return getSettings(&table_metadata_in_keeper);
+        };
+        /// Shared by all tables with this `keeper_path` on this server, can differ from this table's `old_settings`.
+        auto local_shared_metadata_settings = getSettings(&metadata->getTableMetadata());
+        std::optional<ObjectStorageQueueSettings> settings_in_keeper;
+        auto differs_from_queue = [&](const SettingChange & setting)
+        {
+            if (!ObjectStorageQueueTableMetadata::isStoredInKeeper(setting.name) || !isSettingChangeable(setting.name, mode))
+                return false;
+            if (local_shared_metadata_settings.get(setting.name) != setting.value)
+                return true;
+            if (!settings_in_keeper)
+                settings_in_keeper.emplace(read_settings_in_keeper());
+            return settings_in_keeper->get(setting.name) != setting.value;
+        };
 
         for (auto & setting : new_settings)
         {
@@ -1850,7 +1937,8 @@ void StorageObjectStorageQueue::alter(
                     old_settings->begin(), old_settings->end(),
                     [&](const SettingChange & change) { return change.name == setting.name; });
 
-                setting_changed = it == old_settings->end() || it->value != setting.value;
+                setting_changed = it == old_settings->end() || it->value != setting.value
+                    || (settings_in_query.contains(setting.name) && differs_from_queue(setting));
             }
             if (!setting_changed)
                 continue;
@@ -2020,7 +2108,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         shutdown_called);
 }
 
-ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
+ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings(const ObjectStorageQueueTableMetadata * table_metadata_) const
 {
     /// We do not store queue settings
     /// (because of the inconvenience of keeping them in sync with ObjectStorageQueueTableMetadata),
@@ -2028,14 +2116,14 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     ObjectStorageQueueSettings settings;
     /// If startup() for a table was not called, just use the default queue settings.
     /// The same holds after shutdown(), which drops the metadata handle while `startup_finished` stays set.
-    if (!startup_finished)
+    if (!startup_finished && !table_metadata_)
         return settings;
 
     auto metadata = tryGetFilesMetadata();
     if (!metadata)
         return settings;
 
-    const auto & table_metadata = metadata->getTableMetadata();
+    const auto & table_metadata = table_metadata_ ? *table_metadata_ : metadata->getTableMetadata();
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
     if (zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME)
