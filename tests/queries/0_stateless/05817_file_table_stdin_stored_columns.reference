@@ -1,0 +1,7 @@
+--- CSV
+1	hello
+2	world
+--- more data than schema inference reads
+100000	5000050000	1	100000
+--- format detected from the data
+1	7

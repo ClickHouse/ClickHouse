@@ -2,10 +2,12 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <Storages/StorageFile.h>
+#include <Storages/StorageURL.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/ITableFunctionFileLike.h>
@@ -93,8 +95,136 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
     else if (!structure_hint.empty())
         columns = structure_hint;
 
+    const bool is_table_definition = isTableDefinition(cached_columns);
     StoragePtr storage = getStorage(
-        filename, format, columns, context, table_name, compression_method, is_insert_query, isTableDefinition(cached_columns));
+        filename, format, columns, context, table_name, compression_method, is_insert_query, is_table_definition);
+
+    /// Without a structure argument, a table reads its stored columns by name from the inferred ones (see
+    /// `StorageTableFunctionProxy`). If it has none of them, as `CREATE TABLE t (id UInt32, s String) AS file('data.csv', 'CSV')`
+    /// with columns `c1` and `c2`, it could not read anything, so create the storage with the ordinary stored columns instead,
+    /// as the object storage table functions do, if it can evaluate their `DEFAULT`s and parse the data with them.
+    if (columns.empty() && !cached_columns.empty())
+    {
+        const auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
+        const auto is_inferred = [&](const String & name)
+        {
+            return metadata->columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        };
+        const auto is_stored = [&](const String & name)
+        {
+            return cached_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        };
+
+        /// The inferred columns also have the columns of the hive-style partitions of the path, which are not in the data. The
+        /// storage created with the stored columns also reads those of them that it has from the path. It is created with the
+        /// format that the storage has detected if the format is `auto`, so it does not read the data to detect it again.
+        const NamesAndTypesList * partition_columns = nullptr;
+        String detected_format = format;
+        /// NOLINT(storage-cast): the storage `getStorage` has just built, never a proxy.
+        auto * storage_file = dynamic_cast<StorageFile *>(storage.get());
+        if (storage_file)
+        {
+            partition_columns = &storage_file->getHivePartitionColumnsToReadFromFilePath();
+            detected_format = storage_file->getFormatName();
+        }
+        /// NOLINT(storage-cast): the same storage.
+        else if (const auto * storage_url = dynamic_cast<const IStorageURLBase *>(storage.get()))
+        {
+            partition_columns = &storage_url->getHivePartitionColumnsToReadFromFilePath();
+            detected_format = storage_url->getFormatName();
+        }
+        const auto is_partition_column = [&](const String & name)
+        {
+            return partition_columns && partition_columns->contains(name);
+        };
+
+        /// A partition column does not make the table read the inferred columns by name, as for `key` of
+        /// `(id UInt32, s String, key UInt32)` of `.../key=7/data.csv`, unless it is a `MATERIALIZED` stored column.
+        bool has_inferred_column = false;
+        for (const auto & inferred_column : metadata->columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()))
+        {
+            if (!is_partition_column(inferred_column.getNameInStorage()))
+                has_inferred_column = has_inferred_column || is_stored(inferred_column.name);
+        }
+
+        bool has_other_column = false;
+        ColumnsDescription stored_columns;
+        size_t num_stored_data_columns = 0;
+        for (const auto & column : cached_columns)
+        {
+            const auto kind = column.default_desc.kind;
+            if (kind != ColumnDefaultKind::Default && kind != ColumnDefaultKind::Materialized)
+                continue;
+
+            const bool partition = kind == ColumnDefaultKind::Default && is_partition_column(column.name);
+            const bool inferred = !partition && is_inferred(column.name);
+            has_inferred_column = has_inferred_column || inferred;
+
+            if (kind != ColumnDefaultKind::Default || (!inferred && !partition && metadata->virtuals.has(column.name)))
+                continue;
+            has_other_column = has_other_column || (!inferred && !partition);
+            num_stored_data_columns += !partition;
+            if (partition)
+            {
+                /// The storage parses a partition column from the path with its type, which is the inferred one in the storage
+                /// of the inferred columns, and the table converts it to the stored type: `key` of `.../key=007/data.csv` is
+                /// `7` for `key String`, not `007`. Keep parsing it with the inferred type, so that the table reads it as before.
+                stored_columns.add(ColumnDescription(column.name, partition_columns->tryGetByName(column.name)->type));
+            }
+            else
+                stored_columns.add(column);
+        }
+
+        /// The storage could not evaluate a `DEFAULT` expression that uses a column it does not have, as `helper` of
+        /// `(id UInt32 DEFAULT helper, helper UInt32 ALIAS 42)`.
+        const auto defaults_use_only_stored_columns = [&]
+        {
+            for (const auto & column : stored_columns)
+            {
+                if (!column.default_desc.expression)
+                    continue;
+                IdentifierNameSet identifiers;
+                column.default_desc.expression->collectIdentifierNames(identifiers);
+                for (const auto & identifier : identifiers)
+                {
+                    if (!stored_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier)
+                        && cached_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier))
+                        return false;
+                }
+            }
+            return true;
+        };
+
+        const auto can_parse_data_with_stored_columns = [&]
+        {
+            /// `StorageFile` always takes the columns of a `Distributed` file from its header, not the given ones.
+            if (detected_format == "Distributed")
+                return false;
+            size_t num_data_columns = 0;
+            for (const auto & inferred_column : metadata->columns.getOrdinary())
+                num_data_columns += !is_partition_column(inferred_column.name);
+            if (num_stored_data_columns == num_data_columns)
+                return true;
+            /// With the settings of the context that creates the storage, as `input_format_with_names_use_header` for
+            /// `CSVWithNames`, which a query could change, as for a table with these columns given as the structure argument.
+            return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(detected_format, context);
+        };
+        if (has_other_column && !has_inferred_column && defaults_use_only_stored_columns() && can_parse_data_with_stored_columns())
+        {
+            auto storage_with_stored_columns = getStorage(
+                filename, detected_format, stored_columns, context, table_name, compression_method, is_insert_query,
+                is_table_definition);
+            /// The data of a file descriptor, such as `stdin`, that the first storage has read to infer the columns cannot be
+            /// read again.
+            if (storage_file)
+            {
+                /// NOLINT(storage-cast): the storage `getStorage` has just built for the same file.
+                storage_file->moveReadBufferFromFileDescriptorTo(assert_cast<StorageFile &>(*storage_with_stored_columns));
+            }
+            storage = std::move(storage_with_stored_columns);
+        }
+    }
+
     storage->startup();
     return storage;
 }
