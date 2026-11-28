@@ -122,6 +122,16 @@ struct BackupSettings
     /// when `data_file_name_generator` is `Checksum`.
     std::optional<size_t> data_file_name_prefix_length;
 
+    /// Experimental: bundle small backup files into larger pack objects to cut the object count. Not supported with
+    /// archives, ON CLUSTER, lightweight snapshots or deduplicate_files=0.
+    bool backup_use_packed_format = false;
+
+    /// Upper bound on the size of one pack object, its index included.
+    UInt64 backup_pack_size = 33554432; /// 32 MiB
+
+    /// Files whose stored size is smaller than this get packed; files at or above it stay their own object.
+    UInt64 backup_pack_min_size = 1048576; /// 1 MiB
+
     /// Should we back up data from refreshable materialized view targets?
     ///
     /// Data is skipped only for targets of refreshable views that fully

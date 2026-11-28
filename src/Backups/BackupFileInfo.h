@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Logger.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -36,6 +37,11 @@ struct BackupFileInfo
     /// Index of the data file. -1 means there is no data file.
     /// This field is set during backup coordination (see the class BackupCoordinationFileInfos).
     size_t data_file_index = static_cast<size_t>(-1);
+
+    /// Index of the pack object holding this data file's bytes when `backup_use_packed_format` is on;
+    /// -1 means the data file is its own object (the default and the only value in non-packed backups).
+    /// Set during coordination to route writing; the id itself never reaches the manifest.
+    Int64 pack_id = -1;
 
     /// Whether this file is encrypted by an encrypted disk.
     bool encrypted_by_disk = false;
@@ -92,5 +98,11 @@ BackupFileInfo buildFileInfoForBackupEntry(String file_name, const BackupEntryPt
 
 /// Builds the file infos for the entries. Consumes `backup_entries`.
 BackupFileInfosAndEntries buildFileInfosForBackupEntries(BackupEntries && backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element);
+
+/// Selects the members of each PackedFilesIO ".packed" object from this host's `file_infos`, index-aligned with its
+/// backup entries. The outer index is pack_id; the inner values are indices into `file_infos`, one per data file: the
+/// entry whose bytes the pack stores. Its duplicates can't stand in: they can differ in base_size, and restore rebuilds
+/// the data file from that entry.
+VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> selectPackMembers(const BackupFileInfos & file_infos);
 
 }

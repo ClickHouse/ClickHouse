@@ -56,6 +56,9 @@ namespace ErrorCodes
     M(Bool, allow_checksums_from_remote_paths) \
     M(BackupDataFileNameGeneratorType, data_file_name_generator) \
     M(Bool, backup_data_from_refreshable_materialized_view_targets) \
+    M(Bool, backup_use_packed_format) \
+    M(UInt64, backup_pack_size) \
+    M(UInt64, backup_pack_min_size) \
     M(OptionalBool, backup_named_collections) \
     LIST_OF_CLOUD_BACKUP_SETTINGS(M) \
     M(Bool, internal) \

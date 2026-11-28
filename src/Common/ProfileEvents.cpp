@@ -1408,6 +1408,7 @@ The server successfully detected this situation and will download merged part fr
     M(BackupReadRemoteFilesToCalculateChecksums, "Number of files read from remote disks to calculate checksums for backup entries", ValueType::Number) \
     M(BackupReadRemoteBytesToCalculateChecksums, "Total size of files read from remote disks to calculate checksums for backup entries", ValueType::Number) \
     M(BackupLockFileReads, "How many times the '.lock' file was read while making backup", ValueType::Number) \
+    M(BackupPackDownloads, "Number of pack objects of a packed backup downloaded whole to the temporary disk while restoring from object storage", ValueType::Number) \
     M(RestorePartsSkippedFiles, "Number of files skipped while restoring parts", ValueType::Number) \
     M(RestorePartsSkippedBytes, "Total size of files skipped while restoring parts", ValueType::Number) \
     \

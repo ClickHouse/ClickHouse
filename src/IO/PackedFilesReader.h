@@ -52,6 +52,13 @@ public:
 
     static PackedFilesIO::Index readIndex(ReadBuffer & in);
 
+    /// Turns off O_DIRECT and switches mmap to pread, which ReadBufferFromFileView needs under it.
+    static ReadSettings disableDirectIOAndMmap(ReadSettings settings);
+
+    /// Wraps an already opened archive buffer as a view over one member's [offset, offset + size) range.
+    static std::unique_ptr<ReadBufferFromFileBase> viewMember(
+        std::unique_ptr<ReadBufferFromFileBase> archive_buffer, const String & member_name, size_t offset, size_t size);
+
 private:
     /// Index of archive: immutable and path-independent.
     const PackedFilesIO::Index index;

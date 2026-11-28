@@ -1,5 +1,6 @@
 #include <Backups/BackupCoordinationFileInfos.h>
 #include <Backups/getBackupDataFileName.h>
+#include <IO/PackedFilesWriter.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 
@@ -219,10 +220,52 @@ void BackupCoordinationFileInfos::prepare() const
 
         handle_unresolved_references(try_resolve_reference);
 
+        if (config.use_packed_format)
+            assignPacks();
+
         num_files = file_infos_for_all_hosts.size();
     }
 
     prepared = true;
+}
+
+void BackupCoordinationFileInfos::assignPacks() const
+{
+    /// A pack object is its front index (a header, then one entry per member) followed by the member bodies;
+    /// pack_size bounds all of it, so a full pack stays a single-part upload. The entry size depends on the
+    /// index version, which must be the one writeFilePack writes.
+    constexpr UInt8 version = PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE;
+    const UInt64 index_header_size = PackedFilesWriter::getSerializedIndexSize({}, version);
+    Int64 current_pack_id = -1;
+    UInt64 current_pack_bytes = 0;
+    for (size_t i = 0; i != file_infos_for_all_hosts.size(); ++i)
+    {
+        auto & info = *(file_infos_for_all_hosts[i]);
+        /// References keep pack_id -1: they carry no bytes, and restore reads them through the target's data_file_name.
+        if (!info.reference_target.empty() || info.data_file_index == static_cast<size_t>(-1))
+            continue;
+
+        /// A duplicate is written with its representative, which comes first.
+        if (info.data_file_index != i)
+        {
+            info.pack_id = file_infos_for_all_hosts[info.data_file_index]->pack_id;
+            continue;
+        }
+
+        const UInt64 physical_size = info.size - info.base_size;
+        if (physical_size >= config.pack_min_size)
+            continue;
+
+        const UInt64 member_size
+            = PackedFilesWriter::getSerializedIndexSize({info.data_file_name}, version) - index_header_size + physical_size;
+        if (current_pack_id < 0 || current_pack_bytes + member_size > config.pack_size)
+        {
+            ++current_pack_id;
+            current_pack_bytes = index_header_size;
+        }
+        info.pack_id = current_pack_id;
+        current_pack_bytes += member_size;
+    }
 }
 
 size_t BackupCoordinationFileInfos::getNumFiles() const

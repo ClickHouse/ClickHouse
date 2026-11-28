@@ -1,0 +1,4 @@
+is not supported with an archive destination
+not supported with deduplicate_files
+not supported with ON CLUSTER
+not supported with experimental_lightweight_snapshot

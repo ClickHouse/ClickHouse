@@ -1,5 +1,8 @@
 import io
 import os
+import re
+import struct
+import tarfile
 import uuid
 from typing import Dict
 
@@ -148,6 +151,7 @@ def setup_cluster(request):
             "configs/blob_log.xml",
             "configs/remote_servers.xml",
             "configs/query_log.xml",
+            "configs/page_cache.xml",
         ]
         + request.param,
         user_configs=[
@@ -714,6 +718,358 @@ def test_backup_to_s3_native_copy_multipart(cluster):
         )
         > 0
     )
+
+
+def _list_backup_objects(cluster, backup_name):
+    return list(
+        cluster.minio_client.list_objects(
+            "root", f"data/backups/{backup_name}/", recursive=True
+        )
+    )
+
+
+def test_backup_to_s3_packed_format(cluster):
+    # Packing coalesces many small backup data files into a few pack objects, cutting the objects (and PUT
+    # requests) written. Restore downloads each pack with one GET and writes each member with one PUT.
+    node = cluster.instances["node"]
+    storage_policy = "policy_s3"
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+    _, restore_events = check_backup_and_restore(
+        cluster,
+        storage_policy,
+        backup_destination,
+        backup_settings={"backup_use_packed_format": 1, "id": backup_name},
+    )
+
+    # Each member read is bounded to its range. Restore reads the metadata, each pack's index (at most the whole
+    # pack) and every stored byte once, so at most twice the backup; an unbounded read per member pulls the rest
+    # of its pack each time.
+    backup_objects = _list_backup_objects(cluster, backup_name)
+    backup_size = sum(o.size for o in backup_objects)
+    assert (
+        restore_events["ReadBufferFromS3Bytes"] <= 2 * backup_size
+    ), f"restore read {restore_events['ReadBufferFromS3Bytes']} bytes from a backup of {backup_size} bytes"
+    packs = sum(1 for o in backup_objects if o.object_name.rsplit("/", 1)[-1].startswith("packs_"))
+    assert restore_events.get("BackupPackDownloads", 0) == packs, f"events={restore_events} packs={packs}"
+
+    # Fewer objects than files: the MinIO listing holds one object per entry plus the .backup manifest. The
+    # listing is the ground truth, since native-copy CopyObject / UploadPartCopy events are not recorded in
+    # system.blob_storage_log.
+    num_files, num_entries = map(
+        int,
+        node.query(
+            f"SELECT num_files, num_entries FROM system.backups WHERE id = '{backup_name}'"
+        ).split(),
+    )
+    objects = len(backup_objects)
+    assert (
+        objects == num_entries + 1 and num_entries < num_files
+    ), f"packing did not reduce backup object count: objects={objects} entries={num_entries} files={num_files}"
+
+
+def test_backup_to_s3_full_pack_is_single_put(cluster):
+    # backup_pack_size bounds the whole pack object, front index included, and its default is the single-part
+    # upload limit, so a full pack is one PutObject. Files of ~20 KB leave a full pack less slack than its index.
+    node = cluster.instances["node"]
+    name = f"full_pack_{uuid.uuid4().hex}"
+    columns = ", ".join(f"c{i} String" for i in range(100))
+    # The second argument keeps the 100 calls distinct, otherwise they collapse into one column of duplicates.
+    values = ", ".join(f"randomString(10, {i})" for i in range(100))
+    try:
+        node.query(
+            f"CREATE TABLE {name} ({columns}) ENGINE=MergeTree ORDER BY tuple() "
+            "SETTINGS min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0"
+        )
+        node.query(f"SYSTEM STOP MERGES {name}")
+        for _ in range(20):
+            node.query(f"INSERT INTO {name} SELECT {values} FROM numbers(2000)")
+
+        query_id = uuid.uuid4().hex
+        node.query(
+            f"BACKUP TABLE {name} TO S3('http://minio1:9001/root/data/backups/{name}', 'minio', '{minio_secret_key}') "
+            "SETTINGS backup_use_packed_format=1",
+            query_id=query_id,
+        )
+        events = get_events_for_query(node, query_id)
+        requests = {
+            event: events.get(event, 0)
+            for event in ("S3PutObject", "S3CreateMultipartUpload", "S3UploadPart", "S3CompleteMultipartUpload")
+        }
+        pack_sizes = sorted(
+            o.size for o in _list_backup_objects(cluster, name) if o.object_name.rsplit("/", 1)[-1].startswith("packs_")
+        )
+        # More than one pack: the first one filled up to backup_pack_size.
+        assert len(pack_sizes) > 1, pack_sizes
+        assert pack_sizes[-1] <= 32 * 1024 * 1024, pack_sizes
+        assert requests["S3PutObject"] >= len(pack_sizes), requests
+        assert requests["S3CreateMultipartUpload"] == 0, f"requests={requests} pack_sizes={pack_sizes}"
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+
+
+def test_restore_from_s3_incremental_downloads_each_pack_once(cluster):
+    # RESTORE from object storage downloads each pack of a backup and of its base once, and reads members from there.
+    # Red if BackupPackDownloads != the number of pack objects, or if a Log file that grew since the base restores
+    # wrong. page_cache.xml and pread are pinned: a page cache block can start before a member, breaking base + delta.
+    node = cluster.instances["node"]
+    name = f"pack_download_{uuid.uuid4().hex}"
+    log_table = f"{name}_log"
+    backups = [f"{name}_base", name]
+    small_parts = (
+        "max_block_size=100, max_insert_block_size=100, min_insert_block_size_rows=0, min_insert_block_size_bytes=0, "
+        "max_insert_threads=1"
+    )
+
+    def insert(start):
+        node.query(
+            f"INSERT INTO {name} SELECT number, toString(number) FROM numbers({start}, 3000) SETTINGS {small_parts}"
+        )
+        # A Log table's files grow on insert, so the incremental backup stores only their new bytes.
+        node.query(f"INSERT INTO {log_table} SELECT number, toString(number) FROM numbers({start}, 3000)")
+
+    def destination(backup):
+        return f"S3('http://minio1:9001/root/data/backups/{backup}', 'minio', '{minio_secret_key}')"
+
+    def manifest(backup):
+        response = cluster.minio_client.get_object("root", f"data/backups/{backup}/.backup")
+        try:
+            return response.read().decode("utf-8")
+        finally:
+            response.close()
+            response.release_conn()
+
+    # Truncate system.query_log so the flush below covers only this test's rows.
+    node.query("TRUNCATE TABLE IF EXISTS system.query_log")
+    try:
+        node.query(
+            f"CREATE TABLE {name} (a UInt64, s String) ENGINE=MergeTree ORDER BY a "
+            "SETTINGS min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0"
+        )
+        node.query(f"SYSTEM STOP MERGES {name}")
+        node.query(f"CREATE TABLE {log_table} (a UInt64, s String) ENGINE=Log")
+        insert(0)
+        node.query(
+            f"BACKUP TABLE {name}, TABLE {log_table} TO {destination(backups[0])} SETTINGS backup_use_packed_format=1"
+        )
+        insert(3000)
+        node.query(
+            f"BACKUP TABLE {name}, TABLE {log_table} TO {destination(backups[1])} "
+            f"SETTINGS backup_use_packed_format=1, base_backup={destination(backups[0])}"
+        )
+
+        files = re.findall(r"<file>.*?</file>", manifest(backups[1]), re.S)
+        assert any("<base_size>" in f and "<packed>true</packed>" in f for f in files), "no packed file grew"
+        pack_sizes = [
+            o.size
+            for backup in backups
+            for o in _list_backup_objects(cluster, backup)
+            if o.object_name.rsplit("/", 1)[-1].startswith("packs_")
+        ]
+        assert len(pack_sizes) >= 2, pack_sizes
+
+        query_id = uuid.uuid4().hex
+        node.query(
+            f"RESTORE TABLE {name} AS {name}_restored, TABLE {log_table} AS {log_table}_restored "
+            f"FROM {destination(backups[1])}",
+            query_id=query_id,
+            settings={"use_page_cache_for_local_disks": 1, "local_filesystem_read_method": "pread"},
+        )
+        for table in (name, log_table):
+            expected = node.query(f"SELECT count(), sum(sipHash64(*)) FROM {table}")
+            assert node.query(f"SELECT count(), sum(sipHash64(*)) FROM {table}_restored") == expected, table
+
+        events = get_events_for_query(node, query_id)
+        assert events.get("BackupPackDownloads", 0) == len(pack_sizes), f"events={events} pack_sizes={pack_sizes}"
+        # The pack files are at the root of the temporary path, where a server restart would remove them too. Matched by
+        # size, since a background merge of a system table can hold its own temporary file there.
+        find = (
+            "find /var/lib/clickhouse/tmp/ -mindepth 1 -maxdepth 1 -ignore_readdir_race -type f -name 'tmp*' "
+            "-printf '%f %s\\n'"
+        )
+        left = node.exec_in_container(["bash", "-c", find]).splitlines()
+        assert not [f for f in left if int(f.split()[1]) in pack_sizes], f"left={left} pack_sizes={pack_sizes}"
+    finally:
+        for table in (name, log_table):
+            node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            node.query(f"DROP TABLE IF EXISTS {table}_restored SYNC")
+
+
+def _small_packed_table(node, table):
+    # Wide, full-storage parts of a small table are several small files, which the packed format bundles into packs_0000.
+    node.query(
+        f"CREATE TABLE {table} (a UInt64, s String) ENGINE=MergeTree ORDER BY a "
+        "SETTINGS min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0"
+    )
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(50)")
+
+
+def test_restore_from_s3_archive_with_packs(cluster):
+    # num_packs > 0 in an archive backup is corruption (archives are never packed on write): RESTORE must report
+    # BACKUP_DAMAGED. A tar archive, because zip backups on S3 are rejected up front.
+    node = cluster.instances["node"]
+    name = f"tamper_archive_{uuid.uuid4().hex}"
+    archive_key = f"data/backups/{name}.tar"
+    backup_destination = f"S3('http://minio1:9001/root/{archive_key}', 'minio', '{minio_secret_key}')"
+    try:
+        _small_packed_table(node, name)
+        node.query(f"BACKUP TABLE {name} TO {backup_destination}")
+
+        response = cluster.minio_client.get_object("root", archive_key)
+        try:
+            archive = response.read()
+        finally:
+            response.close()
+            response.release_conn()
+        out = io.BytesIO()
+        tampered = False
+        with tarfile.open(fileobj=io.BytesIO(archive)) as tin, tarfile.open(fileobj=out, mode="w") as tout:
+            for item in tin.getmembers():
+                data = tin.extractfile(item).read() if item.isfile() else None
+                if item.name == ".backup":
+                    original = data
+                    data = data.decode("utf-8").replace("<contents>", "<num_packs>1</num_packs><contents>", 1).encode("utf-8")
+                    assert data != original, original
+                    item.size = len(data)
+                    tampered = True
+                tout.addfile(item, io.BytesIO(data) if data is not None else None)
+        assert tampered, [item.name for item in tarfile.open(fileobj=io.BytesIO(archive)).getmembers()]
+        cluster.minio_client.put_object("root", archive_key, io.BytesIO(out.getvalue()), len(out.getvalue()))
+
+        error = node.query_and_get_error(f"RESTORE TABLE {name} AS {name}_restored FROM {backup_destination}")
+        assert "Archive backup cannot contain packed objects" in error, error
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+        node.query(f"DROP TABLE IF EXISTS {name}_restored SYNC")
+
+
+def _tamper_packed_backup(objects, mode):
+    """Applies `mode` to the `{relative key: bytes}` objects of a packed directory backup, in place."""
+    if mode not in ("drop_index_member", "shrink_index_member"):
+        manifest = objects[".backup"].decode("utf-8")
+        if mode == "drop_num_packs":
+            manifest, replaced = re.subn(r"<num_packs>\d+</num_packs>", "", manifest, count=1)
+            assert replaced == 1, manifest
+        elif mode == "downgrade_version":
+            manifest, replaced = re.subn(r"<version>\d+</version>", "<version>1</version>", manifest, count=1)
+            assert replaced == 1, manifest
+        elif mode == "drop_markers":
+            assert "<packed>true</packed>" in manifest, manifest
+            manifest = manifest.replace("<packed>true</packed>", "")
+        else:
+            raise ValueError(mode)
+        objects[".backup"] = manifest.encode("utf-8")
+        return
+
+    pack_key = sorted(key for key in objects if key.startswith("packs_"))[0]
+    pack = objects[pack_key]
+
+    def read_varint(pos):
+        value = shift = 0
+        while True:
+            byte = pack[pos]
+            pos += 1
+            value |= (byte & 0x7F) << shift
+            if not byte & 0x80:
+                return value, pos
+            shift += 7
+
+    def write_varint(value):
+        out = bytearray()
+        while True:
+            byte = value & 0x7F
+            value >>= 7
+            out.append(byte | 0x80 if value else byte)
+            if not value:
+                return bytes(out)
+
+    version = pack[0]
+    entry_format = "<QQQ" if version >= 1 else "<QQ"
+    entry_size = struct.calcsize(entry_format)
+    (count,) = struct.unpack_from("<Q", pack, 1)
+    pos = 9
+    members = []
+    for _ in range(count):
+        length, pos = read_varint(pos)
+        name = pack[pos:pos + length]
+        pos += length
+        members.append((name, struct.unpack_from(entry_format, pack, pos)))
+        pos += entry_size
+
+    if mode == "drop_index_member":
+        # Drop the first member. Bodies keep their absolute offsets, and the shortened index is zero-padded back to
+        # its original length, so every surviving member still resolves -- only the dropped one goes missing.
+        members = members[1:]
+    else:
+        # Understate the first member's recorded size by one byte. Every field keeps its width, so the index still
+        # parses and every member still resolves -- the only damage is the disagreement with the manifest.
+        name, entry = members[0]
+        members[0] = (name, entry[:1] + (entry[1] - 1,) + entry[2:])
+
+    index = bytearray(pack[:1]) + struct.pack("<Q", len(members))
+    for name, entry in members:
+        index += write_varint(len(name)) + name + struct.pack(entry_format, *entry)
+    index += b"\0" * (pos - len(index))
+    objects[pack_key] = bytes(index) + pack[pos:]
+    assert objects[pack_key] != pack, mode
+
+
+@pytest.fixture(scope="module")
+def packed_backup_to_tamper(cluster):
+    # One good packed backup; each tamper case damages its own copy.
+    node = cluster.instances["node"]
+    name = f"tamper_{uuid.uuid4().hex}"
+    try:
+        _small_packed_table(node, name)
+        node.query(
+            f"BACKUP TABLE {name} TO S3('http://minio1:9001/root/data/backups/{name}', 'minio', '{minio_secret_key}') "
+            "SETTINGS backup_use_packed_format=1"
+        )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+    prefix = f"data/backups/{name}/"
+    objects = {}
+    for item in _list_backup_objects(cluster, name):
+        response = cluster.minio_client.get_object("root", item.object_name)
+        try:
+            objects[item.object_name[len(prefix):]] = response.read()
+        finally:
+            response.close()
+            response.release_conn()
+    assert any(key.startswith("packs_") for key in objects), sorted(objects)
+    return name, objects
+
+
+# Restore must reject any disagreement between the manifest's <packed> markers and the pack indexes (membership or
+# byte ranges): a dropped member would read as an own object of the same data_file_name.
+@pytest.mark.parametrize(
+    "mode, expected_error",
+    [
+        ("drop_index_member", "marked as packed in the metadata but no pack contains it"),
+        ("shrink_index_member", "in the pack index but the metadata declares"),
+        # Without <num_packs> no pack index is loaded, so only the manifest's <packed> markers can catch it.
+        ("drop_num_packs", "marked as packed in the metadata but no pack contains it"),
+        ("drop_markers", "is not marked as packed in the metadata"),
+        ("downgrade_version", "predates the packed format"),
+    ],
+)
+def test_restore_from_s3_tampered_packed_format(cluster, packed_backup_to_tamper, mode, expected_error):
+    node = cluster.instances["node"]
+    name, objects = packed_backup_to_tamper
+    tampered = dict(objects)
+    _tamper_packed_backup(tampered, mode)
+    copy_name = f"{name}_{mode}_{uuid.uuid4().hex}"
+    for key, data in tampered.items():
+        cluster.minio_client.put_object("root", f"data/backups/{copy_name}/{key}", io.BytesIO(data), len(data))
+
+    try:
+        error = node.query_and_get_error(
+            f"RESTORE TABLE {name} AS {copy_name} "
+            f"FROM S3('http://minio1:9001/root/data/backups/{copy_name}', 'minio', '{minio_secret_key}')"
+        )
+        assert expected_error in error, error
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {copy_name} SYNC")
 
 
 @pytest.fixture(scope="module")

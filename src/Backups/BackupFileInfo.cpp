@@ -2,6 +2,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
 #include <Common/CurrentThread.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
@@ -306,6 +307,33 @@ BackupFileInfosAndEntries buildFileInfosForBackupEntries(BackupEntries && backup
     }
 
     return res;
+}
+
+VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> selectPackMembers(const BackupFileInfos & file_infos)
+{
+    /// `file_infos` is in insertion order, but data_file_index indexes file_infos_for_all_hosts, sorted by file_name,
+    /// so the entry whose bytes are stored is the smallest file_name sharing its data_file_index. A later duplicate
+    /// can still replace the pick, so it is final only after this scan; the second pass buckets the picks by pack_id.
+    MapWithMemoryTracking<size_t, size_t> member_index_by_data_file_index;
+    for (size_t i = 0; i != file_infos.size(); ++i)
+    {
+        const auto & info = file_infos[i];
+        if (info.pack_id < 0)
+            continue;
+        auto [it, inserted] = member_index_by_data_file_index.try_emplace(info.data_file_index, i);
+        if (!inserted && info.file_name < file_infos[it->second].file_name)
+            it->second = i;
+    }
+
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> member_indices_by_pack_id;
+    for (const auto & [data_file_index, member_index] : member_index_by_data_file_index)
+    {
+        const auto pack_id = static_cast<size_t>(file_infos[member_index].pack_id);
+        if (pack_id >= member_indices_by_pack_id.size())
+            member_indices_by_pack_id.resize(pack_id + 1);
+        member_indices_by_pack_id[pack_id].push_back(member_index);
+    }
+    return member_indices_by_pack_id;
 }
 
 }

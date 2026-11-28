@@ -4,6 +4,7 @@
 #include <Common/checkStackSize.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/PackedFilesReader.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Common/logger_useful.h>
 
@@ -39,6 +40,11 @@ UInt64 BackupReaderFile::getFileSize(const String & file_name)
 std::unique_ptr<ReadBufferFromFileBase> BackupReaderFile::readFile(const String & file_name)
 {
     return createReadBufferFromFileBase(root_path / file_name, read_settings);
+}
+
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderFile::readFileForPackedMember(const String & file_name)
+{
+    return createReadBufferFromFileBase(root_path / file_name, PackedFilesReader::disableDirectIOAndMmap(read_settings));
 }
 
 void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,

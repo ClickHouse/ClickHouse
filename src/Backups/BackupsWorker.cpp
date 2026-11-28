@@ -484,6 +484,21 @@ struct BackupsWorker::BackupStarter
 
         on_cluster = !backup_query->cluster.empty() || is_internal_backup;
 
+        /// BackupCoordinationOnCluster doesn't pass the packing settings on, so packing would silently do nothing.
+        if (on_cluster && backup_settings.backup_use_packed_format)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "backup_use_packed_format is not supported with ON CLUSTER yet");
+
+        /// A lightweight snapshot stores files by object_key, which packing has no path for.
+        if (backup_settings.backup_use_packed_format && backup_settings.experimental_lightweight_snapshot)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "backup_use_packed_format is not supported with experimental_lightweight_snapshot");
+
+        /// deduplicate_files=0 has no data_file_index to pack by.
+        if (backup_settings.backup_use_packed_format && !backup_settings.deduplicate_files)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "backup_use_packed_format is not supported with deduplicate_files=0");
+
         if (!backup_settings.backup_uuid)
             backup_settings.backup_uuid = UUIDHelpers::generateV4();
 
@@ -759,6 +774,7 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
     backup_create_params.s3_storage_class = backup_settings.s3_storage_class;
     backup_create_params.is_internal_backup = backup_settings.internal;
     backup_create_params.is_lightweight_snapshot = backup_settings.experimental_lightweight_snapshot;
+    backup_create_params.backup_use_packed_format = backup_settings.backup_use_packed_format;
     backup_create_params.data_file_name_generator = backup_settings.data_file_name_generator;
     chassert(backup_settings.data_file_name_prefix_length);
     backup_create_params.data_file_name_prefix_length = *backup_settings.data_file_name_prefix_length;
@@ -974,6 +990,9 @@ void BackupsWorker::writeBackupEntries(
 
     std::atomic_bool failed = false;
 
+    /// Groups the packed members by pack; the pack pass below writes them.
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> member_indices_by_pack_id = selectPackMembers(file_infos);
+
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
     auto & thread_pool = getThreadPool(thread_pool_id);
 
@@ -1003,6 +1022,10 @@ void BackupsWorker::writeBackupEntries(
         }
 
         const auto & file_info = file_infos[index];
+
+        /// The pack pass below still needs this entry to read the member's bytes, so don't move it.
+        if (file_info.pack_id >= 0)
+            continue;
 
         /// Using references here is fine as the variables reference objects either belonging to `this` or passed as references in the
         /// function. The exception is file_info, which is itself a reference to `file_infos`, created before the runner (so it will be
@@ -1046,6 +1069,59 @@ void BackupsWorker::writeBackupEntries(
         /// the counters, so it runs inline: the runner keeps every task until the end, and an incremental backup is
         /// mostly such entries.
         if (always_single_threaded || file_info.data_file_name.empty() || entry->isReference())
+        {
+            job();
+            continue;
+        }
+
+        runner.enqueueAndKeepTrack(std::move(job));
+    }
+
+    /// One job per pack: packs share no state and write distinct objects, so they run in parallel with each
+    /// other and with the own-object writes above. Members within a pack stay serial (one writer per object).
+    for (size_t pack_id = 0; pack_id != member_indices_by_pack_id.size(); ++pack_id)
+    {
+        if (failed)
+            break;
+
+        const auto & member_indices = member_indices_by_pack_id[pack_id];
+
+        auto job = [&failed, &process_list_element, &backup, &file_infos, &backup_entries, this, is_internal_backup,
+                    &backup_id, pack_id, member_indices, current_component = Coordination::getCurrentComponent()]()
+        {
+            auto local_component_guard = Coordination::setCurrentComponent(current_component);
+            if (failed)
+                return;
+            try
+            {
+                if (process_list_element)
+                    process_list_element->checkTimeLimit();
+
+                IBackup::PackMembers members;
+                members.reserve(member_indices.size());
+                for (size_t index : member_indices)
+                    members.emplace_back(file_infos[index], backup_entries[index]);
+
+                backup->writeFilePack(pack_id, members);
+
+                if (!is_internal_backup)
+                    setNumFilesAndSize(
+                        backup_id,
+                        backup->getNumFiles(),
+                        backup->getTotalSize(),
+                        backup->getNumEntries(),
+                        backup->getUncompressedSize(),
+                        backup->getCompressedSize(),
+                        0, 0);
+            }
+            catch (...)
+            {
+                failed = true;
+                throw;
+            }
+        };
+
+        if (always_single_threaded)
         {
             job();
             continue;

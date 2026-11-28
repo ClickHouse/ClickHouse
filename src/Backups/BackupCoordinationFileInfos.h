@@ -27,6 +27,11 @@ public:
         bool plain_backup;
         BackupDataFileNameGeneratorType data_file_name_generator;
         size_t data_file_name_prefix_length;
+
+        /// See BackupSettings::backup_use_packed_format.
+        bool use_packed_format = false;
+        UInt64 pack_size = 0;      /// Upper bound on the size of one pack object, its front index included.
+        UInt64 pack_min_size = 0;  /// Data files with a physical size below this get packed; others stay their own object.
     };
 
     explicit BackupCoordinationFileInfos(const Config & config_)
@@ -52,6 +57,10 @@ public:
 
 private:
     void prepare() const;
+
+    /// Bin-packs representative data files smaller than config.pack_min_size into packs of at most config.pack_size
+    /// and sets BackupFileInfo::pack_id of them and their duplicates. Runs after dedup and reference resolution.
+    void assignPacks() const;
 
     /// before preparation
     const Config config;

@@ -6,6 +6,9 @@
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
 #include <Common/Logger_fwd.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <atomic>
 #include <map>
 #include <memory>
@@ -20,6 +23,7 @@ class IBackupWriter;
 class SeekableReadBuffer;
 class IArchiveReader;
 class IArchiveWriter;
+class TemporaryFileOnDisk;
 #if CLICKHOUSE_CLOUD && USE_SSL
 class BackupEncryptionSidecar;
 #endif
@@ -103,11 +107,12 @@ public:
     size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const override;
     size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const override;
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
+    void writeFilePack(size_t pack_id, const PackMembers & members) override;
 #if CLICKHOUSE_CLOUD && USE_SSL
     /// See `getBackupEncryptionKeyInfos`, which is how the rest of the code reaches it.
     BackupEncryptionSidecar & getEncryptionSidecar() const { return *encryption_sidecar; }
 #endif
-    bool supportsWritingInMultipleThreads() const override { return !use_archive; }
+    bool supportsWritingInMultipleThreads() const override { return !isArchive(); }
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
@@ -161,10 +166,61 @@ private:
     std::unique_ptr<ReadBufferFromFileBase>
     readFileImpl(const String & file_name, const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
 
+    /// Where a packed data file's bytes are inside its pack object.
+    struct MemberLocation
+    {
+        size_t pack_id = 0;
+        UInt64 offset = 0;
+        UInt64 size = 0;
+    };
+
+    /// A pack object downloaded whole on its first read, kept until the backup is destroyed.
+    struct PackDownload
+    {
+        UInt64 size = 0; /// Of the pack object, set when the pack indexes are loaded.
+        std::mutex mutex;
+        std::unique_ptr<TemporaryFileOnDisk> file TSA_GUARDED_BY(mutex); /// Null until a download succeeds.
+    };
+
+    /// Pack objects of a packed backup. Empty for other layouts.
+    struct Packs
+    {
+        /// data_file_name -> its location inside a pack. Built once at restore start (see loadPackIndexes).
+        UnorderedMapWithMemoryTracking<String, MemberLocation> member_locations;
+        /// Number of pack objects: from the manifest on read, counted as they are written on write.
+        size_t count = 0;
+        /// By pack id; empty unless restoring a packed backup from object storage to a local temporary volume. Sized once
+        /// at open and never resized, so a slot's address stays valid without `mutex`; each slot locks itself.
+        mutable VectorWithMemoryTracking<PackDownload> downloads;
+        UInt64 total_size = 0; /// Total size of the written pack objects, front indexes included.
+    };
+
+    /// Reads each pack's front index (packs_0000 .. packs_{packs.count-1}), checks that every member fits in its pack,
+    /// and fills `packs.member_locations`.
+    void loadPackIndexes() TSA_REQUIRES(mutex);
+    /// Fails closed unless the pack indexes and the manifest agree on which data files are packed and on each
+    /// member's size.
+    void checkPacksMatchManifest(const UnorderedSetWithMemoryTracking<String> & declared_packed_files) const TSA_REQUIRES(mutex);
+    /// `pack_download` is the member's pack slot in `packs.downloads`, or null to read the member from the backup directly.
+    std::unique_ptr<ReadBufferFromFileBase> readPackedMember(const MemberLocation & member, PackDownload * pack_download) const;
+    std::unique_ptr<TemporaryFileOnDisk> downloadPack(const String & pack_object, UInt64 pack_object_size) const;
+
+    /// How the backup's objects are laid out, set at construction. Packed is set only on write, from the setting;
+    /// a read finds packed members via `packs.member_locations`.
+    enum class BackupLayout : uint8_t
+    {
+        PerFile, /// One object per backed-up file.
+        Archive,
+        Packed,
+    };
+
+    bool isArchive() const { return layout == BackupLayout::Archive; }
+    bool isPacked() const { return layout == BackupLayout::Packed; }
+
     const BackupFactory::CreateParams params;
     BackupInfo backup_info;
     const String backup_name_for_logging;
-    const bool use_archive;
+    const BackupLayout layout;
     const ArchiveParams archive_params;
     const OpenMode open_mode;
     /// Used to write data to destinated object storage.
@@ -178,7 +234,6 @@ private:
     String original_namespace; /// namespace of source disk, we need to write it to metafile to restore a snapshot.
 
     BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::FirstFileName;
-    size_t data_file_name_prefix_length = 3;
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;
@@ -189,6 +244,7 @@ private:
     /// Instead of `file_infos` when the backup is opened only for lookups (`CreateParams::for_file_lookups_only`): the sizes
     /// and checksums of its files, sorted and without duplicates. Without empty files.
     std::vector<SizeAndChecksum> sizes_and_checksums TSA_GUARDED_BY(mutex);
+    Packs packs TSA_GUARDED_BY(mutex);
     /// object_key -> file name, only used by lightweight snapshot
     std::unordered_map<String, String> file_object_keys TSA_GUARDED_BY(mutex);
     std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);

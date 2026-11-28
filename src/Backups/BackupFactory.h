@@ -45,6 +45,8 @@ public:
         ContextPtr context;
         bool is_internal_backup = false;
         bool is_lightweight_snapshot = false;
+        /// See BackupSettings::backup_use_packed_format.
+        bool backup_use_packed_format = false;
         BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::FirstFileName;
         size_t data_file_name_prefix_length = 3;
         std::shared_ptr<IBackupCoordination> backup_coordination;
@@ -61,6 +63,9 @@ public:
         /// with a given name, or with a given size and checksum, and for the size and checksum of a file. So it doesn't
         /// keep the rest of the information about its files, and can't be read from.
         bool for_file_lookups_only = false;
+        /// Download each pack of a packed backup on object storage once, into a temporary file kept until the backup is
+        /// destroyed. Off for a reader that lives as long as a `Backup` database. A base backup inherits it.
+        bool download_packs = true;
         ReadSettings read_settings;
         WriteSettings write_settings;
 #if CLICKHOUSE_CLOUD
