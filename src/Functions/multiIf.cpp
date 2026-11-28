@@ -2,6 +2,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionIfBase.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/LowCardinalityOfKnownValues.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
@@ -472,6 +474,9 @@ public:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
+        if (auto res = executeConstBranchesToLowCardinality(instructions, result_type, input_rows_count))
+            return res;
+
         const WhichDataType which(removeNullable(result_type));
         bool execute_multiif_columnar = allow_execute_multiif_columnar && instructions.size() <= std::numeric_limits<UInt8>::max()
             && (which.isInt() || which.isUInt() || which.isFloat() || which.isDecimal() || which.isDateOrDate32OrDateTimeOrDateTime64()
@@ -541,6 +546,39 @@ public:
 #undef EXECUTE_INSTRUCTIONS_COLUMNAR
 
 private:
+
+    /// The `LowCardinality` result for constant branches (see `optimize_if_transform_const_strings_to_lowcardinality`):
+    /// the dictionary holds the branches, and the index of each row is the one of the first branch whose condition holds.
+    /// Building the indexes directly is much cheaper than inserting every row into a new dictionary.
+    static ColumnPtr executeConstBranchesToLowCardinality(
+        const VectorWithMemoryTracking<Instruction> & instructions, const DataTypePtr & result_type, size_t rows)
+    {
+        const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(result_type.get());
+        /// The branch numbers are computed as UInt8, and the dictionary also holds the default value and NULL.
+        if (!low_cardinality_type || instructions.size() > std::numeric_limits<UInt8>::max() - 2)
+            return nullptr;
+
+        for (const auto & instruction : instructions)
+            if (!instruction.source_is_constant)
+                return nullptr;
+
+        const auto & dictionary_type = low_cardinality_type->getDictionaryType();
+        auto values = dictionary_type->createColumn();
+        for (const auto & instruction : instructions)
+        {
+            const auto & value = assert_cast<const ColumnConst &>(*instruction.source).getDataColumn();
+            values->insertFrom(*value.convertToFullColumnIfLowCardinality(), 0);
+        }
+        /// `calculateInserts` leaves `instructions.size()` in the rows where no condition holds, which cannot
+        /// happen, as the last instruction is the `else` branch. Map it to the default value anyway.
+        values->insertDefault();
+
+        auto branches = ColumnUInt8::create(rows, static_cast<UInt8>(instructions.size()));
+        calculateInserts(instructions, rows, branches->getData());
+
+        /// The dictionary gets only the branches that are chosen by some row.
+        return createLowCardinalityOfReferencedValues<UInt8>(*low_cardinality_type, *values, std::move(branches));
+    }
 
     static void executeInstructions(VectorWithMemoryTracking<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
     {
@@ -612,7 +650,8 @@ private:
                     /// Equivalent to below code. But it is able to utilize SIMD instructions.
                     /// if (!condition_null_map[row_i] && condition_nested_data[row_i])
                     ///     inserts[row_i] = i;
-                    inserts[row_i] += (~condition_null_map[row_i] & (!!condition_nested_data[row_i])) * (i - inserts[row_i]);
+                    /// The check of the NULL map is logical, not bitwise: a NULL map can hold any non-zero byte for NULL.
+                    inserts[row_i] += (static_cast<UInt8>(!condition_null_map[row_i]) & static_cast<UInt8>(!!condition_nested_data[row_i])) * (i - inserts[row_i]);
                 }
             }
         }

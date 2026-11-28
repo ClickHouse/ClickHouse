@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -31,6 +32,7 @@
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/LowCardinalityOfKnownValues.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
@@ -1407,6 +1409,84 @@ public:
             return getLeastSupertypeOrVariant(DataTypes{arguments[1], arguments[2]}, allow_lossy_numeric_supertype);
 
         return getLeastSupertype(DataTypes{arguments[1], arguments[2]}, allow_lossy_numeric_supertype);
+    }
+
+    /// The `LowCardinality(String)` result for constant string branches (see `tryGetLowCardinalityReturnType`):
+    /// the dictionary holds the two branches, and the index of each row is chosen by the condition.
+    /// Returns nullptr when the branches turned out not constant or the condition constant at execution time.
+    [[nodiscard]] ColumnPtr executeForLowCardinalityResultImpl(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        const auto & arg_then = arguments[1];
+        const auto & arg_else = arguments[2];
+        if (!arg_then.column || !arg_else.column || !isColumnConst(*arg_then.column) || !isColumnConst(*arg_else.column))
+            return nullptr;
+
+        ColumnPtr cond_col = arguments[0].column->convertToFullColumnIfLowCardinality();
+        if (isColumnConst(*cond_col) || cond_col->onlyNull())
+            return nullptr;
+
+        const ColumnUInt8 * cond_data_col = nullptr;
+        const NullMap * cond_null_map = nullptr;
+        if (const auto * cond_nullable = checkAndGetColumn<ColumnNullable>(cond_col.get()))
+        {
+            cond_data_col = checkAndGetColumn<ColumnUInt8>(&cond_nullable->getNestedColumn());
+            cond_null_map = &cond_nullable->getNullMapData();
+        }
+        else
+            cond_data_col = checkAndGetColumn<ColumnUInt8>(cond_col.get());
+
+        if (!cond_data_col)
+            return nullptr;
+
+        const auto & low_cardinality_type = assert_cast<const DataTypeLowCardinality &>(*result_type);
+        const auto & dictionary_type = low_cardinality_type.getDictionaryType();
+
+        /// First, 0 in the rows of the `then` branch and 1 in the rows of the `else` branch.
+        auto indexes = ColumnUInt8::create(input_rows_count);
+        UInt8 * __restrict res = indexes->getData().data();
+        const UInt8 * __restrict cond = cond_data_col->getData().data();
+        size_t else_rows = 0;
+        if (cond_null_map)
+        {
+            const UInt8 * __restrict null_map = cond_null_map->data();
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                res[i] = !(cond[i] && !null_map[i]);
+                else_rows += res[i];
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                res[i] = !cond[i];
+                else_rows += res[i];
+            }
+        }
+
+        /// The dictionary holds only the branches that are chosen by some row: a function that takes the result
+        /// is executed over the whole dictionary, and it must not get (and possibly throw on) the other branch.
+        const bool has_then = else_rows < input_rows_count;
+        const bool has_else = else_rows > 0;
+
+        auto values = dictionary_type->createColumn();
+        for (const auto * arg : {&arg_then, &arg_else})
+        {
+            if (arg == &arg_then ? !has_then : !has_else)
+                continue;
+            auto value = castColumn(*arg, dictionary_type);
+            values->insertFrom(assert_cast<const ColumnConst &>(*value).getDataColumn(), 0);
+        }
+        LowCardinalityOfKnownValues known_values(low_cardinality_type, *values);
+        /// The dictionary has at most four values: the default value, NULL and the two branches.
+        const UInt8 then_index = has_then ? static_cast<UInt8>(known_values.positions[0]) : 0;
+        const UInt8 else_index = has_else ? static_cast<UInt8>(known_values.positions[has_then ? 1 : 0]) : 0;
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+            res[i] = res[i] ? else_index : then_index;
+
+        return ColumnLowCardinality::create(MutableColumnPtr(std::move(known_values.dictionary)), MutableColumnPtr(std::move(indexes)), /*is_shared=*/false);
     }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override

@@ -1,10 +1,13 @@
 #include <algorithm>
+#include <limits>
 #include <mutex>
 #include <base/bit_cast.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/SipHash.h>
@@ -14,11 +17,13 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/LowCardinalityOfKnownValues.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
@@ -74,9 +79,10 @@ namespace
         using StringToIdx = HashMap<std::string_view, size_t, StringViewHash>;
         using AnythingToIdx = HashMap<UInt128, size_t>;
 
-        std::unique_ptr<NumToIdx> table_num_to_idx;
-        std::unique_ptr<StringToIdx> table_string_to_idx;
-        std::unique_ptr<AnythingToIdx> table_anything_to_idx;
+        /// Shared with the cache of the `LowCardinality` result, which maps to dictionary indexes instead of values.
+        std::shared_ptr<NumToIdx> table_num_to_idx;
+        std::shared_ptr<StringToIdx> table_string_to_idx;
+        std::shared_ptr<AnythingToIdx> table_anything_to_idx;
 
         ColumnPtr from_column;
         ColumnPtr to_column;
@@ -236,7 +242,110 @@ namespace
             return column_result;
         }
 
+        /// The `LowCardinality` result for a constant default (see `optimize_if_transform_const_strings_to_lowcardinality`).
+        /// The mapping runs as usual, but it produces the numbers of the values of `array_to` and of the default instead
+        /// of the values. Then the dictionary is built of the values that the block refers to, instead of inserting
+        /// every row into a new dictionary.
+        [[nodiscard]] ColumnPtr executeForLowCardinalityResultImpl(
+            const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+        {
+            if (arguments.size() != 4)
+                return nullptr;
+
+            /// The default implementation maps the dictionary of a `LowCardinality` argument instead of its rows,
+            /// which is cheaper than mapping every row here.
+            if (arguments[0].type->lowCardinality())
+                return nullptr;
+
+            /// The same conversion as in the default implementation for `LowCardinality`.
+            ColumnsWithTypeAndName args = arguments;
+            for (auto & arg : args)
+            {
+                arg.column = recursiveRemoveLowCardinality(arg.column);
+                arg.type = recursiveRemoveLowCardinality(arg.type);
+            }
+
+            if (isColumnConst(*args[0].column))
+                return nullptr;
+
+            const auto & low_cardinality_type = assert_cast<const DataTypeLowCardinality &>(*result_type);
+            const auto & dictionary_type = low_cardinality_type.getDictionaryType();
+
+            std::call_once(cache_once_flag, [&]
+            {
+                if (!cache)
+                    cache = initializeTransformCache(args, dictionary_type);
+            });
+
+            if (cache->is_empty || !cache->default_column)
+                return nullptr;
+
+            std::call_once(low_cardinality_once_flag, [&] { low_cardinality = buildLowCardinalityResult(); });
+
+            auto value_numbers = FunctionTransform(low_cardinality->index_cache).executeImpl(args, low_cardinality->index_type, input_rows_count);
+            auto mutable_value_numbers = IColumn::mutate(value_numbers->convertToFullColumnIfConst());
+            const auto & values = *low_cardinality->values;
+
+            /// The dictionary gets only the values that the block refers to: a function that takes the result is
+            /// executed over the whole dictionary, and it must not get (and possibly throw on) the other values.
+            switch (low_cardinality->index_type->getTypeId())
+            {
+                case TypeIndex::UInt8:
+                    return createLowCardinalityOfReferencedValues<UInt8>(low_cardinality_type, values, std::move(mutable_value_numbers));
+                case TypeIndex::UInt16:
+                    return createLowCardinalityOfReferencedValues<UInt16>(low_cardinality_type, values, std::move(mutable_value_numbers));
+                default:
+                    return createLowCardinalityOfReferencedValues<UInt32>(low_cardinality_type, values, std::move(mutable_value_numbers));
+            }
+        }
+
     private:
+        struct LowCardinalityResult
+        {
+            /// The values of `array_to` followed by the default, as a column of the dictionary type.
+            ColumnPtr values;
+            /// Like `cache`, but maps to the numbers of the rows of `values`.
+            TransformCachePtr index_cache;
+            DataTypePtr index_type;
+        };
+
+        std::shared_ptr<const LowCardinalityResult> buildLowCardinalityResult() const
+        {
+            const size_t num_mapped_values = cache->to_column->size();
+            auto values = cache->to_column->cloneEmpty();
+            values->reserve(num_mapped_values + 1);
+            values->insertRangeFrom(*cache->to_column, 0, num_mapped_values);
+            values->insertFrom(*cache->default_column, 0);
+
+            auto result = std::make_shared<LowCardinalityResult>();
+            /// The same column holds the numbers of the values and then the indexes of a dictionary, which has
+            /// at most two more values: the default value and NULL.
+            const size_t max_dictionary_size = values->size() + 2;
+            if (max_dictionary_size <= std::numeric_limits<UInt8>::max() + 1)
+                result->index_type = std::make_shared<DataTypeUInt8>();
+            else if (max_dictionary_size <= std::numeric_limits<UInt16>::max() + 1)
+                result->index_type = std::make_shared<DataTypeUInt16>();
+            else
+                result->index_type = std::make_shared<DataTypeUInt32>();
+
+            auto numbers = ColumnUInt64::create();
+            for (size_t i = 0; i < values->size(); ++i)
+                numbers->insertValue(i);
+            auto value_numbers = castColumn({std::move(numbers), std::make_shared<DataTypeUInt64>(), ""}, result->index_type);
+
+            auto index_cache = std::make_shared<TransformCache>();
+            index_cache->table_num_to_idx = cache->table_num_to_idx;
+            index_cache->table_string_to_idx = cache->table_string_to_idx;
+            index_cache->table_anything_to_idx = cache->table_anything_to_idx;
+            index_cache->from_column = cache->from_column;
+            index_cache->to_column = value_numbers->cut(0, num_mapped_values);
+            index_cache->default_column = value_numbers->cut(num_mapped_values, 1);
+
+            result->index_cache = std::move(index_cache);
+            result->values = std::move(values);
+            return result;
+        }
+
         ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
         {
             /// Materialize the input column and compute the function as usual.
@@ -671,6 +780,9 @@ namespace
         mutable TransformCachePtr cache;
         mutable std::once_flag cache_once_flag;
 
+        mutable std::shared_ptr<const LowCardinalityResult> low_cardinality;
+        mutable std::once_flag low_cardinality_once_flag;
+
     public:
         static void checkAllowedType(const DataTypePtr & type)
         {
@@ -804,7 +916,7 @@ namespace
         /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
         if (isNativeNumber(which) || which.isDecimal32() || which.isDecimal64() || which.isEnum())
         {
-            cache->table_num_to_idx = std::make_unique<TransformCache::NumToIdx>();
+            cache->table_num_to_idx = std::make_shared<TransformCache::NumToIdx>();
             auto & table = *cache->table_num_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
@@ -827,7 +939,7 @@ namespace
         }
         else if (from_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
         {
-            cache->table_string_to_idx = std::make_unique<TransformCache::StringToIdx>();
+            cache->table_string_to_idx = std::make_shared<TransformCache::StringToIdx>();
             auto & table = *cache->table_string_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
@@ -840,7 +952,7 @@ namespace
         }
         else
         {
-            cache->table_anything_to_idx = std::make_unique<TransformCache::AnythingToIdx>();
+            cache->table_anything_to_idx = std::make_shared<TransformCache::AnythingToIdx>();
             auto & table = *cache->table_anything_to_idx;
             for (size_t i = 0; i < size; ++i)
             {

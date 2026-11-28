@@ -1,0 +1,15 @@
+0	0
+1	1
+2	2
+0	String	first
+1	String	else
+2	String	else
+0	LowCardinality(String)	first
+1	LowCardinality(String)	else
+2	LowCardinality(String)	else
+0	1
+1	3
+2	3
+0	first
+1	else
+2	else
