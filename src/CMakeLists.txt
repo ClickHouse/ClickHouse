@@ -143,6 +143,7 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
         Functions/GatherUtils/createArraySink.cpp
         Functions/GatherUtils/resizeConstantSize.cpp
         Functions/GatherUtils/resizeDynamicSize.cpp
+        Functions/GatherUtils/wrappedRangeBytes.cpp
         PROPERTIES COMPILE_FLAGS -g1)
 endif()
 

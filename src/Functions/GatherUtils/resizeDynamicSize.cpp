@@ -14,17 +14,19 @@ struct ArrayResizeDynamic : public ArrayAndValueSourceSelectorBySink<ArrayResize
 {
     template <typename ArraySource, typename ValueSource, typename Sink>
     static void selectArrayAndValueSourceBySink(
-            ArraySource && array_source, ValueSource && value_source, Sink && sink, const IColumn & size_column)
+            ArraySource && array_source, ValueSource && value_source, Sink && sink, const IColumn & size_column,
+            CancellationBudget & budget)
     {
-        resizeDynamicSize(array_source, value_source, sink, size_column);
+        resizeDynamicSize(array_source, value_source, sink, size_column, budget);
     }
 };
 
 }
 
-void resizeDynamicSize(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, const IColumn & size_column)
+void resizeDynamicSize(
+    IArraySource & array_source, IValueSource & value_source, IArraySink & sink, const IColumn & size_column, CancellationBudget & budget)
 {
-    ArrayResizeDynamic::select(sink, array_source, value_source, size_column);
+    ArrayResizeDynamic::select(sink, array_source, value_source, size_column, budget);
 }
 }
 

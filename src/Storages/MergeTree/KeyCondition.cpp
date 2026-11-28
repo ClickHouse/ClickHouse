@@ -26,6 +26,7 @@
 #include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/indexHint.h>
+#include <Interpreters/CancellationBudget.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -3225,6 +3226,7 @@ static bool executeDeterministicDag(
     catch (const Exception & e)
     {
         /// Any error other than an outer guard of the query means that the constant cannot be transformed.
+        rethrowIfQueryCancelled(e);
         if (isQueryOuterGuardError(e.code()))
             throw;
         return false;

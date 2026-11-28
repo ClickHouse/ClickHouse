@@ -7,6 +7,7 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
+#include <Interpreters/CancellationBudget.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
@@ -495,8 +496,9 @@ FilterResult filterResultForNotMatchedRows(
                 /*input_rows_count=*/1,
                 { .skip_materialize = true, .allow_unknown_function_arguments = allow_unknown_function_arguments });
         }
-        catch (const Exception &)
+        catch (const Exception & e)
         {
+            rethrowIfQueryCancelled(e);
             return FilterResult::UNKNOWN;
         }
 
@@ -534,9 +536,10 @@ FilterResult filterResultForNotMatchedRows(
             { .skip_materialize = true, .allow_unknown_function_arguments = allow_unknown_function_arguments }
         );
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
         /// If we cannot evaluate the filter expression, return UNKNOWN
+        rethrowIfQueryCancelled(e);
         return FilterResult::UNKNOWN;
     }
 

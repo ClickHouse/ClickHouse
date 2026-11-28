@@ -9,6 +9,7 @@ set(DBMS_GATHERUTILS_FUNCTIONS
     createArraySink.cpp
     resizeConstantSize.cpp
     resizeDynamicSize.cpp
+    wrappedRangeBytes.cpp
 )
 
 extract_into_parent_list(clickhouse_functions_gatherutils_sources dbms_sources ${DBMS_GATHERUTILS_FUNCTIONS})
