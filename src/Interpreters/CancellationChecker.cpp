@@ -219,6 +219,8 @@ void CancellationChecker::workerFunction()
                 });
         }
     }
+    /// Reset for a re-run (tests restart the worker): a stale value defeats the
+    /// `RearmsWaitOnEarlierDeadline` parked-check poll. No-op in the single-run server.
     armed_deadline = 0;
 
     /// `terminateThread` flips `stop_thread` to true to signal exit; clear it here while still
@@ -226,12 +228,6 @@ void CancellationChecker::workerFunction()
     /// to tests that own the worker thread and may want to spin it up again later; the server
     /// starts the worker exactly once during boot, so for the production code path this is a no-op.
     stop_thread = false;
-}
-
-UInt64 CancellationChecker::getArmedDeadline()
-{
-    std::unique_lock<std::mutex> lock(m);
-    return armed_deadline;
 }
 
 }

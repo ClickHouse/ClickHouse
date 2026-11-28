@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <limits>
+#include <mutex>
 #include <thread>
 
 #include <base/scope_guard.h>
@@ -73,12 +74,21 @@ TEST(CancellationChecker, RearmsWaitOnEarlierDeadline)
         worker.join();
     });
 
+    /// Read the deadline the worker is currently parked on. This test is a friend of
+    /// `CancellationChecker`, so it reads the private member directly, under the same mutex the
+    /// worker writes it with; 0 means the worker is not parked on a deadline.
+    const auto armed_deadline = [&checker]
+    {
+        std::unique_lock lock(checker.m);
+        return checker.armed_deadline;
+    };
+
     /// Arm the worker's wait toward a deadline 10 minutes away and wait until the worker has
     /// actually parked on it, so the buggy interleaving is reproduced deterministically.
     ASSERT_TRUE(checker.appendTask(long_query, /*timeout_us=*/600'000'000, OverflowMode::THROW));
-    for (int i = 0; i < 2000 && checker.getArmedDeadline() == 0; ++i)
+    for (int i = 0; i < 2000 && armed_deadline() == 0; ++i)
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    ASSERT_NE(checker.getArmedDeadline(), 0u);
+    ASSERT_NE(armed_deadline(), 0u);
 
     /// The long query finishes; removal intentionally does not notify the worker, so the stale
     /// 10-minute arm stays in place.
