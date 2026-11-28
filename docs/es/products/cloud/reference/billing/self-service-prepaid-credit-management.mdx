@@ -7,20 +7,16 @@ doc_type: 'guide'
 ---
 
 Si adquieres créditos prepagados mediante un contrato comprometido, puedes gestionar cómo se distribuyen esos créditos entre tus organizaciones de ClickHouse.
-Usa la página **Prepaid credits** para consultar los saldos y transferir créditos entre organizaciones.
+Usa la página **Créditos prepagados** para consultar los saldos y transferir créditos entre organizaciones.
 
 ## Acceder a los créditos prepagados {#access-prepaid-credits}
 
-En la consola de ClickHouse Cloud, abra **Settings** y luego seleccione **Prepaid credits** en **Account**.
+En la consola de ClickHouse Cloud, abra **Settings** y luego seleccione **Créditos prepagados** en **Account**.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Créditos prepagados en Account, en la barra lateral de Settings](/images/cloud/reference/billing/prepaid-credits-navigation.png)
-
-</Frame>
-
+  <Frame>
+    ![Créditos prepagados en Account, en la barra lateral de Settings](/images/cloud/reference/billing/prepaid-credits-navigation.png)
+  </Frame>
 </div>
 
 Para consultar los saldos de créditos prepagados, necesita al menos uno de los siguientes roles en una organización que tenga créditos de contrato comprometido asignados:
@@ -57,26 +53,22 @@ Todos los importes se expresan en ClickHouse Credits (CHC), donde 1 CHC equivale
 Cada fila de la tabla situada debajo del resumen representa una organización, con datos que reflejan todos los balances prepago de esa organización.
 
 * **Organization** muestra el nombre de la organización, un Organization ID parcialmente oculto y un enlace a su Billing page, donde se puede consultar el desglose de los saldos de créditos.
-* **Credits granted**, **Expired credits**, **Credits used** y **Credits available** se rigen por las mismas definiciones que en el resumen, pero aplicadas a los créditos prepagados de esa organización.
+* **Créditos otorgados**, **Créditos caducados**, **Créditos utilizados** y **Créditos disponibles** se rigen por las mismas definiciones que en el resumen, pero aplicadas a los créditos prepagados de esa organización.
 * **Credit status** muestra el estado de los balances prepago de la organización, tal como se describe a continuación.
-* **Expiration Date** muestra la fecha de expiración del balance prepago. Si hay varios balances, muestra la fecha de expiración más lejana.
+* **Fecha de expiración** muestra la fecha de expiración del balance prepago. Si hay varios balances, muestra la fecha de expiración más lejana.
 
 | Status                 | Description                                                                                                                                             |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Active**             | La organización tiene uno o más balances de créditos prepagados que no han expirado.                                                                        |
+| **Active**             | La organización tiene uno o más balances de créditos prepagados que no han expirado.                                                                    |
 | **Expires soon**       | La organización solo tiene un balance prepago activo y este expira dentro de los próximos 60 días. Este estado se mantiene hasta que el balance expire. |
 | **Expired**            | Todos los balances prepago de la organización tienen fechas de finalización ya pasadas.                                                                 |
 | **Spent**              | Todos los balances prepago de la organización se han consumido, pero no han expirado. Este estado tiene prioridad sobre **Active**.                     |
-| **No Prepaid Credits** | La organización no tiene créditos prepagados.                                                                                                               |
+| **No Prepaid Credits** | La organización no tiene créditos prepagados.                                                                                                           |
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Métricas de resumen de créditos prepagados y balances por organización](/images/cloud/reference/billing/prepaid-credits-balances.png)
-
-</Frame>
-
+  <Frame>
+    ![Métricas de resumen de créditos prepagados y balances por organización](/images/cloud/reference/billing/prepaid-credits-balances.png)
+  </Frame>
 </div>
 
 ## Transferir créditos {#transfer-credits}
@@ -89,26 +81,22 @@ Para transferir créditos, necesitas el permiso [Manage billing details](/es/pro
 2. Selecciona una asignación de créditos activa. El panel muestra las asignaciones activas de la organización de origen y sus fechas de expiración.
 3. Selecciona una organización de destino entre aquellas a las que tienes acceso.
 4. Introduce el importe que quieres transferir.
-5. Revisa los saldos resultantes y haz clic en **Transfer credits**.
+5. Revisa los saldos resultantes y haz clic en **Transferir créditos**.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Panel de transferencia de créditos con la asignación de origen, la organización de destino, el importe de la transferencia y los saldos resultantes](/images/cloud/reference/billing/prepaid-credits-transfer.png)
-
-</Frame>
-
+  <Frame>
+    ![Panel de transferencia de créditos con la asignación de origen, la organización de destino, el importe de la transferencia y los saldos resultantes](/images/cloud/reference/billing/prepaid-credits-transfer.png)
+  </Frame>
 </div>
 
 ### Reglas de transferencia {#transfer-rules}
 
-* Solo puedes transferir **créditos prepagados activos**. No puedes transferir créditos de prueba.
-* Una transferencia de créditos modifica los créditos prepagados disponibles en las organizaciones de origen y de destino, pero no altera el total de créditos activos otorgados en virtud de tu contrato comprometido.
-* Transferir créditos prepagados a una organización en periodo de prueba o en periodo de gracia por falta de pago la convierte en una organización prepago, que empieza a consumir esos créditos.
-* Solo puedes transferir la totalidad de los créditos prepagados restantes de una organización de origen si esta cuenta con un [método de pago de respaldo](/es/products/cloud/reference/billing/managing-payment-methods#add-backup-cc-to-marketplace-org) o no tiene servicios. De lo contrario, el máximo transferible es el 75 % del saldo de créditos de la organización de origen.
-* No puedes transferir créditos entre organizaciones de ClickHouse Cloud y de [Bring Your Own Cloud (BYOC)](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview).
-* No puedes transferir créditos entre organizaciones facturadas a través de distintos marketplaces en la nube, como AWS Marketplace y Google Cloud Marketplace.
+* Solo puede transferir **créditos prepagados activos**. Los créditos de prueba no se pueden transferir.
+* Una transferencia de créditos modifica los créditos prepagados disponibles en las organizaciones de origen y de destino, pero no altera el total de créditos activos otorgados en virtud de su contrato comprometido.
+* Si transfiere créditos prepagados a una organización que está en período de prueba o en un período de gracia por falta de pago, esta pasa a ser una organización prepagada y comienza a consumir esos créditos.
+* Solo puede transferir la totalidad de los créditos prepagados restantes de una organización de origen si esta tiene un [método de pago de respaldo](/es/products/cloud/reference/billing/managing-payment-methods#add-backup-cc-to-marketplace-org) o no tiene servicios. En caso contrario, puede transferir como máximo el 75% del saldo de créditos de la organización de origen.
+* No se pueden transferir créditos entre organizaciones de ClickHouse Cloud y de [Bring Your Own Cloud (BYOC)](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview).
+* No se pueden transferir créditos entre organizaciones facturadas a través de distintos marketplaces en la nube, como AWS Marketplace y Google Cloud Marketplace.
 
 ### Facturación del marketplace tras una transferencia {#marketplace-billing-after-a-transfer}
 

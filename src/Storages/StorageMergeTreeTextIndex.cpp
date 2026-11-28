@@ -134,7 +134,7 @@ private:
     /// delimited by the end offsets in `position_offsets`.
     void readPositions(const TokenPostingsInfo & token_info, size_t first_rank, size_t num_ranks)
     {
-        static constexpr size_t block_docs = TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+        static constexpr size_t block_size = TextIndexBlockedPositionsCodec::BLOCK_SIZE;
 
         const bool embedded = token_info.header & PostingsSerialization::Flags::EmbeddedPositions;
         std::optional<ReadBufferFromMemory> embedded_in;
@@ -165,11 +165,11 @@ private:
 
         for (size_t rank = first_rank; rank < end_rank;)
         {
-            const size_t block_idx = rank / block_docs;
-            const size_t block_end = std::min(end_rank, (block_idx + 1) * block_docs);
+            const size_t block_idx = rank / block_size;
+            const size_t block_end = std::min(end_rank, (block_idx + 1) * block_size);
 
             block_local_ranks.resize(block_end - rank);
-            std::iota(block_local_ranks.begin(), block_local_ranks.end(), static_cast<UInt32>(rank % block_docs));
+            std::iota(block_local_ranks.begin(), block_local_ranks.end(), static_cast<UInt32>(rank % block_size));
 
             in.seek(static_cast<off_t>(positions_directory.block_offsets[block_idx]), SEEK_SET);
             TextIndexBlockedPositionsCodec::decodeBlock(in, positions_directory, block_idx, block_local_ranks, position_offsets, positions, positions_scratch);

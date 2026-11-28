@@ -27,6 +27,8 @@ import { DeprecatedBadge } from "/snippets/ja/components/DeprecatedBadge/Depreca
 導入バージョン: v20.1.0
 
 ClickHouseサーバーの完全修飾ドメイン名を返します。
+分散テーブルのコンテキストで実行された場合は、各分片に対応する値を持つ通常のカラムを生成します。
+それ以外の場合は定数値を生成します。
 
 <Note>
   この関数は非決定論的です。同じ引数に対して異なる結果を返す場合があります。
@@ -6354,11 +6356,11 @@ uniqThetaIntersect(uniqThetaSketch,uniqThetaSketch)
 
 **引数**
 
-* `uniqThetaSketch` — uniqThetaSketch オブジェクト。[`Tuple`](/ja/reference/data-types/tuple) または [`Array`](/ja/reference/data-types/array) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`String`](/ja/reference/data-types/string) または [`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
+* `uniqThetaSketch` — uniqThetaSketch オブジェクト。[`AggregateFunction(uniqTheta, T)`](/ja/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/ja/reference/data-types/aggregatefunction)
 
 **戻り値**
 
-積集合の結果を含む新しい uniqThetaSketch。 [`UInt64`](/ja/reference/data-types/int-uint)
+積集合の結果を含む新しい uniqThetaSketch。 [`AggregateFunction(uniqTheta, T)`](/ja/reference/data-types/aggregatefunction)
 
 **例**
 
@@ -6390,11 +6392,11 @@ uniqThetaNot(uniqThetaSketch,uniqThetaSketch)
 
 **引数**
 
-* `uniqThetaSketch` — uniqThetaSketch オブジェクト。[`Tuple`](/ja/reference/data-types/tuple) または [`Array`](/ja/reference/data-types/array) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`String`](/ja/reference/data-types/string) または [`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
+* `uniqThetaSketch` — uniqThetaSketch オブジェクト。[`AggregateFunction(uniqTheta, T)`](/ja/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/ja/reference/data-types/aggregatefunction)
 
 **戻り値**
 
-a&#95;not&#95;b の結果を含む、新しい uniqThetaSketch を返します。[`UInt64`](/ja/reference/data-types/int-uint)
+a&#95;not&#95;b の結果を含む、新しい uniqThetaSketch を返します。[`AggregateFunction(uniqTheta, T)`](/ja/reference/data-types/aggregatefunction)
 
 **例**
 
@@ -6426,11 +6428,11 @@ uniqThetaUnion(uniqThetaSketch,uniqThetaSketch)
 
 **引数**
 
-* `uniqThetaSketch` — uniqThetaSketch オブジェクト。[`Tuple`](/ja/reference/data-types/tuple) または [`Array`](/ja/reference/data-types/array) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`String`](/ja/reference/data-types/string) または [`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
+* `uniqThetaSketch` — uniqThetaSketch オブジェクト。[`AggregateFunction(uniqTheta, T)`](/ja/reference/data-types/aggregatefunction)。[`AggregateFunction(uniqTheta, T)`](/ja/reference/data-types/aggregatefunction)
 
 **戻り値**
 
-ユニオン結果を含む新しい uniqThetaSketch を返します。[`UInt64`](/ja/reference/data-types/int-uint)
+ユニオン結果を含む新しい uniqThetaSketch を返します。[`AggregateFunction(uniqTheta, T)`](/ja/reference/data-types/aggregatefunction)
 
 **例**
 

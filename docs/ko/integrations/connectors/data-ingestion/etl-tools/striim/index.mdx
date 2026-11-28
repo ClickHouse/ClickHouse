@@ -1,0 +1,91 @@
+---
+title: "Striim for ClickHouse"
+sidebarTitle: "개요"
+slug: /integrations/connectors/data-ingestion/etl-tools/striim
+description: "Striim for ClickHouse를 사용하여 데이터베이스, 데이터 웨어하우스, 데이터 레이크, SaaS 애플리케이션의 데이터를 ClickHouse로 복제합니다."
+doc_type: guide
+keywords: ['striim', 'clickhouse', 'cdc', 'data ingestion', 'real-time replication']
+---
+
+[Striim for ClickHouse](https://www.striim.com/docs/striimforclickhouse/en/introducing-striim-for-clickhouse.html)는 Oracle, Microsoft SQL Server, Snowflake 같은 엔터프라이즈 소스를 비롯해 데이터베이스, 데이터 웨어하우스(data warehouse), 데이터 레이크(data lakes), SaaS 애플리케이션의 데이터를 ClickHouse로 가져오는 완전 관리형 SaaS입니다. 기존 레코드를 먼저 로드한 다음 변경 데이터 캡처(Change Data Capture, CDC)로 삽입, 갱신(updates), 삭제(deletes)를 스트리밍하여 AI 워크로드(workloads), 대시보드, 데이터 애플리케이션에서 사용하는 ClickHouse 데이터를 항상 최신 상태로 유지할 수 있습니다.
+
+Striim for ClickHouse는 AWS의 Striim Cloud에서 호스팅되며, 셀프서비스 가입과 사용량 기반 월별 청구 방식을 제공하고 연간 약정이 필요하지 않습니다. striim.com 또는 AWS Marketplace에서 가입하여 14일 무료 체험판을 시작한 다음, 자연어 프롬프트, 마법사 또는 플로 디자이너로 파이프라인을 빌드하십시오.
+
+## 주요 기능 {#key-features}
+
+* **변경 데이터 캡처(Change Data Capture) 및 초기 적재(initial load):** 기존 데이터를 적재한 뒤 삽입, 갱신(updates), 삭제(deletes)를 지속적으로 반영하는 실시간 복제(real-time replication)로 전환합니다. 자동화된 파이프라인 마법사로 두 단계를 생성하고 연결할 수 있으며, 초기 적재가 끝나면 CDC 복제로 자동 전환됩니다.
+* **ClickHouse writer:** 파이프라인별로 테이블 엔진(`MergeTree`, `ReplacingMergeTree`, `CollapsingMergeTree`, `CoalescingMergeTree` 등)을 선택할 수 있습니다. Striim은 대상 테이블을 생성하고, 선택한 엔진에 맞게 갱신 및 삭제를 처리하며, 정렬 키를 설정합니다.
+* **스키마(schema) 처리:** 지원되는 소스에서는 소스 스키마를 기반으로 대상 스키마를 자동 생성하며, 지원되는 CDC 소스에서는 일부 DDL 변경 사항(`CREATE TABLE`, `ADD COLUMN`, `ALTER TABLE ... MODIFY COLUMN`, `DROP COLUMN`, `DROP TABLE`, `TRUNCATE TABLE`)을 전파합니다.
+* **전송 중 처리:** 소스와 ClickHouse 사이에서 데이터를 필터링, 보강, 변환합니다.
+* **AI 지원 운영:** 대화형 AI 에이전트인 Striim Clara AI는 자연어 설명을 바탕으로 파이프라인을 구축하고, 지연 시간과 처리량을 보고하며, 장애 원인을 설명합니다. 운영 환경에 배포하기 전에 생성된 결과물을 반드시 검토하십시오.
+* **프라이빗 연결:** 소스 및 ClickHouse와의 연결에 AWS PrivateLink, SSH 터널, IP 허용 목록을 지원합니다.
+* **모니터링 및 알림:** 파이프라인 모니터링 기능이 내장되어 있으며, 이메일, Slack, Microsoft Teams, Striim 웹 UI로 알림을 보냅니다.
+
+## 활용 사례 {#use-cases}
+
+| **활용 사례**      | **Striim for ClickHouse의 활용 방식**                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 실시간 분석         | CDC 리더가 ClickHouse 테이블을 항상 최신 상태로 유지하므로, 대화형 대시보드에 마지막 배치 사이클이 아닌 불과 몇 초 전의 활동까지 반영됩니다.                                   |
+| AI 에이전트 및 RAG  | 벡터 검색이나 MCP 서버에서 사용하는 테이블을 포함한 ClickHouse 테이블을 최신 상태로 유지하므로, 에이전트가 최신 운영 데이터를 읽을 수 있습니다.                                  |
+| 피처 스토어 및 모델 추론 | 사기 탐지나 개인화처럼 거의 실시간으로 점수를 산출하는 모델에 맞춰 엔터티 수준의 피처를 최신 상태로 유지합니다.                                                           |
+| 데이터 웨어하우징      | 중간 스테이징 계층이나 스트리밍 계층을 거치지 않고 Oracle, SQL Server, Snowflake, Salesforce 등의 소스에서 ClickHouse로 데이터를 직접 전달합니다.                 |
+| 관측성            | 데이터베이스 로그와 애플리케이션 로그를 텔레메트리와 동일한 ClickHouse 인스턴스로 스트리밍하므로, 두 데이터를 함께 쿼리할 수 있습니다. ClickStack 및 OpenTelemetry 기반 수집을 보완합니다. |
+
+## 지원되는 소스 {#supported-sources}
+
+아래 표는 지원되는 소스를 범주별로 정리한 것입니다. 변경 데이터 캡처(Change Data Capture, CDC)는 지원되는 소스에서 발생하는 삽입, 갱신(updates), 삭제(deletes)를 지속적으로 복제합니다. 초기 적재(initial load)는 기존 레코드를 복사합니다. CDC 외의 수집 방식으로는 파일 읽기, 애플리케이션 API 읽기, 메시지 스트림이 있습니다.
+
+플랜별 제공 여부는 [제품 요약](https://www.striim.com/docs/striimforclickhouse/en/product-summary.html)을, 소스별 기능 및 설정 요구 사항은 [Striim for ClickHouse 문서](https://www.striim.com/docs/striimforclickhouse/en/pipelines.html#supported-sources-and-targets-for-striim-for-clickhouse)를 참조하십시오.
+
+| **범주**          | **소스**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| CDC 소스          | Azure CosmosDB<br />MariaDB (Galera Cluster, XPand, SkySQL, Amazon RDS 포함)<br />MongoDB (자가 관리형 배포 및 AWS, Azure, Google Cloud의 MongoDB Atlas 포함)<br />MySQL (자가 관리형 배포, Amazon Aurora, Amazon RDS, Azure Database, Google Cloud SQL 포함)<br />Oracle (자가 관리형 배포, Amazon RDS 포함)<br />PostgreSQL (자가 관리형 배포, Amazon Aurora, Amazon RDS, Azure Database, Crunchy Postgres, Google AlloyDB, Google Cloud SQL, Neon 포함)<br />SQL Server (자가 관리형 배포, Amazon RDS, Azure SQL Database 포함)<br />Salesforce<br />Snowflake<br />Yugabyte |
+| 기타 데이터베이스       | Teradata                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 데이터 웨어하우스       | BigQuery, Snowflake                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 데이터 레이크 및 파일    | Amazon S3, Azure Data Lake Service, Google Cloud Storage<br />HDFS, MapR 파일 시스템, 로컬 파일<br />파일 형식: Avro, Parquet, JSON, XML, 구분자 형식(delimited), 자유 형식(free-form), 바이너리, Apache 액세스 로그, Cobol copybook, CollectD, HL7v2, Netflow, 이름-값 쌍                                                                                                                                                                                                                                                                                        |
+| SaaS 애플리케이션     | Atlassian Jira<br />Google Ads<br />HubSpot<br />Intercom<br />Microsoft Dynamics 365, Microsoft Dynamics 365 Business Central<br />Salesforce, Salesforce Pardot, Salesforce Platform Event 및 PushTopic<br />ServiceNow<br />Stripe<br />Zendesk                                                                                                                                                                                                                                                                              |
+| 메시징, IoT 및 네트워크 | Apache Kafka<br />JMS, MQTT, OPC UA, HTTP, TCP, UDP, JMX, Windows Event Log                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+
+## 요금제, 체험판 및 청구 {#plans-trial-and-billing}
+
+| 항목  | **Standard**                                              | **Premium**                                                   |
+| --- | --------------------------------------------------------- | ------------------------------------------------------------- |
+| 컴퓨트 | 4 vCPU                                                    | 8 vCPU                                                        |
+| 소스  | 비CDC 소스, PostgreSQL·MySQL·MariaDB·MongoDB·YugabyteDB용 CDC | Standard의 모든 기능 및 Oracle·SQL Server·Snowflake·Salesforce용 CDC |
+| 대상  | ClickHouse 및 File Writer                                  | ClickHouse 및 File Writer                                      |
+| 리전  | AWS us-east-1, us-east-2, us-west-2                       | AWS us-east-1, us-east-2, us-west-2                           |
+
+요금은 연간 약정 없이 사용량에 따라 매월 청구되며, 컴퓨트 인프라와 처리된 이벤트를 기준으로 산정됩니다. striim.com에서 신용카드로 결제하거나 AWS Marketplace를 통해 결제할 수 있습니다. 자세한 내용은 [요금 상세 정보](https://www.striim.com/docs/striimforclickhouse/en/product-summary.html)를 참조하십시오.
+
+## 운영 고려 사항 {#operational-considerations}
+
+* 전달은 최소 1회(at-least-once) 방식으로 보장됩니다. 재시작 또는 복구 후에는 이미 기록된 이벤트가 다시 기록될 수 있습니다. 이에 따른 최종 데이터 레코드는 테이블 엔진에 따라 달라집니다([ClickHouse에 데이터가 적재되는 방식](/ko/integrations/connectors/data-ingestion/etl-tools/striim/get-started#how-data-lands-in-clickhouse) 참조).
+* 스키마 진화(Schema Evolution)는 컬럼 이름 변경이나 NULL 허용 여부 변경을 지원하지 않으며, `AggregatingMergeTree`, `Replicated`, `Distributed` 대상에는 적용되지 않습니다. `VersionedCollapsingMergeTree`와 `GraphiteMergeTree`는 지원되지 않습니다.
+* 일부 소스 유형은 ClickHouse 타입에 매핑되지 않으므로 자동 스키마 생성 시 건너뜁니다. 예를 들어 `SQL Server GEOGRAPHY`, `GEOMETRY`, `HIERARCHYID`, `SQL_VARIANT`; `Oracle BFILE`, `LONG`, `LONG RAW`, `SDO_GEOMETRY`, `UROWID`; `MySQL GEOMETRY`, `SET` 등이 이에 해당합니다.
+
+## 문의 및 지원 {#contact-and-support}
+
+Striim for ClickHouse는 다른 Striim 서비스와 동일한 [Striim 지원 정책](https://www.striim.com/msa/)에 따라 Striim에서 지원합니다. 기존 고객은 [Striim 지원 포털](https://support.striim.com/hc/en-us)을 이용하거나 Striim 클라우드 콘솔의 도움말 메뉴에서 **Create ticket**을 선택하여 티켓을 제출할 수 있습니다.
+
+| **채널**                   | **운영 시간**                                    |
+| ------------------------ | -------------------------------------------- |
+| 지원 포털                    | 24시간 x 7일 x 365일 (연중무휴)                      |
+| 이메일 (support@striim.com) | 24시간 x 7일 x 365일 (연중무휴)                      |
+| 전화 (+1 650 241-0680)     | 월요일~~금요일 오전 8시~~오후 7시(태평양 시간), Striim 휴무일 제외 |
+
+### 지원 책임 범위 {#support-ownership}
+
+| **영역**                                  | **담당**        | **예시**                                                                                                     |
+| --------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------- |
+| Striim for ClickHouse 서비스               | Striim        | 가입, 청구, 체험판, 서비스 생성, 리전, 플랜 변경, Clara AI                                                                   |
+| 소스 연결 및 CDC                             | Striim        | 소스 리더 및 설정, 초기 적재(initial load), 지연(lag), 스키마 진화(Schema Evolution)                                         |
+| ClickHouse Writer                       | Striim        | 테이블 엔진 동작, Striim 메타데이터 컬럼, 타입 매핑(type mapping), 배치 및 업로드 설정, at-least-once 재적용 동작                         |
+| Striim 측 네트워킹                           | Striim        | AWS PrivateLink, Striim 측의 SSH 및 IP 허용 목록                                                                  |
+| ClickHouse 데이터베이스(Database) 또는 클라우드 서비스 | ClickHouse    | 서비스 가용성, 쿼리 성능(query performance), 서버 설정(server settings), 권한 부여, 머지, PrivateLink 및 허용 목록의 ClickHouse 측 구성 |
+| 공동 이슈                                   | Striim에 먼저 문의 | 원인이 불분명한 쓰기 오류 또는 삽입 지연. Striim이 1차 분석을 수행하고, 근본 원인이 데이터베이스에 있으면 ClickHouse에 협조를 요청합니다.                    |
+
+## 관련 페이지 {#related-pages}
+
+* [Striim for ClickHouse 시작하기](/ko/integrations/connectors/data-ingestion/etl-tools/striim/get-started): 가입, ClickHouse 설정, 테이블 엔진 선택 방법을 설명합니다.
+* [샘플 파이프라인: SQL Server에서 ClickHouse로](/ko/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline): 자동화된 파이프라인 마법사를 사용한 초기 적재(initial load)와 CDC 방법을 설명합니다.
+* [Striim for ClickHouse 문서](https://www.striim.com/docs/striimforclickhouse/en/index-en.html)

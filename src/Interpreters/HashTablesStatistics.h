@@ -50,17 +50,31 @@ struct AggregationEntry
         return new_entry.sum_of_sizes < sum_of_sizes / 2 || sum_of_sizes < new_entry.sum_of_sizes || new_entry.median_size < median_size / 2
             || median_size < new_entry.median_size || new_entry.sum_of_sizes_with_empty_string < sum_of_sizes_with_empty_string / 2
             || sum_of_sizes_with_empty_string < new_entry.sum_of_sizes_with_empty_string
-            || new_entry.adaptive_staging_repeat_dominated != adaptive_staging_repeat_dominated;
+            || new_entry.adaptive_several_producers_staging_repeat_dominated != adaptive_several_producers_staging_repeat_dominated
+            || new_entry.adaptive_lone_producer_staging_repeat_dominated != adaptive_lone_producer_staging_repeat_dominated;
     }
 
     [[nodiscard]] std::string dump() const
     {
         return fmt::format(
-            "sum_of_sizes={}, median_size={}, sum_of_sizes_with_empty_string={}, adaptive_staging_repeat_dominated={}",
+            "sum_of_sizes={}, median_size={}, sum_of_sizes_with_empty_string={}, "
+            "adaptive_several_producers_staging_repeat_dominated={}, adaptive_lone_producer_staging_repeat_dominated={}",
             sum_of_sizes,
             median_size,
             sum_of_sizes_with_empty_string,
-            adaptive_staging_repeat_dominated);
+            adaptive_several_producers_staging_repeat_dominated,
+            adaptive_lone_producer_staging_repeat_dominated);
+    }
+
+    /// The adaptive verdict that holds for a run with one producer (`lone_producer`) or for a run with
+    /// several, to read and to assign.
+    [[nodiscard]] bool adaptiveStagingRepeatDominated(bool lone_producer) const
+    {
+        return lone_producer ? adaptive_lone_producer_staging_repeat_dominated : adaptive_several_producers_staging_repeat_dominated;
+    }
+    [[nodiscard]] bool & adaptiveStagingRepeatDominated(bool lone_producer)
+    {
+        return lone_producer ? adaptive_lone_producer_staging_repeat_dominated : adaptive_several_producers_staging_repeat_dominated;
     }
 
     /// The part of `median_size` with an empty string, by the share of such keys in `sum_of_sizes` (see
@@ -79,11 +93,18 @@ struct AggregationEntry
     /// other methods. Its share of `sum_of_sizes` splits the preallocation of such a table between its
     /// sub-tables.
     size_t sum_of_sizes_with_empty_string = 0;
-    /// The adaptive verdict of a run of the query (see `Aggregator::adaptiveStagingVerdict`): its staged
-    /// streams were repeat-dominated, so freezing cannot pay for such a query, and later runs do not engage
-    /// the adaptive aggregation at all. Runs without a verdict of their own carry the stored one over (see
-    /// `updateStatistics`).
-    bool adaptive_staging_repeat_dominated = false;
+    /// The adaptive verdicts of the runs of the query (see `Aggregator::adaptiveStagingVerdict`): the staged
+    /// streams of a run were repeat-dominated, so freezing cannot pay for such a run, and later runs of its
+    /// kind do not engage the adaptive aggregation at all. Runs without a verdict of their own carry the
+    /// stored ones over (see `updateStatistics`).
+    /// There is one verdict for the runs with several producers and one for the runs with a lone producer,
+    /// because a lone producer thaws by a lower bound (see
+    /// `adaptive_thaw_lone_producer_state_cost_multiplier`): the verdict of one kind of run says nothing
+    /// about the other. A run stores and consults the verdict of its own kind (see
+    /// `adaptiveStagingRepeatDominated`). For example, a query that a loaded server plans with one thread
+    /// thaws and marks only its one-producer runs, and its later runs with 16 threads still engage.
+    bool adaptive_several_producers_staging_repeat_dominated = false;
+    bool adaptive_lone_producer_staging_repeat_dominated = false;
 };
 
 struct HashJoinEntry

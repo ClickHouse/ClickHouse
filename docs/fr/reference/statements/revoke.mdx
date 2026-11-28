@@ -10,37 +10,29 @@ doc_type: 'reference'
 
 Révoque les privilèges accordés à des utilisateurs ou à des rôles.
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
-**Révocation des privilèges aux utilisateurs**
+**Révocation des privilèges**
 
 ```sql
-REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
+REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | role | CURRENT_USER} [,...]
 ```
 
-**Révocation de rôles à des utilisateurs**
+**Révocation de rôles**
 
 ```sql
 REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
 ```
 
-<div id="description">
-  ## Description
-</div>
+## Description {#description}
 
 Pour révoquer un privilège donné, vous pouvez utiliser un privilège de portée plus large que le privilège que vous souhaitez révoquer. Par exemple, si un utilisateur possède le privilège `SELECT (x,y)`, un administrateur peut exécuter la requête `REVOKE SELECT(x,y) ...`, ou `REVOKE SELECT * ...`, ou même `REVOKE ALL PRIVILEGES ...` pour révoquer ce privilège.
 
-<div id="partial-revokes">
-  ### Révocations partielles
-</div>
+### Révocations partielles {#partial-revokes}
 
 Vous pouvez révoquer une partie d’un privilège. Par exemple, si un utilisateur possède le privilège `SELECT *.*`, vous pouvez lui révoquer le privilège de lire des données dans une table ou une base de données spécifique.
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
 Accordez au compte utilisateur `john` le privilège de sélectionner dans toutes les bases de données, à l’exception de `accounts` :
 

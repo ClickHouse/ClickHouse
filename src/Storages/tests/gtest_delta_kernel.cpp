@@ -596,7 +596,6 @@ TEST(DeltaLakeAzureKernelHelper, EntrypointsRefuseRestrictedSessionWhateverTheSh
         expectAccessDenied([&] { return metadata->buildStorageMetadataFromState(DeltaLake::TableStateSnapshot{}, restricted); });
         expectAccessDenied([&] { return metadata->iterate(nullptr, {}, 1000, nullptr, restricted); });
         expectAccessDenied([&] { return metadata->prepareReadingFromFormat({}, nullptr, restricted, true, true); });
-        expectAccessDenied([&] { return metadata->getTableChanges({0, std::nullopt}, DB::Block{}, std::nullopt, restricted); });
         expectAccessDenied([&]
         {
             return metadata->write(

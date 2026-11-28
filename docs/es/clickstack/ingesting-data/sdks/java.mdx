@@ -46,7 +46,7 @@ Después, tendrás que configurar las siguientes variables de entorno en tu shel
     ```
   </Tab>
 
-  <Tab title="ClickStack de código abierto">
+  <Tab title="ClickStack Open Source">
     ```shell
     export JAVA_TOOL_OPTIONS="-javaagent:PATH/TO/opentelemetry-javaagent.jar" \
     OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
@@ -58,9 +58,9 @@ Después, tendrás que configurar las siguientes variables de entorno en tu shel
   </Tab>
 </Tabs>
 
-*La variable de entorno `OTEL_SERVICE_NAME` se usa para identificar tu servicio en la aplicación HyperDX; puede ser cualquier nombre que quieras.*
+*La variable de entorno `OTEL_SERVICE_NAME` se usa para identificar tu servicio en la UI de ClickStack; puede ser cualquier nombre que quieras.*
 
-La variable de entorno `OTEL_EXPORTER_OTLP_HEADERS` contiene la clave de API disponible en la aplicación HyperDX, en `Team Settings → API Keys`.
+La variable de entorno `OTEL_EXPORTER_OTLP_HEADERS` contiene la clave de API disponible en la UI de ClickStack, en `Team Settings → API Keys`.
 
 ### Ejecuta la aplicación con el agente de Java de OpenTelemetry {#run-the-application-with-otel-java-agent}
 

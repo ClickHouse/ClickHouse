@@ -124,3 +124,62 @@ SELECT (SELECT (count(), sum(cityHash64(s)), sum(v)) FROM t_sparse_prewhere PREW
 
 DROP TABLE t_sparse_prewhere;
 DROP TABLE t_full_prewhere;
+
+-- A sparse `PREWHERE` filter applied to every other column must match a table without sparse columns: scattered rows (`s`),
+-- most rows of each granule (`w`, the filter is applied after reading the other columns), a few rows at the start of each
+-- granule (`z`, long zero tails), one run of consecutive rows per granule (`r`) and two steps. `arr` has fewer than 8 elements
+-- per row and `arrl` more, so arrays take every path of `ColumnArray::index`.
+
+DROP TABLE IF EXISTS t_sparse_prewhere_types;
+DROP TABLE IF EXISTS t_full_prewhere_types;
+
+CREATE TABLE t_sparse_prewhere_types (id UInt64, s String, w String, z String, r String, o UInt64, d UInt64, ds String, n Nullable(UInt64),
+    lc LowCardinality(String), arr Array(UInt64), arrl Array(UInt64), arrs Array(String), m Map(String, UInt64), t Tuple(UInt64, String))
+ENGINE = MergeTree ORDER BY id
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1, index_granularity = 8192, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
+
+CREATE TABLE t_full_prewhere_types AS t_sparse_prewhere_types
+ENGINE = MergeTree ORDER BY id
+SETTINGS ratio_of_defaults_for_sparse_serialization = 1, index_granularity = 8192, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
+
+INSERT INTO t_sparse_prewhere_types SELECT
+    number,
+    cityHash64(number) % 20 = 0 ? toString(number) : '',
+    cityHash64(number, 1) % 10 < 7 ? toString(number) : '',
+    number % 8192 < 64 AND number % 2 = 0 ? toString(number) : '',
+    number % 8192 >= 5120 AND number % 8192 < 5620 ? toString(number) : '',
+    number % 13 = 0 ? number : 0,
+    number,
+    toString(number),
+    number % 7 = 0 ? NULL : number,
+    toString(number % 100),
+    range(number % 5),
+    range(number % 20),
+    arrayMap(x -> toString(x), range(number % 3)),
+    map('a', number, 'b', number % 3),
+    (number, toString(number % 11))
+FROM numbers(300000);
+
+INSERT INTO t_full_prewhere_types SELECT * FROM t_sparse_prewhere_types;
+
+SELECT table, column, serialization_kind FROM system.parts_columns
+WHERE database = currentDatabase() AND table IN ('t_sparse_prewhere_types', 't_full_prewhere_types') AND active AND column IN ('s', 'w', 'z', 'r', 'o')
+GROUP BY ALL ORDER BY ALL;
+
+SELECT (SELECT (count(), sum(cityHash64(id, s, w, z, o, d, ds, ifNull(n, 0), isNull(n), lc, arr, arrl, arrs, m, t))) FROM t_sparse_prewhere_types PREWHERE s != '')
+     = (SELECT (count(), sum(cityHash64(id, s, w, z, o, d, ds, ifNull(n, 0), isNull(n), lc, arr, arrl, arrs, m, t))) FROM t_full_prewhere_types PREWHERE s != '');
+
+SELECT (SELECT (count(), sum(cityHash64(id, s, w, z, o, d, ds, ifNull(n, 0), isNull(n), lc, arr, arrl, arrs, m, t))) FROM t_sparse_prewhere_types PREWHERE w != '')
+     = (SELECT (count(), sum(cityHash64(id, s, w, z, o, d, ds, ifNull(n, 0), isNull(n), lc, arr, arrl, arrs, m, t))) FROM t_full_prewhere_types PREWHERE w != '');
+
+SELECT (SELECT (count(), sum(cityHash64(id, s, w, z, o, d, ds, ifNull(n, 0), isNull(n), lc, arr, arrl, arrs, m, t))) FROM t_sparse_prewhere_types PREWHERE z != '')
+     = (SELECT (count(), sum(cityHash64(id, s, w, z, o, d, ds, ifNull(n, 0), isNull(n), lc, arr, arrl, arrs, m, t))) FROM t_full_prewhere_types PREWHERE z != '');
+
+SELECT (SELECT (count(), sum(cityHash64(id, s, w, z, r, o, d, ds, ifNull(n, 0), isNull(n), lc, arr, arrl, arrs, m, t))) FROM t_sparse_prewhere_types PREWHERE r != '')
+     = (SELECT (count(), sum(cityHash64(id, s, w, z, r, o, d, ds, ifNull(n, 0), isNull(n), lc, arr, arrl, arrs, m, t))) FROM t_full_prewhere_types PREWHERE r != '');
+
+SELECT (SELECT (count(), sum(cityHash64(id, s, o, d, ds, lc, arr, arrl, m))) FROM t_sparse_prewhere_types PREWHERE s != '' AND o != 0 SETTINGS enable_multiple_prewhere_read_steps = 1)
+     = (SELECT (count(), sum(cityHash64(id, s, o, d, ds, lc, arr, arrl, m))) FROM t_full_prewhere_types PREWHERE s != '' AND o != 0 SETTINGS enable_multiple_prewhere_read_steps = 1);
+
+DROP TABLE t_sparse_prewhere_types;
+DROP TABLE t_full_prewhere_types;

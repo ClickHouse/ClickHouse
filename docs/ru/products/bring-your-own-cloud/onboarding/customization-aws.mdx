@@ -8,7 +8,7 @@ doc_type: 'reference'
 ---
 
 <div id="customer-managed-vpc-aws">
-  ## Управляемая клиентом VPC (BYO-VPC) для AWS
+  ## Управляемая клиентом VPC (BYO-VPC) для AWS {#customer-managed-vpc-aws}
 </div>
 
 Если вы хотите использовать существующую VPC для развертывания ClickHouse BYOC, а не поручать ClickHouse Cloud создание новой VPC, выполните приведенные ниже шаги. Такой подход дает больше контроля над конфигурацией сети и позволяет интегрировать ClickHouse BYOC в вашу существующую сетевую инфраструктуру.
@@ -21,23 +21,15 @@ doc_type: 'reference'
     4. Добавьте в каждую подсеть теги `kubernetes.io/role/internal-elb=1` и `clickhouse-byoc="true"`, чтобы обеспечить корректную настройку балансировщика нагрузки.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Подсеть BYOC VPC](/images/cloud/reference/byoc-subnet-1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Подсеть BYOC VPC](/images/cloud/reference/byoc-subnet-1.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Теги подсети BYOC VPC](/images/cloud/reference/byoc-subnet-2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Теги подсети BYOC VPC](/images/cloud/reference/byoc-subnet-2.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -45,13 +37,9 @@ doc_type: 'reference'
     Если в вашей VPC еще не настроена конечная точка шлюза S3, ее нужно создать, чтобы обеспечить безопасное приватное взаимодействие между вашей VPC и Amazon S3. Эта конечная точка позволяет сервисам ClickHouse обращаться к S3 без выхода в публичный интернет. Пример конфигурации приведен на снимке экрана ниже.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Конечная точка S3 BYOC](/images/cloud/reference/byoc-s3-endpoint.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Конечная точка S3 BYOC](/images/cloud/reference/byoc-s3-endpoint.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -81,7 +69,7 @@ doc_type: 'reference'
       Бакеты хранилища, Kubernetes-кластер и вычислительные ресурсы, необходимые для запуска ClickHouse, не входят в эту первоначальную настройку. Они будут подготовлены на следующем шаге. Хотя вы управляете своей VPC, ClickHouse Cloud по-прежнему нужны разрешения IAM для создания и управления Kubernetes-кластером, ролями IAM для service accounts, S3 бакетами и другими важными ресурсами в вашей учетной записи AWS.
     </Note>
 
-#### Модуль Terraform
+#### Модуль Terraform {#terraform-module-aws}
 
     Если вы предпочитаете использовать Terraform вместо CloudFormation, используйте модуль [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
@@ -118,13 +106,9 @@ doc_type: 'reference'
     5. Нажмите **Set up Infrastructure**, чтобы начать подготовку инфраструктуры.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Интерфейс настройки BYOC в ClickHouse Cloud с выбранным пунктом Use existing VPC](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Интерфейс настройки BYOC в ClickHouse Cloud с выбранным пунктом Use existing VPC](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
+      </Frame>
     </div>
 
     <Note>

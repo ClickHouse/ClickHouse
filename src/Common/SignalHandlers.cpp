@@ -21,6 +21,7 @@
 #include <Core/Settings.h>
 #include <Poco/Environment.h>
 
+#include <algorithm>
 #include <thread>
 #include <unistd.h>
 
@@ -54,7 +55,7 @@ static std::atomic_bool is_crashed = false;
 static_assert(std::atomic_bool::is_always_lock_free, "is_crashed must be lock-free for use in signal handlers");
 bool isCrashed() { return is_crashed.load(std::memory_order_relaxed); }
 
-/// Set once the deadly signal handlers are reset to SIG_DFL; makes resetHandledSignals() a no-op afterwards.
+/// Set once the deadly signal handlers are reset to their previous actions; makes resetHandledSignals() a no-op afterwards.
 static std::atomic_flag handled_signals_were_reset;
 
 /// After re-raising the signal, the siginfo recorded in the core dump shows SI_TKILL with no si_addr,
@@ -63,6 +64,18 @@ static std::atomic<uintptr_t> saved_fault_address{0};
 static_assert(std::atomic<uintptr_t>::is_always_lock_free, "saved_fault_address must be lock-free for use in signal handlers");
 static std::atomic<const char *> saved_fault_access_type{nullptr};
 static_assert(std::atomic<const char *>::is_always_lock_free, "saved_fault_access_type must be lock-free for use in signal handlers");
+
+/// The signals a fault of the stack unwinder raises: SIGBUS from the frame-pointer walk on Darwin,
+/// SIGILL from a failed return address authentication on AArch64 cores with FEAT_FPAC.
+static constexpr int unwind_fault_signals[] = {
+    SIGSEGV,
+#if defined(OS_DARWIN)
+    SIGBUS,
+#endif
+#if defined(OS_LINUX) && defined(__aarch64__)
+    SIGILL,
+#endif
+};
 
 
 void call_default_signal_handler([[maybe_unused]] int sig)
@@ -130,12 +143,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     /// interrupts a thread parked in frame-pointer-less libsystem code), which raises SIGBUS, so recover
     /// from that too there. We siglongjmp back to asynchronous_stack_unwinding_signal_jump_buffer, where
     /// the handler drops the capture (the profiler also increments ProfileEvents::QueryProfilerErrors).
-    if (asynchronous_stack_unwinding
-        && (sig == SIGSEGV
-#if defined(OS_DARWIN)
-            || sig == SIGBUS
-#endif
-        ))
+    if (asynchronous_stack_unwinding && std::ranges::contains(unwind_fault_signals, sig))
         siglongjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1);
 
     DENY_ALLOCATIONS_IN_SCOPE;
@@ -155,7 +163,20 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
 
     const ucontext_t * signal_context = reinterpret_cast<ucontext_t *>(context);
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    /// The deadly and SIGTSTP registrations block these signals, and a blocked fault kills the process
+    /// instead of reaching the recovery above.
+    sigset_t unwind_fault_set;
+    sigemptyset(&unwind_fault_set);
+    for (int fault_sig : unwind_fault_signals)
+        sigaddset(&unwind_fault_set, fault_sig);
+    sigset_t previous_mask;
+    pthread_sigmask(SIG_UNBLOCK, &unwind_fault_set, &previous_mask);
+#endif
     const StackTrace stack_trace(*signal_context);
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    pthread_sigmask(SIG_SETMASK, &previous_mask, nullptr);
+#endif
 
     writeBinary(sig, out);
     writePODBinary(*info, out);
@@ -347,12 +368,25 @@ void HandledSignals::addSignalHandler(
             throw Poco::Exception("Cannot set signal handler.");
 #endif
 
+    const auto & asynchronous_signals = asynchronousHandledSignals();
+    handled_signals.reserve(handled_signals.size() + signals.size());
     for (auto signal : signals)
-        if (sigaction(signal, &sa, nullptr))
+    {
+        struct sigaction previous{};
+        if (sigaction(signal, &sa, &previous))
             throw Poco::Exception("Cannot set signal handler.");
 
-    if (register_signal)
-        std::copy(signals.begin(), signals.end(), std::back_inserter(handled_signals));
+        /// An asynchronous signal goes back to SIG_DFL: in a restarted watchdog child,
+        /// its previous action is the watchdog's forwarding handler.
+        if (std::ranges::contains(asynchronous_signals, signal))
+        {
+            previous = {};
+            previous.sa_handler = SIG_DFL;
+        }
+
+        if (register_signal)
+            handled_signals.emplace_back(signal, previous);
+    }
 #endif
 }
 
@@ -889,13 +923,12 @@ void HandledSignals::reset(bool close_pipe)
 {
     handled_signals_were_reset.test_and_set();
 
-    /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
-    /// Nothing was ever installed where there are no signals, so `handled_signals` is empty there
-    /// and this loop does nothing; it is compiled out to keep `signal` out of the WebAssembly link.
+    /// Restore the recorded actions, to avoid trying to write to the signal_pipe that will be closed after.
+    /// Nothing was ever installed where there are no signals, so this loop is compiled out there.
 #if defined(OS_HAS_SIGNAL_HANDLERS)
-    for (int sig : handled_signals)
+    for (auto it = handled_signals.rbegin(); it != handled_signals.rend(); ++it)
     {
-        if (SIG_ERR == signal(sig, SIG_DFL))
+        if (0 != sigaction(it->first, &it->second, nullptr))
         {
             try
             {

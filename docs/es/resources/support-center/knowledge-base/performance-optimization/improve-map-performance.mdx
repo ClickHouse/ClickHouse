@@ -6,37 +6,35 @@ tags: ['Rendimiento y optimización']
 keywords: ['Rendimiento de Map']
 ---
 
-<div id="problem">
-  ## Problema
-</div>
+## Problema {#problem}
 
-Una operación de búsqueda sobre Map, como `a['key']`, tiene complejidad lineal (como se menciona [aquí](/es/reference/data-types/map)) y puede resultar ineficiente. Esto se debe a que seleccionar un valor con una clave específica de una tabla requeriría recorrer todas las claves (~M) de todas las filas (N) de la columna Map, lo que da como resultado ~MxN búsquedas.
+Una búsqueda en Map, como `a['key']`, tiene complejidad lineal (como se menciona [aquí](/es/reference/data-types/map)) y puede resultar ineficiente. Esto se debe a que seleccionar un valor con una clave específica de una table requeriría recorrer todas las claves (~M) de todas las filas (N) de la columna Map, lo que da como resultado ~MxN búsquedas.
 
 Una búsqueda con Map puede ser 10 veces más lento que una columna String. El experimento siguiente también muestra una ralentización de ~10 veces para una consulta en frío, y una diferencia de varios órdenes de magnitud en el volumen de datos procesados (7.21 MB frente a 5.65 GB).
 
 ```sql
--- crear tabla con SpanName como String y ResourceAttributes como Map
+-- create table with SpanNAme as String and ResourceAttributes as Map
 DROP TABLE IF EXISTS tbl;
 CREATE TABLE tbl (
-    `Timestamp` DateTime64(9) CODEC (Delta(8), ZSTD(1)),
-    `TraceId` String CODEC (ZSTD(1)),
-    `ServiceName` LowCardinality(String) CODEC (ZSTD(1)),
-    `Duration` UInt8 CODEC (ZSTD(1)), -- Int64
-    `SpanName` LowCardinality(String) CODEC (ZSTD(1)),
-    `ResourceAttributes` Map(LowCardinality(String), String) CODEC (ZSTD(1))
+    `Timestamp` DateTime64(9) CODEC(Delta, Default),
+    `TraceId` String,
+    `ServiceName` LowCardinality(String),
+    `Duration` UInt8, -- Int64
+    `SpanName` LowCardinality(String),
+    `ResourceAttributes` Map(LowCardinality(String), String)
 )
 ENGINE = MergeTree
 PARTITION BY toDate(Timestamp)
 ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId);
 
--- crear UDF para generar datos Map aleatorios para ResourceAttributes
+-- create UDF to generate random Map data for ResourceAttributes
 DROP FUNCTION IF EXISTS genmap;
 CREATE FUNCTION genmap AS (n) -> arrayMap (x-> (x::String, (x*rand32())::String), range(1, n));
 
--- verificar que genmap funciona como se espera
+-- check that genmap is working as intended
 SELECT genmap(10)::Map(String, String);
 
--- insertar 1M de filas
+-- insert 1M rows
 INSERT INTO tbl
 SELECT
     now() - randUniform(1, 1000000.) as Timestamp,
@@ -47,7 +45,7 @@ SELECT
     genmap(rand64()%500)::Map(String, String) as ResourceAttributes
 FROM numbers(1_000_000);
 
--- la consulta por SpanName es más rápida
+-- querying for SpanName is faster
 -- [cold] 0 rows in set. Elapsed: 0.642 sec. Processed 1.00 million rows, 7.21 MB (1.56 million rows/s., 11.22 MB/s.)
 -- [warm] 0 rows in set. Elapsed: 0.164 sec. Processed 1.00 million rows, 7.21 MB (6.10 million rows/s., 43.99 MB/s.)
 SELECT
@@ -59,7 +57,7 @@ SELECT
 FROM tbl
 GROUP BY SpanName ORDER BY 1 DESC LIMIT 50 FORMAT Null;
 
--- la consulta por ResourceAttributes es más lenta
+-- query for ResourceAttributes is slower
 -- [cold] 0 rows in set. Elapsed: 6.432 sec. Processed 1.00 million rows, 5.65 GB (155.46 thousand rows/s., 879.07 MB/s.)
 -- [warm] 0 rows in set. Elapsed: 5.935 sec. Processed 1.00 million rows, 5.65 GB (168.50 thousand rows/s., 952.81 MB/s.)
 SELECT
