@@ -1355,18 +1355,23 @@ void MetadataStorageFromPlainRewritableObjectStorage::dropCache()
 
 void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
 {
-    if (!previous_refresh.compareAndRestart(0.001 * static_cast<double>(not_sooner_than_milliseconds)))
+    const bool explicit_request = not_sooner_than_milliseconds == 0;
+    if (explicit_request)
+        previous_refresh.restart();
+    else if (!previous_refresh.compareAndRestart(0.001 * static_cast<double>(not_sooner_than_milliseconds)))
         return;
 
     std::unique_lock load_lock(load_mutex, std::defer_lock);
-    if (!load_lock.try_lock())
+    if (explicit_request)
+        load_lock.lock();
+    else if (!load_lock.try_lock())
         return;
 
     /// The periodic refresh is best-effort. Waiting for the transactions in flight would make every new transaction
     /// wait behind this one, which is exactly the disk-wide stall during a long operation that the path locks avoid;
-    /// so skip this round instead if anything is in flight. An explicit request (SYSTEM RESTART DISK passes zero
-    /// to bypass the throttle) waits.
-    const auto tx_lock = not_sooner_than_milliseconds == 0 ? std::optional(path_locks.lockAll()) : path_locks.tryLockAll();
+    /// so skip this round instead if anything is in flight. An explicit request (zero) waits for a reload in flight
+    /// and then reloads itself.
+    const auto tx_lock = explicit_request ? std::optional(path_locks.lockAll()) : path_locks.tryLockAll();
     if (!tx_lock)
         return;
 
@@ -1771,6 +1776,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
     const auto normalized_path_to = normalizePath(path_to);
     uncommitted_state.useDirectory(normalized_path_from.parent_path());
     uncommitted_state.useDirectory(normalized_path_to.parent_path());
+    materializeVirtualDirectory(normalized_path_to.parent_path());
 
     /// A real hard link would make the metadata of the target directory unreadable by older servers, so it is opt-in.
     if (!metadata_storage.hard_links_enabled)
@@ -1813,12 +1819,25 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
         metadata_storage.metrics));
 }
 
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::materializeVirtualDirectory(const NormalizedPath & directory)
+{
+    /// A file can be put only into a directory with its own `prefix.path`, not into one that exists only as an ancestor
+    /// of other directories.
+    if (uncommitted_state.getDirectoryRemoteInfo(directory) || !uncommitted_state.getSnapshot().existsDirectory(directory))
+        return;
+
+    /// The same as for a new file in `generateObjectKeyForPath`.
+    uncommitted_state.useMissingDirectory(directory);
+    createDirectoryRecursive(directory);
+}
+
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::planFileMove(const NormalizedPath & path_from, const NormalizedPath & path_to)
 {
     markFallbackCopyMoved(path_from.string(), path_to.string());
 
     uncommitted_state.useDirectory(path_from.parent_path());
     uncommitted_state.useDirectory(path_to.parent_path());
+    materializeVirtualDirectory(path_to.parent_path());
 
     const auto & snapshot = uncommitted_state.getSnapshot();
     const auto directory_from = snapshot.getDirectoryRemoteInfo(path_from.parent_path());

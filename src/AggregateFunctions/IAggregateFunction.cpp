@@ -2,6 +2,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <base/arithmeticOverflow.h>
 
@@ -13,6 +14,12 @@ namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
 extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+extern const char aggregator_merge_batch_throw[];
 }
 
 namespace
@@ -151,11 +158,6 @@ bool IAggregateFunction::haveSameStateRepresentationImpl(const IAggregateFunctio
     return getStateType()->equals(*rhs.getStateType());
 }
 
-bool IAggregateFunction::haveSameDefinition(const IAggregateFunction & rhs) const
-{
-    return assert_cast<const DataTypeAggregateFunction &>(*getStateType()).equalsIgnoringVariant(*rhs.getStateType());
-}
-
 void IAggregateFunction::parallelizeMergePrepare(
     AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/) const
 {
@@ -172,19 +174,6 @@ char * IAggregateFunction::serializeToMemory(ConstAggregateDataPtr __restrict, c
 void IAggregateFunction::setSumAndCount(AggregateDataPtr __restrict /*place*/, const Field & /*sum*/, UInt64 /*count*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method setSumAndCount is not implemented for {}", getName());
-}
-
-void IAggregateFunction::mergeStateFromDifferentVariant(
-    AggregateDataPtr __restrict /*place*/, const IAggregateFunction & rhs, ConstAggregateDataPtr /*rhs_place*/, Arena * /*arena*/) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED,
-        "mergeStateFromDifferentVariant() is not implemented for aggregate function '{}' ({} state variant). "
-        "Cannot merge state produced by '{}' ({} state variant)",
-        getName(),
-        toString(getStateVariant()),
-        rhs.getName(),
-        toString(rhs.getStateVariant()));
 }
 
 void IAggregateFunction::mergeImpl(
@@ -288,6 +277,14 @@ void IAggregateFunction::mergeBatchOrDefer(
 
         mergeImpl(places[i] + place_offset, rhs[i], arena);
     }
+}
+
+void IAggregateFunction::injectMergeBatchFault()
+{
+    fiu_do_on(FailPoints::aggregator_merge_batch_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault in the batch merge of aggregate function states");
+    });
 }
 
 void IAggregateFunction::insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const

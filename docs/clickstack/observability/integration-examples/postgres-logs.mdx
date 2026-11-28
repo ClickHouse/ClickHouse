@@ -9,7 +9,6 @@ keywords: ['PostgreSQL', 'Postgres', 'logs', 'OTEL', 'ClickHouse Observability',
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 Collect PostgreSQL CSV logs with an OpenTelemetry collector and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without installing PostgreSQL.
@@ -30,7 +29,15 @@ Collect PostgreSQL CSV logs with an OpenTelemetry collector and send them to Cli
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
 
@@ -322,7 +329,15 @@ Leave the terminal open while verifying ingestion. Stop the collector with **Ctr
 
 Open **Search**, select **Logs**, filter for `ServiceName:postgresql-demo`, and select **Last 2 days**. Expand a record to inspect fields such as `database_name`, `error_severity`, `message`, and `query`.
 
-<Image img="/images/clickstack/observability-postgres-demo-logs.png" alt="PostgreSQL demo logs in ClickHouse Observability Search"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![PostgreSQL demo logs in ClickHouse Observability Search](/images/clickstack/observability-postgres-demo-logs.png)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -336,14 +351,30 @@ Open **Search**, select **Logs**, filter for `ServiceName:postgresql-demo`, and 
 2. Upload `postgresql-logs-dashboard.json`.
 3. Map the charts to your **Logs** source and click **Finish Import**.
 
-<Image img="/images/clickstack/observability-import-dashboard.png" alt="Dashboards page with the Import button highlighted"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboards page with the Import button highlighted](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
 
 </Step>
 <Step title="View the dashboard" id="view-dashboard">
 
 Select **Last 2 days** for the sample and optionally filter for `ServiceName:postgresql-demo`. For your own logs, filter for `ServiceName:postgresql-service` and choose a time range covering your records.
 
-<Image img="/images/clickstack/observability-postgres-logs-dashboard.png" alt="PostgreSQL logs dashboard showing log volume, slow queries, databases, errors, authentication failures, and query types"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![PostgreSQL logs dashboard showing log volume, slow queries, databases, errors, authentication failures, and query types](/images/clickstack/observability-postgres-logs-dashboard.png)
+
+</Frame>
+
+</div>
 
 </Step>
 </Steps>

@@ -7,14 +7,21 @@ doc_type: 'guide'
 keywords: ['clickstack', 'AI notebooks', 'investigation', 'observability', 'ClickStack UI']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge/>
 
 AI Notebooks are an interactive investigation tool in ClickHouse Observability that combines an AI agent with manual analysis. You can describe an issue in plain language, and the AI agent will query logs, traces, and metrics on your behalf — surfacing relevant data, charts, and summaries as a series of tiles. You can also add your own tiles (charts, tables, searches, and markdown notes) alongside the AI-generated output, building a complete record of an investigation.
 
-<Image img="/images/clickstack/observability-notebook-hero.png" alt="AI Notebook analyzing recent errors with investigation steps and a summary" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![AI Notebook analyzing recent errors with investigation steps and a summary](/images/clickstack/observability-notebook-hero.png)
+
+</Frame>
+
+</div>
 
 ## Setup {#setup}
 
@@ -35,7 +42,15 @@ A team admin must enable the Generative AI consent toggle before notebooks (and 
 2. Turn on the Generative AI toggle.
 3. Review and accept the consent dialog.
 
-<Image img="/images/clickstack/observability-notebook-ai-consent.png" alt="Configure Generative AI settings with Chart AI Assistant and AI Notebooks enabled" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Configure Generative AI settings with Chart AI Assistant and AI Notebooks enabled](/images/clickstack/observability-notebook-ai-consent.png)
+
+</Frame>
+
+</div>
 
 ## Using AI Notebooks {#using-notebooks}
 
@@ -46,7 +61,15 @@ A team admin must enable the Generative AI consent toggle before notebooks (and 
 
 The notebook list page shows all notebooks you have access to. You can filter by name, tags, or toggle between **My Notebooks** and **All Notebooks**.
 
-<Image img="/images/clickstack/observability-notebook-list.png" alt="Notebook list page" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Notebook list page](/images/clickstack/observability-notebook-list.png)
+
+</Frame>
+
+</div>
 
 ### Running an AI investigation {#running-investigation}
 
@@ -62,7 +85,15 @@ Each step appears as a tile in the notebook. **Thought process** tiles show the 
 
 While an investigation is running, you can click **Stop** to cancel it.
 
-<Image img="/images/clickstack/observability-notebook-tiles.png" alt="Notebook with AI-generated tiles" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Notebook with AI-generated tiles](/images/clickstack/observability-notebook-tiles.png)
+
+</Frame>
+
+</div>
 
 ### Branching an investigation {#branching}
 
@@ -74,11 +105,27 @@ To create a branch:
 2. In the dialog, enter a modified prompt that steers the investigation in the new direction.
 3. Click **Create Branch**. The AI starts a new investigation branch from that point.
 
-<Image img="/images/clickstack/observability-notebook-branch-modal.png" alt="Create New Branch dialog" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Create New Branch dialog](/images/clickstack/observability-notebook-branch-modal.png)
+
+</Frame>
+
+</div>
 
 Once a tile has multiple branches, left and right arrow buttons appear on the tile header with a badge (e.g. **1/2**) indicating how many branches exist. Click the arrows to switch between branches.
 
-<Image img="/images/use-cases/observability/hyperdx-notebook-branching.webp" alt="Branch navigation arrows and 1/2 badge on a tile" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Branch navigation arrows and 1/2 badge on a tile](/images/use-cases/observability/hyperdx-notebook-branching.webp)
+
+</Frame>
+
+</div>
 
 ### Adding manual tiles {#manual-tiles}
 
@@ -95,7 +142,15 @@ After adding a tile, it opens in inline edit mode where you can configure the da
 
 Manual tiles are added below the last visible tile in the current branch. You can resize tiles vertically by dragging their bottom edge.
 
-<Image img="/images/clickstack/observability-notebook-manual-tiles.png" alt="Manual tile buttons at the bottom of a notebook" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Manual tile buttons at the bottom of a notebook](/images/clickstack/observability-notebook-manual-tiles.png)
+
+</Frame>
+
+</div>
 
 <Note>
 If an AI investigation is currently running, adding or editing a manual tile will cancel the investigation. A confirmation dialog will appear before proceeding.
@@ -119,4 +174,12 @@ To configure this:
 
 This context is appended to the AI's system prompt for all notebook investigations across the team.
 
-<Image img="/images/clickstack/observability-notebook-agent-context.png" alt="Custom Agent Context panel on the AI notebooks page" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Custom Agent Context panel on the AI notebooks page](/images/clickstack/observability-notebook-agent-context.png)
+
+</Frame>
+
+</div>

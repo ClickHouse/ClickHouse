@@ -4,7 +4,11 @@
 /// without pulling in the full CurrentThread.h (which includes ThreadStatus.h).
 
 #include <memory>
+#include <optional>
+#include <type_traits>
+#include <utility>
 #include <boost/core/noncopyable.hpp>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/setThreadName.h>
 
 namespace DB
@@ -19,15 +23,13 @@ class ThreadStatus;
 /// This is equivalent to CurrentThread::getGroup() but avoids including CurrentThread.h.
 ThreadGroupPtr getCurrentThreadGroup();
 
+/// Whether the current thread has a `ThreadStatus`, so that it can attach to a group.
+bool hasThreadStatus();
+
 /**
  * RAII wrapper around CurrentThread::attachToGroup/detachFromGroupIfNotDetached.
  *
- * Typically used for inheriting thread group when scheduling tasks on a thread pool:
- *   pool->scheduleOrThrow([thread_group = CurrentThread::getGroup()]()
- *       {
- *           ThreadGroupSwitcher switcher(thread_group, "MyThread");
- *           ...
- *       });
+ * To run a pool job for the query that schedules it, prefer `attachedJob`.
  */
 class ThreadGroupSwitcher : private boost::noncopyable
 {
@@ -51,5 +53,38 @@ private:
     bool should_restore_prev_thread_name = false;
 };
 
+
+/// A pool job that runs `f` attached to the thread group of the scheduling thread, like
+///   pool->scheduleOrThrow(attachedJob(ThreadName::X, [captures] { ... }));
+/// `f` is destroyed attached as well, so what it captured is released by the query it belongs to, also when the job is
+/// dropped without running. The job and its state are the server's, so they cost no query memory themselves.
+template <typename F>
+auto attachedJob(ThreadName thread_name, F && f)
+{
+    struct State
+    {
+        ThreadGroupPtr thread_group;
+        std::optional<std::decay_t<F>> f;
+        ThreadName thread_name{};
+
+        ~State()
+        {
+            /// Not run: dropped by the pool, or after a failed schedule on the scheduling thread, where this does nothing.
+            /// A thread without a `ThreadStatus` cannot attach, and releases it as it is.
+            if (!f || !hasThreadStatus())
+                return;
+            ThreadGroupSwitcher switcher(std::move(thread_group), thread_name, /*allow_existing_group=*/ true);
+            f.reset();
+        }
+    };
+    auto job_state = std::allocate_shared<State>(ServerOwnedAllocator<State>{}, getCurrentThreadGroup(), std::forward<F>(f), thread_name);
+    return makeServerOwnedJob([state = std::move(job_state)]
+    {
+        ThreadGroupSwitcher switcher(std::move(state->thread_group), state->thread_name);
+        auto local = std::move(*state->f);
+        state->f.reset();
+        local();
+    });
+}
 
 }

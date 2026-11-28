@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <filesystem>
 #include <map>
 #include <mutex>
@@ -113,9 +114,44 @@ bool StackTrace::showAddresses()
     return show_addresses.load(std::memory_order_relaxed);
 }
 
+static void * getCallerAddress(const ucontext_t & context);
+
+/// Whether the faulting instruction is the trap that Clang emits for a failed CFI check: `llvm.ubsantrap` with the
+/// `CFICheckFail` kind (2), which is `ud1l 2(%eax), %eax` on x86-64 (SIGILL) and `brk #0x5502` on AArch64 (SIGTRAP).
+/// See `EmitTrapCheck` in clang/lib/CodeGen/CGExpr.cpp, the kinds in clang/lib/CodeGen/SanitizerHandler.h, `UBSAN_UD1` in
+/// llvm/lib/Target/X86/X86MCInstLower.cpp and `ubsan_trap_xform` in llvm/lib/Target/AArch64/AArch64InstrInfo.td.
+static bool isCFICheckTrap([[maybe_unused]] int sig, [[maybe_unused]] const ucontext_t & context)
+{
+    [[maybe_unused]] static constexpr uint8_t cfi_check_fail_kind = 2;
+    /// Check `sig` before touching `context`: for a signal whose handler returns (`SIGTSTP`) it is already dangling.
+#if defined(__x86_64__)
+    static constexpr uint8_t trap[] = {0x67, 0x0f, 0xb9, 0x40, cfi_check_fail_kind};
+    if (sig != SIGILL)
+        return false;
+    const auto * pc = static_cast<const uint8_t *>(getCallerAddress(context));
+    return pc && memcmp(pc, trap, sizeof(trap)) == 0;
+#elif defined(__aarch64__)
+    static constexpr uint32_t trap = 0xd4200000 | ((0x5500 | cfi_check_fail_kind) << 5);
+    if (sig != SIGTRAP)
+        return false;
+    const auto * pc = static_cast<const uint8_t *>(getCallerAddress(context));
+    if (!pc)
+        return false;
+    uint32_t instruction = 0;
+    memcpy(&instruction, pc, sizeof(instruction));
+    return instruction == trap;
+#else
+    return false;
+#endif
+}
+
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     std::string message = getSignalCodeDescription(sig, info.si_code);
+
+    if (isCFICheckTrap(sig, context))
+        return "Failed Clang CFI check: an indirect call, a virtual call or a cast reached a function or object of an "
+               "unexpected type. " + message;
 
     if (sig == SIGSEGV || sig == SIGBUS)
     {

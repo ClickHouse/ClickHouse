@@ -115,7 +115,7 @@ private:
     void recordReadParts(const String & query, const ContextPtr & context);
 
     /// Whether the parts recorded for a query of the current oracle have changed since.
-    bool readPartsChanged(const ContextPtr & context) const;
+    [[nodiscard]] bool readPartsChanged(const ContextPtr & context) const;
 
     /// Each query the current oracle executed, with the parts recorded before it.
     std::vector<std::pair<ASTPtr, Strings>> read_parts;

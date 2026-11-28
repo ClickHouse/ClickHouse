@@ -6,11 +6,10 @@ keywords: ['партиции', 'partition by']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.jsx";
 
 <div id="what-are-table-partitions-in-clickhouse">
-  ## Что такое партиции таблицы в ClickHouse?
+  ## Что такое партиции таблицы в ClickHouse? {#what-are-table-partitions-in-clickhouse}
 </div>
 
 <br />
@@ -18,7 +17,7 @@ import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.
 Партиции объединяют [части данных](/ru/concepts/core-concepts/parts) таблицы из [семейства движков MergeTree](/ru/reference/engines/table-engines/mergetree-family/index) в упорядоченные логические единицы. Это способ организации данных в соответствии с определёнными критериями, такими как временные диапазоны, категории или другие ключевые атрибуты. Такие логические единицы упрощают управление данными, выполнение запросов и оптимизацию.
 
 <div id="partition-by">
-  ### PARTITION BY
+  ### PARTITION BY {#partition-by}
 </div>
 
 Партиционирование можно включить при первоначальном определении таблицы с помощью [секции PARTITION BY](/ru/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Эта секция может содержать SQL-выражение над любыми столбцами, результат которого определяет, к какой партиции принадлежит строка.
@@ -40,13 +39,15 @@ PARTITION BY toStartOfMonth(date);
 
 Вы можете [запросить данные из этой таблицы](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB1ay51a19wcmljZV9wYWlkX3NpbXBsZV9wYXJ0aXRpb25lZA\&run_query=true\&tab=results) в нашей Песочнице ClickHouse.
 
-<div id="structure-on-disk">
-  ### Структура на диске
-</div>
+### Структура на диске {#structure-on-disk}
 
 Каждый раз, когда в таблицу вставляется набор строк, ClickHouse вместо создания (как минимум [одной](/ru/reference/settings/session-settings/max-insert#max_insert_block_size)) одной-единственной части данных, содержащей все вставленные строки (как описано [здесь](/ru/concepts/core-concepts/parts)), создает по одной новой части данных для каждого уникального значения ключа партиционирования среди вставленных строк:
 
-<Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="ОБРАБОТКА INSERT" />
+<div className="ch-image-lg">
+  <Frame>
+    ![ОБРАБОТКА INSERT](/images/managing-data/core-concepts/partitions.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -55,20 +56,22 @@ PARTITION BY toStartOfMonth(date);
 
 Обратите внимание: при включенном партиционировании ClickHouse автоматически создает [индексы MinMax](https://github.com/ClickHouse/ClickHouse/blob/dacc8ebb0dac5bbfce5a7541e7fc70f26f7d5065/src/Storages/MergeTree/IMergeTreeDataPart.h#L341) для каждой части данных. Это просто файлы для каждого столбца таблицы, используемого в выражении ключа партиционирования, которые содержат минимальное и максимальное значения этого столбца в пределах части данных.
 
-<div id="per-partition-merges">
-  ### Слияния внутри партиций
-</div>
+### Слияния внутри партиций {#per-partition-merges}
 
 При включенном партиционировании ClickHouse выполняет [слияния](/ru/concepts/core-concepts/merges) частей данных только в пределах одной партиции, но не между разными партициями. Покажем это на примере таблицы выше:
 
-<Image img="/images/managing-data/core-concepts/merges_with_partitions.webp" size="lg" alt="PART MERGES" />
+<div className="ch-image-lg">
+  <Frame>
+    ![СЛИЯНИЯ ЧАСТЕЙ](/images/managing-data/core-concepts/merges_with_partitions.webp)
+  </Frame>
+</div>
 
 <br />
 
 Как показано на диаграмме выше, части, принадлежащие разным партициям, никогда не сливаются. Если выбран ключ партиционирования с высокой мощностью, то части, распределенные по тысячам партиций, никогда не будут кандидатами на слияние, что приведет к превышению заранее заданных ограничений и вызовет пресловутую ошибку `Too many parts`. Решение этой проблемы простое: выберите разумный ключ партиционирования с [мощностью менее 1000..10000](https://github.com/ClickHouse/ClickHouse/blob/ffc5b2c56160b53cf9e5b16cfb73ba1d956f7ce4/src/Storages/MergeTree/MergeTreeDataWriter.cpp#L121).
 
 <div id="monitoring-partitions">
-  ## Мониторинг партиций
+  ## Мониторинг партиций {#monitoring-partitions}
 </div>
 
 Вы можете [выполнить запрос](https://sql.clickhouse.com/?query=U0VMRUNUIERJU1RJTkNUIF9wYXJ0aXRpb25fdmFsdWUgQVMgcGFydGl0aW9uCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKT1JERVIgQlkgcGFydGl0aW9uIEFTQw\&run_query=true\&tab=results), чтобы получить список всех существующих уникальных партиций нашей тестовой таблицы, используя [виртуальный столбец](/ru/reference/engines/table-engines/index#table_engines-virtual_columns) `_partition_value`:
@@ -97,11 +100,11 @@ PARTITION BY toStartOfMonth(date);
 </RunnableCode>
 
 <div id="what-are-table-partitions-used-for">
-  ## Для чего нужны партиции таблиц?
+  ## Для чего нужны партиции таблиц? {#what-are-table-partitions-used-for}
 </div>
 
 <div id="data-management">
-  ### Управление данными
+  ### Управление данными {#data-management}
 </div>
 
 В ClickHouse партиционирование в первую очередь используется для управления данными. Благодаря логической организации данных на основе выражения партиционирования каждой партицией можно управлять независимо. Например, схема партиционирования в приведённой выше таблице позволяет реализовать сценарии, в которых в основной таблице хранятся только данные за последние 12 месяцев, а более старые данные автоматически удаляются с помощью [правила TTL](/ru/concepts/features/operations/delete/ttl) (см. добавленную последнюю строку DDL-оператора):
@@ -138,9 +141,7 @@ ORDER BY (town, street)
 TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
 ```
 
-<div id="query-optimization">
-  ### Оптимизация запросов
-</div>
+### Оптимизация запросов {#query-optimization}
 
 Партиции могут повысить производительность запросов, но это сильно зависит от характера доступа к данным. Если запросы обращаются только к нескольким партициям (в идеале — к одной), производительность может улучшиться. На практике это обычно полезно только тогда, когда ключ партиционирования не входит в первичный ключ, а фильтрация выполняется именно по нему, как показано в примере запроса ниже.
 
@@ -156,9 +157,13 @@ TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
 
 Этот запрос выполняется для таблицы из примера выше и [вычисляет](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIGRhdGUgPj0gJzIwMjAtMTItMDEnCiAgQU5EIGRhdGUgPD0gJzIwMjAtMTItMzEnCiAgQU5EIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results) максимальную цену среди всех проданных объектов недвижимости в Лондоне за декабрь 2020 года, используя фильтрацию как по столбцу (`date`), который входит в ключ партиционирования таблицы, так и по столбцу (`town`), который входит в первичный ключ таблицы (при этом `date` не является частью первичного ключа).
 
-ClickHouse обрабатывает этот запрос, применяя последовательность методов отсеивания данных, чтобы не обрабатывать нерелевантные данные:
+ClickHouse обрабатывает этот запрос, применяя последовательность методов отсечения данных, чтобы не обрабатывать нерелевантные данные:
 
-<Image img="/images/managing-data/core-concepts/partition-pruning.webp" size="lg" alt="PART MERGES 2" />
+<div className="ch-image-lg">
+  <Frame>
+    ![PART MERGES 2](/images/managing-data/core-concepts/partition-pruning.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -172,7 +177,7 @@ ClickHouse обрабатывает этот запрос, применяя по
   </Step>
 </Steps>
 
-Мы можем увидеть эти шаги отсеивания данных, [изучив](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) физический план выполнения для нашего примера запроса выше с помощью оператора [EXPLAIN](/ru/reference/statements/explain) :
+Мы можем увидеть эти шаги отсечения данных, [изучив](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) физический план выполнения для нашего примера запроса выше с помощью секции [EXPLAIN](/ru/reference/statements/explain) :
 
 ```sql style="fontSize:13px"
 EXPLAIN indexes = 1
@@ -232,7 +237,7 @@ WHERE date >= '2020-12-01'
 Это означает, что ClickHouse просканировал и обработал 1 гранулу (блок из [8192](/ru/reference/settings/merge-tree-settings/index-granularity#index_granularity) строк) за 6 миллисекунд, чтобы вычислить результат запроса.
 
 <div id="partitioning-is-primarily-a-data-management-feature">
-  ### Партиционирование — это прежде всего средство управления данными
+  ### Партиционирование — это прежде всего средство управления данными {#partitioning-is-primarily-a-data-management-feature}
 </div>
 
 Имейте в виду, что запросы по всем партициям обычно выполняются медленнее, чем тот же запрос к таблице без партиционирования.

@@ -27,6 +27,8 @@ template class CacheBase<UInt128, PrimaryIndex, UInt128TrivialHash, PrimaryIndex
 PrimaryIndexCache::PrimaryIndexCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
     : Base(cache_policy, CurrentMetrics::PrimaryIndexCacheBytes, CurrentMetrics::PrimaryIndexCacheFiles, max_size_in_bytes, 0, size_ratio)
 {
+    /// Shared by all queries, see `CacheBase::markServerOwned`.
+    markServerOwned();
 }
 
 UInt128 PrimaryIndexCache::hash(const String & part_path)

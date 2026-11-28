@@ -38,3 +38,8 @@ e_off	0
 1598
 h_on	0
 h_off	0
+--- F a key cast to Bool, compared with a UInt8 key ---
+1599	1279200
+1599	1279200
+f_on	0
+f_off	0

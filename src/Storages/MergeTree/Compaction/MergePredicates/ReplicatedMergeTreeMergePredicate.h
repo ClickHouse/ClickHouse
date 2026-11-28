@@ -12,9 +12,9 @@ class ReplicatedMergeTreeBaseMergePredicate : public DistributedMergePredicate<A
 public:
     explicit ReplicatedMergeTreeBaseMergePredicate(const ReplicatedMergeTreeQueue & queue_, std::optional<PartitionIdsHint> partition_ids_hint_);
 
-    std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
-    std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const;
-    PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override;
+    [[nodiscard]] std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
+    [[nodiscard]] std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const;
+    [[nodiscard]] PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override;
 
 protected:
     const ReplicatedMergeTreeQueue & queue;
@@ -51,19 +51,19 @@ public:
     /// mutation version (and -1 as alter version). In other case, we return biggest mutation version with
     /// smallest alter version. This required, because we have to execute alter mutations sequentially and
     /// don't glue them together. Alter is rare operation, so it shouldn't affect performance.
-    std::optional<std::pair<Int64, int>> getExpectedMutationVersion(const MergeTreeData::DataPartPtr & part) const;
+    [[nodiscard]] std::optional<std::pair<Int64, int>> getExpectedMutationVersion(const MergeTreeData::DataPartPtr & part) const;
 
     bool isMutationFinished(const std::string & znode_name, const std::map<String, int64_t> & block_numbers,
                             std::unordered_set<String> & checked_partitions_cache) const;
 
     /// The version of "log" node that is used to check that no new merges have appeared.
-    int32_t getVersion() const { return merges_version; }
+    [[nodiscard]] int32_t getVersion() const { return merges_version; }
 
     /// Returns true if there's a drop range covering new_drop_range_info
     bool isGoingToBeDropped(const MergeTreePartInfo & new_drop_range_info, MergeTreePartInfo * out_drop_range_info = nullptr) const;
 
     /// Returns virtual part covering part_name (if any) or empty string
-    String getCoveringVirtualPart(const String & part_name) const;
+    [[nodiscard]] String getCoveringVirtualPart(const String & part_name) const;
 
 private:
     std::shared_ptr<ActiveDataPartSet> prev_virtual_parts;

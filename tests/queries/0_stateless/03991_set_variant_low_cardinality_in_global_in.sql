@@ -1,9 +1,9 @@
--- Regression test: GLOBAL IN with UNION ALL that produces Variant containing LowCardinality
--- caused LOGICAL_ERROR "Bad cast from type DB::ColumnFixedString to DB::ColumnLowCardinality"
--- because convertToFullIfWrapped recursively stripped LowCardinality from ColumnVariant's
--- internal variant columns without updating the corresponding DataTypeVariant, creating
--- column/type position mismatches in KeyCondition::tryPrepareSetColumnsForIndex.
+-- `GLOBAL IN` index preparation must preserve the `LowCardinality` columns inside a `Variant`
+-- together with their types while converting set elements to the key column types: stripping
+-- `LowCardinality` from the variant columns without updating the `Variant` type would make the
+-- columns and the types in `KeyCondition::tryPrepareSetColumnsForIndex` disagree.
 -- https://github.com/ClickHouse/ClickHouse/issues/97854
+SET use_index_for_in_with_subqueries = 1;
 DROP TABLE IF EXISTS t_variant_lc;
 CREATE TABLE t_variant_lc (`id` Decimal(76, 70), `value` Int128) ENGINE = MergeTree ORDER BY (id, value);
 INSERT INTO t_variant_lc SELECT number, number FROM numbers(10);

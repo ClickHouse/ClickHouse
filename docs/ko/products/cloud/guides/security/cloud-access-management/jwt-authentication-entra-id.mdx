@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'Entra ID', 'Azure AD', 'Microsoft', 'OAuth', 'OIDC', '앱 역할', '인증', 'IdP(Identity Provider)']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 import { VersionBadge } from "/snippets/ko/components/VersionBadge/VersionBadge.jsx";
@@ -56,7 +54,11 @@ import { VersionBadge } from "/snippets/ko/components/VersionBadge/VersionBadge.
     * **Supported account types**: 단일 테넌트를 선택합니다. 포털 버전에 따라 이 옵션은 **Single tenant only** 또는 **Accounts in this organizational directory only**로 표시됩니다.
     * **Redirect URI**: 비워 둡니다. 사용자는 디바이스 코드 흐름(device code flow)으로 로그인하며, 이 방식은 리디렉션 URI를 사용하지 않습니다.
 
-    <Image img="/images/cloud/security/jwt/entra-register-application.webp" size="lg" alt="Microsoft Entra 관리 센터의 애플리케이션 등록 양식으로, 단일 테넌트 계정 유형이 선택되어 있고 리디렉션 URI가 비어 있음" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Microsoft Entra 관리 센터의 애플리케이션 등록 양식으로, 단일 테넌트 계정 유형이 선택되어 있고 리디렉션 URI가 비어 있음](/images/cloud/security/jwt/entra-register-application.webp)
+      </Frame>
+    </div>
 
     **Register**를 선택하세요. **Overview** 페이지에서 다음 값을 복사하세요.
 
@@ -72,7 +74,11 @@ import { VersionBadge } from "/snippets/ko/components/VersionBadge/VersionBadge.
     * Microsoft Graph 포맷: `api` 섹션의 `requestedAccessTokenVersion`
     * Azure AD Graph 포맷: 아래 스크린샷과 같이 최상위 수준의 `accessTokenAcceptedVersion`
 
-    <Image img="/images/cloud/security/jwt/entra-manifest-token-version.webp" size="lg" alt="accessTokenAcceptedVersion이 2로 설정된 애플리케이션 매니페스트 편집기" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![accessTokenAcceptedVersion이 2로 설정된 애플리케이션 매니페스트 편집기](/images/cloud/security/jwt/entra-manifest-token-version.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="API 노출" id="expose-an-api">
@@ -80,7 +86,11 @@ import { VersionBadge } from "/snippets/ko/components/VersionBadge/VersionBadge.
 
     1. **Application ID URI** 옆의 **Add**를 선택하고 기본값 `api://<CLIENT_ID>`를 그대로 둔 채 저장합니다. 클라이언트는 이 URI를 사용하여 ClickHouse용 토큰을 요청합니다. 이 URI를 설정해도 v2.0 토큰의 `aud` 클레임은 변경되지 않으며, 클라이언트 ID로 유지됩니다.
 
-       <Image img="/images/cloud/security/jwt/entra-application-id-uri.webp" size="lg" alt="기본 api:// 값이 표시된 Application ID URI 패널이 있는 Expose an API 페이지" />
+       <div className="ch-image-lg">
+         <Frame>
+           ![기본 api:// 값이 표시된 Application ID URI 패널이 있는 Expose an API 페이지](/images/cloud/security/jwt/entra-application-id-uri.webp)
+         </Frame>
+       </div>
 
     2. **Add a scope**를 선택하고 양식을 작성합니다. 사용자는 로그인할 때 이 범위를 요청합니다. 애플리케이션이 자체 자격으로 인증하는 경우에는 이 범위를 사용하지 않습니다.
 
@@ -92,7 +102,11 @@ import { VersionBadge } from "/snippets/ko/components/VersionBadge/VersionBadge.
        | **Admin consent description**  | 임의의 설명                                       |
        | **State**                      | **Enabled**                                  |
 
-       <Image img="/images/cloud/security/jwt/entra-add-scope.webp" size="lg" alt="access_as_application 범위, 관리자로 제한된 동의, Enabled로 설정된 상태가 표시된 Add a scope 패널" />
+       <div className="ch-image-lg">
+         <Frame>
+           ![access_as_application 범위, 관리자로 제한된 동의, Enabled로 설정된 상태가 표시된 Add a scope 패널](/images/cloud/security/jwt/entra-add-scope.webp)
+         </Frame>
+       </div>
   </Step>
 
   <Step title="사용자 로그인을 위해 클라이언트 애플리케이션에 권한 부여" id="authorize-client-application">
@@ -100,7 +114,11 @@ import { VersionBadge } from "/snippets/ko/components/VersionBadge/VersionBadge.
 
     **Expose an API**의 **Authorized client applications**에서 **Add a client application**을 선택하십시오. `04b07795-8ddb-461a-bbee-02f9e1bf7b46`을 입력하고 `api://<CLIENT_ID>/access_as_application` 범위를 선택한 다음 **Add application**을 선택하십시오.
 
-    <Image img="/images/cloud/security/jwt/entra-authorize-client-application.webp" size="lg" alt="Azure CLI 클라이언트 ID와 access_as_application 범위가 선택된 Add a client application 패널" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Azure CLI 클라이언트 ID와 access_as_application 범위가 선택된 Add a client application 패널](/images/cloud/security/jwt/entra-authorize-client-application.webp)
+      </Frame>
+    </div>
 
     <Note>
       Azure CLI 대신 자체 클라이언트 애플리케이션을 사용하려면 별도의 애플리케이션을 등록하고 **Authentication**에서 **Allow public client flows**를 **Yes**로 설정한 다음, 여기에서 해당 클라이언트 ID를 사전 승인하십시오. 이후 [clickhouse-client로 로그인](#sign-in-with-clickhouse-client)할 때 이 클라이언트 ID를 `--oauth-client-id`로 전달하십시오. 테넌트에서 사용자 동의를 허용하지 않는다면 관리자가 해당 애플리케이션의 `openid`, `profile`, `offline_access` 권한에 대해서도 동의를 부여해야 합니다.
@@ -122,19 +140,31 @@ import { VersionBadge } from "/snippets/ko/components/VersionBadge/VersionBadge.
 
     다음 예시에서는 ClickHouse 역할 이름을 값으로 사용하는 앱 역할 3개를 정의합니다.
 
-    <Image img="/images/cloud/security/jwt/entra-app-roles.webp" size="lg" alt="값이 각각 ch_admin, ch_analyst, ch_readonly인 ClickHouse Admin, ClickHouse Analyst DB, ClickHouse Read Only가 나열된 App roles 페이지" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![값이 각각 ch_admin, ch_analyst, ch_readonly인 ClickHouse Admin, ClickHouse Analyst DB, ClickHouse Read Only가 나열된 App roles 페이지](/images/cloud/security/jwt/entra-app-roles.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="할당 필요" id="require-assignment">
     기본적으로 테넌트의 모든 사용자는 해당 애플리케이션의 토큰을 발급받을 수 있습니다. 앱 역할에 할당한 사용자, 그룹, 애플리케이션만 토큰을 발급받도록 제한하려면 **Enterprise applications**를 열고 앱 등록과 이름이 같은 애플리케이션을 선택합니다. 그런 다음 **Properties**를 열어 **Assignment required?**&#xB97C; **Yes**로 설정하고 **Save**를 선택하십시오.
 
-    <Image img="/images/cloud/security/jwt/entra-assignment-required.webp" size="lg" alt="Assignment required가 Yes로 설정된 엔터프라이즈 애플리케이션 속성" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Assignment required가 Yes로 설정된 엔터프라이즈 애플리케이션 속성](/images/cloud/security/jwt/entra-assignment-required.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="앱 역할에 사용자 및 그룹 할당" id="assign-users-and-groups">
     동일한 엔터프라이즈 애플리케이션에서 **Users and groups**를 열고 **Add user/group**을 선택하십시오. 사용자 또는 그룹을 선택하고 앱 역할을 선택한 다음 **Assign**을 선택하십시오. 각 사용자 또는 그룹마다 이 과정을 반복하십시오.
 
-    <Image img="/images/cloud/security/jwt/entra-assign-users-and-groups.webp" size="lg" alt="ClickHouse Read Only 앱 역할에 할당된 사용자를 보여 주는 엔터프라이즈 애플리케이션의 Users and groups 페이지" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Read Only 앱 역할에 할당된 사용자를 보여 주는 엔터프라이즈 애플리케이션의 Users and groups 페이지](/images/cloud/security/jwt/entra-assign-users-and-groups.webp)
+      </Frame>
+    </div>
 
     직접 또는 그룹을 통해 여러 앱 역할을 할당받은 사용자는 `roles` 클레임에 해당 역할이 모두 포함됩니다.
 

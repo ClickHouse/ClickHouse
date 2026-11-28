@@ -18,13 +18,9 @@ O motor de tabela (tipo de tabela) determina:
 * Se a execução multithread de requisições é possível.
 * Os parâmetros de replicação de dados.
 
-<div id="engine-families">
-  ## Famílias de motores
-</div>
+## Famílias de motores {#engine-families}
 
-<div id="mergetree">
-  ### MergeTree
-</div>
+### MergeTree {#mergetree}
 
 Os motores de tabela mais universais e funcionais para tarefas de alta carga. A característica comum desses motores é a inserção rápida de dados, seguida pelo processamento de dados em segundo plano. Os motores da família `MergeTree` oferecem suporte à replicação de dados (com versões [Replicated*](/pt-BR/reference/engines/table-engines/mergetree-family/replication) dos motores), particionamento, índices secundários de data-skipping e outros recursos não disponíveis em outros motores.
 
@@ -46,9 +42,7 @@ Motores da família:
 | [Motores de tabela Replicated*](/pt-BR/reference/engines/table-engines/mergetree-family/replication)                      |
 | [Busca de texto completo com índices de texto](/pt-BR/reference/engines/table-engines/mergetree-family/textindexes)       |
 
-<div id="log">
-  ### Log
-</div>
+### Log {#log}
 
 [motores](/pt-BR/reference/engines/table-engines/log-family/index) leves com funcionalidade mínima. São mais eficazes quando você precisa gravar rapidamente muitas tabelas pequenas (até aproximadamente 1 milhão de linhas) e depois lê-las por completo.
 
@@ -61,9 +55,7 @@ Motores da família:
 | [StripeLog](/pt-BR/reference/engines/table-engines/log-family/stripelog)          |
 | [Log](/pt-BR/reference/engines/table-engines/log-family/log)                      |
 
-<div id="integration-engines">
-  ### Motores de integração
-</div>
+### Motores de integração {#integration-engines}
 
 Motores para se comunicar com outros sistemas de armazenamento e processamento de dados.
 
@@ -99,9 +91,7 @@ Motores da família:
 | [SQLite](/pt-BR/reference/engines/table-engines/integrations/sqlite)                                  |
 | [YTsaurus](/pt-BR/reference/engines/table-engines/integrations/ytsaurus)                              |
 
-<div id="special-engines">
-  ### Motores especiais
-</div>
+### Motores especiais {#special-engines}
 
 Motores da família:
 
@@ -126,9 +116,7 @@ Motores da família:
 | [KeeperMap](/pt-BR/reference/engines/table-engines/special/keepermap)               |
 | [FileLog](/pt-BR/reference/engines/table-engines/special/filelog)                   |
 
-<div id="table_engines-virtual_columns">
-  ## Colunas virtuais
-</div>
+## Colunas virtuais {#table_engines-virtual_columns}
 
 Uma coluna virtual é um atributo inerente ao motor de tabela, definido no código-fonte do motor.
 
@@ -136,7 +124,7 @@ Você não deve especificar colunas virtuais na consulta `CREATE TABLE`, e não 
 
 Para selecionar dados de uma coluna virtual, você deve especificar seu nome na consulta `SELECT`. `SELECT *` não retorna valores de colunas virtuais.
 
-Se você criar uma tabela com uma coluna que tenha o mesmo nome de uma das colunas virtuais da tabela, essa coluna virtual ficará inacessível. Não recomendamos fazer isso. Para ajudar a evitar conflitos, os nomes de colunas virtuais geralmente começam com um sublinhado.
+Se você criar uma tabela com uma coluna que tenha o mesmo nome de uma das colunas virtuais da tabela, essa coluna virtual ficará inacessível. Não recomendamos fazer isso. Para ajudar a evitar conflitos, os nomes de colunas virtuais geralmente começam com um sublinhado. Em tabelas da família `MergeTree`, uma coluna desse tipo é rejeitada, a menos que a configuração `allow_reserved_column_names` esteja habilitada.
 
 * `_table` — Contém o nome da tabela da qual os dados foram lidos. Tipo: [String](/pt-BR/reference/data-types/string).
 

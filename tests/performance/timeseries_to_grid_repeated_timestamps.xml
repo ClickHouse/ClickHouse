@@ -1,0 +1,19 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!--
+        Benchmarks the `timeSeries*ToGrid` aggregate functions when a bucket receives many samples with duplicate timestamps in no sorted order.
+        The unsorted samples are sorted and deduplicated before the buffer of the bucket is reallocated, so the buffer
+        stays as small as the number of distinct timestamps instead of the number of samples.
+        Many series with the same timestamps in one state are benchmarked by `timeseries_to_grid_overlapping_tail.xml`.
+    -->
+
+    <!--
+        Two series in two states repeat the same 4095 timestamps of one bucket, and the rows of the two series alternate, so every sample is added on its own.
+        After the deduplication the buffer of 4096 samples holds 4095 of them, so it has to grow instead of being sorted again by every following sample.
+    -->
+    <query>SELECT number % 2 AS k, timeSeriesRateToGrid(0, 4095, 4095, 4095)(toDateTime64(1 + intDiv(number, 2) % 4095, 3, 'UTC'), toFloat64(number % 4093)) FROM numbers(2000000) GROUP BY k FORMAT Null</query>
+</test>

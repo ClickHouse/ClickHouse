@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 
+#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
@@ -7,7 +8,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/NaNUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/DecimalFunctions.h>
@@ -35,6 +35,7 @@
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <base/EnumReflection.h>
+#include <base/bit_cast.h>
 #include <base/sort.h>
 
 #include <algorithm>
@@ -151,7 +152,7 @@ namespace
                 continue;
 
             sorted_tags.clear();
-            size_t tags_start = (i == 0) ? 0 : tags_offsets[i - 1];
+            size_t tags_start = (i == 0) ? 0 : tags_offsets[static_cast<ssize_t>(i) - 1];
             size_t tags_end = tags_offsets[i];
             sorted_tags.reserve(tags_end - tags_start + 1);
             for (size_t j = tags_start; j < tags_end; ++j)
@@ -262,7 +263,7 @@ namespace
             if (!filter[i])
                 continue;
 
-            size_t ts_start = (i == 0) ? 0 : ts_offsets[i - 1];
+            size_t ts_start = (i == 0) ? 0 : ts_offsets[static_cast<ssize_t>(i) - 1];
             size_t ts_end = ts_offsets[i];
 
             if (ts_start == ts_end)
@@ -300,7 +301,7 @@ namespace
         size_t id_index = 0;
         for (size_t i = 0; i < filter.size(); ++i)
         {
-            size_t ts_start = (i == 0) ? 0 : ts_offsets[i - 1];
+            size_t ts_start = (i == 0) ? 0 : ts_offsets[static_cast<ssize_t>(i) - 1];
             size_t ts_end = ts_offsets[i];
             size_t num_samples = ts_end - ts_start;
 
@@ -365,15 +366,21 @@ namespace
             if (!std::is_sorted(row_data, row_data + num_samples, less_by_timestamp))
                 ::sort(row_data, row_data + num_samples, less_by_timestamp);
 
-            /// Collapse each run of equal timestamps into one sample: the sample with the greatest value,
-            /// where a NaN value loses to any other value.
+            /// Collapse each run of equal timestamps into one sample by the rule of the `timeSeries*` functions,
+            /// so the kept sample does not depend on the order of the samples.
+            const auto * float32_values = typeid_cast<const ColumnFloat32 *>(&ts_values);
             auto new_sample_wins = [&](size_t kept_index, size_t new_index)
             {
+                /// Float32 values are compared as Float32, because widening them would quiet a signaling NaN.
+                if (float32_values)
+                {
+                    Float32 kept = float32_values->getData()[kept_index];
+                    Float32 winner = timeseriesMaxValueForDuplicateTimestamp(kept, float32_values->getData()[new_index]);
+                    return bit_cast<UInt32>(winner) != bit_cast<UInt32>(kept);
+                }
                 Float64 kept_value = ts_values.getFloat64(kept_index);
-                Float64 new_value = ts_values.getFloat64(new_index);
-                if (isNaN(new_value))
-                    return false;
-                return isNaN(kept_value) || (new_value > kept_value);
+                Float64 winner = timeseriesMaxValueForDuplicateTimestamp(kept_value, ts_values.getFloat64(new_index));
+                return bit_cast<UInt64>(winner) != bit_cast<UInt64>(kept_value);
             };
 
             size_t last_unique = 0;
@@ -688,7 +695,7 @@ namespace
         {
             for (size_t i = 0; i != num_rows; ++i)
             {
-                size_t start = (i == 0) ? 0 : tags_offsets[i - 1];
+                size_t start = (i == 0) ? 0 : tags_offsets[static_cast<ssize_t>(i) - 1];
                 if (tags_offsets[i] > start)
                     set_filter(i);
             }

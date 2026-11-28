@@ -122,10 +122,10 @@ TEST(BlockedPositionsCodec, SingleDocManyPositions)
 
 TEST(BlockedPositionsCodec, ExactBlockBoundaries)
 {
-    for (size_t num_docs : {TextIndexBlockedPositionsCodec::BLOCK_DOCS - 1,
-                            TextIndexBlockedPositionsCodec::BLOCK_DOCS,
-                            TextIndexBlockedPositionsCodec::BLOCK_DOCS + 1,
-                            3 * TextIndexBlockedPositionsCodec::BLOCK_DOCS})
+    for (size_t num_docs : {TextIndexBlockedPositionsCodec::BLOCK_SIZE - 1,
+                            TextIndexBlockedPositionsCodec::BLOCK_SIZE,
+                            TextIndexBlockedPositionsCodec::BLOCK_SIZE + 1,
+                            3 * TextIndexBlockedPositionsCodec::BLOCK_SIZE})
         expectRoundTrip(randomDocs(num_docs, 3, num_docs));
 }
 
@@ -139,9 +139,9 @@ TEST(BlockedPositionsCodec, MixedFrequencyRuns)
 {
     /// Blocks of single positions around a block with a repeated token.
     PerDocPositions docs;
-    for (uint32_t doc = 0; doc < 3 * TextIndexBlockedPositionsCodec::BLOCK_DOCS; ++doc)
+    for (uint32_t doc = 0; doc < 3 * TextIndexBlockedPositionsCodec::BLOCK_SIZE; ++doc)
     {
-        const bool repeated = doc / TextIndexBlockedPositionsCodec::BLOCK_DOCS == 1 && doc % 5 == 0;
+        const bool repeated = doc / TextIndexBlockedPositionsCodec::BLOCK_SIZE == 1 && doc % 5 == 0;
         docs[doc] = repeated ? std::vector<uint32_t>{doc % 7, doc % 7 + 3} : std::vector<uint32_t>{doc % 7};
     }
     expectRoundTrip(docs);
@@ -180,8 +180,8 @@ TEST(BlockedPositionsCodec, CandidateBlockDecodeMatchesFullDecode)
     {
         std::vector<uint32_t> local_ranks;
         for (uint32_t r : ranks)
-            if (r / TextIndexBlockedPositionsCodec::BLOCK_DOCS == b)
-                local_ranks.push_back(r % TextIndexBlockedPositionsCodec::BLOCK_DOCS);
+            if (r / TextIndexBlockedPositionsCodec::BLOCK_SIZE == b)
+                local_ranks.push_back(r % TextIndexBlockedPositionsCodec::BLOCK_SIZE);
         if (local_ranks.empty())
             continue;
 
@@ -191,7 +191,7 @@ TEST(BlockedPositionsCodec, CandidateBlockDecodeMatchesFullDecode)
 
         for (uint32_t r : ranks)
         {
-            if (r / TextIndexBlockedPositionsCodec::BLOCK_DOCS != b)
+            if (r / TextIndexBlockedPositionsCodec::BLOCK_SIZE != b)
                 continue;
             const std::vector<uint32_t> expected(ref_positions.begin() + ref_offsets[r], ref_positions.begin() + ref_offsets[r + 1]);
             const uint32_t begin = emitted == 0 ? 0 : offsets[emitted - 1];
@@ -267,16 +267,29 @@ DB::PaddedPODArray<UInt32> toPod(const std::vector<uint32_t> & v)
     return out;
 }
 
-/// Test-side wrapper over the appending kernel.
+/// Test-side wrapper: converts absolute positions to the gap lists the matcher reads.
 DB::PaddedPODArray<UInt32> matchCandidates(
     const DB::PaddedPODArray<UInt32> & candidates,
     const std::vector<DB::PaddedPODArray<UInt32>> & offsets,
     const std::vector<DB::PaddedPODArray<UInt32>> & positions,
     const std::vector<size_t> & term_to_unique)
 {
+    std::vector<DB::PaddedPODArray<UInt64>> bounds(offsets.size());
+    std::vector<DB::PaddedPODArray<UInt32>> lanes(offsets.size());
+    for (size_t u = 0; u < offsets.size(); ++u)
+    {
+        for (size_t i = 0; i + 1 < offsets[u].size(); ++i)
+        {
+            bounds[u].push_back(lanes[u].size());
+            for (UInt32 k = offsets[u][i]; k < offsets[u][i + 1]; ++k)
+                lanes[u].push_back(k == offsets[u][i] ? positions[u][k] : positions[u][k] - positions[u][k - 1]);
+            bounds[u].push_back(lanes[u].size());
+        }
+    }
+
     DB::PaddedPODArray<UInt32> matching;
     DB::TextIndexPhraseSearch::matchCandidatePositions(
-        std::span<const UInt32>(candidates.data(), candidates.size()), offsets, positions, term_to_unique, matching);
+        std::span<const UInt32>(candidates.data(), candidates.size()), bounds, lanes, term_to_unique, matching);
     return matching;
 }
 

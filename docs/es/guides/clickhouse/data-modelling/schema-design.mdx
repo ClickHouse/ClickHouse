@@ -6,19 +6,19 @@ keywords: ['esquema', 'diseño de esquemas', 'optimización de consultas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Comprender un diseño de esquema eficaz es clave para optimizar el rendimiento de ClickHouse e implica tomar decisiones que a menudo conllevan concesiones; el enfoque óptimo depende de las consultas que se ejecuten, así como de factores como la frecuencia de actualización de los datos, los requisitos de latencia y el volumen de datos. Esta guía ofrece una visión general de las buenas prácticas de diseño de esquemas y de las técnicas de modelado de datos para optimizar el rendimiento de ClickHouse.
 
-<div id="stack-overflow-dataset">
-  ## Stack Overflow dataset
-</div>
+## Stack Overflow dataset {#stack-overflow-dataset}
 
 Para los ejemplos de esta guía, usamos un subconjunto del Stack Overflow dataset. Incluye todas las publicaciones, votos, usuarios, comentarios e insignias de Stack Overflow desde 2008 hasta abril de 2024. Estos datos están disponibles en Parquet con los esquemas que se muestran a continuación, en el bucket de S3 `s3://datasets-documentation/stackoverflow/parquet/`:
 
 > Las claves primarias y las relaciones indicadas no se aplican mediante restricciones (Parquet es un formato de archivo, no de tabla) y solo muestran cómo se relacionan los datos y qué claves únicas tienen.
 
-<Image img="/images/data-modeling/stackoverflow-schema.webp" size="lg" alt="Esquema de Stack Overflow" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Esquema de Stack Overflow](/images/data-modeling/stackoverflow-schema.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -27,7 +27,7 @@ El Stack Overflow dataset contiene varias tablas relacionadas. En cualquier tare
 El esquema anterior, deliberadamente, no es óptimo para los fines de esta guía.
 
 <div id="establish-initial-schema">
-  ## Establecer el esquema inicial
+  ## Establecer el esquema inicial {#establish-initial-schema}
 </div>
 
 Dado que la tabla `posts` será el destino de la mayoría de las consultas analíticas, nos centraremos en definir un esquema para esta tabla. Estos datos están disponibles en el bucket público de S3 `s3://datasets-documentation/stackoverflow/parquet/posts/*.parquet`, con un archivo por año.
@@ -133,7 +133,7 @@ INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.
 > La consulta anterior carga 60 millones de filas. Aunque para ClickHouse es un volumen pequeño, los usuarios con conexiones a internet más lentas quizá prefieran cargar un subconjunto de los datos. Para ello, basta con especificar los años que se quieren cargar mediante un patrón glob; por ejemplo, `https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2008.parquet` o `https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/{2008, 2009}.parquet`. Consulte [aquí](/es/reference/functions/table-functions/file#globs-in-path) cómo pueden usarse los patrones glob para seleccionar subconjuntos de archivos.
 
 <div id="optimizing-types">
-  ## Optimización de tipos
+  ## Optimización de tipos {#optimizing-types}
 </div>
 
 Uno de los secretos del rendimiento de las consultas de ClickHouse es la compresión.
@@ -231,13 +231,15 @@ No conservamos ningún valor NULL en nuestro nuevo esquema. El insert anterior l
 Claves primarias (de ordenación) en ClickHouse
 Los usuarios que vienen de bases de datos OLTP suelen buscar el concepto equivalente en ClickHouse.
 
-<div id="choosing-an-ordering-key">
-  ## Elegir una clave de ordenación
-</div>
+## Elegir una clave de ordenación {#choosing-an-ordering-key}
 
 A la escala a la que suele usarse ClickHouse, la eficiencia en el uso de memoria y disco es fundamental. Los datos se escriben en las tablas de ClickHouse en fragmentos conocidos como partes, y se aplican reglas para fusionar esas partes en segundo plano. En ClickHouse, cada parte tiene su propio índice primario. Cuando se fusionan las partes, también se fusionan los índices primarios de la parte resultante. El índice primario de una parte tiene una entrada de índice por cada grupo de filas; esta técnica se denomina indexación dispersa.
 
-<Image img="/images/data-modeling/schema-design-indices.webp" size="md" alt="Indexación dispersa en ClickHouse" />
+<div className="ch-image-md">
+  <Frame>
+    ![Indexación dispersa en ClickHouse](/images/data-modeling/schema-design-indices.webp)
+  </Frame>
+</div>
 
 La clave seleccionada en ClickHouse determinará no solo el índice, sino también el orden en que los datos se escriben en disco. Por ello, puede influir drásticamente en los niveles de compresión, lo que a su vez puede afectar al rendimiento de las consultas. Una clave de ordenación que haga que los valores de la mayoría de las columnas se escriban de forma contigua permitirá que el algoritmo de compresión seleccionado (y los códecs) comprima los datos de manera más eficaz.
 
@@ -253,7 +255,7 @@ Se pueden aplicar algunas reglas sencillas para ayudar a elegir una clave de ord
 Al identificar el subconjunto de columnas para la clave de ordenación, declare las columnas en un orden específico. Este orden puede influir significativamente tanto en la eficiencia del filtrado sobre las columnas secundarias de la clave en las consultas como en la relación de compresión de los archivos de datos de la tabla. En general, lo mejor es ordenar las claves por cardinalidad ascendente. Esto debe equilibrarse con el hecho de que el filtrado en columnas que aparecen más tarde en la clave de ordenación será menos eficiente que el filtrado en las que aparecen antes en la tupla. Equilibre estos comportamientos y tenga en cuenta sus patrones de acceso (y, lo más importante, pruebe variantes).
 
 <div id="example">
-  ### Ejemplo
+  ### Ejemplo {#example}
 </div>
 
 Aplicando las directrices anteriores a nuestra tabla `posts`, supongamos que nuestros usuarios desean realizar análisis con filtros por fecha y tipo de publicación; por ejemplo:
@@ -350,7 +352,7 @@ LIMIT 3
 Para quienes estén interesados en las mejoras de compresión logradas con el uso de tipos específicos y claves de ordenación adecuadas, consulte [La compresión en ClickHouse](/es/guides/clickhouse/data-modelling/compression/compression-in-clickhouse). Si necesita mejorar aún más la compresión, también le recomendamos la sección [Cómo elegir el códec de compresión de columna adecuado](/es/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec).
 
 <div id="next-data-modeling-techniques">
-  ## Siguiente: Técnicas de modelado de datos
+  ## Siguiente: Técnicas de modelado de datos {#next-data-modeling-techniques}
 </div>
 
 Hasta ahora, solo hemos migrado una tabla. Aunque esto nos ha permitido introducir algunos conceptos fundamentales de ClickHouse, por desgracia la mayoría de los esquemas no son tan simples.

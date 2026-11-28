@@ -8,7 +8,7 @@ WITH
     beta_session_settings AS
         (
             SELECT
-                format('[{}](/operations/settings/settings#{})', name, name) AS Name,
+                format('[{}](/reference/settings/session-settings#{})', name, name) AS Name,
                 format('`{}`', ifNull(default, ' ')) AS Default
 FROM system.settings
 WHERE tier = 'Beta'
@@ -17,7 +17,7 @@ AND NOT (name LIKE 'input_format_parquet_use_native_reader_v3')),
     beta_mergetree_settings AS
     (
 SELECT
-    format('[{}](/operations/settings/merge-tree-settings#{})', name, name) AS Name,
+    format('[{}](/reference/settings/merge-tree-settings#{})', name, name) AS Name,
     format('`{}`', default) AS Default
 FROM system.merge_tree_settings
 WHERE tier = 'Beta'

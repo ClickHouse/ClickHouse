@@ -3,14 +3,12 @@ slug: /best-practices/minimize-optimize-joins
 sidebarTitle: 'Minimize e otimize junções'
 title: 'Minimize e otimize junções'
 description: 'Documento que descreve práticas recomendadas para o uso de junções no ClickHouse'
-keywords: ['JOIN', 'Parallel Hash JOIN']
+keywords: ['JOIN', 'Hash JOIN']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
-Esta página traz orientações práticas para evitar junções sempre que possível e reduzir seu custo quando forem necessárias. Para a sintaxe e a semântica, consulte a [referência da cláusula `JOIN`](/pt-BR/reference/statements/select/join). Para os algoritmos de execução e a escolha do algoritmo, consulte [Junção de tabelas](/pt-BR/concepts/features/operations/select/joining-tables).
+Esta página traz orientações práticas para evitar junções sempre que possível e reduzir seu custo quando forem necessárias. Para a sintaxe e a semântica, consulte a [referência da cláusula `JOIN`](/pt-BR/reference/statements/select/join). Para os algoritmos de execução e a escolha do algoritmo, consulte [Algoritmos de junção](/pt-BR/concepts/features/operations/select/join-algorithms).
 
 ## Prefira evitar junções {#prefer-avoiding-joins}
 
@@ -37,40 +35,113 @@ Para um guia completo sobre como desnormalizar dados no ClickHouse, consulte [de
 
 Siga estas boas práticas para melhorar o desempenho de junções:
 
-* **Use junções `ANY` quando apenas uma correspondência for necessária.** Um JOIN comum retorna todas as linhas correspondentes e pode gerar um produto cartesiano quando há chaves duplicadas. Use `LEFT ANY JOIN` ou `ANY INNER JOIN` quando uma correspondência bastar, para reduzir o tamanho do resultado e o uso de memória.
+* **Use junções `ANY` quando apenas uma correspondência for necessária.** Um JOIN comum retorna todas as linhas correspondentes e pode gerar um produto cartesiano quando há chaves duplicadas. Para enriquecer cada linha do lado esquerdo com uma única linha correspondente do lado direito, use `LEFT ANY JOIN`, o que reduz o tamanho do resultado e o uso de memória. Para verificar se existe uma linha correspondente, use `IN` ou `LEFT SEMI JOIN`. Com o valor padrão [`any_join_distinct_right_table_keys = 0`](/pt-BR/reference/settings/session-settings/other#any_join_distinct_right_table_keys), um `INNER ANY JOIN` também limita o lado esquerdo a uma linha por chave e, por isso, pode descartar linhas do lado esquerdo que compartilham a mesma chave. Consulte [Rigor `ALL` e `ANY`](/pt-BR/concepts/features/operations/select/joining-tables#all-and-any-strictness).
 * **Reduza ambos os lados antes do JOIN.** Aplique condições seletivas nas cláusulas `WHERE` e `JOIN ON`. O ClickHouse aplica pushdown de filtros sempre que possível, mas subconsultas explícitas garantem que cada entrada seja filtrada antes do JOIN.
 * **Considere `IN` em vez de `INNER JOIN`.** Quando uma consulta só precisa verificar se uma chave existe na outra tabela, uma subconsulta `IN` expressa esse requisito diretamente e pode usar menos memória do que gerar o resultado de um `INNER JOIN`.
-* **Prefira o motor de tabela `Join` para consultas reutilizáveis.** O [motor de tabela `Join`](/pt-BR/reference/engines/table-engines/special/join) armazena em memória uma estrutura pré-computada para um tipo de JOIN, rigor e chave declarados. No ClickHouse Cloud, ele é implementado como `SharedJoin`, com uma tabela `MergeTree` de suporte, e `Join(ANY, LEFT, key)` oferece uma consulta por chave atualizável. Veja [Fast, updatable lookups with the Join table engine](https://clickhouse.com/blog/join-table-engine).
-* **Faça a junção pelas sorting keys das tabelas sempre que possível.** Quando ambas as tabelas estão fisicamente ordenadas pela chave do JOIN, o `full_sorting_merge` pode dispensar a ordenação e reduzir o uso de memória. Verifique o plano de execução e compare o desempenho desse algoritmo com o padrão usando dados representativos.
+* **Use dicionários para consultas chave-valor repetidas.** Com um layout como `HASHED` ou `COMPLEX_KEY_HASHED`, um [dicionário](/pt-BR/concepts/features/dictionaries) é carregado em memória antes da consulta e atualizado de acordo com seu `LIFETIME`. A função [`dictGetOrDefault`](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGetOrDefault) busca cada chave no dicionário sem precisar de um JOIN, por exemplo: `dictGetOrDefault('stackoverflow.users_dict', 'DisplayName', tuple(p.OwnerUserId), '')`.
+* **Prefira o motor de tabela `Join` para consultas reutilizáveis.** O [motor de tabela `Join`](/pt-BR/reference/engines/table-engines/special/join) armazena uma estrutura pré-computada in-memory para um tipo de junção, rigor e chave declarados. No ClickHouse Cloud, ele é implementado como `SharedJoin`, com uma tabela `MergeTree` de suporte, e `Join(ANY, LEFT, key)` oferece uma consulta por chave atualizável. Veja [Fast, updatable consultas with the Join table engine](https://clickhouse.com/blog/join-table-engine).
+* **Faça a junção pelas sorting keys das tabelas sempre que possível.** Quando ambas as tabelas estão fisicamente ordenadas pela chave de junção, o `full_sorting_merge` pode dispensar a ordenação e reduzir o uso de memória. Verifique o plano de execução e compare o desempenho desse algoritmo com o padrão usando dados representativos.
 * **Evite junções que fazem spill para disco.** Fazer spill do estado intermediário do JOIN para disco pode manter uma consulta dentro do limite de memória, mas a E/S de disco costuma aumentar a latência. Hash joins podem passar a usar grace hash ao atingir os limiares de spill configurados, enquanto junções merge podem recorrer à ordenação externa. Antes de depender do spill, reduza as linhas e colunas de entrada ou altere o modelo de dados. Consulte [Escolhendo o algoritmo de JOIN ideal](#choosing-the-optimal-join-algorithm) para mais detalhes.
 * **Use valores default como marcadores de ausência de correspondência quando apropriado.** O padrão [`join_use_nulls = 0`](/pt-BR/reference/settings/session-settings/join#join_use_nulls) preenche as colunas sem correspondência de um outer JOIN com o valor default do respectivo tipo de dado e evita wrappers `Nullable`. Habilite `join_use_nulls` somente quando a consulta precisar diferenciar uma linha sem correspondência de uma linha correspondente que contenha um valor default.
 
 ## Escolhendo o algoritmo de JOIN ideal {#choosing-the-optimal-join-algorithm}
 
-O ClickHouse oferece suporte a vários algoritmos de JOIN, cada um com um equilíbrio diferente entre velocidade e memória.
-O valor padrão de [`join_algorithm`](/pt-BR/reference/settings/session-settings/join#join_algorithm) é `direct,parallel_hash,hash,ie_join`, e o ClickHouse seleciona o primeiro algoritmo aplicável ao tipo de JOIN, ao rigor, à condição e ao motor de tabela. Só considere alterá-lo depois de reduzir ambas as entradas e se medições em dados representativos mostrarem que é necessária uma estratégia diferente de memória ou de execução. Para detalhes sobre a execução dos algoritmos e os tipos de JOIN suportados, consulte [Escolhendo um algoritmo de JOIN](/pt-BR/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
+O ClickHouse oferece suporte a vários algoritmos de junção, cada um com um equilíbrio diferente entre velocidade e memória.
+O valor padrão de [`join_algorithm`](/pt-BR/reference/settings/session-settings/join#join_algorithm) é `direct,hash,ie_join`, e o ClickHouse seleciona o primeiro algoritmo aplicável ao tipo de junção, ao rigor, à condição e ao motor de tabela. Só considere alterá-lo depois de reduzir ambas as entradas e se medições em dados representativos mostrarem que é necessária uma estratégia diferente de memória ou de execução. Para detalhes sobre a execução dos algoritmos e os tipos de junção suportados, consulte [Algoritmos de junção](/pt-BR/concepts/features/operations/select/join-algorithms).
 
 Se a sua principal métrica de otimização for o desempenho e você quiser executar a junção o mais rápido possível, use a seguinte árvore de decisão para escolher o algoritmo de junção adequado:
 
 <br />
 
-<Image img="/images/guides/joins-4.webp" size="lg" alt="Árvore de decisão para otimização de desempenho de junções" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Árvore de decisão para otimização de desempenho de junções](/images/guides/joins-4.webp)
+  </Frame>
+</div>
 
 <br />
 
-* **(1)** Se os dados da tabela do lado direito puderem ser pré-carregados em uma estrutura de dados chave-valor em memória e de baixa latência (por exemplo, um dicionário), se a chave de junção corresponder ao atributo de chave do armazenamento chave-valor subjacente e se a semântica de `LEFT ANY JOIN` for adequada, a **junção direct** é aplicável e costuma ser a abordagem mais rápida.
+* **(1)** Se o lado direito for um dicionário ou outro armazenamento com consultas chave-valor de baixa latência, o algoritmo [`direct`](/pt-BR/concepts/features/operations/select/join-algorithms#direct) é aplicável e costuma ser a abordagem mais rápida. Ele requer um `INNER JOIN`, `LEFT JOIN`, `LEFT ANY JOIN`, `LEFT SEMI JOIN` ou `LEFT ANTI JOIN` cuja cláusula `ON` contenha apenas uma condição de igualdade sobre a chave de coluna única do armazenamento; caso contrário, o ClickHouse usa o próximo algoritmo em [`join_algorithm`](/pt-BR/reference/settings/session-settings/join#join_algorithm) sem gerar erro.
 
-* **(2)** Se a [ordem física das linhas](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) da sua tabela corresponder à ordem de classificação da chave de junção, a escolha depende de outros fatores. Nesse caso, a **junção por intercalação com ordenação completa** [pula](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order) a fase de ordenação, o que reduz significativamente o uso de memória e, dependendo do tamanho dos dados e da distribuição dos valores da chave de junção, pode resultar em tempos de execução menores do que os de alguns algoritmos de hash join.
+* **(2)** Se a [ordem física das linhas](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) da sua tabela corresponder à ordenação da chave de junção, a escolha depende de outros fatores. Nesse caso, a **junção por intercalação com ordenação completa** [pula](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order) a fase de ordenação, o que reduz significativamente o uso de memória e, dependendo do tamanho dos dados e da distribuição dos valores da chave de junção, pode resultar em tempos de execução menores do que os de alguns algoritmos de hash join.
 
-* **(3)** Se a tabela da direita couber na memória, mesmo com a [sobrecarga adicional de uso de memória](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2#summary) da **junção por hash paralela**, esse algoritmo ou o hash join podem ser mais rápidos. Isso depende do tamanho dos dados, dos tipos de dados e da distribuição de valores das colunas da chave de junção.
+* **(3)** Se a tabela da direita couber na memória, use o algoritmo [`hash`](/pt-BR/concepts/features/operations/select/join-algorithms#hash). Normalmente, ele é a opção in-memory mais rápida, dependendo do tamanho dos dados, dos tipos de dados e da distribuição de valores das colunas da chave de junção. Para cada consulta, o ClickHouse decide se constrói uma única tabela hash ou se divide a tabela hash em partes que várias threads preenchem simultaneamente, o que a árvore de decisão mostra como parallel hash. A configuração [`parallel_hash_join_threshold`](/pt-BR/reference/settings/session-settings/parallel#parallel_hash_join_threshold) controla essa decisão: a tabela hash é dividida quando o número estimado de linhas na tabela da direita atinge o limiar ou quando não há estimativa disponível. Desde a versão 26.11, `parallel_hash` é um alias obsoleto de `hash`, portanto incluí-lo em `join_algorithm` não altera essa decisão.
 
-* **(4)** Se a tabela da direita não couber na memória, os hash joins e as junções por hash paralela podem descarregar dados em disco, alternando para grace hash quando [`max_bytes_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) ou [`max_bytes_ratio_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) for atingido. As junções por intercalação com ordenação completa e por mesclagem parcial também podem usar armazenamento externo. A abordagem mais rápida depende do volume de dados, dos tipos de dados e da distribuição de valores das colunas da chave de junção.
+* **(4)** Se a tabela da direita não couber na memória, os hash joins e as junções por hash paralela podem fazer spill, alternando para grace hash quando [`max_bytes_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) ou [`max_bytes_ratio_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) for atingido. As junções por intercalação com ordenação completa e por mesclagem parcial também podem usar armazenamento externo. A abordagem mais rápida depende do volume de dados, dos tipos de dados e da distribuição de valores das colunas da chave de junção.
 
-A junção por mesclagem parcial é otimizada para minimizar o uso de memória ao unir tabelas grandes, à custa da velocidade da junção, que é bastante baixa. Isso é ainda mais evidente quando a ordem física das linhas da tabela da esquerda não corresponde à ordem de classificação da chave de junção.
+A junção por mesclagem parcial é otimizada para minimizar o uso de memória ao unir tabelas grandes, à custa da velocidade da junção, que é bastante baixa. Isso é ainda mais evidente quando a ordem física das linhas da tabela da esquerda não corresponde à ordenação da chave de junção.
 
 A junção hash Grace é o mais flexível dos três algoritmos de junção não limitados pela memória e oferece bom controle por meio de configurações. A configuração [`grace_hash_join_initial_buckets`](/pt-BR/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets) controla o número inicial de buckets e permite equilibrar uso de memória e velocidade da junção.
 
 Qual dos três algoritmos baseados em disco é o mais rápido depende do volume de dados, dos tipos de dados e da distribuição de valores das colunas da chave de junção. O ideal é sempre executar alguns benchmarks com volumes realistas dos seus dados para determinar qual algoritmo é o mais rápido.
+
+### Exemplos da árvore de decisão {#decision-tree-examples}
+
+Os exemplos a seguir aplicam cada etapa da árvore de decisão ao [conjunto de dados do Stack Overflow](/pt-BR/getting-started/example-datasets/stackoverflow). Para ver qual algoritmo executa um JOIN, execute a consulta com `EXPLAIN actions = 1` e verifique a linha `Algorithm` na saída.
+
+**(1) `direct`.** O dicionário a seguir armazena o nome de exibição de cada usuário, e a consulta busca o autor de cada publicação bem avaliada:
+
+```sql
+CREATE DICTIONARY stackoverflow.users_dict
+(
+    Id Int32,
+    DisplayName String
+)
+PRIMARY KEY Id
+SOURCE(CLICKHOUSE(DB 'stackoverflow' TABLE 'users'))
+LAYOUT(COMPLEX_KEY_HASHED())
+LIFETIME(MIN 600 MAX 900);
+
+SELECT p.Id, p.Score, u.DisplayName
+FROM stackoverflow.posts AS p
+LEFT JOIN stackoverflow.users_dict AS u ON p.OwnerUserId = u.Id
+WHERE p.Score > 1000;
+```
+
+A linha `Algorithm` mostra `DirectKeyValueJoin`. O dicionário usa o layout `COMPLEX_KEY_HASHED` para preservar o tipo `Int32` de `users.Id`. Um layout com chave simples, como `HASHED`, converte a chave para `UInt64`, que não pode ser usada em junção com a coluna `posts.OwnerUserId`, do tipo `Int32`.
+
+**(2) `full_sorting_merge`.** A tabela `badges` está ordenada por `UserId`, e a sorting key da tabela `users` começa com `Id`; portanto, ambas as tabelas estão fisicamente ordenadas pela chave de junção:
+
+```sql
+SELECT u.Location, count() AS famous_questions
+FROM stackoverflow.badges AS b
+INNER JOIN stackoverflow.users AS u ON b.UserId = u.Id
+WHERE b.Name = 'Famous Question'
+GROUP BY u.Location
+ORDER BY famous_questions DESC
+LIMIT 5
+SETTINGS join_algorithm = 'full_sorting_merge';
+```
+
+A linha `Algorithm` indica `FullSortingMergeJoin`, e as duas etapas `ReadFromMergeTree` indicam o tipo de leitura `InOrder`. O ClickHouse lê as duas tabelas na ordem da chave de junção, em vez de ordená-las.
+
+**(3) `hash`.** Com o `join_algorithm` padrão, o JOIN a seguir é executado com `hash`:
+
+```sql
+SELECT u.Location, count() AS popular_posts
+FROM stackoverflow.posts AS p
+INNER JOIN stackoverflow.users AS u ON p.OwnerUserId = u.Id
+WHERE p.Score > 1000
+GROUP BY u.Location
+ORDER BY popular_posts DESC
+LIMIT 5
+SETTINGS parallel_hash_join_threshold = 0;
+```
+
+Sem a cláusula `SETTINGS`, o ClickHouse divide a tabela hash somente quando o número estimado de linhas na tabela do lado direito atinge o valor padrão de `parallel_hash_join_threshold`, que é 100,000. Com `parallel_hash_join_threshold = 0`, ele divide a tabela hash independentemente da estimativa.
+
+**(4) Spill.** A consulta a seguir permite que a tabela hash cresça até 10 GiB em memória. Acima desse tamanho, o ClickHouse passa a executar o JOIN com `grace_hash` e grava parte dos dados em armazenamento temporário:
+
+```sql
+SELECT u.Location, count() AS popular_posts
+FROM stackoverflow.posts AS p
+INNER JOIN stackoverflow.users AS u ON p.OwnerUserId = u.Id
+WHERE p.Score > 1000
+GROUP BY u.Location
+ORDER BY popular_posts DESC
+LIMIT 5
+SETTINGS max_bytes_before_external_join = '10Gi';
+```
 
 ## Otimizando para memória {#optimizing-for-memory}
 
@@ -78,12 +149,16 @@ Se você quiser otimizar uma junção para obter o menor uso de memória, em vez
 
 <br />
 
-<Image img="/images/guides/joins-5.webp" size="lg" alt="Árvore de decisão para otimização de memória em junções" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Árvore de decisão para otimização de memória em junções](/images/guides/joins-5.webp)
+  </Frame>
+</div>
 
 <br />
 
 * **(1)** Se a ordem física das linhas da sua tabela corresponder à ordenação da chave de junção, o uso de memória da **junção por intercalação com ordenação completa** será o menor possível, com o benefício adicional de uma boa velocidade de junção, já que a fase de ordenação é [desabilitada](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order).
-* **(2)** A **junção hash Grace** pode ser ajustada para um uso de memória muito baixo aumentando-se [`grace_hash_join_initial_buckets`](/pt-BR/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets), à custa da velocidade da junção. A **junção por mesclagem parcial** usa propositalmente pouca memória principal. A **junção por intercalação com ordenação completa** com ordenação externa habilitada geralmente usa mais memória do que a junção por mesclagem parcial quando a ordem das linhas não corresponde à ordenação da chave, mas oferece um tempo de execução da junção significativamente melhor. Os hash joins e as junções por hash paralela também podem reduzir a pressão de memória ao alternar para grace hash quando o limiar de spill configurado é atingido.
+* **(2)** O algoritmo [`grace_hash`](/pt-BR/concepts/features/operations/select/join-algorithms#grace-hash) pode ser ajustado para um uso de memória muito baixo aumentando-se [`grace_hash_join_initial_buckets`](/pt-BR/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets), à custa da velocidade do JOIN. O algoritmo [`partial_merge`](/pt-BR/concepts/features/operations/select/join-algorithms#partial-merge) usa propositalmente pouca memória principal. O algoritmo [`full_sorting_merge`](/pt-BR/concepts/features/operations/select/join-algorithms#full-sorting-merge) com ordenação externa habilitada geralmente usa mais memória do que `partial_merge` quando a ordem das linhas não corresponde à ordenação da chave, mas oferece um tempo de execução do JOIN significativamente melhor. O algoritmo [`hash`](/pt-BR/concepts/features/operations/select/join-algorithms#hash) também pode reduzir a pressão de memória ao alternar para `grace_hash` quando o limiar de spill configurado é atingido.
 
 ## Exemplos de otimização de JOIN {#join-optimization-examples}
 
@@ -127,6 +202,8 @@ WHERE
 
 A consulta com `IN` também retorna `86`. A mediana do tempo decorrido foi de 10,206 segundos, com pico de memória de 162,81 MiB. Foram lidas 174,20 milhões de linhas e 19,02 GiB de dados.
 
+As duas consultas retornam o mesmo resultado porque `posts.Id` é único. A reescrita só é equivalente quando a chave de junção do lado esquerdo é única, porque `ANY INNER JOIN` retorna no máximo uma linha do lado esquerdo por chave, enquanto `IN` retorna todas as linhas do lado esquerdo que tenham correspondência.
+
 ### Filtre os dois lados antes de substituir o JOIN {#filter-both-sides-before-replacing-the-join}
 
 Neste teste, a reescrita reduziu a mediana do tempo decorrido em 18% e o pico de memória em 14%.
@@ -164,9 +241,15 @@ WHERE
 
 A consulta com `IN` também retorna `261915`. A mediana do tempo decorrido foi de 0,696 segundo, com pico de memória de 51,70 MiB. Ela leu 46,20 milhões de linhas e 817,49 MiB de dados.
 
+A reescrita é equivalente porque `posts.Id` é único; portanto, cada voto corresponde a no máximo uma publicação.
+
 ## Leitura adicional {#further-reading}
 
-* [Junção de tabelas](/pt-BR/concepts/features/operations/select/joining-tables)
+* [Como usar JOINs no ClickHouse](/pt-BR/concepts/features/operations/select/joining-tables)
+* [Como o ClickHouse executa JOINs](/pt-BR/concepts/features/operations/select/join-execution)
+* [Algoritmos de junção](/pt-BR/concepts/features/operations/select/join-algorithms)
+* [Gerenciamento de memória e spill em JOINs](/pt-BR/concepts/features/operations/select/join-memory-management)
+* [Configurações de JOIN](/pt-BR/concepts/features/operations/select/join-settings)
 * [Referência da cláusula `JOIN`](/pt-BR/reference/statements/select/join)
 * [Boas práticas para dicionários](/pt-BR/concepts/features/dictionaries/best-practices)
 * [Suporte completo a JOIN em SQL, Parte 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)

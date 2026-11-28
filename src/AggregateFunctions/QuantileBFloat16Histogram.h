@@ -1,15 +1,24 @@
 #pragma once
 
 #include <base/types.h>
+#include <base/arithmeticOverflow.h>
 #include <base/sort.h>
 #include <Common/HashTable/HashMap.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <Common/Exception.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int INCORRECT_DATA;
+}
 
 /** `bfloat16` is a 16-bit floating point data type that is the same as the corresponding most significant 16 bits of the `float`.
   * https://en.wikipedia.org/wiki/Bfloat16_floating-point_format
@@ -57,16 +66,24 @@ struct QuantileBFloat16Histogram
         add(x, 1);
     }
 
+    /// A weight is a number of occurrences: a sum that does not fit is rejected instead of wrapping around, which would
+    /// move the quantile to another bucket.
+    static void addWeight(Weight & sum, Weight weight)
+    {
+        if (common::addOverflow(sum, weight, sum))
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in `quantileBFloat16Weighted` does not fit UInt64");
+    }
+
     void add(const Value & x, Weight w)
     {
         if (!isNaN(x))
-            data[toBFloat16(x)] += w;
+            addWeight(data[toBFloat16(x)], w);
     }
 
     void merge(const QuantileBFloat16Histogram & rhs)
     {
         for (const auto & pair : rhs.data)
-            data[pair.getKey()] += pair.getMapped();
+            addWeight(data[pair.getKey()], pair.getMapped());
     }
 
     void serialize(WriteBuffer & buf) const
@@ -76,10 +93,19 @@ struct QuantileBFloat16Histogram
 
     void deserialize(ReadBuffer & buf)
     {
-        data.read(buf);
+        /// Entry by entry, so that a malformed count does not allocate the table before any entry arrives.
+        typename Data::Reader reader(buf);
+        while (reader.next())
+        {
+            const auto & pair = reader.get();
+            /// `add` skips NaNs, and the finalization relies on that (a NaN does not convert to an integer result).
+            if ((pair.first & 0x7FFF) > 0x7F80)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "NaN in the state of quantileBFloat16");
+            data[pair.first] = pair.second;
+        }
     }
 
-    Value get(Float64 level) const
+    [[nodiscard]] Value get(Float64 level) const
     {
         return getImpl<Value>(level);
     }
@@ -89,7 +115,7 @@ struct QuantileBFloat16Histogram
         getManyImpl(levels, indices, size, result);
     }
 
-    Float64 getFloat(Float64 level) const
+    [[nodiscard]] Float64 getFloat(Float64 level) const
     {
         return getImpl<Float64>(level);
     }
@@ -101,13 +127,13 @@ struct QuantileBFloat16Histogram
 
 private:
     /// Take the most significant 16 bits of the floating point number.
-    BFloat16 toBFloat16(const Value & x) const
+    [[nodiscard]] BFloat16 toBFloat16(const Value & x) const
     {
         return std::bit_cast<UInt32>(static_cast<Float32>(x)) >> 16;
     }
 
     /// Put the bits into most significant 16 bits of the floating point number and fill other bits with zeros.
-    Float32 toFloat32(const BFloat16 & x) const
+    [[nodiscard]] Float32 toFloat32(const BFloat16 & x) const
     {
         return std::bit_cast<Float32>(x << 16);
     }
@@ -128,7 +154,7 @@ private:
     }
 
     template <typename T>
-    T getImpl(Float64 level) const
+    [[nodiscard]] T getImpl(Float64 level) const
     {
         size_t size = data.size();
 

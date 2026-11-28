@@ -1,0 +1,4 @@
+arr	Array(Int32)
+m	Map(String, Nullable(Int64))
+s	Tuple(x Int32, y Array(String))
+rows: 0

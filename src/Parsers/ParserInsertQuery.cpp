@@ -1,4 +1,3 @@
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -32,14 +31,9 @@ namespace
 /// Only in that case does an INSERT with a SELECT carry inline data following the FORMAT clause.
 bool selectReadsInlineDataViaInputFunction(const ASTPtr & ast)
 {
-    if (!ast)
-        return false;
-    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "input")
-        return true;
-    for (const auto & child : ast->children)
-        if (selectReadsInlineDataViaInputFunction(child))
-            return true;
-    return false;
+    ASTPtr input_function;
+    ASTInsertQuery::tryFindInputFunction(ast, input_function);
+    return input_function != nullptr;
 }
 
 }
@@ -579,7 +573,7 @@ WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] VALUES ...
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] FORMAT format_name data_set
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] SELECT ...
-INSERT INTO [TABLE] FUNCTION table_func(...) [(c1, c2, c3)] RETURNING (SELECT ...) [SETTINGS ...] ...
+INSERT INTO [TABLE] FUNCTION table_func(...) [PARTITION BY expr] [(c1, c2, c3)] RETURNING (SELECT ...) [SETTINGS ...] ...
 ```
 
 The `RETURNING` clause specifies a `SELECT` query, which runs on top of the inserted data, and the query returns its result.
@@ -670,7 +664,7 @@ Data can be inserted into tables referenced by [table functions](/reference/func
 **Syntax**
 
 ```sql
-INSERT INTO [TABLE] FUNCTION table_func ...
+INSERT INTO [TABLE] FUNCTION table_func(...) [PARTITION BY expr] ...
 ```
 
 **Example**
@@ -688,6 +682,28 @@ SELECT * FROM simple_table;
 ┌──id─┬─text──────────────────┐
 │ 100 │ inserted via remote() │
 └─────┴───────────────────────┘
+```
+
+### Partitioned writes {#partitioned-writes}
+
+The `PARTITION BY` clause is supported by some table functions that write to files or object storage, for example [file](/reference/functions/table-functions/file#partitioned-write-to-multiple-tsv-files), [s3](/reference/functions/table-functions/s3#partitioned-write), [gcs](/reference/functions/table-functions/gcs#partitioned-write) and [azureBlobStorage](/reference/functions/table-functions/azureBlobStorage#partitioned-write). Table functions that do not support it, such as `remote`, reject the query. `expr` refers to the columns of the table function.
+
+Whether and how the inserted rows are split depends on the partition strategy of the table function and on its path. Without an explicit partition strategy, a `{_partition_id}` placeholder in the path selects the `wildcard` strategy: each partition is written to a separate file or object, whose path has the placeholder replaced with the value of `expr` converted to a string. The pages of `s3`, `gcs` and `azureBlobStorage` describe their other partition strategies.
+
+```sql title="Query"
+INSERT INTO TABLE FUNCTION file('insert_partitioned_{_partition_id}.csv', 'CSV', 'id UInt32, text String')
+    PARTITION BY id % 2
+    VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd');
+SELECT _file, id, text FROM file('insert_partitioned_*.csv', 'CSV', 'id UInt32, text String') ORDER BY id;
+```
+
+```text title="Response"
+┌─_file────────────────────┬─id─┬─text─┐
+│ insert_partitioned_1.csv │  1 │ a    │
+│ insert_partitioned_0.csv │  2 │ b    │
+│ insert_partitioned_1.csv │  3 │ c    │
+│ insert_partitioned_0.csv │  4 │ d    │
+└──────────────────────────┴────┴──────┘
 ```
 
 ## Inserting into ClickHouse Cloud {#inserting-into-clickhouse-cloud}
@@ -746,7 +762,7 @@ INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] VALUES (v11, v12, v
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] FORMAT format_name data_set
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] SELECT ...
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ...) [SETTINGS ...] {VALUES ... | FORMAT format_name data_set | SELECT ...}
-INSERT INTO [TABLE] FUNCTION table_func(...) [(c1, c2, c3)] [SETTINGS ...] SELECT ...
+INSERT INTO [TABLE] FUNCTION table_func(...) [PARTITION BY expr] [(c1, c2, c3)] [SETTINGS ...] SELECT ...
 )",
         .related = {"SELECT", "FORMAT", "CREATE TABLE", "UPDATE", "DELETE"},
     };

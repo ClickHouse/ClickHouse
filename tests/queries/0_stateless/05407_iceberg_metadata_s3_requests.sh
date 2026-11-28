@@ -6,6 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The reads go through the distributed cache by default where it is enabled, but the test checks the reads of this server.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --table_engine_read_through_distributed_cache 0"
+
 TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
 TABLE_PATH="05407_iceberg_metadata_s3_requests/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 

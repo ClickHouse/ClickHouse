@@ -6,8 +6,6 @@ keywords: ['aws', 'marketplace', 'billing', 'PAYG']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 Get started with ClickHouse Cloud on the [AWS Marketplace](https://aws.amazon.com/marketplace) via a PAYG (Pay-as-you-go) Public Offer.
 
 ## Prerequisites {#prerequisites}
@@ -23,25 +21,57 @@ Get started with ClickHouse Cloud on the [AWS Marketplace](https://aws.amazon.co
 
 Go to the [AWS Marketplace](https://aws.amazon.com/marketplace) and search for “ClickHouse Cloud - Pay As You Go”.
 
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-1.webp" alt="AWS Marketplace search for ClickHouse" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS Marketplace search for ClickHouse](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-1.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="View purchase options" id="purchase-options">
 
 Click on the [listing](https://aws.amazon.com/marketplace/pp/prodview-p4gwofrqpkltu) and then on **View purchase options**.
 
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-2.webp" alt="AWS Marketplace view purchase options" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS Marketplace view purchase options](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-2.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Subscribe" id="subscribe">
 
 On the next screen, click subscribe.
 
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-3.webp" alt="AWS Marketplace subscribe" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS Marketplace subscribe](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-3.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Set up your account" id="set-up-your-account">
 
 At this point, the setup isn't complete and your ClickHouse Cloud organization isn't being billed through the marketplace yet. You will now need to click on Set up your account on your marketplace subscription to redirect to ClickHouse Cloud to finish setup.
 
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-4.webp" alt="Set up your account" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Set up your account](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-4.webp)
+
+</Frame>
+
+</div>
 
 Once you redirect to ClickHouse Cloud, you can either login with an existing account, or register with a new account. This step is very important so we can bind your ClickHouse Cloud organization to your AWS Marketplace billing.
 
@@ -54,7 +84,15 @@ If you're a new ClickHouse Cloud user, follow the steps below.
 <Accordion title="Steps for new users">
 If you're a new ClickHouse Cloud user, click Register at the bottom of the page. You will be prompted to create a new user and verify the email. After verifying your email, you can leave the ClickHouse Cloud login page and login using the new username at the https://console.clickhouse.cloud.
 
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-5.webp" size="md" alt="ClickHouse Cloud sign-up"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud sign-up](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-5.webp)
+
+</Frame>
+
+</div>
 
 <Info>
 **New users**
@@ -62,9 +100,25 @@ If you're a new ClickHouse Cloud user, click Register at the bottom of the page.
 You will also need to provide some basic information about your business. See the screenshots below.
 </Info>
 
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-6.webp" size="md" alt="Before you start"/>
+<div className="ch-image-md">
 
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-7.webp" size="md" alt="Before you start, continued"/>
+<Frame>
+
+![Before you start](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-6.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Before you start, continued](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-7.webp)
+
+</Frame>
+
+</div>
 </Accordion>
 
 If you're an existing ClickHouse Cloud user, simply log in using your credentials.
@@ -73,17 +127,41 @@ If you're an existing ClickHouse Cloud user, simply log in using your credential
 
 After successfully logging in, you can decide whether to create a new organization to bill to this marketplace subscription or choose an existing organization to bill to this subscription.
 
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="lg" alt="Add marketplace subscription" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Add marketplace subscription](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp)
+
+</Frame>
+
+</div>
 
 If you're registering a new ClickHouse account, you'll see a default organization created for you that you can link your marketplace subscription to.
 
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-13.webp" size="lg" alt="Link the default organization to the AWS Marketplace subscription" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Link the default organization to the AWS Marketplace subscription](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-13.webp)
+
+</Frame>
+
+</div>
 
 After completing this step your organization will be connected to this AWS subscription and all usage will be billed via your AWS account.
 
 You can confirm from the organization's billing page in the ClickHouse UI that billing is indeed now linked to the AWS marketplace.
 
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-9.webp" size="lg" alt="Confirm billing page" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Confirm billing page](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-9.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 

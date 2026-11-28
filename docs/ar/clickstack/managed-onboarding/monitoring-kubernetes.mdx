@@ -1,23 +1,30 @@
 ---
 slug: /use-cases/observability/clickstack/monitoring-kubernetes
-title: 'مراقبة Kubernetes باستخدام Managed ClickStack'
-description: 'اجمع السجلات ومقاييس البنية التحتية والأحداث من عنقود Kubernetes إلى Managed ClickStack'
-doc_type: 'دليل'
-keywords: ['clickstack', 'kubernetes', 'k8s', 'managed', 'observability', 'logs', 'metrics', 'events', 'daemonset', 'helm']
+title: 'مراقبة Kubernetes باستخدام ClickHouse Observability'
+sidebarTitle: 'مراقبة Kubernetes'
+description: 'اجمع السجلات ومقاييس البنية التحتية والأحداث من عنقود Kubernetes إلى ClickHouse Observability ضمن التجربة المُدارة ذاتيًا'
+doc_type: 'guide'
+keywords: ['clickstack', 'kubernetes', 'k8s', 'self-managed', 'ClickHouse Observability', 'logs', 'metrics', 'events', 'daemonset', 'helm']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
+<Note>
+  **أنت على المسار المُدار ذاتيًا**
 
-يأخذك هذا الدليل خطوة بخطوة خلال جمع السجلات، ومقاييس البنية التحتية، وأحداث Kubernetes من عنقود إلى Managed ClickStack، ثم عرضها في لوحة معلومات Kubernetes المضمّنة.
+  لقد اخترت إعداد ClickHouse Observability بنفسك باستخدام [التجربة المُدارة ذاتيًا](/ar/clickstack/self-configured/overview). في هذا المسار، تتولى تشغيل جامع بيانات OpenTelemetry، وإدارة إدخال البيانات إلى خدمة ClickHouse Cloud الخاصة بك، وضبط المخطط، والفصل بين أحمال عمل الإدخال والاستعلام باستخدام المستودعات. راجع [جامع بيانات OpenTelemetry](/ar/clickstack/self-configured/ingesting-data/collector)، و[ضبط الأداء](/ar/clickstack/self-configured/managing/performance-tuning)، و[عزل أحمال عمل القراءة والكتابة](/ar/clickstack/self-configured/managing/isolating-read-write).
 
-النمط هنا هو نمط OpenTelemetry القياسي: مُجمِّعان منشوران عبر [مخطط Helm الخاص بـ OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector)، يوجّه كلٌّ منهما البيانات إلى مُجمِّع بوابة ClickStack لديك عبر OTLP. تعمل **مجموعة DaemonSet** على كل عقدة لجمع سجلات الحاويات ومقاييس kubelet. وتجمع **عملية نشر** ذات نُسخة متماثلة واحدة أحداث Kubernetes والمقاييس على مستوى العنقود. ولمزيد من المعلومات حول دور البوابة، راجع [أدوار المُجمِّع](/ar/clickstack/ingesting-data/collector#collector-roles).
+  هل تفضّل تجربة بلا خوادم يتولى فيها ClickHouse عنك إدخال البيانات والمخططات وموارد الحوسبة؟ استخدم تجربة ClickHouse Observability الافتراضية واتبع بدلًا من ذلك [مراقبة Kubernetes باستخدام OpenTelemetry](/ar/clickstack/managed-onboarding/monitoring-kubernetes-serverless).
+</Note>
 
-يفترض هذا الدليل أنك أكملت [إعداد OpenTelemetry Collector الخاص بك](/ar/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) وأن لديك مُجمِّع بوابة ClickStack قيد التشغيل.
+يأخذك هذا الدليل خطوة بخطوة خلال جمع السجلات، ومقاييس البنية التحتية، وأحداث Kubernetes من عنقود إلى ClickHouse Observability، ثم عرضها في لوحة معلومات Kubernetes المضمّنة.
 
-بالنسبة إلى عبء عمل يعمل داخل Kubernetes، ينبغي نشر مُجمِّع البوابة نفسه **داخل العنقود نفسه باستخدام مخطط Helm الرسمي لـ OpenTelemetry مع صورة مُجمِّع ClickStack**. اتبع مسار Helm في [نشر المُجمِّع](/ar/clickstack/ingesting-data/collector#configuring-the-collector) لتثبيته. **تأكد من تدوين نقطة نهاية OTLP هذه**.
+النمط هنا هو نمط OpenTelemetry القياسي: مُجمِّعان منشوران عبر [مخطط Helm الخاص بـ OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector)، يوجّه كلٌّ منهما البيانات إلى مُجمِّع بوابة ClickStack لديك عبر OTLP. تعمل **مجموعة DaemonSet** على كل عقدة لجمع سجلات الحاويات ومقاييس kubelet. وتجمع **عملية نشر** ذات نُسخة متماثلة واحدة أحداث Kubernetes والمقاييس على مستوى العنقود. ولمزيد من المعلومات حول دور البوابة، راجع [أدوار المُجمِّع](/ar/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured).
+
+يفترض هذا الدليل أنك أكملت [إعداد OpenTelemetry Collector الخاص بك](/ar/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector) وأن لديك مُجمِّع بوابة ClickStack قيد التشغيل.
+
+بالنسبة إلى عبء عمل يعمل داخل Kubernetes، ينبغي نشر مُجمِّع البوابة نفسه **داخل العنقود نفسه باستخدام مخطط Helm الرسمي لـ OpenTelemetry مع صورة مُجمِّع ClickStack**. اتبع مسار Helm في [نشر المُجمِّع](/ar/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured) لتثبيته. **تأكد من تدوين نقطة نهاية OTLP هذه**.
 
 <Steps>
   <Step title="جهّز المتطلبات الأساسية" id="gather-prerequisites">
@@ -36,7 +43,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 
   <Step title="أنشئ سرّ المصادقة وConfigMap" id="create-secret-and-configmap">
-    اختر مساحة الاسم التي تريد أن تعمل ضمنها المجمِّعات، ثم أنشئ سرًّا يحتوي على `OTLP_AUTH_TOKEN` وConfigMap يشير إلى بوابتك:
+    اختر مساحة الاسم التي تريد أن تعمل ضمنها المجمِّعات، ثم أنشئ سرًّا يحتوي على `OTLP_AUTH_TOKEN` وConfigMap يشير إلى بوابتك:
 
     ```shell
     export OTLP_AUTH_TOKEN="a-strong-shared-secret"
@@ -185,7 +192,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
       config:
         receivers:
-          # مقاييس kubelet إضافية معبَّر عنها كنِسَب استخدام مقارنةً بالطلبات والحدود.
+          # مقاييس kubelet إضافية معبَّر عنها كنِسَب استخدام مقارنةً بالطلبات والحدود.
           kubeletstats:
             collection_interval: 20s
             auth_type: 'serviceAccount'
@@ -233,7 +240,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       ```
     </Accordion>
 
-    ثبِّته:
+    ثبِّته:
 
     ```shell
     helm install k8s-otel-daemonset open-telemetry/opentelemetry-collector \
@@ -302,28 +309,40 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="تحقّق في واجهة ClickStack" id="confirm-in-ui">
     افتح خدمتك في [وحدة تحكم ClickHouse Cloud](https://console.clickhouse.cloud) ثم اختر **ClickStack** من القائمة الجانبية اليسرى.
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="تشغيل ClickStack" border />
+    <div className="ch-image-lg">
+      <Frame>
+        ![تشغيل ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+      </Frame>
+    </div>
 
     في عرض **Search**، بدّل المصدر إلى `Logs` واضبط النطاق الزمني على **آخر 15 دقيقة**. يجب أن تظهر سجلات الحاويات من مختلف أنحاء العنقود خلال ثوانٍ قليلة، مع إغنائها بسمات مثل `k8s.namespace.name` و`k8s.pod.name` و`k8s.node.name`.
 
-    <Image img="/images/use-cases/observability/clickstack-search-with-k8-logs.webp" size="lg" alt="عرض Search في ClickStack مع سجلات Kubernetes" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![عرض Search في ClickStack مع سجلات Kubernetes](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
+      </Frame>
+    </div>
 
     للاطّلاع على مقاييس البنية التحتية والأحداث ضمن سياقها، افتح لوحة المعلومات المضمّنة **Kubernetes** بالانتقال إلى **Dashboards** -&gt; **Kubernetes**. يجب أن تكون علامات التبويب `Pods` و`Nodes` و`Namespaces` جميعها مليئة بالبيانات.
 
-    <Image img="/images/use-cases/observability/clickstack-dashboard-kubernetes.webp" size="lg" alt="لوحة معلومات Kubernetes في ClickStack" border />
+    <div className="ch-image-lg">
+      <Frame>
+        ![لوحة معلومات Kubernetes في ClickStack](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
+      </Frame>
+    </div>
 
     إذا لم يظهر شيء:
 
-    * تحقّق من أن جرابات كلٍّ من مجموعة DaemonSet والنشر Deployment في حالة `Running`، وتتبّع سجلاتها باستخدام `kubectl logs -n ${NAMESPACE} <pod>`.
+    * تحقّق من أن جرابات كلٍّ من مجموعة DaemonSet والنشر Deployment في حالة `Running`، وتتبّع سجلاتها باستخدام `kubectl logs -n ${NAMESPACE} <pod>`.
     * تأكّد من أن `YOUR_OTEL_COLLECTOR_ENDPOINT` يمكن الوصول إليه من داخل العنقود (نفّذ `kubectl exec` داخل أحد جرابات collector ثم استخدم `curl` عليه).
     * تحقّق من أن `OTLP_AUTH_TOKEN` في السر `secret` يطابق القيمة المضبوطة على collector الخاص بالبوابة.
   </Step>
 
   <Step title="قراءات إضافية" id="further-reading">
-    * [مرجع تكامل Kubernetes](/ar/clickstack/integration-examples/kubernetes) للاطلاع على المجموعة الكاملة من المستقبِلات والمعالِجات وخيارات الضبط.
-    * [تمرير وسوم المورد إلى البودات](/ar/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) لمزيد من التفاصيل حول الإثراء من جانب التطبيق.
-    * [تأمين المجمّع](/ar/clickstack/ingesting-data/collector#securing-the-collector) باستخدام TLS على نقطة نهاية OTLP ولمستخدمي إدخال البيانات بأقل الامتيازات اللازمة.
-    * [تقدير الموارد](/ar/clickstack/ingesting-data/collector#estimating-resources) لعمليات نشر البوابة والوكيل وفق معدل النقل المتوقع.
-    * [الانتقال إلى بيئة الإنتاج](/ar/clickstack/managing/production) للاطلاع على التوصيات الخاصة بالانتقال إلى بيئة الإنتاج.
+    * [مرجع تكامل Kubernetes](/ar/clickstack/observability/integration-examples/kubernetes#self-managed) للاطلاع على المجموعة الكاملة من المستقبِلات والمعالِجات وخيارات الضبط.
+    * [تمرير وسوم المورد إلى البودات](/ar/clickstack/observability/integration-examples/kubernetes#application-metadata) لمزيد من التفاصيل حول الإثراء من جانب التطبيق.
+    * [تأمين المجمّع](/ar/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) باستخدام TLS على نقطة نهاية OTLP ولمستخدمي إدخال البيانات بأقل الامتيازات اللازمة.
+    * [تقدير الموارد](/ar/clickstack/self-configured/ingesting-data/collector#estimating-resources-self-configured) لعمليات نشر البوابة والوكيل وفق معدل النقل المتوقع.
+    * [الانتقال إلى بيئة الإنتاج](/ar/clickstack/self-configured/managing/production) للاطلاع على التوصيات الخاصة بالانتقال إلى بيئة الإنتاج.
   </Step>
 </Steps>
