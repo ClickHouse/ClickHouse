@@ -1118,6 +1118,12 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       is that test's move, whose part it removes on purpose: the stress phase can stop the file before its
 #       `KILL PART_MOVE_TO_SHARD`, and the upgraded server retries the move every 3 seconds. Requires the orchestrator, the
 #       fixture's destination shard and the code together, so a failed move of any other table still fails this job.
+# `ReplicatedMergeTreeAttachThread` + `TOO_MANY_UNEXPECTED_DATA_PARTS` on `t_replace_cover_rep` is the fixture of
+#       `05259_replace_partition_covers_outdated_parts_replicated`: it stops cleanup and drops a part, leaving two parts
+#       on disk that are no longer in ZooKeeper until its `REPLACE PARTITION` writes a part that covers them. An injected
+#       `Code: 241` can stop the file between the two, and then every restart, of the previous release too, refuses to
+#       attach the table. Requires the attach thread, the fixture table and the code together, so the same refusal of
+#       any other table still fails this job.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -1217,6 +1223,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: The path .*/user_files/\(05316_file_log_copytruncate\|05316_file_log_error_does_not_lock_table\|05317_file_log_partial_last_line\|05318_file_log_one_bad_file\|05394_filelog_engine_file_source_grant\|05395_filelog_drop_idle_while_other_busy\)_.* neither a regular file, nor a directory" \
     | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: The directory .*/user_files/05316_file_log_globs_.* of the path .* does not exist" \
     | grep -av -e "(PartMovesBetweenShardsOrchestrator): .*Code: 232\. DB::Exception: Part [^ ]* is not active on replica [^ ]*, it cannot be attached on shard /clickhouse/05565_part_move_to_shard_source_part_removed_[^/]*/dst\. (NO_SUCH_DATA_PART)" \
+    | grep -av -e "<Error> test_[a-z0-9_]*\.t_replace_cover_rep (ReplicatedMergeTreeAttachThread): Initialization failed, table will remain readonly\. Error: Code: 231\. DB::Exception: The local set of parts of table test_[a-z0-9_]*\.t_replace_cover_rep .*(TOO_MANY_UNEXPECTED_DATA_PARTS)" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
