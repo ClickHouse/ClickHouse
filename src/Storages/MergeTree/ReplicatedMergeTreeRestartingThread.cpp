@@ -226,7 +226,8 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
             /// dedicated MergeTree arena like the ALTER paths (this runs on the restarting thread,
             /// outside the constructor's arena scope).
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-            storage.setInMemoryMetadata(storage_metadata_snapshot->withMetadataVersion(replica_metadata_version));
+            if (!storage.adoptMetadataCommittedByPendingAlter(replica_metadata_version))
+                storage.setInMemoryMetadata(storage_metadata_snapshot->withMetadataVersion(replica_metadata_version));
         }
         else
         {

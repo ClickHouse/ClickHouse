@@ -174,6 +174,9 @@ void ReplicatedMergeTreeAttachThread::checkHasReplicaMetadataInZooKeeper(const z
 
 void ReplicatedMergeTreeAttachThread::runImpl()
 {
+    /// A record left by an earlier attempt describes Keeper state that this attempt has not checked.
+    std::atomic_store(&storage.metadata_committed_by_pending_alter, StorageMetadataPtr{});
+
     storage.setZooKeeper();
 
     auto zookeeper = storage.getZooKeeper();
@@ -230,8 +233,13 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     /// Just in case it was not removed earlier due to connection loss
     zookeeper->tryRemove(replica_path + "/flags/force_restore_data");
 
+    /// A metadata ALTER commits to Keeper and to the local metadata file in two separate steps, so an
+    /// interrupted one leaves this replica's znodes ahead of the local file. The check below cannot be
+    /// reached a second time, so the divergence has to be resolved here rather than after startup.
+    auto committed_metadata = storage.getMetadataCommittedByPendingAlter(zookeeper, metadata_snapshot);
+
     /// Here `zookeeper_retries_info = {}` because the attach thread has its own retries (see ReplicatedMergeTreeAttachThread::run()).
-    storage.checkTableStructure(replica_path, metadata_snapshot, /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {});
+    storage.checkTableStructure(replica_path, committed_metadata ? committed_metadata : StorageMetadataPtr(metadata_snapshot), /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {});
     storage.checkParts(skip_sanity_checks);
 
     /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
@@ -241,8 +249,14 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     storage.createNewZooKeeperNodes(/* zookeeper_retries_info = */ {});
     storage.syncPinnedPartUUIDs(/* zookeeper_retries_info = */ {});
 
-    std::lock_guard lock(storage.table_shared_id_mutex);
-    storage.createTableSharedID(/* zookeeper_retries_info = */ {});
+    {
+        std::lock_guard lock(storage.table_shared_id_mutex);
+        storage.createTableSharedID(/* zookeeper_retries_info = */ {});
+    }
+
+    /// Published by ReplicatedMergeTreeRestartingThread::tryStartup once the queue is loaded: until then the
+    /// parts must keep being read with the local metadata they match.
+    std::atomic_store(&storage.metadata_committed_by_pending_alter, committed_metadata);
 };
 
 void ReplicatedMergeTreeAttachThread::finalizeInitialization() TSA_NO_THREAD_SAFETY_ANALYSIS
