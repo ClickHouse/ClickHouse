@@ -79,3 +79,49 @@ TEST(Base58RowLoop, CancellationCountAcrossRows)
     ASSERT_EQ(decoded->getDataAt(rows - 1), std::string_view(body));
     EXPECT_EQ(decode_calls, expected_decode_calls);
 }
+
+/// Values of exactly 32 and 64 bytes take the fixed-size encoders, which have no check of their own: the
+/// row loop charges them to the same count, so a block of them is interruptible too. A 32-byte value is
+/// worth 704 units and a 64-byte one 2816, against 2^20 between two checks: one check per 1490 and per
+/// 373 values.
+TEST(Base58RowLoop, CancellationCountAcrossFixedSizeRows)
+{
+    static_assert(base58FixedSizeEncodeWork(32) == 704);
+    static_assert(base58FixedSizeEncodeWork(64) == 2816);
+
+    {
+        constexpr size_t rows = 3000;
+        constexpr size_t length = 32;
+        const std::string body = bodyOfLength(length);
+
+        auto src_fixed = ColumnFixedString::create(length);
+        for (size_t row = 0; row < rows; ++row)
+            src_fixed->insertData(body.data(), body.size());
+
+        ColumnString::MutablePtr encoded = ColumnString::create();
+        size_t work = 0;
+        size_t calls = 0;
+        Base58EncodeRowLoop::processFixedString<false>(
+            *src_fixed, encoded, rows, 0, Base58EncodeTraits::max_input_size, [&] { ++calls; }, work);
+        ASSERT_EQ(encoded->size(), rows);
+        EXPECT_EQ(calls, 2);
+    }
+
+    {
+        constexpr size_t rows = 1000;
+        constexpr size_t length = 64;
+        const std::string body = bodyOfLength(length);
+
+        auto src_string = ColumnString::create();
+        for (size_t row = 0; row < rows; ++row)
+            src_string->insertData(body.data(), body.size());
+
+        ColumnString::MutablePtr encoded = ColumnString::create();
+        size_t work = 0;
+        size_t calls = 0;
+        Base58EncodeRowLoop::processString<false>(
+            *src_string, encoded, rows, 0, Base58EncodeTraits::max_input_size, [&] { ++calls; }, work);
+        ASSERT_EQ(encoded->size(), rows);
+        EXPECT_EQ(calls, 2);
+    }
+}

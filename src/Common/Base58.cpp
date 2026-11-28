@@ -662,7 +662,7 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
     /// reach a check on their own still adds up to one.
     size_t own_work_since_check = 0;
     size_t & work_since_check = shared_work_since_check ? *shared_work_since_check : own_work_since_check;
-    static constexpr size_t work_per_check = 1ULL << 20;
+    static constexpr size_t work_per_check = BASE58_WORK_PER_CANCELLATION_CHECK;
 
     /// A short leading pass goes first, so every pass below reads exactly `BASE58_ENCODE_BYTES_PER_PASS` bytes.
     if (size_t head = body_length % BASE58_ENCODE_BYTES_PER_PASS)
@@ -824,7 +824,7 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
     /// keeps the work of a value rejected mid-loop below charged to the caller.
     size_t own_work_since_check = 0;
     size_t & work_since_check = shared_work_since_check ? *shared_work_since_check : own_work_since_check;
-    static constexpr size_t work_per_check = 1ULL << 20;
+    static constexpr size_t work_per_check = BASE58_WORK_PER_CANCELLATION_CHECK;
 
     /// A short leading pass goes first, so every pass below reads exactly `BASE58_DECODE_CHARS_PER_PASS` characters.
     if (size_t head = body_length % BASE58_DECODE_CHARS_PER_PASS)

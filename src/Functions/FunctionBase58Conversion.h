@@ -37,11 +37,33 @@ struct Base58EncodeTraits
     static size_t perform(std::string_view src, UInt8 * dst, const std::function<void()> & check_cancellation, size_t & work_since_check)
     {
         if (src.size() == 32)
+        {
+            chargeFixedSize(src.size(), check_cancellation, work_since_check);
             return encodeBase58_32(reinterpret_cast<const UInt8 *>(src.data()), dst);
+        }
         else if (src.size() == 64)
+        {
+            chargeFixedSize(src.size(), check_cancellation, work_since_check);
             return encodeBase58_64(reinterpret_cast<const UInt8 *>(src.data()), dst);
+        }
         else
             return encodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst, check_cancellation, &work_since_check);
+    }
+
+private:
+    /// The fixed-size encoders take no callback, so their work is charged here to the count the generic
+    /// conversion shares: a block of 32-byte or 64-byte values stays as interruptible as any other one.
+    static void chargeFixedSize(size_t src_length, const std::function<void()> & check_cancellation, size_t & work_since_check)
+    {
+        if (!check_cancellation)
+            return;
+
+        work_since_check += base58FixedSizeEncodeWork(src_length);
+        if (work_since_check >= BASE58_WORK_PER_CANCELLATION_CHECK)
+        {
+            check_cancellation();
+            work_since_check = 0;
+        }
     }
 };
 
