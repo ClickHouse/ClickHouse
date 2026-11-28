@@ -81,8 +81,8 @@ public:
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
     /// For `ATTACH`ing existing data on filesystem. `RESTORE` paths use `deduplicate_part = false`
-    /// to preserve duplicate parts.
-    bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part, bool deduplicate_part = true);
+    /// to preserve duplicate parts. A deduplicated part from `detached/` is moved back to `detached/<detached_dir>`.
+    bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part, bool deduplicate_part = true, const String & detached_dir = {});
 
 protected:
     virtual void finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper);

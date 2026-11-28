@@ -8002,7 +8002,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartitionImpl(
     {
         const String old_name = loaded_parts[i]->name;
 
-        output.writeExistingPart(loaded_parts[i], deduplicate_part);
+        output.writeExistingPart(loaded_parts[i], deduplicate_part, renamed_parts.old_and_new_names[i].old_dir);
 
         renamed_parts.old_and_new_names[i].old_dir.clear();
 

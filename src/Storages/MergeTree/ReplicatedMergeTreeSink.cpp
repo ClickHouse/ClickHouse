@@ -625,7 +625,7 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
     parts_to_sync.syncOld();
 }
 
-bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPtr & part, bool deduplicate_part)
+bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPtr & part, bool deduplicate_part, const String & detached_dir)
 {
     /// NOTE: No delay in this case. That's Ok.
     auto origin_zookeeper = storage.getZooKeeper();
@@ -683,8 +683,8 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 
             if (relative_path.ends_with("detached/attaching_" + part->name + "/"))
             {
-                /// Part came from ATTACH PART - rename back to detached/ (remove attaching_ prefix)
-                fs::path new_relative_path = fs::path("detached") / part->getNewName(part->info);
+                /// Part came from ATTACH PART - move it back to the directory it was attached from
+                fs::path new_relative_path = fs::path("detached") / (detached_dir.empty() ? part->name : detached_dir);
                 part->renameTo(new_relative_path, false);
             }
             else if (part_dir.starts_with("tmp_restore_" + part->name))
