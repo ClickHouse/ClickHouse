@@ -12,8 +12,9 @@ TMP_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 mkdir -p "$TMP_DIR"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-# A list of `null` references child rows that no buffer backs, so a forged child length together with a forged
-# offset or size can ask for close to 2^63 rows. Such a file is bad data, not an internal error.
+# A list whose child is `null` (or a fixed-size list of empty structs) references child rows that no buffer backs,
+# so a forged child length together with a forged offset or size can ask for a huge number of rows. Such a file is
+# bad data, not an internal error.
 
 python3 - "$TMP_DIR" <<'PYEOF'
 import struct
@@ -48,15 +49,26 @@ write(
     pa.LargeListViewArray.from_arrays(pa.array([0], pa.int64()), pa.array([n], pa.int64()), pa.nulls(n)),
     forged)
 
+# Empty structs allocate nothing, so only the offsets of the fixed-size list, 8 bytes per row, are left to allocate.
+fixed_size_list_type = pa.list_(pa.field("item", pa.struct([]), nullable=False), 1)
+fixed_size_list = pa.FixedSizeListArray.from_arrays(
+    pa.StructArray.from_buffers(pa.struct([]), n, [None]), type=fixed_size_list_type)
+write(
+    "large_list_fixed_size_list",
+    pa.LargeListArray.from_arrays(
+        pa.array([0, n], pa.int64()), fixed_size_list, type=pa.large_list(pa.field("item", fixed_size_list_type, nullable=False))),
+    [(1 << 60, "two_to_60")])
+
 table = pa.table({"a": pa.LargeListArray.from_arrays(pa.array([0, 3, 7], pa.int64()), pa.nulls(7))})
 with ipc.new_file(f"{directory}/small.arrow", table.schema) as writer:
     writer.write_table(table)
 PYEOF
 
-for name in large_list_int64_max large_list_two_to_62 large_list_view_int64_max large_list_view_two_to_62
+for name in large_list_int64_max large_list_two_to_62 large_list_view_int64_max large_list_view_two_to_62 \
+    large_list_fixed_size_list_two_to_60
 do
     echo "$name"
-    $CLICKHOUSE_LOCAL --query "SELECT length(a) FROM file('$TMP_DIR/$name.arrow', Arrow, 'a Array(Nullable(Nothing))')" 2>&1 \
+    $CLICKHOUSE_LOCAL --query "SELECT length(a) FROM file('$TMP_DIR/$name.arrow', Arrow)" 2>&1 \
         | grep -o -m1 'INCORRECT_DATA\|LOGICAL_ERROR\|MEMORY_LIMIT_EXCEEDED\|CANNOT_ALLOCATE_MEMORY'
 done
 

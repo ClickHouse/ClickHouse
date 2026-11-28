@@ -1721,9 +1721,9 @@ bool RecordBatchDecoder::bufferlessSubtreeDeclaresNulls(const ArrowField & field
 ColumnPtr RecordBatchDecoder::buildSizeDeterminedColumn(
     const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path, size_t list_depth)
 {
-    /// No buffer bounds `rows`: stay an octave below the allocator's ceiling, as for the decompressed body.
-    if (rows >= 1ULL << 62)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC field '{}' has {} rows, too many to allocate", field.name, rows);
+    /// No buffer bounds `rows`: keep its 8-byte offsets an octave below the allocator's ceiling, as for the decompressed body.
+    if (requiredBytes(rows, sizeof(UInt64)) >= 1ULL << 62)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC field '{}' declares {} rows, too many to allocate", field.name, rows);
 
     /// The caller has validated the node's length and that it declares no nulls; the length only fixes what
     /// the children must declare.
