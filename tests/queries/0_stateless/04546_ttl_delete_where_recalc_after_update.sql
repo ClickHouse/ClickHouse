@@ -296,8 +296,7 @@ CREATE TABLE clear_column_unrelated_materialized
     id Int64,
     c Int64,
     d Int64 MATERIALIZED c + 1,
-    other Int64 MATERIALIZED 1,
-    PROJECTION p (SELECT other, count() GROUP BY other)
+    other Int64 MATERIALIZED 1
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -310,6 +309,10 @@ ALTER TABLE clear_column_unrelated_materialized MODIFY COLUMN other Int64 MATERI
 -- No mutation is scheduled by the metadata-only MODIFY, so the part still holds other = 1.
 SELECT count() FROM system.mutations
 WHERE database = currentDatabase() AND table = 'clear_column_unrelated_materialized';
+
+-- The expression of a column that a projection computes from cannot be changed, so the projection is added after it.
+ALTER TABLE clear_column_unrelated_materialized ADD PROJECTION p (SELECT other, count() GROUP BY other);
+ALTER TABLE clear_column_unrelated_materialized MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
 
 ALTER TABLE clear_column_unrelated_materialized CLEAR COLUMN c SETTINGS mutations_sync = 2;
 
