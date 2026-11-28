@@ -269,6 +269,7 @@ namespace FailPoints
     extern const char rmt_merge_selecting_task_no_free_threads[];
     extern const char rmt_merge_selecting_task_max_part_size[];
     extern const char rmt_delay_execute_drop_range[];
+    extern const char rmt_drop_part_pause_before_commit[];
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
     extern const char rmt_restore_replica_pause_before_metadata_version_raise[];
@@ -3154,6 +3155,10 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     fiu_do_on(FailPoints::rmt_delay_execute_drop_range, { sleepForSeconds(10); });
 
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+
+    /// Remove the deduplication blocks that dropPartImpl left, if there were too many. On failure, the entry is retried.
+    if (entry.type == LogEntry::DROP_PART && entry.source_replica == replica_name)
+        clearBlocksInPartition(*getZooKeeper(), drop_range_info.getPartitionId(), drop_range_info.min_block, drop_range_info.max_block);
 
     /// Wait for loading of outdated parts because DROP_RANGE
     /// command must be applied to all parts on disk.
@@ -10967,6 +10972,9 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         Coordination::Requests ops;
         /// NOTE Don't need to remove block numbers too, because no in-progress inserts in the range are possible
         getClearBlocksInPartitionOps(ops, *zookeeper, part_info.getPartitionId(), part_info.min_block, part_info.max_block);
+        /// Too many removals for one request (it could exceed jute.maxbuffer). They are done when the entry is executed.
+        if (ops.size() > zkutil::MULTI_BATCH_SIZE)
+            ops.clear();
         size_t clear_block_ops_size = ops.size();
 
         /// If `part_name` is result of a recent merge and source parts are still available then
@@ -10986,6 +10994,7 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
         /// Just update version, because merges assignment relies on it
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "log", "", -1));
+        FailPointInjection::pauseFailPoint(FailPoints::rmt_drop_part_pause_before_commit);
         Coordination::Responses responses;
         Coordination::Error rc = zookeeper->tryMulti(ops, responses);
 
