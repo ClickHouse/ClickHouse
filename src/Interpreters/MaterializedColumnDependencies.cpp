@@ -43,6 +43,20 @@ const NamesAndTypesList & MaterializedColumnDependencies::getSourceColumns() con
     return *source_columns;
 }
 
+const NameSet & MaterializedColumnDependencies::getSubcolumnParents() const
+{
+    if (subcolumn_parents)
+        return *subcolumn_parents;
+
+    /// A mutation evaluates the recomputed defaults in one scope, and an ALIAS column is expanded into them.
+    subcolumn_parents.emplace();
+    for (const auto & column : columns)
+        if (column.default_desc.expression)
+            collectSubcolumnParents(*column.default_desc.expression, getSourceColumns(), *subcolumn_parents);
+
+    return *subcolumn_parents;
+}
+
 const MaterializedColumnDependencies::MaterializedDependencyNode *
 MaterializedColumnDependencies::findNode(const String & column_name) const
 {
@@ -66,7 +80,7 @@ MaterializedColumnDependencies::findNode(const String & column_name) const
 
     /// Both the read set and the recompute stage are keyed on top-level columns, so a default over a
     /// subcolumn must be reported as depending on `t`, not on `t.a`.
-    replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized.expression, source_columns_);
+    replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized.expression, source_columns_, getSubcolumnParents());
 
     /// `analyze` rewrites in place, so keep `materialized.expression` pristine for callers.
     auto query = materialized.expression->clone();
