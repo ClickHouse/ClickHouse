@@ -1,0 +1,18 @@
+empty buckets
+[]
+[█  ]
+[]
+[]
+[▄  █]
+occupancy survives merge and serialization
+[▄  █]
+[▄  █]
+nullable inputs through outer combinators
+String
+ ▄█
+[]
+String
+[]
+ ▄█
+aggregate_functions_null_for_empty
+String

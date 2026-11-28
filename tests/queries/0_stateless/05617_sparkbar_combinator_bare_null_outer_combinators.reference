@@ -1,0 +1,19 @@
+If, NULL key
+String	[]
+If, NULL argument
+String	[]
+If, NULL condition
+String	[]
+Distinct, NULL key
+String	[]
+Distinct, NULL argument
+String	[]
+OrNull, NULL key
+Nullable(String)	\N
+State, NULL key
+AggregateFunction(avgSparkbar(3, 0, 2), Nullable(Nothing), UInt64)	[]
+State, NULL argument
+[]
+non-NULL rows are still aggregated
+  █
+ ▄█

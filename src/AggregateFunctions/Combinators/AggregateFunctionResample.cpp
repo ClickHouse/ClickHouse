@@ -60,7 +60,15 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Incorrect number of parameters for aggregate function with {} suffix", getName());
 
-        if (which.isNativeUInt() || which.isDate() || which.isDateTime() || which.isDateTime64())
+        /// A bare `NULL` key arrives here as `Nullable(Nothing)`. It is accepted only if the nested function keeps its result
+        /// type for bare `NULL` arguments (`-Sparkbar`): the `Null` adapter skips every row, so every interval has
+        /// the result of an empty state, as for a typed `Nullable` `NULL` key. For other nested functions
+        /// the `Null` combinator replaces the whole function, so the key type is still rejected.
+        const bool nothing_key = arguments.back()->onlyNull() && !nested_function->getArgumentsThatCanBeOnlyNullThroughCombinators().empty();
+        const bool unsigned_params = params[params.size() - 3].getType() == Field::Types::UInt64
+            && params[params.size() - 2].getType() == Field::Types::UInt64;
+
+        if ((nothing_key && unsigned_params) || which.isNativeUInt() || which.isDate() || which.isDateTime() || which.isDateTime64())
         {
             UInt64 begin = params[params.size() - 3].safeGet<UInt64>();
             UInt64 end = params[params.size() - 2].safeGet<UInt64>();
@@ -76,7 +84,7 @@ public:
                 params);
         }
 
-        if (which.isNativeInt() || which.isEnum() || which.isInterval())
+        if (nothing_key || which.isNativeInt() || which.isEnum() || which.isInterval())
         {
             Int64 begin = 0;
             Int64 end = 0;
