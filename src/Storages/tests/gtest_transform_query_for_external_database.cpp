@@ -89,7 +89,7 @@ private:
                 {"apply_id", std::make_shared<DataTypeUInt64>()},
                 {"apply_type", std::make_shared<DataTypeUInt8>()},
                 {"apply_status", std::make_shared<DataTypeUInt8>()},
-                {"create_time", std::make_shared<DataTypeDateTime>()},
+                {"create_time", std::make_shared<DataTypeDateTime>("UTC")},
                 {"field", std::make_shared<DataTypeString>()},
                 {"value", std::make_shared<DataTypeString>()},
                 {"a", std::make_shared<DataTypeUInt8>()},
@@ -442,6 +442,42 @@ TEST(TransformQueryForExternalDatabase, Issue7245)
     check(state, 1, {"apply_id", "apply_type", "apply_status", "create_time"},
           "SELECT apply_id FROM test.table WHERE apply_type = 2 AND create_time > addDays(toDateTime('2019-01-01 01:02:03', 'UTC'),-7) AND apply_status IN (3,4)",
           R"(SELECT "apply_id", "apply_type", "apply_status", "create_time" FROM "test"."table" WHERE ("apply_type" = 2) AND ("create_time" > '2018-12-25 01:02:03') AND ("apply_status" IN (3, 4)))");
+}
+
+TEST(TransformQueryForExternalDatabase, DateTimeConstantInColumnTimeZone)
+{
+    const State & state = State::instance();
+
+    checkNewAnalyzer(state, {"create_time"},
+        "SELECT create_time FROM test.table WHERE create_time = toDateTime('2019-01-01 10:02:03', 'Asia/Tokyo')",
+        R"(SELECT "create_time" FROM "test"."table" WHERE "create_time" = '2019-01-01 01:02:03')");
+    checkNewAnalyzer(state, {"create_time"},
+        "SELECT create_time FROM test.table WHERE create_time IN (toDateTime('2019-01-01 10:02:03', 'Asia/Tokyo'), toDateTime('2019-01-01 11:02:03', 'Asia/Tokyo'))",
+        R"(SELECT "create_time" FROM "test"."table" WHERE "create_time" IN ('2019-01-01 01:02:03', '2019-01-01 02:02:03'))");
+    checkNewAnalyzer(state, {"create_time", "b", "a"},
+        "SELECT create_time FROM test.table WHERE ((create_time, b), a) IN (((toDateTime('2019-01-01 10:02:03', 'Asia/Tokyo'), toDate('2019-01-01')), 1), ((toDateTime('2019-01-01 11:02:03', 'Asia/Tokyo'), toDate('2019-01-01')), 2))",
+        R"(SELECT "create_time", "b", "a" FROM "test"."table" WHERE (("create_time", "b"), "a") IN ((('2019-01-01 01:02:03', '2019-01-01'), 1), (('2019-01-01 02:02:03', '2019-01-01'), 2)))",
+        LiteralEscapingStyle::PostgreSQL);
+    checkNewAnalyzer(state, {"create_time", "b", "a"},
+        "SELECT create_time FROM test.table WHERE ((create_time, b), a) IN (((toDateTime('2019-01-01 10:02:03', 'Asia/Tokyo'), toDate('2019-01-01')), 1))",
+        R"(SELECT "create_time", "b", "a" FROM "test"."table" WHERE (("create_time", "b"), "a") IN ((('2019-01-01 01:02:03', '2019-01-01'), 1)))",
+        LiteralEscapingStyle::PostgreSQL);
+    /// The member with `a = 300` does not fit `UInt8` and is dropped, which leaves a single row.
+    checkNewAnalyzer(state, {"a", "apply_type", "create_time"},
+        "SELECT a FROM test.table WHERE ((a, apply_type), create_time) IN (((1, 2), toDateTime('2019-01-01 10:02:03', 'Asia/Tokyo')), ((300, 2), toDateTime('2019-01-01 11:02:03', 'Asia/Tokyo')))",
+        R"(SELECT "a", "apply_type", "create_time" FROM "test"."table" WHERE (("a", "apply_type"), "create_time") IN (((1, 2), '2019-01-01 01:02:03')))",
+        LiteralEscapingStyle::PostgreSQL);
+    checkNewAnalyzer(state, {"create_time"},
+        "SELECT create_time FROM test.table WHERE ((1, 2), create_time) IN (((1, 2), toDateTime('2019-01-01 10:02:03', 'Asia/Tokyo')))",
+        R"(SELECT "create_time" FROM "test"."table" WHERE ((1, 2), "create_time") IN (((1, 2), '2019-01-01 01:02:03')))",
+        LiteralEscapingStyle::PostgreSQL);
+    /// The only member is before 1970 in UTC and does not fit `DateTime`: the set is empty, so the `IN` is applied locally.
+    checkNewAnalyzer(state, {"a", "create_time"},
+        "SELECT a FROM test.table WHERE create_time NOT IN (toDateTime64('1970-01-01 00:00:00', 0, 'Asia/Tokyo')) AND a = 1",
+        R"(SELECT "a", "create_time" FROM "test"."table" WHERE "a" = 1)");
+    checkNewAnalyzer(state, {"a", "create_time"},
+        "SELECT a FROM test.table WHERE NOT ((a, create_time) IN ((1, toDateTime64('1970-01-01 00:00:00', 0, 'Asia/Tokyo')))) OR a = 2",
+        R"(SELECT "a", "create_time" FROM "test"."table")");
 }
 
 TEST(TransformQueryForExternalDatabase, Aliases)
@@ -1131,6 +1167,70 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
             "(SELECT field, value FROM test.table WHERE tuple(field, value) IN (tuple('foo', 'bar')))",
             IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field, value FROM test."table" WHERE (field, value) IN (('foo', 'bar')))");
+    /// With a nested key the single row starts with a tuple, in either carrier. `row(...)` is a tuple on either side.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT a FROM test.table WHERE ((a, b), c) IN (((1, 2), 3)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT a FROM test."table" WHERE ((a, b), c) IN (((1, 2), 3)))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT a FROM test.table WHERE ((a, b), c) IN (((1, 1 + 1), 3)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT a FROM test."table" WHERE ((a, b), c) IN (((1, 1 + 1), 3)))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT a FROM test.table WHERE (row(a, b), c) IN (((1, 2), 3), ((4, 5), 6)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT a FROM test."table" WHERE (row(a, b), c) IN (((1, 2), 3), ((4, 5), 6)))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT a FROM test.table WHERE (ROW(a, b), c) IN (((1, 2), 3)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT a FROM test."table" WHERE (ROW(a, b), c) IN (((1, 2), 3)))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT a FROM test.table WHERE (a, b) IN (row(1, 2), row(3, 4)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT a FROM test."table" WHERE (a, b) IN (row(1, 2), row(3, 4)))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT a FROM test.table WHERE ((a, b), c) IN ((row(1, 2), 3), (row(4, 5), 6)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT a FROM test."table" WHERE ((a, b), c) IN ((row(1, 2), 3), (row(4, 5), 6)))");
+    /// A constant tuple key or position of the key, as a literal or wrapped in the analyzer's `_CAST`.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT a FROM test.table WHERE ((1, 2), 3) IN (((1, 2), 3)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT a FROM test."table" WHERE ((1, 2), 3) IN (((1, 2), 3)))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT a FROM test.table WHERE ((1, 2), c) IN (((1, 2), 3)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT a FROM test."table" WHERE ((1, 2), c) IN (((1, 2), 3)))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT a FROM test.table WHERE (_CAST((1, 2), 'Tuple(UInt8, UInt8)'), c) IN (((1, 2), 3)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT a FROM test."table" WHERE ((1, 2), c) IN (((1, 2), 3)))");
+    /// A key position of unknown shape: the scalar `3` cannot be a row of the key, so the set is one row,
+    /// while a set whose elements can all be rows keeps them, also with redundant parentheses around it.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT c FROM (SELECT row(1, 2) AS ab, 3 AS c) AS s WHERE (ab, c) IN (((1, 2), 3)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT c FROM (SELECT row(1, 2) AS ab, 3 AS c) AS s WHERE (ab, c) IN (((1, 2), 3)))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT c FROM (SELECT row(1, 2) AS ab, 3 AS c) AS s WHERE (ab, c) IN (tuple((1, 2), 3)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT c FROM (SELECT row(1, 2) AS ab, 3 AS c) AS s WHERE (ab, c) IN (((1, 2), 3)))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT a FROM test.table WHERE (a, b) IN (((1, 2), (4, 5))))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT a FROM test."table" WHERE (a, b) IN ((1, 2), (4, 5)))");
     /// A row value is also valid as an operand of a comparison.
     EXPECT_EQ(
         formatQueryTableArgument(state,
