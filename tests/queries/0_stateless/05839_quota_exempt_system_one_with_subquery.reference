@@ -1,0 +1,16 @@
+only system.one	0	0
+UNION of exempt branches	0	0
+IN	1	1
+GLOBAL IN	1	1
+no FROM	1	1
+IN table	1	1
+scalar subquery	1	1
+correlated subquery	1	1
+UNION	1	1
+additional_table_filters	1	1
+additional_result_filter	1	1
+-- exhausted quota
+1
+QUOTA_EXCEEDED
+QUOTA_EXCEEDED
+0
