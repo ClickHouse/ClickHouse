@@ -1303,7 +1303,33 @@ StoragePtr DatabaseDataLake::maybeCreateTableInExternalCatalog(ContextPtr contex
     catalog->createTableAtDefaultLocation(namespace_name, table_name, metadata_object);
     LOG_DEBUG(log, "Created table {} in the catalog of database {}", name, backQuoteIfNeed(getDatabaseName()));
 
-    auto storage = tryGetTableImpl(name, context_, /* lightweight */ false, /* ignore_if_not_iceberg */ false);
+    StoragePtr storage;
+    try
+    {
+        storage = tryGetTableImpl(name, context_, /* lightweight */ false, /* ignore_if_not_iceberg */ false);
+    }
+    catch (...)
+    {
+        /// The catalog has already committed the table, but this database cannot load it, so the query fails.
+        /// For example, the engine arguments that the table inherits from the database definition are validated
+        /// only here, because parsing them needs the location, which the catalog may assign only on creation.
+        /// Remove the table from the catalog again, so that a failed `CREATE TABLE` does not leave it behind.
+        /// The table is new and has no data, so its files (the first metadata file) are removed as well.
+        try
+        {
+            catalog->dropTable(namespace_name, table_name, /* delete_data */ true);
+            LOG_DEBUG(log, "Removed table {} from the catalog of database {}, because it cannot be loaded after creation",
+                name, backQuoteIfNeed(getDatabaseName()));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format(
+                "Cannot remove table {} from the catalog of database {} after its creation failed",
+                name, backQuoteIfNeed(getDatabaseName())));
+        }
+        throw;
+    }
+
     if (!storage)
         throw Exception(
             ErrorCodes::DATALAKE_DATABASE_ERROR,

@@ -3428,6 +3428,17 @@ SETTINGS catalog_type = 'rest', warehouse = 'demo', storage_endpoint = 'http://m
     error = node.query_and_get_error(select_query)
     assert "not supported by data lake engines" in error, error
 
+    # A table created without engine arguments inherits them from the database definition as well.
+    # The catalog commits the table before the database can load it and validate the arguments,
+    # so the rejected `CREATE TABLE` must remove the table from the catalog again.
+    assert len(catalog.list_tables(root_namespace)) == 1
+    error = node.query_and_get_error(
+        f"CREATE TABLE {db_name}.`{root_namespace}.{table_name}_new` (x String) ENGINE = IcebergS3",
+        settings={"allow_experimental_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert "not supported by data lake engines" in error, error
+    assert catalog.list_tables(root_namespace) == [(root_namespace, table_name)]
+
     # The same fresh definition run by a wrapper that executes user statements as internal ones
     # (`PARALLEL WITH`, `EXECUTE AS`) must be rejected as well.
     node.query(f"DROP DATABASE {db_name}")
