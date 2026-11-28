@@ -115,7 +115,7 @@ private:
         res_offsets.resize(input_rows_count);
         res_data.resize(data.size());
 
-        const std::function<void()> check_cancellation = makeCancellationCheck(name.c_str());
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
         CancellationBudget budget(check_cancellation);
 
         size_t prev_offset = 0;
