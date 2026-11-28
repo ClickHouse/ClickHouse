@@ -1,0 +1,44 @@
+iceberg_v2_delete_equality
+1	test_1_base
+2	test_2_updated
+1	test_1_base
+2	test_2_updated
+iceberg_v2_delete_equality_nulls
+1	str1
+4	str4
+\N	str5
+1	str1
+3	str3
+\N	str2
+iceberg_v2_delete_both_eq_and_pos
+2	str2_updated	2023-12-13
+3	str3	2023-12-23
+iceberg_v2_delete_equality_partitioned
+1	str1	2023-12-24
+2	str2	2023-12-24
+333333	str3	2023-12-24
+4	str4	2023-12-24
+1	str1	2023-12-25
+222	str2	2023-12-25
+2
+iceberg_v2_delete_equality_multi_eq_ids
+1	str1
+4	str4_updated
+5	str5
+33	str3_updated_twice
+2222	str2
+1	str1
+2	str2
+3	str3_updated
+iceberg_v2_delete_pos_and_multi_eq_ids
+1	str1	2020-12-01
+4	str4	2024-01-26
+5	str5	2024-01-27
+333333	str3	2024-01-25
+iceberg_v2_equality_delete_schema_evolution
+1	2024-03-20	str1	\N
+5	2024-03-22	str5	\N
+44	2024-03-21	str4	4444
+1	2024-03-20	str1
+4	2024-03-21	str4
+5	2024-03-22	str5

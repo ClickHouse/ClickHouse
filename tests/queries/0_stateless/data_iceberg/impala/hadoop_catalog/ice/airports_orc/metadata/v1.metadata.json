@@ -1,0 +1,76 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "6f36d4ad-321a-4359-87a0-fd9e31a034a7",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/airports_orc",
+  "last-updated-ms" : 1634575394783,
+  "last-column-id" : 7,
+  "schema" : {
+    "type" : "struct",
+    "fields" : [ {
+      "id" : 1,
+      "name" : "iata",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 2,
+      "name" : "airport",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "city",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 4,
+      "name" : "state",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 5,
+      "name" : "country",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 6,
+      "name" : "lat",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 7,
+      "name" : "lon",
+      "required" : false,
+      "type" : "double"
+    } ]
+  },
+  "partition-spec" : [ ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "last_modified_time" : "1634575394",
+    "numRows" : "0",
+    "rawDataSize" : "0",
+    "gc.enabled" : "TRUE",
+    "bucketing_version" : "2",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler",
+    "numFilesErasureCoded" : "0",
+    "engine.hive.enabled" : "true",
+    "totalSize" : "101946",
+    "EXTERNAL" : "TRUE",
+    "write.format.default" : "orc",
+    "numFiles" : "1",
+    "table_type" : "ICEBERG"
+  },
+  "current-snapshot-id" : -1,
+  "snapshots" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}

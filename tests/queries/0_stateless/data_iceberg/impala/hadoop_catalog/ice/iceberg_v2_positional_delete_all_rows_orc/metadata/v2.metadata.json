@@ -1,0 +1,71 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "c1985299-1304-4b78-8860-040a2c6dc4ff",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_positional_delete_all_rows_orc",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1661866640281,
+  "last-column-id" : 2,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "i",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "s",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "engine.hive.enabled" : "true",
+    "bucketing_version" : "2",
+    "serialization.format" : "1",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler",
+    "write.format.default" : "orc"
+  },
+  "current-snapshot-id" : 4807054508647143162,
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 4807054508647143162,
+    "timestamp-ms" : 1661866640281,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "1",
+      "added-records" : "3",
+      "added-files-size" : "340",
+      "changed-partition-count" : "1",
+      "total-records" : "3",
+      "total-files-size" : "340",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_positional_delete_all_rows_orc/metadata/snap-4807054508647143162-1-83d17f01-336e-41ab-a791-ffd5f511f6ab.avro",
+    "schema-id" : 0
+  } ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1661866640281,
+    "snapshot-id" : 4807054508647143162
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1661866573782,
+    "metadata-file" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_positional_delete_all_rows_orc/metadata/00000-49f36a40-e2b6-411f-9efe-0519b28b8774.metadata.json"
+  } ]
+}
