@@ -43,9 +43,10 @@ SELECT formatQuery($$SELECT dt AT TIME ZONE 'UTC' = dt2$$);          -- toTimeZo
 SELECT formatQuery($$SELECT dt AT TIME ZONE 'A' AT TIME ZONE 'B'$$); -- toTimeZone(toTimeZone(dt, 'A'), 'B') (chained, left-assoc)
 SELECT formatQuery($$SELECT t AT TIME ZONE tz FROM x$$);             -- toTimeZone(t, tz) (column operands)
 SELECT formatQuery($$SELECT a * ts AT TIME ZONE 'UTC'$$);            -- a * toTimeZone(ts, 'UTC') (AT binds tighter than *)
--- non-const column tz: requires allow_nonconst_timezone_arguments=1 to execute
+-- non-const column tz cannot be applied per-row: a DateTime result has a single time zone,
+-- so the function rejects it whatever allow_nonconst_timezone_arguments is set to
 SELECT dt AT TIME ZONE tz FROM (SELECT toDateTime('2001-02-16 20:38:40', 'UTC') AS dt, 'America/Denver' AS tz)
-    SETTINGS allow_nonconst_timezone_arguments = 1;
+    SETTINGS allow_nonconst_timezone_arguments = 1; -- { serverError ILLEGAL_COLUMN }
 SELECT dt AT TIME ZONE tz FROM (SELECT toDateTime('2001-02-16 20:38:40', 'UTC') AS dt, 'America/Denver' AS tz) SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
 
 -- error paths
