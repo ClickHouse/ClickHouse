@@ -27,6 +27,7 @@
 #   include <libkern/OSByteOrder.h>
     // define 64 bit macros
 #   define htole64(x) OSSwapHostToLittleInt64(x)
+#   define le64toh(x) OSSwapLittleToHostInt64(x)
 #endif
 
 #include <types.h>
@@ -227,8 +228,10 @@ static int saveMetaData(const char* filenames[], int count, int output_fd, const
         pointer += sizeof(FileData);
 
         /// Save file name
-        memcpy(output + pointer, filenames[i], files_data[i].name_length);
-        pointer += files_data[i].name_length;
+        /// `files_data[i].name_length` is already encoded as little-endian so ensure `file_name_length` is host-endian
+        uint64_t file_name_length = le64toh(files_data[i].name_length);
+        memcpy(output + pointer, filenames[i], file_name_length);
+        pointer += file_name_length;
     }
 
     /// Save metadata
