@@ -7,7 +7,10 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpandedASTBudget.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/misc.h>
@@ -19,8 +22,16 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -31,6 +42,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -264,6 +276,157 @@ void replaceObjectIdentifiersWithLiterals(ASTPtr & ast, const ColumnsDescription
         replaceObjectIdentifiersWithLiterals(child, columns);
 }
 
+constexpr std::string_view unwritten_columns_expansion = "unwritten insertion table columns";
+
+using NameSetWithMemoryTracking = UnorderedSetWithMemoryTracking<String>;
+
+bool isOtherScope(const IAST & ast)
+{
+    return ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>() || ast.as<ASTTableExpression>();
+}
+
+/// Whether the head of an identifier of `ast` or an expression alias of `ast` is in `names`.
+bool bindsAny(const IAST & ast, const NameSetWithMemoryTracking & names)
+{
+    checkStackSize();
+    if (const auto * identifier = ast.as<ASTIdentifier>(); identifier && names.contains(identifier->name_parts.at(0)))
+        return true;
+    if (auto alias = ast.tryGetAlias(); !alias.empty() && names.contains(alias))
+        return true;
+    return std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return bindsAny(*child, names); });
+}
+
+bool hasAlias(const IAST & ast)
+{
+    checkStackSize();
+    return !ast.tryGetAlias().empty() || std::ranges::any_of(ast.children, [](const ASTPtr & child) { return hasAlias(*child); });
+}
+
+bool hasNonDeterministicFunction(const IAST & ast, const ContextPtr & context)
+{
+    checkStackSize();
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name != "lambda")
+    {
+        auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+        if (!resolver || !resolver->isDeterministicInScopeOfQuery())
+            return true;
+    }
+    return std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return hasNonDeterministicFunction(*child, context); });
+}
+
+/// Replaces the reads of the insertion table columns that the `INSERT` does not write with the values the insertion
+/// table computes for them, like `addDefaultRequiredExpressionsRecursively`.
+class UnwrittenColumnsInliner
+{
+public:
+    UnwrittenColumnsInliner(
+        const ColumnsDescription & insertion_columns_, const Names & written_columns,
+        const VectorWithMemoryTracking<String> & defaulted_hint_columns, const ContextPtr & context_)
+        : insertion_columns(insertion_columns_)
+        , written(written_columns.begin(), written_columns.end())
+        , defaulted(defaulted_hint_columns.begin(), defaulted_hint_columns.end())
+        , context(context_)
+        , max_expanded_ast_elements(context->getSettingsRef()[Setting::max_expanded_ast_elements])
+    {
+    }
+
+    /// Whether `rewrite` met a read that it left as it is, because the expression of the column defines an expression alias
+    /// or a name in the value is an argument of an enclosing lambda.
+    [[nodiscard]] bool declined() const { return is_declined; }
+
+    /// Returns whether `ast` changed. Identifiers whose head is in `lambda_arguments` are lambda arguments. A replaced
+    /// argument of a function keeps the name of the column, which functions such as `tuple` and `formatRow` read, unless
+    /// a hint column with a `DEFAULT` has that name: the `DEFAULT` is aliased by it.
+    bool rewrite(ASTPtr & ast, ExpandedASTBudget & budget, const NameSetWithMemoryTracking & lambda_arguments, bool is_argument = false)
+    {
+        checkStackSize();
+        if (isOtherScope(*ast))
+            return false;
+
+        if (const auto * identifier = ast->as<ASTIdentifier>())
+        {
+            if (lambda_arguments.contains(identifier->name_parts.at(0)))
+                return false;
+            auto name = IdentifierSemantic::getColumnName(*identifier);
+            const ASTPtr * value = name ? getValue(*name) : nullptr;
+            if (!value)
+                return false;
+            if (bindsAny(**value, lambda_arguments))
+            {
+                is_declined = true;
+                return false;
+            }
+            ast = budget.replace(ast, *value);
+            if (is_argument && !defaulted.contains(*name))
+                ast->setAlias(*name);
+            return true;
+        }
+
+        if (auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+        {
+            NameSetWithMemoryTracking masked = lambda_arguments;
+            for (auto & argument : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
+                masked.insert(std::move(argument));
+            return rewrite(function->arguments->children[1], budget, masked);
+        }
+
+        bool changed = false;
+        for (auto & child : ast->children)
+            changed |= rewrite(child, budget, lambda_arguments, true);
+        return changed;
+    }
+
+private:
+    /// The value of `name` if it is an insertion table column that the `INSERT` does not write.
+    const ASTPtr * getValue(const String & name)
+    {
+        if (auto it = values.find(name); it != values.end())
+            return &it->second;
+
+        const auto * column = insertion_columns.tryGet(name);
+        if (!column || written.contains(name))
+            return nullptr;
+
+        if (column->default_desc.expression && hasAlias(*column->default_desc.expression))
+        {
+            is_declined = true;
+            return nullptr;
+        }
+
+        /// A non-deterministic value would differ from the one the insertion table computes for its own columns.
+        if (column->default_desc.expression && hasNonDeterministicFunction(*column->default_desc.expression, context))
+            return nullptr;
+
+        ASTPtr value;
+        if (column->default_desc.expression)
+        {
+            /// CREATE rejects cyclic `DEFAULT`s, this only bounds the recursion.
+            if (!expanding.insert(name).second)
+                return nullptr;
+            auto cast = makeASTFunction(
+                "_CAST", column->default_desc.expression->clone(), make_intrusive<ASTLiteral>(column->type->getName()));
+            ExpandedASTBudget value_budget(max_expanded_ast_elements, *cast, unwritten_columns_expansion);
+            rewrite(cast->arguments->children[0], value_budget, {});
+            expanding.erase(name);
+            value = std::move(cast);
+        }
+        else
+            value = make_intrusive<ASTLiteral>(column->type->getDefault());
+
+        return &values.emplace(name, std::move(value)).first->second;
+    }
+
+    const ColumnsDescription & insertion_columns;
+    const NameSetWithMemoryTracking written;
+    const NameSetWithMemoryTracking defaulted;
+    const ContextPtr context;
+    const size_t max_expanded_ast_elements;
+
+    UnorderedMapWithMemoryTracking<String, ASTPtr> values;
+    NameSetWithMemoryTracking expanding;
+    bool is_declined = false;
+};
+
 }
 
 NameSet getStorageColumnsReadByDefault(const ColumnsDescription & columns, const ColumnDescription & column)
@@ -279,6 +442,38 @@ NameSet getStorageColumnsReadByDefault(const ColumnsDescription & columns, const
         storage_reads.insert(read_column ? read_column->getNameInStorage() : read);
     }
     return storage_reads;
+}
+
+void inlineUnwrittenColumnsInStructureHint(
+    ColumnsDescription & structure_hint, const ColumnsDescription & insertion_columns, const Names & written_columns,
+    const ContextPtr & context)
+{
+    VectorWithMemoryTracking<String> names;
+    auto expressions = make_intrusive<ASTExpressionList>();
+    for (const auto & column : structure_hint)
+    {
+        if (column.default_desc.expression)
+        {
+            names.push_back(column.name);
+            expressions->children.push_back(column.default_desc.expression->clone());
+        }
+    }
+
+    /// The `DEFAULT`s evaluated together resolve the expression aliases of each other and of the values they read.
+    if (hasAlias(*expressions))
+        return;
+
+    UnwrittenColumnsInliner inliner(insertion_columns, written_columns, names, context);
+    ExpandedASTBudget budget(context->getSettingsRef()[Setting::max_expanded_ast_elements], *expressions, unwritten_columns_expansion);
+    VectorWithMemoryTracking<size_t> changed;
+    for (size_t i = 0; i < names.size(); ++i)
+        if (inliner.rewrite(expressions->children[i], budget, {}))
+            changed.push_back(i);
+
+    if (inliner.declined())
+        return;
+    for (size_t i : changed)
+        structure_hint.modify(names[i], [&](ColumnDescription & column) { column.default_desc.expression = expressions->children[i]; });
 }
 
 void removeMisboundDefaultsFromStructureHint(
