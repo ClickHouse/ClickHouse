@@ -1,0 +1,9 @@
+merge	1
+merge ttl of a is due	1
+merge	1	0
+merge	2	0
+merge ttl	1
+merge ttl	1	100
+merge ttl	2	101
+no info	1	0
+no info	2	0
