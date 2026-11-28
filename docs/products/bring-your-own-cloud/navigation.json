@@ -24,7 +24,8 @@
           "group": "Customization",
           "pages": [
             "products/bring-your-own-cloud/onboarding/customization-aws",
-            "products/bring-your-own-cloud/onboarding/customization-gcp"
+            "products/bring-your-own-cloud/onboarding/customization-gcp",
+            "products/bring-your-own-cloud/onboarding/customization-azure"
           ]
         },
         {
@@ -48,7 +49,8 @@
           "root": "products/bring-your-own-cloud/reference/privilege",
           "pages": [
             "products/bring-your-own-cloud/reference/privilege-aws",
-            "products/bring-your-own-cloud/reference/privilege-gcp"
+            "products/bring-your-own-cloud/reference/privilege-gcp",
+            "products/bring-your-own-cloud/reference/privilege-azure"
           ]
         },
         "products/bring-your-own-cloud/reference/clickhouse-data-access",

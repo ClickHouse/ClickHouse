@@ -1,0 +1,87 @@
+---
+title: 'Azure customized setup'
+slug: /cloud/reference/byoc/onboarding/customization-azure
+sidebarTitle: 'Azure customized setup'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'onboarding', 'Azure', 'IAM', 'managed identity']
+description: 'Deploy ClickHouse BYOC on Azure with managed identities and role assignments that you create and control'
+doc_type: 'reference'
+---
+
+## Customer-managed IAM (BYO-IAM) for Azure {#customer-managed-iam-azure}
+
+You can create the managed identities, custom roles, and role assignments of each BYOC infrastructure yourself. In this mode, ClickHouse Cloud does not create them. You keep control of the IAM resources, and you can apply the security policies of your organization to them.
+
+<Info>
+Customer-managed IAM is in private preview. Contact ClickHouse Support to enable this capability for your organization before you do the steps below.
+</Info>
+
+With customer-managed IAM, you:
+
+- Create the resource groups, managed identities, custom roles, and role assignments of each BYOC infrastructure before ClickHouse creates the infrastructure.
+- Remove the permissions to create managed identities, role definitions, role assignments, and resource groups from the ClickHouse service principal.
+- Limit most permissions of the ClickHouse service principal to the resource groups of each BYOC infrastructure, instead of the subscription.
+
+<Steps>
+<Step title="Configure the service principal without IAM write permissions" id="byo-iam-service-principal">
+When you do the [initial BYOC setup](/products/bring-your-own-cloud/onboarding/standard), turn off the IAM write permissions in the Terraform module for Azure:
+
+```hcl
+module "clickhouse_onboarding" {
+  source                        = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/azure?ref=<version>"
+  include_iam_write_permissions = false
+}
+```
+
+Replace `<version>` with the latest tag from the module's [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases). Always use the latest release.
+
+The module then gives the `byo_iam` output. The per-infrastructure module in the next step uses this output.
+</Step>
+<Step title="Create the per-infrastructure IAM resources" id="byo-iam-per-infra-resources">
+Before ClickHouse creates each BYOC infrastructure, create its IAM resources with the [`azure-per-infra-iam` module](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure-per-infra-iam):
+
+```hcl
+module "clickhouse_per_infra_iam" {
+  source = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/azure-per-infra-iam?ref=<version>"
+
+  spoken_name = "<spoken-name-provided-by-clickhouse>"
+  region      = "<azure-region-of-the-infrastructure>"
+  onboarding  = module.clickhouse_onboarding.byo_iam
+}
+
+output "data_plane_management_identity_client_id" {
+  value = module.clickhouse_per_infra_iam.data_plane_management_identity_client_id
+}
+```
+
+The module creates these resources:
+
+- The resource groups `clickhouse-cloud-<spoken-name>-default` and `clickhouse-cloud-<spoken-name>-storage`.
+- The managed identities `<spoken-name>-data-plane-mgmt`, `<spoken-name>-clickhouse-byoc`, and `<spoken-name>-monitoring`, with their custom roles and role assignments.
+- The role assignments that give the ClickHouse service principal access to the 2 resource groups of this infrastructure only.
+
+ClickHouse finds these resources by name. Do not change their names.
+
+If you plan to use [Transparent Data Encryption (TDE)](/products/cloud/guides/security/cmek#transparent-data-encryption-tde), set `include_tde = true` on this module. Also set `include_tde_permissions = true` on the onboarding module. The module then also creates the managed identity `<spoken-name>-tde-delegate`.
+</Step>
+<Step title="Send the client ID to ClickHouse" id="byo-iam-send-client-id">
+Send the `data_plane_management_identity_client_id` output to ClickHouse. ClickHouse needs it to create the BYOC infrastructure.
+</Step>
+<Step title="Keep the per-infrastructure resources up to date" id="byo-iam-keep-up-to-date">
+ClickHouse can add managed identities and permissions to the per-infrastructure module when it adds platform capabilities. When ClickHouse tells you about an update, apply the module again at the latest release. If you use an old release, the provisioning and upgrades of your BYOC infrastructure can fail.
+</Step>
+</Steps>
+
+<Warning>
+Do not destroy the `azure-per-infra-iam` module of an infrastructure before ClickHouse deletes that infrastructure. If you remove the role assignments first, ClickHouse cannot delete the resources of the infrastructure.
+</Warning>
+
+Some resources depend on resources that ClickHouse creates during provisioning, so the module cannot create them. ClickHouse creates these resources also in this mode:
+
+- The federated identity credentials on the managed identities.
+- The Entra application and service principal of the AKS cluster, and its `Network Contributor` role assignment.
+- The role assignments of `<spoken-name>-data-plane-mgmt` on the AKS cluster.
+- The `Key Vault Crypto User` role assignments on the TDE and named collections key vaults.
+
+An ABAC condition limits these role assignments to a fixed list of roles and principals. For the list, and for the permissions that the ClickHouse service principal keeps, see the [README of the Terraform module](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure#bring-your-own-iam-byo-iam).
+
+For information about the managed identities that ClickHouse Cloud creates by default, see [BYOC privilege on Azure](/products/bring-your-own-cloud/reference/privilege-azure#additional-managed-identities-created-by-the-controller).
