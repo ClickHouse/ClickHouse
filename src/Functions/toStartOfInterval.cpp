@@ -237,30 +237,30 @@ public:
     {
     }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
     /// The Origin overload checks that origin <= time_arg for every row. The LowCardinality
     /// dictionary always contains a default value (epoch/0) which would violate this check.
-    bool canBeExecutedOnDefaultArguments() const override { return overload != ToStartOfIntervalOverload::Origin; }
-    bool hasInformationAboutMonotonicity() const override { return true; }
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return overload != ToStartOfIntervalOverload::Origin; }
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return true; }
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
     {
         if (date32_narrowing)
             return getDate32RoundingMonotonicity(*date32_narrowing, left, right);
         return { .is_monotonic = true, .is_always_monotonic = true };
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
         /// Not called through the overload resolver path.
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} should only be used through the overload resolver", getName());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /* input_rows_count */) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /* input_rows_count */) const override
     {
         const auto & time_column = arguments[0];
         const auto & interval_column = arguments[1];
@@ -300,7 +300,7 @@ public:
 
 private:
     template <typename ReturnType>
-    ColumnPtr dispatchForTimeColumn(
+    [[nodiscard]] ColumnPtr dispatchForTimeColumn(
         const ColumnWithTypeAndName & time_column, const ColumnWithTypeAndName & interval_column, const ColumnWithTypeAndName & origin_column, const DataTypePtr & result_type, const DateLUTImpl & time_zone) const
     {
         const auto & time_column_type = *time_column.type.get();
@@ -344,7 +344,7 @@ private:
     }
 
     template <typename ReturnType, typename TimeDataType, typename TimeColumnType>
-    ColumnPtr dispatchForIntervalColumn(
+    [[nodiscard]] ColumnPtr dispatchForIntervalColumn(
         const TimeDataType & time_data_type,
         const TimeColumnType & time_column,
         const ColumnWithTypeAndName & interval_column,
@@ -538,7 +538,7 @@ private:
     }
 
     template <typename ResultDataType, typename TimeDataType, typename TimeColumnType, IntervalKind::Kind unit>
-    ColumnPtr execute(const TimeDataType &, const TimeColumnType & time_column_type, Int64 num_units, const ColumnWithTypeAndName & origin_column, const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale) const
+    [[nodiscard]] ColumnPtr execute(const TimeDataType &, const TimeColumnType & time_column_type, Int64 num_units, const ColumnWithTypeAndName & origin_column, const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale) const
     {
         using ResultColumnType = typename ResultDataType::ColumnType;
 
@@ -645,7 +645,7 @@ private:
             auto execute_default = [&]<bool saturate>()
             {
                 /// The start of the interval of one value, in the representation of the result type.
-                auto execute_row = [&](auto time)
+                auto execute_row = [&](auto time) ALWAYS_INLINE
                 {
                     /// A `DateTime` result that clamps (`to_start_of_interval_preserves_argument_type`) is computed with the
                     /// signed overload: the unsigned one clamps a day before the epoch to the first day after it, which
@@ -654,6 +654,14 @@ private:
                     if constexpr (saturate && std::is_same_v<TimeColumnType, ColumnDateTime>)
                         return convertToResultRepresentation<unit, ResultDataType>(
                             ToStartOfInterval<unit>::execute(static_cast<Int64>(time), num_units, time_zone, 1), time_zone, result_scale_multiplier);
+                    else if constexpr (unit == IntervalKind::Kind::Hour && std::is_same_v<TimeColumnType, ColumnDateTime>)
+                    {
+                        /// Rounding to hours is inlined into the loop over the rows as a whole (see also
+                        /// `ToStartOfInterval<IntervalKind::Kind::Hour>::execute`), so that the number of hours and the
+                        /// properties of the time zone are checked once per column and not in a call for every row.
+                        [[clang::always_inline]] return convertToResultRepresentation<unit, ResultDataType>(
+                            ToStartOfInterval<unit>::execute(time, num_units, time_zone, scale_multiplier), time_zone, result_scale_multiplier);
+                    }
                     else
                         return convertToResultRepresentation<unit, ResultDataType>(
                             ToStartOfInterval<unit>::execute(time, num_units, time_zone, scale_multiplier), time_zone, result_scale_multiplier);

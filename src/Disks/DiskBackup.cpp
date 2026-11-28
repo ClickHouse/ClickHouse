@@ -32,14 +32,14 @@ public:
 
     void next() override { ++index; }
 
-    bool isValid() const override { return index < files.size(); }
+    [[nodiscard]] bool isValid() const override { return index < files.size(); }
 
-    String path() const override
+    [[nodiscard]] String path() const override
     {
         return fmt::format("{}/{}", dir_path, files[index]);
     }
 
-    String name() const override { return files[index]; }
+    [[nodiscard]] String name() const override { return files[index]; }
 
 private:
     std::string dir_path;

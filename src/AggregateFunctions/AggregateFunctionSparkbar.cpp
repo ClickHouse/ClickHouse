@@ -290,11 +290,14 @@ public:
         if (width < 2 || 1024 < width)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter width must be in range [2, 1024]");
 
+        if (is_specified_range_x && (begin_x != params.at(1).safeGet<X>() || end_x != params.at(2).safeGet<X>()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameters `min_x` and `max_x` must fit in the type of `x`");
+
         if (begin_x >= end_x)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter `min_x` must be less than `max_x`");
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return "sparkbar";
     }
@@ -324,7 +327,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * /*arena*/) const override
     {

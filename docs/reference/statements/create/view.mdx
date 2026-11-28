@@ -266,7 +266,7 @@ The `REFRESH` clause must specify at least one of `EVERY`, `AFTER`, or `DEPENDS 
 
 Periodically runs the corresponding query and stores its result into a table.
 * If `APPEND` is specified, each refresh inserts rows into the table without deleting existing rows. The insert is not atomic, just like a regular `INSERT INTO ... SELECT` query.
-* If `APPEND INCREMENTAL` is specified, each refresh runs the query over only the rows committed to the source table since the previous refresh, and appends the result. The source table cannot be dropped, renamed or exchanged (including by `CREATE OR REPLACE TABLE`), and its database cannot be dropped or renamed, while the view exists.
+* If `APPEND INCREMENTAL` is specified, each refresh runs the query over only the rows committed to the source table since the previous refresh, and appends the result.
 * Otherwise, each refresh atomically replaces the table's previous contents.
 
 Differences from regular non-refreshable materialized views:
@@ -411,6 +411,7 @@ Available refresh settings:
 * `refresh_retry_initial_backoff_ms` - Delay before the first retry, if `refresh_retries` is not zero. Each subsequent retry doubles the delay, up to `refresh_retry_max_backoff_ms`. Default: 100 ms.
 * `refresh_retry_max_backoff_ms` - Limit on the exponential growth of delay between refresh attempts. Default: 60000 ms (1 minute).
 * `all_replicas` - In a [Replicated database](/reference/engines/database-engines/replicated) with `APPEND`, controls whether all replicas refresh independently or only one replica refreshes at each scheduled time. Cannot be changed after the view is created. Default: `false`.
+* `refresh_coordination_jitter_ms` - If refreshes are coordinated across replicas, each replica waits a random delay of up to this long before starting a due refresh, so that refreshes are spread across replicas even without `RANDOMIZE FOR`. The delay is not reflected in `next_refresh_time`. 0 disables the delay. Default: 1000 ms.
 
 ### Changing Refresh Parameters {#changing-refresh-parameters}
 

@@ -16,7 +16,7 @@ private:
     bool allow_execute_as = true;
     bool allow_in_parallel_with = true;
 
-    const char * getName() const override { return "Query"; }
+    [[nodiscard]] const char * getName() const override { return "Query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:

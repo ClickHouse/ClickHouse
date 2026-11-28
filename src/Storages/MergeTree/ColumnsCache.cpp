@@ -4,6 +4,7 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/memory.h>
@@ -48,13 +49,15 @@ String getColumnsCachePartName(const String & part_name, const String & parent_p
     return parent_part_name + ":" + part_name;
 }
 
-UInt128 getColumnsCacheColumnIdentity(const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity)
+UInt128 getColumnsCacheColumnIdentity(
+    const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity, const String & name_in_part)
 {
     SipHash hash;
     hash.update(table_uuid);
     hash.update(part_name);
     hash.update(column_name);
     hash.update(schema_identity);
+    hash.update(name_in_part);
     return hash.get128();
 }
 
@@ -124,7 +127,8 @@ size_t chargedBytesOfColumn(const IColumn & column)
 
 std::shared_ptr<ColumnsCacheEntry> makeColumnsCacheEntry()
 {
-    return std::allocate_shared<ColumnsCacheEntry>(ServerOwnedCacheEntryAllocator<ColumnsCacheEntry>{});
+    /// Storage only: the destructor decides whether the column is the server's or the query's.
+    return std::allocate_shared<ColumnsCacheEntry>(ServerOwnedAllocator<ColumnsCacheEntry>{});
 }
 
 /// Only the root is checked for other holders: a subcolumn a query keeps past the eviction (e.g. from `assumeNotNull`)
@@ -132,7 +136,7 @@ std::shared_ptr<ColumnsCacheEntry> makeColumnsCacheEntry()
 /// would never release entries that share a dictionary.
 ColumnsCacheEntry::~ColumnsCacheEntry()
 {
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
     String().swap(part_name);
     String().swap(column_name);
     source.reset();
@@ -348,7 +352,7 @@ size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expe
     size_t bytes_to_hand_over = 0;
     size_t bytes_admitted = 0;
     {
-        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+        ServerOwnedMemoryScope not_charged_to_query_or_user;
         bytes_admitted = setManyImpl(entries, expected_table_generation, bytes_to_hand_over, entries_resident);
     }
     if (bytes_to_hand_over)
@@ -612,7 +616,7 @@ void ColumnsCache::removeStaleEntries(const std::vector<Key> & keys, const std::
 void ColumnsCache::removeEntries(const std::vector<MappedPtr> & entries)
 {
     /// The memory of the cache is the server's, see `setMany`.
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
 
     std::vector<Key> keys;
     keys.reserve(entries.size());
@@ -631,7 +635,7 @@ bool ColumnsCache::containsAll(const std::vector<Key> & keys) const
 void ColumnsCache::removeTable(const UUID & table_uuid)
 {
     /// The memory of the cache is the server's, see `setMany`.
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
 
     /// Not under `index_mutex`: `maxSizeInBytes` of a shard takes the mutex of the shard.
     const bool disabled = shards.front()->maxSizeInBytes() == 0;
@@ -685,10 +689,9 @@ void ColumnsCache::removeTable(const UUID & table_uuid)
 void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
 {
     /// The memory of the cache is the server's, see `setMany`.
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
 
-    /// No invalidation stamp is advanced here, see the declaration: the part is removed from
-    /// the cache only once no reader can hold it, so there is no deferred write to reject.
+    /// No invalidation stamp is advanced here, see the declaration.
     std::vector<Key> keys_to_remove;
     {
         std::lock_guard lock(index_mutex);
@@ -715,7 +718,7 @@ bool ColumnsCache::containsPart(const UUID & table_uuid, const String & part_nam
 void ColumnsCache::clearAll()
 {
     /// The memory of the cache is the server's, see `setMany`.
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
 
     {
         std::lock_guard lock(index_mutex);

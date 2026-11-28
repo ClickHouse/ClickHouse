@@ -1,0 +1,22 @@
+<test>
+    <create_query>
+        CREATE TABLE sparse_prewhere_array_runs (k UInt64, f_short_runs String, f_long_runs String, a Array(UInt8))
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS index_granularity = 8192, ratio_of_defaults_for_sparse_serialization = 0.8
+    </create_query>
+
+    <fill_query>
+        INSERT INTO sparse_prewhere_array_runs SELECT
+            number,
+            number % 80 &lt; 8 ? toString(number) : '',
+            number % 8192 &gt;= 5120 AND number % 8192 &lt; 5940 ? toString(number) : '',
+            arrayMap(x -&gt; toUInt8(cityHash64(number, x) % 200), range(cityHash64(number, 1) % 7))
+        FROM numbers(33554432)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE sparse_prewhere_array_runs FINAL</fill_query>
+
+    <query>SELECT max(arraySum(a)) FROM sparse_prewhere_array_runs PREWHERE f_short_runs != '' SETTINGS max_threads = 1</query>
+    <query>SELECT max(arraySum(a)) FROM sparse_prewhere_array_runs PREWHERE f_long_runs != '' SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS sparse_prewhere_array_runs</drop_query>
+</test>

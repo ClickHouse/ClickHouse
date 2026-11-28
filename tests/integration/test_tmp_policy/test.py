@@ -34,12 +34,16 @@ def start_cluster():
 
 
 def test_multiple_local_disk():
+    # The log line checked below is written when the ordinary external aggregation writes a hash table to disk.
+    # The adaptive aggregator takes this single stream too and writes its staged records without that line, so
+    # the query turns it off.
     query = "SELECT count(ignore(*)) FROM (SELECT * FROM system.numbers LIMIT 1e7) GROUP BY number"
     settings = {
         "max_bytes_ratio_before_external_group_by": 0,
         "max_bytes_ratio_before_external_sort": 0,
         "max_bytes_before_external_group_by": 1 << 20,
         "max_bytes_before_external_sort": 1 << 20,
+        "enable_adaptive_aggregator": 0,
     }
 
     assert node_local.contains_in_log(
@@ -114,12 +118,14 @@ def test_multiple_local_disk_full_disk():
 
 
 def test_remote_disk():
+    # As in `test_multiple_local_disk`, the log line is the one of the ordinary external aggregation.
     query = "SELECT count(ignore(*)) FROM (SELECT * FROM system.numbers LIMIT 1e7) GROUP BY number"
     settings = {
         "max_bytes_ratio_before_external_group_by": 0,
         "max_bytes_ratio_before_external_sort": 0,
         "max_bytes_before_external_group_by": 1 << 20,
         "max_bytes_before_external_sort": 1 << 20,
+        "enable_adaptive_aggregator": 0,
     }
 
     node_remote.query(query, settings=settings)

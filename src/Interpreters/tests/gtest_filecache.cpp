@@ -56,6 +56,7 @@
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/BoundedReadBuffer.h>
+#include <IO/DiskCacheProvider.h>
 #include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 
 #include <Disks/SingleDiskVolume.h>
@@ -65,12 +66,14 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
 namespace CurrentMetrics
 {
     extern const Metric FilesystemCachePriorityQueueElements;
     extern const Metric FilesystemCacheInvalidatedElements;
+    extern const Metric FilesystemCacheDelayedCleanupElements;
 }
 
 namespace ProfileEvents
@@ -79,6 +82,8 @@ namespace ProfileEvents
     extern const Event FilesystemCachePromotedFileSegments;
     extern const Event FilesystemCacheEvictedFileSegments;
     extern const Event FilesystemCacheReserveAheadRetries;
+    extern const Event FilesystemCacheEvictionReusedIterator;
+    extern const Event FilesystemCacheSkippedBusyPriorityLock;
 }
 
 using namespace std::chrono_literals;
@@ -115,9 +120,12 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 reserve_granularity;
     extern const FileCacheSettingsFileCachePolicy cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
+    extern const FileCacheSettingsDouble check_cache_probability;
     extern const FileCacheSettingsUInt64 background_download_threads;
     extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsNonZeroUInt64 load_metadata_threads;
+    extern const FileCacheSettingsNonZeroUInt64 background_cleanup_threads;
+    extern const FileCacheSettingsNonZeroUInt64 background_cleanup_elements_per_thread;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
     extern const FileCacheSettingsUInt64 idle_client_ttl_sec;
@@ -2542,7 +2550,9 @@ TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
                                  /* background_download_queue_size_limit */0,
                                  /* background_download_threads */0,
                                  /* write_cache_per_user_directory */false,
-                                 /* use_real_disk_size */false);
+                                 /* use_real_disk_size */false,
+                                 /* background_cleanup_threads */1,
+                                 /* background_cleanup_elements_per_thread */1);
 
     const auto key = DB::FileCacheKey::fromPath("104307_protected_only_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -2673,7 +2683,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     LRUFileCachePriority priority(IFileCachePriority::QueueType::Main, max_size, max_elements);
 
     std::string cache_path = std::filesystem::path(caches_dir) / "test_eviction_pos";
-    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false, 1, 1);
 
     auto key = DB::FileCacheKey::fromPath("evict_key");
     auto origin = FileCache::getCommonOrigin();
@@ -2790,7 +2800,7 @@ TEST_F(FileCacheTest, MoveEvictionPos)
     LRUFileCachePriority dst(IFileCachePriority::QueueType::Main, /* max_size */100, /* max_elements */10, "dst");
 
     std::string cache_path = std::filesystem::path(caches_dir) / "test_move_eviction_pos";
-    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false, 1, 1);
 
     auto key = DB::FileCacheKey::fromPath("move_key");
     auto origin = FileCache::getCommonOrigin();
@@ -3518,7 +3528,7 @@ TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
 
     const std::string cache_path = caches_dir / "test_slru_modify_rollback";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false, 1, 1);
 
     const auto key = DB::FileCacheKey::fromPath("slru_modify_rollback_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -3575,7 +3585,9 @@ TEST_F(FileCacheTest, LRUDecrementSizeToZeroDropsElement)
                                  /* background_download_queue_size_limit */0,
                                  /* background_download_threads */0,
                                  /* write_cache_per_user_directory */false,
-                                 /* use_real_disk_size */false);
+                                 /* use_real_disk_size */false,
+                                 /* background_cleanup_threads */1,
+                                 /* background_cleanup_elements_per_thread */1);
 
     const auto key = DB::FileCacheKey::fromPath("lru_decrement_to_zero_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -3622,7 +3634,7 @@ TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
 
     const std::string cache_path = caches_dir / "test_split_total_cleanup";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false, 1, 1);
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_total_cleanup_system_key");
@@ -3665,7 +3677,7 @@ TEST_F(FileCacheTest, SplitResizeCollectsSystemCandidates)
 
     const std::string cache_path = caches_dir / "test_split_resize";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false, 1, 1);
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_resize_system_key");
@@ -3735,7 +3747,7 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
 
     const std::string cache_path = caches_dir / "test_slru_downgrade_rollback";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false, 1, 1);
 
     const auto key = DB::FileCacheKey::fromPath("slru_downgrade_rollback_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -3820,7 +3832,7 @@ TEST_F(FileCacheTest, SLRUCollectForProtectedQueueWithoutReservee)
 
     const std::string cache_path = caches_dir / "test_slru_protected_without_reservee";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false, 1, 1);
 
     const auto key = DB::FileCacheKey::fromPath("slru_protected_without_reservee_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -3902,7 +3914,7 @@ TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
 
     const std::string cache_path = caches_dir / "test_split_slru_total_cleanup";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false, 1, 1);
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_slru_total_cleanup_system_key");
@@ -3959,7 +3971,7 @@ TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
 
     const auto cache_path = caches_dir / "test_queue_metrics";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false, 1, 1);
     const auto key = DB::FileCacheKey::fromPath("metrics_key");
     const auto & origin = FileCache::getCommonOrigin();
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
@@ -4003,7 +4015,7 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     const auto cache_path = caches_dir / "test_slru_downgrade";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false, 1, 1);
     const auto key = DB::FileCacheKey::fromPath("downgrade_key");
     const auto & origin = FileCache::getCommonOrigin();
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
@@ -4546,4 +4558,750 @@ TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtUnknownFileSize)
         for (size_t t = 0; t < num_threads; ++t)
             ASSERT_EQ(errors[t], "") << "thread " << t << ", iteration " << iteration;
     }
+}
+
+TEST_F(FileCacheTest, SLRUPromotionSkippedWhilePriorityGuardIsBusy)
+{
+    /// Making room in the protected queue walks it under the priority read lock. The walk is
+    /// best-effort: while a writer holds the guard the hit is not promoted and nothing blocks.
+    /// Before that, the promotion below waited for the lock held by this thread.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    /// Protected: 50 bytes / 10 elements.
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    /// The random correctness check takes the priority read lock, which this thread holds below.
+    settings[FileCacheSetting::check_cache_probability] = 0;
+
+    auto cache = std::make_shared<DB::FileCache>("slru_promotion_busy_guard", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    const size_t file_size = -1;
+    const auto key = DB::FileCacheKey::fromPath("promotion_busy_guard_key");
+
+    auto add_range = [&](size_t offset, size_t size)
+    {
+        auto holder = cache->getOrSet(key, offset, size, file_size, {}, 0, user);
+        download(holder);
+        return holder;
+    };
+    auto hit = [&](size_t offset, size_t size)
+    {
+        auto holder = cache->getOrSet(key, offset, size, file_size, {}, 0, user);
+        increasePriority(holder);
+        return holder;
+    };
+    const auto skipped_event = ProfileEvents::FilesystemCacheSkippedBusyPriorityLock;
+
+    auto first = add_range(0, 10);
+    auto & priority_guard = first->front().getQueueIterator()->getPriorityGuard();
+    /// Released, so that [0, 9] stays releasable for the downgrade at the end.
+    first = nullptr;
+
+    /// Fill protected to its 50-byte limit, so that the next promotion has to walk it.
+    add_range(10, 20);
+    add_range(30, 20);
+    hit(0, 10);
+    hit(10, 20);
+    hit(30, 20);
+    assertProtected(cache->dumpQueue(), { Range(0, 9), Range(10, 29), Range(30, 49) });
+
+    add_range(50, 10);
+    {
+        const auto skipped_before = ProfileEvents::global_counters[skipped_event];
+        auto busy_guard = priority_guard.writeLock();
+        hit(50, 10);
+        ASSERT_EQ(ProfileEvents::global_counters[skipped_event], skipped_before + 1);
+    }
+    assertProtected(cache->dumpQueue(), { Range(0, 9), Range(10, 29), Range(30, 49) });
+    assertProbationary(cache->dumpQueue(), { Range(50, 59) });
+
+    /// With the guard free the same hit downgrades [0, 9] and promotes.
+    hit(50, 10);
+    assertProtected(cache->dumpQueue(), { Range(10, 29), Range(30, 49), Range(50, 59) });
+    assertProbationary(cache->dumpQueue(), { Range(0, 9) });
+}
+
+TEST_F(FileCacheTest, SLRUConcurrentPromotionsResumeProtectedWalk)
+{
+    /// Concurrent promotions share the `Promotion` cursor over the protected queue: the second
+    /// one resumes after the in-use entries the first one skipped instead of rescanning the head.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    /// Protected: 50 bytes / 10 elements.
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+
+    auto cache = std::make_shared<DB::FileCache>("slru_promotion_cursor", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    const size_t file_size = -1;
+    const auto key = DB::FileCacheKey::fromPath("promotion_cursor_key");
+
+    auto add_range = [&](size_t offset, size_t size)
+    {
+        auto holder = cache->getOrSet(key, offset, size, file_size, {}, 0, user);
+        download(holder);
+    };
+    auto hit = [&](size_t offset, size_t size)
+    {
+        auto holder = cache->getOrSet(key, offset, size, file_size, {}, 0, user);
+        increasePriority(holder);
+        return holder;
+    };
+
+    /// Fill protected to its 50-byte limit. The holders keep [0, 19] and [30, 49] in use,
+    /// so every downgrade walk has to skip them.
+    add_range(0, 20);
+    add_range(20, 10);
+    add_range(30, 20);
+    auto held_head = hit(0, 20);
+    hit(20, 10);
+    auto held_third = hit(30, 20);
+    assertProtected(cache->dumpQueue(), { Range(0, 19), Range(20, 29), Range(30, 49) });
+
+    add_range(50, 10);
+    add_range(60, 10);
+    add_range(70, 10);
+    assertProbationary(cache->dumpQueue(), { Range(50, 59), Range(60, 69), Range(70, 79) });
+
+    const auto reused_before = ProfileEvents::global_counters[ProfileEvents::FilesystemCacheEvictionReusedIterator];
+
+    /// The first promoter parks inside the move, so the two promotions below count as concurrent.
+    const std::string pause_point = "file_cache_slru_pause_promotion_before_downgrade";
+    FailPointInjection::enableFailPoint(pause_point);
+    std::thread parked_promoter([&]
+    {
+        DB::ThreadStatus parked_thread_status;
+        hit(50, 10);
+    });
+    SCOPE_EXIT({
+        FailPointInjection::disableFailPoint(pause_point);
+        if (parked_promoter.joinable())
+            parked_promoter.join();
+    });
+    FailPointInjection::waitForPause(pause_point);
+
+    /// Walks from the head: skips [0, 19], downgrades [20, 29] and leaves the cursor on it.
+    hit(60, 10);
+    assertProtected(cache->dumpQueue(), { Range(0, 19), Range(30, 49), Range(60, 69) });
+    ASSERT_EQ(ProfileEvents::global_counters[ProfileEvents::FilesystemCacheEvictionReusedIterator], reused_before);
+
+    /// Resumes from the cursor: skips [30, 49] and downgrades [60, 69] without revisiting [0, 19].
+    hit(70, 10);
+    assertProtected(cache->dumpQueue(), { Range(0, 19), Range(30, 49), Range(70, 79) });
+    ASSERT_EQ(ProfileEvents::global_counters[ProfileEvents::FilesystemCacheEvictionReusedIterator], reused_before + 1);
+
+    /// Alone again, the parked promoter walks from the head and downgrades [70, 79].
+    FailPointInjection::disableFailPoint(pause_point);
+    parked_promoter.join();
+    assertProtected(cache->dumpQueue(), { Range(0, 19), Range(30, 49), Range(50, 59) });
+    ASSERT_EQ(ProfileEvents::global_counters[ProfileEvents::FilesystemCacheEvictionReusedIterator], reused_before + 1);
+}
+
+namespace
+{
+
+/// Without a holder: releasing one on the downloader's thread would complete the segment.
+ChainedBuffers bytesAt(size_t offset, const String & data)
+{
+    auto block = std::make_shared<OwnedChainedBuffer>(data.size());
+    memcpy(block->data(), data.data(), data.size());
+    ChainedBuffers chain;
+    chain.append(ChainedBufferNode{std::move(block), 0, data.size(), offset});
+    return chain;
+}
+
+}
+
+TEST_F(FileCacheTest, TemporarySegmentRemovedAtLastReleaseUnlessUsed)
+{
+    /// A segment created as temporary leaves the cache at its last release, unless a reader or writer
+    /// outside the temporary-cache mode used it.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+    FileCacheSettings settings;
+    settings[FileCacheSetting::max_size] = 10_KiB;
+    settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
+    settings[FileCacheSetting::boundary_alignment] = 1_KiB;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    auto cache = std::make_shared<FileCache>("temporary_segments", settings);
+    cache->initialize();
+    const auto & user = FileCache::getCommonOrigin();
+
+    CreateFileSegmentSettings temporary;
+    temporary.temporary = true;
+    String data(1_KiB, 'x');
+    /// Fills the whole segment; a temporary-mode writer passes `keep_temporary`.
+    auto fill = [&](const FileCacheKey & key, bool keep_temporary)
+    {
+        auto holder = cache->getOrSet(key, 0, data.size(), data.size(), temporary, 0, user);
+        auto & segment = holder->front();
+        EXPECT_EQ(segment.getOrSetDownloader(), FileSegment::getCallerId());
+        std::string failure_reason;
+        EXPECT_TRUE(segment.reserve(data.size(), 1000, failure_reason));
+        fs::create_directories(cache->getKeyPath(key, user));
+        segment.write(data.data(), data.size(), 0, keep_temporary);
+        return holder;
+    };
+    auto cached = [&](const FileCacheKey & key) { return !cache->tryGetFileSegmentInfos(key, user.user_id).empty(); };
+
+    const auto unused = FileCacheKey::fromPath("temporary_unused");
+    {
+        auto holder = fill(unused, /*keep_temporary=*/true);
+    }
+    EXPECT_FALSE(cached(unused));
+
+    const auto written = FileCacheKey::fromPath("temporary_written_by_normal_writer");
+    {
+        auto holder = fill(written, /*keep_temporary=*/false);
+    }
+    EXPECT_TRUE(cached(written));
+
+    const auto read = FileCacheKey::fromPath("temporary_read_by_normal_reader");
+    {
+        auto holder = fill(read, /*keep_temporary=*/true);
+        holder->front().increasePriority();
+    }
+    EXPECT_TRUE(cached(read));
+
+    /// Another holder delays the removal until its own release.
+    const auto held = FileCacheKey::fromPath("temporary_held_by_other");
+    {
+        auto holder = fill(held, /*keep_temporary=*/true);
+        auto other = cache->getOrSet(held, 0, data.size(), data.size(), CreateFileSegmentSettings{}, 0, user);
+        holder = nullptr;
+        EXPECT_TRUE(cached(held));
+    }
+    EXPECT_FALSE(cached(held));
+}
+
+TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeDropsUnusedSegments)
+{
+    /// In the temporary-cache mode a segment that the reader created leaves the cache at its last release,
+    /// unless a reader or writer outside the mode used it.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+    FileCacheSettings settings;
+    settings[FileCacheSetting::max_size] = 10_KiB;
+    settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
+    settings[FileCacheSetting::boundary_alignment] = 1_KiB;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    auto cache = std::make_shared<FileCache>("disk_cache_provider_temporary", settings);
+    cache->initialize();
+
+    const String data(1_KiB, 'x');
+    FilesystemCacheSettings temporary_settings;
+    temporary_settings.read_if_exists_otherwise_bypass = true;
+    temporary_settings.cache_temporarily = true;
+    DiskCacheProvider temporary(cache, temporary_settings);
+    DiskCacheProvider regular(cache, FilesystemCacheSettings{});
+
+    /// Fills `[0, size)` of the object through a temporary writer and returns its cells.
+    auto fill = [&](const StoredObject & object, size_t size)
+    {
+        auto cells = temporary.resolve(object, 0, ByteRange{0, data.size()});
+        CacheWriter & writer = *cells.back().writer;
+        auto role = writer.takeFillRole();
+        EXPECT_EQ(writer.write(bytesAt(0, data.substr(0, size)), role), size);
+        return cells;
+    };
+    /// Takes no holder: releasing one can be the last release.
+    auto cached = [&](const StoredObject & object)
+    {
+        return !cache->tryGetFileSegmentInfos(FileCacheKey::fromPath(object.remote_path), FileCache::getCommonOrigin().user_id).empty();
+    };
+
+    const StoredObject unused("temporary_unused", "", data.size());
+    fill(unused, data.size());
+    EXPECT_FALSE(cached(unused));
+
+    const StoredObject read_by_normal_reader("temporary_read_by_normal_reader", "", data.size());
+    {
+        auto cells = fill(read_by_normal_reader, data.size());
+        auto normal_cells = regular.resolve(read_by_normal_reader, 0, ByteRange{0, data.size()});
+        EXPECT_EQ(normal_cells.front().reader->read(ByteRange{0, data.size()}).totalBytes(), data.size());
+    }
+    EXPECT_TRUE(cached(read_by_normal_reader));
+
+    const StoredObject held_by_normal_reader("temporary_held_by_normal_reader", "", data.size());
+    {
+        auto cells = fill(held_by_normal_reader, data.size());
+        auto normal_cells = regular.resolve(held_by_normal_reader, 0, ByteRange{0, data.size()});
+        cells.clear();
+        EXPECT_TRUE(cached(held_by_normal_reader));
+    }
+    EXPECT_FALSE(cached(held_by_normal_reader));
+
+    const StoredObject written_by_normal_writer("temporary_written_by_normal_writer", "", data.size());
+    {
+        auto cells = fill(written_by_normal_writer, data.size() / 2);
+        auto normal_cells = regular.resolve(written_by_normal_writer, 0, ByteRange{0, data.size()});
+        CacheWriter & normal_writer = *normal_cells.back().writer;
+        auto role = normal_writer.takeFillRole();
+        ASSERT_TRUE(role);
+        EXPECT_EQ(normal_writer.write(bytesAt(data.size() / 2, data.substr(data.size() / 2)), role), data.size() / 2);
+    }
+    EXPECT_TRUE(cached(written_by_normal_writer));
+}
+
+namespace
+{
+
+DB::FileCacheSettings getSettingsForLoadTests(size_t max_size)
+{
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = max_size;
+    settings[FileCacheSetting::max_elements] = 100000;
+    settings[FileCacheSetting::max_file_segment_size] = 50;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::load_metadata_threads] = 4;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    return settings;
+}
+
+fs::path getKeyDirectory(const FileCacheKey & key)
+{
+    const auto key_str = key.toString();
+    return fs::path(cache_base_path) / key_str.substr(0, 3) / key_str;
+}
+
+/// The queue is empty once the metric is back at the value it had before the cache was created.
+void waitForCleanupQueue(Int64 delayed_cleanup_elements_before)
+{
+    Stopwatch watch;
+    while (CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements) != delayed_cleanup_elements_before)
+    {
+        ASSERT_LT(watch.elapsedSeconds(), 60) << "The cleanup queue did not become empty";
+        sleepForMilliseconds(10);
+    }
+}
+
+size_t countFilesInKeyDirectories()
+{
+    size_t count = 0;
+    /// Depth 0 is the key prefix directories, depth 1 is the key directories, depth 2 is their files.
+    for (auto it = fs::recursive_directory_iterator(cache_base_path); it != fs::recursive_directory_iterator(); ++it)
+        count += it.depth() == 2 && it->is_regular_file();
+    return count;
+}
+
+/// Loads the cache from `cache_base_path` and returns the final line of the load progress log.
+std::string loadCacheAndGetProgressLine(std::optional<DB::FileCache> & cache, const std::string & name, const DB::FileCacheSettings & settings)
+{
+    /// The progress line is logged at the information level.
+    FileCacheTest::setupLogs("information");
+
+    std::string log_output;
+    testing::internal::CaptureStderr();
+    {
+        /// A capture which is left open makes the next one abort the whole test binary.
+        SCOPE_EXIT({ log_output = testing::internal::GetCapturedStderr(); });
+        cache.emplace(name, settings);
+        cache->initialize();
+    }
+
+    const auto pos = log_output.find("Loaded filesystem cache");
+    if (pos == std::string::npos)
+        return {};
+    return log_output.substr(pos, log_output.find('\n', pos) - pos);
+}
+
+}
+
+TEST_F(FileCacheTest, LoadMetadataLeavesEmptyKeyDirectoriesToCleanupThread)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t num_loaded_keys = 3;
+    const size_t num_empty_keys = 5;
+    const size_t segment_size = 50;
+    const auto settings = getSettingsForLoadTests(/* max_size */ 100 * segment_size);
+    const auto & user = FileCache::getCommonOrigin();
+
+    std::vector<FileCacheKey> loaded_keys;
+    for (size_t i = 0; i < num_loaded_keys; ++i)
+        loaded_keys.push_back(FileCacheKey::fromPath("loaded_" + std::to_string(i)));
+
+    {
+        auto cache = DB::FileCache("LeavesEmptyKeyDirectories_init", settings);
+        cache.initialize();
+        for (const auto & key : loaded_keys)
+            download(cache.getOrSet(key, 0, segment_size, segment_size, {}, 0, user));
+    }
+
+    std::vector<fs::path> empty_key_directories;
+    for (size_t i = 0; i < num_empty_keys; ++i)
+    {
+        empty_key_directories.push_back(getKeyDirectory(FileCacheKey::fromPath("empty_" + std::to_string(i))));
+        fs::create_directories(empty_key_directories.back());
+    }
+
+    /// Empty key directories which share the key prefix directory with a loaded key: one cleanup task takes them all.
+    for (const char last_character : {'0', '1', '2'})
+    {
+        auto key_string = loaded_keys[0].toString();
+        key_string.back() = key_string.back() == last_character ? 'f' : last_character;
+        empty_key_directories.push_back(getKeyDirectory(FileCacheKey::fromKeyString(key_string)));
+        fs::create_directories(empty_key_directories.back());
+    }
+
+    /// A key which is used again after the load: its empty directory is either skipped by the cleanup
+    /// or removed and created again, and the key keeps its file in both cases.
+    const auto returning_key = FileCacheKey::fromPath("returning");
+    fs::create_directories(getKeyDirectory(returning_key));
+
+    fs::path empty_key_prefix_directory;
+    for (size_t i = 0; empty_key_prefix_directory.empty(); ++i)
+    {
+        auto candidate = fs::path(cache_base_path) / fmt::format("{:03x}", i);
+        if (!fs::exists(candidate))
+            empty_key_prefix_directory = candidate;
+    }
+    fs::create_directories(empty_key_prefix_directory);
+
+    const auto delayed_cleanup_elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
+
+    std::optional<DB::FileCache> cache;
+    const auto progress_line = loadCacheAndGetProgressLine(cache, "LeavesEmptyKeyDirectories", settings);
+
+    ASSERT_TRUE(progress_line.contains(", 1 empty key prefix directories removed")) << progress_line;
+    ASSERT_TRUE(progress_line.contains(", 3 keys with 3 file segments loaded")) << progress_line;
+    ASSERT_TRUE(progress_line.contains(", 0 keys removed because no file segment was loaded for them")) << progress_line;
+    ASSERT_TRUE(progress_line.contains(", 0 file segments removed because they do not fit")) << progress_line;
+    ASSERT_TRUE(progress_line.contains(", 9 empty key directories left for background cleanup")) << progress_line;
+    ASSERT_FALSE(fs::exists(empty_key_prefix_directory));
+
+    download(cache->getOrSet(returning_key, 0, segment_size, segment_size, {}, 0, user));
+
+    ASSERT_NO_FATAL_FAILURE(waitForCleanupQueue(delayed_cleanup_elements_before));
+    /// Joins the cleanup thread, so a removal that it has already taken from the queue is finished.
+    cache.reset();
+
+    for (const auto & directory : empty_key_directories)
+        ASSERT_FALSE(fs::exists(directory)) << directory;
+    for (const auto & key : loaded_keys)
+        ASSERT_FALSE(fs::is_empty(getKeyDirectory(key))) << key.toString();
+    ASSERT_FALSE(fs::is_empty(getKeyDirectory(returning_key)));
+    ASSERT_EQ(countFilesInKeyDirectories(), num_loaded_keys + 1);
+}
+
+TEST_F(FileCacheTest, LoadMetadataRemovesEmptyKeyDirectoriesOverMemoryLimit)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t num_empty_keys = 5;
+    std::vector<fs::path> empty_key_directories;
+    for (size_t i = 0; i < num_empty_keys; ++i)
+    {
+        empty_key_directories.push_back(getKeyDirectory(FileCacheKey::fromPath("empty_" + std::to_string(i))));
+        fs::create_directories(empty_key_directories.back());
+    }
+
+    setupLogs("debug");
+    std::string log_output;
+    testing::internal::CaptureStderr();
+    {
+        SCOPE_EXIT({ log_output = testing::internal::GetCapturedStderr(); });
+
+        /// The fail point makes queueing of each empty key directory throw `MEMORY_LIMIT_EXCEEDED`.
+        const String fail_point = "file_cache_empty_key_directory_queue_memory_limit";
+        DB::FailPointInjection::enableFailPoint(fail_point);
+        SCOPE_EXIT({ DB::FailPointInjection::disableFailPoint(fail_point); });
+
+        auto cache = DB::FileCache("RemovesEmptyKeyDirectoriesOverMemoryLimit", getSettingsForLoadTests(/* max_size */ 1000));
+        cache.initialize();
+
+        /// The cache is still alive, so the directories were removed by the load and not by the cleanup.
+        for (const auto & directory : empty_key_directories)
+            ASSERT_FALSE(fs::exists(directory)) << directory;
+    }
+
+    ASSERT_TRUE(log_output.contains(", 0 empty key directories left for background cleanup")) << log_output;
+    ASSERT_TRUE(log_output.contains(", 5 empty key directories removed during the load because of the memory limit")) << log_output;
+    for (const auto & directory : empty_key_directories)
+        ASSERT_TRUE(log_output.contains("Removed empty key directory: " + directory.string())) << log_output;
+}
+
+TEST_F(FileCacheTest, LoadMetadataRemovesEmptyDirectoryWhichIsNotNamedByKey)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const auto key_directory = getKeyDirectory(FileCacheKey::fromPath("empty"));
+    const auto other_directory = key_directory.parent_path() / "tmp";
+    /// The right length, but a key is printed in lower case, so the cleanup would look for another name.
+    const auto upper_case_directory = key_directory.parent_path() / std::string(FileCacheKey::KEY_STRING_SIZE, 'A');
+    fs::create_directories(key_directory);
+    fs::create_directories(other_directory);
+    fs::create_directories(upper_case_directory);
+
+    auto cache = DB::FileCache("RemovesEmptyDirectoryWhichIsNotNamedByKey", getSettingsForLoadTests(/* max_size */ 1000));
+    cache.initialize();
+
+    /// The cache is still alive, so the directories were removed by the load and not by the cleanup.
+    ASSERT_FALSE(fs::exists(other_directory));
+    ASSERT_FALSE(fs::exists(upper_case_directory));
+}
+
+TEST_F(FileCacheTest, FailedLoadDoesNotLeaveEmptyKeyDirectoriesInCleanupQueue)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t num_empty_keys = 5;
+    const auto settings = getSettingsForLoadTests(/* max_size */ 1000);
+
+    std::vector<fs::path> empty_key_directories;
+    for (size_t i = 0; i < num_empty_keys; ++i)
+    {
+        empty_key_directories.push_back(getKeyDirectory(FileCacheKey::fromPath("empty_" + std::to_string(i))));
+        fs::create_directories(empty_key_directories.back());
+    }
+
+    /// A directory which is not empty and not named by a key fails the load.
+    const auto bad_directory = empty_key_directories[0].parent_path() / "not_a_key";
+    fs::create_directories(bad_directory);
+    std::ofstream(bad_directory / "0").close();
+
+    const auto delayed_cleanup_elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
+    {
+        auto cache = DB::FileCache("FailedLoad", settings);
+        ASSERT_THROW(cache.initialize(), DB::Exception);
+        /// The cache is still alive, so the queue was emptied by the failed load and not by the shutdown.
+        ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements), delayed_cleanup_elements_before);
+    }
+    for (const auto & directory : empty_key_directories)
+        ASSERT_TRUE(fs::exists(directory)) << directory;
+
+    fs::remove_all(bad_directory);
+
+    std::optional<DB::FileCache> cache;
+    const auto progress_line = loadCacheAndGetProgressLine(cache, "FailedLoad_retry", settings);
+    ASSERT_TRUE(progress_line.contains(", 5 empty key directories left for background cleanup")) << progress_line;
+
+    ASSERT_NO_FATAL_FAILURE(waitForCleanupQueue(delayed_cleanup_elements_before));
+    cache.reset();
+    for (const auto & directory : empty_key_directories)
+        ASSERT_FALSE(fs::exists(directory)) << directory;
+}
+
+TEST_F(FileCacheTest, LoadMetadataCountsKeysWithoutFileSegments)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t num_keys = 4;
+    const size_t num_fitting_keys = 2;
+    const size_t segment_size = 50;
+    const auto & user = FileCache::getCommonOrigin();
+
+    {
+        auto cache = DB::FileCache("CountsKeysWithoutFileSegments_init", getSettingsForLoadTests(/* max_size */ num_keys * segment_size));
+        cache.initialize();
+        for (size_t i = 0; i < num_keys; ++i)
+            download(cache.getOrSet(FileCacheKey::fromPath("key_" + std::to_string(i)), 0, segment_size, segment_size, {}, 0, user));
+    }
+
+    /// A key directory which holds only a file of zero size: the file is removed and no file segment is loaded.
+    const auto key_directory_with_empty_file = getKeyDirectory(FileCacheKey::fromPath("only_empty_file"));
+    fs::create_directories(key_directory_with_empty_file);
+    std::ofstream(key_directory_with_empty_file / "0").close();
+
+    std::optional<DB::FileCache> cache;
+    const auto progress_line = loadCacheAndGetProgressLine(
+        cache, "CountsKeysWithoutFileSegments", getSettingsForLoadTests(/* max_size */ num_fitting_keys * segment_size));
+
+    ASSERT_TRUE(progress_line.contains(", 2 keys with 2 file segments loaded")) << progress_line;
+    ASSERT_TRUE(progress_line.contains(", 3 keys removed because no file segment was loaded for them")) << progress_line;
+    ASSERT_TRUE(progress_line.contains(", 2 file segments removed because they do not fit")) << progress_line;
+    ASSERT_TRUE(progress_line.contains(", 0 empty key directories left for background cleanup")) << progress_line;
+
+    ASSERT_FALSE(fs::exists(key_directory_with_empty_file));
+    ASSERT_EQ(countFilesInKeyDirectories(), num_fitting_keys);
+    ASSERT_EQ(cache->getUsedCacheSize(), num_fitting_keys * segment_size);
+}
+
+TEST_F(FileCacheTest, EmptiedKeyDirectoryWithUntrackedFileIsRemoved)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t segment_size = 50;
+    const auto & user = FileCache::getCommonOrigin();
+    const auto key_with_untracked_file = FileCacheKey::fromPath("with_untracked_file");
+    const auto plain_key = FileCacheKey::fromPath("plain");
+    const auto untracked_file = getKeyDirectory(key_with_untracked_file) / "untracked";
+
+    const auto delayed_cleanup_elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
+    {
+        auto cache = DB::FileCache("EmptiedKeyDirectoryWithUntrackedFile", getSettingsForLoadTests(/* max_size */ 100 * segment_size));
+        cache.initialize();
+
+        download(cache.getOrSet(key_with_untracked_file, 0, segment_size, segment_size, {}, 0, user));
+        download(cache.getOrSet(plain_key, 0, segment_size, segment_size, {}, 0, user));
+        std::ofstream(untracked_file).close();
+
+        cache.removeFileSegment(key_with_untracked_file, 0, user.user_id);
+        cache.removeFileSegment(plain_key, 0, user.user_id);
+
+        ASSERT_NO_FATAL_FAILURE(waitForCleanupQueue(delayed_cleanup_elements_before));
+    }
+
+    ASSERT_FALSE(fs::exists(getKeyDirectory(plain_key)));
+    ASSERT_FALSE(fs::exists(getKeyDirectory(key_with_untracked_file)));
+    /// A key prefix directory goes with its last key.
+    ASSERT_FALSE(fs::exists(getKeyDirectory(plain_key).parent_path()));
+    ASSERT_FALSE(fs::exists(getKeyDirectory(key_with_untracked_file).parent_path()));
+    ASSERT_EQ(countFilesInKeyDirectories(), 0);
+}
+
+TEST_F(FileCacheTest, ManyEmptiedKeysAreRemovedInBackground)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    /// Helper cleanup threads start only if the keys are queued faster than one thread removes them,
+    /// which these settings make likely but do not guarantee.
+    const size_t num_keys = 3000;
+    const size_t segment_size = 10;
+    const auto & user = FileCache::getCommonOrigin();
+
+    std::vector<FileCacheKey> keys;
+    for (size_t i = 0; i < num_keys; ++i)
+        keys.push_back(FileCacheKey::fromPath("emptied_" + std::to_string(i)));
+
+    const auto delayed_cleanup_elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
+    {
+        auto settings = getSettingsForLoadTests(/* max_size */ num_keys * segment_size);
+        settings[FileCacheSetting::background_cleanup_threads] = 4;
+        settings[FileCacheSetting::background_cleanup_elements_per_thread] = 1;
+        auto cache = DB::FileCache("ManyEmptiedKeys", settings);
+        cache.initialize();
+
+        for (const auto & key : keys)
+            download(cache.getOrSet(key, 0, segment_size, segment_size, {}, 0, user));
+        for (const auto & key : keys)
+            cache.removeFileSegment(key, 0, user.user_id);
+
+        ASSERT_NO_FATAL_FAILURE(waitForCleanupQueue(delayed_cleanup_elements_before));
+    }
+
+    for (const auto & key : keys)
+        ASSERT_FALSE(fs::exists(getKeyDirectory(key))) << key.toString();
+    ASSERT_EQ(countFilesInKeyDirectories(), 0);
+}
+
+TEST_F(FileCacheTest, EmptyKeyDirectoriesFromStartupStartHelperCleanupThreads)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t num_empty_keys = 100;
+    auto settings = getSettingsForLoadTests(/* max_size */ 1000);
+    settings[FileCacheSetting::background_cleanup_threads] = 4;
+    /// All the directories are queued before the cleanup thread starts, so its first task sees the others waiting.
+    settings[FileCacheSetting::background_cleanup_elements_per_thread] = 1;
+
+    std::vector<fs::path> empty_key_directories;
+    for (size_t i = 0; i < num_empty_keys; ++i)
+    {
+        empty_key_directories.push_back(getKeyDirectory(FileCacheKey::fromPath("empty_" + std::to_string(i))));
+        fs::create_directories(empty_key_directories.back());
+    }
+
+    const auto delayed_cleanup_elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
+
+    /// The start of a helper thread is logged at the debug level by the logger of `CacheMetadata`. All caches
+    /// share it, and it keeps the level and the channel which the root logger had when it was created.
+    setupLogs("debug");
+    auto & metadata_logger = Poco::Logger::get("CacheMetadata");
+    /// Owns the channel: `setChannel` releases the old one, and this logger may be its last owner.
+    Poco::AutoPtr<Poco::Channel> previous_channel(metadata_logger.getChannel(), /* shared */ true);
+    const auto previous_level = metadata_logger.getLevel();
+    SCOPE_EXIT({
+        metadata_logger.setChannel(previous_channel.get());
+        metadata_logger.setLevel(previous_level);
+    });
+    metadata_logger.setChannel(Poco::Logger::root().getChannel());
+    metadata_logger.setLevel("debug");
+
+    std::string log_output;
+    testing::internal::CaptureStderr();
+    {
+        SCOPE_EXIT({ log_output = testing::internal::GetCapturedStderr(); });
+        auto cache = DB::FileCache("StartHelperCleanupThreads", settings);
+        cache.initialize();
+        ASSERT_NO_FATAL_FAILURE(waitForCleanupQueue(delayed_cleanup_elements_before));
+    }
+
+    ASSERT_TRUE(log_output.contains("Started a helper cleanup thread")) << log_output;
+    for (const auto & directory : empty_key_directories)
+        ASSERT_FALSE(fs::exists(directory)) << directory;
+}
+
+TEST_F(FileCacheTest, RemovedKeyDoesNotComeBackFromDuplicateFile)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t segment_size = 50;
+    const auto settings = getSettingsForLoadTests(/* max_size */ 100 * segment_size);
+    const auto & user = FileCache::getCommonOrigin();
+    const auto key = FileCacheKey::fromPath("with_duplicate_file");
+
+    {
+        auto cache = DB::FileCache("DuplicateFile_init", settings);
+        cache.initialize();
+        download(cache.getOrSet(key, 0, segment_size, segment_size, {}, 0, user));
+    }
+
+    /// Two files for one offset: the load keeps the one without the size in its name and ignores the other.
+    const auto file_with_size = getKeyDirectory(key) / "0_50";
+    const auto file_without_size = getKeyDirectory(key) / "0";
+    ASSERT_NE(fs::exists(file_with_size), fs::exists(file_without_size));
+    if (fs::exists(file_with_size))
+        fs::copy_file(file_with_size, file_without_size);
+    else
+        fs::copy_file(file_without_size, file_with_size);
+
+    {
+        auto cache = DB::FileCache("DuplicateFile_remove", settings);
+        cache.initialize();
+        ASSERT_EQ(cache.getUsedCacheSize(), segment_size);
+
+        cache.removeKeyIfExists(key, user.user_id);
+        ASSERT_EQ(cache.getUsedCacheSize(), 0);
+        ASSERT_FALSE(fs::exists(getKeyDirectory(key)));
+    }
+
+    /// The ignored file must not be loaded as a file segment by the next start.
+    auto cache = DB::FileCache("DuplicateFile_restart", settings);
+    cache.initialize();
+    ASSERT_EQ(cache.getUsedCacheSize(), 0);
+    ASSERT_EQ(countFilesInKeyDirectories(), 0);
 }

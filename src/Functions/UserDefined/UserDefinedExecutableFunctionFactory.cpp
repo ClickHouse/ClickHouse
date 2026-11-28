@@ -161,24 +161,24 @@ public:
         }
     }
 
-    String getName() const override { return executable_function->getConfiguration().name; }
+    [[nodiscard]] String getName() const override { return executable_function->getConfiguration().name; }
 
-    bool isVariadic() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return executable_function->getConfiguration().arguments.size(); }
+    [[nodiscard]] bool isVariadic() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return executable_function->getConfiguration().arguments.size(); }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool isDeterministic() const override { return executable_function->getConfiguration().is_deterministic; }
-    bool isDeterministicInScopeOfQuery() const override { return executable_function->getConfiguration().is_deterministic; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool isDeterministic() const override { return executable_function->getConfiguration().is_deterministic; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return executable_function->getConfiguration().is_deterministic; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
         const auto & configuration = executable_function->getConfiguration();
         return configuration.result_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// Do not start user defined script during query analysis. Because user script startup could be heavy.
         if (input_rows_count == 0)

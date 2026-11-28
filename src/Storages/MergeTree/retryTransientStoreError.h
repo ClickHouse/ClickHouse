@@ -23,7 +23,7 @@ public:
 
     /// The innermost scope of this thread, or `nullptr`.
     static const TransientStoreRetryScope * current();
-    double elapsedSeconds() const { return watch.elapsedSeconds(); }
+    [[nodiscard]] double elapsedSeconds() const { return watch.elapsedSeconds(); }
 
 private:
     Stopwatch watch;

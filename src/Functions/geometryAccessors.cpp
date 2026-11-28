@@ -44,21 +44,21 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeometryAccessor>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return Impl::has_index ? 2 : 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return Impl::has_index ? 2 : 1; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     /// Handle `Geometry` here, so that the result is `Geometry` too.
-    bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & type) const override
+    [[nodiscard]] bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & type) const override
     {
         return type->getName() != "Geometry";
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (Impl::has_index && !isNativeInteger(arguments[1]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -75,7 +75,7 @@ public:
         return DataTypeFactory::instance().get(Impl::element);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column->convertToFullColumnIfConst();
 
@@ -106,10 +106,10 @@ public:
                     const auto & arrays = assert_cast<const ColumnArray &>(geometries->getVariantByGlobalDiscriminator(discriminator));
                     const auto & offsets = arrays.getOffsets();
                     const size_t offset = geometries->offsetAt(row);
-                    if (auto pos = position(row, offsets[offset] - offsets[offset - 1]))
+                    if (auto pos = position(row, offsets[offset] - offsets[static_cast<ssize_t>(offset) - 1]))
                     {
                         result_geometries.insertIntoVariantFrom(
-                            static_cast<ColumnVariant::Discriminator>(Impl::element_type), arrays.getData(), offsets[offset - 1] + *pos);
+                            static_cast<ColumnVariant::Discriminator>(Impl::element_type), arrays.getData(), offsets[static_cast<ssize_t>(offset) - 1] + *pos);
                         continue;
                     }
                 }
@@ -126,8 +126,8 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            if (auto pos = position(row, offsets[row] - offsets[row - 1]))
-                result->insertFrom(arrays.getData(), offsets[row - 1] + *pos);
+            if (auto pos = position(row, offsets[row] - offsets[static_cast<ssize_t>(row) - 1]))
+                result->insertFrom(arrays.getData(), offsets[static_cast<ssize_t>(row) - 1] + *pos);
             else
                 result->insertDefault();
         }

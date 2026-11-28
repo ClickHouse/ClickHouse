@@ -1,0 +1,7 @@
+<test>
+    <query>SELECT sum(byteSize(arrayMap(i -> toUInt64(i), range(number % 2)))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(byteSize(arrayMap(i -> toString(number + i), range(number % 3)))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(byteSize(arrayMap(i -> if(i % 3 = 0, NULL, toUInt64(i)), range(number % 5)))) FROM numbers(1000000) FORMAT Null</query>
+    <query>WITH CAST(range(4096) AS Array(UInt8)) AS elem SELECT sum(byteSize(materialize(elem))) FROM numbers(1000) FORMAT Null</query>
+    <query>WITH CAST(range(1000000) AS Array(UInt32)) AS elem SELECT arrayWithConstant(number % 3, materialize(elem)) FROM numbers(128) FORMAT Null</query>
+</test>

@@ -13,14 +13,12 @@ doc_type: 'guide'
 我们建议从 Postgres 迁移的用户阅读[ClickHouse 数据建模指南](/zh/guides/clickhouse/data-modelling/schema-design)。该指南使用相同的 Stack Overflow 数据集，并探讨了利用 ClickHouse 功能进行建模的多种方法。
 
 <div id="primary-ordering-keys-in-clickhouse">
-  ## ClickHouse 中的主键 (排序键)
+  ## ClickHouse 中的主键 (排序键) {#primary-ordering-keys-in-clickhouse}
 </div>
 
 来自 OLTP 数据库的用户，往往会在 ClickHouse 中寻找对应的概念。看到 ClickHouse 支持 `PRIMARY KEY` 语法后，用户可能会倾向于沿用源 OLTP 数据库中的相同键来定义表 schema。但这并不合适。
 
-<div id="how-are-clickhouse-primary-keys-different">
-  ### ClickHouse 主键有何不同？
-</div>
+### ClickHouse 主键有何不同？ {#how-are-clickhouse-primary-keys-different}
 
 要理解为什么在 ClickHouse 中使用 OLTP 主键并不合适，你需要先了解 ClickHouse 索引的基本原理。这里我们以 Postgres 作为对比示例，但这些通用概念同样适用于其他 OLTP 数据库。
 
@@ -31,23 +29,15 @@ doc_type: 'guide'
 如需更多细节，我们推荐阅读这篇[深入指南](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![PostgreSQL B-Tree 索引](/images/migrations/postgres-b-tree.webp)
-
-</Frame>
-
+  <Frame>
+    ![PostgreSQL B-Tree 索引](/images/migrations/postgres-b-tree.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![PostgreSQL 稀疏索引](/images/migrations/postgres-sparse-index.webp)
-
-</Frame>
-
+  <Frame>
+    ![PostgreSQL 稀疏索引](/images/migrations/postgres-sparse-index.webp)
+  </Frame>
 </div>
 
 在 ClickHouse 中，所选的键不仅决定索引，还决定数据写入磁盘时的顺序。因此，它会显著影响压缩水平，而这又会进一步影响查询性能。一个能让大多数列的值按连续顺序写入的排序键，可以让所选压缩算法 (以及编解码器) 更高效地压缩数据。
@@ -55,29 +45,23 @@ doc_type: 'guide'
 > 表中的所有列都会根据指定排序键的值进行排序，无论这些列本身是否包含在该键中。例如，如果使用 `CreationDate` 作为键，那么其他所有列中的值顺序都会与 `CreationDate` 列中的值顺序保持一致。也可以指定多个排序键——其排序语义与 `SELECT` 查询中的 `ORDER BY` 子句相同。
 
 <div id="choosing-an-ordering-key">
-  ### 选择排序键
+  ### 选择排序键 {#choosing-an-ordering-key}
 </div>
 
 有关选择排序键时的考量因素和步骤 (以 posts 表为例) ，请参见[此处](/zh/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key)。
 
 使用 CDC (变更数据捕获) 进行实时复制时，还需考虑额外的约束；有关如何结合 CDC 自定义排序键的具体方法，请参阅这份[文档](/zh/integrations/clickpipes/postgres/ordering-keys)。
 
-<div id="partitions">
-  ## 分区
-</div>
+## 分区 {#partitions}
 
 如果你使用过 Postgres，那么你一定熟悉表分区这一概念：它通过将表拆分为更小、更易于管理的部分 (称为分区) ，来提升大型数据库的性能和可管理性。这种分区可以通过指定列上的范围 (例如日期) 、预定义列表，或基于某个键的哈希来实现。这使管理员能够根据日期范围或地理位置等特定条件组织数据。分区通过分区裁剪和更高效的索引加快数据访问，从而提升查询性能。它还支持针对单个分区而不是整个表执行操作，因此有助于简化备份和数据清理等维护任务。此外，分区还可以通过将负载分散到多个分区，显著提升 PostgreSQL 数据库的可扩展性。
 
 在 ClickHouse 中，分区是在表初次定义时通过 `PARTITION BY` 子句指定的。该子句可以包含基于任意列的 SQL 表达式，其结果将决定某一行会被写入哪个分区。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![PostgreSQL 分区到 ClickHouse 分区](/images/migrations/postgres-partitions.webp)
-
-</Frame>
-
+  <Frame>
+    ![PostgreSQL 分区到 ClickHouse 分区](/images/migrations/postgres-partitions.webp)
+  </Frame>
 </div>
 
 数据分区片段在磁盘上会按分区进行逻辑归属，并且可以单独查询。在下面的示例中，我们使用表达式 `toYear(CreationDate)` 按年份对 `posts` 表进行分区。当行被插入 ClickHouse 时，系统会对每一行计算该表达式，并将其路由到对应的分区 (如果某一年份的第一行数据到来时该分区尚不存在，则会创建该分区) 。
@@ -85,7 +69,7 @@ doc_type: 'guide'
 ```sql
  CREATE TABLE posts
 (
-        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `Id` Int32 CODEC(Delta, Default),
         `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
         `AcceptedAnswerId` UInt32,
         `CreationDate` DateTime64(3, 'UTC'),
@@ -100,7 +84,7 @@ PARTITION BY toYear(CreationDate)
 有关分区的完整说明，请参阅 [&quot;表分区&quot;](/zh/concepts/core-concepts/partitions).
 
 <div id="applications-of-partitions">
-  ### 分区的用途
+  ### 分区的用途 {#applications-of-partitions}
 </div>
 
 ClickHouse 中的分区用途与 Postgres 类似，但也有一些细微差别。更具体地说：
@@ -151,7 +135,7 @@ Ok.
 * **查询优化** - 虽然分区有助于提升查询性能，但效果在很大程度上取决于访问模式。如果查询只涉及少量分区 (理想情况下仅一个) ，性能可能会有所提升。通常，只有当分区键不在主键中，并且查询按该分区键进行过滤时，这样做才有意义。不过，如果查询需要覆盖很多分区，性能反而可能比不使用分区更差 (因为分区可能会导致产生更多的 parts) 。如果分区键本身已经在主键中靠前的位置，那么只命中单个分区带来的收益就会更不明显，甚至几乎没有。如果每个分区中的值都是唯一的，分区还可用于[优化 GROUP BY 查询](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key)。不过，总体来说，你应先确保主键已经过优化，只有在极少数特殊情况下，才应将分区视为一种查询优化手段——也就是访问模式会稳定地访问某个可预测的特定数据子集时，例如按天分区，而大多数查询都集中在最近一天的数据。
 
 <div id="recommendations-for-partitions">
-  ### 分区建议
+  ### 分区建议 {#recommendations-for-partitions}
 </div>
 
 你应将分区视为一种数据管理技术。当处理时间序列数据时，如果需要让数据过期后从集群中移除，这种方式尤其合适。例如，最旧的分区可以[直接删除](/zh/reference/statements/alter/partition#drop-partitionpart)。
@@ -163,7 +147,7 @@ Ok.
 > 由于 parts 是按分区彼此独立创建的，因此分区数量增加时，parts 的数量也会随之增加，也就是说，它与分区数量成倍数关系。因此，高基数分区键可能会导致此错误，应当避免。
 
 <div id="materialized-views-vs-projections">
-  ## materialized views 与 PROJECTION
+  ## materialized views 与 PROJECTION {#materialized-views-vs-projections}
 </div>
 
 Postgres 允许在单个表上创建多个索引，从而针对不同的访问模式进行优化。这种灵活性使管理员和开发人员能够根据特定查询和运维需求调整数据库性能。虽然 ClickHouse 的 PROJECTION 概念与之并不完全对应，但它允许为同一个表指定多个 `ORDER BY` 子句。
@@ -286,37 +270,31 @@ WHERE UserId = 8592047
 11 rows in set. Elapsed: 0.004 sec.
 ```
 
-<div id="when-to-use-projections">
-  ### 何时使用PROJECTION
-</div>
+### 何时使用投影 {#when-to-use-projections}
 
-对于新用户来说，PROJECTION是一项很有吸引力的功能，因为它会在数据插入时自动维护。
-此外，查询只需发送到单个表上，系统会在可能的情况下利用PROJECTION来加快响应
+对于新用户来说，投影是一项很有吸引力的功能，因为它会在数据插入时自动维护。
+此外，查询只需发送到单个表上，系统会在可能的情况下利用投影来加快响应
 时间。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ClickHouse 中的 PostgreSQL PROJECTION](/images/migrations/postgres-projections.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse 中的 PostgreSQL 投影](/images/migrations/postgres-projections.webp)
+  </Frame>
 </div>
 
 这与 materialized view 不同：使用 materialized view 时，用户必须根据过滤条件
 选择合适的优化目标表，或者重写查询。
 这会让用户应用承担更多责任，并增加客户端侧的复杂性。
 
-尽管有这些优势，PROJECTION也有一些[固有限制](/zh/concepts/features/projections/projections#when-to-use-projections)
+尽管有这些优势，投影也有一些[固有限制](/zh/concepts/features/projections/projections#when-to-use-projections)
 ，你应该了解这些限制，因此应谨慎使用。
 
-我们建议在以下情况下使用PROJECTION：
+我们建议在以下情况下使用投影：
 
-* 需要对数据进行完全重排序。虽然PROJECTION中的表达式
+* 需要对数据进行完全重排序。虽然投影中的表达式
   理论上可以使用 `GROUP BY,`，但 materialized view 在维护聚合方面
   更高效。查询优化器也更可能
-  利用采用简单重排序的PROJECTION，即 `SELECT * ORDER BY x`。
+  利用采用简单重排序的投影，即 `SELECT * ORDER BY x`。
   你可以在该表达式中只选择部分列，以减少存储占用。
 * 用户能够接受随之增加的存储占用，以及
   数据被写入两次所带来的开销。请测试其对插入速度的影响，并
@@ -324,17 +302,15 @@ WHERE UserId = 8592047
 
 <Note>
   从 25.5 版本开始，ClickHouse 在
-  PROJECTION中支持虚拟列 `_part_offset`。这带来了一种存储PROJECTION时更节省空间的方式。
+  投影中支持虚拟列 `_part_offset`。这带来了一种存储投影时更节省空间的方式。
 
-  更多详情，请参见[“PROJECTION”](/zh/concepts/features/projections/projections)
+  更多详情，请参见[“投影”](/zh/concepts/features/projections/projections)
 </Note>
 
-<div id="denormalization">
-  ## 反规范化
-</div>
+## 反规范化 {#denormalization}
 
-由于 Postgres 是关系型数据库，其数据模型通常高度[归一化](https://en.wikipedia.org/wiki/Database_normalization)，往往涉及数百张表。在 ClickHouse 中，为了优化 JOIN 性能，有时采用反规范化会更有优势。
+由于 Postgres 是关系型数据库，其数据模型通常经过高度[规范化](https://en.wikipedia.org/wiki/Database_normalization)，往往包含数百张表。在 ClickHouse 中，为了优化 JOIN 性能，有时进行反规范化会更有优势。
 
-你可以参考这篇[指南](/zh/guides/clickhouse/data-modelling/denormalization)，其中展示了在 ClickHouse 中对 Stack Overflow 数据集进行反规范化的好处。
+你可以参考这篇[指南](/zh/guides/clickhouse/data-modelling/denormalization)，其中展示了在 ClickHouse 中对 Stack Overflow 数据集进行反规范化所带来的好处。
 
-如果你正从 Postgres 迁移到 ClickHouse，我们的基础指南到这里就结束了。我们建议阅读[ClickHouse 数据建模指南](/zh/guides/clickhouse/data-modelling/schema-design)，进一步了解 ClickHouse 的高级功能。
+如果你正从 Postgres 迁移到 ClickHouse，我们的基础指南到这里就结束了。我们建议你阅读[ClickHouse 数据建模指南](/zh/guides/clickhouse/data-modelling/schema-design)，进一步了解 ClickHouse 的高级功能。

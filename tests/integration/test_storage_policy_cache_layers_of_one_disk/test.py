@@ -35,6 +35,16 @@ def test_cache_layers_of_one_disk_in_separate_policies():
     node.query("DROP TABLE t SYNC")
 
 
+def test_encrypted_layers_of_one_directory_in_separate_policies():
+    node.query(
+        "CREATE TABLE t_encrypted (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'local_encrypted_1_only'"
+    )
+    node.query("INSERT INTO t_encrypted SELECT number FROM numbers(100)")
+    node.restart_clickhouse()
+    assert node.query("SELECT count(), sum(x) FROM t_encrypted") == "100\t4950\n"
+    node.query("DROP TABLE t_encrypted SYNC")
+
+
 @pytest.mark.parametrize(
     "volumes, first_disk, second_disk",
     [
@@ -64,6 +74,16 @@ def test_cache_layers_of_one_disk_in_separate_policies():
             "encrypted_subdir",
             "encrypted_subdir_dot",
         ),
+        (
+            "<main><disk>local_encrypted_1</disk><disk>local_encrypted_2</disk></main>",
+            "local_encrypted_1",
+            "local_encrypted_2",
+        ),
+        (
+            "<main><disk>local_1</disk><disk>local_encrypted_no_path</disk></main>",
+            "local_1",
+            "local_encrypted_no_path",
+        ),
     ],
 )
 def test_policy_with_two_disks_over_one_disk_is_rejected(
@@ -84,8 +104,8 @@ def test_policy_with_two_disks_over_one_disk_is_rejected(
         node.query("SYSTEM RELOAD CONFIG")
         assert node.query(count_bad_policy) == "0\n"
         assert (
-            f"Disks `{first_disk}` and `{second_disk}` in storage policy `bad_policy` store data in the same directory"
-            in node.grep_in_log("store data in the same directory")
+            f"Disks `{first_disk}` and `{second_disk}` in storage policy `bad_policy` store data in the same place"
+            in node.grep_in_log("store data in the same place")
         )
     finally:
         node.exec_in_container(["rm", "-f", BAD_POLICY_CONFIG])
@@ -113,8 +133,8 @@ def test_server_does_not_start_with_bad_policy_and_keeps_parts():
     node.replace_config(RESTART_POLICY_CONFIG, restart_policy(["cache_1", "cache_2"]))
     node.start_clickhouse(expected_to_fail=True)
     assert (
-        "Disks `cache_1` and `cache_2` in storage policy `restart_policy` store data in the same directory"
-        in node.grep_in_log("store data in the same directory")
+        "Disks `cache_1` and `cache_2` in storage policy `restart_policy` store data in the same place"
+        in node.grep_in_log("store data in the same place")
     )
 
     node.replace_config(RESTART_POLICY_CONFIG, restart_policy(["cache_1"]))

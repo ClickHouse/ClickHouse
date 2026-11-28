@@ -3,6 +3,10 @@ DROP DICTIONARY IF EXISTS dict_geo;
 DROP TABLE IF EXISTS src_products;
 DROP TABLE IF EXISTS src_geo;
 DROP TABLE IF EXISTS inputs;
+DROP DICTIONARY IF EXISTS dict_a;
+DROP DICTIONARY IF EXISTS dict_ab;
+DROP TABLE IF EXISTS src_a;
+DROP TABLE IF EXISTS src_ab;
 
 CREATE TABLE src_products
 (
@@ -106,3 +110,17 @@ SELECT
     dictGetKeys('dict_geo',      'timezone', target_timezone) AS country_city_by_tz
 FROM inputs
 ORDER BY target_category, target_brand, target_timezone;
+
+SELECT 'Dictionary and attribute names with the same concatenation';
+
+SET max_reverse_dictionary_lookup_cache_size_bytes = 104857600;
+
+CREATE TABLE src_a (id UInt64, bc String) ENGINE = Memory;
+CREATE TABLE src_ab (id UInt64, c String) ENGINE = Memory;
+INSERT INTO src_a VALUES (1, 'v');
+INSERT INTO src_ab VALUES (2, 'v');
+
+CREATE DICTIONARY dict_a (id UInt64, bc String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'src_a')) LAYOUT(HASHED()) LIFETIME(0);
+CREATE DICTIONARY dict_ab (id UInt64, c String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'src_ab')) LAYOUT(HASHED()) LIFETIME(0);
+
+SELECT dictGetKeys('dict_a', 'bc', materialize('v')), dictGetKeys('dict_ab', 'c', materialize('v'));

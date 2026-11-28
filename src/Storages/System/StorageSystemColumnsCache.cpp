@@ -13,6 +13,7 @@
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB
@@ -43,7 +44,7 @@ public:
     {
     }
 
-    std::string getName() const override { return "ReadFromSystemColumnsCache"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromSystemColumnsCache"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {

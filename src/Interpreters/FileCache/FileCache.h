@@ -64,7 +64,7 @@ struct FileCacheReserveStat
             return *this;
         }
 
-        std::string toString() const;
+        [[nodiscard]] std::string toString() const;
     };
 
     Stat total_stat;
@@ -73,7 +73,7 @@ struct FileCacheReserveStat
     bool not_enough_space = false;
 
     Stat & getStatByKind(FileSegmentKind kind) { return stat_by_kind[static_cast<uint8_t>(kind)]; }
-    const Stat & getStatByKind(FileSegmentKind kind) const { return stat_by_kind[static_cast<uint8_t>(kind)]; }
+    [[nodiscard]] const Stat & getStatByKind(FileSegmentKind kind) const { return stat_by_kind[static_cast<uint8_t>(kind)]; }
 
     enum class State
     {
@@ -357,7 +357,7 @@ private:
     /// `dynamic_resize_lock` gate on every reservation and priority increase.
     bool supports_dynamic_resize = false;
 
-    std::atomic<size_t> cache_reserve_active_threads = 0;
+    IFileCachePriority::SharedEvictionCursor reserve_cursor{IFileCachePriority::EvictionCursor::Reserve};
 
     std::mutex apply_settings_mutex;
 
@@ -391,7 +391,8 @@ private:
 
     void loadMetadata();
     void loadMetadataImpl();
-    void loadMetadataForKey(const std::filesystem::path & key_dir, const OriginInfo & origin);
+    struct LoadMetadataProgress;
+    void loadMetadataForKey(const std::filesystem::path & key_dir, const OriginInfo & origin, LoadMetadataProgress & progress);
 
     /// Get all file segments from cache which intersect with `range`.
     /// If `file_segments_limit` > 0, return no more than first file_segments_limit

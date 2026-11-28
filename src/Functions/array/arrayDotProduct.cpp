@@ -154,13 +154,13 @@ class FunctionArrayScalarProduct final : public IFunction
 public:
     static constexpr auto name = Kernel::name;
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayScalarProduct>(); }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override { return String(Kernel::signature); }
+    [[nodiscard]] String getSignatureString() const override { return String(Kernel::signature); }
 
 #define SUPPORTED_TYPES(ACTION) \
     ACTION(UInt8) \
@@ -175,7 +175,7 @@ public:
     ACTION(Float32) \
     ACTION(Float64)
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         DataTypePtr type_x = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
@@ -202,7 +202,7 @@ public:
 
 private:
     template <typename LeftType>
-    ColumnPtr executeWithLeftType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeWithLeftType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         DataTypePtr type_y = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
@@ -227,7 +227,7 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    ColumnPtr executeWithLeftAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeWithLeftAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
     {
         /// Compute the result type from the input types; this must match the declarative
         /// `signature` (`additionMultiplicationResult`, with the `Float32`/`BFloat16` same-type
@@ -242,7 +242,7 @@ private:
     }
 
     template <typename ResultType, typename LeftType, typename RightType>
-    ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
     {
         if (typeid_cast<const ColumnConst *>(col_x.get()))
         {
@@ -320,7 +320,7 @@ private:
     }
 
     template <typename ResultType, typename LeftType, typename RightType>
-    ColumnPtr executeWithLeftArgConst(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeWithLeftArgConst(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
     {
         col_x = assert_cast<const ColumnConst *>(col_x.get())->getDataColumnPtr();
         col_y = col_y->convertToFullColumnIfConst();
@@ -370,6 +370,11 @@ private:
         {
             /// Scalar path for non-same-type-float inputs (mixed types or same-type
             /// integers whose ResultType is widened, e.g. Int32 x Int32 -> Int64).
+            /// With a floating-point result the constant is converted once, not per row (integer products stay narrow).
+            using ConstType = std::conditional_t<std::is_floating_point_v<ResultType>, ResultType, LeftType>;
+            PaddedPODArray<ConstType> x(array_size);
+            for (size_t i = 0; i < array_size; ++i)
+                x[i] = static_cast<ConstType>(data_x[i]);
             ColumnArray::Offset current_offset = 0;
             for (size_t row = 0; row < input_rows_count; ++row)
             {
@@ -382,7 +387,7 @@ private:
                     for (size_t j = 0; j < VEC_SIZE; ++j)
                         Kernel::template accumulate<ResultType>(
                             states[j],
-                            static_cast<ResultType>(data_x[i + j]),
+                            static_cast<ResultType>(x[i + j]),
                             static_cast<ResultType>(data_y[current_offset + i + j]));
                 }
 
@@ -391,9 +396,11 @@ private:
                     Kernel::template combine<ResultType>(state, other_state);
 
                 /// Process the tail
+                /// At most 3 elements are left: a vectorized tail would never run and only slows the main loop down.
+                _Pragma("clang loop vectorize(disable)")
                 for (; i < array_size; ++i)
                     Kernel::template accumulate<ResultType>(
-                        state, static_cast<ResultType>(data_x[i]), static_cast<ResultType>(data_y[current_offset + i]));
+                        state, static_cast<ResultType>(x[i]), static_cast<ResultType>(data_y[current_offset + i]));
 
                 result[row] = Kernel::template finalize<ResultType>(state);
 

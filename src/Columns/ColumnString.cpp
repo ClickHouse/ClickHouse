@@ -16,6 +16,8 @@
 #include <base/PackedStringRef.h>
 #include <base/unaligned.h>
 #include <base/arithmeticOverflow.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
@@ -49,6 +51,12 @@ ColumnString::ColumnString(const ColumnString & src)
             last_offset, chars.size());
 }
 
+void ColumnString::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+{
+    if (options.notFull(name_buf))
+        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, name_buf);
+}
+
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t length)
 #else
@@ -62,17 +70,24 @@ void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t
         return;
 
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
-    const size_t src_offset = src_concrete.offsets[position - 1];
+    const size_t src_offset = src_concrete.offsets[static_cast<ssize_t>(position) - 1];
     const size_t src_buf_size
-        = src_concrete.offsets[position] - src_concrete.offsets[position - 1]; /// -1th index is Ok, see PaddedPODArray.
+        = src_concrete.offsets[position] - src_concrete.offsets[static_cast<ssize_t>(position) - 1]; /// -1th index is Ok, see PaddedPODArray.
 
     const size_t old_rows = offsets.size();
-    const size_t new_rows = old_rows + length;
-    /// Reserve offsets before changing chars to keep the column consistent if allocation fails.
-    offsets.reserve(new_rows);
+    size_t new_rows = 0;
+    if (common::addOverflow(old_rows, length, new_rows))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too many rows in string column: {} + {}", old_rows, length);
 
     const size_t old_size = chars.size();
-    const size_t new_size = old_size + src_buf_size * length;
+    size_t added_size = 0;
+    size_t new_size = 0;
+    if (common::mulOverflow(src_buf_size, length, added_size) || common::addOverflow(old_size, added_size, new_size))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too many bytes in string column: {} + {} * {}", old_size, src_buf_size, length);
+
+    /// Reserve offsets before changing chars to keep the column consistent if allocation fails.
+    offsets.reserve(new_rows);
     chars.resize(new_size);
 
     const UInt8 * src_buf = &src_concrete.chars[src_offset];
@@ -125,7 +140,7 @@ void ColumnString::computeHashInto(size_t row_begin, size_t row_end, UInt32 * ha
     /// Each row seeds with `WEAK_HASH32_INITIAL_VALUE` and combines its finalized hash via
     /// `combineWeakHash32`. CRC32C is a hardware dependency chain with no packed form, so a
     /// plain scalar loop is used. See IColumn::computeHashInto.
-    Offset prev_offset = row_begin == 0 ? 0 : offsets[row_begin - 1];
+    Offset prev_offset = row_begin == 0 ? 0 : offsets[static_cast<ssize_t>(row_begin) - 1];
     const UInt8 * pos = chars.data() + prev_offset;
 
     for (size_t i = row_begin; i < row_end; ++i)
@@ -226,6 +241,76 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 }
 
 
+namespace
+{
+
+template <bool src_true_is_const, bool src_false_is_const>
+void insertStringsFromEither(
+    ColumnString::Chars & res_chars,
+    ColumnString::Offsets & res_offsets,
+    const ColumnString & src_true,
+    const ColumnString & src_false,
+    const IColumn::Filter & condition)
+{
+    const size_t rows = condition.size();
+    const UInt8 * condition_data = condition.data();
+    const ColumnString::Offsets & true_offsets = src_true.getOffsets();
+    const ColumnString::Offsets & false_offsets = src_false.getOffsets();
+
+    /// The first pass computes the offsets, so that `res_chars` is resized once.
+    const size_t old_rows = res_offsets.size();
+    res_offsets.resize(old_rows + rows);
+    ColumnString::Offset * out_offsets = res_offsets.data() + old_rows;
+    ColumnString::Offset offset = res_chars.size();
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const size_t true_row = src_true_is_const ? 0 : i;
+        const size_t false_row = src_false_is_const ? 0 : i;
+        const size_t size_true = true_offsets[true_row] - true_offsets[ssize_t(true_row) - 1];
+        const size_t size_false = false_offsets[false_row] - false_offsets[ssize_t(false_row) - 1];
+        offset += condition_data[i] ? size_true : size_false;
+        out_offsets[i] = offset;
+    }
+
+    const size_t old_chars_size = res_chars.size();
+    res_chars.resize(offset);
+
+    const UInt8 * true_chars = src_true.getChars().data();
+    const UInt8 * false_chars = src_false.getChars().data();
+    UInt8 * out_chars = res_chars.data();
+    ColumnString::Offset start = old_chars_size;
+    /// The writes overflow into the next strings, which are written later, and into the padding of `chars`.
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const size_t true_row = src_true_is_const ? 0 : i;
+        const size_t false_row = src_false_is_const ? 0 : i;
+        /// Both are computed so that the select is a `cmov`: a branch on a random condition is mispredicted.
+        const UInt8 * value_if_true = true_chars + true_offsets[ssize_t(true_row) - 1];
+        const UInt8 * value_if_false = false_chars + false_offsets[ssize_t(false_row) - 1];
+        const UInt8 * value = condition_data[i] ? value_if_true : value_if_false;
+        memcpySmallAllowReadWriteOverflow15(out_chars + start, value, out_offsets[i] - start);
+        start = out_offsets[i];
+    }
+}
+
+}
+
+void ColumnString::insertFromEither(
+    const IColumn & src_true_, bool src_true_is_const, const IColumn & src_false_, bool src_false_is_const, const IColumn::Filter & condition)
+{
+    const ColumnString & src_true = assert_cast<const ColumnString &>(src_true_);
+    const ColumnString & src_false = assert_cast<const ColumnString &>(src_false_);
+
+    if (src_true_is_const && src_false_is_const)
+        insertStringsFromEither<true, true>(chars, offsets, src_true, src_false, condition);
+    else if (src_true_is_const)
+        insertStringsFromEither<true, false>(chars, offsets, src_true, src_false, condition);
+    else if (src_false_is_const)
+        insertStringsFromEither<false, true>(chars, offsets, src_true, src_false, condition);
+    else
+        insertStringsFromEither<false, false>(chars, offsets, src_true, src_false, condition);
+}
+
 ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (offsets.empty())
@@ -255,8 +340,8 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
     if (mask.size() < offsets_data.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    ssize_t index = mask.size() - 1;
-    ssize_t from = offsets_data.size() - 1;
+    ssize_t index = static_cast<ssize_t>(mask.size()) - 1;
+    ssize_t from = static_cast<ssize_t>(offsets_data.size()) - 1;
     offsets_data.resize_exact(mask.size());
     UInt64 last_offset = offsets_data[from];
     while (index >= 0)
@@ -412,46 +497,6 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     offsets.push_back(new_size);
 }
 
-void ColumnString::fillFromRowStorePtrs(const DataTypePtr &, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map)
-{
-    auto row_at = [&](size_t i)
-    {
-        return row_store_ptrs.base_ptr ? row_store_ptrs.base_ptr + (begin + i) * row_store_ptrs.row_length : row_store_ptrs.ptrs[begin + i];
-    };
-
-    /// A nullable field keeps its null byte right before the ref.
-    const size_t offset = null_map ? field_offset + 1 : field_offset;
-
-    UInt8 * out_null_map = nullptr;
-    if (null_map)
-    {
-        const size_t old_size = null_map->size();
-        null_map->resize(old_size + count);
-        out_null_map = null_map->data() + old_size;
-    }
-
-    const size_t old_rows = offsets.size();
-    offsets.resize(old_rows + count);
-    UInt64 * out_offsets = offsets.data() + old_rows;
-    UInt64 offsets_cursor = offsets[static_cast<ssize_t>(old_rows) - 1];
-    for (size_t i = 0; i < count; ++i)
-    {
-        const char * row = row_at(i);
-        if (out_null_map)
-            out_null_map[i] = static_cast<UInt8>(row[field_offset]);
-        offsets_cursor += unalignedLoad<UnhashedPackedStringRef>(row + offset).size();
-        out_offsets[i] = offsets_cursor;
-    }
-
-    const size_t old_chars = chars.size();
-    if (offsets_cursor == old_chars)
-        return;
-    chars.resize(offsets_cursor);
-    UInt8 * out_chars = chars.data() + old_chars;
-    for (size_t i = 0; i < count; ++i)
-        out_chars = unalignedLoad<UnhashedPackedStringRef>(row_at(i) + offset).copyTo(out_chars);
-}
-
 void ColumnString::gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const
 {
     const auto gather = [&]<bool has_null_map>
@@ -544,7 +589,7 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     for (size_t i = 0; i < limit; ++i)
     {
         size_t j = indexes[i];
-        size_t string_offset = offsets[j - 1];
+        size_t string_offset = offsets[static_cast<ssize_t>(j) - 1];
         size_t string_size = offsets[j] - string_offset;
 
         memcpySmallAllowReadWriteOverflow15(&res_chars[current_new_offset], &chars[string_offset], string_size);
@@ -565,7 +610,7 @@ struct ColumnString::ComparatorBase
     {
     }
 
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(
             parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs),
@@ -585,7 +630,7 @@ struct ColumnString::ComparatorCollationBase
     {
     }
 
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = collator->compare(
             reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
@@ -715,8 +760,8 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
     size_t res_chars_size = 0;
     for (size_t i = 0; i < col_size; ++i)
     {
-        size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
-        size_t string_size = offsets[i] - offsets[i - 1];
+        size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[static_cast<ssize_t>(i) - 1];
+        size_t string_size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
         size_t replicated_size = 0;
         if (common::mulOverflow(size_to_replicate, string_size, replicated_size)
             || common::addOverflow(res_chars_size, replicated_size, res_chars_size))
@@ -731,9 +776,9 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
     size_t curr_offset = 0;
     for (size_t i = 0; i < col_size; ++i)
     {
-        const size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
-        const size_t string_size = offsets[i] - offsets[i-1];
-        const UInt8 * src = &chars[offsets[i - 1]];
+        const size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[static_cast<ssize_t>(i) - 1];
+        const size_t string_size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
+        const UInt8 * src = &chars[offsets[static_cast<ssize_t>(i) - 1]];
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
             memcpySmallAllowReadWriteOverflow15(

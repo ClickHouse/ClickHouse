@@ -48,10 +48,11 @@ Notes on data coverage:
     events only for translation units that were actually recompiled. Per-TU
     compile times are therefore compared against the most recent warmup build
     that recompiled the same TU.
-  * The ThinLTO link runs on every linking build, so its trace (at least the
-    `Total OptFunction` row; per-function OptFunction events from 50 ms) is
-    present on both sides for every final binary that is actually linked
-    (clickhouse-keeper has none when built as a symlink to clickhouse).
+  * Every final binary that is actually linked has a link trace with at least
+    the `Total ExecuteLinker` row (clickhouse-keeper has none when built as a
+    symlink to clickhouse). PR builds link with the ThinLTO cache, so their
+    per-function OptFunction events (from 50 ms) cover only the functions the
+    link optimized again; the official master build links without it.
   * `binary_sizes` is complete on both sides; `binary_symbols` is complete on
     the PR side and on master builds since this check was introduced.
   * The warmup build builds every object-file target ninja knows about while a
@@ -1079,8 +1080,12 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     """Per-function ThinLTO optimization time of the final linked binaries.
 
     This is the per-function 'how long does the backend chew on it' signal; it
-    is present on every linking build (the link is never cached) and it is
-    where a new heavyweight function or template instantiation shows up first.
+    is where a new heavyweight function or template instantiation shows up
+    first. A PR build links with the ThinLTO cache of the master performance
+    reference build (see ci/jobs/build_clickhouse.py), so its trace has events
+    only for the functions its link optimized again; the other functions came
+    unchanged from the cache, so only functions with a PR-side event are
+    compared. The baseline links without the cache and has every function.
     It covers every binary in FINAL_BINARIES, keyed by (binary, function), so
     a keeper-only PR cannot regress the `clickhouse-keeper` ThinLTO time
     without showing up here. Like the symbol section, a binary is compared
@@ -1097,7 +1102,9 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     PGO/BOLT availability) - that skews every function's time by a roughly
     uniform ratio. The median ratio over matched functions estimates the skew
     and per-function deltas are taken relative to it, the same way the per-TU
-    compile-time section normalizes its machine-speed skew.
+    compile-time section normalizes its machine-speed skew. A binary with fewer
+    than 10 such functions (most of it came from the cache) has no reliable
+    skew estimate, so only its new functions are listed.
 
     The skew is estimated per binary. Each binary is a separate ThinLTO link, so
     the two links of a build do not even run at the same time, let alone the
@@ -1117,14 +1124,14 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     """
     section = Section(title="Slowest function optimization changes (ThinLTO)")
     trace_where = "name = 'OptFunction' AND dur >= 50000"
-    # Presence is judged on `Total OptFunction`, which lld writes for every ThinLTO
-    # link however many events `--time-trace-granularity` (50 ms) dropped: a binary
-    # none of whose functions reaches the cutoff is an intact upload, not a lost one.
+    # Presence is judged on `Total ExecuteLinker`, lld's top-level scope, which every
+    # link writes: a binary whose functions all came from the ThinLTO cache or are
+    # below `--time-trace-granularity` (50 ms) is an intact upload, not a lost one.
     sides = db.query(
         f"""SELECT file,
             countIf(side = 'pr') AS pr_count,
             countIf(side = 'base') AS base_count
-        FROM {both_sides("build_time_trace", "file", pr_side, base_side, f"file IN ({in_list(FINAL_BINARIES)}) AND name = 'Total OptFunction'")}
+        FROM {both_sides("build_time_trace", "file", pr_side, base_side, f"file IN ({in_list(FINAL_BINARIES)}) AND name = 'Total ExecuteLinker'")}
         GROUP BY file"""
     )
     comparable = [row["file"] for row in sides if int(row["pr_count"]) and int(row["base_count"])]
@@ -1181,12 +1188,17 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     )
     skews = {row["file"]: float(row["skew"]) for row in skew_rows if int(row["matched"]) >= 10}
     skew_expr = "1.0"
+    normalized = "base_dur = 0"
     if skews:
         skew_expr = f"transform(file, [{in_list(skews)}], [{', '.join(f'{v}' for v in skews.values())}], 1.0)"
+        normalized = f"(base_dur = 0 OR file IN ({in_list(skews)}))"
+    unnormalized = [f for f in comparable if f not in skews]
+    if unnormalized:
+        print(f"Fewer than 10 functions optimized by both links, only new functions compared: {unnormalized}")
     report_us = int(OPTFN_REPORT_SECONDS * 1e6)
     # dur >= 50ms cuts the aggregation from ~1M rows per side to tens of
     # thousands; a function can only reach the report threshold if one side
-    # exceeds it anyway, and a missing side renders as "new"/"gone".
+    # exceeds it anyway, and a missing base side renders as "new".
     rows = db.query(
         f"""SELECT file, detail,
             sumIf(dur, side = 'pr') AS pr_dur,
@@ -1195,8 +1207,9 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
             toInt64(pr_dur) - toInt64(adjusted_base_dur) AS delta
         FROM {both}
         GROUP BY file, detail
-        HAVING abs(delta) >= {report_us}
-            AND (pr_dur = 0 OR base_dur = 0
+        HAVING pr_dur > 0 AND {normalized}
+            AND abs(delta) >= {report_us}
+            AND (base_dur = 0
                  OR greatest(toFloat64(pr_dur), adjusted_base_dur) >= least(toFloat64(pr_dur), adjusted_base_dur) * {OPTFN_REPORT_RATIO})
         ORDER BY abs(delta) DESC
         LIMIT {MAX_TABLE_ROWS}"""
@@ -1204,6 +1217,13 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     if not rows:
         section.body = "\n".join(lines).rstrip()
         return section
+    if unnormalized:
+        names = ", ".join(md_code(strip_build_dir(f)) for f in unnormalized)
+        lines += [
+            f"Fewer than 10 functions of {names} were optimized by both links (the others came from the "
+            "ThinLTO cache), so their times are not normalized: only new functions are listed.",
+            "",
+        ]
     skewed = sorted((f, s) for f, s in skews.items() if abs(s - 1.0) >= 0.05)
     if skewed:
         ratios = ", ".join(f"{md_code(strip_build_dir(f))} ×{s:.2f}" for f, s in skewed)
@@ -1224,8 +1244,7 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
         if abs(delta) >= OPTFN_SIG_SECONDS:
             section.significant = True
         base_text = f"{base_s:.1f} s" if base_s else "new"
-        pr_text = f"{pr_s:.1f} s" if pr_s else "gone"
-        lines.append(f"| {md_code(strip_build_dir(row['file']))} | {md_code(demangle(row['detail']))} | {base_text} | {pr_text} | {format_seconds_delta(delta, adjusted_base_s)} |")
+        lines.append(f"| {md_code(strip_build_dir(row['file']))} | {md_code(demangle(row['detail']))} | {base_text} | {pr_s:.1f} s | {format_seconds_delta(delta, adjusted_base_s)} |")
     section.body = "\n".join(lines)
     return section
 

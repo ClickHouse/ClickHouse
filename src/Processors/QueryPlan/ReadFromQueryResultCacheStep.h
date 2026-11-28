@@ -14,11 +14,11 @@ public:
         std::shared_ptr<SourceFromChunks> source_totals_,
         std::shared_ptr<SourceFromChunks> source_extremes_);
 
-    String getName() const override { return "ReadFromQueryResultCacheStep"; }
+    [[nodiscard]] String getName() const override { return "ReadFromQueryResultCacheStep"; }
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
-    bool hasTotals() const { return pipe.getTotalsPort() != nullptr; }
+    [[nodiscard]] bool hasTotals() const { return pipe.getTotalsPort() != nullptr; }
 
 private:
     /// The very sources the `Pipe` of `ReadFromPreparedSource` is built from, kept so that `clone`

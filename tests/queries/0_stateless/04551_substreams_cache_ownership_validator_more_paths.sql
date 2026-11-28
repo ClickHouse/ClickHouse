@@ -9,8 +9,6 @@
 --      that later holds the produced subcolumns is created.
 -- The queries only need to run without tripping the validator (issue #105626).
 
-SET enable_json_type = 1;
-
 DROP TABLE IF EXISTS t_log_nested_ownership;
 
 CREATE TABLE t_log_nested_ownership

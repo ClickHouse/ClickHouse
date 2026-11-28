@@ -62,8 +62,8 @@ void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDesc
     });
 }
 
-/// Resolving a name runs the function's `create`, where `checkAccess` lives. Names only: building the
-/// expression would report its type errors from here, not from the validator.
+/// Resolving a name gives the function's resolver, and `checkAccessOnBuild` checks its privileges with no
+/// arguments. Names only: building the expression would report its type errors from here, not from the validator.
 ///
 /// A transform is analysed under the global context, so reading a table or a dictionary during analysis
 /// would happen with full access. Such access depends on the arguments, not the function name, so
@@ -85,9 +85,14 @@ void checkFunctionsAsUser(const ASTPtr & ast, const ContextPtr & context)
         }
 
         /// Only the name, which for `dictGet` and the like does not touch the dictionary; analysis would.
-        if (auto resolver = FunctionFactory::instance().tryGet(function->name, context); resolver && !resolver->isDeterministic())
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "A text index transform expression must not contain non-deterministic functions. Got `{}`", function->name);
+        if (auto resolver = FunctionFactory::instance().tryGet(function->name, context))
+        {
+            resolver->checkAccessOnBuild();
+
+            if (!resolver->isDeterministic())
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "A text index transform expression must not contain non-deterministic functions. Got `{}`", function->name);
+        }
     }
 
     for (const auto & child : ast->children)

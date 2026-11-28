@@ -53,7 +53,7 @@ bool isTimeSeriesTimeRangesTargetEnabled(const ASTCreateQuery & query, bool for_
 
 /// Whether a CREATE TABLE ... ENGINE=TimeSeries query declares a target in a form written by users: inner columns,
 /// an inner engine, or an external table. An inner UUID doesn't count: it's stamped by UUID generation,
-/// which can happen before normalization (e.g. for an ON CLUSTER query using an old DDL entry format).
+/// which can happen before normalization.
 bool hasTimeSeriesTargetDefinition(const ASTCreateQuery & query, ViewTarget::Kind kind);
 
 /// Returns the number of inner target tables created by a CREATE TABLE ... ENGINE=TimeSeries query: the mandatory targets

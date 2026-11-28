@@ -21,23 +21,23 @@ class CursorTreeNode
     using Data = MapWithMemoryTracking<String, std::variant<Int64, CursorTreeNodePtr>>;
 
 public:
-    bool hasSubtree(const String & key) const;
-    const CursorTreeNodePtr & getSubtree(const String & key) const;
+    [[nodiscard]] bool hasSubtree(const String & key) const;
+    [[nodiscard]] const CursorTreeNodePtr & getSubtree(const String & key) const;
     CursorTreeNodePtr & setSubtree(const String & key, CursorTreeNodePtr tree);
     CursorTreeNodePtr & getSubtreeOrCreate(const String & key);
 
-    bool hasValue(const String & key) const;
-    Int64 getValue(const String & key) const;
-    Int64 getValue(const String & key, Int64 default_value) const;
+    [[nodiscard]] bool hasValue(const String & key) const;
+    [[nodiscard]] Int64 getValue(const String & key) const;
+    [[nodiscard]] Int64 getValue(const String & key, Int64 default_value) const;
     Int64 & setValue(const String & key, Int64 value);
 
-    CursorTreeNodePtr clone() const;
+    [[nodiscard]] CursorTreeNodePtr clone() const;
 
     Data::iterator begin();
     Data::iterator end();
 
-    Data::const_iterator begin() const;
-    Data::const_iterator end() const;
+    [[nodiscard]] Data::const_iterator begin() const;
+    [[nodiscard]] Data::const_iterator end() const;
 
 private:
     Data data;

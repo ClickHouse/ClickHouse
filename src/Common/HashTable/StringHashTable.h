@@ -7,6 +7,7 @@
 
 #include <bit>
 #include <new>
+#include <base/sanitizer_defs.h>
 #include <tuple>
 
 
@@ -51,20 +52,20 @@ struct StringHashTableHash
 #if defined(__SSE4_2__)
     size_t ALWAYS_INLINE operator()(StringKey8 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = _mm_crc32_u64(res, key);
         return res;
     }
     size_t ALWAYS_INLINE operator()(StringKey16 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = _mm_crc32_u64(res, key.items[0]);
         res = _mm_crc32_u64(res, key.items[1]);
         return res;
     }
     size_t ALWAYS_INLINE operator()(StringKey24 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = _mm_crc32_u64(res, key.a);
         res = _mm_crc32_u64(res, key.b);
         res = _mm_crc32_u64(res, key.c);
@@ -73,20 +74,20 @@ struct StringHashTableHash
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
     size_t ALWAYS_INLINE operator()(StringKey8 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = __crc32cd(static_cast<UInt32>(res), key);
         return res;
     }
     size_t ALWAYS_INLINE operator()(StringKey16 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = __crc32cd(static_cast<UInt32>(res), key.items[0]);
         res = __crc32cd(static_cast<UInt32>(res), key.items[1]);
         return res;
     }
     size_t ALWAYS_INLINE operator()(StringKey24 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = __crc32cd(static_cast<UInt32>(res), key.a);
         res = __crc32cd(static_cast<UInt32>(res), key.b);
         res = __crc32cd(static_cast<UInt32>(res), key.c);
@@ -95,20 +96,20 @@ struct StringHashTableHash
 #elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     size_t ALWAYS_INLINE operator()(StringKey8 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = s390x_crc32c(res, key);
         return res;
     }
     size_t ALWAYS_INLINE operator()(StringKey16 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = s390x_crc32c(res, key.items[UInt128::_impl::little(0)]);
         res = s390x_crc32c(res, key.items[UInt128::_impl::little(1)]);
         return res;
     }
     size_t ALWAYS_INLINE operator()(StringKey24 key) const
     {
-        size_t res = -1ULL;
+        size_t res = ~0ULL;
         res = s390x_crc32c(res, key.a);
         res = s390x_crc32c(res, key.b);
         res = s390x_crc32c(res, key.c);
@@ -144,7 +145,7 @@ struct StringHashTableEmpty // NOLINT(cppcoreguidelines-pro-type-member-init,hic
     alignas(Cell) std::byte zero_value_storage[sizeof(Cell)];
 
 public:
-    bool hasZero() const { return has_zero; }
+    [[nodiscard]] bool hasZero() const { return has_zero; }
 
     void prefetchByHash(size_t) const {} /// No-op: empty key storage is trivially small
 
@@ -168,7 +169,7 @@ public:
     }
 
     Cell * zeroValue() { return std::launder(reinterpret_cast<Cell *>(&zero_value_storage)); }
-    const Cell * zeroValue() const { return std::launder(reinterpret_cast<const Cell *>(&zero_value_storage)); }
+    [[nodiscard]] const Cell * zeroValue() const { return std::launder(reinterpret_cast<const Cell *>(&zero_value_storage)); }
 
     using LookupResult = Cell *;
     using ConstLookupResult = const Cell *;
@@ -193,7 +194,7 @@ public:
     }
 
     template <typename Key>
-    ConstLookupResult ALWAYS_INLINE find(const Key &, size_t = 0) const
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key &, size_t = 0) const
     {
         return hasZero() ? zeroValue() : nullptr;
     }
@@ -202,11 +203,11 @@ public:
     void writeText(DB::WriteBuffer & wb) const { zeroValue()->writeText(wb); }
     void read(DB::ReadBuffer & rb) { zeroValue()->read(rb); }
     void readText(DB::ReadBuffer & rb) { zeroValue()->readText(rb); }
-    size_t size() const { return hasZero() ? 1 : 0; }
-    bool empty() const { return !hasZero(); }
+    [[nodiscard]] size_t size() const { return hasZero() ? 1 : 0; }
+    [[nodiscard]] bool empty() const { return !hasZero(); }
     static constexpr size_t initial_buffer_bytes = sizeof(Cell);
-    size_t getBufferSizeInBytes() const { return sizeof(Cell); }
-    size_t getCollisions() const { return 0; }
+    [[nodiscard]] size_t getBufferSizeInBytes() const { return sizeof(Cell); }
+    [[nodiscard]] size_t getCollisions() const { return 0; }
 };
 
 template <size_t initial_size_degree = 8>
@@ -283,7 +284,7 @@ protected:
     }
 
     template <size_t key_class>
-    const auto & submapForClass() const
+    [[nodiscard]] const auto & submapForClass() const
     {
         if constexpr (key_class == 0)
             return m0;
@@ -417,7 +418,8 @@ public:
     /// here, while e.g. `ColumnString::getDataAt` can), because the packing copies 8 bytes at a
     /// time.
     template <typename Resolver, typename KeyHolder, typename HashProvider, typename Func>
-    static auto ALWAYS_INLINE dispatchOnKeyClass(Resolver && resolver, KeyHolder && key_holder, HashProvider && hash_of, Func && func)
+    static auto ALWAYS_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW dispatchOnKeyClass(
+        Resolver && resolver, KeyHolder && key_holder, HashProvider && hash_of, Func && func)
     {
         const auto & x = keyHolderGetKey(key_holder);
         const size_t sz = x.size();
@@ -454,9 +456,9 @@ public:
                 {
                     memcpy(&n[0], p, 8);
                     if constexpr (std::endian::native == std::endian::little)
-                        n[0] &= -1ULL >> s;
+                        n[0] &= ~0ULL >> s;
                     else
-                        n[0] &= -1ULL << s;
+                        n[0] &= ~0ULL << s;
                 }
                 else
                 {
@@ -534,7 +536,7 @@ public:
     /// allows that - a `ColumnString` / `ColumnFixedString` data slice, or an arena key holder -
     /// and never a `std::string` or a lone unpadded buffer. Every caller already satisfies it by
     /// construction: they hash exactly the keys they then `emplace` or `find` in the same table.
-    size_t ALWAYS_INLINE hash(const Key & x) const
+    [[nodiscard]] size_t ALWAYS_INLINE hash(const Key & x) const
     {
         return dispatchOnKeyClass(
             [&](auto, size_t) -> const auto & { return m0; },
@@ -647,7 +649,7 @@ public:
         return dispatchWithHash(*this, x, hash_value, FindCallable{});
     }
 
-    ConstLookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value) const
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value) const
     {
         return dispatchWithHash(*this, x, hash_value, FindCallable{});
     }
@@ -658,12 +660,12 @@ public:
         dispatchWithHash(*this, std::forward<KeyHolder>(key_holder), hash_value, PrefetchCallable{});
     }
 
-    ConstLookupResult ALWAYS_INLINE find(const Key & x) const
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key & x) const
     {
         return dispatch(*this, x, FindCallable{});
     }
 
-    bool ALWAYS_INLINE has(const Key & x) const
+    [[nodiscard]] bool ALWAYS_INLINE has(const Key & x) const
     {
         return dispatch(*this, x, FindCallable{}) != nullptr;
     }
@@ -697,7 +699,7 @@ public:
         return callable.erased;
     }
 
-    bool ALWAYS_INLINE has(const Key & x, size_t hash_value) const
+    [[nodiscard]] bool ALWAYS_INLINE has(const Key & x, size_t hash_value) const
     {
         return dispatchWithHash(*this, x, hash_value, FindCallable{}) != nullptr;
     }
@@ -746,11 +748,11 @@ public:
         ms.readText(rb);
     }
 
-    size_t size() const { return m0.size() + m1.size() + m2.size() + m3.size() + ms.size(); }
+    [[nodiscard]] size_t size() const { return m0.size() + m1.size() + m2.size() + m3.size() + ms.size(); }
 
-    bool empty() const { return m0.empty() && m1.empty() && m2.empty() && m3.empty() && ms.empty(); }
+    [[nodiscard]] bool empty() const { return m0.empty() && m1.empty() && m2.empty() && m3.empty() && ms.empty(); }
 
-    size_t getBufferSizeInBytes() const
+    [[nodiscard]] size_t getBufferSizeInBytes() const
     {
         return m0.getBufferSizeInBytes() + m1.getBufferSizeInBytes() + m2.getBufferSizeInBytes() + m3.getBufferSizeInBytes()
             + ms.getBufferSizeInBytes();

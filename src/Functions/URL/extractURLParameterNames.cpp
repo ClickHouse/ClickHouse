@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionTokens.h>
+#include <base/find_symbols.h>
 
 namespace DB
 {

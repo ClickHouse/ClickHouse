@@ -1,4 +1,5 @@
 #include <Core/BaseSettings.h>
+#include <Formats/ParseError.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/FieldVisitorToString.h>
@@ -115,7 +116,7 @@ String BaseSettingsHelpers::formatValueForErrorMessage(const Field & value)
 
 String BaseSettingsHelpers::formatValueForErrorMessage(String str)
 {
-    maskURIPassword(&str);
+    maskURIPassword(str);
     return str;
 }
 
@@ -144,6 +145,15 @@ void BaseSettingsHelpers::warningSettingNotFound(std::string_view name)
 
         unknown_settings_warning_logged = true;
     }
+}
+
+bool BaseSettingsHelpers::skipInvalidSettingValue(std::string_view name, const Exception & e)
+{
+    if (e.code() != ErrorCodes::BAD_ARGUMENTS && !isParseError(e.code()))
+        return false;
+
+    LOG_WARNING(getLogger("Settings"), "Cannot parse the value of setting `{}`, skipping it: {}", name, e.message());
+    return true;
 }
 
 void BaseSettingsHelpers::flushWarnings()

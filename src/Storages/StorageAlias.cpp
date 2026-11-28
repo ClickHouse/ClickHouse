@@ -23,6 +23,7 @@
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB
@@ -38,6 +39,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -245,6 +247,8 @@ public:
 
         auto insert_context = Context::createCopy(getContext());
         insert_context->makeQueryContext();
+        /// A part of the outer query: plan it from the same snapshot.
+        insert_context->shareQueryMaxThreadsSnapshot(*getContext());
         if (getContext()->hasQueryContext())
             insert_context->setQueryAccessInfo(getContext()->getQueryContext()->getQueryAccessInfoPtr());
         addInterpreterContext(insert_context);
@@ -503,6 +507,18 @@ bool StorageAlias::optimize(
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::OPTIMIZE});
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    if (deduplicate)
+    {
+        const auto & columns = target_metadata->getColumns();
+        local_context->checkAccess(
+            AccessType::SELECT,
+            target_database,
+            target_table,
+            columns.getColumnNamesForSelectAccessCheck(
+                deduplicate_by_columns.empty() ? columns.getNamesOfPhysical() : deduplicate_by_columns,
+                local_context,
+                StorageID(target_database, target_table)));
+    }
     return target_storage->optimize(query, target_metadata, partition, final, deduplicate,
                                     deduplicate_by_columns, cleanup, local_context);
 }
@@ -553,6 +569,30 @@ QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands,
     return pipeline;
 }
 
+bool StorageAlias::hasUniqueKey() const
+{
+    /// A lazily loaded target reports no keys until it is loaded.
+    auto target = tryGetTargetTable();
+    return target && resolveStorageProxyLoading(target)->hasUniqueKey();
+}
+
+void StorageAlias::deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr local_context)
+{
+    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
+    /// The caller refused a Replicated database for the alias's own database, not for the target's.
+    if (DatabaseCatalog::instance().getDatabase(target_storage->getStorageID().database_name)->shouldReplicateQuery(local_context, query_ptr))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "DELETE on UNIQUE KEY tables is not supported inside a Replicated database");
+
+    /// The caller locks the alias, not the target. A lazy target is locked both as the catalog holds it and as loaded.
+    const auto & settings = local_context->getSettingsRef();
+    auto lock = target_storage->lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+    auto loaded_target = resolveStorageProxyLoading(target_storage);
+    auto loaded_lock = loaded_target->lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+
+    loaded_target->deleteByUniqueKey(query_ptr, local_context);
+}
+
 CancellationCode StorageAlias::killMutation(const String & mutation_id)
 {
     return getTargetTable()->killMutation(mutation_id);
@@ -583,7 +623,7 @@ struct AliasCheckTasks : IStorage::DataValidationTasksBase
         chassert(inner);
     }
 
-    size_t size() const override { return inner->size(); }
+    [[nodiscard]] size_t size() const override { return inner->size(); }
 };
 
 }
