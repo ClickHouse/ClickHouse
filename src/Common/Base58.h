@@ -14,10 +14,19 @@ namespace DB
 /// time, so they accept an optional `check_cancellation` callback that is invoked periodically;
 /// it is expected to throw if the query has been cancelled or exceeded its time limit.
 ///
+/// A caller converting many values can pass `shared_work_since_check` to have the work counted
+/// across them: a value that completes well within one interval reaches no check of its own, so a
+/// count that restarts at every value leaves a long run of small values uninterruptible.
+///
 /// `dst` also holds the conversion's intermediate state: it must have room for
 /// `2 * src_length + 1` bytes to encode and `src_length` bytes to decode.
-size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation = {});
-std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation = {});
+///
+/// The work is counted in (input element, accumulator element) pairs, and `check_cancellation` is
+/// invoked once per `BASE58_WORK_PER_CANCELLATION_CHECK` of them.
+constexpr size_t BASE58_WORK_PER_CANCELLATION_CHECK = 1ULL << 20;
+
+size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation = {}, size_t * shared_work_since_check = nullptr);
+std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation = {}, size_t * shared_work_since_check = nullptr);
 
 /// Maximum base58-encoded lengths for fixed-size inputs.
 /// A 32-byte value uses 9 intermediate digits of radix 58^5, producing at most
@@ -38,7 +47,18 @@ constexpr size_t maxBase58EncodedLength(size_t body_length)
 static_assert(maxBase58EncodedLength(32) == BASE58_ENCODED_32_LEN);
 static_assert(maxBase58EncodedLength(64) == BASE58_ENCODED_64_LEN);
 
+/// The fixed-size encoders take no callback: one value is a small constant amount of work. A caller
+/// converting many of them charges `base58FixedSizeEncodeWork` per value to the same count the generic
+/// conversion uses, and invokes the callback itself.
 size_t encodeBase58_32(const UInt8 * src, UInt8 * dst);
 size_t encodeBase58_64(const UInt8 * src, UInt8 * dst);
+
+/// The work of encoding `src_length` bytes, in the units of `BASE58_WORK_PER_CANCELLATION_CHECK`: every
+/// input byte meets, on average, half of the final digits. It matches what `encodeBase58` counts for a
+/// value of the same length.
+constexpr size_t base58FixedSizeEncodeWork(size_t src_length)
+{
+    return src_length * maxBase58EncodedLength(src_length) / 2;
+}
 
 }

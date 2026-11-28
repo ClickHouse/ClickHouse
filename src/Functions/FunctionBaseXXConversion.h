@@ -42,7 +42,7 @@ struct BaseXXEncode
     static constexpr size_t default_max_input_size = Traits::max_input_size;
 
     template <bool /* with_size_optimization */>
-    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t, size_t max_input_size, const std::function<void()> & check_cancellation)
+    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t, size_t max_input_size, const std::function<void()> & check_cancellation, size_t & work_since_check)
     {
         const ColumnString::Offsets & src_offsets = src_column.getOffsets();
 
@@ -82,7 +82,7 @@ struct BaseXXEncode
         {
             size_t current_src_offset = src_offsets[row];
             size_t src_length = current_src_offset - prev_src_offset;
-            size_t encoded_size = Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset], check_cancellation);
+            size_t encoded_size = Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset], check_cancellation, work_since_check);
             prev_src_offset = current_src_offset;
             current_dst_offset += encoded_size;
             dst_offsets[row] = current_dst_offset;
@@ -92,7 +92,7 @@ struct BaseXXEncode
     }
 
     template <bool /* with_size_optimization */>
-    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t, size_t max_input_size, const std::function<void()> & check_cancellation)
+    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t, size_t max_input_size, const std::function<void()> & check_cancellation, size_t & work_since_check)
     {
         size_t const N = src_column.getN();
 
@@ -118,7 +118,7 @@ struct BaseXXEncode
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            size_t encoded_size = Traits::perform({&src[row * N], N}, &dst[current_dst_offset], check_cancellation);
+            size_t encoded_size = Traits::perform({&src[row * N], N}, &dst[current_dst_offset], check_cancellation, work_since_check);
             current_dst_offset += encoded_size;
             dst_offsets[row] = current_dst_offset;
         }
@@ -145,7 +145,7 @@ struct BaseXXDecode
     static constexpr size_t default_max_input_size = Traits::max_input_size;
 
     template <bool with_size_optimization>
-    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size, size_t max_input_size, const std::function<void()> & check_cancellation)
+    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size, size_t max_input_size, const std::function<void()> & check_cancellation, size_t & work_since_check)
     {
         const ColumnString::Offsets & src_offsets = src_column.getOffsets();
 
@@ -213,8 +213,8 @@ struct BaseXXDecode
             }
             std::optional<size_t> decoded_size = [&]{
                 if constexpr (with_size_optimization)
-                    return Traits::performWithSizeHint({&src[prev_src_offset], src_length}, &dst[current_dst_offset], expected_size, check_cancellation);
-                return Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset], check_cancellation);
+                    return Traits::performWithSizeHint({&src[prev_src_offset], src_length}, &dst[current_dst_offset], expected_size, check_cancellation, work_since_check);
+                return Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset], check_cancellation, work_since_check);
             }();
             if (!decoded_size)
             {
@@ -237,7 +237,7 @@ struct BaseXXDecode
     }
 
     template <bool with_size_optimization>
-    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size, size_t max_input_size, const std::function<void()> & check_cancellation)
+    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size, size_t max_input_size, const std::function<void()> & check_cancellation, size_t & work_since_check)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
@@ -277,8 +277,8 @@ struct BaseXXDecode
         {
             std::optional<size_t> decoded_size = [&]{
                 if constexpr (with_size_optimization)
-                    return Traits::performWithSizeHint({&src[row * N], N}, &dst[current_dst_offset], expected_size, check_cancellation);
-                return Traits::perform({&src[row * N], N}, &dst[current_dst_offset], check_cancellation);
+                    return Traits::performWithSizeHint({&src[row * N], N}, &dst[current_dst_offset], expected_size, check_cancellation, work_since_check);
+                return Traits::perform({&src[row * N], N}, &dst[current_dst_offset], check_cancellation, work_since_check);
             }();
             if (!decoded_size)
             {
@@ -361,6 +361,10 @@ public:
                     throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
             };
 
+        /// One count for the whole block: it spans every value converted below, so values individually
+        /// too small to reach a check still add up to one.
+        size_t work_since_check = 0;
+
         size_t expected_size = 0;
         if constexpr (has_size_optimization)
         {
@@ -380,13 +384,13 @@ public:
             if constexpr (has_size_optimization)
             {
                 if (expected_size > 0)
-                    Func::template processString<true>(*col_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation);
+                    Func::template processString<true>(*col_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation, work_since_check);
                 else
-                    Func::template processString<false>(*col_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation);
+                    Func::template processString<false>(*col_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation, work_since_check);
             }
             else
             {
-                Func::template processString<false>(*col_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation);
+                Func::template processString<false>(*col_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation, work_since_check);
             }
             return col_res;
         }
@@ -396,13 +400,13 @@ public:
             if constexpr (has_size_optimization)
             {
                 if (expected_size > 0)
-                    Func::template processFixedString<true>(*col_fixed_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation);
+                    Func::template processFixedString<true>(*col_fixed_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation, work_since_check);
                 else
-                    Func::template processFixedString<false>(*col_fixed_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation);
+                    Func::template processFixedString<false>(*col_fixed_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation, work_since_check);
             }
             else
             {
-                Func::template processFixedString<false>(*col_fixed_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation);
+                Func::template processFixedString<false>(*col_fixed_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation, work_since_check);
             }
             return col_res;
         }

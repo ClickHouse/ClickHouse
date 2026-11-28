@@ -38,7 +38,7 @@ struct Base64EncodeTraits
     }
 
     /// Base64 conversion is linear in the input length, so the cancellation callback is unused.
-    static size_t perform(std::string_view src, UInt8 * dst, const std::function<void()> & = {})
+    static size_t perform(std::string_view src, UInt8 * dst, const std::function<void()> &, size_t &)
     {
         /// simdutf emits the base64url alphabet ('-' and '_') without padding for the URL variant directly.
         constexpr auto options = (variant == Base64Variant::URL) ? simdutf::base64_url : simdutf::base64_default;
@@ -68,7 +68,7 @@ struct Base64DecodeTraits
     }
 
     /// Base64 conversion is linear in the input length, so the cancellation callback is unused.
-    static std::optional<size_t> perform(std::string_view src, UInt8 * dst, const std::function<void()> & = {})
+    static std::optional<size_t> perform(std::string_view src, UInt8 * dst, const std::function<void()> &, size_t &)
     {
         /// The URL variant decodes the standard/base64url hybrid alphabet: the previous implementation only
         /// translated '-' and '_' before decoding and left '+' and '/' untouched, so it accepted both alphabets
