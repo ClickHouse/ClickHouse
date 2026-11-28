@@ -18,6 +18,10 @@ public:
         size_t max_joined_block_bytes = 0;
 
         size_t avg_joined_bytes_per_row = 0;
+        /// The dictionary values of `LowCardinality` right columns, not in `avg_joined_bytes_per_row`: a chunk copies at
+        /// most `joined_dictionary_bytes` of them, and at most `joined_dictionary_bytes_per_row` per row.
+        size_t joined_dictionary_bytes = 0;
+        size_t joined_dictionary_bytes_per_row = 0;
 
         bool need_filter = false;
         bool is_join_get = false;
@@ -62,6 +66,7 @@ private:
     size_t next_matched_rows_it = 0;
     size_t next_row_ref = 0;
     size_t num_joined_rows = 0;
+    size_t copied_right_keys_bytes_per_row = 0;
     std::optional<size_t> matched_right_rows;
 
     struct GenerateCurrentRowState

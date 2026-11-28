@@ -1,9 +1,12 @@
 #include <Interpreters/RowRefs.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
@@ -26,6 +29,7 @@
 #include <algorithm>
 #include <limits>
 #include <mutex>
+#include <unordered_map>
 
 
 namespace DB
@@ -358,6 +362,86 @@ void StoredColumnsIndex::invalidateEmitTable()
     ++blocks_generation;
 }
 
+namespace
+{
+
+/// Bytes of a column's rows, a `LowCardinality` counting its indexes, and of one dictionary value per index.
+struct EmitByteSize
+{
+    size_t rows = 0;
+    size_t dictionary_values = 0;
+};
+
+/// The dictionary values `indexes` indexes can point to, each counted once.
+size_t getDictionaryValuesBytes(const IColumnUnique & dictionary, size_t indexes)
+{
+    const size_t values = dictionary.size();
+    return values ? dictionary.byteSize() / values * std::min(values, indexes) : 0;
+}
+
+/// Calls `on_dictionary(dictionary, indexes)` for every `LowCardinality` in `column`.
+template <typename OnDictionary>
+EmitByteSize getEmitByteSize(const IColumn & column, OnDictionary & on_dictionary)
+{
+    if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
+    {
+        const IColumnUnique & dictionary = low_cardinality->getDictionary();
+        on_dictionary(dictionary, low_cardinality->size());
+        return {
+            .rows = low_cardinality->getIndexes().byteSize(),
+            .dictionary_values = dictionary.byteSize() / std::max<size_t>(1, dictionary.size()) * low_cardinality->size()};
+    }
+
+    if (const auto * sparse = typeid_cast<const ColumnSparse *>(&column))
+    {
+        /// Row 0 of the values is the default, the other rows are the non-default rows.
+        const IColumn & sparse_values = sparse->getValuesColumn();
+        const size_t values_bytes = getEmitByteSize(sparse_values, on_dictionary).rows;
+        const size_t default_bytes = std::min(values_bytes, sparse_values.byteSizeAt(0));
+        return {.rows = values_bytes - default_bytes + default_bytes * sparse->getNumberOfDefaultRows()};
+    }
+
+    const IColumn * values = nullptr;
+    if (const auto * replicated = typeid_cast<const ColumnReplicated *>(&column))
+        values = replicated->getNestedColumn().get();
+    else if (const auto * const_column = typeid_cast<const ColumnConst *>(&column))
+        values = &const_column->getDataColumn();
+    else
+    {
+        const size_t bytes = column.byteSize();
+        size_t subcolumns_bytes = 0;
+        EmitByteSize subcolumns_size;
+        column.forEachSubcolumn(
+            [&](const auto & subcolumn)
+            {
+                subcolumns_bytes += subcolumn->byteSize();
+                const EmitByteSize subcolumn_size = getEmitByteSize(*subcolumn, on_dictionary);
+                subcolumns_size.rows += subcolumn_size.rows;
+                subcolumns_size.dictionary_values += subcolumn_size.dictionary_values;
+            });
+        subcolumns_size.rows += bytes - std::min(bytes, subcolumns_bytes);
+        return subcolumns_size;
+    }
+    if (values->empty())
+        return {.rows = column.byteSize()};
+
+    const EmitByteSize values_size = getEmitByteSize(*values, on_dictionary);
+    return {
+        .rows = values_size.rows / values->size() * column.size(),
+        .dictionary_values = values_size.dictionary_values / values->size() * column.size()};
+}
+
+}
+
+size_t getMaterializedByteSize(const IColumn & column)
+{
+    size_t dictionaries_bytes = 0;
+    auto on_dictionary = [&](const IColumnUnique & dictionary, size_t indexes)
+    { dictionaries_bytes += getDictionaryValuesBytes(dictionary, indexes); };
+    const size_t rows_bytes = getEmitByteSize(column, on_dictionary).rows;
+    return rows_bytes + dictionaries_bytes;
+}
+
 void StoredColumnsIndex::resolveEmitColumns(
     size_t saved_columns_count, const std::vector<EmitColumnRequest> & requests, std::vector<GatherColumn> & out_gather)
 {
@@ -394,6 +478,19 @@ void StoredColumnsIndex::resolveEmitColumns(
         {
             auto emit_column = std::make_unique<EmitColumn>();
             emit_column->request_type = request.type;
+            /// The share of the bytes held by the rows the block's selector keeps, as `StoredBlock::allocatedBytes` counts.
+            auto add_live_rows_bytes = [&](const StoredBlock & block, EmitByteSize size)
+            {
+                const size_t block_rows = block.blockRows();
+                if (block_rows == 0)
+                    return;
+                emit_column->emit_bytes += size.rows * block.selector.size() / block_rows;
+                emit_column->emit_dictionary_values_bytes += size.dictionary_values * block.selector.size() / block_rows;
+                emit_column->emit_rows += block.selector.size();
+            };
+            /// A shared dictionary is one dictionary for all the blocks pointing to it.
+            std::unordered_map<const IColumnUnique *, size_t> dictionary_indexes;
+            auto on_dictionary = [&](const IColumnUnique & dictionary, size_t indexes) { dictionary_indexes[&dictionary] += indexes; };
             /// Sized on the first replicated block; most columns never have one and skip it.
             VectorWithMemoryTracking<GatherRowRemap> remap;
             for (size_t b = 0; b < num_blocks; ++b)
@@ -413,6 +510,7 @@ void StoredColumnsIndex::resolveEmitColumns(
                     resolveRowStoreGatherNode(
                         emit_column->gather_root, request.type, *row_store, row_store->getFieldLayout(request.access.index), b, num_blocks);
                     emit_column->in_row_store = true;
+                    add_live_rows_bytes(*block, {.rows = row_store->fieldByteSize(request.access.index)});
                     continue;
                 }
 
@@ -443,7 +541,10 @@ void StoredColumnsIndex::resolveEmitColumns(
                             ErrorCodes::NOT_IMPLEMENTED,
                             "Too many deduplicated rows in right table block for HashJoin: {}",
                             column->size());
+                    add_live_rows_bytes(*block, getEmitByteSize(*replicated, on_dictionary));
                 }
+                else
+                    add_live_rows_bytes(*block, getEmitByteSize(*column, on_dictionary));
 
                 resolveGatherNode(emit_column->gather_root, request.type, *column, b, num_blocks);
             }
@@ -458,13 +559,19 @@ void StoredColumnsIndex::resolveEmitColumns(
             }
             if (!remap.empty())
                 emit_column->gather_remap_by_block = std::move(remap);
+            for (const auto & [dictionary, indexes] : dictionary_indexes)
+                emit_column->emit_dictionary_bytes += getDictionaryValuesBytes(*dictionary, indexes);
             emit_columns[pos] = std::move(emit_column);
         }
         const EmitColumn & emit_column = *emit_columns[pos];
         out_gather[pos]
             = {.node = &emit_column.gather_root,
                .remap_by_block = emit_column.gather_remap_by_block.empty() ? nullptr : emit_column.gather_remap_by_block.data(),
-               .in_row_store = emit_column.in_row_store};
+               .in_row_store = emit_column.in_row_store,
+               .emit_bytes = emit_column.emit_bytes,
+               .emit_rows = emit_column.emit_rows,
+               .emit_dictionary_bytes = emit_column.emit_dictionary_bytes,
+               .emit_dictionary_values_bytes = emit_column.emit_dictionary_values_bytes};
     }
 }
 

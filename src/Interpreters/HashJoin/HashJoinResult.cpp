@@ -405,6 +405,29 @@ static size_t getAvgBytesPerRow(const Block & block)
     return block.allocatedBytes() / std::max<size_t>(1, block.rows());
 }
 
+/// Per-row bytes of the right keys appendRightColumns copies from the left.
+static size_t getCopiedRightKeysBytesPerRow(const Block & block, const HashJoinResult::Properties & properties)
+{
+    const auto & table_join = properties.table_join;
+    if (properties.required_right_keys.columns() == 0 || block.rows() == 0)
+        return 0;
+
+    const bool is_asof_join = table_join.strictness() == JoinStrictness::Asof;
+    size_t bytes = 0;
+    for (size_t i = 0; i < properties.required_right_keys.columns(); ++i)
+    {
+        const auto & right_key = properties.required_right_keys.getByPosition(i);
+        if (is_asof_join && right_key.name == table_join.getOnlyClause().key_names_right.back())
+            continue;
+
+        const auto & source = block.getByName(properties.required_right_keys_sources[i]);
+        bytes += getMaterializedByteSize(*source.column);
+        if (right_key.type->isNullable() && !source.type->isNullable())
+            bytes += block.rows();
+    }
+    return bytes / block.rows();
+}
+
 void HashJoinResult::setNextBlock(ScatteredBlock && block)
 {
     next_scattered_block.emplace(std::move(block));
@@ -442,8 +465,25 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         limit_bytes_per_key = properties.max_joined_block_bytes;
     }
 
-    size_t avg_bytes_per_row = properties.avg_joined_bytes_per_row + getAvgBytesPerRow(scattered_block->getSourceBlock());
-    auto num_lhs_rows = numLeftRowsForNextBlock(next_row, offsets, properties.max_joined_block_rows, properties.max_joined_block_bytes, avg_bytes_per_row);
+    if (next_row == 0 && properties.max_joined_block_bytes && !offsets.empty() && offsets.back() > offsets.size())
+        copied_right_keys_bytes_per_row = getCopiedRightKeysBytesPerRow(scattered_block->getSourceBlock(), properties);
+
+    size_t avg_bytes_per_row = properties.avg_joined_bytes_per_row + getAvgBytesPerRow(scattered_block->getSourceBlock())
+        + copied_right_keys_bytes_per_row;
+    size_t max_joined_block_bytes = properties.max_joined_block_bytes;
+    /// Charge the dictionary values once per chunk or one per row, whichever allows the bigger chunk.
+    if (max_joined_block_bytes && properties.joined_dictionary_bytes_per_row)
+    {
+        const size_t rows_with_dictionaries = properties.joined_dictionary_bytes < max_joined_block_bytes
+            ? (max_joined_block_bytes - properties.joined_dictionary_bytes) / std::max<size_t>(1, avg_bytes_per_row)
+            : 0;
+        const size_t rows_with_values = max_joined_block_bytes / (avg_bytes_per_row + properties.joined_dictionary_bytes_per_row);
+        if (rows_with_dictionaries > rows_with_values)
+            max_joined_block_bytes -= properties.joined_dictionary_bytes;
+        else
+            avg_bytes_per_row += properties.joined_dictionary_bytes_per_row;
+    }
+    auto num_lhs_rows = numLeftRowsForNextBlock(next_row, offsets, properties.max_joined_block_rows, max_joined_block_bytes, avg_bytes_per_row);
 
     if (num_lhs_rows == 0 || (next_row == 0 && num_lhs_rows >= scattered_block->rows()))
     {

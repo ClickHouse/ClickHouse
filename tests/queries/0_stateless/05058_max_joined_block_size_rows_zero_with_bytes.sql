@@ -31,7 +31,7 @@ FROM
 )
 SETTINGS max_joined_block_size_rows = 20, max_joined_block_size_bytes = 4194304, join_algorithm = 'hash';
 
--- Same query with a byte budget the result does reach: with no row limit, the byte budget alone
+-- Same query with a byte budget the result does reach (it carries `v` and `v2`): with no row limit, the byte budget alone
 -- must still split the output. So the block size must land strictly between one left row's worth
 -- of matches (10) and the whole result (1000). `avg_bytes_per_row` is derived from container
 -- capacities, so the exact size within that range is build-dependent, not a query-level invariant.
@@ -42,5 +42,93 @@ FROM
     FROM (SELECT number % 10 AS k, rightPad(toString(number), 64, '_') AS v FROM numbers(100)) AS l
     INNER JOIN (SELECT number % 10 AS k, rightPad(toString(number), 64, '_') AS v2 FROM numbers(100)) AS r
     ON l.k = r.k
+    WHERE NOT ignore(v, v2)
 )
 SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 4500, join_algorithm = 'hash';
+
+-- A right side of 2 rows filtered out of one 84-row granule, matching every left row: the byte budget
+-- must come from the right rows the join emits (~450 bytes per output row here), not from the capacity
+-- and the granule-wide `LowCardinality` dictionaries of the stored block divided by 2 rows.
+DROP TABLE IF EXISTS t_05058_right;
+CREATE TABLE t_05058_right (k UInt8, f LowCardinality(String), s LowCardinality(String), t String) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_05058_right SELECT 1, if(number IN (1, 31), 'yes', 'no'), concat('m', toString(number % 30)), toString(number) FROM numbers(84);
+
+SELECT max(bs) > 4096, max(bs) < 131072, count()
+FROM
+(
+    SELECT blockSize() AS bs
+    FROM (SELECT 1 AS k, rightPad(toString(number), 256, 'x') AS v FROM numbers(65536)) AS l
+    INNER JOIN (SELECT k, s, t FROM t_05058_right WHERE f = 'yes') AS r USING (k)
+    WHERE NOT ignore(v, s, t)
+)
+SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 4194304, join_algorithm = 'hash';
+
+DROP TABLE t_05058_right;
+
+-- Two right keys copied from the same left key, which is not in the output: the output block holds
+-- both copies, so the byte budget must count both of them.
+SELECT max(bs * b) <= 65536, count()
+FROM
+(
+    SELECT blockSize() AS bs, byteSize(r.k1, r.k2) AS b
+    FROM (SELECT rightPad(toString(number % 2), 1024, 'x') AS k FROM numbers(4096)) AS l
+    INNER JOIN
+    (
+        SELECT rightPad(toString(number % 2), 1024, 'x') AS k1, rightPad(toString(number % 2), 1024, 'x') AS k2
+        FROM numbers(8)
+    ) AS r ON l.k = r.k1 AND l.k = r.k2
+)
+SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536, join_algorithm = 'hash';
+
+-- A right column stored as `ColumnReplicated` (from `ARRAY JOIN`) is emitted materialized, so the byte
+-- budget must count the full value of every emitted row, not the replicated column's compact size.
+SELECT max(bs * b) <= 65536, count()
+FROM
+(
+    SELECT blockSize() AS bs, byteSize(r.v) AS b
+    FROM (SELECT number % 128 AS k FROM numbers(4096)) AS l
+    INNER JOIN
+    (
+        SELECT number * 64 + n % 64 AS k, rightPad(toString(number), 1024, 'x') AS v
+        FROM numbers(2) ARRAY JOIN range(128) AS n
+    ) AS r ON l.k = r.k
+)
+SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536,
+         enable_lazy_columns_replication = 1, join_algorithm = 'hash';
+
+-- A replicated right column with a `LowCardinality` inside is emitted keeping it, so a row costs the index width and
+-- the dictionary is paid once: the byte budget must not split the output as if every row held the full string.
+SELECT max(bs) > 512, sum(b > 0)
+FROM
+(
+    SELECT blockSize() AS bs, byteSize(r.t, r.m) AS b
+    FROM (SELECT number % 128 AS k FROM numbers(4096)) AS l
+    INNER JOIN
+    (
+        SELECT number * 64 + n % 64 AS k,
+               tuple(toLowCardinality(rightPad(toString(number), 1024, 'x'))) AS t,
+               map(toLowCardinality(rightPad(toString(number), 1024, 'x')), number) AS m
+        FROM numbers(2) ARRAY JOIN range(128) AS n
+    ) AS r ON l.k = r.k
+)
+SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536,
+         enable_lazy_columns_replication = 1, join_algorithm = 'hash';
+
+-- Two parts with their own `LowCardinality` dictionaries of distinct 4 KiB values: the output copies every value it
+-- uses into its own dictionary, so the byte budget must count them.
+DROP TABLE IF EXISTS t_05058_lc_parts;
+CREATE TABLE t_05058_lc_parts (k UInt64, v LowCardinality(String)) ENGINE = MergeTree ORDER BY k;
+SYSTEM STOP MERGES t_05058_lc_parts;
+INSERT INTO t_05058_lc_parts SELECT number, concat('a', toString(number), repeat('x', 4096)) FROM numbers(1024);
+INSERT INTO t_05058_lc_parts SELECT number, concat('b', toString(number), repeat('y', 4096)) FROM numbers(1024);
+
+SELECT max(bs * b) <= 65536, count()
+FROM
+(
+    SELECT blockSize() AS bs, byteSize(r.v) AS b
+    FROM numbers(1024) AS l
+    INNER JOIN t_05058_lc_parts AS r ON l.number = r.k
+)
+SETTINGS max_block_size = 1024, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536, join_algorithm = 'hash';
+
+DROP TABLE t_05058_lc_parts;
