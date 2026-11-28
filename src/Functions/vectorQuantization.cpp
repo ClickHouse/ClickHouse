@@ -152,8 +152,7 @@ public:
 
         auto col_res = ColumnFloat32::create(input_rows_count);
         auto & res_data = col_res->getData();
-        for (size_t row = 0; row < input_rows_count; ++row)
-            res_data[row] = VectorQuantizer::distance(*query, reinterpret_cast<const char *>(&code_char[row * n]));
+        VectorQuantizer::distances(*query, reinterpret_cast<const char *>(code_char.data()), n, input_rows_count, res_data.data());
 
         return col_res;
     }
