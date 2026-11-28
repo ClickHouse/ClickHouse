@@ -19,9 +19,12 @@ import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupp
 
 `apache-airflow-providers-clickhousedb` 프로바이더는 Airflow를 ClickHouse에 연결하여 DAG의 일부로 쿼리를 실행하고, 테이블을 생성하고, 데이터를 적재할 수 있게 합니다. 이 프로바이더는 [`clickhouse-connect`](/ko/integrations/language-clients/python/index) 클라이언트를 사용해 [HTTP 인터페이스](/ko/concepts/features/interfaces/http)를 통해 연결되며, Airflow의 공통 SQL 프레임워크에서 ClickHouse를 사용할 수 있도록 제공합니다. 따라서 표준 `SQLExecuteQueryOperator`로 DDL, DML 및 분석 쿼리를 처리할 수 있으므로 ClickHouse 전용 연산자는 필요하지 않습니다.
 
-<div id="install-the-provider">
-  ## 프로바이더 설치
-</div>
+<Note>
+  커뮤니티 `airflow-clickhouse-plugin`을 이미 사용하고 있습니까? 이 플러그인은 다른 드라이버, 프로토콜, 포트를 사용합니다.
+  [마이그레이션 가이드](/ko/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin)를 따라 기존 DAG와 연결을 프로바이더로 이전하십시오.
+</Note>
+
+## 프로바이더 설치 {#install-the-provider}
 
 Airflow 스케줄러와 워커가 실행되는 환경에 해당 프로바이더를 설치합니다:
 
@@ -35,9 +38,7 @@ pip install apache-airflow-providers-clickhousedb
 pip install 'apache-airflow-providers-common-sql[pandas,polars]'
 ```
 
-<div id="create-a-clickhouse-connection">
-  ## ClickHouse 연결 생성
-</div>
+## ClickHouse 연결 생성 {#create-a-clickhouse-connection}
 
 이 프로바이더는 `clickhouse` 연결 유형을 등록합니다. Airflow UI의 **Admin &gt; Connections**에서 연결을 생성하거나, CLI 또는 환경 변수를 통해 정의할 수 있습니다.
 
@@ -53,26 +54,22 @@ UI에서 연결 유형으로 **ClickHouse**를 선택하고 다음 필드를 입
 
 [ClickHouse Cloud](/ko/products/cloud/getting-started/intro) 또는 TLS가 활성화된 자체 호스팅 클러스터를 사용하는 경우 **Extra** 필드에서 `secure`를 `true`로 설정하고 TLS 포트(`8443`)를 사용하십시오.
 
-<div id="extra-connection-options">
-  ### 추가 연결 옵션
-</div>
+### 추가 연결 옵션 {#extra-connection-options}
 
 프로바이더는 연결 폼에 추가 옵션을 전용 필드로 제공합니다. 연결을 UI 대신 URI, JSON 또는 환경 변수로 정의할 때는 이 옵션들을 `extra` JSON 객체의 키로 지정하십시오. 모두 선택 사항입니다:
 
-| `extra` 키              | UI 필드               | 기본값     | 설명                                                                                                                                  |
-| ---------------------- | ------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `secure`               | TLS 사용 (HTTPS)      | `false` | HTTPS/TLS를 활성화합니다.                                                                                                                  |
-| `verify`               | SSL 인증서 확인          | `true`  | `secure`가 `true`일 때 서버 TLS 인증서를 검증합니다. 자체 서명 인증서를 사용하는 경우 `false`로 설정하십시오.                                                          |
-| `connect_timeout`      | 연결 타임아웃 (초)         | `10`    | HTTP 연결 타임아웃(초)입니다.                                                                                                                 |
-| `send_receive_timeout` | 쿼리 타임아웃 (초)         | `300`   | 쿼리 읽기/쓰기 타임아웃(초)입니다. 오래 실행되는 분석용 쿼리에는 이 값을 늘리십시오.                                                                                   |
-| `compress`             | LZ4 압축 활성화          | `true`  | LZ4 결과 압축을 활성화합니다.                                                                                                                  |
-| `client_name`          | 클라이언트 이름            | (비어 있음) | ClickHouse `User-Agent`와 [`system.query_log`](/ko/reference/system-tables/query_log)의 `client_name` 컬럼에 있는 Airflow 버전 식별자에 덧붙는 레이블입니다. |
-| `session_settings`     | 세션 설정 (JSON)        | (비어 있음) | 연결의 모든 쿼리에 적용되는 [ClickHouse 세션 설정](/ko/reference/settings/session-settings)입니다. 예: `{"max_execution_time": 300, "max_threads": 8}`     |
-| `client_kwargs`        | 클라이언트 kwargs (JSON) | (비어 있음) | `clickhouse_connect.get_client()`에 전달되는 추가 키워드 인수입니다. 예를 들어 `http_proxy`가 있습니다.                                                     |
+| `extra` 키              | UI 필드               | 기본값     | 설명                                                                                                                                     |
+| ---------------------- | ------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `secure`               | TLS 사용 (HTTPS)      | `false` | HTTPS/TLS를 활성화합니다.                                                                                                                     |
+| `verify`               | SSL 인증서 확인          | `true`  | `secure`가 `true`일 때 서버 TLS 인증서를 검증합니다. 자체 서명 인증서를 사용하는 경우 `false`로 설정하십시오.                                                             |
+| `connect_timeout`      | 연결 타임아웃 (초)         | `10`    | HTTP 연결 타임아웃(초)입니다.                                                                                                                    |
+| `send_receive_timeout` | 쿼리 타임아웃 (초)         | `300`   | 쿼리 읽기/쓰기 타임아웃(초)입니다. 오래 실행되는 분석용 쿼리에는 이 값을 늘리십시오.                                                                                      |
+| `compress`             | LZ4 압축 활성화          | `true`  | LZ4 결과 압축을 활성화합니다.                                                                                                                     |
+| `client_name`          | 클라이언트 이름            | (비어 있음) | HTTP `User-Agent` 헤더의 Airflow 버전 식별자에 덧붙는 레이블로, [`system.query_log`](/ko/reference/system-tables/query_log)의 `http_user_agent` 컬럼에 기록됩니다. |
+| `session_settings`     | 세션 설정 (JSON)        | (비어 있음) | 연결의 모든 쿼리에 적용되는 [ClickHouse 세션 설정](/ko/reference/settings/session-settings)입니다. 예: `{"max_execution_time": 300, "max_threads": 8}`        |
+| `client_kwargs`        | 클라이언트 kwargs (JSON) | (비어 있음) | `clickhouse_connect.get_client()`에 전달되는 추가 키워드 인수입니다. 예를 들어 `http_proxy`가 있습니다.                                                        |
 
-<div id="define-a-connection-without-the-ui">
-  ### UI 없이 연결 정의하기
-</div>
+### UI 없이 연결 정의하기 {#define-a-connection-without-the-ui}
 
 환경 변수로 연결을 설정합니다. URI 형식에는 호스트, 자격 증명, 데이터베이스가 포함됩니다:
 
@@ -102,9 +99,7 @@ export AIRFLOW_CONN_CLICKHOUSE_DEFAULT='{
 
 모든 후크과 연산자는 별도로 지정하지 않는 한 connection ID `clickhouse_default`를 사용합니다.
 
-<div id="run-queries">
-  ## SQLExecuteQueryOperator로 쿼리 실행
-</div>
+## SQLExecuteQueryOperator로 쿼리 실행 {#run-queries}
 
 연산자의 `conn_id`를 ClickHouse 연결로 설정합니다. 다음 DAG는 테이블(table)을 생성하고, 행을 삽입한 뒤 다시 읽고, 마지막으로 테이블을 삭제합니다:
 
@@ -112,7 +107,7 @@ export AIRFLOW_CONN_CLICKHOUSE_DEFAULT='{
 from datetime import datetime
 
 from airflow import DAG
-from airflow.providers.common.sql.hooks.sql import fetch_all_handler
+from airflow.providers.common.sql.hooks.handlers import fetch_all_handler
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 
 CLICKHOUSE_CONN_ID = "clickhouse_default"
@@ -163,9 +158,7 @@ with DAG(
 
 쿼리 결과는 기본 `handler`(`fetch_all_handler`)를 사용해 가져옵니다. 전체 결과 집합이 아닌 다른 값을 반환하려면 다른 handler를 전달하십시오. 예를 들어 첫 번째 행만 반환하려면 `fetch_one_handler`를 사용합니다.
 
-<div id="target-a-different-database">
-  ### 작업별로 서로 다른 데이터베이스 지정하기
-</div>
+### 작업별로 서로 다른 데이터베이스 지정하기 {#target-a-different-database}
 
 하나의 connection이 클러스터를 가리키고 개별 작업이 서로 다른 데이터베이스를 쿼리하는 경우, 별도의 connection을 만들지 말고 `hook_params`를 통해 데이터베이스를 재정의하십시오:
 
@@ -178,9 +171,7 @@ read_rows = SQLExecuteQueryOperator(
 )
 ```
 
-<div id="use-the-hook-directly">
-  ## 후크 직접 사용하기
-</div>
+## 후크 직접 사용하기 {#use-the-hook-directly}
 
 대량 삽입, 스트리밍 또는 ClickHouse 전용 클라이언트 호출처럼 SQL 연산자로 처리하기 어려운 작업에는 Python 작업 내에서 `ClickHouseHook`을 사용하십시오.
 
@@ -206,9 +197,7 @@ client = hook.get_client()
 total = client.query("SELECT count() FROM events").result_rows[0][0]
 ```
 
-<div id="apply-session-settings">
-  ### 세션 설정 적용
-</div>
+### 세션 설정 적용 {#apply-session-settings}
 
 후크을 구성할 때 [세션 설정](/ko/reference/settings/session-settings)을 직접 전달하거나 연산자의 `hook_params`를 통해 전달하십시오. 생성자에 전달된 설정은 연결의 **Extra** 필드에 정의된 `session_settings`에 추가로 머지되며, 동일한 키가 충돌할 경우 생성자 값이 우선합니다:
 
@@ -219,10 +208,9 @@ hook = ClickHouseHook(
 )
 ```
 
-<div id="related-content">
-  ## 관련 콘텐츠
-</div>
+## 관련 콘텐츠 {#related-content}
 
+* [airflow-clickhouse-plugin에서 마이그레이션](/ko/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin)
 * [`clickhouse-connect` Python 클라이언트](/ko/integrations/language-clients/python/index)
 * [ClickHouse HTTP 인터페이스](/ko/concepts/features/interfaces/http)
 * [ClickHouse 세션 설정 참고 문서](/ko/reference/settings/session-settings)

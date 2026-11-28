@@ -6,8 +6,10 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TrivialMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeType.h>
 
 #include <Common/logger_useful.h>
+#include <Core/MergeSelectorAlgorithm.h>
 
 #include <limits>
 
@@ -27,11 +29,15 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 parts_to_throw_insert;
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
     extern const MergeTreeSettingsBool merge_selector_enable_heuristic_to_remove_small_parts_at_right;
+    extern const MergeTreeSettingsUInt64 merge_selector_min_age_to_disable_right_tail_heuristic;
     extern const MergeTreeSettingsBool merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once;
     extern const MergeTreeSettingsUInt64 merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent;
     extern const MergeTreeSettingsFloat merge_selector_base;
     extern const MergeTreeSettingsUInt64 min_parts_to_merge_at_once;
     extern const MergeTreeSettingsBool apply_patches_on_merge;
+    extern const MergeTreeSettingsUInt64 merge_selector_small_parts_threshold;
+    extern const MergeTreeSettingsUInt64 merge_selector_small_parts_min_count;
+    extern const MergeTreeSettingsUInt64 merge_selector_small_parts_max_age;
 }
 
 namespace
@@ -59,7 +65,7 @@ MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, Merg
     {
         const bool apply_patch_parts = ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
         PartsRange patch_parts = apply_patch_parts ? ctx.predicate.getPatchesToApplyOnMerge(parts) : PartsRange{};
-        return MergeSelectorChoice{std::move(parts), std::move(patch_parts), merge_type};
+        return MergeSelectorChoice{std::move(parts), std::move(patch_parts), merge_type, MergeCoverage::PartitionSegment};
     };
 
     MergeSelectorChoices choices;
@@ -125,6 +131,8 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
     simple_merge_settings.window_size = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_window_size];
     simple_merge_settings.max_parts_to_merge_at_once = ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once];
     simple_merge_settings.enable_heuristic_to_remove_small_parts_at_right = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_enable_heuristic_to_remove_small_parts_at_right];
+    simple_merge_settings.merge_selector_min_age_to_disable_right_tail_heuristic
+        = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_min_age_to_disable_right_tail_heuristic];
     simple_merge_settings.base = static_cast<double>(ctx.merge_tree_settings[MergeTreeSetting::merge_selector_base]);
     simple_merge_settings.min_parts_to_merge_at_once = ctx.merge_tree_settings[MergeTreeSetting::min_parts_to_merge_at_once];
 
@@ -133,13 +141,22 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
     simple_merge_settings.parts_to_throw_insert = ctx.merge_tree_settings[MergeTreeSetting::parts_to_throw_insert];
     simple_merge_settings.partitions_stats = &ctx.partitions_stats;
 
+    simple_merge_settings.small_parts_threshold = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_small_parts_threshold];
+    simple_merge_settings.small_parts_min_count = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_small_parts_min_count];
+    simple_merge_settings.small_parts_max_age = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_small_parts_max_age];
+
     if (!ctx.merge_tree_settings[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
         simple_merge_settings.min_age_to_force_merge = ctx.merge_tree_settings[MergeTreeSetting::min_age_to_force_merge_seconds];
 
     simple_merge_settings.min_partition_age_to_force_merge = ctx.merge_tree_settings[MergeTreeSetting::min_partition_age_to_force_merge_seconds];
 
     if (ctx.aggressive)
+    {
         simple_merge_settings.base = 1;
+        /// Aggressive selection (`OPTIMIZE` without `FINAL`) is an explicit user request that ignores
+        /// part novelty, so the background anti-churn gate for fresh small parts must not apply to it.
+        simple_merge_settings.small_parts_min_count = 0;
+    }
 
     return simple_merge_settings;
 }

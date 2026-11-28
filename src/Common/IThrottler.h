@@ -14,17 +14,38 @@ class IThrottler : public Poco::Net::Throttler, public boost::noncopyable
 {
 public:
     /// Is throttler already accumulated some sleep time and throttling.
-    virtual bool isThrottling() const = 0;
+    [[nodiscard]] virtual bool isThrottling() const = 0;
 
     /// Returns the number of tokens available for use.
     /// NOTE: it might refill the bucket state, that is why it is not const.
     virtual Int64 getAvailable() = 0;
 
     /// Returns the maximum speed in tokens per second.
-    virtual UInt64 getMaxSpeed() const = 0;
+    [[nodiscard]] virtual UInt64 getMaxSpeed() const = 0;
 
     /// Returns the maximum burst size in tokens.
-    virtual UInt64 getMaxBurst() const = 0;
+    [[nodiscard]] virtual UInt64 getMaxBurst() const = 0;
+
+    /// Charge `amount` tokens for the data that was copied from the OS page cache,
+    /// i.e. without performing any block device I/O.
+    /// Throttlers that exist to limit the bandwidth of a block device ignore such reads,
+    /// all the others account them as usual.
+    virtual bool throttleOSPageCacheRead(size_t amount, size_t max_block_ns)
+    {
+        return throttle(amount, max_block_ns);
+    }
+
+    bool throttleOSPageCacheRead(size_t amount)
+    {
+        return throttleOSPageCacheRead(amount, unlimited_block_ns);
+    }
+
+    /// Whether `throttleOSPageCacheRead` may differ from `throttle`, i.e. some throttler ignores
+    /// the reads served from the OS page cache. Otherwise, there is no point in detecting such reads.
+    [[nodiscard]] virtual bool ignoresOSPageCacheReads() const
+    {
+        return false;
+    }
 };
 
 using ThrottlerPtr = std::shared_ptr<IThrottler>;

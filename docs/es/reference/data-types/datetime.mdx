@@ -21,23 +21,19 @@ Rango de valores admitido: [1970-01-01 00:00:00, 2106-02-07 06:28:15].
 
 Resolución: 1 segundo.
 
-<div id="speed">
-  ## Velocidad
-</div>
+## Velocidad {#speed}
 
 El tipo de dato `Date` es más rápido que `DateTime` en *la mayoría* de los casos.
 
 El tipo `Date` requiere 2 bytes de almacenamiento, mientras que `DateTime` requiere 4. Sin embargo, durante la compresión, la diferencia de tamaño entre `Date` y `DateTime` se vuelve más significativa. Esto se debe a que los minutos y segundos de `DateTime` son menos compresibles. Filtrar y agregar por `Date` en lugar de `DateTime` también es más rápido.
 
-<div id="usage-remarks">
-  ## Observaciones de uso
-</div>
+## Observaciones de uso {#usage-remarks}
 
 El instante temporal se guarda como un [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), independientemente de la zona horaria o del horario de verano. La zona horaria afecta a cómo se muestran en formato de texto los valores de tipo `DateTime` y a cómo se interpretan los valores especificados como cadenas (`'2020-01-01 05:00:01'`).
 
 En las tablas se almacena un Unix timestamp independiente de la zona horaria, y la zona horaria se utiliza para convertirlo a formato de texto o viceversa durante la importación/exportación de datos, o para realizar cálculos de calendario sobre los valores (por ejemplo, las funciones `toDate`, `toHour`, etc.). La zona horaria no se almacena en las filas de la tabla (ni en el conjunto de resultados), sino en los metadatos de la columna.
 
-Puede encontrar una lista de las zonas horarias compatibles en la [IANA Time Zone Database](https://www.iana.org/time-zones), y también puede consultarla con `SELECT * FROM system.time_zones`. [La lista](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) también está disponible en Wikipedia.
+Los nombres de zona horaria compatibles son exactamente los que enumera `SELECT * FROM system.time_zones`: los de la [IANA Time Zone Database](https://www.iana.org/time-zones) que se distribuye con el servidor, de modo que los resultados no dependen de la base de datos del propio host. [La lista](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) también está disponible en Wikipedia. También se acepta un desplazamiento fijo respecto de UTC, escrito como `Fixed/UTC±HH:MM:SS`, por ejemplo, `Fixed/UTC+05:30:00`; este es el tipo de nombre que se obtiene al leer una columna de marcas de tiempo de Arrow u ORC con una zona horaria de desplazamiento fijo. Se rechaza cualquier otro nombre.
 
 Puede establecer explícitamente una zona horaria para las columnas de tipo `DateTime` al crear una tabla. Ejemplo: `DateTime('UTC')`. Si no se establece la zona horaria, ClickHouse usa el valor del parámetro [timezone](/es/reference/settings/server-settings/settings/other#timezone) en la configuración del servidor o en la configuración del sistema operativo en el momento en que se inicia el servidor de ClickHouse.
 
@@ -47,9 +43,7 @@ ClickHouse muestra los valores según el valor de la configuración [date&#95;ti
 
 Al insertar datos en ClickHouse, puede usar diferentes formatos de cadenas de fecha y hora, según el valor de la configuración [date&#95;time&#95;input&#95;format](/es/reference/settings/formats/date-time#date_time_input_format).
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples}
 
 **1.** Crear una tabla con una columna de tipo `DateTime` e insertar datos en ella:
 
@@ -135,9 +129,7 @@ FROM dt
 
 Dado que la conversión de zona horaria solo cambia los metadatos, la operación no tiene coste computacional.
 
-<div id="limitations-on-time-zones-support">
-  ## Limitaciones en la compatibilidad con zonas horarias
-</div>
+## Limitaciones en la compatibilidad con zonas horarias {#limitations-on-time-zones-support}
 
 Es posible que algunas zonas horarias no sean totalmente compatibles. Hay algunos casos:
 
@@ -151,9 +143,7 @@ Existe un problema similar en la estación antártica Casey en 2010. Retrasaron 
 
 Desplazamientos horarios de varios días. Algunas islas del Pacífico cambiaron el desfase de su zona horaria de UTC+14 a UTC-12. Esto no supone ningún problema, pero pueden producirse algunas imprecisiones si realiza cálculos con su zona horaria para momentos históricos en los días de la conversión.
 
-<div id="handling-daylight-saving-time-dst">
-  ## Gestión del horario de verano (DST)
-</div>
+## Gestión del horario de verano (DST) {#handling-daylight-saving-time-dst}
 
 El tipo DateTime de ClickHouse con zonas horarias puede mostrar un comportamiento inesperado durante las transiciones del horario de verano (DST), especialmente cuando:
 
@@ -194,9 +184,7 @@ SELECT '2023-03-26 01:30:00'::DateTime('Europe/London') AS time, time + toInterv
 
 En este caso, ClickHouse retrasa la hora inexistente `2023-03-26 01:30:00` hasta `2023-03-26 00:30:00`.
 
-<div id="see-also">
-  ## Véase también
-</div>
+## Véase también {#see-also}
 
 * [Funciones de conversión de tipos](/es/reference/functions/regular-functions/type-conversion-functions)
 * [Funciones para trabajar con fechas y horas](/es/reference/functions/regular-functions/date-time-functions)

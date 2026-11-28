@@ -6,8 +6,6 @@
 -- can produce such a boundary, and only for `DateTime64`: `Date` and `DateTime` start at 1970, and
 -- `Date32` literals go through a day-number parser that has no year-zero special case.
 
--- No `enable_analyzer` pin here: this test asserts on results only, so it covers the old AST
--- optimizer as well as the analyzer pass.
 SET session_timezone = 'UTC';
 -- The flaky check randomizes the setting under test.
 SET optimize_time_filter_with_preimage = 1;

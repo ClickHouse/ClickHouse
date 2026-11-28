@@ -35,17 +35,21 @@ CANNOT_EXTRACT_TABLE_STRUCTURE
 CANNOT_STAT
 --- server: control, a short name with the partition wildcard ---
 CANNOT_STAT
---- server: a name over NAME_MAX with archive syntax is not a filesystem error ---
-CANNOT_STAT
+--- server: a name over NAME_MAX with archive syntax is an unknown table ---
+UNKNOWN_TABLE
 --- server: control, a short name with archive syntax ---
-CANNOT_STAT
+UNKNOWN_TABLE
 --- local: a glob under an over-long directory matches nothing ---
 CANNOT_EXTRACT_TABLE_STRUCTURE
 --- local: control, a glob under a short absent directory ---
 CANNOT_EXTRACT_TABLE_STRUCTURE
---- local: a name over NAME_MAX with archive syntax is not a filesystem error ---
-CANNOT_STAT
+--- local: a name over NAME_MAX with archive syntax is an unknown table ---
+UNKNOWN_TABLE
 --- local: control, a short name with archive syntax ---
+UNKNOWN_TABLE
+--- local: file() on an archive over NAME_MAX with a member glob is not a filesystem error ---
+CANNOT_STAT
+--- local: control, file() on a short absent archive with a member glob ---
 CANNOT_STAT
 --- local: file() on a written-out path over NAME_MAX ---
 CANNOT_STAT

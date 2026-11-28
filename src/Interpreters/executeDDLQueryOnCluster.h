@@ -40,8 +40,12 @@ struct DDLQueryOnClusterParams
     AccessRightsElements access_to_check;
 
     /// An authorization check which must run after the standard cluster and query checks but before enqueueing.
-    /// It receives each default database which the cluster can use for an unqualified target table.
-    std::function<void(const String &)> additional_access_check;
+    /// It receives each default database which the cluster can use for an unqualified target table, and whether
+    /// an object missing on the initiator must be rejected. It need not be when
+    /// `distributed_ddl_use_initial_user_and_roles` is enabled and `distributed_ddl_entry_format_version` carries
+    /// the initiator's user: the workers then run the query as that user and roles and repeat the check against
+    /// their own objects.
+    std::function<void(const String & default_database, bool throw_if_unresolved)> additional_access_check;
 
     /// Use retries when creating nodes "query-0000000000", "query-0000000001", "query-0000000002" in ZooKeeper.
     ZooKeeperRetriesInfo retries_info;

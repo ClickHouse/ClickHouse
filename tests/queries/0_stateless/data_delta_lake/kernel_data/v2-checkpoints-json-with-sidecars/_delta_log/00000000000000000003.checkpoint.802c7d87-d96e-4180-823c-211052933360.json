@@ -1,0 +1,5 @@
+{"checkpointMetadata":{"version":3}}
+{"sidecar":{"path":"00000000000000000003.checkpoint.0000000001.0000000002.92a4d85f-fb4c-4954-9254-e39a23c5fa1b.parquet","sizeInBytes":9758,"modificationTime":1739329702443}}
+{"sidecar":{"path":"00000000000000000003.checkpoint.0000000002.0000000002.0d8dd173-c1d7-400b-bd6b-22b5982e6fb3.parquet","sizeInBytes":9746,"modificationTime":1739329702447}}
+{"protocol":{"minReaderVersion":3,"minWriterVersion":7,"readerFeatures":["v2Checkpoint"],"writerFeatures":["v2Checkpoint","appendOnly","invariants"]}}
+{"metaData":{"id":"f571bf08-452e-4155-9f52-f793e630c55c","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"long\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":[],"configuration":{"delta.checkpointPolicy":"v2","delta.checkpointInterval":"1"},"createdTime":1739329697356}}

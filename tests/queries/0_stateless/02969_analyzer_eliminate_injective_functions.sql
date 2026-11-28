@@ -1,4 +1,3 @@
-set enable_analyzer = 1;
 SET optimize_injective_functions_inside_uniq = 1;
 SET optimize_injective_functions_in_group_by = 1;
 SET optimize_aggregators_of_group_by_keys = 1;

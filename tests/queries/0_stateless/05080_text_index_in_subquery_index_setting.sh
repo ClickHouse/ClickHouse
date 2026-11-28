@@ -4,9 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-settings="--enable_analyzer=1"
-
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_text_index_in_setting;
     CREATE TABLE t_text_index_in_setting
     (
@@ -29,7 +27,7 @@ $CLICKHOUSE_CLIENT $settings -q "
 
 function index_consulted()
 {
-    $CLICKHOUSE_CLIENT $settings -q "
+    $CLICKHOUSE_CLIENT -q "
         SELECT count() FROM t_text_index_in_setting FINAL
         PREWHERE m['k'] IN (SELECT arrayJoin(['val0', 'val2', 'val4']))
         SETTINGS use_index_for_in_with_subqueries = $1, query_plan_optimize_lazy_final = 1,
@@ -46,7 +44,7 @@ echo "-- use_index_for_in_with_subqueries = 0: the index is left alone"
 index_consulted 0
 
 echo "-- and the answer is the same either way"
-$CLICKHOUSE_CLIENT $settings -q "SELECT count() FROM t_text_index_in_setting FINAL PREWHERE m['k'] IN (SELECT arrayJoin(['val0', 'val2', 'val4'])) SETTINGS use_index_for_in_with_subqueries = 1"
-$CLICKHOUSE_CLIENT $settings -q "SELECT count() FROM t_text_index_in_setting FINAL PREWHERE m['k'] IN (SELECT arrayJoin(['val0', 'val2', 'val4'])) SETTINGS use_index_for_in_with_subqueries = 0"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM t_text_index_in_setting FINAL PREWHERE m['k'] IN (SELECT arrayJoin(['val0', 'val2', 'val4'])) SETTINGS use_index_for_in_with_subqueries = 1"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM t_text_index_in_setting FINAL PREWHERE m['k'] IN (SELECT arrayJoin(['val0', 'val2', 'val4'])) SETTINGS use_index_for_in_with_subqueries = 0"
 
-$CLICKHOUSE_CLIENT $settings -q "DROP TABLE t_text_index_in_setting"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_text_index_in_setting"

@@ -124,7 +124,7 @@ public:
     /// Put one already-encoded key.
     void addEncoded(const std::string_view & encoded_key, UInt32 row_number);
 
-    UInt64 entriesAdded() const { return entries_added; }
+    [[nodiscard]] UInt64 entriesAdded() const { return entries_added; }
 
     /// Commit point: close the RocksDB writer (flushing the SST footer into
     /// the part-storage `WriteBuffer`), record the checksum in `out_checksums`,
@@ -144,7 +144,9 @@ private:
     std::unique_ptr<Impl> impl;
 
     IDataPartStorage & part_storage;
-    UInt64 entries_added = 0;
+    /// Both are read only from the `USE_ROCKSDB` paths; the stub build leaves them at their
+    /// initial value.
+    [[maybe_unused]] UInt64 entries_added = 0;
     [[maybe_unused]] bool finalized = false;
 };
 

@@ -12,34 +12,33 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
     distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0;
 
 SELECT '-- sum OVER (ORDER BY)';
-SELECT v, sum(v) OVER (ORDER BY v) AS s FROM t_window_dist ORDER BY v;
+SELECT v, sum(v) OVER (ORDER BY v) AS s FROM t_window_dist ORDER BY v SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- row_number OVER (ORDER BY)';
-SELECT v, row_number() OVER (ORDER BY v) AS rn FROM t_window_dist ORDER BY v;
+SELECT v, row_number() OVER (ORDER BY v) AS rn FROM t_window_dist ORDER BY v SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- rolling frame (ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)';
-SELECT v, sum(v) OVER (ORDER BY v ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS roll FROM t_window_dist ORDER BY v;
+SELECT v, sum(v) OVER (ORDER BY v ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS roll FROM t_window_dist ORDER BY v
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- sum OVER (PARTITION BY a ORDER BY v)';
-SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) FROM t_window_dist ORDER BY a, v;
+SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) FROM t_window_dist ORDER BY a, v SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- The empty window is the only shape with no sort below the WindowStep, so it exercises the plain
 -- gather (no order to maintain) rather than the sorted one.
 SELECT '-- sum OVER () (empty window)';
-SELECT v, sum(v) OVER () AS s FROM t_window_dist ORDER BY v;
+SELECT v, sum(v) OVER () AS s FROM t_window_dist ORDER BY v SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_window_dist;
 
--- Sanity check that deserializing a WindowStep picks the `window_creator` state variant for
--- CrossTab-family aggregates (cramersV, cramersVBiasCorrected, contingency, theilsU) rather than
--- falling back to the ordinary aggregation state variant. The non-window variant re-scans the whole
--- frame on every row, so it would not finish in reasonable time for this input size. The data comes
--- from a MergeTree table because ReadFromSystemNumbers is not serializable for remote execution.
+-- `theilsU` over a frame that starts at the partition start must stay fast under a distributed plan:
+-- recalculating the whole frame on every row would not finish in reasonable time for this input size.
+-- The data comes from a MergeTree table because ReadFromSystemNumbers is not serializable for remote execution.
 DROP TABLE IF EXISTS t_window_crosstab;
 CREATE TABLE t_window_crosstab (n UInt32) ENGINE = MergeTree ORDER BY n;
 INSERT INTO t_window_crosstab SELECT number FROM numbers(100000);
 
-SELECT '-- theilsU window variant under make_distributed_plan';
+SELECT '-- theilsU window function under make_distributed_plan';
 SELECT n, round(tu, 2)
 FROM
 (
@@ -47,6 +46,7 @@ FROM
     FROM t_window_crosstab
 )
 ORDER BY n
-LIMIT 1;
+LIMIT 1
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_window_crosstab;

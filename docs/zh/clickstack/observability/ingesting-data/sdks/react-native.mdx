@@ -1,0 +1,66 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/react-native
+description: '适用于 ClickHouse Observability 和自管理部署的 React Native 设置与配置。'
+title: 'React Native'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', '插桩']
+sidebarTitle: 'React Native'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+使用 OpenTelemetry 将 React Native 应用程序 JavaScript 层中的链路追踪数据发送至 ClickHouse Observability。
+
+<ClickStackIntegrates signals={['traces']} />
+
+## 设置 OpenTelemetry {#set-up-opentelemetry}
+
+请参考官方的 [OpenTelemetry React Native 演示](https://opentelemetry.io/docs/demo/services/react-native-app/)及其[插桩源代码](https://github.com/open-telemetry/opentelemetry-demo/tree/main/src/react-native-app)，初始化追踪并对网络请求进行插桩。
+
+该演示使用的是 OpenTelemetry JavaScript 软件包，而这些软件包并未明确声明支持 React Native。请验证它们与您的应用程序所用 React Native 及 OpenTelemetry 版本的兼容性。
+
+## 配置目标端 {#configure-destination}
+
+将演示应用中的本地导出器配置替换为下方的目标端配置，并在上游设置的跨度处理器中使用此导出器。导出器 URL 必须包含 `/v1/traces`。
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版服务" />
+
+    在您的服务中打开 **团队设置 → 数据 → Managed Telemetry**，复制 **OTLP HTTP 端点** 和 **API key**。请保留完整的 HTTPS 端点 (包括端口) ，并在末尾追加 `/v1/traces`：
+
+    ```javascript
+    import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+
+    const traceExporter = new OTLPTraceExporter({
+      url: 'https://YOUR_OTEL_ENDPOINT:4318/v1/traces',
+      headers: {
+        Authorization: 'Bearer YOUR_INGESTION_API_KEY',
+      },
+    });
+    ```
+  </Tab>
+
+  <Tab title="自管理">
+    使用采集器的 OTLP HTTP 端点和摄取 key。设备必须能够访问该采集器。有关采集器的设置，请参阅[使用 OpenTelemetry 摄取数据](/zh/clickstack/observability/ingesting-data/opentelemetry#sending-otel-data-self-configured)。
+
+    ```javascript
+    import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+
+    const traceExporter = new OTLPTraceExporter({
+      url: 'https://YOUR_COLLECTOR_HOST:4318/v1/traces',
+      headers: {
+        Authorization: 'YOUR_INGESTION_API_KEY',
+      },
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## 验证摄取 {#verify-ingestion}
+
+在设备或模拟器上运行您的应用程序并发起网络请求。在 ClickHouse Observability 中选择最近的时间范围，然后在 Traces 中找到您的应用程序的服务名称。
+
+有关插桩的详细信息以及 React Native 兼容性问题的解决方法，请参阅 [OpenTelemetry React Native 演示](https://opentelemetry.io/docs/demo/services/react-native-app/)。有关导出器选项，请参阅 [OpenTelemetry JavaScript 导出器文档](https://opentelemetry.io/docs/languages/js/exporters/)。

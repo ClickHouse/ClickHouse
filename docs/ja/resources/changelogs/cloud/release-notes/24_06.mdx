@@ -9,16 +9,12 @@ doc_type: 'changelog'
 
 v24.6 リリースにおける ClickHouse Cloud サービス向けの主な変更点です。
 
-<div id="backward-incompatible-change">
-  ## 後方互換性を持たない変更
-</div>
+## 後方互換性を持たない変更 {#backward-incompatible-change}
 
 * ストレージ `S3Queue` の `Ordered` モードにおける並列処理を見直しました。`s3queue_processing_threads_num` または `s3queue_total_shards_num` を使用していた場合、この PR は `Ordered` モードに対して後方互換性がありません。`s3queue_total_shards_num` は削除されました。従来は `s3queue_allow_experimental_sharded_mode` 配下でのみ使用できましたが、これは現在非推奨です。新しい設定 `s3queue_buckets` が追加されました。 [#64349](https://github.com/ClickHouse/ClickHouse/pull/64349) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * 新しい関数 `snowflakeIDToDateTime`、`snowflakeIDToDateTime64`、`dateTimeToSnowflakeID`、および `dateTime64ToSnowflakeID` が追加されました。既存の `snowflakeToDateTime`、`snowflakeToDateTime64`、`dateTimeToSnowflake`、`dateTime64ToSnowflake` とは異なり、これらの新しい関数は `generateSnowflakeID` と互換性があります。つまり、`generateSnowflakeID` で生成された Snowflake ID を受け取り、`generateSnowflakeID` と同じ型 (つまり `UInt64`) の Snowflake ID を生成します。さらに、新しい関数は `generateSnowflakeID` と同様、デフォルトで UNIX エポック (すなわち 1970-01-01) を使用します。必要に応じて、別のエポック、たとえば Twitter/X のエポックである 2010-11-04 (UNIX エポックから 1288834974657 ミリ秒) を渡すこともできます。古い conversion functions は非推奨であり、移行期間後に削除される予定です。それでも使用する場合は、設定 `allow_deprecated_snowflake_conversion_functions` を有効にしてください。 [#64948](https://github.com/ClickHouse/ClickHouse/pull/64948) ([Robert Schulze](https://github.com/rschu1ze)).
 
-<div id="new-feature">
-  ## 新機能
-</div>
+## 新機能 {#new-feature}
 
 * 空のタプルをサポート。 [#55061](https://github.com/ClickHouse/ClickHouse/pull/55061) ([Amos Bird](https://github.com/amosbird)).
 * Hilbert Curve のエンコード関数とデコード関数を追加。 [#60156](https://github.com/ClickHouse/ClickHouse/pull/60156) ([Artem Mustafin](https://github.com/Artemmm91)).
@@ -36,9 +32,7 @@ v24.6 リリースにおける ClickHouse Cloud サービス向けの主な変�
 * `system.query_log` に 2 つの追加カラム `used_privileges` と `missing_privileges` を導入。`used_privileges` にはクエリ実行中にチェックされた権限が格納され、`missing_privileges` には不足している必要な権限が格納されます。 [#64597](https://github.com/ClickHouse/ClickHouse/pull/64597) ([Alexey Katsman](https://github.com/alexkats)).
 * 有効にすると長い table (デフォルトでは 50 行) の末尾にカラム名を表示する setting `output_format_pretty_display_footer_column_names` を追加。表示対象となる最小行数のしきい値は `output_format_pretty_display_footer_column_names_min_rows` で制御されます。 [#65144](https://github.com/ClickHouse/ClickHouse/pull/65144) ([Shaun Struwig](https://github.com/Blargian)).
 
-<div id="performance-improvement">
-  ## パフォーマンス改善
-</div>
+## パフォーマンス改善 {#performance-improvement}
 
 * #60459 (24.5) で導入された CROSS JOIN のパフォーマンス低下を修正しました。#65243 (Nikita Taranov) 。
 * io&#95;uring の再送信の可視性を向上させました。プロファイルイベント IOUringSQEsResubmits の名称を IOUringSQEsResubmitsAsync に変更し、新たに IOUringSQEsResubmitsSync を追加しました。#63699 (Tomer Shafir) 。
@@ -68,9 +62,7 @@ v24.6 リリースにおける ClickHouse Cloud サービス向けの主な変�
 * Azure Blob Storage へのバックアップでサーバーサイドコピーを使用するよう、条件を更新しました。[#64518](https://github.com/ClickHouse/ClickHouse/pull/64518) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)) 。
 * 多数のスキップ索引を持つテーブルにおける垂直マージのメモリ使用量を最適化しました。[#64580](https://github.com/ClickHouse/ClickHouse/pull/64580) ([Anton Popov](https://github.com/CurtizJ)) 。
 
-<div id="improvement">
-  ## 改善
-</div>
+## 改善 {#improvement}
 
 * ClickHouse が CSV format で Tuples を処理・解釈する際の挙動を元に戻しました。この変更により、実質的に ClickHouse/ClickHouse#60994 は元に戻され、output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns、input&#95;format&#95;csv&#95;deserialize&#95;separate&#95;columns&#95;into&#95;tuple、input&#95;format&#95;csv&#95;try&#95;infer&#95;strings&#95;from&#95;quoted&#95;tuples という一部の設定でのみ利用可能になります。#65170 (Nikita Mikhaylov).
 * システムテーブルに対して `SHOW CREATE TABLE` を実行すると、そのテーブルがなぜ必要なのかを説明する、各テーブル固有の非常に便利なコメントが表示されるようになりました。[#63788](https://github.com/ClickHouse/ClickHouse/pull/63788) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
@@ -96,9 +88,7 @@ v24.6 リリースにおける ClickHouse Cloud サービス向けの主な変�
 * 未対応のストレージでは、materialized view であってもトランザクションを無効にしました。[#64918](https://github.com/ClickHouse/ClickHouse/pull/64918) ([alesapin](https://github.com/alesapin)).
 * 古いアナライザでの `QUALIFY` 句の使用を禁止しました。古いアナライザは `QUALIFY` を無視していたため、ミューテーションで予期しないデータ削除につながる可能性がありました。[#65356](https://github.com/ClickHouse/ClickHouse/pull/65356) ([Dmitry Novik](https://github.com/novikd)).
 
-<div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release">
-  ## バグ修正 (正式な安定版リリースにおけるユーザーに影響する不具合)
-</div>
+## バグ修正 (正式な安定版リリースにおけるユーザーに影響する不具合) {#bug-fix-user-visible-misbehavior-in-an-official-stable-release}
 
 * 「set」スキップ索引が IN および indexHint() で機能しない問題を修正しました。 #62083 (Michael Kolupaev).
 * テーブルで adaptive granularity を使用していない場合に、FINAL を使用したクエリで誤った結果が返される問題を修正しました。 #62432 (Duc Canh Le).
@@ -124,7 +114,7 @@ v24.6 リリースにおける ClickHouse Cloud サービス向けの主な変�
 * GROUP BY キーに定数 CTE がある分散クエリで発生する Cannot find column エラーを修正しました。 #64519 (Nikolai Kochetov).
 * フォーマッタが奇数文字数を生成し、末尾の文字が 0 の場合に、function formatDateTimeInJodaSyntax の出力が正しくなるよう修正しました。たとえば、SELECT formatDateTimeInJodaSyntax(toDate(&#39;2012-05-29&#39;), &#39;D&#39;) は、以前は 15 を返していましたが、現在は正しく 150 を返します。#64614 (LiuNeng)。
 * すでに -If コンビネータが使用されている場合は、集約の書き換えを行わないようにしました。 #64638 (Dmitry Novik).
-* float の型推論を修正 (バッファが小さい場合、つまり --max&#95;read&#95;buffer&#95;size 1 のとき) 。#64641 (Azat Khuzhin)。
+* float の型推論を修正 (バッファが小さい場合、つまり `--max_read_buffer_size` 1 のとき) 。#64641 (Azat Khuzhin)。
 * 式を含む有効期限 (TTL) が正常に動作しなくなる可能性がある不具合を修正しました。 #64694 (alesapin).
 * 常に true となる WHERE および PREWHERE 式が削除されてしまう問題を修正しました (新しいアナライザ向け) 。#64695 (Nikolai Kochetov) 。
 * startsWith、endsWith、match、multiSearchAny の結果でフィルタする際、トークンベースのテキスト索引 (ngrambf、full&#95;text) によってパートが過剰に除外される問題を修正しました。#64720 (Eduard Karacharov) 。

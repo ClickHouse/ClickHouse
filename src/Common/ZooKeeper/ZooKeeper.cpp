@@ -988,18 +988,15 @@ ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Resp
 
     if (check_session_valid)
     {
-        if (code != Coordination::Error::ZOK && !Coordination::isHardwareError(code)
-            && getFailedOpIndex(code, responses) == requests.size())
+        if (Coordination::isUserError(code) && getFailedOpIndex(code, responses) == requests.size())
         {
             reason = fmt::format("Session was killed: {}", requests_with_check_session.back()->getPath());
             impl->finalize(reason);
             code = Coordination::Error::ZSESSIONMOVED;
         }
         responses.pop_back();
-        /// For some reason, for hardware errors we set ZOK codes for all responses.
-        /// In other cases, if the multi-request status is not ZOK, then the last response status must indicate an error too
-        chassert(
-            code == Coordination::Error::ZOK || Coordination::isHardwareError(code) || responses.back()->error != Coordination::Error::ZOK);
+        /// Only a user error points at a failed operation, the last one is then failed too.
+        chassert(!Coordination::isUserError(code) || responses.back()->error != Coordination::Error::ZOK);
     }
 
     maybeSetSpanStatus(maybe_span, code);
@@ -1420,11 +1417,16 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
         if (!state->event.tryWait(1000))
             continue;
 
-        if (state->code == static_cast<int32_t>(Coordination::Error::ZNONODE))
+        /// Read the code once: every iteration issues a new `get` with the same callback, and a late response
+        /// of an earlier `get` may overwrite the code at any moment, e.g. with `ZNONODE` right after the watch
+        /// reported the deletion. Reading it twice could then pass the `ZNONODE` check and throw on the second read.
+        const auto code = static_cast<Coordination::Error>(state->code.load(std::memory_order_seq_cst));
+
+        if (code == Coordination::Error::ZNONODE)
             return true;
 
-        if (state->code)
-            throw KeeperException::fromPath(static_cast<Coordination::Error>(state->code.load(std::memory_order_seq_cst)), path);
+        if (code != Coordination::Error::ZOK)
+            throw KeeperException::fromPath(code, path);
 
         if (state->event_type == Coordination::DELETED)
             return true;
@@ -1775,6 +1777,38 @@ std::future<Coordination::ListResponse> ZooKeeper::asyncTryGetChildrenNoThrow(
     return future;
 }
 
+std::future<Coordination::ListWithOptionsResponse> ZooKeeper::asyncListWithOptions(
+    const std::string & path,
+    const Coordination::ListOptions & options)
+{
+    auto promise = std::make_shared<std::promise<Coordination::ListWithOptionsResponse>>();
+    auto future = promise->get_future();
+    auto callback = [promise, path](const Coordination::ListWithOptionsResponse & response) mutable
+    {
+        if (response.error != Coordination::Error::ZOK)
+            promise->set_exception(std::make_exception_ptr(KeeperException::fromPath(response.error, path)));
+        else
+            promise->set_value(response);
+    };
+    impl->listWithOptions(path, options, std::move(callback), {});
+    return future;
+}
+
+std::future<Coordination::ListWithOptionsResponse> ZooKeeper::asyncTryListWithOptionsNoThrow(
+    const std::string & path,
+    const Coordination::ListOptions & options,
+    Coordination::WatchCallbackPtrOrEventPtr watch_callback)
+{
+    auto promise = std::make_shared<std::promise<Coordination::ListWithOptionsResponse>>();
+    auto future = promise->get_future();
+    auto callback = [promise](const Coordination::ListWithOptionsResponse & response) mutable
+    {
+        promise->set_value(response);
+    };
+    impl->listWithOptions(path, options, std::move(callback), std::move(watch_callback));
+    return future;
+}
+
 std::future<Coordination::ListResponse>
 ZooKeeper::asyncTryGetChildren(const std::string & path, Coordination::ListRequestType list_request_type, bool with_stat, bool with_data)
 {
@@ -2106,6 +2140,26 @@ Coordination::RequestPtr makeListRecursiveRequest(const std::string & path, uint
     auto request = std::make_shared<Coordination::ZooKeeperListRecursiveRequest>();
     request->path = path;
     request->children_nodes_limit = children_nodes_limit;
+    return request;
+}
+
+Coordination::RequestPtr makeListWithOptionsRequest(
+    const std::string & path,
+    const Coordination::ListOptions & options,
+    Coordination::WatchCallbackPtrOrEventPtr watch)
+{
+    options.validate();
+    if (path.empty() || path[0] != '/')
+        throw Coordination::Exception::fromMessage(Coordination::Error::ZBADARGUMENTS, "Path must begin with /");
+    if (options.recursive && watch)
+        throw Coordination::Exception::fromMessage(Coordination::Error::ZBADARGUMENTS, "ListWithOptions does not support recursive watches");
+
+    auto request = std::make_shared<Coordination::ZooKeeperListWithOptionsRequest>();
+    request->path = path;
+    request->options_version = Coordination::requiredListOptionsVersion(options);
+    request->options = options;
+    request->watch_callback = watch;
+    request->has_watch = static_cast<bool>(watch);
     return request;
 }
 

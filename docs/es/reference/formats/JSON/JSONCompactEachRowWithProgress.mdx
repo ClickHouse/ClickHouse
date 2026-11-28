@@ -15,26 +15,34 @@ doc_type: 'reference'
 | ------- | ------ | ----- |
 | ✗       | ✔      |       |
 
-<div id="description">
-  ## Descripción
-</div>
+## Descripción {#description}
 
-Este formato combina la salida compacta fila por fila de JSONCompactEachRow con información de progreso
-en streaming.
-Produce los datos como objetos JSON independientes para los metadatos, las filas individuales, las actualizaciones de progreso,
-los totales y las excepciones. Los valores se representan en sus tipos nativos.
+Combina la salida compacta fila por fila de [`JSONCompactEachRow`](/es/reference/formats/JSON/JSONCompactEachRow) con información de progreso en streaming. ClickHouse emite cada evento como un objeto JSON independiente; los valores de las columnas conservan sus tipos JSON nativos.
 
-Características principales:
+El formato relacionado `JSONCompactStringsEachRowWithProgress` utiliza los mismos tipos de objeto de nivel superior, pero los valores de los campos se serializan como cadenas.
 
-* Produce primero los metadatos con los nombres y tipos de las columnas
-* Cada fila es un objeto JSON independiente con una clave &quot;row&quot; que contiene un array de valores
-* Incluye actualizaciones de progreso durante la ejecución de la consulta (como objetos `{"progress":...}`)
-* Admite totales y valores extremos
-* Los valores conservan sus tipos nativos (los números como números y las cadenas como cadenas)
+Comparte el mismo contrato de stream que [`JSONEachRowWithProgress`](/es/reference/formats/JSON/JSONEachRowWithProgress) (`writesProgressConcurrently` / `finalizeImpl`), con la diferencia de que las cargas útiles `row` / `totals` / `min` / `max` son **arrays** de valores en el orden de las columnas, en lugar de objetos con nombre.
 
-<div id="example-usage">
-  ## Ejemplo de uso
-</div>
+## Objetos del stream {#stream-objects}
+
+Cada línea de la respuesta es un objeto JSON. Los clientes deben determinar cómo procesar cada objeto según su clave de nivel superior:
+
+| Clave de nivel superior      | Cuándo aparece                                                                                    | Estructura                                                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `meta`                       | Una vez, antes del primer `row` (puede emitirse un objeto `progress` antes)                       | `{"meta":[{"name":...,"type":...}, ...]}` — nombres y tipos de las columnas                                                                  |
+| `row`                        | Una vez por cada fila del resultado                                                               | `{"row":[...]}` — valores de las columnas en el orden del encabezado                                                                         |
+| `progress`                   | Periódicamente mientras se ejecuta la consulta                                                    | `{"progress":{...}}` — contadores como `read_rows`, `read_bytes`, `total_rows_to_read`                                                       |
+| `totals`                     | Cuando hay totales                                                                                | `{"totals":[...]}` — valores de la fila de totales en el orden del encabezado                                                                |
+| `min` / `max`                | Cuando hay valores extremos                                                                       | `{"min":[...]}` / `{"max":[...]}` — valores de la fila de extremos en el orden del encabezado                                                |
+| `rows_before_limit_at_least` | Cuando la consulta contiene `LIMIT`                                                               | `{"rows_before_limit_at_least":N}` — cota inferior estimada de las filas que habría sin `LIMIT` (no demuestra que se hayan descartado filas) |
+| `rows_before_aggregation`    | Cuando la consulta realiza una agregación y el contador `rows_before_aggregation` está habilitado | `{"rows_before_aggregation":N}`                                                                                                              |
+| `exception`                  | Cuando la consulta falla, en la ruta HTTP con `http_write_exception_in_output_format=1`           | `{"exception":"..."}` — texto del error como **cadena de nivel superior**, no anidado dentro de `row`                                        |
+
+El objeto `rows_before_limit_at_least` se emite cuando la consulta contiene `LIMIT`, aunque el límite no haya descartado ninguna fila. Es una cota inferior estimada del número de filas que habría sin `LIMIT` (con el mismo significado que en `JSON`); los clientes no deben interpretarlo como prueba de que se descartaron filas.
+
+`meta` se emite una vez antes del primer `row`, pero un objeto `progress` puede llegar antes que `meta`. El objeto `exception` de nivel superior solo se emite en la ruta HTTP cuando `http_write_exception_in_output_format=1`; de lo contrario, el error se notifica a través de la capa de transporte. Cuando se emite, es un objeto de nivel superior independiente, no anidado dentro de `row`.
+
+## Ejemplo de uso {#example-usage}
 
 ```sql title="Query"
 SELECT *
@@ -54,8 +62,6 @@ FORMAT JSONCompactEachRowWithProgress
 {"rows_before_limit_at_least":5}
 ```
 
-<div id="format-settings">
-  ## Ajustes de formato
-</div>
+## Ajustes de formato {#format-settings}
 
 {/*AUTOGENERATED_END*/}

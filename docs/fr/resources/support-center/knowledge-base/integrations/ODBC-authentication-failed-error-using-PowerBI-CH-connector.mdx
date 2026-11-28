@@ -6,15 +6,11 @@ tags: ['Clients natifs et interfaces', 'Erreurs et exceptions']
 keywords: ['ODBC', 'Connecteur Power BI', 'Authentication Failed']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
-<div id="question">
-  ## Question
-</div>
+## Question {#question}
 
 Lorsque vous essayez de vous connecter à ClickHouse depuis PowerBI à l’aide du connecteur, vous obtenez une erreur d’authentification.
 
-Cette erreur se présente généralement comme suit :
+Cette erreur se présente généralement comme suit :
 
 ```
 We encountered an error while trying to connect.
@@ -27,10 +23,14 @@ See also /etc/clickhouse-server/users.ml on the server where
 ClickHouse is installed.
 ```
 
-<Image img="/images/knowledgebase/powerbi_odbc_authentication_error.webp" size="md" alt="Boîte de dialogue d’erreur d’authentification ODBC dans Power BI" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Boîte de dialogue d’erreur d’authentification ODBC dans Power BI](/images/knowledgebase/powerbi_odbc_authentication_error.webp)
+  </Frame>
+</div>
 
 <div id="answer">
-  ## Réponse
+  ## Réponse {#answer}
 </div>
 
 Mettez à jour le ClickHouse ODBC Driver vers la version [1.4.1](https://github.com/ClickHouse/clickhouse-odbc/releases/tag/1.4.1.20250523).

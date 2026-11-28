@@ -10,10 +10,8 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="what-mysql-resync-do">
-  ### 重新同步会执行什么操作？
+  ### 重新同步会执行什么操作？ {#what-mysql-resync-do}
 </div>
 
 重新同步会按以下顺序执行这些操作：
@@ -26,7 +24,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 原始 ClickPipe 的所有设置都会保留在 resync ClickPipe 中。原始 ClickPipe 的统计信息会在 UI 中清除。
 
 <div id="use-cases-mysql-resync">
-  ### 重新同步 ClickPipe 的使用场景
+  ### 重新同步 ClickPipe 的使用场景 {#use-cases-mysql-resync}
 </div>
 
 以下是一些场景：
@@ -39,15 +37,17 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   因为每次都会涉及带并行线程的初始加载。
 </Note>
 
-<div id="guide-mysql-resync">
-  ### ClickPipe 重新同步指南
-</div>
+### ClickPipe 重新同步指南 {#guide-mysql-resync}
 
 1. 在 **Data Sources** 选项卡中，点击要重新同步的 MySQL ClickPipe。
-2. 转到 **Settings** 选项卡。
+2. 转到 **设置** 选项卡。
 3. 点击 **重新同步** 按钮。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![](/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp)
+  </Frame>
+</div>
 
 4. 此时会弹出确认对话框。再次点击 **重新同步**。
 5. 转到 **Metrics** 选项卡。

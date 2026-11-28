@@ -1,6 +1,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Parsers/ParserQuery.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/CommonParsers.h>
@@ -10,6 +11,7 @@
 #include <Common/levenshteinDistance.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -449,6 +451,9 @@ ASTPtr tryParseQuery(
         diagnostics->expected.variants.clear();
         diagnostics->expected.max_parsed_pos = nullptr;
         diagnostics->expected.highlights.clear();
+        diagnostics->expected.failed_keyword_readings.reset();
+        diagnostics->expected.failed_subquery_readings.reset();
+        diagnostics->expected.failed_literal_readings.reset();
         diagnostics->error_token = Token{};
     }
 
@@ -514,12 +519,37 @@ ASTPtr tryParseQuery(
       *
       * This shortcut is needed to avoid complex backtracking in case of obviously erroneous queries.
       */
+    /// 3. A dialect parser's raw text may contain tokens the SQL lexer rejects (e.g. PromQL's `=~`)
+    /// to find the statement end. It also skips case 1's carve-out: raw text has no FORMAT clause.
     IParser::Pos lookahead(token_iterator);
-    if (!ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
+    IParser::Pos set_lookahead(token_iterator);
+    const bool committed_to_set = parser.consumesRawText() && isCommittedToSetQuery(set_lookahead);
+    const bool consumes_raw_text = parser.consumesRawText() && !committed_to_set;
+    /// The walk below also matches the brackets. If they match up to the first `;` or the end, and the parse does not
+    /// look past it, `checkUnmatchedParentheses` would find nothing in this statement, so it is skipped.
+    const char * brackets_match_until = nullptr;
+    if (consumes_raw_text || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
+        /// A closing bracket that matches nothing stays on the stack, so the stack never gets empty again.
+        VectorWithMemoryTracking<TokenType> open_brackets;
         while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
         {
-            if (lookahead->isError())
+            const TokenType type = lookahead->type;
+            if (type == TokenType::OpeningRoundBracket || type == TokenType::OpeningSquareBracket)
+            {
+                open_brackets.push_back(type);
+            }
+            else if (type == TokenType::ClosingRoundBracket || type == TokenType::ClosingSquareBracket)
+            {
+                const TokenType opening
+                    = type == TokenType::ClosingRoundBracket ? TokenType::OpeningRoundBracket : TokenType::OpeningSquareBracket;
+                if (!open_brackets.empty() && open_brackets.back() == opening)
+                    open_brackets.pop_back();
+                else
+                    open_brackets.push_back(type);
+            }
+
+            if (lookahead->isError() && (!consumes_raw_text || lookahead->type == TokenType::ErrorMaxQuerySizeExceeded))
             {
                 // Advance the position for further processing of possible test hint.
                 // Capture max() BEFORE current_statement_end, which walks fresh tokens
@@ -551,6 +581,9 @@ ASTPtr tryParseQuery(
             ++lookahead;
         }
 
+        if (open_brackets.empty())
+            brackets_match_until = lookahead->begin;
+
         /// We should not spoil the info about maximum parsed position in the original iterator.
         tokens.reset();
     }
@@ -571,8 +604,11 @@ ASTPtr tryParseQuery(
         return res;
 
     // More granular checks for queries other than INSERT w/inline data.
-    /// Lexical error
-    if (last_token.isError())
+    /// Lexical error, unless the parser read the raw text itself and only used the tokens
+    /// to delimit the statement (see IParser::consumesRawText). An input committed to SET
+    /// is ordinary SQL even under a raw-text dialect, so it keeps the lexical error.
+    /// Exceeding `max_query_size` is an error for any parser.
+    if (last_token.isError() && (!consumes_raw_text || last_token.type == TokenType::ErrorMaxQuerySizeExceeded))
     {
         if (diagnostics)
             diagnostics->error_token = last_token;
@@ -581,11 +617,16 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
-    /// Unmatched parentheses
-    UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens));
+    /// Unmatched parentheses. Skipped for raw-text parsers: `TokenIterator::isValid()` stops at
+    /// the first error token, so a lexer-rejected token before a later `)` reads as unmatched.
+    /// Only the parens inside the current statement are reported, so the walk stops after it once every
+    /// bracket is closed: walking the rest of a multi-statement input for each statement is quadratic.
+    UnmatchedParentheses unmatched_parens;
+    if (!consumes_raw_text && !(brackets_match_until && last_token.begin <= brackets_match_until))
+        unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), last_token.end);
     if (!unmatched_parens.empty())
     {
-        /// `checkUnmatchedParentheses` walks the entire remaining input, so it can
+        /// `checkUnmatchedParentheses` can walk past the current statement, so it can
         /// report parens that live in later statements. Restrict to parens inside
         /// the current statement; otherwise the highlight loop in
         /// `writeQueryWithHighlightedErrorPositions` asserts on positions past `end`.
@@ -718,6 +759,12 @@ ASTPtr parseQuery(
     size_t max_parser_backtracks)
 {
     return parseQuery(parser, query.data(), query.data() + query.size(), parser.getName(), max_query_size, max_parser_depth, max_parser_backtracks);
+}
+
+
+ASTPtr parseQueryFromText(IParser & parser, std::string_view query)
+{
+    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0, 0);
 }
 
 

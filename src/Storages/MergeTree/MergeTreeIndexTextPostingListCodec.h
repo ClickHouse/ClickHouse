@@ -8,7 +8,9 @@
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
 
+#include <limits>
 #include <memory>
+#include <string_view>
 
 namespace DB
 {
@@ -56,6 +58,15 @@ class SegmentedPostingListCodec
             writeVarUInt(first_row_id, out);
         }
 
+        static uint32_t readUInt32(ReadBuffer & in, std::string_view field_name)
+        {
+            UInt64 v = 0;
+            readVarUInt(v, in);
+            if (v > std::numeric_limits<uint32_t>::max())
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: posting list segment {} {} exceeds UInt32 max", field_name, v);
+            return static_cast<uint32_t>(v);
+        }
+
         void read(ReadBuffer & in)
         {
             UInt64 v = 0;
@@ -67,11 +78,8 @@ class SegmentedPostingListCodec
             readVarUInt(v, in);
             payload_bytes = static_cast<uint64_t>(v);
 
-            readVarUInt(v, in);
-            cardinality = static_cast<uint32_t>(v);
-
-            readVarUInt(v, in);
-            first_row_id = static_cast<uint32_t>(v);
+            cardinality = readUInt32(in, "cardinality");
+            first_row_id = readUInt32(in, "first row id");
         }
 
         /// Block codec used for this segment's payload. Filled by read.
@@ -139,7 +147,7 @@ public:
     void serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const;
 
     /// Total number of row ids added so far.
-    size_t cardinality() const { return total_row_ids; }
+    [[nodiscard]] size_t cardinality() const { return total_row_ids; }
 
     /// Deserialize a postings list from input `in` into `out`.
     ///
@@ -170,8 +178,8 @@ private:
 
     /// Decodes one compressed block of `out.size()` row ids into `out` and reconstructs absolute row ids.
     ///
-    /// - Delegates the block payload to `block_codec` (bitpacking reads a bits-width byte), which fills `out` with delta values
-    /// - inclusive_scan converts deltas to row ids using `prev_row_id` as initial prefix
+    /// - Delegates the block payload to `block_codec` (bitpacking reads a bits-width byte), which restores the row ids
+    ///   from the stored deltas, starting from `prev_row_id`
     /// - Updates prev_row_id to the last decoded row id
     void decodeBlock(std::span<const std::byte> & in, std::span<uint32_t> out);
 
@@ -214,7 +222,7 @@ public:
     void append(std::span<const UInt32> row_ids) override { impl.append(row_ids); }
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
-    size_t cardinality() const override { return impl.cardinality(); }
+    [[nodiscard]] size_t cardinality() const override { return impl.cardinality(); }
 
 private:
     SegmentedPostingListCodec impl;
@@ -237,7 +245,7 @@ public:
     explicit SegmentedPostingListCodecBase(Type type_) : IPostingListCodec(type_) {}
 
     /// Creates a SegmentedPostingListEncoder whose block payloads are produced by this codec's block codec (see `getType`).
-    std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size) const override;
+    [[nodiscard]] std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size) const override;
 
     void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const override;
     void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const override;
@@ -272,7 +280,7 @@ public:
     void append(std::span<const UInt32> row_ids) override;
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
-    size_t cardinality() const override { return total_row_ids; }
+    [[nodiscard]] size_t cardinality() const override { return total_row_ids; }
 
 private:
     void finishSegment();
@@ -293,7 +301,7 @@ public:
 
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
-    std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size) const override;
+    [[nodiscard]] std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size) const override;
     void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const override;
     void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const override;
 };

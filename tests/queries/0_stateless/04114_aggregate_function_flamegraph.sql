@@ -41,7 +41,7 @@ SELECT arrayJoin(flameGraph(trace, sz)) FROM (
     FROM numbers(20)
 ) GROUP BY g ORDER BY 1;
 
-SELECT '--- trace containing a zero stops descent (find() breaks on ptr==0) ---';
+SELECT '--- a zero frame in a trace is skipped ---';
 SELECT arrayJoin(flameGraph(trace, sz)) FROM (
     SELECT CAST([18446744073709551600, 0, 18446744073709551602] AS Array(UInt64)) AS trace, CAST(7 AS Int64) AS sz
 ) ORDER BY 1;

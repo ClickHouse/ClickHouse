@@ -1,12 +1,5 @@
 -- Tags: need-query-parameters
 
--- The fix is in the query-tree analyzer, so pin it: the `old analyzer` CI jobs link
--- `users.d/analyzer.xml` and the randomized `compatibility='<24.3'` setting also reverts
--- `allow_experimental_analyzer`, and on the legacy path a JOINed parameterized view is not
--- expanded at all (only the left table storage is), so these rows would assert a different
--- code path's behaviour.
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS local_data;
 DROP VIEW IF EXISTS pv;
 DROP VIEW IF EXISTS pv2;

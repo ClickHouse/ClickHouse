@@ -24,7 +24,7 @@ struct NumberGetter
 {
     static NumberGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, std::optional<uint64_t> default_value = std::nullopt);
     uint64_t getNumber(pcg64 & rng) const;
-    std::string description() const;
+    [[nodiscard]] std::string description() const;
 private:
     struct NumberRange
     {
@@ -46,8 +46,8 @@ struct StringGetter
     static StringGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config);
     void setString(std::string name);
     std::string getString(pcg64 & rng) const;
-    std::string description() const;
-    bool isRandom() const;
+    [[nodiscard]] std::string description() const;
+    [[nodiscard]] bool isRandom() const;
 private:
     std::variant<std::string, NumberGetter> value;
 };
@@ -64,13 +64,13 @@ struct PathGetter
     /// nullopt if the sets (shards) are currently empty, which can happen for
     /// dynamic sets; the request generator then declines to produce a request.
     std::optional<std::string> getPath(GenerateContext & ctx) const;
-    std::string description() const;
+    [[nodiscard]] std::string description() const;
 
     /// True if any of the sets is dynamic.
-    bool isDynamic() const;
+    [[nodiscard]] bool isDynamic() const;
     /// If this draws from a single literal path, returns it. Only meaningful
     /// before the sets are finalized.
-    std::optional<std::string> singleStagedPath() const;
+    [[nodiscard]] std::optional<std::string> singleStagedPath() const;
 
 private:
     std::vector<PathSetPtr> sets;
@@ -105,7 +105,7 @@ struct RequestGenerator
 
     void setWatchCallback(Coordination::WatchCallbackPtr callback);
 
-    size_t getWeight() const;
+    [[nodiscard]] size_t getWeight() const;
 private:
     virtual void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup) = 0;
     virtual std::string descriptionImpl() = 0;
@@ -194,9 +194,9 @@ struct RequestGetter
     /// request if all of them decline.
     ZooKeeperRequestWithCallbacks generate(GenerateContext & ctx, const Coordination::ACLs & acls) const;
 
-    std::string description() const;
+    [[nodiscard]] std::string description() const;
     void setWatchCallback(Coordination::WatchCallbackPtr callback);
-    const std::vector<RequestGeneratorPtr> & requestGenerators() const;
+    [[nodiscard]] const std::vector<RequestGeneratorPtr> & requestGenerators() const;
 private:
     std::vector<RequestGeneratorPtr> request_generators;
     std::vector<size_t> weights;
@@ -232,7 +232,7 @@ public:
 
     /// Seed for the given worker thread's rng: `generator.seed` config (plus
     /// thread index) if set, random otherwise.
-    uint64_t getSeedFor(size_t thread_idx) const { return base_seed + thread_idx; }
+    [[nodiscard]] uint64_t getSeedFor(size_t thread_idx) const { return base_seed + thread_idx; }
 private:
     uint64_t base_seed = 0;
 

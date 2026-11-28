@@ -7,7 +7,6 @@ from pathlib import Path
 from build_download_helper import DownloadException, download_build_with_progress
 from compress_files import compress_fast, decompress_fast
 from env_helper import S3_BUILDS_BUCKET
-from s3_helper import S3Helper
 
 DOWNLOAD_RETRIES_COUNT = 5
 
@@ -17,19 +16,25 @@ class CacheError(Exception):
 
 
 class Cache:
-    """a generic class for all caches"""
+    """a generic class for all caches
+
+    `s3` must expose `list_prefix(s3_path, recursive=)`,
+    `copy_file_to_s3(s3_path=, local_path=)` and `get_url(s3_path)`, each
+    taking one `bucket/key` string (e.g. `ci/praktika`'s `S3`); it is passed
+    in so this module stays dependency-free.
+    """
 
     def __init__(
         self,
         directory: Path,
         temp_path: Path,
         archive_name: str,
-        s3_helper: S3Helper,
+        s3,
     ):
         self.directory = directory
         self.temp_path = temp_path
         self.archive_name = archive_name
-        self.s3_helper = s3_helper
+        self.s3 = s3
 
     def _download(self, url: str, ignore_error: bool = False) -> None:
         self.temp_path.mkdir(parents=True, exist_ok=True)
@@ -73,7 +78,9 @@ class Cache:
 
     def _upload(self, s3_path: str, force_upload: bool = False) -> None:
         if not force_upload:
-            existing_cache = self.s3_helper.list_prefix_non_recursive(s3_path)
+            existing_cache = self.s3.list_prefix(
+                f"{S3_BUILDS_BUCKET}/{s3_path}", recursive=False
+            )
             if existing_cache:
                 logging.info("Remote cache %s already exist, won't reupload", s3_path)
                 return
@@ -82,7 +89,9 @@ class Cache:
         archive_path = self.temp_path / self.archive_name
         compress_fast(self.directory, archive_path)
         logging.info("Uploading %s to S3 path %s", archive_path, s3_path)
-        self.s3_helper.upload_build_file_to_s3(archive_path, s3_path)
+        self.s3.copy_file_to_s3(
+            s3_path=f"{S3_BUILDS_BUCKET}/{s3_path}", local_path=archive_path
+        )
 
 
 class GitHubCache(Cache):
@@ -92,12 +101,12 @@ class GitHubCache(Cache):
         self,
         directory: Path,
         temp_path: Path,
-        s3_helper: S3Helper,
+        s3,
     ):
         self.force_upload = True
-        super().__init__(directory, temp_path, "GitHub.tar.zst", s3_helper)
-        self._url = self.s3_helper.get_url(
-            S3_BUILDS_BUCKET, f"{self.PREFIX}/{self.archive_name}"
+        super().__init__(directory, temp_path, "GitHub.tar.zst", s3)
+        self._url = self.s3.get_url(
+            f"{S3_BUILDS_BUCKET}/{self.PREFIX}/{self.archive_name}"
         )
 
     def download(self):

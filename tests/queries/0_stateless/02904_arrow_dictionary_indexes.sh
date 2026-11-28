@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,4 +17,5 @@ $CLICKHOUSE_LOCAL -q "select uniqExact(a) from file('$CLICKHOUSE_TMP/$CLICKHOUSE
 
 $CLICKHOUSE_LOCAL -q "select * from file('$CUR_DIR/data_arrow/different_dicts.arrowstream') order by x"
 
-$CLICKHOUSE_LOCAL -q "select * from file('$CUR_DIR/data_arrow/non_unique_dict.arrowstream') -- { serverError INCORRECT_DATA }"
+# Arrow allows repeated dictionary values.
+$CLICKHOUSE_LOCAL -q "select * from file('$CUR_DIR/data_arrow/non_unique_dict.arrowstream')"

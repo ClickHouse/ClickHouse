@@ -34,11 +34,7 @@
 
 
 #if !defined(Redis_API)
-#    if !defined(POCO_NO_GCC_API_ATTRIBUTE) && defined(__GNUC__) && (__GNUC__ >= 4)
-#        define Redis_API __attribute__((visibility("default")))
-#    else
-#        define Redis_API
-#    endif
+#    define Redis_API
 #endif
 
 

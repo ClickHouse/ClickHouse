@@ -34,6 +34,7 @@ ASTPtr ASTCreateIndexQuery::clone() const
     res->children.push_back(res->index_decl);
 
     cloneTableOptions(*res);
+    cloneOutputOptions(*res);
 
     return res;
 }

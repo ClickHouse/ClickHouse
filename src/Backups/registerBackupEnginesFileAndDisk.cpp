@@ -3,8 +3,8 @@
 #include <Backups/BackupIO_Disk.h>
 #include <Backups/BackupIO_File.h>
 #include <Backups/BackupImpl.h>
+#include <Backups/BackupLocatorArchive.h>
 #include <Backups/BackupSourceAccess.h>
-#include <Core/Settings.h>
 #include <Disks/IDisk.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
@@ -21,12 +21,6 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SUPPORT_IS_DISABLED;
-}
-
-namespace Setting
-{
-extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
 }
 
 
@@ -40,6 +34,8 @@ namespace
         fs::path path;
         String disk_name;
         String archive_name;
+        /// Only set for the `File` engine: the 'backups.allowed_path' entry `path` resolved against.
+        fs::path allowed_path;
     };
 
     /// Checks that a disk name specified as parameters of Disk() is valid.
@@ -74,8 +70,10 @@ namespace
                             quoteString(path.c_str()), quoteString(disk_name));
     }
 
-    /// Checks that a path specified as parameters of File() is valid.
-    void checkPath(fs::path & path, const Poco::Util::AbstractConfiguration & config, const fs::path & data_dir)
+    /// Checks that a path specified as parameters of File() is valid, and returns the
+    /// 'backups.allowed_path' entry it resolved against. Every directory the backup may create is
+    /// below that entry, so it bounds how far up the durability fsyncs have to go.
+    fs::path checkPath(fs::path & path, const Poco::Util::AbstractConfiguration & config, const fs::path & data_dir)
     {
         path = path.lexically_normal();
         if (path.empty())
@@ -92,25 +90,38 @@ namespace
             if (first_allowed_path.is_relative())
                 first_allowed_path = data_dir / first_allowed_path;
 
-            path = first_allowed_path / path;
+            path = (first_allowed_path / path).lexically_normal();
         }
 
-        size_t counter = 0;
-        while (true)
+        /// With overlapping entries, return the deepest one containing the path, so the durability
+        /// boundary does not depend on the order of the entries in the config.
+        std::optional<fs::path> deepest_allowed_path;
+        size_t deepest_depth = 0;
+        for (size_t counter = 0; config.has(key); key = "backups.allowed_path[" + std::to_string(++counter) + "]")
         {
             auto allowed_path = fs::path(config.getString(key));
             if (allowed_path.is_relative())
                 allowed_path = data_dir / allowed_path;
+            allowed_path = allowed_path.lexically_normal();
+            if (!allowed_path.has_filename())
+                allowed_path = allowed_path.parent_path();
             auto rel = path.lexically_proximate(allowed_path);
             bool path_ok = rel.empty() || (rel.is_relative() && (*rel.begin() != ".."));
-            if (path_ok)
-                break;
-            key = "backups.allowed_path[" + std::to_string(++counter) + "]";
-            if (!config.has(key))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Path {} is not allowed for backups, see the 'backups.allowed_path' configuration parameter",
-                                quoteString(path.c_str()));
+            if (!path_ok)
+                continue;
+            size_t depth = std::distance(allowed_path.begin(), allowed_path.end());
+            if (!deepest_allowed_path || depth > deepest_depth)
+            {
+                deepest_allowed_path = allowed_path;
+                deepest_depth = depth;
+            }
         }
+
+        if (!deepest_allowed_path)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Path {} is not allowed for backups, see the 'backups.allowed_path' configuration parameter",
+                            quoteString(path.c_str()));
+        return *deepest_allowed_path;
     }
 
     ResolvedLocalBackupLocation resolveLocalBackupLocation(const BackupInfo & backup_info, ContextPtr context)
@@ -127,7 +138,7 @@ namespace
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'File' requires 1 argument (path)");
 
             location.path = args[0].safeGet<String>();
-            checkPath(location.path, context->getConfigRef(), context->getPath());
+            location.allowed_path = checkPath(location.path, context->getConfigRef(), fs::absolute(context->getPath()));
         }
         else if (engine_name == "Disk")
         {
@@ -186,37 +197,21 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         const String & engine_name = params.backup_info.backup_engine_name;
         auto location = resolveLocalBackupLocation(params.backup_info, params.context);
 
-        BackupImpl::ArchiveParams archive_params;
-        if (!location.archive_name.empty())
+        /// A `Disk` destination can be backed by object storage (e.g. an `s3`-typed disk). In that case a zip
+        /// archive is just as problematic as a direct `S3(...)`/`AzureBlobStorage(...)` destination, because zip
+        /// requires seeking to read its central directory and every seek turns into a separate HTTP request.
+        /// Reject it here too, so the seek-heavy path is not reachable through `BackupReaderDisk`/`BackupWriterDisk`.
+        if (location.disk && hasSupportedZipExtension(location.archive_name))
         {
-            /// A `Disk` destination can be backed by object storage (e.g. an `s3`-typed disk). In that case a zip
-            /// archive is just as problematic as a direct `S3(...)`/`AzureBlobStorage(...)` destination, because zip
-            /// requires seeking to read its central directory and every seek turns into a separate HTTP request.
-            /// Reject it here too, so the seek-heavy path is not reachable through `BackupReaderDisk`/`BackupWriterDisk`.
-            if (location.disk && hasSupportedZipExtension(location.archive_name))
-            {
-                const auto object_storage_type = location.disk->getDataSourceDescription().object_storage_type;
-                if ((object_storage_type == ObjectStorageType::S3) || (object_storage_type == ObjectStorageType::Azure))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Zip archive format is not supported for backups on disk '{}' because it is backed by object storage, "
-                        "which does not support seeking efficiently (zip requires seeking). "
-                        "Use tar.gz or other tar-based formats instead", location.disk->getName());
-            }
-
-            if (params.is_internal_backup)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
-
-            archive_params.archive_name = location.archive_name;
-            archive_params.compression_method = params.compression_method;
-            archive_params.compression_level = params.compression_level;
-            archive_params.password = params.password;
-            archive_params.adaptive_buffer_max_size = params.context->getSettingsRef()[Setting::archive_adaptive_buffer_max_size_bytes];
+            const auto object_storage_type = location.disk->getDataSourceDescription().object_storage_type;
+            if ((object_storage_type == ObjectStorageType::S3) || (object_storage_type == ObjectStorageType::Azure))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Zip archive format is not supported for backups on disk '{}' because it is backed by object storage, "
+                    "which does not support seeking efficiently (zip requires seeking). "
+                    "Use tar.gz or other tar-based formats instead", location.disk->getName());
         }
-        else
-        {
-            if (!params.password.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password is not applicable, backup cannot be encrypted");
-        }
+
+        auto archive_params = makeBackupArchiveParams(params, location.archive_name);
 
         if (params.open_mode == IBackup::OpenMode::READ)
         {
@@ -230,7 +225,8 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
 
         std::shared_ptr<IBackupWriter> writer;
         if (engine_name == "File")
-            writer = std::make_shared<BackupWriterFile>(location.path, params.read_settings, params.write_settings);
+            writer = std::make_shared<BackupWriterFile>(
+                location.path, location.allowed_path, params.read_settings, params.write_settings);
         else
             writer = std::make_shared<BackupWriterDisk>(location.disk, location.path, params.read_settings, params.write_settings);
         return std::make_unique<BackupImpl>(params, archive_params, writer);
@@ -254,8 +250,8 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
             AccessTypeObjects::Source::DISK, "", backupSourceAccessFlagsForWriterUnlock(open_mode)};
     };
 
-    factory.registerBackupEngine("File", creator_fn, getLocalDestinationIdentity, file_source_access_fn);
-    factory.registerBackupEngine("Disk", creator_fn, getLocalDestinationIdentity, disk_source_access_fn);
+    factory.registerBackupEngine("File", creator_fn, getLocalDestinationIdentity, file_source_access_fn, credentialFreeBackupSecretArguments(1));
+    factory.registerBackupEngine("Disk", creator_fn, getLocalDestinationIdentity, disk_source_access_fn, credentialFreeBackupSecretArguments(2));
 }
 
 }

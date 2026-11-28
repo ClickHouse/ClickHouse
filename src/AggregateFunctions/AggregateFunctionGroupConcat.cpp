@@ -1,7 +1,11 @@
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/VarInt.h>
 
 namespace DB
 {
@@ -42,21 +46,27 @@ UInt64 GroupConcatData::getString(size_t i) const
     return offsets[i * 2];
 }
 
+template <bool has_limit>
 void GroupConcatData::insertString(std::string_view str, Arena * arena)
 {
-    checkAndUpdateSize(str.size(), arena);
-    memcpy(data + data_size, str.data(), str.size());
-    offsets.push_back(data_size, arena);
-    data_size += str.size();
-    offsets.push_back(data_size, arena);
-    num_rows++;
+    if constexpr (has_limit)
+        offsets.push_back(data_size, arena);
+
+    insertChar(str.data(), str.size(), arena);
+
+    if constexpr (has_limit)
+    {
+        offsets.push_back(data_size, arena);
+        num_rows++;
+    }
 }
 
+template <bool has_limit>
 void GroupConcatData::insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
 {
     WriteBufferFromOwnString buff;
     serialization->serializeText(*column, row_num, buff, {});
-    insertString(buff.stringView(), arena);
+    insertString<has_limit>(buff.stringView(), arena);
 }
 
 template <bool has_limit>
@@ -66,7 +76,8 @@ GroupConcatImpl<has_limit>::GroupConcatImpl(
         {data_type_}, parameters_, std::make_shared<DataTypeString>())
     , limit(limit_)
     , delimiter(delimiter_)
-    , type(data_type_)
+    , is_string(isString(data_type_))
+    , is_fixed_string(isFixedString(data_type_))
 {
     serialization = this->argument_types[0]->getDefaultSerialization();
 }
@@ -94,16 +105,21 @@ void GroupConcatImpl<has_limit>::add(
     if (cur_data.data_size != 0)
         cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
-    if (isFixedString(type))
+    if (is_string)
+    {
+        /// The text serialization of `String` is the value itself, so it is appended without a temporary copy.
+        cur_data.template insertString<has_limit>(assert_cast<const ColumnString &>(*columns[0]).getDataAt(row_num), arena);
+    }
+    else if (is_fixed_string)
     {
         /// Trailing zero bytes are cut, matching `CAST(FixedString AS String)`.
         std::string_view ref = assert_cast<const ColumnFixedString &>(*columns[0]).getDataAt(row_num);
         while (!ref.empty() && ref.back() == 0)
             ref.remove_suffix(1);
-        cur_data.insertString(ref, arena);
+        cur_data.template insertString<has_limit>(ref, arena);
     }
     else
-        cur_data.insert(columns[0], serialization, row_num, arena);
+        cur_data.template insert<has_limit>(columns[0], serialization, row_num, arena);
 }
 
 template <bool has_limit>
@@ -123,10 +139,7 @@ void GroupConcatImpl<has_limit>::mergeImpl(AggregateDataPtr __restrict place, Co
             if (cur_data.data_size != 0)
                 cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
-            cur_data.offsets.push_back(cur_data.data_size, arena);
-            cur_data.insertChar(rhs_data.data + rhs_data.getString(i), rhs_data.getSize(i), arena);
-            cur_data.num_rows++;
-            cur_data.offsets.push_back(cur_data.data_size, arena);
+            cur_data.template insertString<true>({rhs_data.data + rhs_data.getString(i), rhs_data.getSize(i)}, arena);
         }
     }
     else
@@ -179,10 +192,17 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
             temp_size,
             max_data_size);
 
-    cur_data.checkAndUpdateSize(temp_size, arena);
-
-    buf.readStrict(cur_data.data, temp_size);
-    cur_data.data_size = temp_size;
+    /// Grown as the payload arrives (the buffer doubles), so that a huge size in a malformed state does not allocate
+    /// before the data proves it.
+    static constexpr UInt64 max_chunk_size = UInt64{1} << 20;
+    cur_data.data_size = 0;
+    while (cur_data.data_size < temp_size)
+    {
+        const UInt64 chunk_size = std::min(max_chunk_size, temp_size - cur_data.data_size);
+        cur_data.checkAndUpdateSize(chunk_size, arena);
+        buf.readStrict(cur_data.data + cur_data.data_size, chunk_size);
+        cur_data.data_size += chunk_size;
+    }
 
     if constexpr (has_limit)
     {
@@ -191,17 +211,21 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
         if (cur_data.num_rows > std::numeric_limits<UInt64>::max() / 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid groupConcat state: num_rows ({}) is too large and would overflow the offsets array.", cur_data.num_rows);
 
-        cur_data.offsets.resize_exact(cur_data.num_rows * 2, arena);
-
-        for (size_t i = 0; i < cur_data.offsets.size(); ++i)
+        /// The offsets are appended as they are read, so that a huge `num_rows` in a malformed state does not allocate
+        /// before the payload proves it.
+        cur_data.offsets.clear();
+        const size_t num_offsets = cur_data.num_rows * 2;
+        for (size_t i = 0; i < num_offsets; ++i)
         {
-            readVarUInt(cur_data.offsets[i], buf);
+            UInt64 offset = 0;
+            readVarUInt(offset, buf);
+            cur_data.offsets.push_back(offset, arena);
 
             if (cur_data.offsets[i] > cur_data.data_size)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offset {} in groupConcat state: exceeds data size {}", cur_data.offsets[i], cur_data.data_size);
 
-            if (i != 0 && cur_data.offsets[i] < cur_data.offsets[i - 1])
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offsets in groupConcat state: end offset {} is less than start offset {}", cur_data.offsets[i], cur_data.offsets[i - 1]);
+            if (i != 0 && cur_data.offsets[i] < cur_data.offsets[static_cast<ssize_t>(i) - 1])
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offsets in groupConcat state: end offset {} is less than start offset {}", cur_data.offsets[i], cur_data.offsets[static_cast<ssize_t>(i) - 1]);
         }
 
         if (cur_data.num_rows != 0 && cur_data.offsets.back() != cur_data.data_size)
@@ -226,8 +250,6 @@ void GroupConcatImpl<has_limit>::insertResultInto(AggregateDataPtr __restrict pl
 
 template <bool has_limit>
 bool GroupConcatImpl<has_limit>::allocatesMemoryInArena() const { return true; }
-
-// Implementation of add, merge, serialize, deserialize, insertResultInto, etc. remains unchanged.
 
 static AggregateFunctionPtr createAggregateFunctionGroupConcat(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
@@ -346,7 +368,7 @@ John, Jane
     /// Register every alias from `getNameAndAliases` (index 0 is the canonical name).
     /// `string_agg` is the PostgreSQL/SQL-standard alias; its argument order matches `groupConcat(expr, sep)`.
     /// The alias names must also be present in `getNameAndAliases` so the analyzer rewrites
-    /// the 2-argument form into the parameterized form (see `QueryTreeBuilder::setSecondArgumentAsParameter`).
+    /// the 2-argument form into the parameterized form (see `getGroupConcatArgumentsCountWithSeparator`).
     const auto & aliases = GroupConcatImpl<false>::getNameAndAliases();
     for (size_t i = 1; i < aliases.size(); ++i)
         factory.registerAlias(aliases.at(i), aliases.at(0), AggregateFunctionFactory::Case::Insensitive);

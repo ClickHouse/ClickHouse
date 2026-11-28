@@ -1,0 +1,12 @@
+Read while the SQLite file is missing:
+PATH_ACCESS_DENIED
+First successful read after restoring the SQLite file returns only the base column:
+a
+1
+The generated column is still readable when named explicitly:
+1	2
+Explicit insert into the generated column is rejected by the proxy metadata:
+Cannot insert column b, because it is MATERIALIZED column
+Insert after metadata refresh:
+1	2
+3	6

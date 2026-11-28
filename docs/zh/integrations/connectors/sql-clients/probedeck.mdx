@@ -12,17 +12,16 @@ integration:
 
 import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
-ProbeDeck 是一款适用于 iOS 和 iPadOS 的客户端，可用于检查 ClickHouse server 的健康状况、查看
+ProbeDeck 是一款适用于 iOS 和 iPadOS 的客户端，可用于检查 ClickHouse 服务器 的健康状况、查看
 `system` 表以及运行 SQL。它可通过设备网络或 SSH 堡垒机连接到 ClickHouse HTTP 接口，
 无需中继服务器。
 
 <div id="before-you-begin">
-  ## 开始之前
+  ## 开始之前 {#before-you-begin}
 </div>
 
 * 从 [App Store 安装 ProbeDeck](https://apps.apple.com/app/id6791261174)。
@@ -40,16 +39,14 @@ ProbeDeck 用于获取已配置内存限制的 `system.server_settings` 需要 C
 23.3 或更高版本。当其数据源不可用时，ProbeDeck 会将受影响的部分标记为受限。
 
 <div id="how-it-works">
-  ## 工作原理
+  ## 工作原理 {#how-it-works}
 </div>
 
 1. ProbeDeck 向 ClickHouse HTTP(S) 端点发送 SQL 请求。
 2. 它使用已配置的 ClickHouse 用户从 `system` 表读取监控数据。
 3. 应用会在设备上显示查询结果和监控视图。当设备无法直接访问端点时，可通过 SSH 堡垒机建立相同的 HTTP(S) 连接。
 
-<div id="connect-to-clickhouse-cloud">
-  ## 连接 ClickHouse Cloud
-</div>
+## 连接 ClickHouse Cloud {#connect-to-clickhouse-cloud}
 
 <Steps>
   <Step title="获取服务连接详细信息" id="gather-cloud-details">
@@ -71,12 +68,16 @@ ProbeDeck 用于获取已配置内存限制的 `system.server_settings` 需要 C
     ClickHouse Cloud 使用 **API Keys** 页面中的组织级密钥来访问 Cloud API 和查询 API 端点。
     ProbeDeck 的 SQL 连接流程不使用这些密钥。
 
-    <Image img="/images/integrations/sql-clients/probedeck-add-connection.png" size="sm" border alt="ProbeDeck 连接表单已配置为通过端口 8443 使用 HTTPS 和 ClickHouse 用户名" />
+    <div className="ch-image-sm">
+      <Frame>
+        ![ProbeDeck 连接表单已配置为通过端口 8443 使用 HTTPS 和 ClickHouse 用户名](/images/integrations/sql-clients/probedeck-add-connection.png)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="connect-to-self-hosted-clickhouse">
-  ## 连接到自托管 ClickHouse
+  ## 连接到自托管 ClickHouse {#connect-to-self-hosted-clickhouse}
 </div>
 
 <Steps>
@@ -103,7 +104,7 @@ ProbeDeck 用于获取已配置内存限制的 `system.server_settings` 需要 C
 </Steps>
 
 <div id="connect-through-an-ssh-bastion">
-  ## 通过 SSH 堡垒机连接
+  ## 通过 SSH 堡垒机连接 {#connect-through-an-ssh-bastion}
 </div>
 
 在连接表单中启用 **SSH 隧道**，然后输入：
@@ -116,7 +117,7 @@ ProbeDeck 会通过 SSH `direct-tcpip` 通道，从堡垒机连接到 **服务�
 端口。首次连接时，在接受前请将堡垒机的 SHA-256 主机密钥指纹与服务器管理员提供的值进行核对。
 
 <div id="configure-authentication-and-tls">
-  ## 配置身份验证和 TLS
+  ## 配置身份验证和 TLS {#configure-authentication-and-tls}
 </div>
 
 ProbeDeck 会通过 `X-ClickHouse-User` 和
@@ -131,9 +132,7 @@ CA 签发的证书时，ProbeDeck 会显示其 SHA-256 指纹、签发方、主�
 
 ProbeDeck 会将连接密钥和导入的密钥材料存储在设备的 iOS Keychain 中。
 
-<div id="monitor-clickhouse">
-  ## 监控 ClickHouse
-</div>
+## 监控 ClickHouse {#monitor-clickhouse}
 
 打开已保存的连接，然后选择 **监控**。该仪表板汇总以下数据源：
 
@@ -146,15 +145,21 @@ ProbeDeck 会将连接密钥和导入的密钥材料存储在设备的 iOS Keych
 | 内存和服务器指标           | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
 | 历史查询和磁盘速率          | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
-<Image img="/images/integrations/sql-clients/probedeck-dashboard.png" size="sm" border alt="显示正在运行的查询、复制、磁盘、parts、变更、合并、查询速率和内存的 ProbeDeck 监控仪表板" />
+<div className="ch-image-sm">
+  <Frame>
+    ![显示正在运行的查询、复制、磁盘、parts、变更、合并、查询速率和内存的 ProbeDeck 监控仪表板](/images/integrations/sql-clients/probedeck-dashboard.png)
+  </Frame>
+</div>
 
 点击 **正在运行的查询**，按耗时对活动查询排序，并查看内存和读取行数。
 
-<Image img="/images/integrations/sql-clients/probedeck-running-queries.png" size="sm" border alt="按耗时排序的 ProbeDeck 正在运行的查询列表" />
-
-<div id="query-the-uk-property-price-dataset">
-  ## 查询英国房产价格数据集
+<div className="ch-image-sm">
+  <Frame>
+    ![按耗时排序的 ProbeDeck 正在运行的查询列表](/images/integrations/sql-clients/probedeck-running-queries.png)
+  </Frame>
 </div>
+
+## 查询英国房产价格数据集 {#query-the-uk-property-price-dataset}
 
 本示例使用 [UK property price dataset](/zh/get-started/sample-datasets/uk-price-paid)。
 将数据集加载到 `uk_price_paid`，然后：
@@ -177,7 +182,7 @@ LIMIT 10
 结果应包含十个城镇及其交易数量和平均价格。
 
 <div id="known-limits">
-  ## 已知限制
+  ## 已知限制 {#known-limits}
 </div>
 
 * ProbeDeck 支持 iOS 和 iPadOS 17.0 及更高版本。
@@ -192,7 +197,7 @@ LIMIT 10
   写入和 DDL 语句以及其他运维操作需要 ProbeDeck Pro。
 
 <div id="troubleshooting">
-  ## 故障排查
+  ## 故障排查 {#troubleshooting}
 </div>
 
 <Accordion title="身份验证失败">
@@ -216,9 +221,7 @@ LIMIT 10
   或 TLS 拦截路径发生了变化。
 </Accordion>
 
-<div id="next-steps">
-  ## 后续步骤
-</div>
+## 后续步骤 {#next-steps}
 
-* 有关 ProbeDeck 的详细信息，请访问 [ProbeDeck 网站](https://probedeck.app)。
- * 有关服务器配置，请参阅 [ClickHouse HTTP 接口文档](/zh/concepts/features/interfaces/http)。
+* 有关产品的具体信息，请参阅 [ProbeDeck 网站](https://probedeck.app)。
+* 有关服务器配置，请参阅 [ClickHouse HTTP 接口文档](/zh/concepts/features/interfaces/http)。

@@ -1,7 +1,5 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings, no-debug
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_lazy_final;
 
 CREATE TABLE t_lazy_final

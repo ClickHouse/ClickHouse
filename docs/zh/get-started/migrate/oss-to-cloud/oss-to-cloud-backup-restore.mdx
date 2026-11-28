@@ -7,10 +7,8 @@ doc_type: 'guide'
 keywords: ['迁移', 'ClickHouse Cloud', 'OSS', '从自管理迁移到 Cloud', 'BACKUP', 'RESTORE']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="overview-migration-approaches">
-  ## 概述
+  ## 概述 {#overview-migration-approaches}
 </div>
 
 将数据从自管理 ClickHouse (OSS) 迁移到 ClickHouse Cloud，主要有两种方法：
@@ -38,7 +36,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Info>
 
 <div id="oss-setup">
-  ## OSS 准备
+  ## OSS 准备 {#oss-setup}
 </div>
 
 首先，我们将使用 examples 仓库中的 Docker Compose 配置启动一个 ClickHouse 集群。
@@ -72,7 +70,7 @@ docker exec -it clickhouse-01 clickhouse-client
 ```
 
 <div id="mergetree-to-replicatedmergetree">
-  ### 从 MergeTree 表迁移到 ReplicatedMergeTree 表
+  ### 从 MergeTree 表迁移到 ReplicatedMergeTree 表 {#mergetree-to-replicatedmergetree}
 </div>
 
 ClickHouse Cloud 使用 [`SharedMergeTree`](/zh/products/cloud/features/infrastructure/shared-merge-tree)。
@@ -174,7 +172,7 @@ WHERE name = 'trips_small_adapted' AND database = 'nyc_taxi';
 您现在已准备好继续设置您的 Cloud 服务，以便稍后从 S3 存储桶中恢复备份。
 
 <div id="distributed-tables">
-  ### 使用 ReplicatedMergeTree 的分布式表
+  ### 使用 ReplicatedMergeTree 的分布式表 {#distributed-tables}
 </div>
 
 如果你的环境使用跨多个分片的分布式表，则需要在每个节点上创建一个本地 `ReplicatedMergeTree` 表，并将 `Distributed` 表作为查询入口。
@@ -263,9 +261,7 @@ FROM s3(
 );
 ```
 
-<div id="cloud-setup">
-  ## Cloud 准备
-</div>
+## Cloud 准备 {#cloud-setup}
 
 你将把数据恢复到一个新的 Cloud 服务中。
 按照以下步骤创建新的 Cloud 服务。
@@ -276,21 +272,33 @@ FROM s3(
   </Step>
 
   <Step title="创建新的服务" id="create-new-service">
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="创建新的服务" />
+    <div className="ch-image-md">
+      <Frame>
+        ![创建新的服务](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="配置并创建服务" id="configure-and-create">
     选择所需的区域和配置，然后点击 `Create service`
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="设置服务偏好" />
+    <div className="ch-image-md">
+      <Frame>
+        ![设置服务偏好](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="创建访问角色" id="create-an-access-role">
     打开 SQL 控制台
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="设置服务偏好" />
+    <div className="ch-image-md">
+      <Frame>
+        ![设置服务偏好](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
+      </Frame>
+    </div>
 
-    ### 设置 S3 访问
+### 设置 S3 访问 {#set-up-s3-access}
 
     要从 S3 恢复备份，你需要在 ClickHouse Cloud 与 S3 存储桶之间配置安全访问。
 
@@ -331,9 +339,7 @@ FROM s3(
   </Step>
 </Steps>
 
-<div id="taking-a-backup-on-oss">
-  ## 进行备份 (在自管理部署中)
-</div>
+## 进行备份 (在自管理部署中) {#taking-a-backup-on-oss}
 
 每个分片都必须单独备份。连接到每个分片中的一个节点，并为每个分片运行备份命令，且使用各自唯一的目标路径。
 
@@ -391,7 +397,11 @@ Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
 
 如果查看之前为空的 S3 存储桶，现在你会看到里面已经出现了一些文件夹：
 
-<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp" size="md" alt="备份、数据和元数据" />
+<div className="ch-image-md">
+  <Frame>
+    ![备份、数据和元数据](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
+  </Frame>
+</div>
 
 如果你要执行完整迁移，可以运行以下命令来备份整个服务器：
 
@@ -452,7 +462,7 @@ WHERE id = 'abc123-def456-789'
 有关备份的更多信息，请参阅[备份与恢复](/zh/concepts/features/backup-restore/overview)文档。
 
 <div id="restore-to-clickhouse-cloud">
-  ## 恢复到 ClickHouse Cloud
+  ## 恢复到 ClickHouse Cloud {#restore-to-clickhouse-cloud}
 </div>
 
 将每个分片的备份依次恢复到你的 Cloud 服务中。将 `ROLE_ARN` 设置为

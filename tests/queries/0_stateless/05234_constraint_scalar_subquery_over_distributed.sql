@@ -1,16 +1,12 @@
--- The stress profile fuzzes every query type: a successful `CREATE TABLE` is replayed under a
--- `__fuzz_N` name and a `DROP TABLE` can be replayed as `UNDROP TABLE`. A `CHECK` constraint reading a
--- table function cannot be analysed while a database loads, so either leftover stops the server starting.
+-- The tables live in a Memory database because its table metadata is never written to disk: a `CHECK`
+-- constraint reading a table function cannot be analysed while a database loads, so a leftover from an
+-- interrupted run would stop the server starting. Cleanup is one `DROP DATABASE`, the one drop a stress
+-- run never ignores; the fuzzer pin keeps this file's own DDL from being replayed under another name.
 SET ast_fuzzer_any_query = 0;
 
-DROP TABLE IF EXISTS t_scalar_constraint_source;
-DROP TABLE IF EXISTS t_scalar_constraint_user;
-DROP TABLE IF EXISTS t_scalar_constraint_probe;
-DROP TABLE IF EXISTS t_scalar_constraint_inner;
-DROP TABLE IF EXISTS t_scalar_constraint_pr;
-DROP TABLE IF EXISTS t_scalar_constraint_dist;
-DROP TABLE IF EXISTS t_scalar_constraint_ttl;
-DROP TABLE IF EXISTS t_scalar_constraint_ttl_remote;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Memory;
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 CREATE TABLE t_scalar_constraint_source (id UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_scalar_constraint_source VALUES (1);
@@ -35,12 +31,12 @@ CREATE TABLE t_scalar_constraint_probe (x UInt64, CONSTRAINT c CHECK x < (SELECT
 -- constraint, it is analysed with a context whose current database is not the one the statement runs
 -- in, so the source has to be named explicitly.
 CREATE TABLE t_scalar_constraint_dist AS t_scalar_constraint_source ENGINE = Distributed('test_shard_localhost', currentDatabase(), 't_scalar_constraint_source');
-CREATE TABLE t_scalar_constraint_ttl (d DateTime, x UInt64) ENGINE = MergeTree ORDER BY tuple() TTL d + INTERVAL 1 YEAR WHERE x < (SELECT throwIf(max(id) = 1, 'the TTL scalar subquery was executed') FROM {CLICKHOUSE_DATABASE:Identifier}.t_scalar_constraint_dist); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+CREATE TABLE t_scalar_constraint_ttl (d DateTime, x UInt64) ENGINE = MergeTree ORDER BY tuple() TTL d + INTERVAL 1 YEAR WHERE x < (SELECT throwIf(max(id) = 1, 'the TTL scalar subquery was executed') FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_scalar_constraint_dist); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 -- The same read, but over the network: the shard of this cluster is local, so `prefer_localhost_replica`
 -- decides whether `RemoteQueryExecutor` is used at all. The context of a standalone expression never went
 -- through `makeQueryContext`, so its client version is zero and the shard query used to be rejected.
-CREATE TABLE t_scalar_constraint_ttl_remote (d DateTime, x UInt64) ENGINE = MergeTree ORDER BY tuple() TTL d + INTERVAL 1 YEAR WHERE x < (SELECT throwIf(max(id) = 1, 'the remote TTL scalar subquery was executed') FROM {CLICKHOUSE_DATABASE:Identifier}.t_scalar_constraint_dist SETTINGS prefer_localhost_replica = 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+CREATE TABLE t_scalar_constraint_ttl_remote (d DateTime, x UInt64) ENGINE = MergeTree ORDER BY tuple() TTL d + INTERVAL 1 YEAR WHERE x < (SELECT throwIf(max(id) = 1, 'the remote TTL scalar subquery was executed') FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_scalar_constraint_dist SETTINGS prefer_localhost_replica = 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 -- A SETTINGS clause written inside the subquery must not re-enable parallel replicas either: the cluster
 -- named below exists in no configuration, so the statement only survives while the setting stays off.
@@ -55,7 +51,4 @@ SET allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas
 CREATE TABLE t_scalar_constraint_pr (x UInt64, CONSTRAINT c CHECK x < (SELECT max(id) + 1000 FROM t_scalar_constraint_source)) ENGINE = MergeTree ORDER BY tuple();
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't_scalar_constraint_pr';
 
-DROP TABLE t_scalar_constraint_pr;
-DROP TABLE t_scalar_constraint_inner;
-DROP TABLE t_scalar_constraint_dist;
-DROP TABLE t_scalar_constraint_source;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

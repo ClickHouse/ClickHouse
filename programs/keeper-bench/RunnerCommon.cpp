@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <iostream>
 
+#include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ShuffleHost.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
@@ -92,7 +93,7 @@ std::shared_ptr<Coordination::ZooKeeper> ConnectionFactory::getConnection(const 
     host.host = connection_info.host;
     host.secure = connection_info.secure;
     host.original_index = static_cast<UInt8>(connection_info_idx);
-    host.address = Poco::Net::SocketAddress{connection_info.host};
+    host.address = DB::DNSResolver::instance().resolveAddress(connection_info.host);
 
     zkutil::ShuffleHosts nodes{host};
     zkutil::ZooKeeperArgs args;
