@@ -94,8 +94,12 @@ void VirtualRowTransform::work()
         empty_columns.reserve(header.columns());
         for (size_t i = 0; i < header.columns(); ++i)
         {
+            /// Not every type can create a column, e.g. `Function` for a lambda, so reuse the header column when there is one.
             const ColumnWithTypeAndName & type_and_name = header.getByPosition(i);
-            empty_columns.push_back(type_and_name.type->createColumn()->cloneEmpty());
+            if (type_and_name.column)
+                empty_columns.push_back(type_and_name.column->cloneEmpty());
+            else
+                empty_columns.push_back(type_and_name.type->createColumn());
         }
 
         current_chunk.setColumns(empty_columns, 0);
