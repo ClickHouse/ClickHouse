@@ -14250,6 +14250,24 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (!check_definitions(my_snapshot->getProjections(), src_snapshot->getProjections()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different projections");
 
+    /// Equal text can still expand differently: a column matcher follows the order in which the table declares its columns.
+    for (const auto & src_projection : src_snapshot->getProjections())
+    {
+        const auto & my_projection = my_snapshot->getProjections().get(src_projection.name);
+        const auto & my_key = my_projection.metadata->sorting_key.column_names;
+        const auto & src_key = src_projection.metadata->sorting_key.column_names;
+        if (my_key != src_key)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Tables have different projections: projection {} is sorted by ({}) in the source table and by ({}) in the "
+                "destination table. Declare the columns in the same order in both tables, or drop the projection",
+                src_projection.name, fmt::join(src_key, ", "), fmt::join(my_key, ", "));
+        if (query_to_string(my_projection.where_clause_ast) != query_to_string(src_projection.where_clause_ast))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Tables have different projections: projection {} filters rows by ({}) in the source table and by ({}) in the "
+                "destination table. Declare the columns in the same order in both tables, or drop the projection",
+                src_projection.name, query_to_string(src_projection.where_clause_ast), query_to_string(my_projection.where_clause_ast));
+    }
+
     return *src_data;
 }
 
