@@ -25,6 +25,9 @@ namespace DB
 class ClientInfo;
 class ASTSQLSecurity;
 
+/// Build the context for a stored view body. An absent definer selects SQL SECURITY NONE.
+ContextMutablePtr makeSQLSecurityOverriddenContext(ContextPtr context, std::optional<UUID> definer_id, const ClientInfo * client_info = nullptr);
+
 /// Common metadata for all storages. Contains all possible parts of CREATE
 /// query from all storages, but only some subset used.
 struct StorageInMemoryMetadata

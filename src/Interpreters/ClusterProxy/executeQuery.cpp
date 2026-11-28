@@ -390,10 +390,12 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         new_client_info.initial_user = address.user;
     }
 
-    /// If "secret" (in remote_servers) is not in use,
-    /// user on the shard is not the same as the user on the initiator,
-    /// hence per-user limits should not be applied.
     const bool interserver_mode = !cluster.getSecret().empty();
+    new_client_info.interserver_view_definer.clear();
+    if (interserver_mode && !is_remote_function && context->isSQLSecurityOverriddenBody() && context->isViewInnerQuery() && context->getUserID())
+        new_client_info.interserver_view_definer = context->getUserName();
+
+    /// With a configured shard login, per-user limits belong to a different account.
     if (!interserver_mode)
     {
         /// Does not matter on remote servers, because queries are sent under different user.

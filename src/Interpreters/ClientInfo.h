@@ -3,6 +3,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <time.h>
 #include <vector>
 
@@ -25,6 +26,7 @@
 namespace Poco::Net
 {
     class HTTPRequest;
+    class StreamSocket;
 }
 
 namespace DB
@@ -155,6 +157,16 @@ public:
 
     /// For interserver in case initial query transport was authenticated via JWT.
     String jwt;
+
+    /// Set by the server when dispatching the body of a definer view. Only the authenticated
+    /// interserver Query packet carries this value. ClientInfo::read and write never transfer it.
+    String interserver_view_definer;
+    /// An ordinary interserver query carries an original client address that its proof does not cover.
+    /// Keep this server-local flag when entering a view on the receiving shard.
+    bool has_unverified_interserver_address = false;
+
+    String getInterserverQueryHash(const Poco::Net::StreamSocket & socket, std::string_view secret, std::string_view salt, UInt64 nonce, std::string_view query,
+        std::string_view query_id, std::string_view external_roles, UInt64 protocol_revision) const;
 
     /// Initiator's current roles for secondary queries; nullopt = not sent (remote uses default roles).
     std::optional<std::vector<String>> current_roles;

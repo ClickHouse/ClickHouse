@@ -411,6 +411,9 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_SECONDARY
 static constexpr auto DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT = 54498;
 
 
+/// Send the effective view definer separately from the authenticated caller on a secret interserver connection.
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_VIEW_DEFINER = 54498;
+
 /// Version of ClickHouse TCP protocol.
 ///
 /// Should be incremented manually on protocol changes.
