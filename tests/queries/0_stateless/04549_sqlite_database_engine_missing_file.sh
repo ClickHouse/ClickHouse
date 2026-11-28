@@ -15,9 +15,9 @@ CREATED_DB="db_04549_created_${CLICKHOUSE_DATABASE}"
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${ATTACHED_DB}"
-    ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${CREATED_DB}"
-    rm -rf "${BASE}"
+    ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${ATTACHED_DB}" \
+        && ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${CREATED_DB}" \
+        && rm -rf "${BASE}"
 }
 trap cleanup EXIT
 
@@ -38,6 +38,9 @@ echo 'system.tables enumeration does not throw:'
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${ATTACHED_DB}'"
 echo 'Table lookup fails closed:'
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${ATTACHED_DB}.t1" 2>&1 | grep -oF 'Cannot access sqlite database' | head -1
+echo 'The error names the database file:'
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${ATTACHED_DB}.t1" 2>&1 \
+    | grep -qF "/04549_sqlite_db_missing_${CLICKHOUSE_DATABASE}/data.sqlite'. Error status" && echo 'yes' || echo 'no'
 
 if [[ -e "${DB_PATH}" ]]; then
     echo 'SQLite database file was created by ATTACH'

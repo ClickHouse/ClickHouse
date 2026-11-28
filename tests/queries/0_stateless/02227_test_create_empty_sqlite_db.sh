@@ -8,8 +8,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query="DROP DATABASE IF EXISTS ${CURR_DATABASE}"
-    rm -r "${DB_PATH}"
+    ${CLICKHOUSE_CLIENT} --query="DROP DATABASE IF EXISTS ${CURR_DATABASE}" \
+        && rm -r "${DB_PATH}"
 }
 trap cleanup EXIT
 

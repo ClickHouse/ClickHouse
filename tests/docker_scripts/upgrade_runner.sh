@@ -1118,6 +1118,12 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       is that test's move, whose part it removes on purpose: the stress phase can stop the file before its
 #       `KILL PART_MOVE_TO_SHARD`, and the upgraded server retries the move every 3 seconds. Requires the orchestrator, the
 #       fixture's destination shard and the code together, so a failed move of any other table still fails this job.
+# `SQLiteEngine: Cannot access sqlite database` + `Error status: 14` + a `user_files/` fixture path of one of the SQLite
+#       tests listed in the matcher below is a database or table that the previous release's copy of the test left
+#       without its file: its cleanup removes the file even when the `DROP` before it did not run (04500, 04506 and 04538
+#       also remove it mid-test on purpose), and the upgraded server cannot open the object at startup. A failed open
+#       of any other SQLite database or table still fails this job. A prefix is removable once the previous release's
+#       copy of its test removes the file only after a successful `DROP`.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -1217,6 +1223,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: The path .*/user_files/\(05316_file_log_copytruncate\|05316_file_log_error_does_not_lock_table\|05317_file_log_partial_last_line\|05318_file_log_one_bad_file\|05394_filelog_engine_file_source_grant\|05395_filelog_drop_idle_while_other_busy\)_.* neither a regular file, nor a directory" \
     | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: The directory .*/user_files/05316_file_log_globs_.* of the path .* does not exist" \
     | grep -av -e "(PartMovesBetweenShardsOrchestrator): .*Code: 232\. DB::Exception: Part [^ ]* is not active on replica [^ ]*, it cannot be attached on shard /clickhouse/05565_part_move_to_shard_source_part_removed_[^/]*/dst\. (NO_SUCH_DATA_PART)" \
+    | grep -av -e "SQLiteEngine: Cannot access sqlite database '[^']*/user_files/\(04141_sqlite_escaping_\|04500_sqlite_reclassify_\|04505_sqlite_dqs_\|04506_sqlite_missing_file_\|04538_sqlite_query_missing_\|04549_sqlite_db_missing_\|05055_anchor_\|05137_sqlite_create_missing_\|05219_sqlite_db_replaced_\|05222_sqlite_file_replacement_\|05259_sqlite_concurrent_\|05261_sqlite_hot_journal_\|test_04618_sqlite_\)[^']*'\. Error status: 14\. Message: unable to open database file" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then

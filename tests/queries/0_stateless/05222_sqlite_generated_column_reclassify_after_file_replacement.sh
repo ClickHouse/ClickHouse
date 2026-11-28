@@ -12,8 +12,8 @@ NEW_DB_PATH="${BASE}/new.sqlite"
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05222"
-    rm -rf "${BASE}"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05222" \
+        && rm -rf "${BASE}"
 }
 trap cleanup EXIT
 

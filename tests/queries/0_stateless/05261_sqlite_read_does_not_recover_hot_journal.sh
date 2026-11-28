@@ -17,9 +17,9 @@ JOURNAL_PATH="${DB_PATH}-journal"
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05261"
-    ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_05261"
-    rm -rf "${BASE}"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05261" \
+        && ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_05261" \
+        && rm -rf "${BASE}"
 }
 trap cleanup EXIT
 

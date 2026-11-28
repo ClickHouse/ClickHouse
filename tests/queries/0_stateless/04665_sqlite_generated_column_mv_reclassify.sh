@@ -15,10 +15,10 @@ VIEW="mv_04665"
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${VIEW}"
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${SOURCE}"
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TARGET}"
-    rm -rf "${BASE}"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${VIEW}" \
+        && ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${SOURCE}" \
+        && ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TARGET}" \
+        && rm -rf "${BASE}"
 }
 trap cleanup EXIT
 

@@ -12,12 +12,12 @@ OUTSIDE="${CLICKHOUSE_TMP}/05055_outside_${CLICKHOUSE_DATABASE}.db"
 
 cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_name_inj"
-    ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_col_inj"
-    ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_quote_id"
-    ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_backslash_id"
-    ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_nul_name"
-    rm -f "${ANCHOR}" "${OUTSIDE}"
+    ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_name_inj" \
+        && ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_col_inj" \
+        && ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_quote_id" \
+        && ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_backslash_id" \
+        && ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_nul_name" \
+        && rm -f "${ANCHOR}" "${OUTSIDE}"
 }
 trap cleanup EXIT
 cleanup

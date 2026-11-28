@@ -16,8 +16,8 @@ DB_PATH="${USER_FILES_PATH}/${CURR_DATABASE}.sqlite"
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query="DROP DATABASE IF EXISTS \`${CURR_DATABASE}\`"
-    rm -f "${DB_PATH}"
+    ${CLICKHOUSE_CLIENT} --query="DROP DATABASE IF EXISTS \`${CURR_DATABASE}\`" \
+        && rm -f "${DB_PATH}"
 }
 trap cleanup EXIT
 
