@@ -1,0 +1,15 @@
+right join to Memory: reads from remote replicas
+0
+10	10	45
+right join to a subquery: reads from remote replicas
+0
+10	10	45
+cross join: reads from remote replicas
+0
+100	100	450
+comma join: reads from remote replicas
+0
+100	100	450
+right join to MergeTree: reads from remote replicas
+1
+10	10	45
