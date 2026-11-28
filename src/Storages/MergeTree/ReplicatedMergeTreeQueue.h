@@ -524,6 +524,9 @@ public:
     bool isGoingToBeDropped(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info = nullptr) const;
     bool isGoingToBeDroppedImpl(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info) const;
 
+    /// Returns a patch part that the mutation must apply but whose fetch waits for a DROP_PART, or an empty string.
+    String getPatchPartBlockedByDropPart(const LogEntry & entry) const;
+
     /// Check that part produced by some entry in queue and get source parts for it.
     /// If there are several entries return largest source_parts set. This rarely possible
     /// for example after replica clone.
