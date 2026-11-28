@@ -16,6 +16,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserUnionQueryElement.h>
+#include <Parsers/PartialASTCapture.h>
 
 #include <optional>
 
@@ -194,6 +195,10 @@ bool ParserPipeOperators::parseImpl(Pos & pos, ASTPtr & query, Expected & expect
 
     while (pos->type == TokenType::PipeOperator)
     {
+        /// What an operator holds, a subquery in an expression or a `JOIN`, is nested in the query that
+        /// the operator generates, and is out of reach of a `WITH` written before `INSERT`. Only the
+        /// operands of a set operation are not, and they leave the scope.
+        std::optional<PartialASTSelectScope> operator_scope(std::in_place, expected);
         ++pos;
 
         /// The AST grows by one nesting level with every pipe operator, same as with explicitly written subqueries.
@@ -438,9 +443,13 @@ bool ParserPipeOperators::parseImpl(Pos & pos, ASTPtr & query, Expected & expect
 
             ParserUnionQueryElement element_parser;
 
+            operator_scope.reset();
+            setPartialASTUnionBranches(expected, 1);
+
             ASTs elements;
             bool last_element_parenthesized = pos->type == TokenType::OpeningRoundBracket;
             ASTPtr element;
+            countPartialASTUnionBranch(expected);
             if (!element_parser.parse(pos, element, expected))
                 return false;
             elements.push_back(std::move(element));
@@ -452,6 +461,7 @@ bool ParserPipeOperators::parseImpl(Pos & pos, ASTPtr & query, Expected & expect
 
                 bool next_element_parenthesized = pos->type == TokenType::OpeningRoundBracket;
                 ASTPtr next_element;
+                countPartialASTUnionBranch(expected);
                 if (!element_parser.parse(pos, next_element, expected))
                 {
                     /// The comma belongs to an outer list, e.g. a list of table function arguments.
