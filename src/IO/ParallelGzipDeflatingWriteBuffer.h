@@ -38,8 +38,8 @@ public:
         size_t num_threads_,
         bool compress_empty_ = true,
         std::string filename_ = "")
-        /// Start with one block and double after every full pass up to about `num_threads` blocks, so that a small
-        /// output stages only what it needs. NOLINT: std::move on a forwarding reference is intentional.
+        /// Staging starts at one block and doubles after every full pass, up to about `num_threads` blocks.
+        /// NOLINT: std::move on a forwarding reference is intentional.
         : WriteBufferWithOwnMemoryDecorator(
               std::move(out_), /// NOLINT(bugprone-move-forwarding-reference)
               BLOCK_SIZE)
