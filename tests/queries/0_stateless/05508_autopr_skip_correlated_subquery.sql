@@ -33,11 +33,19 @@ SELECT count() FROM t_skip_correlated_o
 WHERE o_total = 5 AND exists((SELECT 1 FROM t_skip_correlated_l WHERE l_orderkey = o_orderkey AND l_discount > 0.05))
 FORMAT Null SETTINGS log_comment = 'skip_correlated_exists';
 
--- The subquery in `FROM` is planned before the correlated one is found, and keeps parallel replicas.
+-- The subquery in `FROM` is the input of the query that evaluates the correlated one, so it loses parallel replicas too.
 SELECT sum(l_price) FROM (SELECT l_orderkey, l_price, l_discount FROM t_skip_correlated_l WHERE l_price > 10) AS s, t_skip_correlated_o
 WHERE o_orderkey = l_orderkey AND o_total = 5
   AND l_discount < (SELECT 0.2 * avg(l_discount) FROM t_skip_correlated_l WHERE l_orderkey = o_orderkey)
-FORMAT Null SETTINGS log_comment = 'skip_correlated_kept_in_from';
+FORMAT Null SETTINGS log_comment = 'skip_correlated_from_input';
+
+-- A subquery in `FROM` next to the one that evaluates the correlated one keeps parallel replicas, though it is walked after it.
+SELECT sum(s.l_price) FROM
+    (SELECT o_orderkey FROM t_skip_correlated_o AS o
+     WHERE o_total < (SELECT 2 * avg(l_price) FROM t_skip_correlated_l WHERE l_orderkey = o.o_orderkey)) AS c,
+    (SELECT l_orderkey, l_price FROM t_skip_correlated_l WHERE l_price > 10) AS s
+WHERE s.l_orderkey = c.o_orderkey
+FORMAT Null SETTINGS log_comment = 'skip_correlated_kept_in_sibling';
 
 -- A view plans its body with its own settings, which turn parallel replicas back on.
 SELECT sum(s) FROM v_skip_correlated, t_skip_correlated_o
