@@ -93,7 +93,7 @@ SerializationPtr SerializationReplicated::SubcolumnCreator::create(const Seriali
     return SerializationReplicated::create(prev);
 }
 
-ColumnPtr SerializationReplicated::SubcolumnCreator::create(const ColumnPtr & prev) const
+ColumnPtr SerializationReplicated::SubcolumnCreator::create(const ColumnPtr & prev, const DataTypePtr &) const
 {
     return ColumnReplicated::create(prev, indexes);
 }

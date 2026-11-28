@@ -526,9 +526,8 @@ private:
         {
             ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisScheduledReplicas);
             auto exception_ptr = result.exception;
-            result.thread = ThreadFromGlobalPool([this, thread_group = CurrentThread::getGroup(), &local_parts, local_marks, local_rows, &local_result, exception_ptr]()
+            result.thread = ThreadFromGlobalPool(attachedJob(ThreadName::DISTRIBUTED_INDEX_ANALYSIS, [this, &local_parts, local_marks, local_rows, &local_result, exception_ptr]()
             {
-                ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_INDEX_ANALYSIS);
                 try
                 {
                     LOG_TRACE(logger, "Resolving {} parts ({} marks, {} rows) from local replica {}: {}",
@@ -542,7 +541,7 @@ private:
                 {
                     *exception_ptr = std::current_exception();
                 }
-            });
+            }));
         }
         return result;
     }

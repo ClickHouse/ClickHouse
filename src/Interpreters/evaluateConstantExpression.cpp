@@ -689,6 +689,14 @@ namespace
         if (num_rows > max_elements)
             return {};
 
+        /// A `Set` matches a floating-point zero with the zero of the other sign (and with the values of other types
+        /// that convert to it, like `'-0'`), but the elements hold only one of them, so a sign-sensitive expression
+        /// of the key (such as a sharding key) evaluated on the elements does not describe all the matching rows.
+        for (const auto & component : components)
+            for (size_t row = 0; row < num_rows; ++row)
+                if (anyFieldSatisfies((*component.column)[row], isFloatZeroField))
+                    return {};
+
         for (size_t i = 0; i < components.size(); ++i)
         {
             auto & component = components[i];

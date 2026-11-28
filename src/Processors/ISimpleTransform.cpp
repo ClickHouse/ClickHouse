@@ -25,11 +25,7 @@ ISimpleTransform::Status ISimpleTransform::prepare()
     /// Check can output.
 
     if (output.isFinished())
-    {
-        input.close();
-        onFinish();
-        return Status::Finished;
-    }
+        return prepareOnOutputFinished();
 
     if (!output.canPush())
     {
@@ -81,6 +77,13 @@ ISimpleTransform::Status ISimpleTransform::prepare()
 
     /// Now transform.
     return Status::Ready;
+}
+
+ISimpleTransform::Status ISimpleTransform::prepareOnOutputFinished()
+{
+    input.close();
+    onFinish();
+    return Status::Finished;
 }
 
 void ISimpleTransform::work()

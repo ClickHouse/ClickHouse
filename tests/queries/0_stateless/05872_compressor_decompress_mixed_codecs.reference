@@ -1,0 +1,6 @@
+whole file
+The first block is stored as is.
+The second block is compressed.
+from an offset in the first block
+first block is stored as is.
+The second block is compressed.

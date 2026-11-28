@@ -45,31 +45,6 @@ using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
 
 struct AggregateFunctionProperties;
 
-/// Some aggregate functions may have multiple implementations/state layouts (for example, a special
-/// implementation for window functions). If the value differs, the state is not interchangeable,
-/// even if the function name/arguments match and the serialization format is compatible. See
-/// CrossTab.h for an example. Aggregate functions with variant can implement canMergeStateFromDifferentVariant()
-/// and mergeStateFromDifferentVariant() methods to allow merging states from different variants.
-/// The serialization format must be same for all variants of the same aggregate function.
-enum class AggregateFunctionStateVariant : UInt8
-{
-    Aggregation,
-    Window,
-};
-
-inline const char * toString(AggregateFunctionStateVariant variant)
-{
-    switch (variant)
-    {
-        case AggregateFunctionStateVariant::Aggregation:
-            return "Aggregation";
-        case AggregateFunctionStateVariant::Window:
-            return "Window";
-    }
-
-    UNREACHABLE();
-}
-
 /** Aggregate functions interface.
   * Instances of classes with this interface do not contain the data itself for aggregation,
   *  but contain only metadata (description) of the aggregate function,
@@ -106,51 +81,16 @@ public:
     /// sorting, views), losing the information the newer version carries.
     DataTypePtr getStateTypeWithVersionOf(const IAggregateFunction & nested) const;
 
-    /// Identifies the state representation variant used by this function.
-    /// The default is Aggregation (normal GROUP BY implementation).
-    virtual AggregateFunctionStateVariant getStateVariant() const
-    {
-        /// Most combinators don't change the internal state layout, just wrap the nested function.
-        /// Propagate the variant through combinators by default so that haveSameStateRepresentation()
-        /// correctly detects Aggregation vs Window state mismatches
-        if (auto nested = getNestedFunction())
-            return nested->getStateVariant();
-
-        return AggregateFunctionStateVariant::Aggregation;
-    }
-
-    /// Allows merging states produced by different state variants of the same aggregate function
-    /// (for example, Aggregate vs Window) when haveSameStateRepresentation() is false.
-    /// This is used by the -Merge combinator to decide whether it can call mergeStateFromDifferentVariant().
-    virtual bool canMergeStateFromDifferentVariant(const IAggregateFunction & /*rhs*/) const { return false; }
-
-    /// Similar to merge() but allows merging between different variants (Aggregate/Window).
-    /// Called by the -Merge combinator when haveSameStateRepresentation() is false and canMergeStateFromDifferentVariant()
-    /// returns true and the input AggregateFunction state column was produced by the same aggregate function
-    /// but with a different state variant (e.g. Window vs Aggregate),
-    /// If haveSameStateRepresentation() is true, then always merge() is called.
-    /// Must be called only if canMergeStateFromDifferentVariant(rhs) returns true.
-    /// See CrossTab.h for an example implementation.
-    virtual void mergeStateFromDifferentVariant(AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const;
-
     /// Returns true if two aggregate functions have the same state representation in memory and the same serialization,
     /// so state of one aggregate function can be safely used with another.
     /// Examples:
     ///  - quantile(x), quantile(a)(x), quantile(b)(x) - parameter doesn't affect state and used for finalization only
     ///  - foo(x) and fooIf(x) - If combinator doesn't affect state
     /// By default returns true only if functions have exactly the same names, combinators and parameters.
-    /// For the same aggregate function but a different variant (e.g. Window vs Aggregate), it returns false by default.
-    /// If the in-memory Data states of the window and variant versions are different, then, even if the implementation overrides it,
-    /// it must return false for different variants and implement merging logic in mergeStateFromDifferentVariant().
     bool haveSameStateRepresentation(const IAggregateFunction & rhs) const;
     virtual bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const;
 
     virtual const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const { return *this; }
-
-    /// Returns true if two aggregate functions have the same definition: name, parameters, and argument types.
-    /// Unlike haveSameStateRepresentation, this ignores the state variant (Aggregation vs Window),
-    /// making it suitable for canMergeStateFromDifferentVariant where the variant intentionally differs.
-    virtual bool haveSameDefinition(const IAggregateFunction & rhs) const;
 
     bool haveEqualArgumentTypes(const IAggregateFunction & rhs) const;
 
@@ -552,6 +492,16 @@ public:
         AggregateDataPtr __restrict place,
         size_t place_stride,
         const IColumn ** columns,
+        Arena * arena) const = 0;
+
+    /// The same as addBatchConsecutivePlaces, but the rows with `null_map[i] != 0` are skipped.
+    virtual void addBatchConsecutivePlacesNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        size_t place_stride,
+        const IColumn ** columns,
+        const UInt8 * null_map,
         Arena * arena) const = 0;
 
     /** The case when the aggregation key is UInt8
@@ -997,6 +947,20 @@ public:
             static_cast<const Derived *>(this)->add(place, columns, i, arena);
     }
 
+    void addBatchConsecutivePlacesNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        size_t place_stride,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena) const override
+    {
+        for (size_t i = row_begin; i < row_end; ++i, place += place_stride)
+            if (!null_map[i])
+                static_cast<const Derived *>(this)->add(place, columns, i, arena);
+    }
+
     void addBatchLookupTable8(
         size_t row_begin,
         size_t row_end,
@@ -1170,22 +1134,20 @@ public:
         std::unique_ptr<Data[]> places{new Data[256 * UNROLL_COUNT]};
         bool has_data[256 * UNROLL_COUNT]{}; /// Separate flags array to avoid heavy initialization.
 
-        size_t i = row_begin;
-
-        /// Aggregate data into different lookup tables.
-
-        size_t size_unrolled = (row_end - row_begin) / UNROLL_COUNT * UNROLL_COUNT;
-        for (; i < size_unrolled; i += UNROLL_COUNT)
+        /// Table `j` gets the `j`-th of `UNROLL_COUNT` consecutive row ranges, so merging tables in order keeps row order.
+        size_t range_size = (row_end - row_begin) / UNROLL_COUNT;
+        for (size_t offset = 0; offset < range_size; ++offset)
         {
             for (size_t j = 0; j < UNROLL_COUNT; ++j)
             {
-                size_t idx = j * 256 + key[i + j];
+                size_t row = row_begin + j * range_size + offset;
+                size_t idx = j * 256 + key[row];
                 if (unlikely(!has_data[idx]))
                 {
                     new (&places[idx]) Data;
                     has_data[idx] = true;
                 }
-                func.add(reinterpret_cast<char *>(&places[idx]), columns, i + j, nullptr);
+                func.add(reinterpret_cast<char *>(&places[idx]), columns, row, nullptr);
             }
         }
 
@@ -1209,7 +1171,7 @@ public:
 
         /// Process tails and add directly to the final destination.
 
-        for (; i < row_end; ++i)
+        for (size_t i = row_begin + range_size * UNROLL_COUNT; i < row_end; ++i)
         {
             size_t k = key[i];
             AggregateDataPtr & place = map[k];
@@ -1249,9 +1211,11 @@ struct AggregateFunctionProperties
       */
     bool is_order_dependent = false;
 
-    /** The result is correct only if each state receives its rows in order, while `merge` puts the states in order by
-      * itself (example: `deltaSumTimestamp`, which compares each row with the previous one and orders the states it
-      * merges by their timestamps). An aggregation that adds the rows of several streams to one state cannot honor it.
+    /** The result is correct only if each state receives its rows in order. In another order the result is wrong,
+      * not just different as for `is_order_dependent` (examples: `deltaSum` and `deltaSumTimestamp`, which compare
+      * each row with the previous one). `deltaSumTimestamp` orders the states it merges by their timestamps, so it
+      * is correct on any number of streams, while `deltaSum` is correct only on one. An aggregation that adds the
+      * rows of several streams to one state cannot honor it.
       */
     bool requires_ordered_rows_per_state = false;
 
