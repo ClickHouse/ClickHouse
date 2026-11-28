@@ -269,7 +269,8 @@ ASTPtr InterpreterSetQuery::getCreateInsertSettings(const ASTPtr & ast)
     return settings;
 }
 
-void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMutablePtr context_, const ASTPtr * create_insert_settings)
+void InterpreterSetQuery::applySettingsFromQuery(
+    const ASTPtr & ast, ContextMutablePtr context_, const ASTPtr * create_insert_settings, bool apply_create_storage_settings_for_client)
 {
     if (!ast)
         return;
@@ -289,7 +290,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
             }
             else if (
                 !create_query->settings_ast && create_query->storage && create_query->storage->settings
-                && context_->getApplicationType() != Context::ApplicationType::CLIENT)
+                && (context_->getApplicationType() != Context::ApplicationType::CLIENT || apply_create_storage_settings_for_client))
             {
                 engine_settings_support = getEngineSettingsSupport(*create_query, context_);
             }

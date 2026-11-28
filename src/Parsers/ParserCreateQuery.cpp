@@ -1265,16 +1265,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         (query->columns_list->primary_key || query->columns_list->primary_key_from_columns))
         throw Exception(ErrorCodes::SYNTAX_ERROR, "PRIMARY KEY is not allowed in the column list of a table created from a table function");
 
-    if (comment)
-        query->set(query->comment, comment);
-
     query->has_and_insert = is_and_insert;
     query->has_as_insert = is_as_insert;
     query->insert_format = insert_format;
     query->insert_data = insert_data;
     query->insert_data_end = insert_data_end;
-    if (insert_select)
-        query->set(query->insert_select, insert_select);
 
     if (query->columns_list && query->columns_list->primary_key)
     {
@@ -1338,6 +1333,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
 
     query->set(query->targets, targets);
+    query->set(query->insert_select, insert_select);
     query->is_create_empty = is_create_empty;
     query->is_clone_as = is_clone_as;
 
@@ -2366,6 +2362,9 @@ AS INSERT ...
 ```
 
 When `IF NOT EXISTS` is specified and the table already exists, the query does not insert the data.
+
+When the native client reads insert data, a storage `SETTINGS` clause requires an explicit `ENGINE` so that
+the client can distinguish engine settings from query settings. This also applies to `AND INSERT`.
 
 ### Create a table with AND INSERT {#and-insert}
 

@@ -34,6 +34,12 @@ cleanup()
         DROP TABLE IF EXISTS t_04093_http;
         DROP TABLE IF EXISTS t_04093_http_input;
         DROP TABLE IF EXISTS t_04093_delimiter;
+        DROP TABLE IF EXISTS t_04093_storage_delimiter;
+        DROP TABLE IF EXISTS t_04093_ambiguous;
+        DROP TABLE IF EXISTS t_04093_empty_as;
+        DROP TABLE IF EXISTS t_04093_empty_and;
+        DROP TABLE IF EXISTS t_04093_empty_as_select;
+        DROP TABLE IF EXISTS t_04093_empty_and_select;
         DROP TABLE IF EXISTS t_04093_large;
         DROP TABLE IF EXISTS t_04093_concurrent;
         DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_rmt_db;
@@ -45,6 +51,12 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     DROP TABLE IF EXISTS t_04093_http;
     DROP TABLE IF EXISTS t_04093_http_input;
     DROP TABLE IF EXISTS t_04093_delimiter;
+    DROP TABLE IF EXISTS t_04093_storage_delimiter;
+    DROP TABLE IF EXISTS t_04093_ambiguous;
+    DROP TABLE IF EXISTS t_04093_empty_as;
+    DROP TABLE IF EXISTS t_04093_empty_and;
+    DROP TABLE IF EXISTS t_04093_empty_as_select;
+    DROP TABLE IF EXISTS t_04093_empty_and_select;
     DROP TABLE IF EXISTS t_04093_large;
     DROP TABLE IF EXISTS t_04093_concurrent;
 "
@@ -54,6 +66,19 @@ printf '1\n2\n99\n' | ${CLICKHOUSE_CLIENT} --query \
 printf '3\n4\n99\n' | ${CLICKHOUSE_CLIENT} --query \
     "CREATE TABLE IF NOT EXISTS t_04093_stream (x UInt8) ENGINE = Memory AND INSERT SELECT * FROM input('x UInt8') SETTINGS limit = 2 FORMAT CSV"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(x) FROM t_04093_stream"
+
+${CLICKHOUSE_CLIENT} --throw_if_no_data_to_insert=0 --query \
+    "CREATE TABLE t_04093_empty_as (x UInt8) ENGINE = Memory AS INSERT FORMAT CSV" < /dev/null
+${CLICKHOUSE_CLIENT} --throw_if_no_data_to_insert=0 --query \
+    "CREATE TABLE IF NOT EXISTS t_04093_empty_and (x UInt8) ENGINE = Memory AND INSERT FORMAT CSV" < /dev/null
+${CLICKHOUSE_CLIENT} --throw_if_no_data_to_insert=0 --query \
+    "CREATE TABLE t_04093_empty_as_select (x UInt8) ENGINE = Memory AS INSERT SELECT * FROM input('x UInt8') FORMAT CSV" < /dev/null
+${CLICKHOUSE_CLIENT} --throw_if_no_data_to_insert=0 --query \
+    "CREATE TABLE IF NOT EXISTS t_04093_empty_and_select (x UInt8) ENGINE = Memory AND INSERT SELECT * FROM input('x UInt8') FORMAT CSV" < /dev/null
+for table in t_04093_empty_as t_04093_empty_and t_04093_empty_as_select t_04093_empty_and_select; do
+    ${CLICKHOUSE_CLIENT} --query "EXISTS TABLE $table"
+    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM $table"
+done
 
 printf '99\n' | ${CLICKHOUSE_CLIENT} --query \
     "CREATE TABLE IF NOT EXISTS t_04093_stream AS INSERT SELECT * FROM input('auto') FORMAT CSV"
@@ -115,6 +140,24 @@ ${CLICKHOUSE_CLIENT} --query "
         AND query_id IN ('${query_id_values}', '${query_id_csv}')
 "
 
+${CLICKHOUSE_CLIENT} --multiquery <<'SQL' | grep -Ex '42|43'
+EXPLAIN SYNTAX CREATE TABLE t_04093_explain (x UInt8) ENGINE = Memory AS INSERT VALUES (1), (2);
+SELECT 42;
+EXPLAIN SYNTAX CREATE TABLE IF NOT EXISTS t_04093_explain (x UInt8) ENGINE = Memory AND INSERT VALUES (1);
+SELECT 43;
+SQL
+
+${CLICKHOUSE_CLIENT} --multiquery <<'SQL' | grep -Ex '44|45'
+EXPLAIN SYNTAX CREATE TABLE t_04093_explain (x String) ENGINE = Memory AS INSERT FORMAT CSV
+hello;world
+
+SELECT 44;
+EXPLAIN SYNTAX CREATE TABLE IF NOT EXISTS t_04093_explain (x String) ENGINE = Memory AND INSERT FORMAT CSV
+hello;world
+
+SELECT 45;
+SQL
+
 printf '1;2\n' | ${CLICKHOUSE_CLIENT} --query \
     "CREATE TABLE t_04093_delimiter (x UInt8, y UInt8) ENGINE = Memory AS INSERT SELECT * FROM input('x UInt8, y UInt8') SETTINGS format_csv_delimiter = ';' FORMAT CSV"
 printf '3;4\n' | ${CLICKHOUSE_CLIENT} --query \
@@ -124,6 +167,35 @@ printf '%s\n' \
     '5;6' | \
     ${CLICKHOUSE_CURL} -sS --fail-with-body "${CLICKHOUSE_URL}" --data-binary @-
 ${CLICKHOUSE_CLIENT} --query "SELECT x, y FROM t_04093_delimiter ORDER BY x"
+
+printf 'a;b,c\n' | ${CLICKHOUSE_CLIENT} --query \
+    "CREATE TABLE t_04093_storage_delimiter (x String, y String) ENGINE = Memory SETTINGS compress = 1, format_csv_delimiter = ';' AS INSERT FORMAT CSV"
+printf 'd;e,f\n' | ${CLICKHOUSE_CLIENT} --query \
+    "CREATE TABLE IF NOT EXISTS t_04093_storage_delimiter (x String, y String) ENGINE = Memory SETTINGS format_csv_delimiter = ';' AND INSERT FORMAT CSV"
+printf 'g|h,i\n' | ${CLICKHOUSE_CLIENT} --query \
+    "CREATE TABLE IF NOT EXISTS t_04093_storage_delimiter (x String, y String) ENGINE = Memory SETTINGS format_csv_delimiter = ';' AND INSERT SELECT * FROM input('x String, y String') SETTINGS format_csv_delimiter = '|' FORMAT CSV"
+printf 'j,k;l\n' | ${CLICKHOUSE_CLIENT} --format_csv_delimiter=';' --query \
+    "CREATE TABLE IF NOT EXISTS t_04093_storage_delimiter (x String, y String) ENGINE = Memory SETTINGS format_csv_delimiter = DEFAULT AND INSERT FORMAT CSV"
+printf 'l;m,n\n' | ${CLICKHOUSE_CLIENT} --param_delimiter=';' --query \
+    "CREATE TABLE IF NOT EXISTS t_04093_storage_delimiter (x String, y String) ENGINE = Memory SETTINGS format_csv_delimiter = {delimiter:String} AND INSERT FORMAT CSV"
+printf 'r;s,t\n' | ${CLICKHOUSE_CLIENT} --query \
+    "CREATE TABLE IF NOT EXISTS t_04093_storage_delimiter (x String, y String) ENGINE = Memory SETTINGS input_format = 'CSV', format_csv_delimiter = ';' AND INSERT SELECT * FROM input('x String, y String')"
+printf '%s\n' \
+    "CREATE TABLE IF NOT EXISTS t_04093_storage_delimiter (x String, y String) ENGINE = Memory SETTINGS format_csv_delimiter = ';' AND INSERT FORMAT CSV" \
+    'o;p,q' | \
+    ${CLICKHOUSE_CURL} -sS --fail-with-body "${CLICKHOUSE_URL}" --data-binary @-
+${CLICKHOUSE_CLIENT} --query "SELECT x, y FROM t_04093_storage_delimiter ORDER BY x"
+
+if error=$(printf 'a;b\n' | ${CLICKHOUSE_CLIENT} --query \
+    "CREATE TABLE t_04093_ambiguous (x String, y String) SETTINGS format_csv_delimiter = ';' AS INSERT FORMAT CSV" 2>&1); then
+    echo "Expected an error for storage settings without an explicit engine" >&2
+    exit 1
+fi
+if [[ "$error" != *"ENGINE must be specified for CREATE with INSERT data and storage SETTINGS"* ]]; then
+    echo "$error" >&2
+    exit 1
+fi
+${CLICKHOUSE_CLIENT} --query "EXISTS TABLE t_04093_ambiguous"
 
 {
     printf 'CREATE TABLE t_04093_large (x UInt8) ENGINE = Memory AS INSERT FORMAT RowBinary\n'

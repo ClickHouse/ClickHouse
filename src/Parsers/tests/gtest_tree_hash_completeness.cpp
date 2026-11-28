@@ -12,6 +12,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <algorithm>
+#include <utility>
 
 using namespace DB;
 
@@ -277,6 +278,36 @@ TEST(TreeHashCompleteness, CloneHashesEqual)
     {
         ASTPtr ast = parse(query);
         EXPECT_EQ(ast->clone()->getTreeHash(/*ignore_aliases=*/ false), ast->getTreeHash(/*ignore_aliases=*/ false)) << query;
+    }
+}
+
+TEST(TreeHashCompleteness, CreateInsertPrimaryKeyAndCommentRoundTrips)
+{
+    const std::pair<const char *, const char *> queries[] = {
+        {"CREATE TABLE t (x UInt8, PRIMARY KEY x) COMMENT 'c' AS INSERT SELECT 1",
+         "CREATE TABLE t (x UInt8) PRIMARY KEY x COMMENT 'c' AS INSERT SELECT 1"},
+        {"CREATE TABLE IF NOT EXISTS t (x UInt8, PRIMARY KEY x) COMMENT 'c' AND INSERT SELECT 1",
+         "CREATE TABLE IF NOT EXISTS t (x UInt8) PRIMARY KEY x COMMENT 'c' AND INSERT SELECT 1"},
+        {"CREATE TABLE t (x UInt8 PRIMARY KEY) COMMENT 'c' AS INSERT SELECT 1",
+         "CREATE TABLE t (x UInt8) PRIMARY KEY tuple(x) COMMENT 'c' AS INSERT SELECT 1"},
+        {"CREATE TABLE IF NOT EXISTS t (x UInt8 PRIMARY KEY) COMMENT 'c' AND INSERT SELECT 1",
+         "CREATE TABLE IF NOT EXISTS t (x UInt8) PRIMARY KEY tuple(x) COMMENT 'c' AND INSERT SELECT 1"},
+        {"CREATE TABLE t (x UInt8) ENGINE = Memory COMMENT 'c'",
+         "CREATE TABLE t (x UInt8) ENGINE = Memory COMMENT 'c'"},
+    };
+
+    for (const auto & [query, canonical] : queries)
+    {
+        ASTPtr ast = parse(query);
+        const auto & create = ast->as<const ASTCreateQuery &>();
+        ASSERT_NE(create.comment, nullptr) << query;
+        EXPECT_EQ(std::ranges::count_if(ast->children, [&](const auto & child) { return child.get() == create.comment; }), 1) << query;
+
+        const auto hash = ast->getTreeHash(/*ignore_aliases=*/ false);
+        EXPECT_EQ(hash, hashOf(canonical)) << query;
+        EXPECT_EQ(hash, ast->clone()->getTreeHash(/*ignore_aliases=*/ false)) << query;
+        EXPECT_EQ(hash, hashOfJSONRoundTrip(query)) << query;
+        EXPECT_EQ(hash, hashOf(ast->formatWithSecretsOneLine())) << query;
     }
 }
 

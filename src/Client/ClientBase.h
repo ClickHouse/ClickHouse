@@ -167,7 +167,7 @@ protected:
     virtual String getName() const = 0;
 
     void processOrdinaryQuery(String query, ASTPtr parsed_query);
-    void processInsertQuery(String query, ASTPtr parsed_query);
+    void processInsertQuery(String query, ASTPtr parsed_query, const Settings * input_settings = nullptr);
 
     /// The other side re-parses the outbound query text using the `dialect` it receives, so that
     /// dialect must be the one the client accepted the text with. Pin the outbound `dialect` (and the
