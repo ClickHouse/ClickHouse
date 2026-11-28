@@ -2058,7 +2058,7 @@ public:
 
                 state = 1;
             }
-            else if (ParserKeyword(Keyword::FROM).ignore(pos, expected))
+            else if (action == Action::OPERATOR && ParserKeyword(Keyword::FROM).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -2104,7 +2104,7 @@ public:
 
                 state = 2;
             }
-            else if (ParserKeyword(Keyword::FOR).ignore(pos, expected))
+            else if (action == Action::OPERATOR && ParserKeyword(Keyword::FOR).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -2186,7 +2186,7 @@ public:
 
                 state = 1;
             }
-            else if (!comma_mode && ParserKeyword(Keyword::PLACING).ignore(pos, expected))
+            else if (!comma_mode && action == Action::OPERATOR && ParserKeyword(Keyword::PLACING).ignore(pos, expected))
             {
                 keyword_mode = true;
                 action = Action::OPERAND;
@@ -2209,7 +2209,7 @@ public:
 
                 state = 2;
             }
-            else if (keyword_mode && ParserKeyword(Keyword::FROM).ignore(pos, expected))
+            else if (keyword_mode && action == Action::OPERATOR && ParserKeyword(Keyword::FROM).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -2231,7 +2231,7 @@ public:
 
                 state = 3;
             }
-            else if (keyword_mode && ParserKeyword(Keyword::FOR).ignore(pos, expected))
+            else if (keyword_mode && action == Action::OPERATOR && ParserKeyword(Keyword::FOR).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -2305,7 +2305,7 @@ public:
 
                 state = 1;
             }
-            else if (ParserKeyword(Keyword::IN).ignore(pos, expected))
+            else if (action == Action::OPERATOR && ParserKeyword(Keyword::IN).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
