@@ -3,3 +3,8 @@ Compact
           Prewhere filter column: and(equals(p, 1), greater(x1, 50)) (removed)
           Prewhere filter column: and(equals(p, 1), greater(x1, 50)) (removed)
 49
+Wide
+Compact
+          Prewhere filter column: and(equals(p, 1), greater(`j.a`, 50)) (removed)
+          Prewhere filter column: and(equals(p, 1), greater(`j.a`, 50)) (removed)
+49

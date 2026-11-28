@@ -30,3 +30,29 @@ WHERE explain LIKE '%Prewhere filter column%';
 SELECT count() FROM prewhere_compact_pruned WHERE p = 1 AND x4 > '100' AND x1 > 50;
 
 DROP TABLE prewhere_compact_pruned;
+
+-- The same with subcolumns, which only the wide part can size: `j.a` is cheap and `j.b` is heavy.
+DROP TABLE IF EXISTS prewhere_compact_pruned_subcolumns;
+
+CREATE TABLE prewhere_compact_pruned_subcolumns (p UInt8, j JSON(a Int, b String) CODEC(NONE))
+ENGINE = MergeTree PARTITION BY p ORDER BY tuple()
+SETTINGS min_rows_for_wide_part = 5000, min_bytes_for_wide_part = 0;
+
+INSERT INTO prewhere_compact_pruned_subcolumns SELECT 0, concat('{"a":', toString(number), ',"b":"', repeat('a', 1024), '"}') FROM numbers(10000);
+INSERT INTO prewhere_compact_pruned_subcolumns SELECT 1, concat('{"a":', toString(number), ',"b":"', repeat('a', 1024), '"}') FROM numbers(100);
+
+SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 'prewhere_compact_pruned_subcolumns' AND active ORDER BY partition;
+
+SELECT replaceRegexpAll(explain, '__table1\.|_UInt8|_String', '')
+FROM (EXPLAIN actions=1 SELECT count() FROM prewhere_compact_pruned_subcolumns WHERE p = 1 AND j.b > '100' AND j.a > 50)
+WHERE explain LIKE '%Prewhere filter column%'
+SETTINGS allow_calculating_subcolumns_sizes_for_merge_tree_reading = 1;
+
+SELECT replaceRegexpAll(explain, '__table1\.|_UInt8|_String', '')
+FROM (EXPLAIN actions=1 SELECT count() FROM prewhere_compact_pruned_subcolumns WHERE p = 1 AND j.b > '100' AND j.a > 50 SETTINGS use_partition_pruning = 0)
+WHERE explain LIKE '%Prewhere filter column%'
+SETTINGS allow_calculating_subcolumns_sizes_for_merge_tree_reading = 1;
+
+SELECT count() FROM prewhere_compact_pruned_subcolumns WHERE p = 1 AND j.b > '100' AND j.a > 50;
+
+DROP TABLE prewhere_compact_pruned_subcolumns;
