@@ -30,10 +30,10 @@
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <fmt/ranges.h>
-#include <Common/StackWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -409,31 +409,20 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(
         return {};
 
     /// Non-trivial atoms from left to right.
-    VectorWithMemoryTracking<const ActionsDAG::Node *> atoms;
+    auto atoms = ActionsDAG::extractConjunctionAtomsInWrittenOrder(filter);
+
+    /// The left most conjunct that is split when no atom is moved: a non-trivial atom or a column that is not split yet.
     const ActionsDAG::Node * first_conjunct = nullptr;
-    StackWithMemoryTracking<const ActionsDAG::Node *> nodes;
-    nodes.push(filter);
-    while (!nodes.empty())
+    for (const auto * atom : atoms)
     {
-        const auto * node = nodes.top();
-        nodes.pop();
-
-        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
+        if (!isTrivialSubtree(atom) || isUnsplitInput(atom, split_names))
         {
-            /// The order is important. We should take the left-most atom, so put conditions on stack in reverse order.
-            for (const auto * child : node->children | std::ranges::views::reverse)
-                nodes.push(child);
-
-            continue;
+            first_conjunct = atom;
+            break;
         }
-
-        const bool is_trivial = isTrivialSubtree(node);
-        if (!is_trivial)
-            atoms.push_back(node);
-
-        if (!first_conjunct && (!is_trivial || isUnsplitInput(node, split_names)))
-            first_conjunct = node;
     }
+
+    std::erase_if(atoms, isTrivialSubtree);
 
     /// Do not split subtree if it's the last non-trivial one.
     if (atoms.size() < 2)

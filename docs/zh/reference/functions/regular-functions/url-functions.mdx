@@ -353,24 +353,24 @@ SELECT cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list');
 
 引入版本：v21.1.0
 
-返回域名中从顶级子域到第一个有效子域的部分，且不会去除 &#39;www&#39;。接受自定义 TLD 列表名称。如果你需要最新的 TLD 列表，或者使用自定义列表，此函数会很有用。
+返回域名中从顶级子域到第一个有效子域的部分，且不会去除 &#39;www&#39;。接受自定义 TLD 列表名称。如果你需要最新的顶级域名列表，或者使用自定义列表，此函数会很有用。
 
 **配置示例**
 
-````yaml
+```yaml
 <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
 <top_level_domains_lists>
     <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
     <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    <!-- 注意：path 位于 top_level_domains_path 下 -->
+    <!-- NOTE: path is under top_level_domains_path -->
 </top_level_domains_lists>
-    
+```
 
-**Syntax**
+**语法**
 
 ```sql
 cutToFirstSignificantSubdomainCustomWithWWW(url, tld_list_name)
-````
+```
 
 **参数**
 
@@ -394,31 +394,31 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_lis
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## cutToFirstSignificantSubdomainCustomWithWWWRFC {#cutToFirstSignificantSubdomainRFC}
+## cutToFirstSignificantSubdomainCustomWithWWWRFC {#cutToFirstSignificantSubdomainCustomWithWWWRFC}
 
 引入版本：v22.10.0
 
 返回域名中从顶级子域到第一个有效子域的部分，且不会去除 `www`。
 接受自定义 TLD 列表名称。
-如果你需要较新的 TLD 列表，或者使用自定义列表，此函数会很有用。
+如果你需要最新的顶级域名列表，或者使用自定义列表，此函数会很有用。
 与 [cutToFirstSignificantSubdomainCustomWithWWW](#cutToFirstSignificantSubdomainCustomWithWWW) 类似，但遵循 [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986)。
 
 **配置示例**
 
-````xml
-{/* <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> */}
+```xml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
 <top_level_domains_lists>
-    {/* https://publicsuffix.org/list/public_suffix_list.dat */}
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
     <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    {/* NOTE: path is under top_level_domains_path */}
+    <!-- NOTE: path is under top_level_domains_path -->
 </top_level_domains_lists>
-    
+```
 
 **语法**
 
 ```sql
 cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld_list_name)
-````
+```
 
 **参数**
 
@@ -440,7 +440,7 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWWRFC('https://www.subdomain.exa
 example.custom
 ```
 
-## cutToFirstSignificantSubdomainRFC {#cutToFirstSignificantSubdomainWithWWW}
+## cutToFirstSignificantSubdomainRFC {#cutToFirstSignificantSubdomainRFC}
 
 Introduced in：v22.10.0
 
@@ -476,7 +476,7 @@ SELECT
 └─────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## cutToFirstSignificantSubdomainWithWWW {#cutToFirstSignificantSubdomainWithWWWRFC}
+## cutToFirstSignificantSubdomainWithWWW {#cutToFirstSignificantSubdomainWithWWW}
 
 引入版本：v20.12.0
 
@@ -515,7 +515,7 @@ SELECT
 └──────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────┴─────────────────────────────────────────────┘
 ```
 
-## cutToFirstSignificantSubdomainWithWWWRFC {#cutURLParameter}
+## cutToFirstSignificantSubdomainWithWWWRFC {#cutToFirstSignificantSubdomainWithWWWRFC}
 
 引入版本：v22.10.0
 
@@ -551,7 +551,7 @@ SELECT
 └───────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## cutURLParameter {#cutWWW}
+## cutURLParameter {#cutURLParameter}
 
 引入版本：v1.1.0
 
@@ -590,7 +590,7 @@ SELECT
 └──────────────────────────────┴───────────────────────────┘
 ```
 
-## cutWWW {#decodeURLComponent}
+## cutWWW {#cutWWW}
 
 引入版本：v1.1.0
 
@@ -624,7 +624,7 @@ SELECT cutWWW('http://www.example.com/path?query=value#fragment');
 └────────────────────────────────────────────────────────────┘
 ```
 
-## decodeURLComponent {#decodeURLFormComponent}
+## decodeURLComponent {#decodeURLComponent}
 
 引入版本：v1.1.0
 
@@ -658,7 +658,7 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 └────────────────────────────────────────┘
 ```
 
-## decodeURLFormComponent {#domain}
+## decodeURLFormComponent {#decodeURLFormComponent}
 
 引入版本：v1.1.0
 
@@ -694,7 +694,7 @@ SELECT decodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT%201+2%2B3') A
 └───────────────────────────────────────────┘
 ```
 
-## domain {#domainRFC}
+## domain {#domain}
 
 引入版本：v1.1.0
 
@@ -730,7 +730,7 @@ SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk');
 └────────────────────────────────────────────────────────┘
 ```
 
-## domainRFC {#domainWithoutWWW}
+## domainRFC {#domainRFC}
 
 引入版本：v22.10.0
 
@@ -769,7 +769,7 @@ SELECT
 └───────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## domainWithoutWWW {#domainWithoutWWWRFC}
+## domainWithoutWWW {#domainWithoutWWW}
 
 引入版本：v1.1.0
 
@@ -803,7 +803,7 @@ SELECT domainWithoutWWW('http://paul@www.example.com:80/');
 └─────────────────────────────────────────────────────┘
 ```
 
-## domainWithoutWWWRFC {#encodeURLComponent}
+## domainWithoutWWWRFC {#domainWithoutWWWRFC}
 
 引入版本：v1.1.0
 
@@ -839,7 +839,7 @@ SELECT
 └─────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## encodeURLComponent {#encodeURLFormComponent}
+## encodeURLComponent {#encodeURLComponent}
 
 引入版本：v22.3.0
 
@@ -873,7 +873,7 @@ SELECT encodeURLComponent('http://127.0.0.1:8123/?query=SELECT 1;') AS EncodedUR
 └──────────────────────────────────────────────────────────┘
 ```
 
-## encodeURLFormComponent {#extractURLParameter}
+## encodeURLFormComponent {#encodeURLFormComponent}
 
 引入版本：v22.3.0
 
@@ -909,7 +909,7 @@ SELECT encodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT 1 2+3') AS En
 └───────────────────────────────────────────────────────────┘
 ```
 
-## extractURLParameter {#extractURLParameterNames}
+## extractURLParameter {#extractURLParameter}
 
 引入版本：v1.1.0
 
@@ -946,7 +946,7 @@ SELECT extractURLParameter('http://example.com/?param1=value1&param2=value2', 'p
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## extractURLParameterNames {#extractURLParameters}
+## extractURLParameterNames {#extractURLParameterNames}
 
 引入版本：v1.1.0
 
@@ -981,7 +981,7 @@ SELECT extractURLParameterNames('http://example.com/?param1=value1&param2=value2
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## extractURLParameters {#firstSignificantSubdomain}
+## extractURLParameters {#extractURLParameters}
 
 引入版本：v1.1.0
 
@@ -1016,7 +1016,7 @@ SELECT extractURLParameters('http://example.com/?param1=value1&param2=value2');
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## firstSignificantSubdomain {#firstSignificantSubdomainCustom}
+## firstSignificantSubdomain {#firstSignificantSubdomain}
 
 引入版本：v1.1.0
 
@@ -1055,7 +1055,7 @@ SELECT firstSignificantSubdomain('https://news.clickhouse.com/')
 └───────────────────────────────────────────────────────────┘
 ```
 
-## firstSignificantSubdomainCustom {#firstSignificantSubdomainCustomRFC}
+## firstSignificantSubdomainCustom {#firstSignificantSubdomainCustom}
 
 引入版本：v21.1.0
 
@@ -1088,7 +1088,7 @@ SELECT firstSignificantSubdomainCustom('https://news.example.com', 'public_suffi
 example
 ```
 
-## firstSignificantSubdomainCustomRFC {#firstSignificantSubdomainRFC}
+## firstSignificantSubdomainCustomRFC {#firstSignificantSubdomainCustomRFC}
 
 引入版本：v22.10.0
 
@@ -1121,7 +1121,7 @@ SELECT firstSignificantSubdomainCustomRFC('https://news.example.com', 'public_su
 example
 ```
 
-## firstSignificantSubdomainRFC {#fragment}
+## firstSignificantSubdomainRFC {#firstSignificantSubdomainRFC}
 
 首次引入于：v22.10.0
 
@@ -1141,7 +1141,7 @@ firstSignificantSubdomainRFC(url)
 
 **示例**
 
-## fragment {#netloc}
+## fragment {#fragment}
 
 引入版本：v1.1.0
 
@@ -1175,7 +1175,7 @@ SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## netloc {#path}
+## netloc {#netloc}
 
 引入版本：v20.5.0
 
@@ -1209,7 +1209,7 @@ SELECT netloc('http://paul@www.example.com:80/');
 └───────────────────────────────────────────┘
 ```
 
-## path {#pathFull}
+## path {#path}
 
 自 v1.1.0 起引入
 
@@ -1243,7 +1243,7 @@ SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/u
 └─────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## pathFull {#port}
+## pathFull {#pathFull}
 
 在 v1.1.0 中引入
 
@@ -1277,7 +1277,7 @@ SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functio
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## port {#portRFC}
+## port {#port}
 
 首次引入版本：v20.5.0
 
@@ -1312,7 +1312,7 @@ SELECT port('https://clickhouse.com:8443/docs'), port('https://clickhouse.com/do
 └──────────────────────────────────────────┴──────────────────────────────────────────┘
 ```
 
-## portRFC {#protocol}
+## portRFC {#portRFC}
 
 引入版本：v22.10.0
 
@@ -1348,7 +1348,7 @@ SELECT port('http://user:password@example.com:8080/'), portRFC('http://user:pass
 └────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
 ```
 
-## protocol {#queryString}
+## protocol {#protocol}
 
 引入版本：v1.1.0
 
@@ -1386,7 +1386,7 @@ SELECT protocol('https://clickhouse.com/');
 └─────────────────────────────────────┘
 ```
 
-## queryString {#queryStringAndFragment}
+## queryString {#queryString}
 
 自 v1.1.0 起引入
 
@@ -1420,7 +1420,7 @@ SELECT queryString('https://clickhouse.com/docs?query=value&param=123#section');
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-## queryStringAndFragment {#topLevelDomain}
+## queryStringAndFragment {#queryStringAndFragment}
 
 引入版本：v1.1.0
 
@@ -1454,9 +1454,9 @@ SELECT queryStringAndFragment('https://clickhouse.com/docs?query=value&param=123
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## topLevelDomain {#topLevelDomainRFC}
+## topLevelDomain {#topLevelDomain}
 
-版本引入：v1.1.0
+引入版本：v1.1.0
 
 从 URL 中提取顶级域名。
 
@@ -1487,7 +1487,7 @@ topLevelDomain(url)
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
@@ -1499,7 +1499,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-## topLevelDomainRFC
+## topLevelDomainRFC {#topLevelDomainRFC}
 
 引入版本：v22.10.0
 
@@ -1522,7 +1522,7 @@ topLevelDomainRFC(url)
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT topLevelDomain('http://foo:foo%41bar@foo.com'), topLevelDomainRFC('http://foo:foo%41bar@foo.com');

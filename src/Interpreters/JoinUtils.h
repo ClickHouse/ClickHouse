@@ -162,6 +162,10 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, co
 void createMissedColumns(Block & block);
 void joinTotals(Block left_totals, Block right_totals, const TableJoin & table_join, Block & out_block);
 
+/// The single row of a totals column: `arrayJoin` in the totals expression can leave more or fewer rows than one.
+/// An empty column that is not constant gets the default of `type` where it differs from the column zero (an `Enum`'s smallest value).
+ColumnPtr totalsColumnToSingleRow(const ColumnPtr & column, const DataTypePtr & type);
+
 void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
 
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);
@@ -205,6 +209,16 @@ Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & 
 constexpr bool hasNonJoinedBlocks(JoinKind kind, JoinStrictness strictness)
 {
     return isRightOrFull(kind) && strictness != JoinStrictness::Asof && strictness != JoinStrictness::Semi;
+}
+
+/// Whether joining each part of a split left input with the whole right input gives the join of the whole input.
+/// Not for RIGHT and FULL (unmatched right rows), INNER ANY and RIGHT SEMI (each right row used at most once), which
+/// depend on the whole left input, nor for PASTE, which pairs rows by position.
+constexpr bool canSplitLeftInput(JoinKind kind, JoinStrictness strictness)
+{
+    if (isLeft(kind) || isCrossOrComma(kind))
+        return true;
+    return isInner(kind) && strictness != JoinStrictness::Any;
 }
 
 bool hasNonJoinedBlocks(const TableJoin & table_join);

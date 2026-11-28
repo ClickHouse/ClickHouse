@@ -2,6 +2,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/AccurateComparison.h>
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -55,15 +56,19 @@ namespace DB
             WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
+                int64_t day = 0;
+                if (!accurate::convertNumeric<typename FromDataType::FieldType, int64_t, false>(vec_from[i], day))
+                    day = std::numeric_limits<int64_t>::max();
+
                 if constexpr (nullOnErrors)
                 {
                     GregorianDate gd;
-                    (*vec_null_map_to)[i] = !(gd.tryInit(static_cast<int64_t>(vec_from[i])) && gd.tryWrite(write_buffer));
+                    (*vec_null_map_to)[i] = !(gd.tryInit(day) && gd.tryWrite(write_buffer));
                     offsets_to[i] = write_buffer.count();
                 }
                 else
                 {
-                    GregorianDate gd(static_cast<int64_t>(vec_from[i]));
+                    GregorianDate gd(day);
                     gd.write(write_buffer);
                     offsets_to[i] = write_buffer.count();
                 }

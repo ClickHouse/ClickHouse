@@ -51,6 +51,8 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 4; }
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// `0` is not a valid S2 cell id.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 

@@ -21,8 +21,8 @@ public:
     static constexpr auto DEFAULT_FORMAT = "RowBinary";
     static constexpr auto PING_OK_ANSWER = "Ok.";
 
-    static const inline std::string PING_METHOD = Poco::Net::HTTPRequest::HTTP_GET;
-    static const inline std::string MAIN_METHOD = Poco::Net::HTTPRequest::HTTP_POST;
+    [[clang::no_destroy]] static const inline std::string PING_METHOD = Poco::Net::HTTPRequest::HTTP_GET;
+    [[clang::no_destroy]] static const inline std::string MAIN_METHOD = Poco::Net::HTTPRequest::HTTP_POST;
 
     explicit IBridgeHelper(ContextPtr context_) : WithContext(context_) {}
 

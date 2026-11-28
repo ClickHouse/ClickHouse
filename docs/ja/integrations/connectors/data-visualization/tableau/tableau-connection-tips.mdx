@@ -15,7 +15,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
 <ClickHouseSupportedBadge />
 
 <div id="initial-sql-tab">
-  ## 初期 SQL タブ
+  ## 初期 SQL タブ {#initial-sql-tab}
 </div>
 
 Advanced タブで *Set Session ID* チェックボックスが有効になっている場合 (デフォルトで有効) 、次の方法でセッションレベルの[設定](/ja/reference/settings/session-settings)を指定できます
@@ -25,7 +25,7 @@ SET my_setting=value;
 ```
 
 <div id="advanced-tab">
-  ## Advanced タブ
+  ## Advanced タブ {#advanced-tab}
 </div>
 
 99% のケースでは Advanced タブは不要です。残りの 1% では、次の設定を使用できます。
@@ -45,7 +45,7 @@ SET my_setting=value;
 * **Set Session ID** チェックボックス。初期 SQL タブでセッションレベルの設定を行うために必要です。`\"tableau-jdbc-connector-*{timestamp}*-*{number}*\"` 形式で、タイムスタンプと疑似乱数を使った `session_id` を生成します
 
 <div id="limited-support-for-uint64-int128-uint256-data-types">
-  ## UInt64、Int128、(U)Int256 データ型のサポートは限定的です
+  ## UInt64、Int128、(U)Int256 データ型のサポートは限定的です {#limited-support-for-uint64-int128-uint256-data-types}
 </div>
 
 デフォルトでは、ドライバーは *UInt64、Int128、(U)Int256* 型のフィールドを文字列として表示しますが、**変換しているのではなく、表示しているだけです**。つまり、次の計算フィールドを作成しようとすると、エラーが発生します

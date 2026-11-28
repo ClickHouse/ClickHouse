@@ -42,7 +42,7 @@ public:
     {
         if (scheduler.joinable())
         {
-            stop_flag.store(true);
+            stop_flag.store(true, std::memory_order_relaxed);
             events.enqueue([]{}); // just to wake up thread
             scheduler.join();
             if (graceful)
@@ -149,7 +149,7 @@ private:
     {
         setThreadName(name);
         EventQueue::SchedulerThread scheduler_thread(&events);
-        while (!stop_flag.load())
+        while (!stop_flag.load(std::memory_order_relaxed))
         {
             if (events.tryProcess()) // Priority 0: process events
                 continue;

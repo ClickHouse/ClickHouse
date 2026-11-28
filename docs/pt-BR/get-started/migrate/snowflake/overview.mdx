@@ -12,21 +12,19 @@ doc_type: 'guide'
 
 O Snowflake é um data warehouse em nuvem voltado principalmente para a migração de cargas de trabalho legadas de armazenamento de dados on-premise
 para a nuvem. Ele é altamente otimizado para executar
-relatórios de longa duração em escala. À medida que os conjuntos de dados são migrados para a nuvem, os responsáveis pelos dados começam
+relatórios de longa duração em escala. À medida que os datasets são migrados para a nuvem, os responsáveis pelos dados começam
 a pensar em outras formas de extrair valor deles, incluindo o uso
-desses conjuntos de dados para alimentar aplicações em tempo real para casos de uso internos e externos.
+desses datasets para alimentar aplicações em tempo real para casos de uso internos e externos.
 Quando isso acontece, eles geralmente percebem que precisam de um banco de dados otimizado para
 viabilizar analytics em tempo real, como o ClickHouse.
 
 <div id="comparison">
-  ## Comparação
+  ## Comparação {#comparison}
 </div>
 
 Nesta seção, comparamos os principais recursos do ClickHouse e do Snowflake.
 
-<div id="similarities">
-  ### Semelhanças
-</div>
+### Semelhanças {#similarities}
 
 Snowflake é uma plataforma de armazenamento de dados em nuvem que oferece uma solução escalável
 e eficiente para armazenar, processar e analisar grandes volumes de
@@ -36,8 +34,8 @@ baseia-se em seu próprio engine de consulta SQL e em uma arquitetura personaliz
 
 A arquitetura do Snowflake é descrita como um híbrido entre uma arquitetura de armazenamento compartilhado (disco compartilhado)
 e uma arquitetura shared-nothing. Uma arquitetura de armazenamento compartilhado é
-aquela em que os dados podem ser acessados por todos os nós de computação por meio de
-armazenamento de objetos, como o S3. Uma arquitetura shared-nothing é aquela em que cada nó de computação
+aquela em que os dados podem ser acessados por todos os nós de capacidade computacional por meio de
+armazenamento de objetos, como o S3. Uma arquitetura shared-nothing é aquela em que cada nó de capacidade computacional
 armazena localmente uma parte de todo o conjunto de dados para responder a consultas. Em
 teoria, isso oferece o melhor dos dois modelos: a simplicidade de uma arquitetura de disco compartilhado
 e a escalabilidade de uma arquitetura shared-nothing.
@@ -50,13 +48,9 @@ A imagem abaixo, de [docs.snowflake.com](https://docs.snowflake.com/en/user-guid
 mostra essa arquitetura:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Arquitetura do Snowflake](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
-
-</Frame>
-
+  <Frame>
+    ![Arquitetura do Snowflake](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
+  </Frame>
 </div>
 
 Por outro lado, como produto open-source e hospedado na nuvem, o ClickHouse pode ser implantado
@@ -77,17 +71,13 @@ disponível para os nós atuais em um cluster não seja afetado à medida que n�
 adicionados.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Arquitetura do ClickHouse Cloud](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
-
-</Frame>
-
+  <Frame>
+    ![Arquitetura do ClickHouse Cloud](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
+  </Frame>
 </div>
 
 <div id="differences">
-  ### Diferenças
+  ### Diferenças {#differences}
 </div>
 
 Além dos formatos de armazenamento subjacentes e dos motores de consulta, essas arquiteturas
@@ -143,7 +133,7 @@ diferem em alguns aspectos sutis:
   vantagem em relação a outros sistemas.
 
 <div id="real-time-analytics">
-  ### Analytics em tempo real
+  ### Analytics em tempo real {#real-time-analytics}
 </div>
 
 Com base em dados públicos de [benchmark](https://benchmark.clickhouse.com/#system=+%E2%98%81w|%EF%B8%8Fr|C%20c|nfe\&type=-\&machine=-ca2|gl|6ax|6ale|3al\&cluster_size=-\&opensource=-\&tuned=+n\&metric=hot\&queries=-),

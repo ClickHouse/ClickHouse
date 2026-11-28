@@ -27,13 +27,9 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
     اطّلع على دليل AWS [هنا](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html).
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![DynamoDB Kinesis Stream](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
-
-    </Frame>
-
+      <Frame>
+        ![DynamoDB Kinesis Stream](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -42,18 +38,14 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
     **ستحتاج إلى إجراء &quot;تصدير كامل&quot; بتنسيق DynamoDB JSON.**
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![تصدير DynamoDB إلى S3](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
-
-    </Frame>
-
+      <Frame>
+        ![تصدير DynamoDB إلى S3](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="حمّل بيانات اللقطة إلى ClickHouse" id="3-load-the-snapshot-into-clickhouse">
-    ### أنشئ الجداول اللازمة
+### أنشئ الجداول اللازمة {#create-necessary-tables}
 
     ستبدو بيانات اللقطة من DynamoDB على النحو التالي:
 
@@ -113,14 +105,14 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
     * يجب أن يكون هذا الجدول من نوع `ReplacingMergeTree`
     * يجب أن يحتوي الجدول على عمود `version`
       * في الخطوات اللاحقة، سنربط الحقل `ApproximateCreationDateTime` من Kinesis Stream بالعمود `version`.
-    * ينبغي أن يستخدم الجدول مفتاح التقسيم بوصفه مفتاح الترتيب (المحدَّد بواسطة `ORDER BY`)
+    * ينبغي أن يستخدم الجدول مفتاح التقسيم بوصفه مفتاح الترتيب (المحدَّد بواسطة `ORDER BY`)
       * ستُزال تكرارات الصفوف ذات مفتاح الترتيب نفسه استنادًا إلى العمود `version`.
 
-    ### أنشئ ClickPipe الخاص باللقطة
+### أنشئ ClickPipe الخاص باللقطة {#create-the-snapshot-clickpipe}
 
     يمكنك الآن إنشاء ClickPipe لتحميل بيانات اللقطة من S3 إلى ClickHouse. اتبع دليل S3 ClickPipe من [هنا](/ar/integrations/clickpipes/object-storage/amazon-s3/overview)، ولكن استخدم الإعدادات التالية:
 
-    * **مسار الاستيعاب**: ستحتاج إلى تحديد مسار ملفات json المُصدَّرة في S3. سيبدو المسار على النحو التالي تقريبًا:
+    * **مسار الاستيعاب**: ستحتاج إلى تحديد مسار ملفات json المُصدَّرة في S3. سيبدو المسار على النحو التالي تقريبًا:
 
     ```text
     https://{bucket}.s3.amazonaws.com/{prefix}/AWSDynamoDB/{export-id}/data/*
@@ -143,13 +135,9 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
       * اربط الحقول الأخرى بأعمدة الوجهة المناسبة كما هو موضح أدناه
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![ربط أعمدة DynamoDB](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ربط أعمدة DynamoDB](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
+      </Frame>
     </div>
   </Step>
 

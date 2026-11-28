@@ -52,7 +52,7 @@ private:
 
     const char * getStorageEngineName() const override { return "Elasticsearch"; }
 
-    const String & getFunctionURI() const override { return configuration->url; }
+    std::string_view getFunctionURI() const override { return configuration->url; }
 
     String getUsedNamedCollectionName() const override { return configuration ? configuration->named_collection_name : String{}; }
 

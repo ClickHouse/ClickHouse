@@ -53,6 +53,10 @@ private:
     /// Encodes a Variant column as an Arrow dense union (no validity buffer; a types and an offsets
     /// buffer, the variant children in global order, and a trailing single-element null child).
     void encodeVariant(const IColumn & column, const DataTypePtr & type, size_t begin, size_t end);
+    /// Encodes a Variant column as a `Utf8` column holding the JSON text of each value
+    /// (`output_format_arrow_variant_as_json_string`). A NULL value is an Arrow null if `nullable`, and the text `null`
+    /// otherwise (for a map key, which Arrow does not allow to be nullable).
+    void encodeVariantAsJSONText(const IColumn & column, const DataTypePtr & type, size_t begin, size_t end, bool nullable);
     /// Writes a column with no first-class Arrow mapping as a variable-width Arrow column (an int32
     /// offsets buffer and the concatenated per-row serialized values). `arrowOpaqueValueIsText` chooses
     /// between `serializeText` and `serializeBinary`, and thereby between the `Utf8` and `Binary` Arrow

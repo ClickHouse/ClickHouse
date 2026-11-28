@@ -72,6 +72,8 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// An empty string is not a query.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return error_handling != ErrorHandling::Exception; }
 
     [[nodiscard]] String getSignatureString() const override
     {

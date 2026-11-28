@@ -93,19 +93,14 @@ class FunctionDictHelper
 public:
     explicit FunctionDictHelper(ContextPtr context_) : context(context_) {}
 
-    const ContextPtr & getContext() const { return context; }
+    [[nodiscard]] const ContextPtr & getContext() const { return context; }
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        auto dict = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
-
-        if (!access_checked)
-        {
-            context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
-            access_checked = true;
-        }
-
-        return dict;
+        /// Check access before loading the dictionary, because loading contacts the dictionary source,
+        /// and load the dictionary that passed the check.
+        const auto & external_loader = context->getExternalDictionariesLoader();
+        return external_loader.getDictionary(external_loader.resolveDictionaryCheckingAccess(dictionary_name, context), context);
     }
 
     std::shared_ptr<const IDictionary> getDictionary(const ColumnPtr & column)
@@ -165,17 +160,16 @@ public:
         return getDictionary(dictionary_name)->isInjective(attribute_name);
     }
 
-    DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
+    DictionaryStructure getDictionaryStructure(const String & dictionary_name)
     {
-        return context->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, context);
+        /// Check access before reading the definition, so that a user without access learns nothing about the dictionary.
+        const auto & external_loader = context->getExternalDictionariesLoader();
+        return external_loader.getDictionaryStructure(external_loader.resolveDictionaryCheckingAccess(dictionary_name, context));
     }
 
     const ContextPtr context;
 
 private:
-    /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
-    std::atomic<bool> access_checked = false;
-
     /// We must not cache dictionary or dictionary's structure here, because there are places
     /// where ExpressionActionsPtr is cached (StorageDistributed caching it for sharding_key_expr and
     /// optimize_skip_unused_shards), and if the dictionary will be cached within "query" then
@@ -757,6 +751,24 @@ private:
         ColumnPtr mask_column,
         const DataTypePtr & result_type) const
     {
+        /// `if` creates its result from the type, which brings back the dynamic paths the dictionary column avoids.
+        if (result_type->hasDynamicSubcolumns())
+        {
+            const auto & mask = assert_cast<const ColumnUInt8 &>(*mask_column).getData();
+            auto merged = result_column->cloneEmpty();
+            merged->reserve(mask.size());
+            for (size_t start = 0; start < mask.size();)
+            {
+                size_t end = start + 1;
+                while (end < mask.size() && mask[end] == mask[start])
+                    ++end;
+                merged->insertRangeFrom(mask[start] ? *defaults_column : *result_column, start, end - start);
+                start = end;
+            }
+            result_column = std::move(merged);
+            return;
+        }
+
         auto if_func = FunctionFactory::instance().get("if", helper.context);
         ColumnsWithTypeAndName if_args =
         {
@@ -1124,7 +1136,7 @@ private:
         /// `dictHas` expects a key that is not `Nullable`. `NULL` keys are already `NULL` in the `dictGet` result below.
         dict_has_arguments[1] = columnGetNested(dict_has_arguments[1]);
         auto is_key_in_dictionary_column = dictionary_has_func_impl.executeImpl(dict_has_arguments, std::make_shared<DataTypeUInt8>(), input_rows_count);
-        auto is_key_in_dictionary_column_mutable = is_key_in_dictionary_column->assumeMutable();
+        auto is_key_in_dictionary_column_mutable = IColumn::mutate(std::move(is_key_in_dictionary_column));
         ColumnVector<UInt8> & is_key_in_dictionary_column_typed = assert_cast<ColumnVector<UInt8> &>(*is_key_in_dictionary_column_mutable);
         PaddedPODArray<UInt8> & is_key_in_dictionary_data = is_key_in_dictionary_column_typed.getData();
         for (auto & key : is_key_in_dictionary_data)
@@ -1150,9 +1162,9 @@ private:
 
         if (dictionary_get_result_data_type.isTuple())
         {
-            ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(*dictionary_get_result_column_mutable);
-
-            const auto & columns = column_tuple.getColumns();
+            /// Release the tuple, so that each element is owned only by `columns` and can be mutated.
+            Columns columns = assert_cast<const ColumnTuple &>(*dictionary_get_result_column_mutable).getColumnsCopy();
+            dictionary_get_result_column_mutable.reset();
             size_t tuple_size = columns.size();
 
             MutableColumns new_columns(tuple_size);
@@ -1162,7 +1174,7 @@ private:
                 auto & nullable_column_map_data = nullable_column_map->getData();
                 nullable_column_map_data.assign(is_key_in_dictionary_data);
 
-                auto mutable_column = columns[tuple_column_index]->assumeMutable();
+                auto mutable_column = IColumn::mutate(std::move(columns[tuple_column_index]));
                 if (ColumnNullable * nullable_column = typeid_cast<ColumnNullable *>(mutable_column.get()))
                 {
                     auto & null_map_data = nullable_column->getNullMapData();

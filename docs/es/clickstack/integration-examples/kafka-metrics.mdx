@@ -16,7 +16,7 @@ import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-kafka">
-  ## Integración con una implementación existente de Kafka
+  ## Integración con una implementación existente de Kafka {#existing-kafka}
 </div>
 
 Supervise su implementación existente de Kafka ejecutando el contenedor OpenTelemetry JMX Metric Gatherer para recopilar métricas y enviarlas a ClickStack a través de OTLP.
@@ -24,7 +24,7 @@ Supervise su implementación existente de Kafka ejecutando el contenedor OpenTel
 Si primero quiere probar esta integración sin modificar su configuración actual, vaya a la [sección del dataset de demostración](#demo-dataset).
 
 <div id="prerequisites">
-  ##### Requisitos previos
+  ##### Requisitos previos {#prerequisites}
 </div>
 
 * Instancia de ClickStack en ejecución
@@ -36,19 +36,15 @@ Si primero quiere probar esta integración sin modificar su configuración actua
   <Step title="Obtener la API key de ClickStack" id="get-api-key">
     El JMX Metric Gatherer envía datos al endpoint OTLP de ClickStack, que requiere autenticación.
 
-    1. Abre HyperDX en la URL de tu ClickStack (p. ej., http://localhost:8080)
+    1. Abre la UI de ClickStack en la URL de tu ClickStack (p. ej., http://localhost:8080)
     2. Crea una cuenta o inicia sesión si es necesario
     3. Ve a **configuración del equipo → API Keys**
     4. Copia tu **API key de ingesta**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![API key de ClickStack](/images/clickstack/api-key.webp)
-
-    </Frame>
-
+      <Frame>
+        ![API key de ClickStack](/images/clickstack/api-key.webp)
+      </Frame>
     </div>
 
     5. Defínela como variable de entorno:
@@ -174,8 +170,8 @@ Si primero quiere probar esta integración sin modificar su configuración actua
     * `10000` - Intervalo de recopilación en milisegundos (10 segundos)
   </Step>
 
-  <Step title="Verificar métricas en HyperDX" id="verify-metrics">
-    Inicie sesión en HyperDX y confirme que se estén recibiendo métricas:
+  <Step title="Verificar métricas en la UI de ClickStack" id="verify-metrics">
+    Inicie sesión en la UI de ClickStack y confirme que se estén recibiendo métricas:
 
     1. Vaya a Chart Explorer
     2. Busque `kafka.message.count` o `kafka.partition.count`
@@ -206,7 +202,7 @@ Si primero quiere probar esta integración sin modificar su configuración actua
 </Steps>
 
 <div id="demo-dataset">
-  ## Dataset de demostración
+  ## Conjunto de datos de demostración {#demo-dataset}
 </div>
 
 Para quienes quieran probar la integración de métricas de Kafka antes de configurar sus sistemas de producción, proporcionamos un conjunto de datos pregenerado con patrones realistas de métricas de Kafka.
@@ -223,11 +219,11 @@ Para quienes quieran probar la integración de métricas de Kafka antes de confi
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/kafka-metrics-sum.csv
     ```
 
-    El conjunto de datos incluye patrones realistas para un clúster de Kafka de comercio electrónico con un solo broker:
+    El conjunto de datos incluye patrones realistas para un clúster de Kafka de comercio electrónico con un solo bróker:
 
     * **06:00-08:00: Pico matutino** - Fuerte aumento del tráfico respecto al nivel base nocturno
     * **10:00-10:15: Venta flash** - Pico drástico de hasta 3.5x el tráfico normal
-    * **11:30: Evento de despliegue** - Pico de 12x en el retraso del consumidor con particiones subreplicadas
+    * **11:30: Evento de despliegue** - Pico de 12x en el retraso del consumidor con particiones con replicación insuficiente
     * **14:00-15:30: Hora punta de compras** - Tráfico alto sostenido en 2.8x el nivel base
     * **17:00-17:30: Pico al final de la jornada** - Pico secundario de tráfico
     * **18:45: Reequilibrio de consumidores** - Pico de 6x en el retraso durante el reequilibrio
@@ -258,7 +254,7 @@ Para quienes quieran probar la integración de métricas de Kafka antes de confi
     ```
   </Step>
 
-  <Step title="Verificar métricas en HyperDX" id="verify-demo-metrics">
+  <Step title="Verificar métricas en la UI de ClickStack" id="verify-demo-metrics">
     Una vez cargadas, la forma más rápida de ver las métricas es a través del dashboard preconfigurado.
 
     Continúe en la sección [Dashboards y visualización](#dashboards) para importar el dashboard y ver todas las métricas de Kafka de una vez.
@@ -266,14 +262,12 @@ Para quienes quieran probar la integración de métricas de Kafka antes de confi
     <Info>
       **Visualización de la zona horaria**
 
-      HyperDX muestra las marcas de tiempo según la zona horaria local del navegador. Los datos de demostración abarcan **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)**. Configure el intervalo de tiempo en **2025-11-04 16:00:00 - 2025-11-07 16:00:00** para asegurarse de ver las métricas de demostración independientemente de su ubicación. Una vez que vea las métricas, puede acotar el intervalo a un período de 24 horas para obtener visualizaciones más claras.
+      La UI de ClickStack muestra las marcas de tiempo según la zona horaria local del navegador. Los datos de demostración abarcan **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)**. Configure el intervalo de tiempo en **2025-11-04 16:00:00 - 2025-11-07 16:00:00** para asegurarse de ver las métricas de demostración independientemente de su ubicación. Una vez que vea las métricas, puede acotar el intervalo a un período de 24 horas para obtener visualizaciones más claras.
     </Info>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## Dashboard y visualización
-</div>
+## Dashboard y visualización {#dashboards}
 
 Para ayudarle a empezar a supervisar Kafka con ClickStack, proporcionamos visualizaciones esenciales de las métricas de Kafka.
 
@@ -283,29 +277,21 @@ Para ayudarle a empezar a supervisar Kafka con ClickStack, proporcionamos visual
   </Step>
 
   <Step title="Importe el dashboard preconfigurado" id="import-dashboard">
-    1. Abra HyperDX y vaya a la sección Dashboard
+    1. Abra la UI de ClickStack y vaya a la sección Dashboard
     2. Haga clic en **Import Dashboard** en la esquina superior derecha, en el menú de puntos suspensivos
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Botón para importar dashboard](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Botón para importar dashboard](/images/clickstack/import-dashboard.webp)
+      </Frame>
     </div>
 
     3. Cargue el archivo `kafka-metrics-dashboard.json` y haga clic en **Finish Import**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Diálogo para finalizar la importación](/images/clickstack/kafka/import-kafka-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Diálogo para finalizar la importación](/images/clickstack/kafka/import-kafka-dashboard.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -313,13 +299,9 @@ Para ayudarle a empezar a supervisar Kafka con ClickStack, proporcionamos visual
     El dashboard se creará con todas las visualizaciones preconfiguradas:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Dashboard de métricas de Kafka](/images/clickstack/kafka/kafka-metrics-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Dashboard de métricas de Kafka](/images/clickstack/kafka/kafka-metrics-dashboard.webp)
+      </Frame>
     </div>
 
     <Note>
@@ -329,20 +311,18 @@ Para ayudarle a empezar a supervisar Kafka con ClickStack, proporcionamos visual
 </Steps>
 
 <div id="troubleshooting">
-  ## Solución de problemas
+  ## Solución de problemas {#troubleshooting}
 </div>
 
-<div id="no-metrics">
-  ### No aparecen métricas en HyperDX
-</div>
+### No aparecen métricas en la UI de ClickStack {#no-metrics}
 
 **Compruebe que la API key esté configurada y se haya pasado al contenedor:**
 
 ```bash
-# Verificar la variable de entorno
+# Check environment variable
 echo $CLICKSTACK_API_KEY
 
-# Verificar que está en el contenedor
+# Verify it's in the container
 docker exec <jmx-exporter-container> env | grep CLICKSTACK_API_KEY
 ```
 
@@ -364,7 +344,7 @@ LIMIT 10
 "
 ```
 
-Si no aparece ningún resultado, revise los logs del exportador de JMX:
+Si no aparece ningún resultado, revise los logs del exportador JMX:
 
 ```bash
 docker compose logs kafka-jmx-exporter | grep -i "error\|connection" | tail -10
@@ -373,20 +353,18 @@ docker compose logs kafka-jmx-exporter | grep -i "error\|connection" | tail -10
 **Genera actividad en Kafka para alimentar las métricas:**
 
 ```bash
-# Crear un topic de prueba
+# Create a test topic
 docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
 
-# Enviar mensajes de prueba
+# Send test messages
 echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
 ```
 
-<div id="auth-errors">
-  ### Errores de autenticación
-</div>
+### Errores de autenticación {#auth-errors}
 
 Si ve `Authorization failed` o `401 Unauthorized`:
 
-1. Verifique la API key en la UI de HyperDX (Settings → API Keys → Ingestion API Key)
+1. Verifique la API key en la UI de ClickStack (Settings → API Keys → Ingestion API Key)
 2. Vuelva a exportarla y reinicie:
 
 ```bash
@@ -396,7 +374,7 @@ docker compose up -d
 ```
 
 <div id="port-conflicts">
-  ### Conflictos de puertos con los comandos del cliente de Kafka
+  ### Conflictos de puertos con los comandos del cliente de Kafka {#port-conflicts}
 </div>
 
 Al ejecutar comandos de Kafka desde el contenedor de Kafka, es posible que vea:
@@ -412,7 +390,7 @@ docker exec kafka bash -c "unset JMX_PORT && kafka-topics --list --bootstrap-ser
 ```
 
 <div id="network-issues">
-  ### Problemas de conectividad de red
+  ### Problemas de conectividad de red {#network-issues}
 </div>
 
 Si los registros del exportador JMX muestran `Connection refused`:
@@ -432,16 +410,14 @@ docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null >
 ```
 
 <div id="next-steps">
-  ## Siguientes pasos
+  ## Siguientes pasos {#next-steps}
 </div>
 
 * Configurar [alertas](/es/clickstack/features/alerts) para métricas críticas (particiones con replicación insuficiente, aumento del retraso del consumidor, picos de latencia de las solicitudes)
 * Crear dashboards adicionales para casos de uso específicos (throughput por topic, monitorización de grupos de consumidores)
 * Supervisar varios brókers de Kafka añadiendo instancias adicionales de JMX Metric Gatherer con atributos de recurso `kafka.broker.id` únicos
 
-<div id="going-to-production">
-  ## Paso a producción
-</div>
+## Paso a producción {#going-to-production}
 
 Esta guía envía métricas directamente desde JMX Metric Gatherer al endpoint OTLP de ClickStack, lo que funciona bien para pruebas e implementaciones pequeñas.
 

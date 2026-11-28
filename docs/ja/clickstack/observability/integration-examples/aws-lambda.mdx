@@ -1,0 +1,304 @@
+---
+slug: /clickstack/observability/integration-examples/aws-lambda
+title: 'Rotel を使用した ClickHouse オブザーバビリティによる AWS Lambda ログの監視'
+sidebarTitle: 'AWS Lambda ログ'
+description: 'コミュニティが保守する Rotel Lambda Extension を使用して AWS Lambda のログを収集し、ClickHouse オブザーバビリティに送信します。'
+doc_type: 'guide'
+keywords: ['AWS', 'Lambda', 'OTEL', 'ClickHouse Observability', 'logs', 'CloudWatch']
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Rotel Lambda Extension を使用すると、関数ログと拡張機能ログを収集し、OTLP 経由で ClickHouse オブザーバビリティに直接送信できます。この拡張機能は Lambda 関数と同じ環境で動作するため、collector を別途用意する必要はありません。さらに、OpenTelemetry のインストルメンテーションを追加すれば、トレースも収集できます。
+
+## 前提条件 {#prerequisites}
+
+* ClickHouse オブザーバビリティのサービス
+* ZIP 形式でデプロイされ、[Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension) がサポートするランタイムを使用する AWS Lambda 関数
+* CLI の例を使用する場合は、関数のリージョン向けに設定済みの AWS CLI v2
+* 関数のレイヤーと環境変数を更新するためのアクセス許可
+* Lambda 関数から OTLP エンドポイントへのネットワークアクセス (VPC 内の関数の場合はアウトバウンドアクセスを含む)
+
+### 接続情報 {#connection-details}
+
+<Tabs>
+  <Tab title="完全マネージド型">
+    <BetaBadge label="ベータ版サービス" />
+
+    ClickHouse オブザーバビリティを開き、**チーム設定 → Data → マネージドテレメトリー** に移動します。OTLP HTTPエンドポイントとAPIキーをコピーしてください。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![マネージドテレメトリーの接続情報](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    以下の `ROTEL_OTLP_EXPORTER_ENDPOINT` には、ポートを含めてエンドポイントをそのまま指定してください。エンドポイントには `/v1/logs` などの接尾辞を付けずにベースのHTTPエンドポイントを使用し、プロトコルは `http` に設定します。マネージドサービスでは `Authorization=Bearer YOUR_API_KEY` ヘッダーが必要です。
+  </Tab>
+
+  <Tab title="セルフマネージド">
+    collectorのOTLP HTTPエンドポイントと認証設定を使用してください。宛先で認証が不要な場合は、`ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS` を省略できます。エンドポイントはLambdaから接続可能である必要があります。なお、`localhost` はLambda実行環境自体を指します。詳しくは[セルフマネージドのセットアップガイド](/ja/clickstack/self-configured/getting-started/managed)を参照してください。
+
+    以下のLambda環境変数および `rotel.env` の例では、次の宛先設定値を使用します。
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_COLLECTOR_HOST:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=YOUR_INGESTION_KEY"
+    ```
+  </Tab>
+</Tabs>
+
+## 既存の Lambda 関数との連携 {#existing-lambda}
+
+<Steps>
+  <Step title="適切な Rotel Lambda Extension レイヤーを選択する" id="choose-layer">
+    関数のアーキテクチャ (`amd64` または `arm64`) 、ランタイム、AWSリージョンに対応するレイヤーを選択してください。[Rotel のリリース](https://github.com/streamfold/rotel-lambda-extension/releases)から、バージョン番号を含む完全なレイヤー ARN をコピーし、以下の例ではその ARN を使用してください。レイヤーのバージョンや提供状況はリージョンによって異なります。
+  </Step>
+
+  <Step title="Lambda 関数に Rotel レイヤーを追加する" id="add-layer">
+    `YOUR_ROTEL_LAYER_ARN` は選択した ARN に、`my-function` は対象の関数名に置き換えてください。
+
+##### オプション 1: AWS コンソール {#console}
+
+    1. AWS Lambda コンソールを開きます
+    2. 対象の Lambda 関数に移動します
+    3. **Layers** セクションまでスクロールし、**Add a layer** をクリックします
+    4. **Specify an ARN** を選択します
+    5. Rotel レイヤーの ARN を入力します。
+       ```text
+       YOUR_ROTEL_LAYER_ARN
+       ```
+    6. **Add** をクリックします
+
+##### オプション 2: AWS CLI {#cli}
+
+    現在のレイヤー一覧をエクスポートします。
+
+    ```bash
+    aws lambda get-function-configuration \
+      --function-name my-function \
+      --query 'Layers[].Arn || `[]`' \
+      --output json > layers.json
+    ```
+
+    既存のエントリを残したまま、Rotel レイヤーの ARN を文字列として `layers.json` 配列に追加します。その後、すべてのレイヤーを含むリストを適用します。
+
+    ```bash
+    aws lambda update-function-configuration \
+      --function-name my-function \
+      --layers file://layers.json
+    aws lambda wait function-updated --function-name my-function
+    ```
+
+##### オプション 3: AWS SAM {#sam}
+
+    ```yaml
+    Resources:
+      MyFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+          # ... other configuration ...
+          Layers:
+            # Keep any existing layer entries here.
+            - YOUR_ROTEL_LAYER_ARN
+    ```
+  </Step>
+
+  <Step title="ClickHouse オブザーバビリティへのエクスポート用に拡張機能を設定する" id="configure-extension">
+    Lambda コンソールで **Configuration → Environment variables** を開き、既存の変数を残したまま以下の設定を追加します。これらは Lambda の設定値であり、ローカルの端末で実行するコマンドではありません。コンソールで値を入力する際は、例に示されている前後の引用符は付けずに入力してください。
+
+##### 基本設定 (環境変数) {#basic-config}
+
+    Lambda 関数に以下の環境変数を追加します。
+
+    ```bash
+    # OTLP HTTP endpoint from Connection details
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+
+    # Required for managed ingestion
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer YOUR_API_KEY"
+
+    # Optional: Service name (defaults to Lambda function name)
+    ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
+    ```
+
+##### 高度な設定 (.env ファイルを使用) {#advanced-config}
+
+    より複雑な構成の場合は、Lambda 関数のバンドル内に `rotel.env` ファイルを作成します。
+
+    **rotel.env:**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer YOUR_API_KEY"
+    ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,deployment.environment=production"
+    ```
+
+    次に、このファイルを参照するよう環境変数を設定します。
+
+    ```bash
+    ROTEL_ENV_FILE=/var/task/rotel.env
+    ```
+
+##### AWS Secrets Manager または Parameter Store の使用 {#secrets}
+
+    APIキーを AWS Secrets Manager または Parameter Store に保存し、その ARN を `rotel.env` で参照できます。以下の例では、完全マネージド型の認証を使用し、シークレットには APIキーのみが格納されていることを前提としています。`Bearer` プレフィックスは、Rotel が設定に基づいて付加します。インジェスト key を使用するセルフマネージドの collector の場合は、`Bearer ` プレフィックスを省略してください。例に記載されているリージョン、アカウント、シークレットの名前は、ご利用の環境に合わせて置き換えてください。
+
+    **AWS Secrets Manager の例:**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer ${arn:aws:secretsmanager:us-east-1:123456789012:secret:observability-api-key-abc123}"
+    ```
+
+    **AWS Parameter Store の例：**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer ${arn:aws:ssm:us-east-1:123456789012:parameter/observability-api-key}"
+    ```
+
+    **必要な IAM 権限:**
+
+    Lambda の実行ロールに次のアクセス許可を追加します。
+
+    Secrets Manager を使用する場合:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "secretsmanager:GetSecretValue",
+            "secretsmanager:BatchGetSecretValue"
+          ],
+          "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:observability-api-key-*"
+        }
+      ]
+    }
+    ```
+
+    Parameter Store の場合：
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "ssm:GetParameters"
+          ],
+          "Resource": "arn:aws:ssm:us-east-1:123456789012:parameter/observability-api-key"
+        }
+      ]
+    }
+    ```
+
+    <Note>
+      シークレットの取得は初期化時に行われるため、コールドスタートのレイテンシが増加する場合があります。対応フォーマットと必要なアクセス許可については、[Rotel のシークレット設定](https://github.com/streamfold/rotel-lambda-extension#secrets)を参照してください。顧客管理の暗号鍵を使用している場合は、`kms:Decrypt` のアクセス許可も必要になることがあります。
+    </Note>
+  </Step>
+
+  <Step title="インテグレーションをテストする" id="test-integration">
+    Lambda 関数が受け付けるイベントを渡して関数を呼び出し、ハンドラーがログを書き込むことを確認してください。関数が別の形式のイベントを想定している場合は、次の例のペイロードを置き換えてください：
+
+    ```bash
+    aws lambda invoke \
+      --function-name my-function \
+      --cli-binary-format raw-in-base64-out \
+      --payload '{"test": "data"}' \
+      response.json
+    ```
+
+    Lambda のログにエラーが出ていないか確認します。
+
+    ```bash
+    aws logs tail /aws/lambda/my-function --follow
+    ```
+  </Step>
+
+  <Step title="ログを確認する" id="verify-logs">
+    ClickHouse オブザーバビリティで **検索** を開き、**Logs** ログソースを選択します。例のサービス名を使用した場合は `ServiceName:my-lambda-api` でフィルタします。それ以外の場合は、使用している Lambda 関数名でフィルタしてください。期間は **Last 15 minutes** を選択します。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Lambda ログビュー](/images/clickstack/lambda/lambda-log-view.webp)
+      </Frame>
+    </div>
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Lambda ログの詳細](/images/clickstack/lambda/lambda-log.webp)
+      </Frame>
+    </div>
+
+    ログで次の主要な属性を確認します。
+
+    * `service.name`: 設定したサービス名 (デフォルトでは Lambda 関数名)
+    * `faas.name`: AWS Lambda 関数名
+    * `faas.invocation_id`: 一意の呼び出し ID
+    * `cloud.provider`: &quot;aws&quot;
+    * `cloud.platform`: &quot;aws&#95;lambda&quot;
+  </Step>
+</Steps>
+
+## CloudWatch Logs の無効化 (コスト最適化) {#disable-cloudwatch}
+
+デフォルトでは、AWS Lambda はすべてのログを CloudWatch Logs に送信するため、大規模な環境ではコストが高額になる場合があります。ログが ClickHouse オブザーバビリティに送信されていることを確認したら、CloudWatch へのログ出力を無効化してコストを削減できます。
+
+<Steps>
+  <Step title="実行ロールから CloudWatch のアクセス許可を削除する" id="remove-permissions">
+    1. AWS コンソールを開き、**AWS Lambda** に移動します
+    2. 対象の Lambda 関数を開きます
+    3. **Configuration** → **アクセス許可** を選択します
+    4. 実行ロール名をクリックして IAM コンソールを開きます
+    5. この関数が使用している CloudWatch Logs への書き込みアクセス許可を削除します。ロールが他と共有されている場合は、この変更を行う前に専用のロールに切り替えてください。
+       * カスタムポリシーを使用している場合は、ポリシーを編集して `logs:CreateLogGroup`、`logs:CreateLogStream`、`logs:PutLogEvents` を削除します
+       * AWS マネージドポリシー `AWSLambdaBasicExecutionRole` を使用している場合は、ロールからそのポリシーを削除します
+    6. ロールを保存します
+  </Step>
+
+  <Step title="CloudWatch へのログ出力が無効になっていることを確認する" id="verify-disabled">
+    関数を再度呼び出し、次の点を確認します。
+
+    1. 関数の CloudWatch ロググループに新しいイベントが表示されないこと
+    2. ClickHouse オブザーバビリティには引き続きログが表示されること
+
+    ```bash
+    aws logs tail /aws/lambda/my-function --since 5m --follow
+    ```
+  </Step>
+</Steps>
+
+## OpenTelemetry の自動計装を追加する {#auto-instrumentation}
+
+Rotel は、併せてインストールされた言語別のインストルメンテーションレイヤーからテレメトリーを受信できます。[Rotel の自動計装の手順](https://github.com/streamfold/rotel-lambda-extension#auto-instrumentation)およびリンク先の各言語レイヤーのドキュメントに従って、互換性のあるレイヤーを選択し、`AWS_LAMBDA_EXEC_WRAPPER` を設定してください。
+
+インストルメンテーションを追加する際は、Rotel レイヤーと既存のレイヤーをすべて残しておいてください。関数を呼び出したら、ClickHouse オブザーバビリティで **Traces** ログソースを選択し、設定済みのサービス名でフィルタします。ログとトレースを相関付けるには、アプリケーションのインストルメンテーションがログにトレース ID とスパン ID を含めている必要があります。
+
+## アプリケーション例 {#examples}
+
+Rotel Lambda Extension の使用方法を示す Python のサンプルアプリケーションを参照してください。
+
+* **[Python + ClickHouse](https://github.com/streamfold/python-aws-lambda-clickhouse-example)**: OpenTelemetry による手動インストルメンテーションを実装し、トレースとログを ClickHouse に直接送信する Python アプリケーション
+
+## Rotel コミュニティに参加する {#join-rotel-community}
+
+Rotel についてご質問がある場合は、[Rotel Discord サーバー](https://rotel.dev)に参加して、フィードバックやご質問をお寄せください。改善へのコントリビュートをご希望の場合は、[Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension) をご覧ください。
+
+## 関連リソース {#resources}
+
+* **[Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension)**: ソースコードと詳細なドキュメント
+* **[Rotel Core](https://github.com/streamfold/rotel)**: この拡張機能の基盤となる軽量な OTEL データプレーン

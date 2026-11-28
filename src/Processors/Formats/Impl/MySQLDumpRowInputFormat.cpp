@@ -351,6 +351,11 @@ static MySQLQueryType skipToInsertOrCreateQuery(String & table_name, ReadBuffer 
         current_table_name = readTableName(in);
         if (table_name.empty())
             table_name = current_table_name;
+        else if (current_table_name != table_name)
+        {
+            /// The keyword scan splits at spaces, so it must start at a statement: skip the rest of this one.
+            skipQuery(in);
+        }
     } while (current_table_name != table_name);
 
     /// Note that now position in the buffer is located in CREATE/INSERT query after table name.
@@ -414,6 +419,12 @@ static void skipFieldDelimiter(ReadBuffer & in)
     skipWhitespaceIfAny(in);
     assertChar(',', in);
     skipWhitespaceIfAny(in);
+}
+
+static void skipBinaryIntroducerIfAny(ReadBuffer & in)
+{
+    if (checkStringCaseInsensitive("_binary", in))
+        skipWhitespaceIfAny(in);
 }
 
 static void skipEndOfInsertQueryIfNeeded(ReadBuffer & in, String & table_name)
@@ -556,6 +567,7 @@ bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
 {
     const auto & type = types[column_idx];
     const auto & serialization = serializations[column_idx];
+    skipBinaryIntroducerIfAny(*in);
     if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
         return SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *in, format_settings, serialization, type.get());
 
@@ -566,6 +578,7 @@ bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
 void MySQLDumpRowInputFormat::skipField()
 {
     NullOutput out;
+    skipBinaryIntroducerIfAny(*in);
     readQuotedFieldInto(out, *in);
 }
 
@@ -602,6 +615,7 @@ std::optional<DataTypes> MySQLDumpSchemaReader::readRowAndGetDataTypes()
         if (!data_types.empty())
             skipFieldDelimiter(in);
 
+        skipBinaryIntroducerIfAny(in);
         readQuotedField(value, in);
         auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
         data_types.push_back(std::move(type));

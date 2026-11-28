@@ -2,7 +2,7 @@
 slug: /use-cases/observability/clickstack/integration-partners/telflo
 title: 'Enviando OpenTelemetry para o ClickStack com o Telflo'
 sidebarTitle: 'Telflo'
-description: 'Crie e implante configurações do OpenTelemetry Collector que enviam telemetria para o ClickStack ou a gravam diretamente no ClickHouse, com o Telflo gerenciando a frota de collectors'
+description: 'Crie e implante configurações do Coletor OpenTelemetry que enviam telemetria para o ClickStack ou a gravam diretamente no ClickHouse, com o Telflo gerenciando a frota de coletores'
 doc_type: 'guide'
 keywords: ['Telflo', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector management', 'fleet management', 'ClickHouse exporter']
 ---
@@ -14,11 +14,11 @@ import { PartnerBadge } from "/snippets/pt-BR/components/PartnerBadge/PartnerBad
 <Info>
   **Resumo**
 
-  Este guia mostra como enviar telemetria para o ClickStack a partir de OpenTelemetry Collectors gerenciados pelo Telflo. Você aprenderá a:
+  Este guia mostra como enviar telemetria para o ClickStack a partir de Coletores OpenTelemetry gerenciados pelo Telflo. Você aprenderá a:
 
-  * Criar uma configuração de collector no editor visual do Telflo ou pela CLI
-  * Enviar a telemetria para o ClickStack open source ou Managed, ou gravá-la diretamente no ClickHouse
-  * Implantar configurações remotamente em uma frota de collectors
+  * Criar uma configuração de coletor no editor visual do Telflo ou pela CLI
+  * Enviar a telemetria para o Open Source ou o Self-managed ClickHouse Observability, ou gravá-la diretamente no ClickHouse
+  * Implantar configurações remotamente em uma frota de coletores
   * Confirmar que a telemetria chega ao ClickStack ou às suas tabelas do ClickHouse
 
   Tempo necessário: 15-20 minutos
@@ -59,13 +59,13 @@ O Telflo oferece:
 
 ## Pré-requisitos {#prerequisites}
 
-* Um destino: [Open Source ClickStack](/pt-BR/clickstack/getting-started/oss), [Managed ClickStack](/pt-BR/clickstack/getting-started/managed) ou uma instância autogerenciada do ClickHouse
+* Um destino: [Open Source ClickStack](/pt-BR/clickstack/getting-started/oss), [Self-managed ClickHouse Observability](/pt-BR/clickstack/self-configured/getting-started/managed) ou uma instância autogerenciada do ClickHouse
 * Conta Telflo ([crie uma conta em telflo.com](https://telflo.com))
-* Um ambiente onde executar os collectors: uma VM ou um cluster do Kubernetes
-* **Open Source ClickStack**: o endpoint OTLP do seu ClickStack (`4318` para HTTP, `4317` para gRPC) e sua API key de ingestão, disponível no HyperDX em **Team Settings → API Keys** ([veja a documentação aqui para referência](/pt-BR/clickstack/ingesting-data/opentelemetry#sending-otel-data))
-* **Managed ClickStack**: o endpoint do seu serviço ClickHouse Cloud (porta `8443`) e um usuário de ingestão (consulte [Criando um usuário de ingestão](/pt-BR/clickstack/ingesting-data/collector#creating-an-ingestion-user))
+* Um ambiente onde executar os coletores: uma VM ou um cluster do Kubernetes
+* **Open Source ClickStack**: o endpoint OTLP do seu ClickStack (`4318` para HTTP, `4317` para gRPC) e sua API key de ingestão, disponível na Interface do ClickStack em **Team Settings → API Keys** ([veja a documentação aqui para referência](/pt-BR/clickstack/ingesting-data/opentelemetry#sending-otel-data))
+* **Self-managed ClickHouse Observability**: o endpoint do seu serviço ClickHouse Cloud (porta `8443`) e um usuário de ingestão (consulte [Criando um usuário de ingestão](/pt-BR/clickstack/ingesting-data/collector#creating-an-ingestion-user))
 * **ClickHouse autogerenciado**: o endpoint do seu ClickHouse, um banco de dados para as [tabelas do ClickStack](/pt-BR/clickstack/ingesting-data/schemas) e um usuário com permissão para criá-las e escrever nelas (consulte [Criando um usuário de ingestão](/pt-BR/clickstack/ingesting-data/collector#creating-an-ingestion-user-oss))
-* Conectividade de rede dos collectors até o endpoint do seu ClickStack ou ClickHouse
+* Conectividade de rede dos coletores até o endpoint do seu ClickStack ou ClickHouse
 
 {/* vale off */}
 
@@ -82,7 +82,7 @@ O Telflo oferece:
   </Step>
 
   <Step title="Adicione o exporter" id="add-exporter">
-    Os três caminhos usam o mesmo editor, o mesmo passo de publicação e a mesma frota; apenas o exporter muda. Escolha a aba correspondente à sua implantação: o Open Source ClickStack recebe OTLP com uma chave de ingestão; o Managed ClickStack e o ClickHouse autogerenciado recebem gravações diretas nas tabelas do ClickStack.
+    Os três caminhos usam o mesmo editor, o mesmo passo de publicação e a mesma frota; apenas o exporter muda. Escolha a aba correspondente à sua implantação: o Open Source ClickStack recebe OTLP com uma chave de ingestão; o Self-managed ClickHouse Observability e o ClickHouse autogerenciado recebem gravações diretas nas tabelas do ClickStack.
 
     <Tabs>
       <Tab title="Open Source ClickStack">
@@ -93,8 +93,8 @@ O Telflo oferece:
         Para gRPC, use o exporter **OTLP** na porta `4317` com o mesmo header em **gRPC Metadata Headers**.
       </Tab>
 
-      <Tab title="Managed ClickStack">
-        O Managed ClickStack não inclui um collector gateway, portanto não há um endpoint OTLP hospedado para onde enviar a telemetria. O collector que você configura aqui passa a ser esse [gateway](/pt-BR/clickstack/ingesting-data/collector#collector-roles): adicione a ele um receiver **OTLP** junto com o ClickHouse exporter, e ele passará a gravar no seu ClickHouse Cloud service. Seus SDKs e collectors agent então enviam OTLP para ele nas portas `4318` (HTTP) ou `4317` (gRPC).
+      <Tab title="Self-managed ClickHouse Observability">
+        O Self-managed ClickHouse Observability não inclui um collector gateway, portanto não há um endpoint OTLP hospedado para onde enviar a telemetria. O collector que você configura aqui passa a ser esse [gateway](/pt-BR/clickstack/ingesting-data/collector#collector-roles): adicione a ele um receiver **OTLP** junto com o ClickHouse exporter, e ele passará a gravar no seu ClickHouse Cloud service. Seus SDKs e collectors agent então enviam OTLP para ele nas portas `4318` (HTTP) ou `4317` (gRPC).
 
         1. Arraste o exporter **ClickHouse** para o canvas.
         2. Preencha **Endpoint** com o endpoint do seu ClickHouse Cloud service (porta `8443`), defina **Database** como `default` e informe em **Username** o seu usuário de ingestão.
@@ -119,13 +119,9 @@ O Telflo oferece:
     Trace conexões dos receivers, passando pelos processors, até o exporter, um pipeline por sinal. A linha de status informa **config valid** ou o número de erros a corrigir, e a aba **YAML** exibe a configuração gerada.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Um pipeline do coletor no editor Telflo com o exportador do ClickHouse configurado](/images/clickstack/telflo/telflo-configuration.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Um pipeline do coletor no editor Telflo com o exportador do ClickHouse configurado](/images/clickstack/telflo/telflo-configuration.webp)
+      </Frame>
     </div>
 
     Antes de colocar qualquer coisa em produção, você pode enviar telemetria de amostra pela configuração e verificar o resultado obtido na outra ponta. Consulte [testes no Telflo](https://docs.telflo.com/docs/testing/overview). Como alternativa, você pode descrever o que pretende fazer e o assistente de IA do Telflo, aberto pelo botão **AI** na barra de ferramentas, monta, valida e testa a configuração para você. Seu próprio agente pode fazer o mesmo por meio da [CLI do Telflo](https://docs.telflo.com/docs/cli/).
@@ -144,18 +140,14 @@ O Telflo oferece:
     Para aplicar uma alteração, publique uma nova version e atribua-a ao grupo; para reverter, atribua uma version implantada anteriormente.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Uma fleet do Telflo com todos os collectors sincronizados após um rollout](/images/clickstack/telflo/telflo-fleet.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Uma fleet do Telflo com todos os collectors sincronizados após um rollout](/images/clickstack/telflo/telflo-fleet.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="Verifique a telemetria" id="verify-telemetry">
-    Abra o HyperDX e busque um dos seus serviços na visualização **Busca**; use o **Chart Explorer** para métricas. Com o Managed ClickStack, abra seu serviço no console do ClickHouse Cloud e clique em **Launch ClickStack**. Com o ClickHouse autogerenciado, consulte diretamente as [tabelas do ClickStack](/pt-BR/clickstack/ingesting-data/schemas), por exemplo `SELECT ServiceName, count() FROM otel_logs GROUP BY ServiceName`.
+    Abra a Interface do ClickStack e busque um dos seus serviços na visualização **Busca**; use o **Chart Explorer** para métricas. Com o Self-managed ClickHouse Observability, abra seu serviço no console do ClickHouse Cloud e clique em **Launch ClickStack**. Com o ClickHouse autogerenciado, consulte diretamente as [tabelas do ClickStack](/pt-BR/clickstack/ingesting-data/schemas), por exemplo `SELECT ServiceName, count() FROM otel_logs GROUP BY ServiceName`.
   </Step>
 </Steps>
 
@@ -172,17 +164,17 @@ A mesma telemetria pode ser enviada simultaneamente ao ClickStack para armazenam
 
 ## Próximos passos {#next-steps}
 
-* **Crie dashboards**: crie visualizações no HyperDX para logs, metrics e traces
+* **Crie dashboards**: crie visualizações na Interface do ClickStack para logs, métricas e traces
 * **Configure alerts**: configure alerts no ClickStack para conditions críticas
 * **Refine com o AI assistant**: peça a ele para ajustar um pipeline ou sugerir testes
-* **Se você está migrando de outro fornecedor**: os [flows](https://telflo.com/flows) dão conta da transição, substituindo os agents já instalados na sua infraestrutura e enviando os dados simultaneamente para os dois backends enquanto você os compara
+* **Se você está migrando de outro fornecedor**: os [fluxos](https://telflo.com/flows) dão conta da transição, substituindo os agents já instalados na sua frota e enviando os dados simultaneamente para os dois backends enquanto você os compara
 
-## Leia mais {#read-more}
+## Saiba mais {#read-more}
 
 * [Documentação do Telflo](https://docs.telflo.com/docs)
-* [Quickstart: de um canvas vazio a um collector implantado](https://docs.telflo.com/docs/getting-started/quickstart)
-* [Testando configurações do collector](https://docs.telflo.com/docs/testing/overview)
+* [Guia de início rápido: da área de trabalho vazia a um coletor implantado](https://docs.telflo.com/docs/getting-started/quickstart)
+* [Testes de configurações do coletor](https://docs.telflo.com/docs/testing/overview)
 * [Gerenciamento de frota no Telflo](https://docs.telflo.com/docs/fleet-management/overview)
-* [Instalando collectors](https://docs.telflo.com/docs/fleet-management/install-collectors)
+* [Instalação de coletores](https://docs.telflo.com/docs/fleet-management/install-collectors)
 * [Ingestão com OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry)
-* [Schemas de tabela do ClickStack](/pt-BR/clickstack/ingesting-data/schemas)
+* [Esquemas de tabela do ClickStack](/pt-BR/clickstack/ingesting-data/schemas)

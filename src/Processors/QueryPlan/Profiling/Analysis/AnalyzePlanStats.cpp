@@ -1,4 +1,5 @@
 #include <iterator>
+#include <ranges>
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
@@ -104,6 +105,36 @@ void printMetricGroup(const MetricGroup & metric_group, WriteBuffer & out, const
             out << name << " " << formatStepMetricValue(metric);
     }
     out << "\n";
+}
+
+/// The group is built by `runtimeFilterAnalysisReport`: the type first, then the reason right after it if the filter
+/// is disabled, then the optional details. Printed as, e.g., `Runtime filter (exact set, 1000 unique keys, size 32.77 KB)`
+/// or `Runtime filter (disabled: bloom filter saturated, size 524.29 KB, set bits 0.07%)`.
+void printRuntimeFilterGroup(const MetricGroup & filter_group, WriteBuffer & out, const std::string & prefix)
+{
+    if (filter_group.metrics.empty())
+        return;
+
+    chassert(filter_group.metrics.front().key == MetricKey::FilterType, "unexpected layout of the Runtime filter group");
+
+    out << prefix << toString(filter_group.key) << " (" << formatStepMetricValue(filter_group.metrics.front());
+    for (const auto & metric : filter_group.metrics | std::views::drop(1))
+    {
+        switch (metric.key)
+        {
+            case MetricKey::Reason: out << ": " << formatStepMetricValue(metric); break;
+            case MetricKey::ReplacedFilterType: out << ", replaced " << formatStepMetricValue(metric); break;
+            case MetricKey::UniqueKeys:
+                /// Not rounded, to compare it with `join_runtime_filter_exact_values_limit`.
+                if (const auto * keys = std::get_if<UInt64>(&metric.value))
+                    out << ", " << *keys << " " << toString(metric.key);
+                else
+                    out << ", " << toString(metric.key) << " " << formatStepMetricValue(metric);
+                break;
+            default: out << ", " << toString(metric.key) << " " << formatStepMetricValue(metric); break;
+        }
+    }
+    out << ")\n";
 }
 
 /// The group is built by makeIOGroup, so a missing metric means the two went out of sync
@@ -238,7 +269,8 @@ AnalyzeStepsStats::AnalyzeStepsStats(
     computeDistribution(elapsed_per_step_group);
     computeJoinBranchCosts();
 
-    /// Work intervals are collected only when `EXPLAIN ANALYZE` requests the `time` setting.
+    /// Work intervals are collected only when asked for: the `time` setting of `EXPLAIN ANALYZE`, or
+    /// `log_query_plans_time` for a logged plan.
     if (const auto work_intervals = step_profiler.extractWorkIntervals(execution_start_ns); !work_intervals.empty())
         interval_timings.emplace(work_intervals, plan_snapshot);
 }
@@ -254,14 +286,14 @@ void AnalyzeStepsStats::collectIOStats(const Processors & processors)
 {
     auto crosses_step_boundary = [](const IProcessor & owner, const IProcessor & neighbour)
     {
-        return owner.getStepUniqID() != neighbour.getStepUniqID();
+        return owner.getQueryPlanStepIndex() != neighbour.getQueryPlanStepIndex();
     };
 
     for (const auto & proc : processors)
     {
-        const auto & step_id = proc->getStepUniqID();
+        const UInt64 step_id = proc->getQueryPlanStepIndex();
 
-        if (step_id.empty())
+        if (step_id == PlanStepIndex::NONE)
             continue;
 
         auto & step_stats = stats_by_step[step_id];
@@ -300,17 +332,17 @@ void AnalyzeStepsStats::collectSpillStats(const Processors & processors)
 {
     /// Whether the step a processor belongs to is the builder of a set, answered from the
     /// snapshot because the processors outlive the plan.
-    const auto creates_a_set = [this](const String & step_id)
+    const auto creates_a_set = [this](UInt64 step_id)
     {
         const auto * analyzer = plan_snapshot.find(step_id);
         return analyzer && analyzer->isCreatingSet();
     };
 
-    UnorderedMapWithMemoryTracking<const TemporaryDataOnDiskScope *, String> steps_by_scope;
+    UnorderedMapWithMemoryTracking<const TemporaryDataOnDiskScope *, UInt64> steps_by_scope;
     for (const auto & processor : processors)
     {
-        const String & step_id = processor->getStepUniqID();
-        if (step_id.empty())
+        const UInt64 step_id = processor->getQueryPlanStepIndex();
+        if (step_id == PlanStepIndex::NONE)
             continue;
 
         for (const auto * spillable : processor->getSpillables())
@@ -337,9 +369,9 @@ AnalyzeStepsStats::ElapsedTimesPerStepGroup AnalyzeStepsStats::collectTimingStat
 
     for (const auto & proc : processors)
     {
-        const auto & step_id = proc->getStepUniqID();
+        const UInt64 step_id = proc->getQueryPlanStepIndex();
 
-        if (step_id.empty())
+        if (step_id == PlanStepIndex::NONE)
             continue;
 
         const size_t group = proc->getQueryPlanStepGroup();
@@ -417,7 +449,7 @@ void AnalyzeStepsStats::computeJoinBranchCosts()
     }
 }
 
-StepStatsContext AnalyzeStepsStats::makeContext(const String & step_id, const StepAnalyzer & analyzer) const
+StepStatsContext AnalyzeStepsStats::makeContext(UInt64 step_id, const StepAnalyzer & analyzer) const
 {
     StepStatsContext context;
     context.execution_query_time_ns = execution_query_time_ns;
@@ -439,10 +471,10 @@ StepStatsContext AnalyzeStepsStats::makeContext(const String & step_id, const St
 
 AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) const
 {
-    return analyzeStep(step->getUniqID());
+    return analyzeStep(step->getStepIndex());
 }
 
-AnalyzedStepData AnalyzeStepsStats::analyzeStep(const String & step_id) const
+AnalyzedStepData AnalyzeStepsStats::analyzeStep(UInt64 step_id) const
 {
     /// Every step analysed here comes from the walk that filled the snapshot, so it has an entry.
     /// One without would be shaped as a plain single-stage step and report none of its metrics.
@@ -500,6 +532,12 @@ void AnalyzeStepsStats::renderStep(const AnalyzedStepData & step_data, WriteBuff
         if (group.key == MetricGroupKey::Concurrency)
         {
             printConcurrencyGroup(group, out, prefix);
+            continue;
+        }
+
+        if (group.key == MetricGroupKey::RuntimeFilter)
+        {
+            printRuntimeFilterGroup(group, out, prefix);
             continue;
         }
 

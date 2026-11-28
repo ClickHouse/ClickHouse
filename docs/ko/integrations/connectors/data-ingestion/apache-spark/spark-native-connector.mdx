@@ -4,7 +4,7 @@ slug: /integrations/apache-spark/spark-native-connector
 description: 'ClickHouse용 Apache Spark 소개'
 keywords: ['ClickHouse', 'Apache Spark', '마이그레이션', '데이터']
 title: Spark 커넥터
-doc_type: '가이드'
+doc_type: 'guide'
 ---
 
 import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
@@ -25,15 +25,11 @@ Spark 3.0 이전에는 Spark에 내장 카탈로그 개념이 없었기 때문�
 Spark의 기본 카탈로그는 `spark_catalog`이며, 테이블은 `{catalog name}.{database}.{table}` 형식으로 식별됩니다. 새로운
 카탈로그 기능을 사용하면 이제 단일 Spark 애플리케이션에서 여러 카탈로그를 추가해 사용할 수 있습니다.
 
-<div id="choosing-between-apis">
-  ## Catalog API와 TableProvider API 중 선택하기
-</div>
+## Catalog API와 TableProvider API 중 선택하기 {#choosing-between-apis}
 
 ClickHouse Spark connector는 **Catalog API**와 **TableProvider API**(포맷 기반 접근 방식)라는 두 가지 액세스 패턴을 지원합니다. 두 방식의 차이를 이해하면 사용 사례에 맞는 접근 방식을 선택하는 데 도움이 됩니다.
 
-<div id="catalog-vs-tableprovider-comparison">
-  ### Catalog API와 TableProvider API 비교
-</div>
+### Catalog API와 TableProvider API 비교 {#catalog-vs-tableprovider-comparison}
 
 | 기능               | Catalog API                        | TableProvider API      |
 | ---------------- | ---------------------------------- | ---------------------- |
@@ -43,17 +39,13 @@ ClickHouse Spark connector는 **Catalog API**와 **TableProvider API**(포맷 �
 | **Spark SQL 통합** | 네이티브 (`clickhouse.database.table`) | 포맷 지정 필요               |
 | **사용 사례**        | 중앙 집중식 구성을 사용하는 장기적이고 안정적인 연결      | 애드혹, 동적 또는 임시 접근       |
 
-<div id="requirements">
-  ## 요구 사항
-</div>
+## 요구 사항 {#requirements}
 
 * Java 8 또는 17 (Spark 4.0에는 Java 17 이상이 필요합니다)
 * Scala 2.12 또는 2.13 (Spark 4.0은 Scala 2.13만 지원합니다)
 * Apache Spark 3.3, 3.4, 3.5 또는 4.0
 
-<div id="compatibility-matrix">
-  ## 호환성 매트릭스
-</div>
+## 호환성 매트릭스 {#compatibility-matrix}
 
 | 버전     | 호환되는 Spark 버전            | ClickHouse JDBC 버전 |
 | ------ | ------------------------ | ------------------ |
@@ -69,18 +61,14 @@ ClickHouse Spark connector는 **Catalog API**와 **TableProvider API**(포맷 �
 | 0.2.1  | Spark 3.2                | 의존하지 않음            |
 | 0.1.2  | Spark 3.2                | 의존하지 않음            |
 
-<div id="installation--setup">
-  ## 설치 및 설정
-</div>
+## 설치 및 설정 {#installation--setup}
 
 ClickHouse를 Spark와 통합하는 방법은 프로젝트 구성에 따라 여러 가지가 있습니다.
 프로젝트의 빌드 파일(Maven의 `pom.xml` 또는 SBT의 `build.sbt` 등)에 ClickHouse Spark 커넥터를 의존성으로 직접 추가할 수 있습니다.
 또는 필요한 JAR 파일을 `$SPARK_HOME/jars/` 폴더에 넣거나, `spark-submit` 명령에서 `--jars` 플래그를 사용해 Spark 옵션으로 직접 전달할 수 있습니다.
 두 방법 모두 Spark 환경에서 ClickHouse 커넥터를 사용할 수 있게 해줍니다.
 
-<div id="import-as-a-dependency">
-  ### 의존성으로 추가하기
-</div>
+### 의존성으로 추가하기 {#import-as-a-dependency}
 
 <Tabs>
   <Tab title="Maven">
@@ -145,9 +133,7 @@ ClickHouse를 Spark와 통합하는 방법은 프로젝트 구성에 따라 여�
   </Tab>
 </Tabs>
 
-<div id="download-the-library">
-  ### 라이브러리 다운로드
-</div>
+### 라이브러리 다운로드 {#download-the-library}
 
 바이너리 JAR 파일의 이름 패턴은 다음과 같습니다:
 
@@ -173,9 +159,7 @@ clickhouse-spark-runtime-${spark_binary_version}_${scala_binary_version}-${versi
   [호환성 매트릭스](#compatibility-matrix)를 기준으로 호환되는지 확인하십시오.
 </Warning>
 
-<div id="register-the-catalog-required">
-  ## 카탈로그 등록(필수)
-</div>
+## 카탈로그 등록(필수) {#register-the-catalog-required}
 
 ClickHouse 테이블에 액세스하려면 다음 구성으로 새 Spark 카탈로그를 설정해야 합니다.
 
@@ -224,15 +208,11 @@ ClickHouse 테이블에 액세스하려면 다음 구성으로 새 Spark 카탈�
   `clickhouse1.<ck_db>.<ck_table>`로, clickhouse2 테이블 `<ck_db>.<ck_table>`에는 `clickhouse2.<ck_db>.<ck_table>`로 액세스할 수 있습니다.
 </Warning>
 
-<div id="using-the-tableprovider-api">
-  ## TableProvider API 사용하기 (포맷 기반 접근 방식)
-</div>
+## TableProvider API 사용하기 (포맷 기반 접근 방식) {#using-the-tableprovider-api}
 
 카탈로그 기반 접근 방식 외에도, ClickHouse Spark 커넥터는 TableProvider API를 통한 **포맷 기반 접근 방식**을 지원합니다.
 
-<div id="format-based-read">
-  ### 포맷 기반 읽기 예시
-</div>
+### 포맷 기반 읽기 예시 {#format-based-read}
 
 <Tabs>
   <Tab title="Python">
@@ -295,9 +275,7 @@ ClickHouse 테이블에 액세스하려면 다음 구성으로 새 Spark 카탈�
   </Tab>
 </Tabs>
 
-<div id="format-based-write">
-  ### 포맷 기반 쓰기 예시
-</div>
+### 포맷 기반 쓰기 예시 {#format-based-write}
 
 <Tabs>
   <Tab title="Python">
@@ -353,15 +331,11 @@ ClickHouse 테이블에 액세스하려면 다음 구성으로 새 Spark 카탈�
   </Tab>
 </Tabs>
 
-<div id="tableprovider-features">
-  ### TableProvider 기능
-</div>
+### TableProvider 기능 {#tableprovider-features}
 
 TableProvider API는 여러 강력한 기능을 제공합니다:
 
-<div id="automatic-table-creation">
-  #### 자동 테이블 생성
-</div>
+#### 자동 테이블 생성 {#automatic-table-creation}
 
 존재하지 않는 테이블에 쓸 경우 커넥터가 적절한 스키마로 테이블을 자동 생성합니다. 커넥터는 다음과 같은 합리적인 기본값을 제공합니다.
 
@@ -455,15 +429,11 @@ TableProvider API는 여러 강력한 기능을 제공합니다:
   **엔진 선택**: 기본 엔진은 `MergeTree()`이지만, `engine` 옵션을 사용해 모든 ClickHouse 테이블 엔진을 지정할 수 있습니다(예: `ReplacingMergeTree()`, `SummingMergeTree()`, `AggregatingMergeTree()` 등).
 </Warning>
 
-<div id="tableprovider-connection-options">
-  ### TableProvider 연결 옵션
-</div>
+### TableProvider 연결 옵션 {#tableprovider-connection-options}
 
 포맷 기반 API를 사용할 때는 다음 연결 옵션을 사용할 수 있습니다:
 
-<div id="connection-options">
-  #### 연결 옵션
-</div>
+#### 연결 옵션 {#connection-options}
 
 | Option      | Description                | Default Value | Required |
 | ----------- | -------------------------- | ------------- | -------- |
@@ -478,9 +448,7 @@ TableProvider API는 여러 강력한 기능을 제공합니다:
 | `ssl_mode`  | SSL 모드(`NONE`, `STRICT` 등) | `STRICT`      | 아니요      |
 | `timezone`  | 날짜/시간 작업에 사용할 시간대          | `server`      | 아니요      |
 
-<div id="table-creation-options">
-  #### 테이블 생성 옵션
-</div>
+#### 테이블 생성 옵션 {#table-creation-options}
 
 이 옵션은 테이블이 아직 없어서 새로 생성해야 할 때 사용됩니다:
 
@@ -500,9 +468,7 @@ TableProvider API는 여러 강력한 기능을 제공합니다:
   **모범 사례**: ClickHouse Cloud에서는 ORDER BY 컬럼이 널 허용일 수 있다면 `settings.allow_nullable_key=1`을 명시적으로 설정하십시오. ClickHouse Cloud에서는 이 설정이 필요합니다.
 </Tip>
 
-<div id="writing-modes">
-  #### 쓰기 모드
-</div>
+#### 쓰기 모드 {#writing-modes}
 
 Spark 커넥터(TableProvider API와 Catalog API 모두)는 다음 Spark 쓰기 모드를 지원합니다.
 
@@ -554,17 +520,13 @@ Spark 커넥터(TableProvider API와 Catalog API 모두)는 다음 Spark 쓰기 
   </Tab>
 </Tabs>
 
-<div id="configuring-clickhouse-options">
-  ## ClickHouse 옵션 구성
-</div>
+## ClickHouse 옵션 구성 {#configuring-clickhouse-options}
 
 Catalog API와 TableProvider API는 모두 ClickHouse 전용 옵션(커넥터 옵션 제외)의 구성을 지원합니다. 이러한 옵션은 테이블을 생성하거나 쿼리를 실행할 때 ClickHouse에 전달됩니다.
 
 ClickHouse 옵션을 사용하면 `allow_nullable_key`, `index_granularity`와 같은 ClickHouse 전용 설정과 그 밖의 테이블 수준 또는 쿼리 수준 설정을 구성할 수 있습니다. 이는 커넥터가 ClickHouse에 연결하는 방식을 제어하는 커넥터 옵션(`host`, `database`, `table` 등)과는 다릅니다.
 
-<div id="using-tableprovider-api-options">
-  ### TableProvider API 사용
-</div>
+### TableProvider API 사용 {#using-tableprovider-api-options}
 
 TableProvider API에서는 `settings.<key>` 옵션 포맷을 사용합니다:
 
@@ -615,9 +577,7 @@ TableProvider API에서는 `settings.<key>` 옵션 포맷을 사용합니다:
   </Tab>
 </Tabs>
 
-<div id="using-catalog-api-options">
-  ### Catalog API 사용
-</div>
+### Catalog API 사용 {#using-catalog-api-options}
 
 Catalog API를 사용할 때는 Spark 구성에서 `spark.sql.catalog.<catalog_name>.option.<key>` 포맷을 사용하십시오:
 
@@ -641,9 +601,7 @@ TBLPROPERTIES (
 )
 ```
 
-<div id="clickhouse-cloud-settings">
-  ## ClickHouse Cloud 설정
-</div>
+## ClickHouse Cloud 설정 {#clickhouse-cloud-settings}
 
 [ClickHouse Cloud](https://clickhouse.com)에 연결할 때는 SSL을 활성화하고 적절한 SSL 모드를 설정하십시오. 예시는 다음과 같습니다.
 
@@ -652,9 +610,7 @@ spark.sql.catalog.clickhouse.option.ssl        true
 spark.sql.catalog.clickhouse.option.ssl_mode   NONE
 ```
 
-<div id="read-data">
-  ## 데이터 읽기
-</div>
+## 데이터 읽기 {#read-data}
 
 <Tabs>
   <Tab title="Java">
@@ -756,9 +712,7 @@ spark.sql.catalog.clickhouse.option.ssl_mode   NONE
   </Tab>
 </Tabs>
 
-<div id="write-data">
-  ## 데이터 쓰기
-</div>
+## 데이터 쓰기 {#write-data}
 
 <Warning>
   **파티션 덮어쓰기 미지원**: Catalog API는 현재 파티션 수준의 덮어쓰기 작업(예: `partitionBy`를 사용하는 `overwrite` 모드)을 지원하지 않습니다. 이 기능은 현재 개발 중입니다. 진행 상황은 [GitHub issue #34](https://github.com/ClickHouse/spark-clickhouse-connector/issues/34)에서 확인하십시오.
@@ -888,9 +842,7 @@ spark.sql.catalog.clickhouse.option.ssl_mode   NONE
   </Tab>
 </Tabs>
 
-<div id="ddl-operations">
-  ## DDL 작업
-</div>
+## DDL 작업 {#ddl-operations}
 
 Spark SQL을 사용해 ClickHouse 인스턴스에서 DDL 작업을 수행할 수 있으며, 모든 변경 사항은 즉시
 ClickHouse에 저장됩니다.
@@ -923,12 +875,10 @@ TBLPROPERTIES (
 
 위의 예시는 Spark SQL 쿼리를 보여 주며, Java, Scala, PySpark 또는 셸 등 어떤 API로든 애플리케이션 내에서 실행할 수 있습니다.
 
-<div id="working-with-varianttype">
-  ## VariantType 사용하기
-</div>
+## VariantType 사용하기 {#working-with-varianttype}
 
 <Note>
-  VariantType 지원은 Spark 4.0+에서 제공되며, 실험적 JSON/Variant 타입을 활성화한 ClickHouse 25.3+가 필요합니다.
+  VariantType 지원은 Spark 4.0+에서 제공되며 ClickHouse 25.3+가 필요합니다. ClickHouse 25.3부터 `JSON` 및 `Variant` 타입은 운영 환경에서 사용할 수 있는 수준이며 기본적으로 활성화되어 있습니다.
 </Note>
 
 커넥터는 반정형 데이터를 다루기 위해 Spark의 `VariantType`을 지원합니다. VariantType은 ClickHouse의 `JSON` 및 `Variant` 타입에 매핑되므로, 유연한 스키마의 데이터를 효율적으로 저장하고 쿼리할 수 있습니다.
@@ -937,18 +887,14 @@ TBLPROPERTIES (
   이 섹션에서는 VariantType의 매핑과 사용법에 중점을 둡니다. 지원되는 모든 데이터 타입에 대한 전체 개요는 [지원되는 데이터 타입](#supported-data-types) 섹션을 참조하십시오.
 </Note>
 
-<div id="clickhouse-type-mapping">
-  ### ClickHouse 타입 매핑
-</div>
+### ClickHouse 타입 매핑 {#clickhouse-type-mapping}
 
 | ClickHouse 유형          | Spark 유형      | 설명                                |
 | ---------------------- | ------------- | --------------------------------- |
 | `JSON`                 | `VariantType` | JSON 객체만 저장합니다(`{`로 시작해야 합니다)     |
 | `Variant(T1, T2, ...)` | `VariantType` | 기본 타입, 배열, JSON을 포함한 여러 타입을 저장합니다 |
 
-<div id="reading-varianttype-data">
-  ### VariantType 데이터 읽기
-</div>
+### VariantType 데이터 읽기 {#reading-varianttype-data}
 
 ClickHouse에서 데이터를 읽으면 `JSON` 및 `Variant` 컬럼이 자동으로 Spark의 `VariantType`에 매핑됩니다.
 
@@ -1005,9 +951,7 @@ ClickHouse에서 데이터를 읽으면 `JSON` 및 `Variant` 컬럼이 자동으
   </Tab>
 </Tabs>
 
-<div id="writing-varianttype-data">
-  ### VariantType 데이터 쓰기
-</div>
+### VariantType 데이터 쓰기 {#writing-varianttype-data}
 
 JSON 또는 Variant 컬럼 타입을 사용해 VariantType 데이터를 ClickHouse에 쓸 수 있습니다:
 
@@ -1122,9 +1066,7 @@ JSON 또는 Variant 컬럼 타입을 사용해 VariantType 데이터를 ClickHou
   </Tab>
 </Tabs>
 
-<div id="creating-varianttype-tables-spark-sql">
-  ### Spark SQL로 VariantType 테이블 생성하기
-</div>
+### Spark SQL로 VariantType 테이블 생성하기 {#creating-varianttype-tables-spark-sql}
 
 Spark SQL DDL을 사용해 VariantType 테이블을 생성할 수 있습니다:
 
@@ -1153,15 +1095,11 @@ TBLPROPERTIES (
 )
 ```
 
-<div id="configuring-variant-types">
-  ### Variant 타입 구성하기
-</div>
+### Variant 타입 구성하기 {#configuring-variant-types}
 
 VariantType 컬럼이 포함된 테이블을 생성할 때 사용할 ClickHouse 타입을 지정할 수 있습니다:
 
-<div id="json-type-default">
-  #### JSON 타입 (기본값)
-</div>
+#### JSON 타입 (기본값) {#json-type-default}
 
 `variant_types` 속성을 지정하지 않으면 해당 컬럼은 기본적으로 ClickHouse의 `JSON` 타입을 사용하며, 이 타입은 JSON 객체만 허용합니다:
 
@@ -1182,9 +1120,7 @@ TBLPROPERTIES (
 CREATE TABLE json_table (id Int32, data JSON) ENGINE = MergeTree() ORDER BY id
 ```
 
-<div id="variant-type-multiple-types">
-  #### 여러 타입을 지원하는 Variant Type
-</div>
+#### 여러 타입을 지원하는 Variant Type {#variant-type-multiple-types}
 
 기본 타입, 배열, JSON 객체를 지원하려면 `variant_types` 속성에 타입을 지정합니다:
 
@@ -1209,9 +1145,7 @@ CREATE TABLE flexible_data (
 ) ENGINE = MergeTree() ORDER BY id
 ```
 
-<div id="supported-variant-types">
-  ### 지원되는 Variant 타입
-</div>
+### 지원되는 Variant 타입 {#supported-variant-types}
 
 다음 ClickHouse 타입은 `Variant()`에서 사용할 수 있습니다.
 
@@ -1219,9 +1153,7 @@ CREATE TABLE flexible_data (
 * **배열**: `Array(T)` — 여기서 T는 중첩 배열을 포함한 지원되는 모든 타입입니다
 * **JSON**: JSON 객체 저장용 `JSON`
 
-<div id="read-format-configuration">
-  ### 읽기 포맷 구성
-</div>
+### 읽기 포맷 구성 {#read-format-configuration}
 
 기본적으로 JSON 및 Variant 컬럼은 `VariantType`으로 읽힙니다. 이 동작은 재정의할 수 있으며, 문자열로 읽도록 설정할 수 있습니다.
 
@@ -1257,9 +1189,7 @@ CREATE TABLE flexible_data (
   </Tab>
 </Tabs>
 
-<div id="write-format-support">
-  ### 쓰기 포맷 지원
-</div>
+### 쓰기 포맷 지원 {#write-format-support}
 
 VariantType의 쓰기 지원은 포맷에 따라 다릅니다:
 
@@ -1278,30 +1208,22 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
   ClickHouse `Variant` 유형에 데이터를 써야 한다면 JSON 포맷을 사용하세요. Arrow 형식은 `JSON` 유형에만 쓸 수 있습니다.
 </Tip>
 
-<div id="varianttype-best-practices">
-  ### 모범 사례
-</div>
+### 모범 사례 {#varianttype-best-practices}
 
 1. **JSON 전용 데이터에는 JSON 타입 사용**: JSON 객체만 저장한다면 기본 JSON 타입을 사용합니다(`variant_types` 속성 없음)
 2. **타입을 명시적으로 지정**: `Variant()`를 사용할 때는 저장할 예정인 모든 타입을 명시적으로 나열합니다
-3. **실험적 기능 활성화**: ClickHouse에서 `allow_experimental_json_type = 1`이 활성화되어 있는지 확인합니다
-4. **쓰기에는 JSON 포맷 사용**: 더 나은 호환성을 위해 VariantType 데이터 쓰기에는 JSON 포맷을 권장합니다
-5. **쿼리 패턴 고려**: JSON/Variant 타입은 효율적인 필터링을 위해 ClickHouse의 JSON 경로 쿼리를 지원합니다
-6. **성능을 위한 컬럼 힌트**: ClickHouse에서 JSON 필드를 사용할 때 컬럼 힌트를 추가하면 쿼리 성능이 향상됩니다. 현재는 Spark를 통해 컬럼 힌트를 추가하는 기능을 지원하지 않습니다. 이 기능의 진행 상황은 [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497)에서 확인하십시오.
+3. **쓰기에는 JSON 포맷 사용**: 더 나은 호환성을 위해 VariantType 데이터 쓰기에는 JSON 포맷을 권장합니다
+4. **쿼리 패턴 고려**: JSON/Variant 타입은 효율적인 필터링을 위해 ClickHouse의 JSON 경로 쿼리를 지원합니다
+5. **성능을 위한 컬럼 힌트**: ClickHouse에서 JSON 필드를 사용할 때 컬럼 힌트를 추가하면 쿼리 성능이 향상됩니다. 현재는 Spark를 통해 컬럼 힌트를 추가하는 기능을 지원하지 않습니다. 이 기능의 진행 상황은 [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497)에서 확인하십시오.
 
-<div id="varianttype-example-workflow">
-  ### 예시: 전체 워크플로
-</div>
+### 예시: 전체 워크플로 {#varianttype-example-workflow}
 
 <Tabs>
   <Tab title="Scala">
     ```scala
     import org.apache.spark.sql.functions._
 
-    // ClickHouse에서 실험적 JSON 타입 활성화
-    spark.sql("SET allow_experimental_json_type = 1")
-
-    // Variant 컬럼이 있는 테이블 생성
+    // Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
         event_id BIGINT,
@@ -1315,14 +1237,14 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
       )
     """)
 
-    // 혼합 타입 데이터 준비
+    // Prepare data with mixed types
     val events = Seq(
       (1L, "2024-01-01 10:00:00", """{"action": "login", "user_id": 123}"""),
       (2L, "2024-01-01 10:05:00", """{"action": "purchase", "amount": 99.99}"""),
       (3L, "2024-01-01 10:10:00", """{"action": "logout", "duration": 600}""")
     ).toDF("event_id", "event_time", "json_data")
 
-    // VariantType으로 변환 후 저장
+    // Convert to VariantType and write
     val variantEvents = events.select(
       col("event_id"),
       to_timestamp(col("event_time")).as("event_time"),
@@ -1331,7 +1253,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
 
     variantEvents.writeTo("clickhouse.default.events").append()
 
-    // 읽기 및 쿼리
+    // Read and query
     val result = spark.sql("""
       SELECT event_id, event_time, event_data
       FROM clickhouse.default.events
@@ -1347,10 +1269,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
     ```python
     from pyspark.sql.functions import parse_json, to_timestamp
 
-    # ClickHouse에서 실험적 JSON 타입 활성화
-    spark.sql("SET allow_experimental_json_type = 1")
-
-    # Variant 컬럼이 있는 테이블 생성
+    # Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
         event_id BIGINT,
@@ -1364,7 +1283,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
       )
     """)
 
-    # 혼합 타입 데이터 준비
+    # Prepare data with mixed types
     events = [
         (1, "2024-01-01 10:00:00", '{"action": "login", "user_id": 123}'),
         (2, "2024-01-01 10:05:00", '{"action": "purchase", "amount": 99.99}'),
@@ -1372,7 +1291,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
     ]
     df = spark.createDataFrame(events, ["event_id", "event_time", "json_data"])
 
-    # VariantType으로 변환 후 저장
+    # Convert to VariantType and write
     variant_events = df.select(
         "event_id",
         to_timestamp("event_time").alias("event_time"),
@@ -1381,7 +1300,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
 
     variant_events.writeTo("clickhouse.default.events").append()
 
-    # 읽기 및 쿼리
+    # Read and query
     result = spark.sql("""
       SELECT event_id, event_time, event_data
       FROM clickhouse.default.events
@@ -1397,10 +1316,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
     ```java
     import static org.apache.spark.sql.functions.*;
 
-    // ClickHouse에서 실험적 JSON 타입 활성화
-    spark.sql("SET allow_experimental_json_type = 1");
-
-    // Variant 컬럼이 있는 테이블 생성
+    // Create table with Variant column
     spark.sql("CREATE TABLE clickhouse.default.events (" +
         "event_id BIGINT, " +
         "event_time TIMESTAMP, " +
@@ -1412,7 +1328,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
         "'order_by' = 'event_time'" +
         ")");
 
-    // 혼합 타입 데이터 준비
+    // Prepare data with mixed types
     List<Row> events = Arrays.asList(
         RowFactory.create(1L, "2024-01-01 10:00:00", "{\"action\": \"login\", \"user_id\": 123}"),
         RowFactory.create(2L, "2024-01-01 10:05:00", "{\"action\": \"purchase\", \"amount\": 99.99}"),
@@ -1425,7 +1341,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
     });
     Dataset<Row> eventsDF = spark.createDataFrame(events, eventSchema);
 
-    // VariantType으로 변환 후 저장
+    // Convert to VariantType and write
     Dataset<Row> variantEvents = eventsDF.select(
         col("event_id"),
         to_timestamp(col("event_time")).as("event_time"),
@@ -1434,7 +1350,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
 
     variantEvents.writeTo("clickhouse.default.events").append();
 
-    // 읽기 및 쿼리
+    // Read and query
     Dataset<Row> result = spark.sql("SELECT event_id, event_time, event_data " +
         "FROM clickhouse.default.events " +
         "WHERE event_time >= '2024-01-01' " +
@@ -1445,9 +1361,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
   </Tab>
 </Tabs>
 
-<div id="configurations">
-  ## 구성
-</div>
+## 구성 {#configurations}
 
 다음은 커넥터에서 조정할 수 있는 구성입니다.
 
@@ -1503,16 +1417,12 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Variant 타입에 �
 | spark.clickhouse.write.retryInterval                                     | 10s                                               | 쓰기 재시도 간의 간격(초)입니다.                                                                                                                                                                                                                                                                                                                                                                                                                   | 0.1.0  |
 | spark.clickhouse.write.retryableErrorCodes                               | 241                                               | 쓰기 실패 시 ClickHouse 서버에서 반환되는 재시도 가능한 오류 코드입니다.                                                                                                                                                                                                                                                                                                                                                                                        | 0.1.0  |
 
-<div id="supported-data-types">
-  ## 지원되는 데이터 타입
-</div>
+## 지원되는 데이터 타입 {#supported-data-types}
 
 이 섹션에서는 Spark와 ClickHouse 간의 데이터 타입 매핑을 설명합니다. 아래 표는
 ClickHouse에서 Spark로 데이터를 읽어올 때와 Spark에서 ClickHouse로 데이터를 삽입할 때의 데이터 타입 변환을 빠르게 참고할 수 있도록 정리한 것입니다.
 
-<div id="reading-data-from-clickhouse-into-spark">
-  ### ClickHouse에서 Spark로 데이터 읽기
-</div>
+### ClickHouse에서 Spark로 데이터 읽기 {#reading-data-from-clickhouse-into-spark}
 
 | ClickHouse 데이터 타입                                                 | Spark 데이터 타입                   | 지원 여부 | 기본 타입 여부 | 비고                                                                                                                                        |
 | ----------------------------------------------------------------- | ------------------------------ | ----- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1552,9 +1462,7 @@ ClickHouse에서 Spark로 데이터를 읽어올 때와 Spark에서 ClickHouse�
 | `AggregateFunction`                                               |                                | ❌     |          |                                                                                                                                           |
 | `SimpleAggregateFunction`                                         |                                | ❌     |          |                                                                                                                                           |
 
-<div id="inserting-data-from-spark-into-clickhouse">
-  ### Spark에서 ClickHouse로 데이터 삽입
-</div>
+### Spark에서 ClickHouse로 데이터 삽입 {#inserting-data-from-spark-into-clickhouse}
 
 | Spark 데이터 타입                        | ClickHouse 데이터 타입   | 지원 여부 | 기본 타입 여부 | 참고                                                                                                                                       |
 | ----------------------------------- | ------------------- | ----- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1578,9 +1486,7 @@ ClickHouse에서 Spark로 데이터를 읽어올 때와 Spark에서 ClickHouse�
 | `Object`                            |                     | ❌     |          |                                                                                                                                          |
 | `Nested`                            |                     | ❌     |          |                                                                                                                                          |
 
-<div id="contributing-and-support">
-  ## 기여 및 지원
-</div>
+## 기여 및 지원 {#contributing-and-support}
 
 프로젝트에 기여하거나 문제를 보고하려는 경우, 의견을 보내주시면 감사하겠습니다!
 이슈를 등록하고, 개선 사항을 제안하고,
