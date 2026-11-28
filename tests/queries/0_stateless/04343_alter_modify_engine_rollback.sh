@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database
+# Tags: no-parallel, no-fasttest, no-replicated-database
 # Tag no-parallel: uses a fail point, which affects the whole server.
 # Tag no-replicated-database: forces the non-replicated durable rollback path
 # (`alterTable(old_metadata)`), which does not exist for `Replicated` databases,
