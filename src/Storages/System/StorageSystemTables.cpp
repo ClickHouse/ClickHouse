@@ -41,6 +41,7 @@
 #include <Storages/System/extractTablesFilter.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/tryGetOwnerTable.h>
 #include <Storages/StorageProxy.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -298,6 +299,10 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"target_table", std::make_shared<DataTypeString>(),
             "For a materialized view, the name of the destination table the view writes to "
             "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."
+        },
+        {"owner_table", std::make_shared<DataTypeString>(),
+            "For an inner table of a materialized view or a `TimeSeries` table, the name of that view or table "
+            "(always in the same database). Empty for other tables."
         },
         {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
     };
@@ -1083,6 +1088,15 @@ protected:
                 else
                 {
                     src_index += 2;
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    const String owner_table = tryGetOwnerTable(database, table_name, context);
+                    if (!owner_table.empty() && is_dependency_visible(StorageID{database_name, owner_table}))
+                        res_columns[res_index++]->insert(owner_table);
+                    else
+                        res_columns[res_index++]->insertDefault();
                 }
 
                 if (columns_mask[src_index++])
