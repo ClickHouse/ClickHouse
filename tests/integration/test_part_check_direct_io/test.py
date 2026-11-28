@@ -13,6 +13,7 @@ BUFFERED_READ_SETTINGS = {
     "max_threads": 1,
     "use_uncompressed_cache": 0,
     "use_page_cache_for_local_disks": 0,
+    "use_columns_cache": 0,
     "min_bytes_to_use_direct_io": 0,
 }
 

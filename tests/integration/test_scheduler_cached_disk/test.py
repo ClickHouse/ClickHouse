@@ -10,6 +10,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/storage_configuration.xml"],
+    user_configs=["configs/no_columns_cache.xml"],
     with_minio=True,
 )
 

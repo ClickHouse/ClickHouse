@@ -196,20 +196,20 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , row_level_filter(row_level_filter_)
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
+    , owned_columns_cache(getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache))
     , reader_settings(setColumnsCacheSchemaIdentity(
           adjustReaderSettingsForColumnsCacheWrites(
               reader_settings_,
               context_,
-              getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache),
+              owned_columns_cache,
               pool_settings_.use_columns_cache),
           storage_snapshot_,
-          getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache)))
+          owned_columns_cache))
     , column_names(column_names_)
     , pool_settings(pool_settings_)
     , block_size_params(block_size_params_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
-    , owned_columns_cache(getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache))
     , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
@@ -239,20 +239,20 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , mutations_snapshot(std::move(mutations_snapshot_))
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
+    , owned_columns_cache(getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache))
     , reader_settings(setColumnsCacheSchemaIdentity(
           adjustReaderSettingsForColumnsCacheWrites(
               reader_settings_,
               context_,
-              getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache),
+              owned_columns_cache,
               pool_settings_.use_columns_cache),
           storage_snapshot_,
-          getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache)))
+          owned_columns_cache))
     , column_names(column_names_)
     , pool_settings(pool_settings_)
     , block_size_params(block_size_params_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
-    , owned_columns_cache(getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache))
     , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
@@ -700,6 +700,27 @@ void MergeTreeReadPoolBase::chargeStagedColumnsCacheWriteEstimate() const
         budget->writes_disabled.store(true, std::memory_order_relaxed);
 }
 
+bool MergeTreeReadPoolBase::areColumnsCacheWritesExpected() const
+{
+    if (!owned_columns_cache || !reader_settings.enable_columns_cache_writes)
+        return false;
+
+    const auto budget = getContext()->getColumnsCacheWriteBudget();
+    if (!budget)
+        return true;
+    if (budget->writes_disabled.load(std::memory_order_relaxed))
+        return false;
+    if (staged_columns_cache_estimate_bytes == 0)
+        return true;
+
+    /// The same comparison as in `chargeStagedColumnsCacheWriteEstimate`, without charging anything.
+    const size_t estimate_budget = columns_cache_estimate_budget != 0
+        ? columns_cache_estimate_budget
+        : owned_columns_cache->maxSizeInBytes() / 2;
+    const size_t charged = budget->estimated_bytes.load(std::memory_order_relaxed);
+    return charged <= estimate_budget && staged_columns_cache_estimate_bytes <= estimate_budget - charged;
+}
+
 void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 {
     std::vector<std::shared_ptr<MergeTreeReadTaskInfo>> infos;
@@ -856,6 +877,12 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
 
 MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const
 {
+    /// The extras are taken to create readers, and a reader decides in its constructor whether it may
+    /// write to the columns cache and so has to read the string values in full, without the scan filter.
+    /// Charge the estimate first, so that a reader of a query that is over the budget already sees
+    /// the writes disabled and keeps the scan filter.
+    commitColumnsCacheWriteEstimate();
+
     return
     {
         .uncompressed_cache = owned_uncompressed_cache.get(),

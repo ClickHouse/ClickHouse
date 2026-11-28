@@ -33,10 +33,12 @@ def test_filesystem_cache(started_cluster_iceberg_with_spark, storage_type):
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
+    # The columns cache is disabled: the second read would get the columns from it instead of the filesystem cache.
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
         f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
         query_id=query_id,
+        settings={"use_columns_cache": "0"},
     )
 
     instance.query("SYSTEM FLUSH LOGS")
@@ -63,7 +65,7 @@ def test_filesystem_cache(started_cluster_iceberg_with_spark, storage_type):
     instance.query(
         f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
         query_id=query_id,
-        settings={"use_parquet_metadata_cache": "0"}
+        settings={"use_parquet_metadata_cache": "0", "use_columns_cache": "0"}
     )
 
     instance.query("SYSTEM FLUSH LOGS")

@@ -1,4 +1,8 @@
 <test>
+    <settings>
+        <use_columns_cache>0</use_columns_cache>
+    </settings>
+
     <!--
         Deserialization of a whole column together with its subcolumns, or of several subcolumns that
         share a substream. Such reads hit the substreams cache: a substream is deserialized once and

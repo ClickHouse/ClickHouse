@@ -1,4 +1,8 @@
 <test>
+    <settings>
+        <use_columns_cache>0</use_columns_cache>
+    </settings>
+
     <!--
         Exercises binary (de)serialization of std::vector of trivially-serializable
         elements via writeVectorBinary / readVectorBinary.

@@ -1,0 +1,8 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- The test removes files of parts and expects the queries to fail, so the data must not be served from the columns cache. -->
+            <use_columns_cache>0</use_columns_cache>
+        </default>
+    </profiles>
+</clickhouse>

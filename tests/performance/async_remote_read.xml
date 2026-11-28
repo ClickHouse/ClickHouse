@@ -1,5 +1,6 @@
 <test>
     <settings>
+        <use_columns_cache>0</use_columns_cache>
         <async_socket_for_remote>1</async_socket_for_remote>
     </settings>
     <query>

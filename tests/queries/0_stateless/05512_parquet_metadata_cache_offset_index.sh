@@ -18,6 +18,9 @@ ${CLICKHOUSE_CLIENT} --query "
 SET log_queries = 1;
 SET use_parquet_metadata_cache = 1;
 SET input_format_parquet_use_offset_index = 1;
+-- A column served from the columns cache reads no offset index. The limit of the random settings above
+-- does not apply to a run without them, where the cache is on by default.
+SET use_columns_cache = 0;
 
 -- One row group, several pages per column.
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '_05512.parquet', format = 'Parquet')

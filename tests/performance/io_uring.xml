@@ -1,5 +1,6 @@
 <test>
     <settings>
+        <use_columns_cache>0</use_columns_cache>
         <local_filesystem_read_method>io_uring</local_filesystem_read_method>
         <optimize_use_implicit_projections>0</optimize_use_implicit_projections>
     </settings>

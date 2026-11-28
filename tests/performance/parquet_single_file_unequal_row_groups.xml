@@ -1,5 +1,8 @@
 <!-- A single Parquet file whose row groups alternate 1.5M and 0.5M rows, read by several streams in parallel. -->
 <test>
+    <settings>
+        <use_columns_cache>0</use_columns_cache>
+    </settings>
     <fill_query><![CDATA[
         INSERT INTO FUNCTION file('test_unequal_row_groups.parquet', Parquet)
         SELECT number AS a, number * 3 AS b FROM numbers(64 * 1500000)

@@ -861,7 +861,7 @@ bool MergeTreeReaderWide::writeStripeToColumnsCache(
 
     for (size_t pos = 0; pos < res_columns.size(); ++pos)
     {
-        if (!from_disk[pos])
+        if (!from_disk[pos] || isColumnsCacheRunDropped(cachedEntryFor(pos, first_mark), first_mark, end_mark))
             continue;
         /// See `finishAccumulatedGranules`. The column is still uniquely owned here.
         res_columns[pos]->shrinkToFit();
@@ -930,6 +930,12 @@ void MergeTreeReaderWide::accumulateRowsForColumnsCache(
         auto & accumulated = accumulated_columns[pos];
         if (!accumulated)
         {
+            /// The run ends at the end of the range or of the stripe at the latest.
+            const size_t stripe_end = stripes.endMark(accumulated_stripe, data_part_info_for_read->getIndexGranularity().getMarksCountWithoutFinal());
+            const size_t run_end = accumulated_first_mark < range_end_mark ? std::min(range_end_mark, stripe_end) : stripe_end;
+            if (isColumnsCacheRunDropped(cachedEntryFor(pos, accumulated_first_mark), accumulated_first_mark, run_end))
+                continue;
+
             accumulated = column->cloneEmpty();
             /// The copy must own its data: otherwise `insertRangeFrom` lets a `ColumnAggregateFunction`
             /// (also nested in a `Tuple`, `Array`, ...) share the states of the column being read by

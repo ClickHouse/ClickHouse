@@ -265,6 +265,11 @@ protected:
     /// block that reads it is sized (see `canReadWholeColumnsCacheStripe`), and the same decision when it is written.
     bool admitStripeToColumnsCache(size_t stripe);
 
+    /// Whether the cache would drop every run of granules that begins at `first_mark` and ends at `end_mark` or
+    /// earlier, written to a stripe it holds the entry `existing` of: see `ColumnsCache::mergeEntries`. Such a run
+    /// is neither copied nor written. `existing` is what the lookup of the range found.
+    [[nodiscard]] bool isColumnsCacheRunDropped(const ColumnsCache::MappedPtr & existing, size_t first_mark, size_t end_mark) const;
+
     /// Queue an entry for the granules [first_mark, end_mark) of the result column at `pos`.
     void addPendingColumnsCacheEntry(size_t pos, size_t first_mark, size_t end_mark, ColumnPtr column);
 
@@ -389,6 +394,11 @@ private:
 };
 
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+
+/// Whether the columns of the part can be read from and written to the columns cache: only those of a part
+/// of a table with a UUID (in an `Atomic` or `Replicated` database). The entries of a projection part are keyed
+/// by the name of its parent part and the projection, see `getColumnsCachePartName`.
+bool isColumnsCachePossibleForPart(const ColumnsCache * columns_cache, const IMergeTreeDataPartInfoForReader & part);
 
 MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,

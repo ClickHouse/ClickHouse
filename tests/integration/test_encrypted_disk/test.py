@@ -15,6 +15,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/storage.xml", "configs/allow_backup_path.xml"],
+    user_configs=["configs/no_columns_cache.xml"],
     tmpfs=["/test_encrypted_disk:size=100M"],
     external_dirs=["/backups/"],
     with_minio=True,

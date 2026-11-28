@@ -2100,14 +2100,16 @@ def test_select_columns(started_cluster):
     # The instance has a page cache, which is used for object storage by default: the second query would read
     # the column of the first one from it and not from S3.
     no_page_cache = "SETTINGS use_page_cache_for_object_storage = 0"
-    instance.query(f"SELECT value2, '{id}' FROM {name} {no_page_cache}")
+    # The columns cache is disabled: the second query would get `value2` from it instead of the file.
+    no_columns_cache = {"use_columns_cache": 0}
+    instance.query(f"SELECT value2, '{id}' FROM {name} {no_page_cache}", settings=no_columns_cache)
 
     instance.query("SYSTEM FLUSH LOGS")
     result1 = instance.query(
         f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT value2, ''{id}'' FROM {name} {no_page_cache}'"
     )
 
-    instance.query(f"SELECT *, '{id}' FROM {name} {no_page_cache}")
+    instance.query(f"SELECT *, '{id}' FROM {name} {no_page_cache}", settings=no_columns_cache)
     instance.query("SYSTEM FLUSH LOGS")
     result2 = instance.query(
         f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT *, ''{id}'' FROM {name} {no_page_cache}'"

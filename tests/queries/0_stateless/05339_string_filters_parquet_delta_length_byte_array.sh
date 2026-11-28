@@ -9,6 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `apply_string_filters_during_scan` on `DELTA_LENGTH_BYTE_ARRAY` string pages, which ClickHouse does not write.
 # Non-matching values are padded so that the filter skips enough bytes per checked value to stay enabled.
 # With 1000-row blocks, every block after the first one in a row group passes the `id` row mask into the decoder.
+# The columns cache is disabled: a column that may be written to it is decoded without the filter.
 DATA_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
 trap 'rm -f "$DATA_FILE"' EXIT
 
@@ -26,7 +27,7 @@ pq.write_table(table, '$DATA_FILE', use_dictionary=False, row_group_size=10000,
 "
 
 for enable in 0 1; do
-    $CLICKHOUSE_LOCAL -q "
+    $CLICKHOUSE_LOCAL --use_columns_cache 0 -q "
         SELECT count(), sum(cityHash64(s)) FROM file('$DATA_FILE', Parquet) PREWHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = $enable;
         SELECT count(), sum(cityHash64(s)) FROM file('$DATA_FILE', Parquet) PREWHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = $enable, input_format_parquet_max_block_size = 1000;
         SELECT count(), sum(cityHash64(s)) FROM file('$DATA_FILE', Parquet) PREWHERE id % 3 = 0 AND s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = $enable;
@@ -41,7 +42,7 @@ for query in \
     "PREWHERE s LIKE '%needle%'" \
     "PREWHERE id % 3 = 0 AND s LIKE '%needle%'" \
     "PREWHERE id % 3 = 0 AND s LIKE '%needle%' SETTINGS input_format_parquet_max_block_size = 1000"; do
-    $CLICKHOUSE_LOCAL --apply_string_filters_during_scan=1 --print-profile-events --profile-events-delay-ms=-1 \
+    $CLICKHOUSE_LOCAL --use_columns_cache 0 --apply_string_filters_during_scan=1 --print-profile-events --profile-events-delay-ms=-1 \
         -q "SELECT count() FROM file('$DATA_FILE', Parquet) $query" 2>&1 >/dev/null \
         | grep -oE 'StringValueFilterValues(Checked|Replaced): [0-9]+'
 done

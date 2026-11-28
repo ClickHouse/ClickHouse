@@ -1,4 +1,8 @@
 <test>
+    <settings>
+        <use_columns_cache>0</use_columns_cache>
+    </settings>
+
     <!-- Analysis of a `bloom_filter` index on a part compressed with `ZSTD(3)`, which merges of 100 MB and more use
          by default. The perf comparison pins the default codec to `LZ4`, so the table sets it explicitly. The indexed
          column is not in the sorting key and has a distinct value in every row, so the index is checked on every granule. -->

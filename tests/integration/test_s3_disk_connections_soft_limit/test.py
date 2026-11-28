@@ -41,7 +41,12 @@ def get_object_requests(instance, query_id):
 
 def test_reads_above_soft_limit_do_not_hold_connections(started_cluster):
     checksum_query = "SELECT sum(cityHash64(*)) FROM t"
-    settings = {"max_read_buffer_size_remote_fs": 65536, "max_threads": 4}
+    # The repeated reads are measured, so they must not be served from the columns cache.
+    settings = {
+        "max_read_buffer_size_remote_fs": 65536,
+        "max_threads": 4,
+        "use_columns_cache": 0,
+    }
 
     for instance in [node, node_limited]:
         instance.query("DROP TABLE IF EXISTS t SYNC")
