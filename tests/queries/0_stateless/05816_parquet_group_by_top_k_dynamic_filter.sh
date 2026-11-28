@@ -14,7 +14,6 @@ trap 'rm -rf "${DIR}"' EXIT
 
 LOCAL=(${CLICKHOUSE_LOCAL}
     --enable_group_by_top_k_optimization=1
-    --input_format_parquet_use_native_reader_v3=1
     --input_format_parquet_filter_push_down=1
     --input_format_parquet_preserve_order=0
     --max_block_size=1000)

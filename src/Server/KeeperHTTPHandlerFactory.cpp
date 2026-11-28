@@ -26,6 +26,9 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
 #include <Common/ZooKeeper/KeeperOverDispatcher.h>
+#include <Common/FailPoint.h>
+#include <base/scope_guard.h>
+#include <base/sleep.h>
 
 namespace DB
 {
@@ -34,6 +37,11 @@ namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+}
+
+namespace FailPoints
+{
+    extern const char keeper_http_four_letter_command_delay[];
 }
 
 KeeperHTTPRequestHandlerFactory::KeeperHTTPRequestHandlerFactory(const std::string & name_) : log(getLogger(name_)), name(name_)
@@ -280,6 +288,14 @@ void KeeperHTTPReadinessHandler::handleRequest(
 {
     try
     {
+        if (!keeper_dispatcher->tryBeginFourLetterCommand())
+        {
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
+            *response.send() << R"({"status":"fail"})";
+            return;
+        }
+        scope_guard finish_four_letter_command([this] { keeper_dispatcher->finishFourLetterCommand(); });
+
         auto is_leader = keeper_dispatcher->isLeader();
         auto is_follower = keeper_dispatcher->isFollower() && keeper_dispatcher->hasLeader();
         auto is_observer = keeper_dispatcher->isObserver() && keeper_dispatcher->hasLeader();
@@ -295,6 +311,7 @@ void KeeperHTTPReadinessHandler::handleRequest(
         details.set("hasLeader", keeper_dispatcher->hasLeader());
         json.set("details", details);
         json.set("status", status ? "ok" : "fail");
+        finish_four_letter_command.reset();
 
         std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         oss.exceptions(std::ios::failbit);
@@ -382,17 +399,30 @@ try
         auto command_ptr = FourLetterCommandFactory::instance().get(DB::IFourLetterCommand::toCode(command));
         LOG_DEBUG(log, "Received four letter command {}", command_ptr->name());
 
-        try
+        if (!keeper_dispatcher->tryBeginFourLetterCommand())
         {
-            String res = command_ptr->run();
-            response_json.set("result", res);
-            response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+            response_json.set("message", "Keeper is shutting down.");
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
         }
-        catch (...)
+        else
         {
-            tryLogCurrentException(log, "Error when executing four letter command " + command_ptr->name());
-            response_json.set("message", "Internal server error.");
-            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+            try
+            {
+                String res;
+                {
+                    SCOPE_EXIT({ keeper_dispatcher->finishFourLetterCommand(); });
+                    fiu_do_on(FailPoints::keeper_http_four_letter_command_delay, { sleepForMilliseconds(20000); });
+                    res = command_ptr->run();
+                }
+                response_json.set("result", res);
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Error when executing four letter command " + command_ptr->name());
+                response_json.set("message", "Internal server error.");
+                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+            }
         }
     }
     else if (!cwd.empty() && !cwd.starts_with('/'))

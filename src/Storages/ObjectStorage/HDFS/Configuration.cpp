@@ -6,6 +6,7 @@
 #include <Core/Settings.h>
 #include <Parsers/IAST.h>
 #include <Formats/FormatFactory.h>
+#include <IO/parseURI.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/HDFS/HDFSObjectStorage.h>
 
 #include <Interpreters/Context.h>
@@ -43,7 +44,7 @@ namespace ErrorCodes
 
 void StorageHDFSConfiguration::check(ContextPtr context)
 {
-    context->getRemoteHostFilter().checkURL(Poco::URI(url));
+    context->getRemoteHostFilter().checkURL(parseURI(url));
     checkHDFSURL(fs::path(url) / path.path.substr(1));
     StorageObjectStorageConfiguration::check(context);
 }

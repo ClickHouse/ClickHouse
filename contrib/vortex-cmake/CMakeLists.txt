@@ -12,7 +12,8 @@ if (ENABLE_FUZZING)
     set (ENABLE_VORTEX OFF)
 endif()
 
-if (NOT ENABLE_VORTEX OR NOT TARGET ch_contrib::arrow)
+# Data is exchanged with the Rust library through the Arrow C data interface, which the native Arrow IPC code implements.
+if (NOT ENABLE_VORTEX OR NOT TARGET ch_contrib::arrow_ipc_metadata)
     message(STATUS "Not using vortex")
     return()
 endif()

@@ -95,7 +95,7 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
     {
         /// The file format keeps its schema in the footer, which needs random access. Use the input
         /// directly only when it is genuinely seekable, the size is known, and `input_format_allow_seeks`
-        /// is not disabled (mirroring `asArrowFile` in the library reader); otherwise load it into memory.
+        /// is not disabled; otherwise load it into memory.
         SeekableReadBuffer * seekable = format_settings.seekable_read ? dynamic_cast<SeekableReadBuffer *>(&in) : nullptr;
         std::unique_ptr<ArrowIPC::InMemoryFile> file_data;
         std::unique_ptr<SeekableReadBuffer> memory_buffer;

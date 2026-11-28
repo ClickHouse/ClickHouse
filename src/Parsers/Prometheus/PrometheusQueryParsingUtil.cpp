@@ -29,6 +29,13 @@ namespace
             *error_pos = value;
     }
 
+    /// Parses a fixed-width hexadecimal number from an escape sequence, a sign isn't allowed there.
+    template <typename T>
+    bool tryParseHexDigits(T & x, std::string_view str)
+    {
+        return std::ranges::all_of(str, isHexDigit) && tryParseIntInBase<16>(x, str);
+    }
+
     /// Parses escape sequences in a string literal and replaces them with the characters which they mean.
     bool tryUnescapeStringLiteral(
         std::string_view input, char quote_char, String & res_string, String * error_message, size_t * error_pos)
@@ -95,7 +102,7 @@ namespace
                         return false;
                     }
                     UInt8 byte = 0;
-                    if (!tryParseIntInBase<16>(byte, input.substr(pos + 2, 2)))
+                    if (!tryParseHexDigits(byte, input.substr(pos + 2, 2)))
                     {
                         setErrorMessage(error_message,
                                         "Invalid escape sequence {}: Cannot parse a hexadecimal number representing a single byte",
@@ -156,7 +163,7 @@ namespace
                         return false;
                     }
                     UInt16 code_point = 0;
-                    if (!tryParseIntInBase<16>(code_point, input.substr(pos + 2, 4)))
+                    if (!tryParseHexDigits(code_point, input.substr(pos + 2, 4)))
                     {
                         setErrorMessage(error_message,
                                         "Invalid escape sequence {}: Cannot parse a hexadecimal number representing a Unicode code point",
@@ -190,7 +197,7 @@ namespace
                         return false;
                     }
                     UInt32 code_point = 0;
-                    if (!tryParseIntInBase<16>(code_point, input.substr(pos + 2, 8)))
+                    if (!tryParseHexDigits(code_point, input.substr(pos + 2, 8)))
                     {
                         setErrorMessage(error_message,
                                         "Invalid escape sequence {}: Cannot parse a hexadecimal number representing a Unicode code point",

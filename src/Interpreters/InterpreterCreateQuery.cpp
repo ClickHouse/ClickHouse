@@ -9,6 +9,7 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
@@ -49,6 +50,7 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
@@ -160,6 +162,7 @@ namespace Setting
     extern const SettingsDefaultTableEngine default_temporary_table_engine;
     extern const SettingsString default_view_definer;
     extern const SettingsBool flatten_nested;
+    extern const SettingsBool force_primary_key_reverse_order;
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -932,6 +935,87 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
     return ConstraintsDescription{constraints_data};
 }
 
+namespace
+{
+
+void forceReverse(ASTPtr & node)
+{
+    if (auto * elem = node->as<ASTStorageOrderByElement>())
+    {
+        elem->direction = -1;
+        return;
+    }
+
+    auto new_elem = make_intrusive<ASTStorageOrderByElement>();
+    new_elem->direction = -1;
+    new_elem->children.push_back(node);
+    node = new_elem;
+}
+
+void applyForceReverseOrder(ASTStorage * storage)
+{
+    /// Only the `MergeTree` family supports reverse sorting keys. Other engines with an `ORDER BY` clause
+    /// (e.g. `MaterializedPostgreSQL` or `IcebergLocal`) are left as is.
+    if (!storage || !storage->engine || !storage->engine->name.ends_with("MergeTree"))
+        return;
+
+    /// `MergeTree` treats `PRIMARY KEY` without `ORDER BY` as the sorting key. Materialize it as `ORDER BY`,
+    /// so that such tables get a reversed sorting key too. `PRIMARY KEY` stays as is, because it inherits
+    /// the directions from the sorting key.
+    if (!storage->order_by && storage->primary_key)
+        storage->set(storage->order_by, storage->primary_key->clone());
+
+    /// The deprecated `MergeTree` syntax keeps the sorting key in the engine arguments, e.g. `MergeTree(date, key, 8192)`.
+    /// It is left as is: that syntax has no way to express `DESC`, and a rewritten engine argument could not be parsed back.
+    if (!storage->order_by)
+        return;
+
+    if (auto * func = storage->order_by->as<ASTFunction>(); func && func->name == "tuple" && func->arguments)
+    {
+        for (auto & child : func->arguments->children)
+            forceReverse(child);
+
+        /// `ORDER BY (a, b)` is parsed as a tuple operator, while a list with `DESC` elements is parsed as a
+        /// `tuple` function. Make the rewritten key look like the parsed one, otherwise it is formatted
+        /// differently, and comparisons of key definitions (e.g. in `CLONE AS`) fail.
+        func->setIsOperator(false);
+        /// A grouped key such as `ORDER BY ((a, b))` or `ORDER BY (tuple(a, b))` keeps the `parenthesized` flag on
+        /// the tuple, which would be formatted as `(tuple(a DESC, b DESC))`. `DESC` is not allowed inside such
+        /// an expression, so the stored metadata could not be parsed back.
+        func->setParenthesized(false);
+    }
+    else
+    {
+        if (auto * elem = storage->order_by->as<ASTStorageOrderByElement>())
+        {
+            elem->direction = -1;
+        }
+        else
+        {
+            auto new_elem = make_intrusive<ASTStorageOrderByElement>();
+            new_elem->direction = -1;
+            new_elem->children.push_back(storage->order_by->clone());
+            storage->set(storage->order_by, new_elem);
+        }
+    }
+}
+
+/// Applies `force_primary_key_reverse_order` to the table engine and to the engines of hidden inner tables.
+void applyForceReverseOrder(ASTCreateQuery & create)
+{
+    applyForceReverseOrder(create.storage);
+
+    /// The engines of hidden inner tables, e.g. `CREATE MATERIALIZED VIEW ... ENGINE = ...`, are kept in
+    /// `create.targets` rather than in `create.storage`. The inner tables are created by internal queries,
+    /// which skip the rewrite, so it is applied here to the definitions they are created from.
+    if (create.targets)
+    {
+        for (auto * inner_engine : create.targets->getInnerEngines())
+            applyForceReverseOrder(inner_engine);
+    }
+}
+
+}
 
 namespace
 {
@@ -1152,6 +1236,20 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
         properties.columns = as_storage_metadata->getColumns();
 
+        /// `SHOW COLUMNS` masks credentials, but the copy can evaluate them, so copying them needs `SELECT` as in `setEngine`.
+        auto check_access_to_copied_definition = [&](const IAST & definition)
+        {
+            if (!definition.hasSecretParts())
+                return;
+            getContext()->checkAccess(AccessType::SELECT, as_database_name, create.as_table);
+            if (const auto * alias = as_storage->as<StorageAlias>();
+                alias && !alias->isTargetTableGranted(getContext(), AccessType::SELECT, {}))
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED,
+                    "Not enough privileges to copy credentials exposed by {}",
+                    StorageID{as_database_name, create.as_table}.getNameForLogs());
+        };
+
         /// Copying subcolumn codecs is a new declaration of them.
         for (const auto & column : properties.columns)
             if (!column.subcolumn_codecs.empty())
@@ -1181,16 +1279,28 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 if (merge_tree_data->format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
                 {
                     if (!create.storage->primary_key && as_storage_metadata->isPrimaryKeyDefined() && as_storage_metadata->hasPrimaryKey())
+                    {
+                        check_access_to_copied_definition(*as_storage_metadata->getPrimaryKeyAST());
                         create.storage->set(create.storage->primary_key, as_storage_metadata->getPrimaryKeyAST()->clone());
+                    }
 
                     if (!create.storage->partition_by && as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
+                    {
+                        check_access_to_copied_definition(*as_storage_metadata->getPartitionKeyAST());
                         create.storage->set(create.storage->partition_by, as_storage_metadata->getPartitionKeyAST()->clone());
+                    }
 
                     if (!create.storage->order_by && as_storage_metadata->isSortingKeyDefined() && as_storage_metadata->hasSortingKey())
+                    {
+                        check_access_to_copied_definition(*as_storage_metadata->getSortingKeyAST());
                         create.storage->set(create.storage->order_by, as_storage_metadata->getSortingKeyAST()->clone());
+                    }
 
                     if (!create.storage->sample_by && as_storage_metadata->isSamplingKeyDefined() && as_storage_metadata->hasSamplingKey())
+                    {
+                        check_access_to_copied_definition(*as_storage_metadata->getSamplingKeyAST());
                         create.storage->set(create.storage->sample_by, as_storage_metadata->getSamplingKeyAST()->clone());
+                    }
                 }
             }
         }
@@ -1201,6 +1311,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         properties.constraints = as_storage_metadata->getConstraints();
+
+        for (const auto & copied :
+             {formatColumns(properties.columns),
+              formatIndices(properties.indices),
+              formatProjections(properties.projections),
+              formatConstraints(properties.constraints)})
+            check_access_to_copied_definition(*copied);
 
         if (create.is_clone_as)
         {
@@ -1412,6 +1529,26 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (!as_table_saved.empty())
         create.is_create_empty = false;
 
+    /// `CLONE AS` and restoring from a backup attach existing data parts, which are physically laid out
+    /// in the original order. Flipping the stored `ORDER BY` to `DESC` for them would make the metadata
+    /// disagree with the data on disk, so the rewrite is skipped for these.
+    /// Internal queries are skipped too, because they create hidden inner tables from definitions which
+    /// the outer query has already rewritten. This includes an internal `TimeSeries` table, e.g. the one
+    /// behind `CREATE MATERIALIZED VIEW ... ENGINE = TimeSeries`: the default engines of its own inner tables
+    /// are added only above by `normalizeTimeSeriesDefinition` and are not persisted in the definition of the
+    /// view, so a restore from a backup would regenerate them with the original keys and attach parts sorted
+    /// by the reversed keys. Such inner tables keep the original keys.
+    /// Definitions re-derived from stored metadata (e.g. `SYSTEM DROP DATABASE REPLICA ... FROM ZKPATH ... WITH TABLES`
+    /// or the recovery of a lost replica of a `Replicated` database) are skipped as well: they describe tables
+    /// which already exist elsewhere and must match the metadata stored in Keeper.
+    if (!internal && !create.is_clone_as && !is_restore_from_backup
+        && !getContext()->isRecoveryFromStoredMetadata()
+        && mode <= LoadingStrictnessLevel::CREATE
+        && getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
+    {
+        applyForceReverseOrder(create);
+    }
+
     return properties;
 }
 
@@ -1436,6 +1573,22 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
             validateDataType(name_and_type_pair.type, validation_settings);
     }
+}
+
+SharedHeader InterpreterCreateQuery::getMaterializedViewSampleBlock(const ASTCreateQuery & create) const
+{
+    /// We should treat SELECT as an initial query in order to properly analyze it.
+    auto context = Context::createCopy(getContext());
+    context->setQueryKindInitial();
+
+    /// For refreshable materialized views, use the MV's database as context.
+    /// This ensures unqualified references resolve in the MV's database, not session's database.
+    if (create.refresh_strategy)
+        context->setCurrentDatabaseUnchecked(create.getDatabase());
+
+    return InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
+        context,
+        SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
 }
 
 void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties)
@@ -1479,20 +1632,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
     {
         try
         {
-            {
-                /// We should treat SELECT as an initial query in order to properly analyze it.
-                auto context = Context::createCopy(getContext());
-                context->setQueryKindInitial();
-
-                /// For refreshable materialized views, use the MV's database as context.
-                /// This ensures unqualified references resolve in the MV's database, not session's database.
-                if (create.refresh_strategy)
-                    context->setCurrentDatabaseUnchecked(create.getDatabase());
-
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
-                    context,
-                    SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
-            }
+            input_block = getMaterializedViewSampleBlock(create);
         }
         catch (Exception & e)
         {
@@ -2441,6 +2581,34 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (mode <= LoadingStrictnessLevel::CREATE && create.is_materialized_view_with_inner_table())
             getContext()->setSetting("flatten_nested", false);
         validateMaterializedViewColumnsAndEngine(create, properties);
+    }
+    else if (create.select && create.is_materialized_view && is_restore_from_backup && !is_secondary_query)
+    {
+        /// A restore does not validate the view, but checks the rights for the tables that its query reads, as `CREATE` does.
+        try
+        {
+            (void)getMaterializedViewSampleBlock(create);
+        }
+        catch (Exception & e)
+        {
+            /// The rights for a table function are checked only by the analysis.
+            std::function<bool(const IAST &)> has_table_function = [&](const IAST & ast)
+            {
+                const auto * table_expression = ast.as<ASTTableExpression>();
+                return (table_expression && table_expression->table_function)
+                    || std::ranges::any_of(ast.children, [&](const auto & child) { return has_table_function(*child); });
+            };
+            if (e.code() == ErrorCodes::ACCESS_DENIED || has_table_function(*create.select))
+                throw;
+
+            /// The query cannot be analyzed, for example a table is missing. Then the rights are checked for every table that it names.
+            const auto dependencies = getDependenciesFromCreateQuery(
+                getContext()->getGlobalContext(), {create.getDatabase(), create.getTable()}, query_ptr, getContext()->getCurrentDatabase());
+            for (const auto & table : dependencies.dependencies)
+                getContext()->checkAccess(AccessType::SELECT, table.database, table.table);
+            if (dependencies.mv_from_dependency)
+                getContext()->checkAccess(AccessType::SELECT, *dependencies.mv_from_dependency);
+        }
     }
 
     bool is_storage_replicated = false;

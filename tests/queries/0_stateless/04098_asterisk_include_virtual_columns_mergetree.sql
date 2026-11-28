@@ -1,4 +1,6 @@
 -- Tags: no-ordinary-database, no-fasttest, no-encrypted-storage, no-async-insert
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 -- Test that asterisk_include_virtual_columns works with MergeTree.
 -- Previously this caused: "Virtual column _distance must be filled by range reader".

@@ -13,6 +13,10 @@
 -- (the failpoint does not fire there) and the subquery runs once, so the rows read by the query tell
 -- which path was taken.
 
+-- Disable force_primary_key_reverse_order: with a descending key the range of marks selected for the set covers one more row of `t_outer_sv`
+-- (the main query reads 11 rows instead of 10).
+SET force_primary_key_reverse_order = 0;
+
 DROP VIEW IF EXISTS v_sealed_join;
 DROP TABLE IF EXISTS t_outer_sv;
 DROP TABLE IF EXISTS t_small_sv;
@@ -21,9 +25,9 @@ DROP TABLE IF EXISTS t_big_sv;
 CREATE TABLE t_outer_sv (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
 INSERT INTO t_outer_sv SELECT number FROM numbers(1000);
 
-CREATE TABLE t_small_sv (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192;
+CREATE TABLE t_small_sv (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 INSERT INTO t_small_sv SELECT number FROM numbers(20);
-CREATE TABLE t_big_sv (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192;
+CREATE TABLE t_big_sv (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 INSERT INTO t_big_sv SELECT number FROM numbers(1000);
 
 -- The `WHERE` makes the view sealed, so it is read through `ReadFromSealedView`. It keeps [0, 10).

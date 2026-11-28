@@ -24,6 +24,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
+#include <IO/parseURI.h>
 #include <Storages/HivePartitioningUtils.h>
 
 
@@ -481,7 +482,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         {
             columns = StorageURL::getTableStructureAndFormatFromData(
                 filename,
-                chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
+                chooseCompressionMethod(parseURI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
                 context,
@@ -492,7 +493,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         {
             columns = StorageURL::getTableStructureFromData(format,
                 filename,
-                chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
+                chooseCompressionMethod(parseURI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
                 context,

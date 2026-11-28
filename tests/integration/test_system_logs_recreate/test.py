@@ -23,6 +23,19 @@ def start_cluster():
         cluster.shutdown()
 
 
+def count_generations(table):
+    """The number of generations of a system log table: the table itself plus
+    the `<table>_0`, `<table>_1`, ... it was renamed to when its structure
+    changed. Other tables whose name merely starts with the same prefix are not
+    counted."""
+    return int(
+        node.query(
+            "SELECT count() FROM system.tables WHERE database = 'system' "
+            f"AND match(name, '^{table}(_[0-9]+)?$')"
+        )
+    )
+
+
 def test_system_logs_recreate():
     system_logs = [
         # enabled by default
@@ -44,14 +57,7 @@ def test_system_logs_recreate():
             assert "ENGINE = `Null`" not in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
-            assert (
-                len(
-                    node.query(f"SHOW TABLES FROM system LIKE '{table}%'")
-                    .strip()
-                    .split("\n")
-                )
-                == 1
-            )
+            assert count_generations(table) == 1
 
         # NOTE: we use zzz- prefix to make it the last file,
         # so that it will be applied last.
@@ -79,14 +85,7 @@ def test_system_logs_recreate():
                 f"SHOW CREATE TABLE system.{table}"
             )
             assert "ENGINE = `Null`" in node.query(f"SHOW CREATE TABLE system.{table}")
-            assert (
-                len(
-                    node.query(f"SHOW TABLES FROM system LIKE '{table}%'")
-                    .strip()
-                    .split("\n")
-                )
-                == 2
-            )
+            assert count_generations(table) == 2
 
         # apply only storage_policy for all system tables
         for table in system_logs:
@@ -122,14 +121,7 @@ def test_system_logs_recreate():
             # Not necessarily right after `SETTINGS`: a log can add its own engine settings
             # (e.g. the bucketed `Map` serialization of the `bucketed` schema of `metric_log`).
             assert "storage_policy = 'system_tables'" in create_table_sql
-            assert (
-                len(
-                    node.query(f"SHOW TABLES FROM system LIKE '{table}%'")
-                    .strip()
-                    .split("\n")
-                )
-                == 3
-            )
+            assert count_generations(table) == 3
 
         for table in system_logs:
             node.exec_in_container(
@@ -145,27 +137,13 @@ def test_system_logs_recreate():
             assert "ENGINE = `Null`" not in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
-            assert (
-                len(
-                    node.query(f"SHOW TABLES FROM system LIKE '{table}%'")
-                    .strip()
-                    .split("\n")
-                )
-                == 4
-            )
+            assert count_generations(table) == 4
 
         node.query("SYSTEM FLUSH LOGS")
         # Ensure that there was no superfluous RENAME's
         # IOW that the table created only when the structure is indeed different.
         for table in system_logs:
-            assert (
-                len(
-                    node.query(f"SHOW TABLES FROM system LIKE '{table}%'")
-                    .strip()
-                    .split("\n")
-                )
-                == 4
-            )
+            assert count_generations(table) == 4
     finally:
         for table in system_logs:
             for syffix in range(3):
@@ -248,9 +226,12 @@ def test_materialized_view_over_rotated_system_log():
         node.query("SYSTEM FLUSH LOGS")
 
         assert node.query(rotated) != rotated_before
+        # Not counting the `ci_logs_export_query_log_watcher` of the CI logs export, see
+        # tests/integration/helpers/ci_logs_export.py.
         assert (
             node.query(
-                "SELECT dependencies_table FROM system.tables WHERE database = 'system' AND name = 'query_log'"
+                "SELECT arrayFilter(name -> name != 'ci_logs_export_query_log_watcher', dependencies_table) "
+                "FROM system.tables WHERE database = 'system' AND name = 'query_log'"
             )
             == "['mv_124177']\n"
         )

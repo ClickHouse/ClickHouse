@@ -383,6 +383,9 @@ public:
         /// Whether to relax the key condition (e.g., for LIKE queries without a perfect prefix).
         bool relaxed = false;
 
+        /// Whether the atom is under an odd number of FUNCTION_NOT. Assigned when the condition is built.
+        bool under_not = false;
+
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
 
@@ -530,6 +533,11 @@ public:
     /// no ordering comparison, so it makes an atom true only through an enclosing negation: `can_be_true`
     /// without `can_be_false`, i.e. `relaxed`. Making one true directly needs `FUNCTION_UNKNOWN` instead.
     void relaxAtomsOverNaNHidingColumns(const DataTypes & key_types);
+
+    /// Whether an atom can claim a key value that carries a nested `NULL` or `NaN` as matching, see
+    /// `mayReadNullKeyValue`. Such a value can sit anywhere inside a range, so the analysis never answers
+    /// `can_be_false = false` for it, whatever the range is, and no range of marks can be exact.
+    [[nodiscard]] bool mayClaimNestedNullOrNaN(const DataTypes & key_types) const;
 
     [[nodiscard]] bool isSinglePoint() const { return single_point; }
 

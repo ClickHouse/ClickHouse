@@ -29,6 +29,7 @@
     {"prefix":"threadpool_remote","mode":"token","target":"/reference/settings/server-settings/settings/threadpool-remote"},
     {"prefix":"threadpool_writer","mode":"token","target":"/reference/settings/server-settings/settings/threadpool-writer"},
     {"prefix":"vector_similarity","mode":"token","target":"/reference/settings/server-settings/settings/vector-similarity"},
+    {"prefix":"workloads_respect","mode":"token","target":"/reference/settings/server-settings/settings/workloads-respect"},
     {"prefix":"database_catalog","mode":"token","target":"/reference/settings/server-settings/settings/database-catalog"},
     {"prefix":"disk_connections","mode":"token","target":"/reference/settings/server-settings/settings/disk-connections"},
     {"prefix":"drop_distributed","mode":"token","target":"/reference/settings/server-settings/settings/drop-distributed"},

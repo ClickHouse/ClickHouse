@@ -4167,9 +4167,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             keep_conjuncts_depending_on_allowed_input(both_streams_push_down_conjunctions, both_streams_allowed_nodes);
     }
 
-    /// `extractConjunctionAtoms` yields the atoms right to left, while `and` is evaluated left to right.
-    auto conjunction_atoms = extractConjunctionAtoms(predicate);
-    std::ranges::reverse(conjunction_atoms);
+    auto conjunction_atoms = extractConjunctionAtomsInWrittenOrder(predicate);
 
     /// Two copies of a runtime filter may pass different rows, and a match removed from the side an OUTER or ANTI
     /// join only matches against makes that join emit a row it would not, so no equivalent copy is pushed there.
@@ -4385,18 +4383,13 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
         /// The whole predicate was split.
         if (removes_filter)
         {
-            /// If filter column is not needed, remove it from output nodes.
-            std::erase_if(outputs, [&](const Node * node) { return node == predicate; });
+            /// Like `FilterStep`, remove only the first output of the filter column's name.
+            outputs.erase(std::ranges::find(outputs, predicate));
         }
-        else
-        {
-            /// The whole predicate was pushed down, but the filter column is still
-            /// needed in the output (e.g. it appears in SELECT). Keep the original
-            /// expression so the output values are correct.  The caller will convert
-            /// the FilterStep into an ExpressionStep, which still evaluates the
-            /// expression but no longer filters.
-            is_filter_const = true;
-        }
+
+        /// An output of that name may remain: the filter column itself (e.g. used in SELECT) or a passed-through column.
+        /// Callers resolve the filter column by name, so they then turn the FilterStep into a non-filtering ExpressionStep.
+        is_filter_const = tryFindInOutputs(predicate->result_name) != nullptr;
     }
     else
     {
@@ -4427,9 +4420,16 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
             if (rejected_is_surviving_and && predicate->result_type->isNullable() && !rejected->result_type->isNullable())
             {
                 /// A carrier is picked by name, because that makes the choice stable for unordered rejected conjuncts.
+                /// An `equals` is picked last: wrapped, it is no longer read as a JOIN key.
+                auto carrier_key = [](const Node * node)
+                {
+                    bool is_equals = node->type == ActionType::FUNCTION && node->function_base->getName() == "equals";
+                    return std::pair<bool, std::string_view>(!is_equals, node->result_name);
+                };
+
                 size_t carrier = 0;
                 for (size_t i = 1; i < new_children.size(); ++i)
-                    if (new_children[i]->result_name > new_children[carrier]->result_name)
+                    if (carrier_key(new_children[i]) > carrier_key(new_children[carrier]))
                         carrier = i;
 
                 NodeRawConstPtrs retyped_children = new_children;
@@ -4690,10 +4690,14 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
     return buildFilterActionsDAGImpl(filter_nodes, replacement_lookup, single_output_condition_node);
 }
 
-ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * predicate)
+namespace
 {
-    NodeRawConstPtrs atoms;
 
+/// An `and` with several parents is expanded once, at its first use in the order of the result.
+ActionsDAG::NodeRawConstPtrs extractConjunctionAtomsImpl(const ActionsDAG::Node * predicate, bool written_order)
+{
+    ActionsDAG::NodeRawConstPtrs atoms;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> expanded;
     std::stack<const ActionsDAG::Node *> stack;
     stack.push(predicate);
 
@@ -4701,22 +4705,40 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * pr
     {
         const auto * node = stack.top();
         stack.pop();
-        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
         {
-            const auto & name = node->function_base->getName();
-            if (name == "and")
+            if (expanded.insert(node).second)
             {
-                for (const auto * arg : node->children)
-                    stack.push(arg);
-
-                continue;
+                if (written_order)
+                {
+                    for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
+                        stack.push(*it);
+                }
+                else
+                {
+                    for (const auto * arg : node->children)
+                        stack.push(arg);
+                }
             }
+            continue;
         }
 
         atoms.push_back(node);
     }
 
     return atoms;
+}
+
+}
+
+ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * predicate)
+{
+    return extractConjunctionAtomsImpl(predicate, /*written_order=*/ false);
+}
+
+ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtomsInWrittenOrder(const Node * predicate)
+{
+    return extractConjunctionAtomsImpl(predicate, /*written_order=*/ true);
 }
 
 ActionsDAG ActionsDAG::restrictFilterDAGToInputs(const ActionsDAG::Node * filter_node, const NameSet & available_inputs) const

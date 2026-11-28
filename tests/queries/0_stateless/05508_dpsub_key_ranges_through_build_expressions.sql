@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the reference pins the choice of merge joins over inputs sorted by an ascending key
+SET force_primary_key_reverse_order = 0;
+
 -- DPsub's interesting-order costing reads the key ranges of a build side to estimate how much of a sorted probe side the
 -- runtime filter of a hash join prunes, or a sharded merge join reads. The range of a column does not describe a
 -- value-changing function of it, e.g. `negate(k)`: kept under the name of the function, the range of `k` would make DPsub

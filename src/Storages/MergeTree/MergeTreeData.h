@@ -963,6 +963,10 @@ public:
 
     MutableDataPartsVector tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr context, PartsTemporaryRename & renamed_parts);
 
+    /// Throws if the parts that `CLEAR COLUMN` of `_block_number` / `_block_offset` (see `isClearOfBlockColumns`) affects
+    /// have unapplied patch parts.
+    void assertNoPatchesForClearOfBlockColumns(const AlterCommand & command, ContextPtr local_context) const;
+
     bool assertNoPatchesForParts(const DataPartsVector & parts, const DataPartsVector & patches, std::string_view command, bool throw_on_error = true) const;
 
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
@@ -2300,6 +2304,9 @@ protected:
             const DiskPtr disk;
 
             bool is_loaded = false;
+            /// Set from the ancestor that loaded `Active` and therefore covers this part.
+            bool covering_part_is_non_transactional = false;
+            String covering_part_name;
             std::map<MergeTreePartInfo, std::shared_ptr<Node>> children;
         };
 
@@ -2569,6 +2576,7 @@ private:
         const MergeTreePartInfo & part_info,
         const String & part_name,
         const DiskPtr & part_disk_ptr,
+        const PartLoadingTree::NodePtr & part_loading_node,
         MergeTreeDataPartState to_state,
         DB::SharedMutex & part_loading_mutex,
         bool is_last_attempt);
@@ -2577,6 +2585,7 @@ private:
         const MergeTreePartInfo & part_info,
         const String & part_name,
         const DiskPtr & part_disk_ptr,
+        const PartLoadingTree::NodePtr & part_loading_node,
         MergeTreeDataPartState to_state,
         DB::SharedMutex & part_loading_mutex,
         size_t backoff_ms,

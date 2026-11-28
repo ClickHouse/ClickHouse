@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+-- Disable force_primary_key_reverse_order: `SHOW CREATE` of the inner tables prints the sorting key direction
+SET force_primary_key_reverse_order = 0;
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';

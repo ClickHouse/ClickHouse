@@ -46,8 +46,11 @@ def escape_tsv_info(text: str) -> str:
     # turned back into LF by universal-newlines mode at read time and
     # fragment the row. Encoding them as `\r` keeps the diagnostic
     # detail intact for the unescape pass in `read_test_results`.
+    # The backslash must be escaped first, otherwise an on-disk `\n` is
+    # ambiguous between an encoded LF and the payload's own two characters.
     return (
-        text.replace("\0", "\\0")
+        text.replace("\\", "\\\\")
+        .replace("\0", "\\0")
         .replace("\t", "\\t")
         .replace("\r", "\\r")
         .replace("\n", "\\n")
@@ -87,7 +90,7 @@ def quote_identifier(name: str) -> str:
 
 
 class RandomDisruptor:
-    """Background thread that randomly kills queries, client processes and mutations,
+    """Background thread that randomly kills queries, client processes, mutations and transactions,
     briefly stops background operations such as merges, empties caches and restarts
     replicas, during stress tests.
 
@@ -328,6 +331,20 @@ class RandomDisruptor:
         except Exception as e:
             logging.warning("Random mutation kill failed: %s: %s", type(e).__name__, e)
 
+    def _kill_random_transaction(self) -> None:
+        """Roll back a random running transaction, which a test opened with `BEGIN TRANSACTION`."""
+        # Quiet: `system.transactions` exists only with `allow_experimental_transactions`.
+        succeeded, output = self._run_query(
+            "SELECT tid_hash FROM system.transactions WHERE state = 'RUNNING' ORDER BY rand() LIMIT 1",
+            quiet=True,
+            timeout=self._SELECT_TIMEOUT,
+        )
+        tid_hash = output.strip()
+        if not succeeded or not tid_hash or self._stop_event.is_set():
+            return
+        if self._run_query("KILL TRANSACTION WHERE tid_hash = {tid_hash:UInt64}", {"tid_hash": tid_hash})[0]:
+            logging.info("KILL TRANSACTION of tid_hash %s", tid_hash)
+
     def _run_query(
         self,
         query: str,
@@ -500,6 +517,7 @@ class RandomDisruptor:
             self._kill_random_query,
             self._kill_random_client,
             self._kill_random_mutation,
+            self._kill_random_transaction,
             self._pause_random_operation,
             self._drop_random_cache,
             self._run_one_shot_statement,

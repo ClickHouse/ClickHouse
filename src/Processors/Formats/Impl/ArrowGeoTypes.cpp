@@ -24,20 +24,6 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
-#if USE_ARROW_LIBRARY
-const std::string * extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata)
-{
-    if (!metadata)
-        return nullptr;
-
-    for (Int64 i = 0; i < metadata->size(); ++i)
-        if (metadata->key(i) == "geo")
-            return &metadata->value(i);
-
-    return nullptr;
-}
-#endif
-
 UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::string * geo_json_str)
 {
     if (!geo_json_str)
