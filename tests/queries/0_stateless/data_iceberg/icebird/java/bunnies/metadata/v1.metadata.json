@@ -1,0 +1,75 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "eee3ca77-1713-442c-8c2f-ad98d8d36a9b",
+  "location" : "s3a://hyperparam-iceberg/java/bunnies",
+  "last-sequence-number" : 0,
+  "last-updated-ms" : 1743410776222,
+  "last-column-id" : 8,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "Breed Name",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 2,
+      "name" : "Average Weight",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 3,
+      "name" : "Fur Length",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 4,
+      "name" : "Lifespan",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 5,
+      "name" : "Origin Country",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 6,
+      "name" : "Ear Type",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 7,
+      "name" : "Temperament",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 8,
+      "name" : "Popularity Rank",
+      "required" : false,
+      "type" : "long"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : -1,
+  "refs" : { },
+  "snapshots" : [ ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}

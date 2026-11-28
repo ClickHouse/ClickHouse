@@ -1,0 +1,158 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "eee3ca77-1713-442c-8c2f-ad98d8d36a9b",
+  "location" : "s3a://hyperparam-iceberg/java/bunnies",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1743410787268,
+  "last-column-id" : 9,
+  "current-schema-id" : 1,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "Breed Name",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 2,
+      "name" : "Average Weight",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 3,
+      "name" : "Fur Length",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 4,
+      "name" : "Lifespan",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 5,
+      "name" : "Origin Country",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 6,
+      "name" : "Ear Type",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 7,
+      "name" : "Temperament",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 8,
+      "name" : "Popularity Rank",
+      "required" : false,
+      "type" : "long"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 1,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "Breed Name",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 2,
+      "name" : "Average Weight",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 3,
+      "name" : "Fur Length",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 4,
+      "name" : "Lifespan",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 5,
+      "name" : "Origin Country",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 6,
+      "name" : "Ear Type",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 7,
+      "name" : "Temperament",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 8,
+      "name" : "Popularity Rank",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 9,
+      "name" : "__happy__",
+      "required" : false,
+      "type" : "boolean"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 4951213507629824583,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 4951213507629824583,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 4951213507629824583,
+    "timestamp-ms" : 1743410783083,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "1",
+      "added-records" : "21",
+      "added-files-size" : "3407",
+      "changed-partition-count" : "1",
+      "total-records" : "21",
+      "total-files-size" : "3407",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "iceberg-version" : "Apache Iceberg 1.8.1 (commit 9ce0fcf0af7becf25ad9fc996c3bad2afdcfd33d)"
+    },
+    "manifest-list" : "s3a://hyperparam-iceberg/java/bunnies/metadata/snap-4951213507629824583-1-583a45a0-7389-4d71-9305-ac3a8725c38b.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1743410783083,
+    "snapshot-id" : 4951213507629824583
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1743410776222,
+    "metadata-file" : "s3a://hyperparam-iceberg/java/bunnies/metadata/v1.metadata.json"
+  }, {
+    "timestamp-ms" : 1743410783083,
+    "metadata-file" : "s3a://hyperparam-iceberg/java/bunnies/metadata/v2.metadata.json"
+  } ]
+}
