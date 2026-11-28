@@ -1,0 +1,30 @@
+Function of a column: the result, then the number of tables the predicate filters
+8	76	76
+2
+8	76	76
+2
+6	35	36
+2
+The other side gets its own key, which is another expression or a column
+1	11	6
+1	1
+3	15	18
+1	1
+The key replaces the whole expression, including when the column inside it is a key too
+2	11	11
+2
+2	11	11
+2
+A predicate that also reads a column that is not a key stays on its side
+3	20	20
+1
+A key that is not deterministic is not the same value in the predicate
+3	18	18
+1
+The side that join_use_nulls makes Nullable
+8	76	76
+2
+5	10	\N
+The primary key of both tables is used
+8	76	76
+2
