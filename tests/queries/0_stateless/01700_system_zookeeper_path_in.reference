@@ -15,3 +15,5 @@ failed_parts
 in_progress
 last_part
 parallel
+task_queue
+tasks

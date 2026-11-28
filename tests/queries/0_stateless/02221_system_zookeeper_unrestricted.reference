@@ -78,5 +78,9 @@ replicas
 replicas
 table_shared_id
 table_shared_id
+task_queue
+task_queue
+tasks
+tasks
 temp
 temp
