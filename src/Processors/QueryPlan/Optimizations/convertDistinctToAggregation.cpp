@@ -83,7 +83,7 @@ UnorderedSetWithMemoryTracking<const QueryPlan::Node *> collectDistinctToAggrega
     /// Source and auxiliary stream restrictions constrain consumers, so those propagate upwards.
     struct Frame
     {
-        const QueryPlan::Node * node;
+        const QueryPlan::Node * node = nullptr;
         size_t next_child = 0;
         bool has_positional_limit = false;
         bool requires_distinct_preservation = false;
