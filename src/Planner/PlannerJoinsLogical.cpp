@@ -286,7 +286,7 @@ static void buildJoinCondition(const QueryTreeNodePtr & node, JoinOperatorBuildC
     if (function_node)
     {
         function_name = function_node->getFunctionName();
-        if (!function_node->isOrdinaryFunction())
+        if (!function_node->isOrdinaryCall())
         {
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                 "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
@@ -693,12 +693,16 @@ PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expr
     if (result.storage_join)
         return result;
 
-    auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
-    if (storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
+    if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage))
     {
-        /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
-        result.storage_key_value = std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary());
-        return result;
+        /// This runs even if the right table is not read, e.g. for `CREATE VIEW`, so the access must be checked here.
+        auto dictionary = storage_dictionary->getDictionary(planner_context->getQueryContext());
+        if (dictionary->getSpecialKeyType() != DictionarySpecialKeyType::Range)
+        {
+            /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
+            result.storage_key_value = std::dynamic_pointer_cast<const IKeyValueEntity>(dictionary);
+            return result;
+        }
     }
 
     result.storage_key_value = castStorage<IKeyValueEntity>(storage, DeferredTable::Load);

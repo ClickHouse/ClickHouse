@@ -71,6 +71,18 @@ sed -re 's/Coordinator\([^.)]*\.\s*/Coordinator(/g'
 echo
 echo "nested join with analyzer"
 
+# Fill the hash table statistics for the joins first. Without them (a cold cache) the size of `numbers(1e5)` is
+# unknown, the join reordering puts `num_1` on the build side, and with plan-based parallel replicas every replica
+# reads it in full, over the `max_rows_to_read` limit.
+$CLICKHOUSE_CLIENT -q "
+select * from (select key, value from num_1) l
+inner join (select key, value from num_2 inner join
+  (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings parallel_replicas_prefer_local_join=1) r
+on l.key = r.key order by l.key limit 10 offset 10000
+SETTINGS enable_parallel_replicas = 0
+FORMAT Null
+"
+
 $CLICKHOUSE_CLIENT -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join

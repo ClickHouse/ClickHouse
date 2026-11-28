@@ -56,23 +56,23 @@ namespace S3AuthSetting
     extern const S3AuthSettingsUInt64 expiration_window_seconds;
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsString region;
-    extern const S3AuthSettingsString secret_access_key;
-    extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
+    extern const S3AuthSettingsSecretString secret_access_key;
+    extern const S3AuthSettingsSecretString server_side_encryption_customer_key_base64;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool use_insecure_imds_request;
 
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
-    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsSecretString session_token;
     extern const S3AuthSettingsString http_client;
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
     extern const S3AuthSettingsString google_adc_client_id;
-    extern const S3AuthSettingsString google_adc_client_secret;
-    extern const S3AuthSettingsString google_adc_refresh_token;
-    extern const S3AuthSettingsString google_service_account_key;
+    extern const S3AuthSettingsSecretString google_adc_client_secret;
+    extern const S3AuthSettingsSecretString google_adc_refresh_token;
+    extern const S3AuthSettingsSecretString google_service_account_key;
 }
 
 namespace S3RequestSetting
@@ -124,30 +124,69 @@ private:
     UInt64 expired_token_retry_timeout_ms = 0;
 };
 
+    /// The S3 settings of a backup reader or writer: the server `<s3>` config, then the endpoint settings, then
+    /// the credentials of a named collection, then the query settings.
+    S3Settings resolveBackupS3Settings(
+        const S3::URI & s3_uri,
+        const std::optional<S3::S3AuthSettings> & named_collection_auth,
+        bool allow_native_copy,
+        const ContextPtr & context,
+        bool is_internal_backup)
+    {
+        S3Settings settings;
+        settings.loadFromConfig(context->getConfigRef(), "s3", context->getSettingsRef());
+
+        if (auto endpoint_settings = context->getStorageS3Settings().getSettings(
+                s3_uri.uri.toString(), context->getUserName(), /*ignore_user=*/is_internal_backup))
+        {
+            settings.updateIfChanged(*endpoint_settings);
+        }
+
+        /// A backup named collection fully overrides the credential fields (so a URL-only collection stays
+        /// anonymous); the explicit url/key form passes no override and keeps the server `<s3>` config values.
+        if (named_collection_auth)
+        {
+            /// `updateIfChanged` cannot clear non-scalar fields, so under the restriction first drop the server
+            /// `<s3>`/endpoint request-auth material (headers/access headers and SSE-C/SSE-KMS keys); a URL-only
+            /// collection then stays anonymous and an explicit-key collection does not inherit the server SSE keys.
+            if (context->shouldRestrictUserQueryS3Credentials())
+                settings.auth_settings.clearServerManagedRequestAuth();
+            settings.auth_settings.updateIfChanged(*named_collection_auth);
+        }
+
+        settings.request_settings.updateFromSettings(context->getSettingsRef(), /* if_changed */true);
+        settings.request_settings[S3RequestSetting::allow_native_copy] = allow_native_copy;
+        return settings;
+    }
+
     std::shared_ptr<S3::Client> makeS3Client(
         const S3::URI & s3_uri,
         const String & access_key_id,
-        const String & secret_access_key,
+        std::string_view secret_access_key,
         String role_arn,
         String role_session_name,
         String external_id,
-        bool gcp_oauth_supplied_by_query,
-        bool from_named_collection,
+        const std::optional<S3::S3AuthSettings> & named_collection_auth,
         const S3Settings & settings,
         const ContextPtr & context)
     {
         s3_uri.checkRemoteHostFilter(context->getGlobalContext()->getRemoteHostFilter());
 
-        Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
+        const bool from_named_collection = named_collection_auth.has_value();
+        /// A `gcp_oauth` is server-managed unless the named collection supplied it itself.
+        const bool gcp_oauth_supplied_by_query = named_collection_auth
+            && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
+
+        Aws::Auth::AWSCredentials credentials{Aws::String(access_key_id), Aws::String(secret_access_key)};
         NormalizedHTTPHeaderEntries headers;
-        String session_token = settings.auth_settings[S3AuthSetting::session_token];
-        String sse_customer_key = settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
+        SecretString session_token = settings.auth_settings[S3AuthSetting::session_token];
+        SecretString sse_customer_key = settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
         S3::ServerSideEncryptionKMSConfig sse_kms_config = settings.auth_settings.server_side_encryption_kms_config;
         /// Whether the base key pair came from the request rather than the server `<s3>` config fallback below.
         const bool base_keys_supplied_by_query = !access_key_id.empty();
         if (access_key_id.empty())
         {
-            credentials = Aws::Auth::AWSCredentials(settings.auth_settings[S3AuthSetting::access_key_id], settings.auth_settings[S3AuthSetting::secret_access_key]);
+            credentials = Aws::Auth::AWSCredentials(Aws::String(settings.auth_settings[S3AuthSetting::access_key_id].value), Aws::String(settings.auth_settings[S3AuthSetting::secret_access_key].value));
             headers = settings.auth_settings.headers;
         }
 
@@ -161,13 +200,18 @@ private:
         /// under the restriction any headers / SSE-C / SSE-KMS here came from the server `<s3>`/endpoint config.
         /// Drop them: the explicit-key form must not send the server's material alongside the query's keys, and
         /// the bare-URL form that resolves to an anonymous/NOSIGN client must stay genuinely anonymous rather
-        /// than still sending operator headers or encryption keys. A named collection is handled by its caller.
+        /// than still sending operator headers or encryption keys. A named collection is handled in `resolveBackupS3Settings`.
         if (!from_named_collection && context->shouldRestrictUserQueryS3Credentials())
         {
             sse_customer_key.clear();
             sse_kms_config = {};
             headers.clear();
         }
+
+        /// `s3_request_payer` can come from the query, so its header must obey the HTTP header filter.
+        auto request_payer_headers = settings.auth_settings.getRequestPayerHeaders();
+        context->getHTTPHeaderFilter().checkHeaders(request_payer_headers);
+        headers.append(request_payer_headers);
 
         const auto & request_settings = settings.request_settings;
         const auto & server_settings = context->getGlobalContext()->getServerSettings();
@@ -207,7 +251,7 @@ private:
 
 
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-            settings.auth_settings[S3AuthSetting::region],
+            settings.auth_settings[S3AuthSetting::region].value,
             context->getRemoteHostFilter(),
             static_cast<unsigned>(server_settings[ServerSetting::s3_max_redirects]),
             S3::PocoHTTPClientConfiguration::RetryStrategy{
@@ -384,7 +428,7 @@ std::shared_ptr<S3::Client> S3BackupDiskClientFactory::getOrCreate(DiskPtr disk)
 BackupReaderS3::BackupReaderS3(
     const S3::URI & s3_uri_,
     const String & access_key_id_,
-    const String & secret_access_key_,
+    std::string_view secret_access_key_,
     const String & role_arn,
     const String & role_session_name,
     const String & external_id,
@@ -399,33 +443,8 @@ BackupReaderS3::BackupReaderS3(
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
     , disk_client_factory(S3BackupClientCreator(context_))
 {
-    s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
-
-    if (auto endpoint_settings = context_->getStorageS3Settings().getSettings(
-            s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
-    {
-        s3_settings.updateIfChanged(*endpoint_settings);
-    }
-
-    /// A backup named collection fully overrides the credential fields (so a URL-only collection stays
-    /// anonymous); the explicit url/key form passes no override and keeps the server `<s3>` config values.
-    if (named_collection_auth)
-    {
-        /// `updateIfChanged` cannot clear non-scalar fields, so under the restriction first drop the server
-        /// `<s3>`/endpoint request-auth material (headers/access headers and SSE-C/SSE-KMS keys); a URL-only
-        /// collection then stays anonymous and an explicit-key collection does not inherit the server SSE keys.
-        if (context_->shouldRestrictUserQueryS3Credentials())
-            s3_settings.auth_settings.clearServerManagedRequestAuth();
-        s3_settings.auth_settings.updateIfChanged(*named_collection_auth);
-    }
-
-    s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
-    s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
-
-    /// A `gcp_oauth` is server-managed unless the named collection supplied it itself (see makeS3Client).
-    const bool gcp_oauth_supplied_by_query = named_collection_auth
-        && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, /* from_named_collection */ named_collection_auth.has_value(), s3_settings, context_);
+    s3_settings = resolveBackupS3Settings(s3_uri, named_collection_auth, allow_s3_native_copy, context_, is_internal_backup);
+    client = makeS3Client(s3_uri, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, named_collection_auth, s3_settings, context_);
 }
 
 BackupReaderS3::~BackupReaderS3() = default;
@@ -487,8 +506,8 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
 
             const auto src_key = fs::path(s3_uri.key) / path_in_backup;
             /// The native copy below issues its requests with the backup client, so `backup_restore_s3_retry_*`
-            /// already covers it. `dest_client` is used only by the fallback, which uploads to the destination
-            /// with it, so it is cloned with the same settings instead of keeping the ones of the disk.
+            /// already covers it. `dest_client` uploads to the destination in the fallback and checks the copied
+            /// object, so it is cloned with the same settings instead of keeping the ones of the disk.
             auto dest_client = disk_client_factory.getOrCreate(destination_disk);
             auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_READER);
             auto create_read_buffer = [&, this]
@@ -528,7 +547,7 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
 BackupWriterS3::BackupWriterS3(
     const S3::URI & s3_uri_,
     const String & access_key_id_,
-    const String & secret_access_key_,
+    std::string_view secret_access_key_,
     const String & role_arn,
     const String & role_session_name,
     const String & external_id,
@@ -545,34 +564,9 @@ BackupWriterS3::BackupWriterS3(
     , s3_capabilities(getCapabilitiesFromConfig(context_->getConfigRef(), "s3"))
     , disk_client_factory(S3BackupClientCreator(context_))
 {
-    s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
-
-    if (auto endpoint_settings = context_->getStorageS3Settings().getSettings(
-            s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
-    {
-        s3_settings.updateIfChanged(*endpoint_settings);
-    }
-
-    /// A backup named collection fully overrides the credential fields (so a URL-only collection stays
-    /// anonymous); the explicit url/key form passes no override and keeps the server `<s3>` config values.
-    if (named_collection_auth)
-    {
-        /// `updateIfChanged` cannot clear non-scalar fields, so under the restriction first drop the server
-        /// `<s3>`/endpoint request-auth material (headers/access headers and SSE-C/SSE-KMS keys); a URL-only
-        /// collection then stays anonymous and an explicit-key collection does not inherit the server SSE keys.
-        if (context_->shouldRestrictUserQueryS3Credentials())
-            s3_settings.auth_settings.clearServerManagedRequestAuth();
-        s3_settings.auth_settings.updateIfChanged(*named_collection_auth);
-    }
-
-    s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
-    s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
+    s3_settings = resolveBackupS3Settings(s3_uri, named_collection_auth, allow_s3_native_copy, context_, is_internal_backup);
     s3_settings.request_settings[S3RequestSetting::storage_class_name] = storage_class_name;
-
-    /// A `gcp_oauth` is server-managed unless the named collection supplied it itself (see makeS3Client).
-    const bool gcp_oauth_supplied_by_query = named_collection_auth
-        && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, /* from_named_collection */ named_collection_auth.has_value(), s3_settings, context_);
+    client = makeS3Client(s3_uri, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, named_collection_auth, s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
     {
@@ -753,22 +747,18 @@ std::unique_ptr<ReadBuffer> BackupWriterS3::readFile(const String & file_name, s
 
 std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
 {
-    return std::make_unique<WriteBufferFromS3>(
-        client,
-        s3_uri.bucket,
-        fs::path(s3_uri.key) / file_name,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        s3_settings.request_settings,
-        blob_storage_log,
-        std::nullopt,
-        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER),
-        write_settings);
+    return writeFileImpl(file_name, write_settings);
 }
 
 std::unique_ptr<WriteBuffer> BackupWriterS3::writeFileIfNotExists(const String & file_name)
 {
     WriteSettings conditional_write_settings = write_settings;
     conditional_write_settings.object_storage_write_if_none_match = "*";
+    return writeFileImpl(file_name, conditional_write_settings);
+}
+
+std::unique_ptr<WriteBuffer> BackupWriterS3::writeFileImpl(const String & file_name, const WriteSettings & file_write_settings)
+{
     return std::make_unique<WriteBufferFromS3>(
         client,
         s3_uri.bucket,
@@ -778,7 +768,7 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFileIfNotExists(const String &
         blob_storage_log,
         std::nullopt,
         threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER),
-        conditional_write_settings);
+        file_write_settings);
 }
 
 void BackupWriterS3::removeFile(const String & file_name)

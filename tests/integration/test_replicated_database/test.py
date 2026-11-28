@@ -1861,6 +1861,7 @@ def test_sync_database_replica_strict(started_cluster):
         # DEFAULT: needs the frozen snapshot fully processed -> times out.
         default_error = dummy_node.http_query_and_get_error(
             "system sync database replica strict_sync",
+            method="POST",
             params=sync_params,
             timeout=60,
         )
@@ -1873,6 +1874,7 @@ def test_sync_database_replica_strict(started_cluster):
         # the guard).
         dummy_node.http_query(
             "system sync database replica strict_sync strict",
+            method="POST",
             params=sync_params,
             timeout=60,
         )
@@ -2197,7 +2199,6 @@ def test_alias_with_dropped_target(started_cluster):
     main_node.query(
         f"""
         CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}');
-        SET allow_experimental_alias_table_engine = 1;
         CREATE TABLE {db_name}.base_table (id UInt32, value String) ENGINE = MergeTree ORDER BY id;
         CREATE TABLE {db_name}.alias_table ENGINE = Alias('{db_name}', 'base_table');
         DROP TABLE {db_name}.base_table;
@@ -2698,3 +2699,32 @@ def test_rename_with_different_local_database_names(started_cluster):
 
     for node, db in mounts:
         node.query(f"DROP DATABASE {db} SYNC")
+
+
+def test_attach_mv_replays_on_replica_without_source(started_cluster):
+    # The initiator validates a full-definition ATTACH MATERIALIZED VIEW, a follower replays it as is.
+    main_node.query("CREATE DATABASE attach_mv_src")
+    main_node.query("CREATE TABLE attach_mv_src.src (n Int32) ENGINE = MergeTree ORDER BY n")
+    for i, node in enumerate([main_node, dummy_node]):
+        node.query(
+            f"CREATE DATABASE attach_mv_db ENGINE = Replicated('/test/attach_mv_db', 'shard1', 'replica{i + 1}')"
+        )
+    main_node.query(
+        "CREATE TABLE attach_mv_db.dst (n Int32) ENGINE = ReplicatedMergeTree ORDER BY n"
+    )
+    main_node.query(
+        "ATTACH MATERIALIZED VIEW attach_mv_db.mv UUID '5a2b6c61-7e43-4d6f-9b4b-1ad7b9b33d71' "
+        "TO attach_mv_db.dst (n Int32) AS SELECT n FROM attach_mv_src.src",
+        settings={"database_replicated_allow_explicit_uuid": 1},
+    )
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA attach_mv_db", timeout=60)
+    assert (
+        dummy_node.query(
+            "SELECT count() FROM system.tables WHERE database = 'attach_mv_db' AND name = 'mv'"
+        )
+        == "1\n"
+    )
+
+    for node in [main_node, dummy_node]:
+        node.query("DROP DATABASE attach_mv_db SYNC")
+    main_node.query("DROP DATABASE attach_mv_src SYNC")

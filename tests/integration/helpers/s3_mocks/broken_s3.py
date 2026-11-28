@@ -76,6 +76,9 @@ class MockControl:
     def setup_at_listing(self, **kwargs):
         self.setup_action("at_listing", **kwargs)
 
+    def setup_at_object_delete(self, **kwargs):
+        self.setup_action("at_object_delete", **kwargs)
+
     def setup_at_object_get(self, **kwargs):
         self.setup_action("at_object_get", **kwargs)
 
@@ -507,6 +510,7 @@ class _ServerRuntime:
         self.at_object_get_by_key = {}
         self.at_complete_multi_part_upload = None
         self.at_abort_multi_part_upload = None
+        self.at_object_delete = None
 
     def register_fake_upload(self, upload_id, key):
         with self.lock:
@@ -531,6 +535,7 @@ class _ServerRuntime:
             self.at_complete_multi_part_upload = None
             self.at_abort_multi_part_upload = None
             self.at_listing = None
+            self.at_object_delete = None
             self.at_object_get = None
             self.at_object_get_by_key = {}
 
@@ -771,6 +776,14 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.log_message("set at_listing %s", _runtime.at_listing)
             return self._ok()
 
+        if path[1] == "at_object_delete":
+            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
+            _runtime.at_object_delete = _ServerRuntime.CountAfter.from_cgi_params(
+                _runtime.lock, params
+            )
+            self.log_message("set at_object_delete %s", _runtime.at_object_delete)
+            return self._ok()
+
         if path[1] == "at_object_get":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             rule = _ServerRuntime.CountAfter.from_cgi_params(_runtime.lock, params)
@@ -880,6 +893,11 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         parts = urllib.parse.urlsplit(self.path)
         params = urllib.parse.parse_qs(parts.query, keep_blank_values=True)
+        # Multi-object delete is `POST /bucket?delete`.
+        if "delete" in params and _runtime.at_object_delete is not None:
+            if _runtime.at_object_delete.has_effect():
+                return _runtime.at_object_delete.inject_error(self)
+
         uploads = params.get("uploads", [None])[0]
         if uploads is not None:
             if _runtime.at_create_multi_part_upload is not None:
@@ -911,6 +929,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.redirect()
 
     def do_DELETE(self):
+        if _runtime.at_object_delete is not None:
+            if _runtime.at_object_delete.has_effect():
+                return _runtime.at_object_delete.inject_error(self)
+
         parts = urllib.parse.urlsplit(self.path)
         params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
         upload_id = params.get("uploadId", [None])[0]

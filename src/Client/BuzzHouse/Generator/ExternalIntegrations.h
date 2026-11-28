@@ -57,7 +57,8 @@ public:
 
     virtual void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) { }
 
-    virtual bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) { return false; }
+    /// Most integrations need nothing besides the engine arguments
+    virtual bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) { return true; }
 
     virtual bool performExternalCommand(uint64_t, bool, const String &, const String &, const String &) { return false; }
 
@@ -82,7 +83,10 @@ public:
 
     virtual String getSQLQuotedTableName(std::shared_ptr<SQLDatabase>, const String &) { return String(); }
 
+    /// Backquoted identifier; only ClickHouse treats `\` as an escape inside it
     virtual String quoteIdentifier(const String & name) const;
+
+    virtual bool isClickHousePeer() const { return false; }
 
     virtual String columnTypeAsString(RandomGenerator &, bool, SQLType *) const { return String(); }
 
@@ -134,6 +138,8 @@ public:
     void setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te) override;
 
     String getSQLQuotedTableName(std::shared_ptr<SQLDatabase> db, const String &) override;
+
+    bool isClickHousePeer() const override { return is_clickhouse; }
 
     String truncateStatement() override;
 
@@ -252,8 +258,6 @@ public:
 
     void setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te) override;
 
-    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
-
     ~RedisIntegration() override = default;
 };
 
@@ -302,10 +306,11 @@ public:
 #endif
 };
 
-class MinIOIntegration : public ClickHouseIntegration
+/// Object storages (MinIO, Azurite) reached through the server's named collection
+class NamedCollectionIntegration : public ClickHouseIntegration
 {
 public:
-    explicit MinIOIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
+    explicit NamedCollectionIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
         : ClickHouseIntegration(fcc, ssc)
     {
     }
@@ -314,27 +319,11 @@ public:
 
     void setBackupDetails(const String &, BackupOut *);
 
-    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
-
-    ~MinIOIntegration() override = default;
+    ~NamedCollectionIntegration() override = default;
 };
 
-class AzuriteIntegration : public ClickHouseIntegration
-{
-public:
-    explicit AzuriteIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
-        : ClickHouseIntegration(fcc, ssc)
-    {
-    }
-
-    void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
-
-    void setBackupDetails(const String &, BackupOut *);
-
-    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
-
-    ~AzuriteIntegration() override = default;
-};
+using MinIOIntegration = NamedCollectionIntegration;
+using AzuriteIntegration = NamedCollectionIntegration;
 
 class HTTPIntegration : public ClickHouseIntegration
 {
@@ -345,8 +334,6 @@ public:
     }
 
     void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
-
-    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~HTTPIntegration() override = default;
 };
@@ -403,6 +390,8 @@ private:
     std::filesystem::path getDatabaseDataDir(PeerTableDatabase pt, bool server) const;
 
     ClickHouseIntegratedDatabase * getPeerPtr(PeerTableDatabase pt) const;
+
+    ClickHouseIntegration * getIntegrationPtr(IntegrationCall ic) const;
 
 public:
     bool getRequiresExternalCallCheck() const { return requires_external_call_check > 0; }

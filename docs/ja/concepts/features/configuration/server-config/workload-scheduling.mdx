@@ -403,9 +403,11 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
   ブロックされたクエリは、すべての制約が満たされるまで無期限に待機し、`SHOW PROCESSLIST` には表示されません。
 </Note>
 
-## ワークロードとリソースの保存 {#workload_entity_storage}
+## ワークロードとリソースのストレージ {#workload_entity_storage}
 
 `CREATE WORKLOAD` および `CREATE RESOURCE` クエリ形式の、すべてのワークロードとリソースの定義は、`workload_path` のディスク上、または `workload_zookeeper_path` の ZooKeeper に永続的に保存されます。ノード間の整合性を確保するには、ZooKeeper ストレージの使用を推奨します。あるいは、ディスクストレージとあわせて `ON CLUSTER` 句を使用することもできます。
+
+ワークロードとリソースを作成・削除するには、`CREATE WORKLOAD`、`CREATE RESOURCE`、`DROP WORKLOAD`、`DROP RESOURCE` の各権限が必要です。これらの権限は `CREATE` および `DROP` 権限グループには含まれないため、個別に明示的に付与するか、`GRANT ALL` で付与する必要があります。
 
 ## 設定ベースのワークロードとリソース {#config_based_workloads}
 

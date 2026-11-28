@@ -39,8 +39,6 @@ function write_fails()
 }
 
 echo "--- Members that cannot be read back"
-write_fails 'v Variant(UInt32, Int64)' '1::UInt32' 'so they cannot be told apart'
-write_fails 'v Variant(Array(Int64), Array(String))' '[]::Array(Int64)' 'so they cannot be told apart'
 write_fails 'v Variant(Map(String, Int64), String)' "map('k', 1)::Map(String, Int64)" 'cannot be read back'
 write_fails 'v Variant(Tuple(a UInt8, b String), Int64)' "tuple(1, 'x')::Tuple(a UInt8, b String)" 'cannot be read back'
 write_fails 'v Variant(Array(Array(Int64)), String)' "'x'" 'cannot be read back'

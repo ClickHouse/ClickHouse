@@ -1,5 +1,7 @@
--- Multi-key GROUP BY with LowCardinality keys uses serialized aggregation, whose keys must not
--- depend on the dictionary order of the individual parts: the keys are serialized by value.
+-- Multi-key GROUP BY with LowCardinality keys reads the keys by value, so the groups must not depend on
+-- the dictionary order of the individual parts. A `String` key with fixed-width keys takes the methods of
+-- fixed-width keys and one `String` key (`keys32_packed_string`), and the `Nullable` keys take serialized
+-- aggregation.
 
 DROP TABLE IF EXISTS lc_serialized_group_by;
 CREATE TABLE lc_serialized_group_by
@@ -69,8 +71,8 @@ SETTINGS log_comment = '05241_lc_topk_freeze' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
--- The heap must freeze on the second block, after which the remaining blocks serialize the
--- LowCardinality keys directly instead of materializing the ranked columns.
+-- The heap must freeze on the second block, after which the remaining blocks pass the LowCardinality
+-- keys to the aggregation method as they are, instead of materializing the ranked columns.
 SELECT max(ProfileEvents['AggregationTopKHeapsFrozen']) > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND current_database = currentDatabase()

@@ -10,7 +10,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-
+#include <Processors/QueryPlan/Profiling/Analysis/StepStatsAnalyzer.h>
 #include <Analyzer/TableQualifiers.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <IO/WriteHelpers.h>
@@ -33,10 +33,9 @@ namespace ErrorCodes
 
 IQueryPlanStep::IQueryPlanStep() = default;
 
-IQueryPlanStep::StepIndex::StepIndex()
-    : value(CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0)
-{
-}
+PlanStepIndex::PlanStepIndex()
+: value(CurrentThread::getGroup() ? CurrentThread::get().getNextPlanStepIndex() : NONE)
+{}
 
 void IQueryPlanStep::updateInputHeaders(SharedHeaders input_headers_)
 {
@@ -568,9 +567,26 @@ void IQueryPlanStep::appendExtraProcessors(const Processors & extra_processors)
     processors.insert(processors.end(), extra_processors.begin(), extra_processors.end());
 }
 
+StepAnalyzer IQueryPlanStep::makeAnalyzer() const
+{
+    StepAnalyzer analyzer;
+
+    analyzer.groups.clear();
+    for (size_t group : getStepGroups())
+        analyzer.groups.push_back({group, getStepGroupName(group)});
+
+    /// No reporter: a step reports no metrics of its own unless it overrides this.
+    analyzer.finish = [](const StepStatsContext & context, StepAnalysisReport report)
+    {
+        return analyzeDefaultStep(context, std::move(report));
+    };
+
+    return analyzer;
+}
+
 String IQueryPlanStep::getUniqID() const
 {
-    return fmt::format("{}_{}", getName(), step_index.value);
+    return fmt::format("{}_{}", getName(), step_index.get());
 }
 
 void IQueryPlanStep::serialize(Serialization & /*ctx*/) const

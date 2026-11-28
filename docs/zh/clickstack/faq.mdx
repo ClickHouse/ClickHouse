@@ -2,15 +2,35 @@
 slug: /use-cases/observability/clickstack/faq
 title: 'ClickStack 常见问题'
 sidebarTitle: '常见问题'
-description: '有关 ClickStack 告警、仪表盘、下钻和指标发现的常见问题解答。'
+description: '有关 ClickStack 开源版、ClickHouse Observability、HyperDX、告警、仪表盘和指标发现的常见问题解答。'
 doc_type: 'guide'
 keywords: ['ClickStack', '常见问题', '告警', '仪表盘', '下钻', '指标发现']
 ---
 
-本页汇总了有关 ClickStack 各项功能的常见问题，包括告警、仪表盘与下钻，以及指标发现。
+本页汇总了有关 ClickStack 开源版的常见问题，包括它与 ClickHouse Observability 和 HyperDX 的关系，以及它的可观测性功能。
+
+## ClickStack 与 ClickHouse Observability {#clickstack-and-clickhouse-observability}
+
+<Accordion title="ClickStack 开源版与 ClickHouse Observability 有何区别？">
+  [ClickStack 开源版](/zh/clickstack/overview)是由您自行部署和运维的可观测性技术栈，包括 ClickHouse、ClickStack 用户界面以及 OpenTelemetry 采集器。
+
+  ClickHouse Observability 将 ClickStack 的使用体验带到了 ClickHouse Cloud。数据库和 UI 均由 ClickHouse 托管。使用[全托管 ClickHouse Observability](/zh/clickstack/observability/overview) 时，ClickHouse 还会管理摄取采集器和 schema；使用[自管理 ClickHouse Observability](/zh/clickstack/self-configured/overview) 时，则由您自行掌控摄取和 schema。
+</Accordion>
+
+<Accordion title="自管理 ClickHouse Observability 与 ClickStack 开源版是一回事吗？">
+  不是。[自管理 ClickHouse Observability](/zh/clickstack/self-configured/overview) 运行在 ClickHouse Cloud 上，由 ClickHouse Cloud 托管 ClickHouse 和 UI，您则负责管理摄取管道、schema 以及数据库配置。
+
+  使用 ClickStack 开源版时，整个技术栈由您自行运维。您既可以自行托管 ClickHouse，也可以连接到 ClickHouse Cloud。请参阅[部署选项](/zh/clickstack/deployment/oss)。
+</Accordion>
+
+<Accordion title="HyperDX 现在怎么样了？">
+  HyperDX 现已成为 ClickStack 的 UI 组件，提供用于搜索和探索日志、链路追踪、指标及会话回放的界面。本文档将其称为 **ClickStack 用户界面**。
+
+  该 UI 依然[开源](https://github.com/hyperdxio/hyperdx)。在代码仓库名称和配置项中，您可能仍会看到 HyperDX 这一名称。
+</Accordion>
 
 <div id="alerting">
-  ## 告警
+  ## 告警 {#alerting}
 </div>
 
 <Accordion title="ClickStack 支持哪些类型的告警？">
@@ -19,7 +39,7 @@ keywords: ['ClickStack', '常见问题', '告警', '仪表盘', '下钻', '指�
   * [搜索告警](/zh/clickstack/features/alerts#search-alerts)：当某个时间窗口内匹配的日志或 trace 结果数量超过或低于阈值时触发通知。
   * [仪表盘图表告警](/zh/clickstack/features/alerts#dashboard-alerts)：当仪表盘卡片上绘制的某项指标越过设定阈值时触发通知。
 
-  这两类告警默认使用静态阈值条件。在托管 ClickStack 上，它们也可以改用[异常检测](/zh/clickstack/features/anomaly-detection)，在某个值超出其预期范围时触发。完整说明请参见 [告警](/zh/clickstack/features/alerts)。
+  这两类告警默认使用静态阈值条件。在 ClickHouse Observability 中，它们也可以改用[异常检测](/zh/clickstack/features/anomaly-detection)，在某个值超出其预期范围时触发。完整说明请参见 [告警](/zh/clickstack/features/alerts)。
 </Accordion>
 
 <Accordion title="我可以针对复杂的指标条件（例如比率、p95/p99 或多指标公式）设置告警吗？">
@@ -30,7 +50,7 @@ keywords: ['ClickStack', '常见问题', '告警', '仪表盘', '下钻', '指�
   * 针对指标使用自定义 SQL 查询进行告警。
   * 将多个条件或多个指标组合成单条告警规则。
 
-  如果您需要为复杂指标设置告警，推荐做法是先将其构建为仪表盘图表，再为该图表添加阈值告警。在托管 ClickStack 上，您也可以改为该图表添加[异常检测告警](/zh/clickstack/features/anomaly-detection)，使其在值超出预期范围时触发，而非在越过固定阈值时触发。
+  如果您需要为复杂指标设置告警，推荐做法是先将其构建为仪表盘图表，再为该图表添加阈值告警。在 ClickHouse Observability 中，您也可以改为该图表添加[异常检测告警](/zh/clickstack/features/anomaly-detection)，使其在值超出预期范围时触发，而非在越过固定阈值时触发。
 </Accordion>
 
 <Accordion title="我可以将 materialized views 用于告警场景吗？">

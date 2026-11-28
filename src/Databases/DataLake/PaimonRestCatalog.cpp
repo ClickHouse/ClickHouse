@@ -24,6 +24,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <IO/parseURI.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
@@ -116,7 +117,7 @@ static String bytesToHex(const String & bytes)
 }
 
 
-const std::vector<String> PaimonRestCatalog::SIGNED_HEADERS
+[[clang::no_destroy]] const std::vector<String> PaimonRestCatalog::SIGNED_HEADERS
     = {Poco::toLower(String(DLF_CONTENT_MD5_HEADER_KEY)),
        Poco::toLower(String(DLF_CONTENT_TYPE_KEY)),
        Poco::toLower(String(DLF_CONTENT_SHA56_HEADER_KEY)),
@@ -170,7 +171,7 @@ void PaimonRestCatalog::loadConfig()
     }
 }
 
-String PaimonRestCatalog::createAuthHeaders(
+std::string_view PaimonRestCatalog::createAuthHeaders(
     DB::HTTPHeaderEntries & current_headers,
     const String & resource_path,
     const std::unordered_map<String, String> & query_params,
@@ -192,7 +193,7 @@ String PaimonRestCatalog::createAuthHeaders(
         std::unordered_map<String, String> headers_map;
         for (const auto & entry : current_headers)
         {
-            headers_map.emplace(entry.name, entry.value);
+            headers_map.emplace(entry.name, String(entry.value));
         }
         auto get_or_default = [](const std::unordered_map<String, String> & map, const String & key_, const String & value_)
         {
@@ -312,7 +313,7 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
     const String & endpoint, const String & method, const Poco::URI::QueryParameters & params, const DB::HTTPHeaderEntries & headers) const
 {
     const auto & context = getContext();
-    Poco::URI url(base_url / endpoint);
+    Poco::URI url = DB::parseURI(base_url / endpoint);
     if (!params.empty())
         url.setQueryParameters(params);
 
@@ -324,7 +325,7 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
             query_parameters_map.emplace(entry.first, entry.second);
         }
         DB::HTTPHeaderEntries request_headers(headers);
-        const String bearer_token = createAuthHeaders(request_headers, endpoint, query_parameters_map, method);
+        const std::string_view bearer_token = createAuthHeaders(request_headers, endpoint, query_parameters_map, method);
         validateBearerToken(context, bearer_token);
         /// The `dlf` provider adds headers built from the database settings (`dlf_access_key_id`, `region`).
         context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(request_headers);
@@ -333,7 +334,7 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
         headers_string << "{";
         for (const auto & entry : request_headers)
         {
-            headers_string << entry.name << ": " << entry.value;
+            headers_string << entry.name << ": " << std::string_view(entry.value);
         }
         headers_string << "}";
         LOG_TRACE(log, "Request headers: {}", headers_string.str());

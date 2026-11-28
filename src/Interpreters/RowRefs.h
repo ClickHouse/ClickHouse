@@ -443,24 +443,18 @@ struct RefWordSelection
 };
 
 /// Describes how a join output column is read from a `StoredBlock`: directly from `columns[index]`
-/// (`Columns`), or as a `(field_offset, field_size)` slice of the block's row store (`RowStore`).
+/// (`Columns`), or as field `index` of the block's row store layout (`RowStore`).
 struct ColumnAccessIndex
 {
     enum Type : uint8_t { Columns, RowStore };
 
-    ColumnAccessIndex(Type type_, size_t index_, size_t field_offset_ = 0, size_t field_size_ = 0, bool is_nullable_ = false, bool is_string_ = false)
-        : type(type_), index(index_), field_offset(field_offset_), field_size(field_size_), is_nullable(is_nullable_), is_string(is_string_)
+    ColumnAccessIndex(Type type_, size_t index_)
+        : type(type_), index(index_)
     {
     }
 
     Type type;
     size_t index;
-
-    /// Valid only when type is RowStore.
-    size_t field_offset;
-    size_t field_size;
-    bool is_nullable;
-    bool is_string;
 
     bool operator==(const ColumnAccessIndex &) const = default;
 };

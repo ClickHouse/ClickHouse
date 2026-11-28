@@ -49,15 +49,15 @@ public:
     /// The cap that the chunks of every partition double up to.
     [[nodiscard]] size_t maxChunkBytes() const { return max_chunk_bytes; }
 
-    [[nodiscard]] size_t partitionsPerBucket() const { return numPartitions() / ADAPTIVE_AGGREGATION_NUM_BUCKETS; }
+    [[nodiscard]] size_t partitionsPerBucket() const { return size_t{1} << sub_bits; }
     [[nodiscard]] size_t numPartitions() const { return partition_mask + 1; }
     [[nodiscard]] size_t partitionOf(UInt64 hash) const { return (hash >> partition_shift) & partition_mask; }
 
     /// The partitions of a bucket are consecutive: they start at `firstPartition(bucket)`, and `subOf` is a
-    /// partition's place among them.
-    [[nodiscard]] size_t firstPartition(size_t bucket) const { return bucket * partitionsPerBucket(); }
+    /// partition's place among them. A partition is `(bucket << sub_bits) | sub`, so all three are bit operations.
+    [[nodiscard]] size_t firstPartition(size_t bucket) const { return bucket << sub_bits; }
     [[nodiscard]] size_t subOf(size_t partition) const { return partition & (partitionsPerBucket() - 1); }
-    [[nodiscard]] size_t bucketOf(size_t partition) const { return partition / partitionsPerBucket(); }
+    [[nodiscard]] size_t bucketOf(size_t partition) const { return partition >> sub_bits; }
 
 private:
     /// The two-level tables take the bucket from the top `bucket_bits` of the low 32 bits of the hash. The kernels
@@ -65,9 +65,10 @@ private:
     /// cell of a bucket falls into that bucket's partitions.
     static constexpr size_t bucket_bits = std::countr_zero(ADAPTIVE_AGGREGATION_NUM_BUCKETS);
 
-    AdaptivePartitionLayout(UInt8 sub_bits, size_t first_chunk_bytes_, size_t max_chunk_bytes_)
-        : partition_mask(static_cast<UInt32>((ADAPTIVE_AGGREGATION_NUM_BUCKETS << sub_bits) - 1))
-        , partition_shift(static_cast<UInt8>(32 - bucket_bits - sub_bits))
+    AdaptivePartitionLayout(UInt8 sub_bits_, size_t first_chunk_bytes_, size_t max_chunk_bytes_)
+        : partition_mask(static_cast<UInt32>((ADAPTIVE_AGGREGATION_NUM_BUCKETS << sub_bits_) - 1))
+        , partition_shift(static_cast<UInt8>(32 - bucket_bits - sub_bits_))
+        , sub_bits(sub_bits_)
         , first_chunk_bytes(first_chunk_bytes_)
         , max_chunk_bytes(max_chunk_bytes_)
     {
@@ -76,6 +77,8 @@ private:
     /// Routing runs for every record and its prefetches, so the layout stores the ready shift and mask.
     UInt32 partition_mask;
     UInt8 partition_shift;
+    /// The bits of a partition below its bucket: a bucket has `2^sub_bits` partitions.
+    UInt8 sub_bits;
 
     size_t first_chunk_bytes;
     size_t max_chunk_bytes;

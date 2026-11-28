@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并根据 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="hdfs_create_new_file_on_insert">
-  ## hdfs_create_new_file_on_insert
-</div>
+## hdfs_create_new_file_on_insert {#hdfs_create_new_file_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -28,9 +26,7 @@ Possible values：
 * 0 — `INSERT` 查询会将新数据追加到文件末尾。
 * 1 — `INSERT` 查询会创建一个新文件。
 
-<div id="hdfs_ignore_file_doesnt_exist">
-  ## hdfs_ignore_file_doesnt_exist
-</div>
+## hdfs_ignore_file_doesnt_exist {#hdfs_ignore_file_doesnt_exist}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -43,17 +39,13 @@ Possible values:
 * 1 — `SELECT` 返回空结果。
 * 0 — `SELECT` 抛出异常。
 
-<div id="hdfs_replication">
-  ## hdfs_replication
-</div>
+## hdfs_replication {#hdfs_replication}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 实际的副本数量可以在创建 HDFS 文件时指定。
 
-<div id="hdfs_skip_empty_files">
-  ## hdfs_skip_empty_files
-</div>
+## hdfs_skip_empty_files {#hdfs_skip_empty_files}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -64,9 +56,20 @@ Possible values:
 * 0 — 如果空文件与所请求的格式不兼容，`SELECT` 会抛出异常。
 * 1 — 对于空文件，`SELECT` 返回空结果。
 
-<div id="hdfs_throw_on_zero_files_match">
-  ## hdfs_throw_on_zero_files_match
-</div>
+## hdfs_skip_hidden_files {#hdfs_skip_hidden_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置：按通配符列出文件时，跳过非通配符前缀之下含有以 `_` 或 `.` 开头的路径分段的文件，与其他 Hive 生态读取器的行为保持一致。设置了 `partition_strategy = 'hive'` 的表始终会跳过此类路径。"}]}]} />
+
+启用或禁用在 [HDFS](/zh/reference/engines/table-engines/integrations/hdfs) 引擎表中按通配符列出文件时跳过隐藏路径。隐藏路径指在路径的非通配符前缀之下，含有以 `_` 或 `.` 开头的路径分段的文件。包含 `=` 的分段属于分区目录 (例如分区列 `_p` 对应的 `_p=1`) ，不视为隐藏。Hive 生态的写入器 (Hive、Spark、Trino) 会在此类路径下暂存尚未完成的输出并写入标记文件 (`_temporary/`、`.spark-staging-<id>/`、`_SUCCESS`) ，读取这些文件会与写入器的提交形成竞态条件。非通配符前缀内的分段不做检查。设置了 `partition_strategy = 'hive'` 的表无论此设置取何值，始终会跳过隐藏路径。
+
+可选值：
+
+* 0 — 读取通配符匹配到的所有文件。
+* 1 — 跳过在非通配符前缀之下含有隐藏路径分段的文件。
+
+## hdfs_throw_on_zero_files_match {#hdfs_throw_on_zero_files_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -79,9 +82,7 @@ Possible values:
 * 1 — `SELECT` 抛出异常。
 * 0 — `SELECT` 返回空结果。
 
-<div id="hdfs_truncate_on_insert">
-  ## hdfs_truncate_on_insert
-</div>
+## hdfs_truncate_on_insert {#hdfs_truncate_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

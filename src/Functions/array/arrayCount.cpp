@@ -132,7 +132,9 @@ If `func` is not specified, it returns the number of non-zero elements in the ar
 
 `arrayCount` is a [higher-order function](/reference/functions/regular-functions/overview#higher-order-functions).
 
-<Note title="Use setting `array_count_legacy_uint32_result` to return `UInt32`">
+<Note>
+**Use setting `array_count_legacy_uint32_result` to return `UInt32`**
+
 Version 26.10 introduced a backward-incompatible change: `arrayCount` returns `UInt64` instead of `UInt32`, so that the result is exact for arrays with more than `4294967295` matching elements.
 The constness of the result also changed: for a non-constant array and a predicate that folds to a constant false, the result was a constant column before 26.10 (`isConstant(arrayCount(...))` returned `1`), and now it is a full column (`isConstant` returns `0`), matching `length(arrayFilter(...))`.
 To retain the previous behavior (both the `UInt32` result type and the result constness), set setting `array_count_legacy_uint32_result` (default: `false`) to `true`.

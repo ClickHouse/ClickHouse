@@ -170,13 +170,23 @@ struct ArrayAggregateImpl
     /// Decimal and DateTime64 columns use their native representation and preserve the source scale in the result.
     template <typename Element>
     requires(has_find_extreme_implementation<Element> || underlying_has_find_extreme_implementation<Element>)
-    static bool executeMinOrMaxFindExtreme(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
+    static bool executeMinOrMaxFindExtreme(
+        const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, const IDataType & result_type, ColumnPtr & res_ptr)
     {
         using ColVecType = ColumnVectorOrDecimal<Element>;
 
         const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
         if (!column)
             return false;
+
+        /// An Enum (an Int8 or Int16 column here) defaults to its lowest member, not to the column zero.
+        Element default_value{};
+        if (!result_type.isDefaultInsertTrivial())
+        {
+            auto default_column = result_type.createColumn();
+            result_type.insertDefaultInto(*default_column);
+            default_value = assert_cast<const ColVecType &>(*default_column).getData()[0];
+        }
 
         const Element * data = column->getData().data();
 
@@ -196,7 +206,7 @@ struct ArrayAggregateImpl
             /// Array is empty
             if (pos == end_of_array)
             {
-                res[i] = Element{};
+                res[i] = default_value;
                 continue;
             }
 
@@ -236,8 +246,11 @@ struct ArrayAggregateImpl
 
     template <AggregateOperation op = aggregate_operation>
     requires(op == AggregateOperation::min || op == AggregateOperation::max)
-    static void executeMinOrMax(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
+    static void executeMinOrMax(
+        const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, const IDataType & result_type, ColumnPtr & res_ptr)
     {
+        const bool trivial_default = result_type.isDefaultInsertTrivial();
+
         const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(&*mapped);
         if (const_column)
         {
@@ -252,7 +265,10 @@ struct ArrayAggregateImpl
                 {
                     if (first_non_empty < i)
                         res_column->insertMany(field, i - first_non_empty);
-                    res_column->insertDefault();
+                    if (trivial_default)
+                        res_column->insertDefault();
+                    else
+                        result_type.insertDefaultInto(*res_column);
 
                     first_non_empty = i + 1;
                 }
@@ -267,25 +283,25 @@ struct ArrayAggregateImpl
             return;
         }
 
-        if (executeMinOrMaxFindExtreme<UInt8>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<UInt16>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<UInt32>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<UInt64>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<Int8>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<Int16>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<Int32>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<Int64>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<UInt128>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<UInt256>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<Int128>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<Int256>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<Float32>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<Float64>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<Decimal32>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<Decimal64>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<Decimal128>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<Decimal256>(mapped, offsets, res_ptr)
-            || executeMinOrMaxFindExtreme<DateTime64>(mapped, offsets, res_ptr))
+        if (executeMinOrMaxFindExtreme<UInt8>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt16>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt32>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt64>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Int8>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Int16>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Int32>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Int64>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt128>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt256>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Int128>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Int256>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Float32>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Float64>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal32>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal64>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal128>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal256>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<DateTime64>(mapped, offsets, result_type, res_ptr))
             return;
 
         MutableColumnPtr res_column = mapped->cloneEmpty();
@@ -299,7 +315,10 @@ struct ArrayAggregateImpl
             /// Array is empty
             if (start_of_array == end_of_array)
             {
-                res_column->insertDefault();
+                if (trivial_default)
+                    res_column->insertDefault();
+                else
+                    result_type.insertDefaultInto(*res_column);
                 continue;
             }
 
@@ -521,14 +540,14 @@ struct ArrayAggregateImpl
         return true;
     }
 
-    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
+    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped, const DataTypePtr & result_type)
     {
         const IColumn::Offsets & offsets = array.getOffsets();
         ColumnPtr res;
 
         if constexpr (aggregate_operation == AggregateOperation::min || aggregate_operation == AggregateOperation::max)
         {
-            executeMinOrMax(mapped, offsets, res);
+            executeMinOrMax(mapped, offsets, *result_type, res);
             return res;
         }
         else

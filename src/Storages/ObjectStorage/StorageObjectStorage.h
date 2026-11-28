@@ -98,7 +98,8 @@ public:
         const std::optional<FormatSettings> & format_settings,
         const std::shared_ptr<DataLake::ICatalog> & catalog,
         const StorageMetadataPtr & metadata_snapshot,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const PartitionedWriteAccessCheck & write_access_check);
 
     void truncate(
         const ASTPtr & query,
@@ -122,6 +123,7 @@ public:
     /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
     /// `t.x` on its own and prune on it.
     bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
+    bool supportsOptimizationToMapKeysAndValuesSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 

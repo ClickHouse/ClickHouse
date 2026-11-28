@@ -10,6 +10,7 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPResponseParser.h>
 
+#include <functional>
 #include <memory>
 
 namespace DB
@@ -88,6 +89,9 @@ public:
     /// Reads into the caller's memory directly, so that a large read costs no copy at all.
     size_t readBig(char * to, size_t n) override;
 
+    /// Called before each read of the body, chunk framing included; can throw to stop a slow read, after which the buffer is not usable.
+    void setBeforeReadCallback(std::function<void()> callback) { before_read_callback = std::move(callback); }
+
 private:
     bool nextImpl() override;
 
@@ -100,6 +104,12 @@ private:
 
     void markComplete();
 
+    void checkBeforeRead() const
+    {
+        if (before_read_callback)
+            before_read_callback();
+    }
+
     Poco::Net::HTTPClientSession * session;
     HTTPSessionPtr session_holder;
     const Poco::Net::HTTPClientSession::BodyEncoding encoding;
@@ -111,6 +121,8 @@ private:
     UInt64 chunk_left = 0;
     bool chunked_eof = false;
     bool response_complete = false;
+
+    std::function<void()> before_read_callback;
 };
 
 /// Sends the request line and the headers of `request`, and returns a buffer for its body.
@@ -138,8 +150,9 @@ std::unique_ptr<HTTPRequestBodyWriteBuffer> sendHTTPRequest(
 ///
 /// This is the replacement of `Poco::Net::HTTPClientSession::receiveResponse`. Throws the same
 /// exceptions `Poco` throws: `Poco::Net::NoMessageException` when the peer sent nothing at all
-/// (a keep-alive connection closed by the server), `Poco::Net::MessageException` for a
-/// malformed response or one that ends before its body does.
+/// (a keep-alive connection closed by the server), `Poco::Net::MalformedMessageException` for a
+/// malformed response, and `Poco::Net::MessageException` for one that ends before its header or
+/// body does. A header that exceeds the limits is `LIMIT_EXCEEDED` instead.
 std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponse(
     Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponse & response, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 

@@ -36,6 +36,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
@@ -51,6 +52,7 @@
 #include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <base/types.h>
+#include <base/unit.h>
 #include <base/PackedStringRef.h>
 #include <fmt/ranges.h>
 
@@ -60,6 +62,7 @@
 namespace ProfileEvents
 {
     extern const Event TextIndexReadDictionaryBlocks;
+    extern const Event TextIndexPatternScanSkippedByCost;
     extern const Event TextIndexReadSparseIndexBlocks;
     extern const Event TextIndexReadGranulesMicroseconds;
     extern const Event TextIndexReadPostings;
@@ -115,6 +118,11 @@ static_assert(static_cast<UInt64>(IPostingListCodec::Type::PFor) == 2);
 /// an index's positions value change after parts exist, mixing positional and non-positional parts
 /// within one index.
 static constexpr bool DEFAULT_POSITIONS = false;
+
+/// Fixed for the same reason. A phrase with slop below the gap cannot span two elements of an `Array` row.
+/// The maximum keeps the gap a one-byte VarUInt in the header and bounds the growth of the positions.
+static constexpr UInt64 DEFAULT_POSITION_INCREMENT_GAP = 63;
+static constexpr UInt64 MAX_POSITION_INCREMENT_GAP = 127;
 
 static String formatTokensForLogs(const ITokenizer & tokenizer, const std::vector<String> & tokens)
 {
@@ -575,6 +583,67 @@ DictionaryBlockRanges blocksMatchingTokenKeyRanges(
     return merged_ranges;
 }
 
+/// Below this many compressed bytes the dictionary scan is cheap whatever the readable rows are,
+/// so the cost check below does not bypass it.
+constexpr size_t MIN_DICTIONARY_BYTES_TO_SKIP_PATTERN_SCAN = 1_MiB;
+
+/// Whether the dictionary scan over `block_ranges` reads more compressed bytes than the rows that are still
+/// readable take in the columns the index is built on. Each dictionary block starts a new compressed block,
+/// so the scanned bytes are the differences of the blocks' offsets in the dictionary file. The readable bytes
+/// are estimated from the compressed sizes of the indexed columns, which are known only for wide parts.
+/// Returns false when the rows are not narrowed down or a size is unknown.
+bool isPatternScanCostlierThanReadableRows(
+    const DictionarySparseIndex & sparse_index,
+    const DictionaryBlockRanges & block_ranges,
+    const MergeTreeIndexDeserializationState & state)
+{
+    if (!state.readable_ranges)
+        return false;
+
+    const auto & part_info = state.part_info;
+    const size_t total_rows = part_info.getRowCount();
+    if (total_rows == 0)
+        return false;
+
+    const auto dictionary_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexDictionary);
+    const size_t dictionary_file_size = getIndexStreamFileSize(
+        part_info, state.index.getFileName() + dictionary_substream.suffix, dictionary_substream.extension);
+    if (dictionary_file_size == 0)
+        return false;
+
+    size_t dictionary_bytes_to_scan = 0;
+    for (const auto & [range_begin, range_end] : block_ranges)
+    {
+        UInt64 begin_offset = sparse_index.getOffsetInFile(range_begin);
+        UInt64 end_offset = range_end < sparse_index.size() ? sparse_index.getOffsetInFile(range_end) : dictionary_file_size;
+        if (end_offset > begin_offset)
+            dictionary_bytes_to_scan += end_offset - begin_offset;
+    }
+
+    if (dictionary_bytes_to_scan < MIN_DICTIONARY_BYTES_TO_SKIP_PATTERN_SCAN)
+        return false;
+
+    size_t indexed_columns_bytes = 0;
+    for (const auto & column_name : state.index.index.expression->getRequiredColumns())
+    {
+        size_t column_bytes = part_info.getColumnSize(column_name).data_compressed;
+        if (column_bytes == 0)
+            return false;
+        indexed_columns_bytes += column_bytes;
+    }
+
+    if (indexed_columns_bytes == 0)
+        return false;
+
+    const auto & index_granularity = part_info.getIndexGranularity();
+    size_t readable_rows = 0;
+    for (const auto & range : *state.readable_ranges)
+        readable_rows += index_granularity.getRowsCountInRange(range);
+
+    const double readable_bytes = static_cast<double>(indexed_columns_bytes) * static_cast<double>(readable_rows) / static_cast<double>(total_rows);
+    return static_cast<double>(dictionary_bytes_to_scan) > readable_bytes;
+}
+
 /// Unique identifier of the text index of a data part in the text index caches.
 String makeIndexIdForCaches(const IMergeTreeDataPartInfoForReader & part_info, const IMergeTreeIndex & index)
 {
@@ -675,6 +744,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     }
 
     auto text_index_header = loadHeader(*index_stream, condition_text, index_id_for_caches);
+    TextIndexSerialization::checkPositionIncrementGap(*text_index_header, params);
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(text_index_header->codec_type);
     auto postings_serialization = PostingsSerialization(std::move(postings_codec), text_index_header->version);
     serialization_version = text_index_header->version;
@@ -837,6 +907,19 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     const auto block_ranges = blocksMatchingTokenKeyRanges(sparse_index, analyzer->getPatternTokenKeyRanges());
     const bool filter_tokens_by_literals = analyzer->canFilterTokensByLiterals();
     const bool intersect_dictionary = analyzer->canIntersectDictionary();
+
+    /// The scan reads every dictionary block in `block_ranges` however few rows are still readable.
+    /// When the readable rows of the indexed columns take fewer bytes than those blocks, the scan
+    /// cannot pay off: skip it and let the filter evaluate the patterns on the readable rows.
+    /// The automaton walk may skip blocks inside the ranges, so its cost is not estimated here.
+    /// Not cached in the pattern bypass cache: the decision depends on the readable ranges of the query.
+    if (!intersect_dictionary && isPatternScanCostlierThanReadableRows(sparse_index, block_ranges, state))
+    {
+        analyzer->bypassPatternQueries();
+        ProfileEvents::increment(ProfileEvents::TextIndexPatternScanSkippedByCost);
+        return;
+    }
+
     using AutomatonResult = TextIndexDictionaryDFA::Cursor::Result;
     String seek_token;
     String next_token;
@@ -1394,9 +1477,13 @@ void TextIndexSerialization::serializeHeader(const TextIndexHeader & header, Wri
     if (header.version >= MergeTreeTextIndexSerializationVersion::V2_WithPositions)
     {
         writeVarUInt(static_cast<UInt64>(header.has_positions), ostr);
-        /// Only a part that has positions carries their codec.
+        /// Only a part that has positions carries their codec, gap and block size.
         if (header.has_positions)
+        {
             writeVarUInt(static_cast<UInt64>(header.positions_codec), ostr);
+            writeVarUInt(static_cast<UInt64>(header.position_increment_gap), ostr);
+            writeVarUInt(header.positions_block_size, ostr);
+        }
     }
 
     /// Sparse indexes are created with raw columns and bit-packed only by optimize.
@@ -1451,10 +1538,30 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Unknown positions codec {} in text index header", positions_codec);
             header.positions_codec = static_cast<UInt8>(positions_codec);
+
+            UInt64 position_increment_gap = 0;
+            readVarUInt(position_increment_gap, istr);
+            if (position_increment_gap > MAX_POSITION_INCREMENT_GAP)
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Invalid position increment gap {} in text index header", position_increment_gap);
+            header.position_increment_gap = static_cast<UInt8>(position_increment_gap);
+
+            readVarUInt(header.positions_block_size, istr);
+            if (header.positions_block_size != TextIndexBlockedPositionsCodec::BLOCK_SIZE)
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Unsupported positions block size {} in text index header", header.positions_block_size);
         }
     }
 
     return header;
+}
+
+void TextIndexSerialization::checkPositionIncrementGap(const TextIndexHeader & header, const MergeTreeIndexTextParams & params)
+{
+    if (header.has_positions && params.enable_positions && header.position_increment_gap != params.position_increment_gap)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Text index positions were built with position increment gap {}, but the index defines {}. The index must be rebuilt",
+            static_cast<UInt64>(header.position_increment_gap), static_cast<UInt64>(params.position_increment_gap));
 }
 
 TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
@@ -1690,7 +1797,8 @@ static DictionarySparseIndex serializeTokensAndPostings(
     MergeTreeIndexWriterStream * positions_stream)
 {
     size_t num_tokens = sorted_tokens.size();
-    size_t num_blocks = (num_tokens + params.dictionary_block_size - 1) / params.dictionary_block_size;
+    /// Round up without forming the sum, which wraps when the block size is close to the maximum of size_t.
+    size_t num_blocks = num_tokens / params.dictionary_block_size + (num_tokens % params.dictionary_block_size != 0);
 
     auto sparse_index_tokens = ColumnString::create();
     auto & sparse_index_str = assert_cast<ColumnString &>(*sparse_index_tokens);
@@ -1795,6 +1903,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         .codec_type = posting_list_codec_type,
         .has_positions = params.enable_positions,
         .positions_codec = params.positions_codec,
+        .position_increment_gap = params.position_increment_gap,
         .sparse_index = std::move(sparse_index_block),
     };
 
@@ -1927,15 +2036,13 @@ void PostingListBuilder::Large::flush(const PostingListBuildContext & context)
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document, const PostingListBuildContext & context)
 {
-    UInt32 token_position = 0;
     forEachToken(
         *tokenizer,
         document.data(),
         document.size(),
         [&](const char * token_start, size_t token_length)
         {
-            addToken({token_start, token_length}, token_position, context);
-            ++token_position;
+            addToken({token_start, token_length}, context);
             return false;
         });
 }
@@ -1996,8 +2103,32 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
     }
 }
 
-void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position, const PostingListBuildContext & context)
+UInt32 MergeTreeIndexTextGranuleBuilder::takeTokenPositions(UInt32 count)
 {
+    const UInt64 first = static_cast<UInt64>(current_token_position) + pending_position_gap;
+    const UInt64 next = first + count;
+
+    if (next > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot build text index with positions for a row with more than {} token positions", std::numeric_limits<UInt32>::max());
+
+    current_token_position = static_cast<UInt32>(next);
+    pending_position_gap = 0;
+    return static_cast<UInt32>(first);
+}
+
+void MergeTreeIndexTextGranuleBuilder::startElement()
+{
+    /// The first element of a row, and elements after ones without tokens, add no gap of their own.
+    if (current_token_position != 0)
+        pending_position_gap = params.position_increment_gap;
+}
+
+void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, const PostingListBuildContext & context)
+{
+    /// Advanced even for a token the drop filter discards below, so that positions stay stable.
+    const UInt32 token_position = context.enable_positions ? takeTokenPositions(1) : 0;
+
     const auto row = static_cast<UInt32>(current_row);
     auto packed_key = PackedStringRef::build(token.data(), token.size(), PackedStringRefHash{});
 
@@ -2058,6 +2189,15 @@ void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
 {
     is_empty = false;
     ++current_row;
+    current_token_position = 0;
+    pending_position_gap = 0;
+}
+
+void MergeTreeIndexTextGranuleBuilder::setCurrentRow(size_t row)
+{
+    current_row = row;
+    current_token_position = 0;
+    pending_position_gap = 0;
 }
 
 void MergeTreeIndexTextGranuleBuilder::addDocumentsFromLowCardinality(
@@ -2066,7 +2206,7 @@ void MergeTreeIndexTextGranuleBuilder::addDocumentsFromLowCardinality(
     const auto * column_array = typeid_cast<const ColumnArray *>(column.get());
     const auto & column_low_cardinality = assert_cast<const ColumnLowCardinality &>(column_array ? column_array->getData() : *column);
     const IColumnUnique & dictionary = column_low_cardinality.getDictionary();
-    auto elements_begin = [&](size_t row) { return column_array ? column_array->getOffsets()[row - 1] : row; };
+    auto elements_begin = [&](size_t row) { return column_array ? column_array->getOffsets()[static_cast<ssize_t>(row) - 1] : row; };
 
     /// Values must repeat for the cache to pay off.
     static constexpr size_t min_documents_per_value = 8;
@@ -2093,6 +2233,8 @@ void MergeTreeIndexTextGranuleBuilder::addDocumentsFromLowCardinality(
             if (dictionary.isNullAt(index))
                 continue;
 
+            startElement();
+
             if (!use_cache)
             {
                 addDocument(dictionary.getDataAt(index), context);
@@ -2104,10 +2246,9 @@ void MergeTreeIndexTextGranuleBuilder::addDocumentsFromLowCardinality(
             {
                 const std::string_view value = dictionary.getDataAt(index);
                 begin = builders.size();
-                UInt32 token_position = 0;
                 forEachToken(*tokenizer, value.data(), value.size(), [&](const char * token_start, size_t token_length)
                 {
-                    addToken({token_start, token_length}, token_position++, context);
+                    addToken({token_start, token_length}, context);
                     if (builders.size() < max_cached_tokens)
                         builders.push_back(&tokens_map.find(PackedStringRef::build(token_start, token_length, PackedStringRefHash{}))->getMapped());
                     return false;
@@ -2126,10 +2267,12 @@ void MergeTreeIndexTextGranuleBuilder::addDocumentsFromLowCardinality(
                     buffer_size = tokens_map.getBufferSizeInCells();
                 }
             }
-            else
+            /// A cached value without tokens takes no positions, so the pending gap stays for the next element.
+            else if (begin != end)
             {
+                const UInt32 first_position = context.enable_positions ? takeTokenPositions(static_cast<UInt32>(end - begin)) : 0;
                 for (size_t j = begin; j < end; ++j)
-                    builders[j]->add(static_cast<UInt32>(current_row), static_cast<UInt32>(j - begin), context);
+                    builders[j]->add(static_cast<UInt32>(current_row), first_position + static_cast<UInt32>(j - begin), context);
                 num_processed_tokens += end - begin;
             }
         }
@@ -2164,6 +2307,8 @@ void MergeTreeIndexTextGranuleBuilder::reset()
 {
     is_empty = true;
     current_row = 0;
+    current_token_position = 0;
+    pending_position_gap = 0;
     num_processed_tokens = 0;
     tokens_map = {};
     arena = std::make_unique<Arena>();
@@ -2233,9 +2378,13 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
 
     if (postprocessor->hasActions() && !use_postprocessor_drop_fast_path)
     {
-        ColumnPtr tokenized = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read);
+        /// The postprocessor maps tokens 1:1, so the element token offsets also apply to the postprocessed tokens.
+        IColumn::Offsets element_token_offsets;
+        const bool track_elements = params.enable_positions && params.position_increment_gap != 0;
+        ColumnPtr tokenized
+            = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read, track_elements ? &element_token_offsets : nullptr);
         ColumnPtr postprocessed = postprocessor->processTokensArrayBatch(assert_cast<const ColumnArray *>(tokenized.get()));
-        addDocumentsFromArray<false>(postprocessed, 0, rows_read, context);
+        addDocumentsFromArray<false>(postprocessed, 0, rows_read, context, track_elements ? &element_token_offsets : nullptr);
     }
     else if (isArray(index_column.type))
     {
@@ -2268,7 +2417,12 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
 }
 
 template <bool tokenize>
-void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context)
+void MergeTreeIndexAggregatorText::addDocumentsFromArray(
+    ColumnPtr column,
+    size_t start_row,
+    size_t rows_read,
+    const PostingListBuildContext & context,
+    const IColumn::Offsets * element_token_offsets)
 {
     const ColumnArray * column_array = assert_cast<const ColumnArray *>(column.get());
     const IColumn & column_data = column_array->getData();
@@ -2284,13 +2438,22 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
         }
     }
 
+    size_t next_element = 0;
     for (size_t i = start_row; i < start_row + rows_read; ++i)
     {
-        /// Dense position counter: dropped (empty/null) tokens leave no gap, so positions
-        /// reflect the surviving token sequence only.
-        UInt32 token_position = 0;
-        for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
+        /// Dropped (empty/null) elements and tokens take no positions.
+        for (size_t element_idx = column_offsets[static_cast<ssize_t>(i) - 1]; element_idx < column_offsets[i]; ++element_idx)
         {
+            if constexpr (!tokenize)
+            {
+                for (; element_token_offsets && next_element < element_token_offsets->size(); ++next_element)
+                {
+                    if ((*element_token_offsets)[next_element] > element_idx)
+                        break;
+                    granule_builder.startElement();
+                }
+            }
+
             if (data_is_nullable && column_data.isNullAt(element_idx))
                 continue;
 
@@ -2299,9 +2462,14 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
                 continue;
 
             if constexpr (tokenize)
+            {
+                granule_builder.startElement();
                 granule_builder.addDocument(ref, context);
+            }
             else
-                granule_builder.addToken(ref, token_position++, context);
+            {
+                granule_builder.addToken(ref, context);
+            }
         }
 
         granule_builder.incrementCurrentRow();
@@ -2326,15 +2494,13 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
     {
         keys_in_row.clear();
 
-        /// One position per map entry, in stored order, as the Array path does.
-        UInt32 token_position = 0;
-        for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
+        for (size_t element_idx = column_offsets[static_cast<ssize_t>(i) - 1]; element_idx < column_offsets[i]; ++element_idx)
         {
             const std::string_view key = keys.getDataAt(element_idx);
             const bool is_duplicate = !keys_in_row.insert(key).second;
 
             KeyValuePairsTokenizer::encodeToken(key, values.getDataAt(element_idx), is_duplicate, token);
-            granule_builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()}, token_position++, context);
+            granule_builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()}, context);
         }
 
         granule_builder.incrementCurrentRow();
@@ -2501,10 +2667,11 @@ static const String ARGUMENT_TOKENIZER = "tokenizer";
 static const String ARGUMENT_PREPROCESSOR = "preprocessor";
 static const String ARGUMENT_POSTPROCESSOR = "postprocessor";
 static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
-static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
-static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
+[[clang::no_destroy]] static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
+[[clang::no_destroy]] static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
 static const String ARGUMENT_POSITIONS = "support_phrase_search";
+static const String ARGUMENT_POSITION_INCREMENT_GAP = "position_increment_gap";
 
 namespace
 {
@@ -2611,6 +2778,11 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
 
     bool enable_positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS) != 0;
 
+    /// Only the elements of an `Array` row are separated. With the `array` tokenizer every element is one token, and a phrase spans elements.
+    UInt64 position_increment_gap = extractFieldOption<UInt64>(options, ARGUMENT_POSITION_INCREMENT_GAP).value_or(DEFAULT_POSITION_INCREMENT_GAP);
+    if (!enable_positions || !isArray(index.data_types[0]) || tokenizer->getType() == ITokenizer::Type::Array)
+        position_increment_gap = 0;
+
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
 
@@ -2638,6 +2810,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
         posting_list_block_size,
         enable_positions,
         static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor), /// not user-configurable yet
+        static_cast<UInt8>(position_increment_gap),
         std::move(preprocessor_ast),
         std::move(postprocessor_ast),
         serialization_version};
@@ -2683,6 +2856,20 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
             "`allow_experimental_text_index_phrase_search = 1`.", ARGUMENT_POSITIONS);
+
+    if (auto position_increment_gap = extractFieldOption<UInt64>(options, ARGUMENT_POSITION_INCREMENT_GAP))
+    {
+        if (!positions)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' requires '{} = 1'", ARGUMENT_POSITION_INCREMENT_GAP, ARGUMENT_POSITIONS);
+
+        if (tokenizer->getType() == ITokenizer::Type::Array)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' is not supported with the `{}` tokenizer",
+                ARGUMENT_POSITION_INCREMENT_GAP, ArrayTokenizer::getExternalName());
+
+        if (*position_increment_gap < 1 || *position_increment_gap > MAX_POSITION_INCREMENT_GAP)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be between 1 and {}, but got {}",
+                ARGUMENT_POSITION_INCREMENT_GAP, MAX_POSITION_INCREMENT_GAP, *position_increment_gap);
+    }
 
     /// The keyValuePairs tokenizer cannot be combined with a preprocessor, a postprocessor or positions.
     if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)

@@ -9,10 +9,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # stay together within the blocks of `numbers_mt`, and the frozen tables hold only the first keys, so nearly every run
 # is staged as one record: a few thousand records where about 570,000 rows miss, and each check asks for fewer than a
 # tenth of the rows. A `String` key takes the map method without aggregates, a `UInt64` key and a `UInt64, String` key
-# take set methods. The interleaved `String` key repeats each of four keys every fourth row, so no run forms, and the
-# per-partition cache of the last missed key combines the repeats instead. Each check compares the result with the one
-# of the feature off; it runs in a clickhouse-local process of its own, so the counters in `system.events` belong to it
-# alone.
+# take set methods. The methods of fixed-width keys and one `String` key have no set form, so they are off, and the
+# `UInt64, String` key takes the serialized set method. The interleaved `String` key repeats each of four keys every
+# fourth row, so no run forms, and the per-partition cache of the last missed key combines the repeats instead. Each
+# check compares the result with the one of the feature off; it runs in a clickhouse-local process of its own, so the
+# counters in `system.events` belong to it alone.
 function check()
 {
     local label=$1 query=$2
@@ -22,6 +23,7 @@ function check()
     SET adaptive_aggregator_freeze_threshold = 16, adaptive_aggregator_freeze_threshold_bytes = 0;
     SET group_by_two_level_threshold = 100000000, group_by_two_level_threshold_bytes = 500000000;
     SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, optimize_aggregation_in_order = 0;
+    SET enable_fixed_and_packed_string_keys_in_aggregation = 0;
 
     SELECT '$label',
         (SELECT count(), sum(cityHash64(*)) FROM ($query)) = (SELECT count(), sum(cityHash64(*)) FROM ($query SETTINGS enable_adaptive_aggregator = 0)),

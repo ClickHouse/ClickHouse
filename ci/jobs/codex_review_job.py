@@ -11,7 +11,8 @@ so the top-level comment is always authored by the pre-authenticated app, not
 the agent's account. When the summary's Final Verdict is `✅ Approve`, the job also
 submits an `APPROVE` review on the reviewed commit, so the approval is recorded
 on GitHub (needed for compliance); any other verdict dismisses the app's earlier
-approvals of the PR.
+approvals of the PR. A review whose sessions the provider stopped as a cybersecurity risk does not
+approve: its summary comes from the fallback model and can miss a finding.
 
 The agent occasionally hits transient GitHub authorization errors mid-run
 ("Authorization error, you may need to run /login"). The whole attempt is
@@ -32,6 +33,7 @@ import traceback
 import urllib.parse
 
 from ci.praktika import Secret
+from ci.praktika._environment import _Environment
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -45,6 +47,9 @@ GH_PREFIX = "env -u GH_CONFIG_DIR"
 # Retrying the whole sequence is the only reliable way to recover.
 MAX_ATTEMPTS = 3
 
+# Attempts at recording the verdict as a GitHub review, see `_update_approval`.
+APPROVAL_ATTEMPTS = 7
+
 # OpenAI API key for the Codex CLI, written into `$CODEX_HOME/auth.json`
 # via `codex login --with-api-key`.
 OPENAI_KEY_SECRET = "/ci/llm/openai_api_key"
@@ -57,6 +62,16 @@ FALLBACK_MODEL = "gpt-5.4"
 CYBER_RISK_FLAG = "flagged for possible cybersecurity risk"
 MODEL_AT_CAPACITY = "Selected model is at capacity"
 REVIEW_HEADER = "#### AI Review"
+STATUS_PREFIX = "Status:"
+VERDICT_APPROVE = "✅ Approve"
+VERDICT_REQUEST_CHANGES = "⚠️ Request changes"
+VERDICT_BLOCK = "❌ Block"
+# The emoji variation selector and the spacing are optional, the words are matched case-insensitively.
+_VERDICT_PATTERNS = {
+    VERDICT_APPROVE: r"✅\s*(?i:approve)",
+    VERDICT_REQUEST_CHANGES: r"⚠\ufe0f?\s*(?i:request\s+changes)",
+    VERDICT_BLOCK: r"❌\s*(?i:block)",
+}
 
 
 def _join_prompt(*sections):
@@ -134,6 +149,12 @@ Tools:
 - Resolve or unresolve bot-authored review threads with:
   `{GH_PREFIX} python3 -m ci.praktika.gh resolve-pr-review-thread --thread-id <thread_node_id>`
   `{GH_PREFIX} python3 -m ci.praktika.gh unresolve-pr-review-thread --thread-id <thread_node_id>`.
+- To reproduce a finding, download a CI binary as described in
+  `.claude/skills/review/references/binaries.md` into `./ci/tmp`, and run it there.
+- Do NOT run `python3 -m ci.praktika run ...` (for example to run tests): you are inside a CI job, and
+  a nested local run replaces the state of this job in `ci/tmp` (the PR number, the job name), which
+  breaks the `ci.praktika.gh` wrappers above and the publishing of this review. Rely on the CI reports
+  of the PR for the test results.
 """
 
 
@@ -185,15 +206,24 @@ Procedure:
 """
 
 
-def _pre_review_output():
+def _pre_review_output(pr_url):
     return f"""\
 Output:
 Write a self-contained summary of ALL findings, regardless of previous summaries, as plain Markdown
 to {REVIEW_FILE} using the REQUESTED OUTPUT FORMAT from .claude/skills/review/SKILL.md:
 start with `---
 {REVIEW_HEADER}`, then use ##### for section headers.
+In the summary, every finding that has a review thread starts with a link to that thread, before its
+location, as in this line:
+    - [Link to the thread]({pr_url}#discussion_r<databaseId>) `<path>:<line>` <Impact>
+`<databaseId>` is the one of the first comment of the thread. After posting the batched review,
+fetch the threads again to get the ids of the new ones. A finding without a thread starts with its
+`<path>:<line>`.
 Do NOT post the summary yourself: the job script will post it after you finish.
-A Final Verdict of `✅ Approve` makes the job submit a GitHub approval of the PR on your behalf.
+The first line of the Final Verdict section must be exactly one of these lines, copied verbatim with no
+bold, list marker or other text on it: `{STATUS_PREFIX} {VERDICT_APPROVE}`, `{STATUS_PREFIX} {VERDICT_REQUEST_CHANGES}`,
+`{STATUS_PREFIX} {VERDICT_BLOCK}`. The job reads the verdict from this line, and `{STATUS_PREFIX} {VERDICT_APPROVE}`
+makes it submit a GitHub approval of the PR on your behalf.
 """
 
 
@@ -204,7 +234,7 @@ def _pre_review_prompt(info):
         _review_target(info),
         _pre_review_tools(info.pr_number, repo_name),
         _pre_review_procedure(info.pr_url),
-        _pre_review_output(),
+        _pre_review_output(info.pr_url),
     )
 
 
@@ -236,25 +266,35 @@ query($owner: String!, $name: String!, $number: Int!, $after: String) {
 
 
 def _review_approves():
-    """True if the `Status:` line of the last `Final Verdict` section in REVIEW_FILE is `✅ Approve`,
-    see the REQUESTED OUTPUT FORMAT in .claude/skills/review/SKILL.md. A summary without a status line,
-    or with the template's list of all statuses, is not an approval."""
+    """True if the last `Final Verdict` section in REVIEW_FILE states `✅ Approve` and no other verdict,
+    see the REQUESTED OUTPUT FORMAT in .claude/skills/review/SKILL.md. The `Status:` line is read if it has
+    a verdict, otherwise the whole section, so a summary that drops the prefix or adds bold still counts.
+    No verdict, or more than one (such as the template's list of all statuses), is not an approval."""
     with open(REVIEW_FILE, encoding="utf-8") as f:
-        _, found, verdict = f.read().rpartition("Final Verdict")
-    status = re.search(r"Status:(.*)", verdict) if found else None
-    if not status:
-        print(f"WARNING: No Final Verdict status in {REVIEW_FILE}")
+        _, found, section = f.read().rpartition("Final Verdict")
+    if not found:
+        print(f"WARNING: No Final Verdict in {REVIEW_FILE}")
         return False
-    status = status.group(1)
-    return "✅ Approve" in status and not re.search(r"Request changes|Block", status)
+
+    def find_verdicts(text):
+        text = text.replace("*", "")
+        return [verdict for verdict, pattern in _VERDICT_PATTERNS.items() if re.search(pattern, text)]
+
+    status = re.search(rf"{STATUS_PREFIX}(.*)", section)
+    verdicts = find_verdicts(status.group(1)) if status else []
+    if not verdicts:
+        verdicts = find_verdicts(section)
+    if verdicts != [VERDICT_APPROVE]:
+        print(f"Final Verdict in {REVIEW_FILE} is not an approval, found verdicts: {verdicts}")
+        return False
+    return True
 
 
-def _update_approval(info):
+def _update_approval_once(info, cyber_risk_flagged):
     """Record the verdict as a GitHub review of the app: approve the reviewed commit on `✅ Approve`,
     otherwise dismiss the app's approvals left by earlier runs, so that a PR which needs changes does not
     keep an approval. A run for a commit that is no longer the PR head changes nothing: overlapping runs
-    for different commits may finish in any order, and only the head commit's verdict is current.
-    Raises on failure, failing the job."""
+    for different commits may finish in any order, and only the head commit's verdict is current."""
     repo = _pr_repository(info)
     owner, name = repo.split("/")
     variables = {"owner": owner, "name": name, "number": int(info.pr_number)}
@@ -275,7 +315,9 @@ def _update_approval(info):
         print(f"Commit {info.sha} is superseded by the PR head {pr['headRefOid']}, keeping the approval state")
         return
 
-    if _review_approves():
+    if cyber_risk_flagged:
+        print("Not approving: a review session was stopped as a cybersecurity risk")
+    elif _review_approves():
         if any((r.get("commit") or {}).get("oid") == info.sha for r in own_approvals):
             print(f"Commit {info.sha} is already approved")
             return
@@ -288,6 +330,7 @@ def _update_approval(info):
                 "event": "APPROVE",
             },
             strict=True,
+            retries=1,
         )
         return
 
@@ -301,7 +344,23 @@ def _update_approval(info):
                 "message": "AI review of a later commit does not approve the PR, see the `AI Review` comment.",
             },
             strict=True,
+            retries=1,
         )
+
+
+def _update_approval(info, cyber_risk_flagged):
+    """Run `_update_approval_once` until it succeeds. Each attempt re-reads the reviews, so a write that GitHub
+    applied but answered with an error is not sent again. Raises on persistent failure, failing the job."""
+    for attempt in range(1, APPROVAL_ATTEMPTS + 1):
+        try:
+            _update_approval_once(info, cyber_risk_flagged)
+            return
+        except Exception as e:  # noqa: BLE001 - a GitHub 5xx burst can outlast the retries of one call
+            if attempt == APPROVAL_ATTEMPTS:
+                raise
+            delay = min(15 * 2 ** (attempt - 1), 120)
+            print(f"WARNING: Approval update attempt {attempt}/{APPROVAL_ATTEMPTS} failed: {e}, retrying in {delay}s")
+            time.sleep(delay)
 
 
 def _add_cyber_risk_note(flagged_sessions, review_model):
@@ -390,7 +449,25 @@ def _run_codex_once(prompt, model):
         )
 
 
-def _run(prompt):
+def _restore_job_state(path, saved):
+    """Restore the state file of this job if the agent has replaced it.
+
+    The agent sometimes starts a nested local run (`python3 -m ci.praktika run ...`), which writes the
+    environment of a local run - without the PR number and with another job name - over the one of
+    this job. The review then cannot be posted, and the job result is reported under a wrong name.
+    """
+    current = None
+    if os.path.isfile(path):
+        with open(path, "r", encoding="utf-8") as f:
+            current = f.read()
+    if current == saved:
+        return
+    print(f"WARNING: the agent has changed {path}, restoring it")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(saved)
+
+
+def _run(prompt, flagged_sessions):
     """Run the Codex agent with retries, then post the review comment.
 
     Each attempt re-fetches secrets and re-runs the agent. The attempt counts
@@ -400,11 +477,18 @@ def _run(prompt):
     last_error = None
     model = MODEL
     review_model = model
-    flagged_sessions = []
+    # Make sure that the environment of this job is on disk before the agent can touch it.
+    _Environment.get()
+    environment_file = _Environment.file_name_static()
+    with open(environment_file, "r", encoding="utf-8") as f:
+        environment = f.read()
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             review_model = model
-            result = _run_codex_once(prompt, model)
+            try:
+                result = _run_codex_once(prompt, model)
+            finally:
+                _restore_job_state(environment_file, environment)
             if CYBER_RISK_FLAG in result.info:
                 flagged_sessions.append((attempt, model))
                 print(f"WARNING: {model} flagged the review as a cybersecurity risk")
@@ -458,8 +542,15 @@ def review():
 
     os.makedirs("./ci/tmp", exist_ok=True)
     prompt = _pre_review_prompt(info)
-    _run(prompt)
-    _update_approval(info)
+    flagged_sessions = []
+    try:
+        _run(prompt, flagged_sessions)
+    except Exception:
+        # A stopped session must not leave an earlier approval behind when the retries then fail.
+        if flagged_sessions:
+            _update_approval(info, cyber_risk_flagged=True)
+        raise
+    _update_approval(info, bool(flagged_sessions))
 
 
 if __name__ == "__main__":

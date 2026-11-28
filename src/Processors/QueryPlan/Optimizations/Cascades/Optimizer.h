@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
@@ -10,6 +11,7 @@
 #include <Common/Logger.h>
 #include <stack>
 #include <utility>
+#include <Common/StackWithMemoryTracking.h>
 
 namespace DB
 {
@@ -29,14 +31,12 @@ public:
     void pushTask(OptimizationTaskPtr task);
     GroupPtr getGroup(GroupId group_id);
 
-    void updateBestPlan(GroupExpressionPtr expression);
     void deriveStatistics(GroupId group_id);
 
     /// Costs the expression (local operator cost plus inputs' best subtree costs), stores the cost
     /// on it and offers it to the group as a best-implementation candidate. Statistics must be
-    /// derived first. With `prune_against_best` the expression is dropped early (cost not stored)
-    /// when the group already holds a cheaper best for the same properties; returns false then.
-    bool costAndUpdateBest(GroupExpressionPtr expression, bool prune_against_best);
+    /// derived first. An expression with an input that has no implementation gets no cost.
+    void costAndUpdateBest(GroupExpressionPtr expression);
 
     /// Fast-path costing: if all inputs already have best implementations,
     /// compute the expression's cost directly and update the group's best plan.
@@ -49,9 +49,9 @@ public:
 
     LoggerPtr log = getLogger("CascadesOptimizer");
 
-    [[nodiscard]] const std::vector<OptimizationRulePtr> & getTransformationRules() const { return transformation_rules; }
-    [[nodiscard]] const std::vector<OptimizationRulePtr> & getImplementationRules() const { return implementation_rules; }
-    [[nodiscard]] const std::vector<OptimizationRulePtr> & getEnforcerRules() const { return enforcer_rules; }
+    [[nodiscard]] const VectorWithMemoryTracking<OptimizationRulePtr> & getTransformationRules() const { return transformation_rules; }
+    [[nodiscard]] const VectorWithMemoryTracking<OptimizationRulePtr> & getImplementationRules() const { return implementation_rules; }
+    [[nodiscard]] const VectorWithMemoryTracking<OptimizationRulePtr> & getEnforcerRules() const { return enforcer_rules; }
 
     Memo & getMemo() { return memo; }
     [[nodiscard]] const Memo & getMemo() const { return memo; }
@@ -66,15 +66,15 @@ private:
     const QueryPlanOptimizationSettings & optimization_settings;
     bool optimize_was_called = false;
 
-    std::vector<OptimizationRulePtr> transformation_rules;
-    std::vector<OptimizationRulePtr> implementation_rules;
-    std::vector<OptimizationRulePtr> enforcer_rules;
+    VectorWithMemoryTracking<OptimizationRulePtr> transformation_rules;
+    VectorWithMemoryTracking<OptimizationRulePtr> implementation_rules;
+    VectorWithMemoryTracking<OptimizationRulePtr> enforcer_rules;
 
     /// The table statistics that the derivation reads. Owned here because
     /// `statistics_derivation` keeps a reference to it.
     OptimizerStatisticsPtr statistics;
     Memo memo{log};
-    std::stack<OptimizationTaskPtr> tasks;
+    StackWithMemoryTracking<OptimizationTaskPtr> tasks;
     CostEstimator cost_estimator;
     StatisticsDerivation statistics_derivation;
 };

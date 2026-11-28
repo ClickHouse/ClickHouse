@@ -76,11 +76,13 @@ MutableColumnConstPtr DataTypeNullable::createColumnConst(size_t size, const Fie
     if (onlyNull())
     {
         auto column = createColumn();
+        column->reserve(1);
         column->insert(field);
         return ColumnConst::create(std::move(column), size);
     }
 
     auto column = nested_data_type->createColumn();
+    column->reserve(1);
     bool is_null = field.isNull();
 
     if (is_null)
@@ -88,8 +90,7 @@ MutableColumnConstPtr DataTypeNullable::createColumnConst(size_t size, const Fie
     else
         column->insert(field);
 
-    auto null_mask = ColumnUInt8::create();
-    null_mask->getData().push_back(is_null ? static_cast<UInt8>(1) : static_cast<UInt8>(0));
+    auto null_mask = ColumnUInt8::create(1, is_null ? static_cast<UInt8>(1) : static_cast<UInt8>(0));
 
     auto res = ColumnNullable::create(std::move(column), std::move(null_mask));
     return ColumnConst::create(std::move(res), size);
@@ -125,7 +126,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeNullable::getDynamicSubcolumnI
     res->data.serialization = creator.create(nested_subcolumn_info->data.serialization, nested_subcolumn_info->data.type);
     res->data.type = creator.create(nested_subcolumn_info->data.type);
     if (data.column)
-        res->data.column = creator.create(nested_subcolumn_info->data.column);
+        res->data.column = creator.create(nested_subcolumn_info->data.column, nested_subcolumn_info->data.type);
 
     /// Reached through the nullable elements, exactly as the static enumeration would reach it.
     res->substreams_path.emplace_back(ISerialization::Substream::NullableElements);
@@ -239,6 +240,13 @@ DataTypePtr removeNullable(const DataTypePtr & type)
 {
     if (type->isNullable())
         return static_cast<const DataTypeNullable &>(*type).getNestedType();
+    return type;
+}
+
+const IDataType & removeNullable(const IDataType & type)
+{
+    if (type.isNullable())
+        return *static_cast<const DataTypeNullable &>(type).getNestedType();
     return type;
 }
 

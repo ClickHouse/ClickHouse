@@ -31,6 +31,7 @@
 #include <Columns/IColumn.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime.h>
@@ -796,9 +797,26 @@ public:
         }
 
         auto data = element.getString();
-        ReadBufferFromMemory buf(data);
         DateType date;
-        const bool saturate = insert_settings.saturate_on_overflow && !format_settings.throwOnDateTimeOverflow();
+        /// With schema-inference parsing accept a string only if it would be inferred as a Date on its own.
+        /// tryInferDateFromString covers DayNum; Date32 has no such inference, so it keeps the lenient parse.
+        if constexpr (std::is_same_v<DateType, DayNum>)
+        {
+            if (insert_settings.parse_date_time_strings_as_schema_inference)
+            {
+                if (!tryInferDateFromString(data, date))
+                {
+                    error = fmt::format("cannot parse Date value here: {}", data);
+                    return false;
+                }
+
+                assert_cast<ColumnVector<ColumnNumericType> &>(column).insertValue(date);
+                return true;
+            }
+        }
+
+        ReadBufferFromMemory buf(data);
+        const bool saturate = !format_settings.throwOnDateTimeOverflow();
         if (!tryReadDateText(date, buf, DateLUT::instance(), nullptr, saturate) || !buf.eof())
         {
             error = fmt::format("cannot parse Date value here: {}", data);
@@ -809,6 +827,18 @@ public:
         return true;
     }
 };
+
+/// A declared time zone belongs to the value, so it wins; without one the value is read in the
+/// reading session's zone. Resolving it per use rather than holding it is what lets `DynamicNode`
+/// reuse a cached node in a later query.
+const DateLUTImpl & getTimeZoneToParseIn(const TimezoneMixin & type_time_zone, const FormatSettings & format_settings)
+{
+    /// Settings built by hand, as in internal casts, carry no zone; the type's own then stands.
+    if (!type_time_zone.hasExplicitTimeZone() && format_settings.session_time_zone)
+        return *format_settings.session_time_zone;
+
+    return type_time_zone.getTimeZone();
+}
 
 template <typename JSONParser>
 class DateTimeNode : public JSONExtractTreeNode<JSONParser>, public TimezoneMixin
@@ -832,13 +862,17 @@ public:
             return true;
         }
 
-        const bool saturate = insert_settings.saturate_on_overflow && !format_settings.throwOnDateTimeOverflow();
+        const bool saturate = !format_settings.throwOnDateTimeOverflow();
         time_t value = 0;
         if (element.isString())
         {
             auto data = element.getString();
-            if (!tryParse(value, data, format_settings.date_time_input_format, saturate)
-                || (!insert_settings.truncate_fractional_seconds && !isWholeSeconds(data, format_settings.date_time_input_format)))
+            /// With schema-inference parsing accept a string only if it would be inferred as a date time on
+            /// its own; the strict parser rejects numeric and fractional strings and out-of-range values.
+            const bool parsed = insert_settings.parse_date_time_strings_as_schema_inference
+                ? tryInferDateTimeFromString(data, value, format_settings, getTimeZoneToParseIn(*this, format_settings), utc_time_zone)
+                : tryParse(value, data, format_settings);
+            if (!parsed)
             {
                 error = fmt::format("cannot parse DateTime value here: {}", data);
                 return false;
@@ -901,51 +935,29 @@ public:
         return true;
     }
 
-    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format, bool saturate_on_overflow) const
+    bool tryParse(time_t & value, std::string_view data, const FormatSettings & format_settings) const
     {
+        const bool saturate_on_overflow = !format_settings.throwOnDateTimeOverflow();
         const auto overflow = saturate_on_overflow ? DateTimeOverflow::Saturate : DateTimeOverflow::Report;
         ReadBufferFromMemory buf(data);
-        switch (date_time_input_format)
+        const auto & parse_time_zone = getTimeZoneToParseIn(*this, format_settings);
+        switch (format_settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadDateTimeText(value, buf, time_zone, nullptr, nullptr, saturate_on_overflow) && buf.eof())
+                if (tryReadDateTimeText(value, buf, parse_time_zone, nullptr, nullptr, saturate_on_overflow) && buf.eof())
                     return true;
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffort:
-                if (tryParseDateTimeBestEffort(value, buf, time_zone, utc_time_zone, overflow) && buf.eof())
+                if (tryParseDateTimeBestEffort(value, buf, parse_time_zone, utc_time_zone, overflow) && buf.eof())
                     return true;
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                if (tryParseDateTimeBestEffortUS(value, buf, time_zone, utc_time_zone, overflow) && buf.eof())
+                if (tryParseDateTimeBestEffortUS(value, buf, parse_time_zone, utc_time_zone, overflow) && buf.eof())
                     return true;
                 break;
         }
 
         return false;
-    }
-
-    /// The DateTime parsers drop fractional seconds, so the text is read again with the maximum precision.
-    [[nodiscard]] bool isWholeSeconds(std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
-    {
-        constexpr UInt32 max_scale = 9;
-        constexpr Int64 max_scale_multiplier = 1'000'000'000;
-        DateTime64 value;
-        ReadBufferFromMemory buf(data);
-        bool parsed = false;
-        switch (date_time_input_format)
-        {
-            case FormatSettings::DateTimeInputFormat::Basic:
-                parsed = tryReadDateTime64Text(value, max_scale, buf, time_zone);
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffort:
-                parsed = tryParseDateTime64BestEffort(value, max_scale, buf, time_zone, utc_time_zone);
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                parsed = tryParseDateTime64BestEffortUS(value, max_scale, buf, time_zone, utc_time_zone);
-                break;
-        }
-
-        return parsed && buf.eof() && value.value % max_scale_multiplier == 0;
     }
 
     /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
@@ -983,6 +995,16 @@ public:
         }
         else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
+            /// 999:59:59, the largest `Time` value.
+            constexpr Int64 max_time_seconds = 999 * 3600 + 59 * 60 + 59;
+            const bool out_of_range = element.isInt64()
+                ? element.getInt64() < -max_time_seconds || element.getInt64() > max_time_seconds
+                : element.getUInt64() > static_cast<UInt64>(max_time_seconds);
+            if (out_of_range)
+            {
+                error = fmt::format("value {} is out of bounds of type Time", jsonElementToStringForError<JSONParser>(element, format_settings));
+                return false;
+            }
             value = element.isInt64() ? element.getInt64() : element.getUInt64();
         }
         else
@@ -1119,9 +1141,15 @@ public:
         DateTime64 value;
         if (element.isString())
         {
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
+            auto data = element.getString();
+            /// Accept a string only if it would be inferred as a date time on its own; the strict parser
+            /// rejects numeric and fractional strings and out-of-range values.
+            const bool parsed = insert_settings.parse_date_time_strings_as_schema_inference
+                ? tryInferDateTime64FromString(data, value, format_settings, getTimeZoneToParseIn(*this, format_settings), utc_time_zone, scale)
+                : tryParse(value, data, format_settings);
+            if (!parsed)
             {
-                error = fmt::format("cannot parse DateTime64 value here: {}", element.getString());
+                error = fmt::format("cannot parse DateTime64 value here: {}", data);
                 return false;
             }
         }
@@ -1190,21 +1218,22 @@ public:
         return true;
     }
 
-    bool tryParse(DateTime64 & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
+    bool tryParse(DateTime64 & value, std::string_view data, const FormatSettings & format_settings) const
     {
         ReadBufferFromMemory buf(data);
-        switch (date_time_input_format)
+        const auto & parse_time_zone = getTimeZoneToParseIn(*this, format_settings);
+        switch (format_settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadDateTime64Text(value, scale, buf, time_zone) && buf.eof())
+                if (tryReadDateTime64Text(value, scale, buf, parse_time_zone) && buf.eof())
                     return true;
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffort:
-                if (tryParseDateTime64BestEffort(value, scale, buf, time_zone, utc_time_zone) && buf.eof())
+                if (tryParseDateTime64BestEffort(value, scale, buf, parse_time_zone, utc_time_zone) && buf.eof())
                     return true;
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                if (tryParseDateTime64BestEffortUS(value, scale, buf, time_zone, utc_time_zone) && buf.eof())
+                if (tryParseDateTime64BestEffortUS(value, scale, buf, parse_time_zone, utc_time_zone) && buf.eof())
                     return true;
                 break;
         }
@@ -1520,7 +1549,10 @@ public:
         }
 
         auto & col_lc = assert_cast<ColumnLowCardinality &>(column);
-        auto tmp_nested = removeNullable(col_lc.getDictionary().getNestedColumn()->cloneEmpty())->assumeMutable();
+        /// `cloneEmpty` after `removeNullable` yields a fresh uniquely-owned column. Cloning first and then
+        /// calling `removeNullable` would return the inner column still referenced by the freshly cloned
+        /// `Nullable` wrapper, so the following `assumeMutable` would trip `chassert(use_count() == 1)`.
+        auto tmp_nested = removeNullable(col_lc.getDictionary().getNestedColumn())->cloneEmpty();
         if (!nested->insertResultToColumn(*tmp_nested, element, insert_settings, format_settings, error))
             return false;
 
@@ -1944,6 +1976,28 @@ private:
 };
 
 
+/// Helper to insert a numeric value directly into a ColumnVariant discriminator/offset slot.
+/// Used by DynamicNode and ObjectJSONNode fast paths to avoid full type-inference overhead.
+template <typename ColumnType, typename ValueType>
+void insertValueIntoDynamicVariant(const ColumnDynamic::VariantInfo & variant_info, ColumnVariant & variant_column, ValueType value, const String & type_name)
+{
+    auto global_discr = variant_info.variant_name_to_discriminator.at(type_name);
+    auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discr);
+    assert_cast<ColumnType &>(variant).insertValue(value);
+    variant_column.getOffsets().push_back(variant.size() - 1);
+    variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(global_discr));
+}
+
+/// Helper to insert a string value directly into a ColumnVariant string slot.
+void insertStringIntoDynamicVariant(ColumnVariant & variant_column, std::string_view data, UInt8 global_discr)
+{
+    auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discr);
+    assert_cast<ColumnString &>(variant).insertData(data.data(), data.size());
+    variant_column.getOffsets().push_back(variant.size() - 1);
+    variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(global_discr));
+}
+
+
 template <typename JSONParser>
 class DynamicNode : public JSONExtractTreeNode<JSONParser>
 {
@@ -1972,6 +2026,123 @@ public:
         const auto & variant_info = column_dynamic.getVariantInfo();
         const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
 
+        /// Fast path for simple JSON element types: we know the exact ClickHouse type
+        /// without running full type inference, so try to insert directly into the
+        /// corresponding variant. If the variant can't be added (max types reached),
+        /// fall through to the generic path which handles shared variant insertion.
+        switch (element.type())
+        {
+            case ElementType::BOOL:
+            {
+                if (variant_info.variant_name_to_discriminator.contains("Bool")
+                    || column_dynamic.addNewVariant(getDataTypesCache().getType("Bool"), "Bool"))
+                {
+                    insertValueIntoDynamicVariant<ColumnUInt8, UInt8>(variant_info, variant_column, element.getBool(), "Bool");
+                    return true;
+                }
+                break;
+            }
+            case ElementType::INT64:
+            {
+                if (variant_info.variant_name_to_discriminator.contains("Int64")
+                    || column_dynamic.addNewVariant(getDataTypesCache().getType("Int64"), "Int64"))
+                {
+                    insertValueIntoDynamicVariant<ColumnInt64, Int64>(variant_info, variant_column, element.getInt64(), "Int64");
+                    return true;
+                }
+                break;
+            }
+            case ElementType::UINT64:
+            {
+                if (variant_info.variant_name_to_discriminator.contains("UInt64")
+                    || column_dynamic.addNewVariant(getDataTypesCache().getType("UInt64"), "UInt64"))
+                {
+                    insertValueIntoDynamicVariant<ColumnUInt64, UInt64>(variant_info, variant_column, element.getUInt64(), "UInt64");
+                    return true;
+                }
+                break;
+            }
+            case ElementType::DOUBLE:
+            {
+                if (variant_info.variant_name_to_discriminator.contains("Float64")
+                    || column_dynamic.addNewVariant(getDataTypesCache().getType("Float64"), "Float64"))
+                {
+                    insertValueIntoDynamicVariant<ColumnFloat64, Float64>(variant_info, variant_column, element.getDouble(), "Float64");
+                    return true;
+                }
+                break;
+            }
+            case ElementType::STRING:
+            {
+                /// When try_infer_numbers_from_strings is enabled, skip the fast path entirely
+                /// and fall through to the generic inference path which handles number inference
+                /// from strings (e.g., "123" should be inferred as Int64, not stored as String).
+                if (format_settings.json.try_infer_numbers_from_strings)
+                    break;
+
+                std::string_view data = element.getString();
+
+                /// Without date/datetime inference, insert as String directly.
+                if (!format_settings.try_infer_dates && !format_settings.try_infer_datetimes)
+                {
+                    if (variant_info.variant_name_to_discriminator.contains("String")
+                        || column_dynamic.addNewVariant(getDataTypesCache().getType("String"), "String"))
+                    {
+                        insertStringIntoDynamicVariant(variant_column, data, variant_info.variant_name_to_discriminator.at("String"));
+                        return true;
+                    }
+                    break;
+                }
+
+                /// Reusing an existing temporal or String variant is only valid when existing variants may be
+                /// tried first. When that is disabled (e.g. heterogeneous array elements in shared data),
+                /// each element must be inferred independently, so fall through to inference below.
+                if (insert_settings.try_existing_variants_in_dynamic_first)
+                {
+                    /// Try existing Date/DateTime/DateTime64 variants before falling back to String.
+                    if (auto it = variant_info.variant_name_to_discriminator.find("Date"); it != variant_info.variant_name_to_discriminator.end())
+                    {
+                        DayNum date;
+                        if (tryInferDateFromString(data, date))
+                        {
+                            insertValueIntoDynamicVariant<ColumnDate, DayNum>(variant_info, variant_column, date, "Date");
+                            return true;
+                        }
+                    }
+
+                    if (auto it = variant_info.variant_name_to_discriminator.find("DateTime"); it != variant_info.variant_name_to_discriminator.end())
+                    {
+                        time_t value = 0;
+                        if (tryInferDateTimeFromString(data, value, format_settings, timeZoneForSchemaInference(format_settings), utc_time_zone_for_schema_inference))
+                        {
+                            insertValueIntoDynamicVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
+                            return true;
+                        }
+                    }
+
+                    if (auto it = variant_info.variant_name_to_discriminator.find("DateTime64(9)"); it != variant_info.variant_name_to_discriminator.end())
+                    {
+                        DateTime64 value;
+                        if (tryInferDateTime64FromString(data, value, format_settings, timeZoneForSchemaInference(format_settings), utc_time_zone_for_schema_inference))
+                        {
+                            insertValueIntoDynamicVariant<ColumnDateTime64, DateTime64>(variant_info, variant_column, value, "DateTime64(9)");
+                            return true;
+                        }
+                    }
+
+                    if (auto it = variant_info.variant_name_to_discriminator.find("String"); it != variant_info.variant_name_to_discriminator.end())
+                    {
+                        insertStringIntoDynamicVariant(variant_column, data, it->second);
+                        return true;
+                    }
+                }
+
+                break;
+            }
+            default:
+                break;
+        }
+
         if (insert_settings.try_existing_variants_in_dynamic_first)
         {
             /// Try to insert element into current variants but with no types conversion.
@@ -1983,9 +2154,10 @@ public:
             insert_settings_with_no_type_conversion.allow_type_conversion = false;
             /// A value that does not fit a variant as is gets its own type instead of being changed to fit.
             insert_settings_with_no_type_conversion.insert_default_on_invalid_elements_in_complex_types = false;
-            insert_settings_with_no_type_conversion.saturate_on_overflow = false;
-            insert_settings_with_no_type_conversion.truncate_fractional_seconds = false;
             insert_settings_with_no_type_conversion.null_as_default_in_complex_types = false;
+            /// A string like `1` is inferred as `String`, so it must not enter an existing Date/DateTime/DateTime64
+            /// variant either: accept a string only if inference would infer that type for it on its own.
+            insert_settings_with_no_type_conversion.parse_date_time_strings_as_schema_inference = true;
 
             /// Check if we already have variants order for this Variant type in cache.
             auto variants_order_it = variants_order_cache.find(variant_info.variant_name);
@@ -2086,10 +2258,9 @@ private:
                 return DataTypeFactory::instance().get("Bool");
             case ElementType::INT64:
             {
-                auto type = std::make_shared<DataTypeInt64>();
                 if (element.getInt64() < 0)
-                    json_inference_info.negative_integers.insert(type.get());
-                return type;
+                    return json_inference_info.getNegativeInt64();
+                return std::make_shared<DataTypeInt64>();
             }
             case ElementType::UINT64:
                 return std::make_shared<DataTypeUInt64>();
@@ -2099,16 +2270,13 @@ private:
             {
                 auto data = element.getString();
 
-                if (auto type = tryInferDateOrDateTimeFromString(data, format_settings))
+                if (auto type = tryInferDateOrDateTimeFromString(data, format_settings, timeZoneForSchemaInference(format_settings)))
                     return type;
 
                 if (format_settings.json.try_infer_numbers_from_strings)
                 {
                     if (auto type = tryInferJSONNumberFromString(data, format_settings, &json_inference_info))
-                    {
-                        json_inference_info.numbers_parsed_from_json_strings.insert(type.get());
-                        return type;
-                    }
+                        return json_inference_info.getNumberParsedFromString(type);
                 }
 
                 return std::make_shared<DataTypeString>();
@@ -2165,6 +2333,16 @@ private:
     }
 
     DataTypePtr object_type;
+
+    /// Time zone references for Date/DateTime inference from strings.
+    const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
+    const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
+
+    /// Settings that carry no zone keep the one captured when the node was built.
+    const DateLUTImpl & timeZoneForSchemaInference(const FormatSettings & format_settings) const
+    {
+        return format_settings.session_time_zone ? *format_settings.session_time_zone : time_zone_for_schema_inference;
+    }
 
     /// Avoid building JSONExtractTreeNode for the same data types on each row by using cache.
     mutable std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> json_extract_nodes_cache;
@@ -2588,122 +2766,10 @@ private:
         return false;
     }
 
+    /// The fast-path logic for simple types (Bool, Int64, UInt64, Float64, String)
+    /// now lives in DynamicNode::insertResultToColumn, so this just delegates.
     bool insertIntoDynamicPath(ColumnDynamic & column_dynamic, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const
     {
-        /// Check if element is NULL.
-        if (element.isNull())
-        {
-            column_dynamic.insertDefault();
-            return true;
-        }
-
-        auto & variant_column = column_dynamic.getVariantColumn();
-        const auto & variant_info = column_dynamic.getVariantInfo();
-
-        /// Fast track where we process simple data types explicitly to avoid
-        /// additional costs of generic code in DynamicNode::insertResultToColumn.
-        switch (element.type())
-        {
-            case ElementType::BOOL:
-            {
-                if (variant_info.variant_name_to_discriminator.contains("Bool") || column_dynamic.addNewVariant(getDataTypesCache().getType("Bool"), "Bool"))
-                {
-                    insertValueIntoNumericVariant<ColumnUInt8, UInt8>(variant_info, variant_column, element.getBool(), "Bool");
-                    return true;
-                }
-
-                break;
-            }
-            case ElementType::INT64:
-            {
-                if (variant_info.variant_name_to_discriminator.contains("Int64") || column_dynamic.addNewVariant(getDataTypesCache().getType("Int64"), "Int64"))
-                {
-                    insertValueIntoNumericVariant<ColumnInt64, Int64>(variant_info, variant_column, element.getInt64(), "Int64");
-                    return true;
-                }
-
-                break;
-            }
-            case ElementType::UINT64:
-            {
-                if (variant_info.variant_name_to_discriminator.contains("UInt64") || column_dynamic.addNewVariant(getDataTypesCache().getType("UInt64"), "UInt64"))
-                {
-                    insertValueIntoNumericVariant<ColumnUInt64, UInt64>(variant_info, variant_column, element.getUInt64(), "UInt64");
-                    return true;
-                }
-
-                break;
-            }
-            case ElementType::DOUBLE:
-            {
-                if (variant_info.variant_name_to_discriminator.contains("Float64") || column_dynamic.addNewVariant(getDataTypesCache().getType("Float64"), "Float64"))
-                {
-                    insertValueIntoNumericVariant<ColumnFloat64, Float64>(variant_info, variant_column, element.getDouble(), "Float64");
-                    return true;
-                }
-
-                break;
-            }
-            case ElementType::STRING:
-            {
-                std::string_view data = element.getString();
-
-                /// With String value we should consider Date/DateTime/DateTime64 inference.
-                /// If inference is disabled, just insert String.
-                if (!format_settings.try_infer_dates && !format_settings.try_infer_datetimes)
-                {
-                    if (variant_info.variant_name_to_discriminator.contains("String") || column_dynamic.addNewVariant(getDataTypesCache().getType("String"), "String"))
-                    {
-                        insertValueIntoStringVariant(variant_column, data, variant_info.variant_name_to_discriminator.at("String"));
-                        return true;
-                    }
-                }
-
-                /// In most cases data is consistent and the same path contains the same type of values.
-                /// So for Date/DateTime/DateTime64 we check if variant info already has these types and try
-                /// to parse data from string into existing variant.
-                if (auto it = variant_info.variant_name_to_discriminator.find("Date"); it != variant_info.variant_name_to_discriminator.end())
-                {
-                    DayNum date;
-                    if (tryInferDateFromString(data, date))
-                    {
-                        insertValueIntoNumericVariant<ColumnDate, DayNum>(variant_info, variant_column, date, "Date");
-                        return true;
-                    }
-                }
-
-                if (auto it = variant_info.variant_name_to_discriminator.find("DateTime"); it != variant_info.variant_name_to_discriminator.end())
-                {
-                    time_t value = 0;
-                    if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
-                    {
-                        insertValueIntoNumericVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
-                        return true;
-                    }
-                }
-
-                if (auto it = variant_info.variant_name_to_discriminator.find("DateTime64(9)"); it != variant_info.variant_name_to_discriminator.end())
-                {
-                    DateTime64 value;
-                    if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
-                    {
-                        insertValueIntoNumericVariant<ColumnDateTime64, DateTime64>(variant_info, variant_column, value, "DateTime64(9)");
-                        return true;
-                    }
-                }
-
-                if (auto it = variant_info.variant_name_to_discriminator.find("String"); it != variant_info.variant_name_to_discriminator.end())
-                {
-                    insertValueIntoStringVariant(variant_column, data, it->second);
-                    return true;
-                }
-
-                break;
-            }
-            default:
-                break;
-        }
-
         return dynamic_node->insertResultToColumn(column_dynamic, element, insert_settings, format_settings, error);
     }
 
@@ -2711,8 +2777,10 @@ private:
     {
         /// Fast track where we process simple data types explicitly and serialize them into
         /// shared data without inserting value into Dynamic column with subsequent binary serialization.
+        /// A string is left to the generic path when numbers are inferred from strings, which inferScalar does not do.
         InferredScalar scalar;
-        if (inferScalar(element, format_settings, scalar))
+        if (inferScalar(element, format_settings, scalar)
+            && !(scalar.kind == ScalarKind::String && format_settings.json.try_infer_numbers_from_strings))
         {
             encodeDataType(getScalarType(scalar.kind), buf);
             writeScalarValue(buf, element, scalar);
@@ -2831,7 +2899,7 @@ private:
                 if (format_settings.try_infer_dates && tryInferDateFromString(data, scalar.date))
                     scalar.kind = ScalarKind::Date;
                 else if (format_settings.try_infer_datetimes && tryInferDateTimeOrDateTime64FromString(
-                             data, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference,
+                             data, format_settings, timeZoneForSchemaInference(format_settings), utc_time_zone_for_schema_inference,
                              is_datetime64, scalar.datetime, scalar.datetime64))
                     scalar.kind = is_datetime64 ? ScalarKind::DateTime64 : ScalarKind::DateTime;
                 else
@@ -2934,24 +3002,6 @@ private:
         return true;
     }
 
-    template <typename ColumnType, typename ElementType>
-    void insertValueIntoNumericVariant(const ColumnDynamic::VariantInfo & variant_info, ColumnVariant & variant_column, ElementType value, const String & type_name) const
-    {
-        auto global_discr = variant_info.variant_name_to_discriminator.at(type_name);
-        auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discr);
-        assert_cast<ColumnType &>(variant).insertValue(value);
-        variant_column.getOffsets().push_back(variant.size() - 1);
-        variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(global_discr));
-    }
-
-    void insertValueIntoStringVariant(ColumnVariant & variant_column, std::string_view data, UInt8 global_discr) const
-    {
-        auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discr);
-        assert_cast<ColumnString &>(variant).insertData(data.data(), data.size());
-        variant_column.getOffsets().push_back(variant.size() - 1);
-        variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(global_discr));
-    }
-
     [[nodiscard]] const FormatSettings & getDefaultFormatSettings() const
     {
         static const FormatSettings settings;
@@ -2990,6 +3040,12 @@ private:
 
     const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
+
+    /// Settings that carry no zone keep the one captured when the node was built.
+    const DateLUTImpl & timeZoneForSchemaInference(const FormatSettings & format_settings) const
+    {
+        return format_settings.session_time_zone ? *format_settings.session_time_zone : time_zone_for_schema_inference;
+    }
 
     enum class JSONElementType
     {
@@ -3049,7 +3105,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
     switch (type->getTypeId())
     {
         case TypeIndex::UInt8:
-            return std::make_unique<NumericNode<JSONParser, UInt8>>(isBool(type));
+            return std::make_unique<NumericNode<JSONParser, UInt8>>(isBool(type) || isSimpleAggregateFunctionOfBool(*type));
         case TypeIndex::UInt16:
             return std::make_unique<NumericNode<JSONParser, UInt16>>();
         case TypeIndex::UInt32:
@@ -3126,7 +3182,8 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             switch (dictionary_type->getTypeId())
             {
                 case TypeIndex::UInt8:
-                    return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt8>>(is_nullable, isBool(type));
+                    return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt8>>(
+                        is_nullable, isBool(dictionary_type) || isSimpleAggregateFunctionOfBool(*dictionary_type));
                 case TypeIndex::UInt16:
                     return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt16>>(is_nullable);
                 case TypeIndex::UInt32:

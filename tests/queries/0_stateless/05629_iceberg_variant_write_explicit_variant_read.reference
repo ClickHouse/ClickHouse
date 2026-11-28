@@ -15,8 +15,6 @@ x	Variant(String, UInt8)
 --- v Array(Variant(UInt16, String))
 [1,'x',NULL]	Array(Variant(String, UInt16))
 --- Members that cannot be read back
-so they cannot be told apart
-so they cannot be told apart
 cannot be read back
 cannot be read back
 cannot be read back

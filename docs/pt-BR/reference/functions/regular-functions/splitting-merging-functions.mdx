@@ -138,7 +138,7 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 Introduzido em: v26.7.0
 
-Divide o texto em n-gramas usando a mesma tokenização de um dicionário Naive Bayes (o layout [`NAIVE_BAYES`](/pt-BR/reference/statements/create/dictionary/layouts/naive-bayes)): modo `byte`, `codepoint` ou `token`, com padding de borda opcional. Use-o para gerar os dados de treinamento pré-agregados `(ngram, class_id, count)` consumidos por esse dicionário, para que os n-gramas de treinamento correspondam exatamente ao que [`naiveBayesClassifier`](/pt-BR/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) produz durante a consulta.
+Divide o texto em n-gramas usando a mesma tokenização de um dicionário Naive Bayes (o layout [`NAIVE_BAYES`](/pt-BR/reference/statements/create/dictionary/layouts/naive-bayes)): modo `byte`, `codepoint` ou `token`, com padding de borda opcional. Use-o para gerar os dados de treinamento pré-agregados `(ngram, class_id, count)` consumidos por esse dicionário, para que os n-gramas de treinamento correspondam exatamente ao que [`naiveBayesClassifier`](/pt-BR/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifier) produz durante a consulta.
 
 **Sintaxe**
 
@@ -170,7 +170,7 @@ SELECT naiveBayesNgrams('the cat sat', 2, 'token');
 ['the cat','cat sat']
 ```
 
-**Bigramas de token com padding nas bordas**
+**Bigramas de token com padding de borda**
 
 ```sql title=Query
 SELECT naiveBayesNgrams('cat', 2, 'token', '<s>', '</s>');
@@ -180,7 +180,7 @@ SELECT naiveBayesNgrams('cat', 2, 'token', '<s>', '</s>');
 ['<s> cat','cat </s>']
 ```
 
-**Bigramas de bytes com preenchimento nas bordas (resultado mostrado em hexadecimal)**
+**Bigramas de bytes com padding de borda (resultado mostrado em hexadecimal)**
 
 ```sql title=Query
 SELECT arrayMap(x -> hex(x), naiveBayesNgrams('xy', 2, 'byte', '0x01', '0xFF'));
@@ -190,7 +190,7 @@ SELECT arrayMap(x -> hex(x), naiveBayesNgrams('xy', 2, 'byte', '0x01', '0xFF'));
 ['0178','7879','79FF']
 ```
 
-**Bigramas de pontos de código com preenchimento nas bordas (resultado mostrado em hexadecimal)**
+**Bigramas de pontos de código com padding de borda (resultado mostrado em hexadecimal)**
 
 ```sql title=Query
 SELECT arrayMap(x -> hex(x), naiveBayesNgrams('ab', 2, 'codepoint', '0x10FFFE', '0x10FFFF'));

@@ -634,3 +634,9 @@ def test_executable_function_in_alias_with_implicit_index_after_restart(started_
     assert node.query("SELECT id, a FROM t_alias_implicit_index_legacy") == "1\tKey 1\n"
     node.query("DROP TABLE t_alias_implicit_index SYNC")
     node.query("DROP TABLE t_alias_implicit_index_legacy SYNC")
+
+
+def test_executable_function_named_like_group_concat(started_cluster):
+    skip_test_msan(node)
+    # The groupConcat separator rewrite must not take the second argument of an executable UDF.
+    assert node.query("SELECT groupConcatDistinct('a', 'b')") == "ab\n"
