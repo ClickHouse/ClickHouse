@@ -74,9 +74,15 @@ FROM
 )
 ORDER BY g;
 
-SELECT number, finalizeAggregation(runningAccumulate(sumStateOrDefaultState(number)))
-FROM numbers(5)
-GROUP BY 1
+-- Sort the aggregate states before `runningAccumulate` reads them.
+SELECT number, finalizeAggregation(runningAccumulate(s))
+FROM
+(
+    SELECT number, sumStateOrDefaultState(number) AS s
+    FROM numbers(5)
+    GROUP BY number
+    ORDER BY number
+)
 ORDER BY number;
 
 -- `-ForEach` over a state-returning nested function: the result column is a
@@ -85,11 +91,15 @@ ORDER BY number;
 -- per-element state into the inner column via the nested
 -- `insertMergeResultInto`, which keeps the per-row states independent of
 -- the stack-local accumulator.
--- accumulates after the sort only with the old arrayJoin evaluation
-SELECT number, finalizeAggregation(finalizeAggregation(arrayJoin(runningAccumulate(sumStateOrDefaultStateForEachState([number, number + 1])))))
-FROM numbers(5)
-GROUP BY 1
-ORDER BY number
+SELECT number, finalizeAggregation(finalizeAggregation(arrayJoin(runningAccumulate(s)))) AS value
+FROM
+(
+    SELECT number, sumStateOrDefaultStateForEachState([number, number + 1]) AS s
+    FROM numbers(5)
+    GROUP BY number
+    ORDER BY number
+)
+ORDER BY number, value
 SETTINGS legacy_array_join_function_nondeterministic_evaluation = 1;
 
 -- A column with type `AggregateFunction(sumStateMerge, ...)` keeps the

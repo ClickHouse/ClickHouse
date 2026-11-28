@@ -64,6 +64,12 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
         if (typeid_cast<FillingStep *>(child_node->children.front()->step.get()))
             return 0;
 
+    const auto & expression = expression_step->getExpression();
+
+    /// Stateful functions such as `rowNumberInAllBlocks` depend on the order of their input rows.
+    if (expression.hasStatefulFunctions())
+        return 0;
+
     NameSet sort_columns;
     for (const auto & col : sorting_step->getSortDescription())
         sort_columns.insert(col.column_name);
@@ -72,7 +78,6 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     /// They may be missing if the plan was transformed by another optimization
     /// (e.g. `convertJoinToIn` can introduce qualified column names like `ty.c0`
     /// that are not in the expression DAG).
-    const auto & expression = expression_step->getExpression();
     {
         NameSet output_names;
         for (const auto * output : expression.getOutputs())
