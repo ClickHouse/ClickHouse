@@ -1,0 +1,48 @@
+compact	1	0	1	2
+compact-columns	['a','c','k']
+1
+compact-stored	1	0	1	2
+compact	1	0	1	2
+compact-columns	['a','c','k']
+1
+compact-stored	1	0	1	2
+wide	1	0	1
+wide	2	0	1
+wide-index	2
+wide-columns	['a','k']
+1
+wide-stored	1	0	1
+wide-stored	2	0	1
+wide	1	0	1
+wide	2	0	1
+wide-index	2
+wide-columns	['a','k']
+1
+wide-stored	1	0	1
+wide-stored	2	0	1
+packed	1	0	1	Packed
+packed	1	0	1	Packed
+dynamic	1	\N	\N
+1
+dynamic-count	1
+dynamic	1	\N	\N
+1
+dynamic-count	1
+json	1	0	\N
+1
+json-count	1
+json	1	0	\N
+1
+json-count	1
+marker	99	100
+marker	99	100
+marker-wide	99	100
+marker-wide	99	100
+chain	1	0	1
+chain	1	0	1
+partition	1	0	1
+partition	2	0	1
+partition-index	2
+partition	1	0	1
+partition	2	0	1
+partition-index	2
