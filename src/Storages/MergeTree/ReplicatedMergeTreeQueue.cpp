@@ -2415,6 +2415,16 @@ MutationCommands getMetadataMutationCommands(const MutationCommands & commands)
     return result;
 }
 
+/// The commands of an ALTER without its CLEAR commands, for a part whose data is newer than the ALTER's mutation.
+MutationCommands getCommandsWithoutClear(const MutationCommands & commands)
+{
+    MutationCommands result;
+    for (const auto & command : commands)
+        if (!command.clear)
+            result.push_back(command);
+    return result;
+}
+
 }
 
 MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
@@ -2456,7 +2466,12 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
             if (alter_version > part_metadata_version)
             {
                 if (alter_version > params.min_part_metadata_version)
-                    addSupportedCommands(entry->commands, mutation_version, result);
+                {
+                    if (!part->info.isPatch() && mutation_version <= part_data_version)
+                        addSupportedCommands(getCommandsWithoutClear(entry->commands), mutation_version, result);
+                    else
+                        addSupportedCommands(entry->commands, mutation_version, result);
+                }
                 /// A patch at metadata version 0 may have been written after the ALTER, so for it the data version decides.
                 else if (part->info.isPatch()
                     && (part_metadata_version > 0 || static_cast<Int64>(part->getPatchPartIndex().getMaxDataVersion()) < mutation_version))
