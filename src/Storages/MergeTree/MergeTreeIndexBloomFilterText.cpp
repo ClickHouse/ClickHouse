@@ -655,6 +655,11 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             const auto map_column_name = first_argument.getColumnName();
             if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
             {
+                /// `has(<constant array>, map['key'])`: the constant is a set of candidates for the
+                /// element, while the builders below take it for the shape of the map key.
+                if (reversed && value_data_type.isArray())
+                    return false;
+
                 auto second_argument = key_function_node.getArgumentAt(1);
                 DataTypePtr const_type;
 
@@ -699,6 +704,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
             if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
             {
+                /// Same as `arrayElement`: a constant array of candidates is not the shape of the map key.
+                if (reversed && value_data_type.isArray())
+                    return false;
+
                 key_index = map_keys_index;
                 const_value = serialized_key;
                 const_source_type = std::make_shared<DataTypeString>();

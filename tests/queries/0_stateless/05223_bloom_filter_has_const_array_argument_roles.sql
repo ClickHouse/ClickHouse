@@ -123,7 +123,39 @@ SELECT count() FROM t_tokenbf_has_map_keys WHERE 'b' = m['k'] SETTINGS use_skip_
 SELECT count() FROM t_tokenbf_has_map_keys WHERE mapContainsKey(m, 'k') SETTINGS use_skip_indexes = 1;
 SELECT count() FROM t_tokenbf_has_map_keys WHERE mapContainsKey(m, 'k') SETTINGS use_skip_indexes = 0;
 
+-- The element accessor, in both its `arrayElement` and its subcolumn spelling, is matched against
+-- the `mapKeys` index by its key. A constant array of candidates for the element raised `BAD_GET`.
+SELECT count() FROM t_tokenbf_has_map_keys WHERE has(['b'], m['k']) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0, optimize_functions_to_subcolumns = 0;
+SELECT count() FROM t_tokenbf_has_map_keys WHERE has(['b'], m['k']) SETTINGS use_skip_indexes = 0, optimize_rewrite_has_to_in = 0, optimize_functions_to_subcolumns = 0;
+SELECT count() FROM t_tokenbf_has_map_keys WHERE has(['b'], m['k']) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0, optimize_functions_to_subcolumns = 1;
+SELECT count() FROM t_tokenbf_has_map_keys WHERE has(['b'], m['k']) SETTINGS use_skip_indexes = 0, optimize_rewrite_has_to_in = 0, optimize_functions_to_subcolumns = 1;
+
 DROP TABLE t_tokenbf_has_map_keys;
+
+-- The same accessor over a `mapValues` index is probed with the candidates themselves and keeps the index.
+DROP TABLE IF EXISTS t_tokenbf_has_map_values;
+
+CREATE TABLE t_tokenbf_has_map_values (m Map(String, String), INDEX idx_m mapValues(m) TYPE tokenbf_v1(256, 2, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
+INSERT INTO t_tokenbf_has_map_values VALUES (map('k', 'a')), (map('k', 'b')), (map('k', 'c')), (map('k', 'd'));
+
+SELECT count() FROM t_tokenbf_has_map_values WHERE has(['b'], m['k']) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0, optimize_functions_to_subcolumns = 0;
+SELECT count() FROM t_tokenbf_has_map_values WHERE has(['b'], m['k']) SETTINGS use_skip_indexes = 0, optimize_rewrite_has_to_in = 0, optimize_functions_to_subcolumns = 0;
+SELECT count() FROM t_tokenbf_has_map_values WHERE has(['b'], m['k']) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0, optimize_functions_to_subcolumns = 1;
+SELECT count() FROM t_tokenbf_has_map_values WHERE has(['b'], m['k']) SETTINGS use_skip_indexes = 0, optimize_rewrite_has_to_in = 0, optimize_functions_to_subcolumns = 1;
+
+-- A key the row does not have reads as the empty string, which may be among the candidates.
+SELECT count() FROM t_tokenbf_has_map_values WHERE has(['b', ''], m['nokey']) SETTINGS use_skip_indexes = 1, optimize_rewrite_has_to_in = 0;
+SELECT count() FROM t_tokenbf_has_map_values WHERE has(['b', ''], m['nokey']) SETTINGS use_skip_indexes = 0, optimize_rewrite_has_to_in = 0;
+
+SELECT countIf(explain LIKE '%Name: idx_m%') > 0 AND countIf(toUInt64OrZero(g[1]) < toUInt64OrZero(g[2])) > 0
+FROM (
+    SELECT explain, splitByChar('/', extract(explain, 'Granules: ([0-9]+/[0-9]+)')) AS g
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM t_tokenbf_has_map_values WHERE has(['b'], m['k'])
+          SETTINGS optimize_rewrite_has_to_in = 0)
+);
+
+DROP TABLE t_tokenbf_has_map_values;
 
 -- `has(<constant array>, <indexed scalar>)` is the one shape a constant first argument is usable
 -- for: the index holds a hash of each whole value, so the candidates can be probed directly.
