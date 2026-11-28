@@ -56,17 +56,8 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     : configuration(configuration_)
     , log(std::move(log_))
     , options(std::move(options_))
-    , statistics(nullptr, &natsStatistics_Destroy)
     , connection(nullptr, &natsConnection_Destroy)
 {
-    natsStatistics * new_statistics = nullptr;
-    auto status = natsStatistics_Create(&new_statistics);
-    if (status != NATS_OK)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_NATS,
-            "Can not create NATS statistics. Nats error: {}", natsStatus_GetText(status));
-    statistics.reset(new_statistics);
-
     if (!configuration.username.empty() && !configuration.password.empty())
         natsOptions_SetUserInfo(options.get(), configuration.username.c_str(), configuration.password.c_str());
     if (!configuration.token.empty())
@@ -167,28 +158,6 @@ bool NATSConnection::isClosed()
     return isClosedImpl(lock);
 }
 
-UInt64 NATSConnection::getReconnectCount()
-{
-    std::lock_guard lock(mutex);
-    if (!connection)
-        return 0;
-
-    auto status = natsConnection_GetStats(connection.get(), statistics.get());
-    if (status != NATS_OK)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_NATS,
-            "Can not get statistics of connection to {}. Nats error: {}", connectionInfoForLog(), natsStatus_GetText(status));
-
-    uint64_t reconnects = 0;
-    status = natsStatistics_GetCounts(statistics.get(), nullptr, nullptr, nullptr, nullptr, &reconnects);
-    if (status != NATS_OK)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_NATS,
-            "Can not read statistics of connection to {}. Nats error: {}", connectionInfoForLog(), natsStatus_GetText(status));
-
-    return reconnects;
-}
-
 bool NATSConnection::connect()
 {
     std::lock_guard lock(mutex);
@@ -230,7 +199,7 @@ void NATSConnection::connectImpl(const Lock &)
     }
     connection.reset(new_conection);
 
-    LOG_DEBUG(log, "New connection {} is connected to {}", static_cast<void*>(this), connectionInfoForLog());
+    LOG_DEBUG(log, "New connection is connected to {}", connectionInfoForLog());
 }
 
 void NATSConnection::disconnectImpl(const Lock & connection_lock)
@@ -241,25 +210,24 @@ void NATSConnection::disconnectImpl(const Lock & connection_lock)
     natsConnection_Close(connection.get());
 }
 
-void NATSConnection::reconnectedCallback(natsConnection *, void * connection)
+void NATSConnection::reconnectedCallback(natsConnection *, void *)
 {
-    LOG_DEBUG(callback_logger, "Connection {} got reconnected to NATS server", static_cast<void*>(connection));
+    LOG_DEBUG(callback_logger, "Connection got reconnected to NATS server");
 }
 
-void NATSConnection::disconnectedCallback(natsConnection *, void * connection)
+void NATSConnection::disconnectedCallback(natsConnection *, void *)
 {
-    LOG_DEBUG(callback_logger, "Connection {} got disconnected from NATS server", connection);
+    LOG_DEBUG(callback_logger, "Connection got disconnected from NATS server");
 }
 
-void NATSConnection::errorCallback(natsConnection * nats_connection, natsSubscription *, natsStatus status, void * connection)
+void NATSConnection::errorCallback(natsConnection * nats_connection, natsSubscription *, natsStatus status, void *)
 {
     const char * last_error = nullptr;
     natsConnection_GetLastError(nats_connection, &last_error);
 
     LOG_ERROR(
         callback_logger,
-        "Connection {} got an asynchronous error from the NATS client. Nats status text: {}. Last error message: {}",
-        connection,
+        "Connection got an asynchronous error from the NATS client. Nats status text: {}. Last error message: {}",
         natsStatus_GetText(status),
         last_error && *last_error ? last_error : "none");
 }

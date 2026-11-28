@@ -246,13 +246,13 @@ bool URI::tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bo
     return true;
 }
 
-void URI::checkRemoteHostFilter(const RemoteHostFilter & filter) const
+bool URI::checkRemoteHostFilter(const RemoteHostFilter & filter, bool throw_on_error) const
 {
     Poco::URI endpoint_uri(endpoint);
     if (filter.isBucketAllowed(endpoint_uri.getHost(), endpoint_uri.getPort(), bucket))
-        return;
+        return true;
 
-    filter.checkURL(uri);
+    return filter.checkURL(uri, throw_on_error);
 }
 
 void URI::addRegionToURI(const std::string &region)

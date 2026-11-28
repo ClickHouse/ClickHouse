@@ -29,7 +29,7 @@ UInt64 BackupReaderDisk::getFileSize(const String & file_name)
     return disk->getFileSize(root_path / file_name);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupReaderDisk::readFile(const String & file_name)
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderDisk::readFile(const String & file_name, std::optional<size_t> /*expected_file_size*/)
 {
     return disk->readFile(root_path / file_name, read_settings);
 }

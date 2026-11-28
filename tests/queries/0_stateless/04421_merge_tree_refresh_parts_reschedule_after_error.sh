@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-random-settings, no-object-storage, no-replicated-database, no-shared-merge-tree, no-fasttest
+# Tags: no-parallel, no-random-settings, no-object-storage, no-replicated-database, no-shared-merge-tree
 # Tag no-parallel: SYSTEM ENABLE FAILPOINT toggles server-global state.
 # Tags no-random-settings, no-object-storage, no-replicated-database, no-shared-merge-tree: mirror
 #   03362_merge_tree_with_background_refresh, the plain_rewritable read-only refresh test this is based on.
@@ -60,10 +60,6 @@ do
     [[ "$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM reader WHERE s = 'World'")" == "1" ]] && break
     sleep 0.5
 done
-
-# On the buggy version the fail point is never reached, so disarm it instead of counting on it
-# having fired: a fail point left armed is server-global state that outlives this test.
-${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT merge_tree_refresh_parts_throw_once"
 
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM reader WHERE s = 'World'"
 

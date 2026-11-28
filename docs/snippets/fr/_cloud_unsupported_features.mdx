@@ -4,7 +4,9 @@ title: Fonctionnalités non prises en charge dans ClickHouse Cloud
 
 Les tableaux suivants répertorient les fonctionnalités et procédures autogérées signalées comme non prises en charge dans ClickHouse Cloud. Chaque entrée précise la fonctionnalité non prise en charge, même lorsque la page source correspondante couvre également des fonctionnalités prises en charge.
 
-### Infrastructure et opérations gérées {#unsupported-managed-infrastructure-and-operations}
+<div id="unsupported-managed-infrastructure-and-operations">
+  ### Infrastructure et opérations gérées
+</div>
 
 | Fonctionnalité non prise en charge                                              | Documentation                                                                                                                                             |
 | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -14,7 +16,9 @@ Les tableaux suivants répertorient les fonctionnalités et procédures autogér
 | Exécution de tests de performances matérielles autogérés                        | [Guide](/fr/concepts/features/performance/troubleshoot/performance-test)                                                                                     |
 | Application des recommandations opérationnelles pour les déploiements autogérés | [Guide](/fr/guides/oss/best-practices/tips)                                                                                                                  |
 
-### Authentification et sécurité {#unsupported-authentication-and-security}
+<div id="unsupported-authentication-and-security">
+  ### Authentification et sécurité
+</div>
 
 | Fonctionnalité non prise en charge         | Documentation                                                                                                                                                                 |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -23,7 +27,9 @@ Les tableaux suivants répertorient les fonctionnalités et procédures autogér
 | Authentification LDAP et mappage des rôles | [Configuration](/fr/concepts/features/security/configuring-ldap), [Authentificateur](/fr/concepts/features/security/external-authenticators/ldap)                                   |
 | Authentification par certificat X.509      | [Authentification des utilisateurs](/fr/concepts/features/security/ssl-user-auth), [Authentificateur HTTP externe](/fr/concepts/features/security/external-authenticators/ssl-x509) |
 
-### Interfaces et intégrations {#unsupported-interfaces-and-integrations}
+<div id="unsupported-interfaces-and-integrations">
+  ### Interfaces et intégrations
+</div>
 
 | Fonctionnalité non prise en charge                        | Documentation                                                                                                                                                                                                                                                                                                                                                                              |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -34,7 +40,9 @@ Les tableaux suivants répertorient les fonctionnalités et procédures autogér
 | Intégration au stockage d&#39;objets MinIO compatible S3  | [Guide](/fr/integrations/connectors/data-ingestion/s3-minio)                                                                                                                                                                                                                                                                                                                                  |
 | Intégration au stockage d&#39;objets Tigris compatible S3 | [Guide](/fr/integrations/connectors/data-ingestion/s3-tigris)                                                                                                                                                                                                                                                                                                                                 |
 
-### Moteurs de base de données et de tables {#unsupported-database-and-table-engines}
+<div id="unsupported-database-and-table-engines">
+  ### Moteurs de base de données et de tables
+</div>
 
 | Fonctionnalité non prise en charge                                     | Documentation                                                                                                                                                                                                                                                               |
 | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -49,7 +57,9 @@ Les tableaux suivants répertorient les fonctionnalités et procédures autogér
 | Moteur de table `YTsaurus`                                             | [Référence](/fr/reference/engines/table-engines/integrations/ytsaurus)                                                                                                                                                                                                         |
 | Moteurs de table de la famille `Log` (`Log`, `StripeLog` et `TinyLog`) | [Présentation de la famille](/fr/reference/engines/table-engines/log-family), [`Log`](/fr/reference/engines/table-engines/log-family/log), [`StripeLog`](/fr/reference/engines/table-engines/log-family/stripelog), [`TinyLog`](/fr/reference/engines/table-engines/log-family/tinylog) |
 
-### Dictionnaires et configuration du serveur {#unsupported-dictionaries-and-server-configuration}
+<div id="unsupported-dictionaries-and-server-configuration">
+  ### Dictionnaires et configuration du serveur
+</div>
 
 | Fonctionnalité non prise en charge                                                        | Documentation                                                                                                                                                                                                                              |
 | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -60,7 +70,9 @@ Les tableaux suivants répertorient les fonctionnalités et procédures autogér
 | Source de dictionnaire `YTsaurus`                                                         | [Référence](/fr/reference/statements/create/dictionary/sources/ytsaurus)                                                                                                                                                                      |
 | Dictionnaires de tokenisation japonaise configurés sur le serveur                         | [Référence](/fr/reference/engines/table-engines/mergetree-family/textindexes#japanese-tokenizer-dictionary)                                                                                                                                   |
 
-### Formats de données et codecs {#unsupported-data-formats-and-codecs}
+<div id="unsupported-data-formats-and-codecs">
+  ### Formats de données et codecs
+</div>
 
 | Fonctionnalité non prise en charge                                                                   | Documentation                                                                                                                                                                                |
 | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -68,19 +80,24 @@ Les tableaux suivants répertorient les fonctionnalités et procédures autogér
 | Formats `Protobuf`, `ProtobufList` et `ProtobufSingle` utilisant des fichiers de schéma côté serveur | [Guide](/fr/guides/clickhouse/data-formats/binary#protocol-buffers), [`ProtobufList`](/fr/reference/formats/Protobuf/ProtobufList), [`ProtobufSingle`](/fr/reference/formats/Protobuf/ProtobufSingle) |
 | Codecs `ZSTD_QAT` et `DEFLATE_QPL` obsolètes                                                         | [`ZSTD_QAT`](/fr/reference/statements/create/table#zstd_qat), [`DEFLATE_QPL`](/fr/reference/statements/create/table#deflate_qpl)                                                                   |
 
-### Fonctions et fonctionnalités expérimentales {#unsupported-functions-and-experimental-features}
+<div id="unsupported-functions-and-experimental-features">
+  ### Fonctions et fonctionnalités expérimentales
+</div>
 
 | Fonctionnalité non prise en charge                                      | Documentation                                                                                                                                                                                                                                                                                                             |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Fonctions expérimentales de traitement du langage naturel               | [Référence](/fr/reference/functions/regular-functions/nlp-functions)                                                                                                                                                                                                                                                         |
 | Transactions expérimentales multi-instructions avec commit et rollback  | [Guide](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)                                                                                                                                                                                                                               |
 | Fonctions expérimentales d’introspection des transactions               | [`transactionID`](/fr/reference/functions/regular-functions/other-functions#transactionID), [`transactionLatestSnapshot`](/fr/reference/functions/regular-functions/other-functions#transactionLatestSnapshot), [`transactionOldestSnapshot`](/fr/reference/functions/regular-functions/other-functions#transactionOldestSnapshot) |
-| Fonctions de fenêtre temporelle                                         | [Référence](/fr/reference/functions/regular-functions/time-window-functions)                                                                                                                                                                                                                                                 |
+| Fonctions de fenêtre temporelle pour `WindowView`                       | [Référence](/fr/reference/functions/regular-functions/time-window-functions)                                                                                                                                                                                                                                                 |
+| `WindowView` expérimental                                               | [Référence](/fr/reference/statements/create/view#window-view)                                                                                                                                                                                                                                                                |
 | Fonctions définies par l’utilisateur en WebAssembly                     | [Vue d’ensemble](/fr/reference/functions/regular-functions/udf#webassembly-user-defined-functions), [Guide](/fr/reference/functions/regular-functions/wasm_udf)                                                                                                                                                                 |
 | Fonctions définies par l’utilisateur exécutables pilotées par un driver | [Référence](/fr/reference/functions/regular-functions/udf#driver-based-executable-user-defined-functions)                                                                                                                                                                                                                    |
 | Fonction de table `filesystem` sur des fichiers locaux au serveur       | [Référence](/fr/reference/functions/table-functions/filesystem)                                                                                                                                                                                                                                                              |
 
-### Administration et contrôle d’accès {#unsupported-administration-and-access-control}
+<div id="unsupported-administration-and-access-control">
+  ### Administration et contrôle d’accès
+</div>
 
 | Fonctionnalité non prise en charge                                                  | Documentation                                                                                                                                             |
 | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |

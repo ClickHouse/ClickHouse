@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически генерируются на основе исходного кода ClickHouse.
 
-## shared_merge_tree_activate_coordinated_merges_tasks {#shared_merge_tree_activate_coordinated_merges_tasks}
+<div id="shared_merge_tree_activate_coordinated_merges_tasks">
+  ## shared_merge_tree_activate_coordinated_merges_tasks
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,7 +25,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 shared&#95;merge&#95;tree&#95;enable&#95;coordinated&#95;merges=0, поскольку позволяет заполнить статистику координатора слияний
 и ускорить холодный старт.
 
-## shared_merge_tree_blobs_list_inline_file_max_bytes {#shared_merge_tree_blobs_list_inline_file_max_bytes}
+<div id="shared_merge_tree_blobs_list_inline_file_max_bytes">
+  ## shared_merge_tree_blobs_list_inline_file_max_bytes
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -36,7 +40,9 @@ count.txt, metadata&#95;version.txt, индексы minmax) непосредст
 действует только для частей, использующих хранилище blob-list (см.
 shared&#95;merge&#95;tree&#95;use&#95;blobs&#95;list&#95;for&#95;parts). Доступно только в ClickHouse Cloud.
 
-## shared_merge_tree_create_per_replica_metadata_nodes {#shared_merge_tree_create_per_replica_metadata_nodes}
+<div id="shared_merge_tree_create_per_replica_metadata_nodes">
+  ## shared_merge_tree_create_per_replica_metadata_nodes
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -45,14 +51,18 @@ shared&#95;merge&#95;tree&#95;use&#95;blobs&#95;list&#95;for&#95;parts). Дос�
 Включает создание узлов /metadata и /columns для каждой реплики в ZooKeeper.
 Доступно только в ClickHouse Cloud
 
-## shared_merge_tree_disable_merges_and_mutations_assignment {#shared_merge_tree_disable_merges_and_mutations_assignment}
+<div id="shared_merge_tree_disable_merges_and_mutations_assignment">
+  ## shared_merge_tree_disable_merges_and_mutations_assignment
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Отключает назначение слияний для shared merge tree. Доступно только в ClickHouse
 Cloud
 
-## shared_merge_tree_empty_partition_lifetime {#shared_merge_tree_empty_partition_lifetime}
+<div id="shared_merge_tree_empty_partition_lifetime">
+  ## shared_merge_tree_empty_partition_lifetime
+</div>
 
 <SettingsInfoBlock type="Секунды" default_value="86400" />
 
@@ -60,7 +70,9 @@ Cloud
 
 Сколько секунд партиция будет храниться в Keeper, если у неё нет частей.
 
-## shared_merge_tree_enable_automatic_empty_partitions_cleanup {#shared_merge_tree_enable_automatic_empty_partitions_cleanup}
+<div id="shared_merge_tree_enable_automatic_empty_partitions_cleanup">
+  ## shared_merge_tree_enable_automatic_empty_partitions_cleanup
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -68,7 +80,9 @@ Cloud
 
 Включает очистку записей Keeper для пустых партиций.
 
-## shared_merge_tree_enable_coordinated_merges {#shared_merge_tree_enable_coordinated_merges}
+<div id="shared_merge_tree_enable_coordinated_merges">
+  ## shared_merge_tree_enable_coordinated_merges
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -76,7 +90,9 @@ Cloud
 
 Включает стратегию координированных слияний
 
-## shared_merge_tree_enable_keeper_parts_extra_data {#shared_merge_tree_enable_keeper_parts_extra_data}
+<div id="shared_merge_tree_enable_keeper_parts_extra_data">
+  ## shared_merge_tree_enable_keeper_parts_extra_data
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -84,7 +100,9 @@ Cloud
 
 Включает запись атрибутов в виртуальные части и коммит блоков в Keeper
 
-## shared_merge_tree_enable_outdated_parts_check {#shared_merge_tree_enable_outdated_parts_check}
+<div id="shared_merge_tree_enable_outdated_parts_check">
+  ## shared_merge_tree_enable_outdated_parts_check
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -92,7 +110,9 @@ Cloud
 
 Включить проверку устаревших частей. Доступно только в ClickHouse Cloud
 
-## shared_merge_tree_idle_parts_update_seconds {#shared_merge_tree_idle_parts_update_seconds}
+<div id="shared_merge_tree_idle_parts_update_seconds">
+  ## shared_merge_tree_idle_parts_update_seconds
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="3600" />
 
@@ -101,7 +121,9 @@ Cloud
 Интервал в секундах между обновлениями частей, не инициированными наблюдением ZooKeeper
 в shared merge tree. Доступно только в ClickHouse Cloud
 
-## shared_merge_tree_inactive_replica_cutoff_seconds {#shared_merge_tree_inactive_replica_cutoff_seconds}
+<div id="shared_merge_tree_inactive_replica_cutoff_seconds">
+  ## shared_merge_tree_inactive_replica_cutoff_seconds
+</div>
 
 <SettingsInfoBlock type="Секунда" default_value="0" />
 
@@ -113,7 +135,9 @@ Cloud
 означает использование значения по умолчанию — двух тайм-аутов сеанса ZooKeeper.
 Только в ClickHouse Cloud
 
-## shared_merge_tree_initial_parts_update_backoff_ms {#shared_merge_tree_initial_parts_update_backoff_ms}
+<div id="shared_merge_tree_initial_parts_update_backoff_ms">
+  ## shared_merge_tree_initial_parts_update_backoff_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -121,7 +145,9 @@ Cloud
 
 Начальная задержка перед обновлением частей. Доступно только в ClickHouse Cloud
 
-## shared_merge_tree_interserver_http_connection_timeout_ms {#shared_merge_tree_interserver_http_connection_timeout_ms}
+<div id="shared_merge_tree_interserver_http_connection_timeout_ms">
+  ## shared_merge_tree_interserver_http_connection_timeout_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -129,7 +155,9 @@ Cloud
 
 Тайм-ауты межсерверных HTTP-соединений. Доступно только в ClickHouse Cloud
 
-## shared_merge_tree_interserver_http_timeout_ms {#shared_merge_tree_interserver_http_timeout_ms}
+<div id="shared_merge_tree_interserver_http_timeout_ms">
+  ## shared_merge_tree_interserver_http_timeout_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -138,7 +166,9 @@ Cloud
 Тайм-ауты межсерверного HTTP-взаимодействия. Доступно только в ClickHouse
 Cloud
 
-## shared_merge_tree_leader_update_period_random_add_seconds {#shared_merge_tree_leader_update_period_random_add_seconds}
+<div id="shared_merge_tree_leader_update_period_random_add_seconds">
+  ## shared_merge_tree_leader_update_period_random_add_seconds
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -148,7 +178,9 @@ Cloud
 значение с равномерным распределением в диапазоне от 0 до x секунд,
 чтобы избежать эффекта «стада». Доступно только в ClickHouse Cloud
 
-## shared_merge_tree_leader_update_period_seconds {#shared_merge_tree_leader_update_period_seconds}
+<div id="shared_merge_tree_leader_update_period_seconds">
+  ## shared_merge_tree_leader_update_period_seconds
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="30" />
 
@@ -157,7 +189,9 @@ Cloud
 Максимальный интервал для повторной проверки лидерства при обновлении частей. Доступно только в
 ClickHouse Cloud
 
-## shared_merge_tree_max_outdated_parts_to_process_at_once {#shared_merge_tree_max_outdated_parts_to_process_at_once}
+<div id="shared_merge_tree_max_outdated_parts_to_process_at_once">
+  ## shared_merge_tree_max_outdated_parts_to_process_at_once
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -165,7 +199,9 @@ ClickHouse Cloud
 
 Максимальное количество устаревших частей, удаление которых лидер попытается подтвердить за один HTTP-запрос. Доступно только в ClickHouse Cloud.
 
-## shared_merge_tree_max_parts_update_backoff_ms {#shared_merge_tree_max_parts_update_backoff_ms}
+<div id="shared_merge_tree_max_parts_update_backoff_ms">
+  ## shared_merge_tree_max_parts_update_backoff_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 
@@ -173,7 +209,9 @@ ClickHouse Cloud
 
 Максимальная задержка при обновлении частей. Доступно только в ClickHouse Cloud
 
-## shared_merge_tree_max_parts_update_leaders_in_total {#shared_merge_tree_max_parts_update_leaders_in_total}
+<div id="shared_merge_tree_max_parts_update_leaders_in_total">
+  ## shared_merge_tree_max_parts_update_leaders_in_total
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="6" />
 
@@ -181,7 +219,9 @@ ClickHouse Cloud
 
 Максимальное число лидеров обновления частей. Доступно только в ClickHouse Cloud
 
-## shared_merge_tree_max_parts_update_leaders_per_az {#shared_merge_tree_max_parts_update_leaders_per_az}
+<div id="shared_merge_tree_max_parts_update_leaders_per_az">
+  ## shared_merge_tree_max_parts_update_leaders_per_az
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -189,7 +229,9 @@ ClickHouse Cloud
 
 Максимальное число лидеров обновления частей. Доступно только в ClickHouse Cloud
 
-## shared_merge_tree_max_replicas_for_parts_deletion {#shared_merge_tree_max_replicas_for_parts_deletion}
+<div id="shared_merge_tree_max_replicas_for_parts_deletion">
+  ## shared_merge_tree_max_replicas_for_parts_deletion
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -198,7 +240,9 @@ ClickHouse Cloud
 Максимальное число реплик, участвующих в удалении частей (поток killer). Доступно только
 в ClickHouse Cloud
 
-## shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range {#shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range}
+<div id="shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range">
+  ## shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -206,7 +250,9 @@ ClickHouse Cloud
 
 Максимальное число реплик, которые будут пытаться назначать потенциально конфликтующие слияния, что позволяет избежать лишних конфликтов при назначении слияний. 0 означает, что функция отключена. Доступно только в ClickHouse Cloud
 
-## shared_merge_tree_max_suspicious_broken_parts {#shared_merge_tree_max_suspicious_broken_parts}
+<div id="shared_merge_tree_max_suspicious_broken_parts">
+  ## shared_merge_tree_max_suspicious_broken_parts
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -214,7 +260,9 @@ ClickHouse Cloud
 
 Максимальное количество повреждённых частей для SMT; при превышении этого значения автоматическое отсоединение запрещается.
 
-## shared_merge_tree_max_suspicious_broken_parts_bytes {#shared_merge_tree_max_suspicious_broken_parts_bytes}
+<div id="shared_merge_tree_max_suspicious_broken_parts_bytes">
+  ## shared_merge_tree_max_suspicious_broken_parts_bytes
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -222,7 +270,9 @@ ClickHouse Cloud
 
 Максимальный размер всех поврежденных частей для SMT; при превышении запретить автоматическое отсоединение.
 
-## shared_merge_tree_memo_ids_remove_timeout_seconds {#shared_merge_tree_memo_ids_remove_timeout_seconds}
+<div id="shared_merge_tree_memo_ids_remove_timeout_seconds">
+  ## shared_merge_tree_memo_ids_remove_timeout_seconds
+</div>
 
 <SettingsInfoBlock type="Int64" default_value="1800" />
 
@@ -231,11 +281,13 @@ ClickHouse Cloud
 Как долго хранятся идентификаторы мемоизации вставки, чтобы избежать некорректных действий при
 повторных попытках вставки. Доступно только в ClickHouse Cloud
 
-## shared_merge_tree_merge_coordinator_distribution_algorithm {#shared_merge_tree_merge_coordinator_distribution_algorithm}
+<div id="shared_merge_tree_merge_coordinator_distribution_algorithm">
+  ## shared_merge_tree_merge_coordinator_distribution_algorithm
+</div>
 
 <SettingsInfoBlock type="MergeCoordinatorDistributionAlgorithm" default_value="sainte_lague" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "sainte_lague"},{"label": "Сохранять распределение Sainte-Lague независимо от `compatibility`."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "sainte_lague"},{"label": "Включить распределение Sainte-Lague по умолчанию."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "Новая настройка, которая определяет, какой алгоритм координатор слияний использует для распределения слияний между репликами"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "sainte_lague"},{"label": "Включить распределение Sainte-Lague по умолчанию."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "Новая настройка, которая определяет, какой алгоритм координатор слияний использует для распределения слияний между репликами"}]}]} />
 
 Алгоритм, используемый потоком координатора слияний для распределения слияний между репликами.
 
@@ -244,7 +296,9 @@ ClickHouse Cloud
 * `water_filling`
 * `sainte_lague`
 
-## shared_merge_tree_merge_coordinator_election_check_period_ms {#shared_merge_tree_merge_coordinator_election_check_period_ms}
+<div id="shared_merge_tree_merge_coordinator_election_check_period_ms">
+  ## shared_merge_tree_merge_coordinator_election_check_period_ms
+</div>
 
 <SettingsInfoBlock type="Milliseconds" default_value="30000" />
 
@@ -252,7 +306,9 @@ ClickHouse Cloud
 
 Интервал между запусками потока выборов координатора слияний
 
-## shared_merge_tree_merge_coordinator_factor {#shared_merge_tree_merge_coordinator_factor}
+<div id="shared_merge_tree_merge_coordinator_factor">
+  ## shared_merge_tree_merge_coordinator_factor
+</div>
 
 <SettingsInfoBlock type="Float" default_value="1.1" />
 
@@ -260,7 +316,9 @@ ClickHouse Cloud
 
 Коэффициент изменения времени задержки потока координатора
 
-## shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms {#shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms}
+<div id="shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms">
+  ## shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms
+</div>
 
 <SettingsInfoBlock type="Milliseconds" default_value="10000" />
 
@@ -268,7 +326,9 @@ ClickHouse Cloud
 
 Как часто координатор слияний должен синхронизироваться с ZooKeeper для получения свежих метаданных
 
-## shared_merge_tree_merge_coordinator_max_merge_request_size {#shared_merge_tree_merge_coordinator_max_merge_request_size}
+<div id="shared_merge_tree_merge_coordinator_max_merge_request_size">
+  ## shared_merge_tree_merge_coordinator_max_merge_request_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
@@ -276,7 +336,9 @@ ClickHouse Cloud
 
 Количество слияний, которые координатор может одновременно запросить у MergerMutator
 
-## shared_merge_tree_merge_coordinator_max_period_ms {#shared_merge_tree_merge_coordinator_max_period_ms}
+<div id="shared_merge_tree_merge_coordinator_max_period_ms">
+  ## shared_merge_tree_merge_coordinator_max_period_ms
+</div>
 
 <SettingsInfoBlock type="Milliseconds" default_value="10000" />
 
@@ -284,7 +346,9 @@ ClickHouse Cloud
 
 Максимальный интервал между запусками потока координатора слияний
 
-## shared_merge_tree_merge_coordinator_merges_prepare_count {#shared_merge_tree_merge_coordinator_merges_prepare_count}
+<div id="shared_merge_tree_merge_coordinator_merges_prepare_count">
+  ## shared_merge_tree_merge_coordinator_merges_prepare_count
+</div>
 
 <SettingsInfoBlock type="UInt64Auto" default_value="auto" />
 
@@ -293,7 +357,9 @@ ClickHouse Cloud
 Количество записей о слияниях, которые координатор должен подготовить и распределить между воркерами.
 Если установлено значение &#39;auto&#39;, оно равно максимальному числу задач слияния, разрешённых для одной реплики, умноженному на число активных реплик.
 
-## shared_merge_tree_merge_coordinator_min_period_ms {#shared_merge_tree_merge_coordinator_min_period_ms}
+<div id="shared_merge_tree_merge_coordinator_min_period_ms">
+  ## shared_merge_tree_merge_coordinator_min_period_ms
+</div>
 
 <SettingsInfoBlock type="Milliseconds" default_value="1" />
 
@@ -301,7 +367,9 @@ ClickHouse Cloud
 
 Минимальный интервал между запусками потока координатора слияний
 
-## shared_merge_tree_merge_worker_fast_timeout_ms {#shared_merge_tree_merge_worker_fast_timeout_ms}
+<div id="shared_merge_tree_merge_worker_fast_timeout_ms">
+  ## shared_merge_tree_merge_worker_fast_timeout_ms
+</div>
 
 <SettingsInfoBlock type="Milliseconds" default_value="100" />
 
@@ -309,7 +377,9 @@ ClickHouse Cloud
 
 Тайм-аут, который использует рабочий поток слияния, если ему требуется обновить своё состояние после немедленного действия
 
-## shared_merge_tree_merge_worker_regular_timeout_ms {#shared_merge_tree_merge_worker_regular_timeout_ms}
+<div id="shared_merge_tree_merge_worker_regular_timeout_ms">
+  ## shared_merge_tree_merge_worker_regular_timeout_ms
+</div>
 
 <SettingsInfoBlock type="Milliseconds" default_value="10000" />
 
@@ -317,7 +387,9 @@ ClickHouse Cloud
 
 Интервал между запусками рабочего потока слияния
 
-## shared_merge_tree_outdated_parts_group_size {#shared_merge_tree_outdated_parts_group_size}
+<div id="shared_merge_tree_outdated_parts_group_size">
+  ## shared_merge_tree_outdated_parts_group_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -326,7 +398,9 @@ ClickHouse Cloud
 Сколько реплик будет входить в одну группу rendezvous hash при очистке устаревших частей.
 Доступно только в ClickHouse Cloud.
 
-## shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations {#shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations}
+<div id="shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations">
+  ## shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations
+</div>
 
 <SettingsInfoBlock type="Float" default_value="0.5" />
 
@@ -335,14 +409,18 @@ partitions for mutations only (partitions that cannot be merged)>/<candidate
 partitions for mutations>` превышает значение этой настройки. Доступно только
 в ClickHouse Cloud
 
-## shared_merge_tree_parts_load_batch_size {#shared_merge_tree_parts_load_batch_size}
+<div id="shared_merge_tree_parts_load_batch_size">
+  ## shared_merge_tree_parts_load_batch_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="32" />
 
 Количество одновременно планируемых задач по получению метаданных частей. Доступно только в
 ClickHouse Cloud
 
-## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms {#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms}
+<div id="shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms">
+  ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -352,7 +430,9 @@ ClickHouse Cloud
 Это даёт другим репликам возможность получить эту часть и начать такое слияние.
 Доступно только в ClickHouse Cloud.
 
-## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold {#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold}
+<div id="shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold">
+  ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
@@ -360,7 +440,9 @@ ClickHouse Cloud
 
 Минимальный размер части (в строках), после локального слияния которой назначение следующего слияния откладывается. Доступно только в ClickHouse Cloud.
 
-## shared_merge_tree_range_for_merge_window_size {#shared_merge_tree_range_for_merge_window_size}
+<div id="shared_merge_tree_range_for_merge_window_size">
+  ## shared_merge_tree_range_for_merge_window_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -370,7 +452,9 @@ ClickHouse Cloud
 репликами. Части в пределах одного окна назначаются одним и тем же репликам.
 Доступно только в ClickHouse Cloud
 
-## shared_merge_tree_read_virtual_parts_from_leader {#shared_merge_tree_read_virtual_parts_from_leader}
+<div id="shared_merge_tree_read_virtual_parts_from_leader">
+  ## shared_merge_tree_read_virtual_parts_from_leader
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -379,7 +463,9 @@ ClickHouse Cloud
 Считывать виртуальные части с лидера, когда это возможно. Доступно только в ClickHouse
 Cloud
 
-## shared_merge_tree_replica_set_max_lifetime_seconds {#shared_merge_tree_replica_set_max_lifetime_seconds}
+<div id="shared_merge_tree_replica_set_max_lifetime_seconds">
+  ## shared_merge_tree_replica_set_max_lifetime_seconds
+</div>
 
 <SettingsInfoBlock type="Секунды" default_value="1800" />
 
@@ -389,7 +475,9 @@ Cloud
 выбирается со случайным равномерным смещением в диапазоне [0, value] секунд. Исключение: value = 0 не подчиняется этому правилу;
 реализация задаёт минимум 200 мс, поэтому время следующего запуска выбирается со случайным равномерным смещением в диапазоне [0, 200] мс.
 
-## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas {#shared_merge_tree_try_fetch_part_in_memory_data_from_replicas}
+<div id="shared_merge_tree_try_fetch_part_in_memory_data_from_replicas">
+  ## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -398,7 +486,9 @@ Cloud
 Если настройка включена, все реплики пытаются получать хранящиеся в памяти данные части (например, первичный
 ключ, информацию о партиции и т. д.) от других реплик, где эти данные уже есть.
 
-## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup {#shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup}
+<div id="shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup">
+  ## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -406,7 +496,9 @@ Cloud
 
 Если включено, при запуске все реплики пытаются получить от других реплик уже имеющиеся у них хранящиеся в памяти данные о части (например, первичный ключ, информацию о партиции и т. д.).
 
-## shared_merge_tree_update_replica_flags_delay_ms {#shared_merge_tree_update_replica_flags_delay_ms}
+<div id="shared_merge_tree_update_replica_flags_delay_ms">
+  ## shared_merge_tree_update_replica_flags_delay_ms
+</div>
 
 <SettingsInfoBlock type="Milliseconds" default_value="30000" />
 
@@ -414,7 +506,9 @@ Cloud
 
 Как часто реплика будет пытаться повторно загружать свои флаги по фоновому расписанию.
 
-## shared_merge_tree_use_blobs_list_for_parts {#shared_merge_tree_use_blobs_list_for_parts}
+<div id="shared_merge_tree_use_blobs_list_for_parts">
+  ## shared_merge_tree_use_blobs_list_for_parts
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -425,7 +519,9 @@ Cloud
 Сокращает объём метаданных Keeper для каждой части с O(файлов) до небольшой постоянной величины,
 сохраняя один blob-объект в объектном хранилище для каждого файла. Доступно только в ClickHouse Cloud.
 
-## shared_merge_tree_use_metadata_hints_cache {#shared_merge_tree_use_metadata_hints_cache}
+<div id="shared_merge_tree_use_metadata_hints_cache">
+  ## shared_merge_tree_use_metadata_hints_cache
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -434,7 +530,9 @@ Cloud
 Включает запрос подсказок для FS-кэша из in-memory-кэша
 на других репликах. Доступно только в ClickHouse Cloud
 
-## shared_merge_tree_use_outdated_parts_compact_format {#shared_merge_tree_use_outdated_parts_compact_format}
+<div id="shared_merge_tree_use_outdated_parts_compact_format">
+  ## shared_merge_tree_use_outdated_parts_compact_format
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -443,7 +541,9 @@ Cloud
 Использовать compact-формат для устаревших частей: снижает нагрузку на Keeper, улучшает
 обработку устаревших частей. Доступно только в ClickHouse Cloud
 
-## shared_merge_tree_use_too_many_parts_count_from_virtual_parts {#shared_merge_tree_use_too_many_parts_count_from_virtual_parts}
+<div id="shared_merge_tree_use_too_many_parts_count_from_virtual_parts">
+  ## shared_merge_tree_use_too_many_parts_count_from_virtual_parts
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -452,7 +552,9 @@ Cloud
 Если включено, счётчик Too many parts будет опираться на общие данные в Keeper, а не на
 локальное состояние реплики. Доступно только в ClickHouse Cloud
 
-## shared_merge_tree_use_zookeeper_connection_pool {#shared_merge_tree_use_zookeeper_connection_pool}
+<div id="shared_merge_tree_use_zookeeper_connection_pool">
+  ## shared_merge_tree_use_zookeeper_connection_pool
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -460,7 +562,9 @@ Cloud
 
 Если настройка включена, SharedMergeTree использует один из пулов сеансов ZooKeeper на уровне сервера.
 
-## shared_merge_tree_virtual_parts_discovery_batch {#shared_merge_tree_virtual_parts_discovery_batch}
+<div id="shared_merge_tree_virtual_parts_discovery_batch">
+  ## shared_merge_tree_virtual_parts_discovery_batch
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
@@ -468,7 +572,9 @@ Cloud
 
 Сколько операций обнаружения партиций следует объединять в батч
 
-## shared_merge_tree_virtual_parts_partition_atomic_discovery {#shared_merge_tree_virtual_parts_partition_atomic_discovery}
+<div id="shared_merge_tree_virtual_parts_partition_atomic_discovery">
+  ## shared_merge_tree_virtual_parts_partition_atomic_discovery
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

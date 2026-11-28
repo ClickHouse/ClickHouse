@@ -31,7 +31,6 @@ public:
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
     bool isRemote() const override;
-    bool readRequiresAnalyzedQuery() const override;
 
     bool hasInnerTable() const { return has_inner_table; }
 
@@ -51,6 +50,7 @@ public:
     /// initiator must not rewrite functions to subcolumns when the target opts out (e.g. Distributed).
     bool supportsOptimizationToSubcolumns() const override { return getTargetTable()->supportsOptimizationToSubcolumns(); }
     bool supportsOptimizationToTupleElementSubcolumns() const override { return getTargetTable()->supportsOptimizationToTupleElementSubcolumns(); }
+    bool hasBucketedMapSerialization() const override { return getTargetTable()->hasBucketedMapSerialization(); }
     bool supportsColumnsWithDynamicStructure() const override;
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
 

@@ -3,6 +3,8 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 namespace DB
 {
@@ -203,11 +205,14 @@ bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return false;
 }
 
-std::map<String, Documentation> ParserDropQuery::getDocumentation() const
-{
-    std::map<String, Documentation> documentation;
+}
 
-    documentation["DROP"] =
+namespace DB
+{
+
+void registerStatementDrop(StatementFactory & factory)
+{
+    factory.registerStatement("DROP",
     {
         .description = R"DOCS_MD(
 Deletes existing entity. If the `IF EXISTS` clause is specified, these queries do not return an error if the entity does not exist. If the `SYNC` modifier is specified, the entity is dropped without delay.
@@ -370,9 +375,9 @@ DROP FUNCTION [IF EXISTS] function_name [ON CLUSTER cluster]
 DROP NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
 )",
         .related = {"DETACH", "TRUNCATE", "UNDROP", "CREATE"},
-    };
+    });
 
-    documentation["DETACH"] =
+    factory.registerStatement("DETACH",
     {
         .description = R"DOCS_MD(
 Makes the server "forget" about the existence of a table, a materialized view, a dictionary, or a database.
@@ -445,9 +450,9 @@ In ClickHouse Cloud users should use the `PERMANENTLY` clause e.g. `DETACH TABLE
 DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY] [SYNC]
 )",
         .related = {"ATTACH", "DROP"},
-    };
+    });
 
-    documentation["TRUNCATE"] =
+    factory.registerStatement("TRUNCATE",
     {
         .description = R"DOCS_MD(
 The `TRUNCATE` statement in ClickHouse is used to quickly remove all data from a table or database while preserving their structure.
@@ -469,7 +474,7 @@ You can use the [alter_sync](/reference/settings/session-settings/alter#alter_sy
 You can specify how long (in seconds) to wait for inactive replicas to execute `TRUNCATE` queries with the [replication_wait_for_inactive_replica_timeout](/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) setting.
 
 <Note>
-If the `alter_sync` is set to `2` and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown. With `alter_sync = 3` the inactive replicas are not waited for, so no exception is thrown.
+If the `alter_sync` is set to `2`, or to `3` on `ReplicatedMergeTree`, and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
 </Note>
 
 The `TRUNCATE TABLE` query is **not supported** for the following table engines:
@@ -518,9 +523,7 @@ TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] 
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 )",
         .related = {"DROP", "DELETE", "ALTER TABLE ... PARTITION"},
-    };
-
-    return documentation;
+    });
 }
 
 }

@@ -37,7 +37,7 @@ endmacro()
 
 # Keep in sync with toolchain in docker images
 # (must be called before find_package(Rust) and inclusion of Corrosion.cmake)
-set(Rust_TOOLCHAIN "nightly-2026-03-22")
+set(Rust_TOOLCHAIN "nightly-2026-11-02")
 
 macro(find_rust)
     set_rust_target()
@@ -313,9 +313,6 @@ function(clickhouse_import_crate)
             LOCKED
             FLAGS --offline
             NO_DEFAULT_FEATURES
-            # Without it every cargo build runs in the Ninja `console` pool, which has depth 1,
-            # so the cargo builds run one after another and block the C++ compilation that waits for them
-            NO_USES_TERMINAL
     )
     enable_dummy_launchers_if_needed()
 endfunction()

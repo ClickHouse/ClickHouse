@@ -82,7 +82,6 @@ struct MergeTreeIndexDeserializationState
     const IMergeTreeIndex & index;
     const MarkRanges * readable_ranges;
     bool skip_postings_deserialization;
-    const MergeTreeReaderSettings & reader_settings;
 };
 
 }

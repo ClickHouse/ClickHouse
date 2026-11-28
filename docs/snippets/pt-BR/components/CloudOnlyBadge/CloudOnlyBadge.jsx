@@ -7,8 +7,8 @@ export const CloudOnlyBadge = ({ supported = ['cloud', 'private', 'BYOC'] }) => 
     const label = platforms.length === 1
         ? platforms[0]
         : platforms.length === 2
-            ? platforms.join(' e ')
-            : platforms.slice(0, -1).join(', ') + ' e ' + platforms[platforms.length - 1]
+            ? platforms.join(' and ')
+            : platforms.slice(0, -1).join(', ') + ', and ' + platforms[platforms.length - 1]
     return (
         <div className="cloudBadge">
             <div className="cloudIcon">
@@ -17,7 +17,7 @@ export const CloudOnlyBadge = ({ supported = ['cloud', 'private', 'BYOC'] }) => 
                       stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
         </div>
-            {'Disponível em ' + label}
+            {'Available in ' + label}
         </div>
     )
 }

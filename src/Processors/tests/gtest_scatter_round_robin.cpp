@@ -2,7 +2,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/ISink.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
@@ -12,7 +12,6 @@
 #include <numeric>
 
 using namespace DB;
-using namespace DB::Runtime::V1;
 
 namespace
 {

@@ -309,7 +309,15 @@ public:
     void create(AggregateDataPtr __restrict place) const override
     {
         new (place) Data;
-        nested_func->create(getNestedPlace(place));
+        try
+        {
+            nested_func->create(getNestedPlace(place));
+        }
+        catch (...)
+        {
+            this->data(place).~Data();
+            throw;
+        }
     }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override
@@ -357,11 +365,6 @@ public:
     size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
-    }
-
-    DataTypePtr getStateType() const override
-    {
-        return this->getStateTypeWithVersionOf(*nested_func);
     }
 
     bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override

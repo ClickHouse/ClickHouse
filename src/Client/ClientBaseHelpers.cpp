@@ -296,7 +296,7 @@ static void highlightWithLexer(const String & query, std::vector<replxx::Replxx:
     }
 }
 
-void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context, int cursor_position, bool rainbow_parentheses, bool lexer_fallback)
+void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context, int cursor_position, bool rainbow_parentheses, bool * last_is_delimiter, bool lexer_fallback)
 {
     using namespace replxx;
 
@@ -651,14 +651,16 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     }
 
     /// This is a callback for the client/local app to better find query end. Note: this is a kludge, remove it.
+    if (!last_is_delimiter)
+        return;
     if (last_token.type == TokenType::Semicolon || last_token.type == TokenType::VerticalDelimiter
         || query.ends_with(';') || query.ends_with("\\G"))  /// This is for raw data in INSERT queries, which is not necessarily tokenized.
     {
-        ReplxxLineReader::setLastIsDelimiter(true);
+        *last_is_delimiter = true;
     }
     else if (last_token.type != TokenType::Whitespace)
     {
-        ReplxxLineReader::setLastIsDelimiter(false);
+        *last_is_delimiter = false;
     }
 }
 
@@ -667,7 +669,7 @@ String highlighted(const String & query, const Context & context, bool rainbow_p
     const size_t num_code_points = countCodePointsWithSeqLength(query, query.data() + query.size());
 
     std::vector<replxx::Replxx::Color> colors(num_code_points, replxx::Replxx::Color::DEFAULT);
-    highlight(query, colors, context, 0, rainbow_parentheses, lexer_fallback);
+    highlight(query, colors, context, 0, rainbow_parentheses, nullptr, lexer_fallback);
 
     String res;
     size_t query_size = query.size();

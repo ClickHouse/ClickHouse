@@ -48,10 +48,10 @@ SELECT 'local storage id', count() FROM t_mut_local;
 DROP TABLE t_mut_local;
 
 -- A real column named like a virtual one is a separate pre-existing failure. It is raised
--- by the analyzer during mutation validation, so that statement pins the analyzer setting.
+-- by the analyzer during mutation validation, so that statement pins both settings.
 DROP TABLE IF EXISTS t_mut_override;
 CREATE TABLE t_mut_override (c0 UInt32, _sample_factor Float64) ENGINE = MergeTree ORDER BY c0;
 INSERT INTO t_mut_override VALUES (1, 0.5), (5, 0.5);
-ALTER TABLE t_mut_override DELETE WHERE _sample_factor = 0.5 AND c0 < 2 SETTINGS enable_analyzer = 1; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+ALTER TABLE t_mut_override DELETE WHERE _sample_factor = 0.5 AND c0 < 2 SETTINGS enable_analyzer = 1, validate_mutation_query = 1; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
 SELECT 'real column override', count() FROM t_mut_override;
 DROP TABLE t_mut_override;

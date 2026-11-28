@@ -1,0 +1,24 @@
+<clickhouse>
+    <!--
+        Regression: `StaticRequestHandler` accepts `config://` lookups with
+        Poco's bracket-index path syntax (e.g. `my_indexed_payload[1]`).
+        The unknown-key validator must normalize the reference by stripping
+        the bracket suffix before recording it as accepted, otherwise the
+        repeated top-level key (which Poco yields with `[N]` suffixes) is
+        rejected with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    -->
+    <my_indexed_payload>First payload</my_indexed_payload>
+    <my_indexed_payload>Second payload</my_indexed_payload>
+
+    <http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <url>/my_indexed_response</url>
+            <handler>
+                <type>static</type>
+                <response_content>config://my_indexed_payload[1]</response_content>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>

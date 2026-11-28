@@ -48,9 +48,7 @@ public:
     std::string getName() const override { return "Merge"; }
 
     bool isRemote() const override;
-    bool readRequiresAnalyzedQuery() const override { return true; }
     bool readsFromOtherTables() const override { return true; }
-    bool supportsTruncate() const override { return false; }
 
     /// The check is delayed to the read method. It checks the support of the tables used.
     bool supportsSampling() const override { return true; }
@@ -60,6 +58,7 @@ public:
     /// initiator rewrite functions to subcolumns, or a skip index on the shard would be missed.
     bool supportsOptimizationToSubcolumns() const override;
     bool supportsOptimizationToTupleElementSubcolumns() const override;
+    bool hasBucketedMapSerialization() const override;
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;
@@ -144,6 +143,9 @@ private:
     StoragePtr traverseTablesUntil(F && predicate) const;
 
     template <typename F>
+    StoragePtr traverseVisibleTablesUntil(const ContextPtr & query_context, F && predicate) const;
+
+    template <typename F>
     void forEachTable(F && func) const;
 
     template <typename F>
@@ -159,7 +161,7 @@ private:
     ColumnSizeByName getColumnSizes() const override;
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
-    std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
+    std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override;
 
     ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context) const;
 
@@ -168,7 +170,7 @@ private:
     bool tableSupportsPrewhere() const;
 
     template <typename F>
-    std::optional<UInt64> totalRowsOrBytes(F && func) const;
+    std::optional<UInt64> totalRowsOrBytes(const ContextPtr & query_context, F && func) const;
 
     friend class ReadFromMerge;
 };
@@ -200,22 +202,11 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
-    /// Whether `requestReadingInOrder` accepts a reverse direction: every reading step of every child plan
-    /// has to accept it (see `ReadFromMergeTree::canReadInReverseOrder`). Creates the child plans.
-    bool canReadInReverseOrder();
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
-
-    /// Whether the child plans have been created (`filterTablesAndCreateChildrenPlans`).
-    bool hasChildPlans() const { return child_plans.has_value(); }
-    /// Drops the child plans, so that they are created again when they are needed next. For a first-pass
-    /// optimization which probes the children before the filters are applied to this step (`applyFilters`):
-    /// children created then would miss the filter on `_database` and `_table` (`getSelectedTables`), and
-    /// they are created only once. Nothing may hold the child plans when this is called.
-    void resetChildPlans();
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
-    QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
+    QueryPlanRawPtrs getChildPlans() override;
 
     /// Returns child plans aligned 1:1 with `getSelectedTables()`. Entries for uninitialized
     /// plans are returned as `nullptr` so that callers can pair tables with their plans.
@@ -233,12 +224,6 @@ public:
     /// distribute the steps above them. Only call it when `getExpandableReads` returned a value; the child
     /// plans are moved out of this step, which the caller then replaces.
     QueryPlan expandForParallelReplicas();
-
-    /// Whether the plan-based parallel replicas may expand this read (see `expandForParallelReplicas`): the
-    /// settings allow it and `getExpandableReads` would say yes, without caching its answer. `false` means this
-    /// step is still in the plan when the second optimization pass runs; `true` only means it might not be,
-    /// because whether anything is distributed also depends on the rest of the plan. Creates the child plans.
-    bool mayBeExpandedForParallelReplicas(const std::function<bool(const ReadFromMergeTree &)> & can_ship_read);
 
     void addFilter(FilterDAGInfo filter);
 
@@ -311,8 +296,6 @@ private:
     {
         QueryPlan plan;
         QueryProcessingStage::Enum stage;
-        /// Set for a child aggregated by keys of other types than the `Merge` table.
-        bool forget_aggregation_buckets = false;
     };
 
     /// Answer of `getExpandableReads`, unset until it is asked for. The parallel-replicas pass asks first
@@ -320,9 +303,6 @@ private:
     /// inspects do not change in between. Assumes the same predicate on every call, which the single
     /// caller satisfies.
     std::optional<std::vector<StorageID>> expandable_reads;
-
-    /// The uncached computation behind `getExpandableReads` and `mayBeExpandedForParallelReplicas`.
-    std::vector<StorageID> computeExpandableReads(const std::function<bool(const ReadFromMergeTree &)> & can_ship_read);
 
     /// Store read plan for each child table.
     /// It's needed to guarantee lifetime for child steps to be the same as for this step (mainly for EXPLAIN PIPELINE).
@@ -356,13 +336,11 @@ private:
         const SelectQueryInfo & outer_query_info,
         SelectQueryInfo & modified_query_info,
         const StorageSnapshotPtr & snapshot,
-        const ColumnsDescription & merge_columns,
         const Aliases & aliases,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextPtr context,
         ChildPlan & child,
-        bool is_smallest_column_requested,
-        const Names & column_names_read);
+        bool is_smallest_column_requested);
 
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context) const;

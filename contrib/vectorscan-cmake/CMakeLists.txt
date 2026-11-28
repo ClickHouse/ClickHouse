@@ -37,8 +37,8 @@ set (SRCS
     "${LIBRARY_DIR}/src/fdr/fdr_confirm_compile.cpp"
     "${LIBRARY_DIR}/src/fdr/fdr_engine_description.cpp"
     "${LIBRARY_DIR}/src/fdr/flood_compile.cpp"
-    "${LIBRARY_DIR}/src/fdr/teddy.c"
-    "${LIBRARY_DIR}/src/fdr/teddy_avx2.c"
+    "${LIBRARY_DIR}/src/fdr/teddy.cpp"
+    "${LIBRARY_DIR}/src/fdr/teddy_fat.cpp"
     "${LIBRARY_DIR}/src/fdr/teddy_compile.cpp"
     "${LIBRARY_DIR}/src/fdr/teddy_engine_description.cpp"
 
@@ -238,10 +238,19 @@ set (SRCS
 # weird reasons different constants in the output.
 #
 # Also, please use upstream versions of colm and ragel, the packages in Ubuntu 22.04 seem to produce wrong output on ARM.
+#
+# The generated scanners read the input through `const char *` but compare it against `unsigned char` tables (the .rl files declare
+# `alphtype unsigned char`), so they must be compiled with `-funsigned-char`, as the original build system does, otherwise bytes >= 0x80
+# never match on platforms where `char` is signed.
 if (ARCH_AMD64)
     list (APPEND SRCS
         "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/amd64/Parser.cpp"
         "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/amd64/control_verbs.cpp"
+    )
+    set_source_files_properties(
+        "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/amd64/Parser.cpp"
+        "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/amd64/control_verbs.cpp"
+        COMPILE_FLAGS -funsigned-char
     )
 elseif (ARCH_AARCH64)
     list (APPEND SRCS
@@ -251,7 +260,7 @@ elseif (ARCH_AARCH64)
     set_source_files_properties(
         "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/aarch64/Parser.cpp"
         "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/aarch64/control_verbs.cpp"
-        COMPILE_FLAGS -Wno-c++11-narrowing
+        COMPILE_FLAGS "-funsigned-char -Wno-c++11-narrowing"
     )
 endif()
 

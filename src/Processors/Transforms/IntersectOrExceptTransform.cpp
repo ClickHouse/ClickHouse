@@ -284,7 +284,17 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
             counts_data->init(CountingSetVariants::chooseMethod(column_ptrs, key_sizes));
 
         auto & variants = *counts_data;
-        variants.callOnMethod([&](auto & method) { addToCounts(method, column_ptrs, num_rows, variants); });
+        switch (variants.type)
+        {
+            case CountingSetVariants::Type::EMPTY:
+                break;
+#define M(NAME) \
+    case CountingSetVariants::Type::NAME: \
+        addToCounts(*variants.NAME, column_ptrs, num_rows, variants); \
+        break;
+            APPLY_FOR_SET_VARIANTS(M)
+#undef M
+        }
 
         return;
     }
@@ -296,7 +306,17 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
         data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
     auto & data_set = *data;
-    data_set.callOnMethod([&](auto & method) { addToSet(method, column_ptrs, num_rows, data_set); });
+    switch (data->type)
+    {
+        case SetVariants::Type::EMPTY:
+            break;
+#define M(NAME) \
+    case SetVariants::Type::NAME: \
+        addToSet(*data_set.NAME, column_ptrs, num_rows, data_set); \
+        break;
+            APPLY_FOR_SET_VARIANTS(M)
+#undef M
+    }
 }
 
 
@@ -328,8 +348,17 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
             counts_data->init(CountingSetVariants::chooseMethod(column_ptrs, key_sizes));
 
         auto & variants = *counts_data;
-        new_rows_num = variants.callOnMethod(
-            [&](auto & method) { return filterWithCounts(method, column_ptrs, row_filter, num_rows, variants); });
+        switch (variants.type)
+        {
+            case CountingSetVariants::Type::EMPTY:
+                break;
+#define M(NAME) \
+    case CountingSetVariants::Type::NAME: \
+        new_rows_num = filterWithCounts(*variants.NAME, column_ptrs, row_filter, num_rows, variants); \
+        break;
+            APPLY_FOR_SET_VARIANTS(M)
+#undef M
+        }
     }
     else
     {
@@ -340,8 +369,18 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
             data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
         auto & data_set = *data;
-        new_rows_num = data_set.callOnMethod(
-            [&](auto & method) { return buildFilter(method, column_ptrs, row_filter, num_rows, data_set); });
+
+        switch (data->type)
+        {
+            case SetVariants::Type::EMPTY:
+                break;
+#define M(NAME) \
+    case SetVariants::Type::NAME: \
+        new_rows_num = buildFilter(*data_set.NAME, column_ptrs, row_filter, num_rows, data_set); \
+        break;
+                APPLY_FOR_SET_VARIANTS(M)
+#undef M
+        }
     }
 
     if (!new_rows_num)

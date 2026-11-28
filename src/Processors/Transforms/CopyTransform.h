@@ -19,8 +19,6 @@ public:
     String getName() const override { return "Copy"; }
     Status prepare() override;
 
-    bool requiresAllOutputsPushable() const override { return true; }
-
     InputPort & getInputPort() { return inputs.front(); }
 
 private:

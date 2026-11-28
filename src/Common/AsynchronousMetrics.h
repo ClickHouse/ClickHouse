@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Server/ServerType.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/MemoryStatisticsOS.h>
@@ -78,8 +77,6 @@ void applyAsynchronousMetricsKeyValuesMode(AsynchronousMetricValues & values, As
 struct ProtocolServerMetrics
 {
     String port_name;
-    /// `ServerType::Type::END` for servers with no protocol type of their own (Keeper listeners).
-    ServerType::Type protocol_type = ServerType::Type::END;
     size_t current_threads;
     size_t rejected_connections;
 };
@@ -193,6 +190,7 @@ private:
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_period TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_quota TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_max TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> cgroupcpuset TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_stat TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpuacct_stat TSA_GUARDED_BY(data_mutex);
 

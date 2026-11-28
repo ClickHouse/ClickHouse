@@ -24,8 +24,6 @@ struct ScatterByPartitionTransform : IProcessor
     Status prepare() override;
     void work() override;
 
-    bool requiresAllOutputsPushable() const override { return true; }
-
 private:
 
     void generateOutputChunks();

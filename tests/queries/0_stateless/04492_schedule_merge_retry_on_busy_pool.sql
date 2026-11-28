@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-shared-merge-tree, no-random-settings, no-random-merge-tree-settings, no-fasttest
+-- Tags: no-parallel, no-shared-merge-tree, no-random-settings, no-random-merge-tree-settings
 -- Tag no-parallel: uses a global failpoint
 -- Tag no-shared-merge-tree: SYSTEM SCHEDULE MERGE / SYNC MERGES require the 'Manual' merge selector
 -- Tag no-random-settings, no-random-merge-tree-settings: the test checks an exact resulting part name

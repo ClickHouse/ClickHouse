@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "服务器设置",
+  "group": "Server Settings",
   "pages": [
     "zh/reference/settings/server-settings/settings",
     "zh/reference/settings/server-settings/settings/access-control",
@@ -101,7 +101,6 @@
     "zh/reference/settings/server-settings/settings/query",
     "zh/reference/settings/server-settings/settings/query-cache-max",
     "zh/reference/settings/server-settings/settings/query-condition",
-    "zh/reference/settings/server-settings/settings/reader-executor",
     "zh/reference/settings/server-settings/settings/remote",
     "zh/reference/settings/server-settings/settings/replicated-fetches",
     "zh/reference/settings/server-settings/settings/s3",

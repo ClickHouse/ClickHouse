@@ -21,6 +21,7 @@
 
 #include <fmt/ranges.h>
 #include <filesystem>
+#include <optional>
 #include <ranges>
 
 namespace CurrentMetrics
@@ -217,6 +218,11 @@ bool DistributedAsyncInsertBatch::recoverBatch()
     }
     files.erase(files.begin(), first_existing_file);
 
+    /// The batch is sent with the `ClientInfo` of its first file. Older servers could put files of different
+    /// users (or originating hosts) into one batch, so a restored batch of mixed identities must not be resent
+    /// as a whole: it is dropped, and its files are batched again by identity like any other pending files.
+    std::optional<std::pair<String, String>> batch_identity;
+
     /// A missing file inside the surviving suffix cannot be recovered safely.
     for (const auto & file : files)
     {
@@ -234,6 +240,18 @@ bool DistributedAsyncInsertBatch::recoverBatch()
             {
                 total_rows += header.rows;
                 total_bytes += header.bytes;
+            }
+
+            auto identity = getRemoteAuthenticationIdentity(header.client_info);
+            if (!batch_identity)
+            {
+                batch_identity = std::move(identity);
+            }
+            else if (identity != *batch_identity)
+            {
+                LOG_WARNING(parent.log, "File {} has a different user or originating host than the first file of the batch, "
+                    "the files of the batch will be sent in new batches", file);
+                return false;
             }
         }
         catch (Exception & e)

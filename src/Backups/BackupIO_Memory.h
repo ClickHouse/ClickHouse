@@ -16,7 +16,7 @@ public:
 
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
-    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, std::optional<size_t> expected_file_size) override;
 
 private:
     std::shared_ptr<const BackupInMemory> backup_in_memory;

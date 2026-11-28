@@ -7,6 +7,10 @@ constexpr unsigned char resource_charset_zst[] =
 {
 #embed "../../contrib/nlp-data/charset.zst"
 };
+constexpr unsigned char resource_tonality_ru_zst[] =
+{
+#embed "../../contrib/nlp-data/tonality_ru.zst"
+};
 
 namespace DB
 {
@@ -25,6 +29,7 @@ FrequencyHolder & FrequencyHolder::getInstance()
 
 FrequencyHolder::FrequencyHolder()
 {
+    loadEmotionalDict();
     loadEncodingsFrequency();
 }
 
@@ -84,6 +89,44 @@ void FrequencyHolder::loadEncodingsFrequency()
         }
     }
     LOG_TRACE(log, "Charset frequencies was added, charsets count: {}", encodings_freq.size());
+}
+
+void FrequencyHolder::loadEmotionalDict()
+{
+    LoggerPtr log = getLogger("EmotionalDict");
+    LOG_TRACE(log, "Loading embedded emotional dictionary");
+
+    std::string_view resource(reinterpret_cast<const char *>(resource_tonality_ru_zst), std::size(resource_tonality_ru_zst));
+    if (resource.empty())
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no embedded emotional dictionary");
+
+    String line;
+    String word;
+    Float64 tonality = 0;
+    size_t count = 0;
+
+    auto buf = std::make_unique<ReadBufferFromMemory>(resource);
+    ZstdInflatingReadBuffer in(std::move(buf));
+
+    while (!in.eof())
+    {
+        readString(line, in);
+        in.ignore();
+
+        if (line.empty())
+            continue;
+
+        ReadBufferFromString buf_line(line);
+
+        readStringUntilWhitespace(word, buf_line);
+        buf_line.ignore();
+        readFloatTextPrecise(tonality, buf_line);
+
+        std::string_view ref{string_pool.insert(word.data(), word.size()), word.size()};
+        emotional_dict[ref] = tonality;
+        ++count;
+    }
+    LOG_TRACE(log, "Emotional dictionary was added. Word count: {}", std::to_string(count));
 }
 
 }

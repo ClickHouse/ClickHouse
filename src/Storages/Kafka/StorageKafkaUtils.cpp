@@ -13,13 +13,12 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/SecretArgumentsSpec.h>
-#include <Storages/Kafka/Kafka_fwd.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
+#include <Storages/Kafka/KafkaConfigLoader.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
@@ -126,6 +125,10 @@ void registerStorageKafka(StorageFactory & factory)
             &args.table_id,
             args.storage_def->settings))
         {
+            /// The named collection is checked every time, also when the definition is read back from metadata
+            /// (server startup, short `ATTACH`): the collection can change after the table is created.
+            KafkaConfigLoader::checkNamedCollection(*named_collection);
+
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
         }
@@ -369,12 +372,6 @@ void registerStorageKafka(StorageFactory & factory)
     factory.registerStorage(
         "Kafka",
         creator_fn,
-        SecretArgumentsSpec{
-            /// Kafka(named_collection, kafka_sasl_password = '...'); the legacy positional form carries no
-            /// secret and makes the collection name optional, so a named argument can be the first one.
-            .secret_settings = Kafka::SETTINGS_TO_HIDE,
-            .settings_as_arguments = true,
-        },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::KAFKA,
@@ -479,19 +476,6 @@ Note: Kafka brokers must be configured with `broker.rack` and `replica.selector.
 - `kafka_map_virtual_columns_on_write` — If enabled, columns with special names `_key`, `_timestamp`, `_headers.name` and `_headers.value` in the table schema are mapped to the corresponding Kafka message metadata on `INSERT` and are excluded from the message payload. See [Mapping columns to Kafka message metadata](#mapping-columns-to-kafka-message-metadata). Default: `false`.
 - `kafka_partition_shard_num` — The current shard number for static partition-to-shard affinity. Must be between 1 and `kafka_shard_count` inclusive. Partitions are assigned by the formula `partition_id % kafka_shard_count == kafka_partition_shard_num - 1`. Supports macro expansion (e.g., `'{shard}'`). Must be used together with `kafka_shard_count`. Only supported with StorageKafka2 (requires `kafka_keeper_path` and `kafka_replica_name`). Default: `''` (disabled).
 - `kafka_shard_count` — Total number of shards participating in consumption. Used together with `kafka_partition_shard_num` to statically assign partitions. Must be used together with `kafka_partition_shard_num`. Only supported with StorageKafka2. Default: `0` (disabled).
-
-## OAUTHBEARER/OIDC authentication {#oauthbearer-oidc-authentication}
-
-`OAUTHBEARER` authentication uses [librdkafka configuration properties](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md). Configure `sasl.oauthbearer.method`, `sasl.oauthbearer.client.id`, `sasl.oauthbearer.client.secret`, `sasl.oauthbearer.token.endpoint.url`, and `sasl.oauthbearer.scope` for the OIDC client credentials flow.
-
-When defining these properties in ClickHouse XML, replace periods with underscores. For example, use `<sasl_oauthbearer_client_id>` for `sasl.oauthbearer.client.id`.
-
-For `ENGINE = Kafka(named_collection)`, use two namespaces in the named collection:
-
-- Top-level `kafka_*` keys are Kafka table-engine settings, such as `kafka_security_protocol` and `kafka_sasl_mechanism`.
-- Keys nested under `<kafka>` are extended `librdkafka` settings, including the OIDC properties above.
-
-The global server `<kafka>` configuration is not merged when a named collection is used, so each collection must include all required OIDC properties. See [Kafka named collections](/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication) for a complete example.
 
 Examples:
 
@@ -644,6 +628,8 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
 ```
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
+
+A named collection created with `CREATE NAMED COLLECTION` accepts only the `librdkafka` properties on the [allowlist](https://github.com/ClickHouse/ClickHouse/blob/26.9/src/Storages/Kafka/KafkaConfigLoader.cpp), such as `security.protocol`, `sasl.username`, and `fetch.min.bytes`. If a table uses a collection with an unlisted property, such as `ssl.ca.location` or `sasl.kerberos.keytab`, ClickHouse returns `BAD_ARGUMENTS`. To use these properties, define the collection in the server configuration file. This restriction also applies to properties added with `ALTER NAMED COLLECTION` after the table was created. Instead of the path of a TLS file, a named collection created with SQL can contain the contents of the file: `ssl.key.pem`, `ssl.certificate.pem`, and `ssl.ca.pem`.
 
 ### AWS MSK IAM Authentication {#kafka-aws-msk-iam}
 

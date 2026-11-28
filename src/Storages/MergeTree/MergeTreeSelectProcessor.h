@@ -126,8 +126,7 @@ public:
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {},
-        LazyMaterializingRowsPtr lazy_materializing_rows_ = {},
-        const ColumnsDescription * columns_ = nullptr);
+        LazyMaterializingRowsPtr lazy_materializing_rows_ = {});
 
     String getName() const;
 
@@ -156,9 +155,7 @@ public:
         const IndexReadTasks & index_read_tasks,
         const ExpressionActionsSettings & actions_settings,
         bool enable_multiple_prewhere_read_steps,
-        bool force_short_circuit_execution,
-        bool read_ahead_prewhere_columns,
-        const ColumnsDescription * columns = nullptr);
+        bool force_short_circuit_execution);
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
@@ -184,10 +181,6 @@ private:
 
     const MergeTreeReaderSettings reader_settings;
     const MergeTreeReadTask::BlockSizeParams block_size_params;
-
-    /// Whether the PREWHERE holds the top-K `__topKFilter` as a conjunct and its query condition cache entry is
-    /// salted with the top-K plan, see `MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere`.
-    const bool prewhere_filters_by_top_k_threshold;
 
     /// Current task to read from.
     MergeTreeReadTaskPtr task;

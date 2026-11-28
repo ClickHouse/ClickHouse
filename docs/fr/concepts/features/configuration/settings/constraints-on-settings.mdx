@@ -8,13 +8,17 @@ title: 'Contraintes sur les paramètres'
 doc_type: 'reference'
 ---
 
-## Vue d’ensemble {#overview}
+<div id="overview">
+  ## Vue d’ensemble
+</div>
 
 Dans ClickHouse, les « contraintes sur les paramètres » désignent les limitations et les règles
 que vous pouvez leur définir. Ces contraintes permettent de préserver
 la stabilité, la sécurité et le comportement prévisible de votre base de données.
 
-## Définition des contraintes {#defining-constraints}
+<div id="defining-constraints">
+  ## Définition des contraintes
+</div>
 
 Les contraintes sur les paramètres peuvent être définies dans la section `profiles` du fichier de configuration `user.xml`.
 Elles empêchent les utilisateurs de modifier certains paramètres à l’aide de
@@ -60,7 +64,9 @@ Les contraintes sont définies comme suit :
 Si l&#39;utilisateur tente d&#39;enfreindre les contraintes, une exception est levée et le
 paramètre reste inchangé.
 
-## Types de contraintes {#types-of-constraints}
+<div id="types-of-constraints">
+  ## Types de contraintes
+</div>
 
 ClickHouse prend en charge plusieurs types de contraintes :
 
@@ -94,20 +100,9 @@ autrement, les paramètres ne peuvent pas être modifiés en mode `readonly=1`.
   ```
 </Note>
 
-### Ne rendez pas `readonly` modifiable en mode lecture seule {#readonly-changeable-in-readonly}
-
-<Warning>
-  Gardez `readonly` en dehors de la liste `changeable_in_readonly` dans chaque profil, y compris dans les profils que vous n&#39;affectez à personne : n&#39;importe quelle session peut sélectionner un profil par son nom.
-</Warning>
-
-Ne marquez pas `readonly` lui-même comme `changeable_in_readonly`. Si vous le faites, une session démarrée avec `readonly = 1` peut exécuter `SET readonly = 0` et retrouver ainsi la possibilité d&#39;exécuter les requêtes d&#39;écriture que ses privilèges existants autorisent déjà, à moins que la même contrainte n&#39;interdise également `0`.
-
-Ce point concerne chaque profil que vous définissez, et pas seulement ceux que vous affectez :
-
-* `SET profile` n&#39;est pas soumis à un contrôle d&#39;accès : n&#39;importe quelle session peut donc sélectionner n&#39;importe quel profil par son nom. Un profil reste accessible même si vous ne l&#39;affectez à personne, bien que les modifications qu&#39;il applique restent soumises aux contraintes déjà actives dans cette session.
-* En HTTP, les requêtes `GET` sont forcées à `readonly = 2` uniquement lorsque la valeur effective serait autrement `0`. Ainsi, un profil qui définit `readonly = 1` mais autorise aussi la modification de `readonly` en mode lecture seule réduit à néant cette protection, car une requête `GET` peut le repasser à `0` et écrire.
-
-## Plusieurs profils de contraintes {#multiple-constraint-profiles}
+<div id="multiple-constraint-profiles">
+  ## Plusieurs profils de contraintes
+</div>
 
 S&#39;il y a plusieurs profils actifs pour un utilisateur, les contraintes sont fusionnées.
 Le processus de fusion dépend de `settings_constraints_replace_previous` :
@@ -119,16 +114,22 @@ Le processus de fusion dépend de `settings_constraints_replace_previous` :
   chaque type de contrainte non défini est repris du profil précédent et que chaque
   type de contrainte défini est remplacé par la valeur du nouveau profil.
 
-## Mode lecture seule {#read-only}
+<div id="read-only">
+  ## Mode lecture seule
+</div>
 
-Le mode lecture seule est activé par le paramètre `readonly`, à ne pas confondre avec le type de
-contrainte `readonly`. Lorsque `readonly = 1`, un paramètre qui serait normalement refusé peut malgré tout être modifié si
-une contrainte `changeable_in_readonly` l&#39;autorise. Pour la signification des valeurs de ce paramètre, consultez la
-[référence des settings](/fr/reference/settings/session-settings/other#readonly) ; pour savoir quelles classes de requête
-chaque valeur autorise, et comment l&#39;HTTP interface la définit, consultez
-[les permissions pour les requêtes](/fr/concepts/features/configuration/settings/permissions-for-queries#readonly).
+Le mode lecture seule est activé par le paramètre `readonly`, à ne pas confondre
+avec le type de contrainte `readonly` :
 
-### Exemple {#example-read-only}
+* `readonly=0` : aucune restriction de lecture seule.
+* `readonly=1` : seules les requêtes en lecture sont autorisées et les paramètres ne peuvent pas être modifiés,
+  sauf si `changeable_in_readonly` est défini.
+* `readonly=2` : seules les requêtes en lecture sont autorisées, mais les paramètres peuvent être modifiés,
+  à l’exception du paramètre `readonly` lui-même.
+
+<div id="example-read-only">
+  ### Exemple
+</div>
 
 Supposons que `users.xml` contienne les lignes suivantes :
 
@@ -171,7 +172,9 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
   jusqu’à ce qu’elles soient explicitement remplacées pour ces utilisateurs.
 </Note>
 
-## Contraintes sur les paramètres de MergeTree {#constraints-on-merge-tree-settings}
+<div id="constraints-on-merge-tree-settings">
+  ## Contraintes sur les paramètres de MergeTree
+</div>
 
 Il est possible de définir des contraintes pour les [paramètres de MergeTree](/fr/reference/settings/merge-tree-settings).
 Ces contraintes sont appliquées lors de la création d&#39;une table utilisant le moteur MergeTree
@@ -180,7 +183,9 @@ ou lors de la modification de ses paramètres de stockage.
 Le nom d&#39;un paramètre de MergeTree doit être précédé du préfixe `merge_tree_` lorsqu&#39;il est
 référencé dans la section `<constraints>`.
 
-### Exemple {#example-mergetree}
+<div id="example-read-only">
+  ### Exemple
+</div>
 
 Vous pouvez interdire la création de nouvelles tables avec un `storage_policy` spécifié explicitement
 

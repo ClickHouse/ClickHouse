@@ -16,25 +16,33 @@ ClickHouse 是一个真正的面向列 DBMS。数据按列存储，并在执行�
 
 加速查询处理主要有两种不同的方法：向量化查询执行和运行时代码生成。后者会消除所有间接层和动态分派。这两种方法并没有绝对的优劣之分。运行时代码生成在融合多个操作时可能表现更好，因此能够充分利用 CPU 执行单元和管道。向量化查询执行的实用性可能略逊一筹，因为它涉及必须写入缓存再读回的临时向量。如果临时数据无法放入 L2 缓存，这就会成为问题。但向量化查询执行更容易利用 CPU 的 SIMD 能力。我们的一位朋友撰写的[研究论文](http://15721.courses.cs.cmu.edu/spring2016/papers/p5-sompolski.pdf)表明，最好将这两种方法结合起来。ClickHouse 使用向量化查询执行，并对运行时代码生成提供了有限的初步支持。
 
-## 列 {#columns}
+<div id="columns">
+  ## 列
+</div>
 
 `IColumn` 接口用于在内存中表示列 (准确地说，是列的数据块) 。该接口为实现各种关系运算符提供辅助方法。几乎所有操作都是不可变的：它们不会修改原始列，而是创建一个修改后的新列。例如，`IColumn :: filter` 方法接受一个过滤字节掩码，用于 `WHERE` 和 `HAVING` 关系运算符。其他示例包括：用于支持 `ORDER BY` 的 `IColumn :: permute` 方法，以及用于支持 `LIMIT` 的 `IColumn :: cut` 方法。
 
 各种 `IColumn` 实现 (`ColumnUInt8`、`ColumnString` 等) 负责列的内存布局。内存布局通常是连续数组。对于整数类型的列，它就是一个连续数组，类似 `std :: vector`。对于 `String` 和 `Array` 列，则由两个向量组成：一个用于存放连续排列的所有数组元素，另一个用于存放每个数组起始位置的偏移量。还有 `ColumnConst`，它在内存中只存储一个值，但看起来像一列。
 
-## Field {#field}
+<div id="field">
+  ## Field
+</div>
 
 不过，也可以处理单个值。要表示单个值，可以使用 `Field`。`Field` 只是 `UInt64`、`Int64`、`Float64`、`String` 和 `Array` 组成的一个可辨识联合。`IColumn` 提供了 `operator []` 方法，可将第 n 个值作为 `Field` 获取；还提供了 `insert` 方法，可将一个 `Field` 追加到列末尾。这些方法的效率都不高，因为它们需要处理表示单个值的临时 `Field` 对象。还有更高效的方法，例如 `insertFrom`、`insertRangeFrom` 等。
 
 `Field` 不包含足以表示表中特定数据类型的信息。例如，`UInt8`、`UInt16`、`UInt32` 和 `UInt64` 在 `Field` 中都表示为 `UInt64`。
 
-## 抽象泄漏 {#leaky-abstractions}
+<div id="leaky-abstractions">
+  ## 抽象泄漏
+</div>
 
 `IColumn` 提供了一些常见关系型数据转换的方法，但还不足以覆盖所有需求。例如，`ColumnUInt64` 没有用于计算两列之和的方法，`ColumnString` 也没有用于执行子串搜索的方法。这些大量的例程都在 `IColumn` 之外实现。
 
 针对列的各种函数，既可以通过使用 `IColumn` 的方法提取 `Field` 值，以一种通用但效率不高的方式来实现；也可以利用特定 `IColumn` 实现中数据的内部内存布局知识，以专门优化的方式来实现。具体做法是将函数转换到特定的 `IColumn` 类型，并直接处理其内部表示。例如，`ColumnUInt64` 有一个 `getData` 方法，会返回内部数组的引用，然后由单独的例程直接读取或填充该数组。我们引入“抽象泄漏”，是为了支持对各种例程进行高效的专门化实现。
 
-## 数据类型 {#data_types}
+<div id="data_types">
+  ## 数据类型
+</div>
 
 `IDataType` 负责序列化和反序列化，即以二进制或文本形式读取和写入列数据块或单个值。`IDataType` 与表中的数据类型直接对应。例如，有 `DataTypeUInt32`、`DataTypeDateTime`、`DataTypeString` 等。
 
@@ -44,7 +52,9 @@ ClickHouse 是一个真正的面向列 DBMS。数据按列存储，并在执行�
 
 `IDataType` 为各种数据格式提供辅助方法。例如，包括在可能需要加引号时序列化某个值、为 JSON 序列化某个值，以及将某个值序列化为 XML 格式的一部分等方法。它与数据格式并不存在直接的一一对应关系。例如，不同的数据格式 `Pretty` 和 `TabSeparated` 可以共用 `IDataType` 接口中的同一个 `serializeTextEscaped` 辅助方法。
 
-## Block {#block}
+<div id="block">
+  ## Block
+</div>
 
 `Block` 是一种容器，用于表示内存中表的一个子集 (数据块) 。它本质上就是一组三元组：`(IColumn, IDataType, column name)`。在执行查询时，数据是以 `Block` 为单位处理的。只要有一个 `Block`，我们就有数据 (存放在 `IColumn` 对象中) 、类型信息 (存放在 `IDataType` 中，它决定了如何处理该列) ，以及列名。这个列名既可以是表中的原始列名，也可以是为获取临时计算结果而指定的人工名称。
 
@@ -52,15 +62,21 @@ ClickHouse 是一个真正的面向列 DBMS。数据按列存储，并在执行�
 
 每个处理中的数据块都会创建一个对应的块。需要注意的是，对于同一类计算，不同块的列名和类型保持不变，变化的只有列数据。最好将块数据与块头分离，因为块较小时，复制 shared&#95;ptr 和列名所产生的临时字符串会带来较高的额外开销。
 
-## 处理器 {#processors}
+<div id="processors">
+  ## 处理器
+</div>
 
 请参见 [https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/IProcessor.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/IProcessor.h) 中的说明。
 
-## 格式 {#formats}
+<div id="formats">
+  ## 格式
+</div>
 
 数据格式由处理器实现。
 
-## I/O {#io}
+<div id="io">
+  ## I/O
+</div>
 
 对于面向字节的输入/输出，有 `ReadBuffer` 和 `WriteBuffer` 两个抽象类。它们用来代替 C++ 的 `iostream`。不用担心：任何成熟的 C++ 项目出于充分的理由，都会使用 `iostream` 之外的方案。
 
@@ -77,7 +93,9 @@ Read/WriteBuffer 只处理字节。`ReadHelpers` 和 `WriteHelpers` 头文件中
 这可以通过 `complete` 方法完成，它会把一个拉取式 `QueryPipeline` 转换成一个已完成的 `QueryPipeline`。
 在内部，`JSONRowOutputFormat` 会写入各种 JSON 分隔符，并调用 `IDataType::serializeTextJSON` 方法，将 `IColumn` 的引用和行号作为参数传入。因此，`IDataType::serializeTextJSON` 会调用 `WriteHelpers.h` 中的方法：例如，数值类型使用 `writeText`，而 `DataTypeString` 使用 `writeJSONString`。
 
-## 表 {#tables}
+<div id="tables">
+  ## 表
+</div>
 
 `IStorage` 接口表示表。该接口的不同实现对应不同的表引擎。例如 `StorageMergeTree`、`StorageMemory` 等。这些类的实例本身就是表。
 
@@ -101,13 +119,17 @@ Read/WriteBuffer 只处理字节。`ReadHelpers` 和 `WriteHelpers` 头文件中
 
 > `IStorage` 还会通过 `read` 方法返回 `QueryProcessingStage`，用于说明查询的哪些部分已经在存储内部完成计算。
 
-## 解析器 {#parsers}
+<div id="parsers">
+  ## 解析器
+</div>
 
 查询由手写的递归下降解析器进行解析。例如，`ParserSelectQuery` 只是递归调用底层解析器来解析查询的各个部分。解析器会生成 `AST`。`AST` 由节点构成，这些节点都是 `IAST` 的实例。
 
 > 由于历史原因，这里没有使用解析器生成器。
 
-## 解释器 {#interpreters}
+<div id="interpreters">
+  ## 解释器
+</div>
 
 解释器负责根据 AST 创建查询执行流水线。解释器有简单的，例如 `InterpreterExistsQuery` 和 `InterpreterDropQuery`；也有更复杂的，例如 `InterpreterSelectQuery`。
 
@@ -115,15 +137,17 @@ Read/WriteBuffer 只处理字节。`ReadHelpers` 和 `WriteHelpers` 头文件中
 处理器通过端口通信，并且可以有多个输入端口和多个输出端口。
 更详细的说明可参见 [src/Processors/IProcessor.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/IProcessor.h)。
 
-例如，解释 `SELECT` 查询后得到的是一个“拉取式” `QueryPipeline`，它带有一个特殊的输出端口，可用于读取结果集。
+例如，解释 `SELECT` 查询后得到的是一个“pulling” `QueryPipeline`，它带有一个特殊的输出端口，可用于读取结果集。
 解释 `INSERT` 查询后得到的是一个“pushing” `QueryPipeline`，它带有一个输入端口，可用于写入待插入的数据。
-而解释 `INSERT SELECT` 查询后得到的是一个“已完成的” `QueryPipeline`，它既没有输入也没有输出，但会同时将数据从 `SELECT` 复制到 `INSERT`。
+而解释 `INSERT SELECT` 查询后得到的是一个“completed” `QueryPipeline`，它既没有输入也没有输出，但会同时将数据从 `SELECT` 复制到 `INSERT`。
 
-`InterpreterSelectQueryAnalyzer` 负责解释 `SELECT` 查询。它在 `AST` 和 `QueryPipeline` 之间引入了一个名为 `QueryTree` 的额外抽象层。自 `24.3` 版本起它成为默认实现；自 `26.9` 版本起，`enable_analyzer` 设置被废弃并固定为 `1`，它成为查询唯一可以选用的分析实现；自 `26.10` 版本起，另一种实现被移除，它成为唯一的查询分析实现。在此之前，`InterpreterSelectQuery` 借助 `ExpressionAnalyzer` 和 `ExpressionActions` 机制完成同样的工作，`enable_analyzer` 则用于在两者之间进行选择。
+`InterpreterSelectQuery` 使用 `ExpressionAnalyzer` 和 `ExpressionActions` 机制进行查询分析和转换。大多数基于规则的查询优化都在这里完成。`ExpressionAnalyzer` 相当混乱，应该重写：应将各种查询转换和优化提取到单独的类中，以支持对查询进行模块化转换。
 
-`ExpressionAnalyzer` 和 `ExpressionActions` 仍用于独立表达式 —— 例如生存时间 (TTL) 表达式、sharding key、列默认值、PROJECTION —— 这些表达式在没有外层查询的情况下编译。
+为了解决解释器中现有的问题，开发了新的 `InterpreterSelectQueryAnalyzer`。这是 `InterpreterSelectQuery` 的新版本，不使用 `ExpressionAnalyzer`，并在 `AST` 和 `QueryPipeline` 之间引入了一个名为 `QueryTree` 的额外抽象层。它已经完全可以用于生产环境；不过为稳妥起见，也可以将 `enable_analyzer` 设置为 `false` 来关闭它。
 
-## 函数 {#functions}
+<div id="functions">
+  ## 函数
+</div>
 
 函数分为普通函数和聚合函数。有关聚合函数，请参见下一节。
 
@@ -139,7 +163,9 @@ ClickHouse 采用强类型，因此不存在隐式类型转换。如果某个函
 
 由于采用向量化查询执行，函数不会进行短路求值。例如，如果你写 `WHERE f(x) AND g(y)`，那么两边都会被计算，即使对于 `f(x)` 为零的行也是如此 (除非 `f(x)` 是值为零的常量表达式) 。但如果 `f(x)` 条件的选择性很高，并且计算 `f(x)` 的开销远小于 `g(y)`，那么最好实现多遍计算。它会先计算 `f(x)`，然后根据结果过滤列，接着仅对更小、经过过滤的数据块计算 `g(y)`。
 
-## 聚合函数 {#aggregate-functions}
+<div id="aggregate-functions">
+  ## 聚合函数
+</div>
 
 聚合函数是有状态的函数。它们会将传入的值累积到某种状态中，并允许你从该状态中获取结果。它们由 `IAggregateFunction` interface 管理。状态可以非常简单 (`AggregateFunctionCount` 的状态只是一个 `UInt64` 值) ，也可以相当复杂 (`AggregateFunctionUniqCombined` 的状态由线性数组、哈希表以及 `HyperLogLog` 概率数据结构组合而成) 。
 
@@ -149,7 +175,9 @@ ClickHouse 采用强类型，因此不存在隐式类型转换。如果某个函
 
 > 聚合函数状态的序列化数据格式目前还没有版本控制。如果聚合状态只是临时存储，这没有问题。但我们有用于增量聚合的 `AggregatingMergeTree` 表引擎，而且它已经被用于生产环境。这就是为什么今后更改任何聚合函数的序列化格式时，都必须保证向后兼容。
 
-## 服务器 {#server}
+<div id="server">
+  ## 服务器
+</div>
 
 服务器实现了几种不同的接口：
 
@@ -167,7 +195,9 @@ ClickHouse 采用强类型，因此不存在隐式类型转换。如果某个函
   对于大多数外部应用程序，我们建议使用 HTTP 接口，因为它简单且易于使用。TCP 协议与内部数据结构耦合得更紧密：它使用内部格式传递数据块，并使用自定义帧格式处理压缩数据。
 </Note>
 
-## 配置 {#configuration}
+<div id="configuration">
+  ## 配置
+</div>
 
 ClickHouse Server 基于 POCO C++ Libraries，并使用 `Poco::Util::AbstractConfiguration` 表示其配置。配置由 `Poco::Util::ServerApplication` 类持有；`DaemonBase` 类继承自该类，而 `DB::Server` 类又继承自 `DaemonBase`，并实现了 clickhouse-server 本身。因此，可通过 `ServerApplication::config()` 方法访问配置。
 
@@ -175,7 +205,9 @@ ClickHouse Server 基于 POCO C++ Libraries，并使用 `Poco::Util::AbstractCon
 
 对于 `Server` 之外的查询和子系统，可通过 `Context::getConfigRef()` 方法访问配置。每个能够在不重启服务器的情况下重新加载其配置的子系统，都应在 `Server::main()` 方法的 reload callback 中注册自己。请注意，如果新配置存在错误，大多数子系统会忽略该新配置、记录警告消息，并继续使用之前已加载的配置。由于 `AbstractConfiguration` 的特性，无法传递对特定节的引用，因此通常改用 `String config_prefix`。
 
-### 上下文 {#context}
+<div id="context">
+  ### 上下文
+</div>
 
 ClickHouse 通过上下文层级来管理设置：
 
@@ -197,7 +229,9 @@ ClickHouse 通过上下文层级来管理设置：
   后台操作可通过全局设置和 &#39;background&#39; profile 设置进行配置；在这种情况下，会话设置和查询设置不会生效。如果未提供显式配置，则会继承全局上下文中的配置。此类操作的默认 profile 名称为 &#39;background&#39;，可通过 `background_profile` 服务器级设置覆盖。
 </Note>
 
-## 线程与作业 {#threads-and-jobs}
+<div id="threads-and-jobs">
+  ## 线程与作业
+</div>
 
 为了执行查询和处理一些附带活动，ClickHouse 会从某个线程池中分配线程，以避免频繁创建和销毁线程。系统中有几个线程池，会根据作业的用途和结构来选择：
 
@@ -227,7 +261,9 @@ IO 线程池实现为一个普通的 `ThreadPool`，可通过 `IOThreadPool::get
 
 如果线程与查询执行相关，那么附加到 `ThreadStatus` 上最重要的内容就是查询上下文 `ContextPtr`。每个查询在 server 池中都有自己的主线程。主线程通过持有一个 `ThreadStatus::QueryScope query_scope(query_context)` 对象来完成附加。主线程还会创建一个由 `ThreadGroupStatus` 对象表示的线程组。在该查询执行期间分配的每个额外线程，都会通过调用 `CurrentThread::attachTo(thread_group)` 附加到其线程组。线程组用于聚合 profile event 计数器，并跟踪专用于单个任务的所有线程的内存消耗 (更多信息请参见 `MemoryTracker` 和 `ProfileEvents::Counters` 类) 。
 
-## 并发控制 {#concurrency-control}
+<div id="concurrency-control">
+  ## 并发控制
+</div>
 
 可并行化的查询会使用 `max_threads` 设置来限制自身。这个设置的默认值经过专门设计，使单个查询能够尽可能高效地利用所有 CPU 核心。但如果同时有多个并发查询，并且它们都使用默认的 `max_threads` 值，会发生什么呢？这时，这些查询就会共享 CPU 资源。操作系统会通过不断切换线程来保证公平性，但这会带来一定的性能损耗。`ConcurrencyControl` 有助于应对这种损耗，并避免分配过多线程。配置项 `concurrent_threads_soft_limit_num` 用于限制在开始施加某种 CPU 压力之前，可分配的并发线程数量。
 
@@ -263,7 +299,9 @@ stateDiagram-v2
 
 该 API 允许查询至少以一个线程启动 (在 CPU 压力较大时) ，并在之后扩展到 `max_threads`。
 
-## 分布式查询执行 {#distributed-query-execution}
+<div id="distributed-query-execution">
+  ## 分布式查询执行
+</div>
 
 集群中的服务器大多彼此独立。你可以在集群中的一台或全部服务器上创建 `Distributed` 表。`Distributed` 表本身不存储数据——它只是为集群中多个节点上的所有本地表提供一个“视图”。当你从 `Distributed` 表执行 SELECT 时，它会重写该查询，根据负载均衡设置选择远程节点，并将查询发送到这些节点。`Distributed` 表会请求远程服务器将查询处理到一个阶段，使来自不同服务器的中间结果能够合并。然后，它再接收这些中间结果并将其合并。分布式表会尽可能把更多工作分配给远程服务器，从而减少通过网络传输的中间数据量。
 
@@ -271,7 +309,9 @@ stateDiagram-v2
 
 分布式查询执行没有全局查询计划。每个节点都只有负责自身那部分任务的本地查询计划。我们目前只有简单的单遍分布式查询执行：向远程节点发送查询，然后合并结果。但对于包含高基数 `GROUP BY`，或需要为 JOIN 维护大量临时数据的复杂查询，这种方式并不可行。在这种情况下，我们需要在服务器之间“重新分发”数据，这就需要额外的协调。ClickHouse 目前不支持这种查询执行方式，我们还需要继续改进这方面的能力。
 
-## Merge tree {#merge-tree}
+<div id="merge-tree">
+  ## Merge tree
+</div>
 
 `MergeTree` 是一个支持按主键建立索引的存储引擎家族。主键可以是由列或表达式组成的任意元组。`MergeTree` 表中的数据以 &quot;parts&quot; 的形式存储。每个 part 都按主键顺序存储数据，因此数据会按照主键元组的字典序排列。表中的所有列都分别存储在这些 part 内独立的 `column.bin` 文件中。文件由压缩后的块组成。每个块通常包含 64 KB 到 1 MB 的未压缩数据，具体取决于平均值大小。块中的列值是连续存放的。每一列中的值顺序都相同 (顺序由主键定义) ，因此当你遍历多列时，就能得到对应行的值。
 
@@ -285,7 +325,9 @@ stateDiagram-v2
 
 有一些 MergeTree 引擎会在后台合并期间执行额外工作。示例包括 `CollapsingMergeTree` 和 `AggregatingMergeTree`。这可以看作是对更新操作的一种特殊支持。请记住，这些并不是真正的更新，因为用户通常无法控制后台合并何时执行，而且 `MergeTree` 表中的数据几乎总是以多个 part 的形式存储，而不是处于完全合并后的状态。
 
-## 复制 {#replication}
+<div id="replication">
+  ## 复制
+</div>
 
 ClickHouse 中的复制可以按表配置。你可以在同一台服务器上同时拥有一些复制表和一些非复制表。你也可以对不同的表采用不同的复制方式，例如一张表使用双副本复制，另一张表使用三副本复制。
 

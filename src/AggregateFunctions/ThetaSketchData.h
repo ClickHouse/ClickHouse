@@ -170,6 +170,45 @@ public:
         }
     }
 
+    /// The number of leading bytes `compact_theta_sketch_parser::parse` reads before it checks that the
+    /// buffer holds them, derived from the first 8 bytes - the only ones it does check for up front. The
+    /// offsets are the ones of `compact_theta_sketch_parser`; every serial version and preamble size not
+    /// listed here is either checked by the parser itself before each read or rejected by it from the
+    /// first 8 bytes.
+    static size_t headerBytesReadBeforeSizeCheck(const uint8_t * data, size_t size)
+    {
+        static constexpr size_t header_size = 8;
+        if (size < header_size)
+            return header_size;
+
+        const uint8_t preamble_longs = data[0];
+        const uint8_t serial_version = data[1];
+        const uint8_t flags = data[5];
+        static constexpr uint8_t is_empty_flag = 1 << 2;
+
+        switch (serial_version)
+        {
+            /// `num_entries` at offset 8 and `theta` at offset 16, unconditionally.
+            case 1:
+                return 24;
+            /// `num_entries` at offset 8 for two preamble longs, `theta` at offset 16 as well for three.
+            case 2:
+                if (preamble_longs == 2)
+                    return 16;
+                if (preamble_longs == 3)
+                    return 24;
+                return header_size;
+            /// `num_entries` at offset 8 unless the sketch is flagged empty; a single-entry sketch
+            /// (one preamble long) and `theta` (more than two) are checked by the parser itself.
+            case 3:
+                if ((flags & is_empty_flag) || preamble_longs == 1 || preamble_longs > 2)
+                    return header_size;
+                return 16;
+            default:
+                return header_size;
+        }
+    }
+
     /// You can only call for an empty object.
     void read(DB::ReadBuffer & in)
     {
@@ -177,6 +216,28 @@ public:
         readVectorBinary(bytes, in);
         if (bytes.empty())
             return;
+
+        /** `compact_theta_sketch_parser::parse` verifies that the buffer holds 8 bytes and then reads
+          * header fields that lie beyond them before it checks the size again: `num_entries` at offset
+          * 8 for serial versions 1, 2 and 3, and `theta` at offset 16 for serial versions 1 and 2. A
+          * state shorter than that - which any `CAST` from a string can produce - is therefore read
+          * past its end, and the out-of-bounds value decides the size the parser then demands.
+          *
+          * Require up front the bytes the parser reads before it validates anything, exactly as the
+          * `std::istream` deserializer of `datasketches` has to consume them before it can decide
+          * anything about the sketch. A state that stops short of them is refused the same way the
+          * parser refuses one that stops short of its entries, and the parser then never reads past
+          * the buffer. The upstream fix is to move each `check_memory_size` before the field it
+          * guards; this keeps the read in bounds for every version of `datasketches-cpp` this
+          * repository pulls in.
+          */
+        const size_t required_size = headerBytesReadBeforeSizeCheck(bytes.data(), bytes.size());
+        if (bytes.size() < required_size)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Cannot deserialize Theta sketch state: at least {} bytes expected, actual {}",
+                required_size,
+                bytes.size());
 
         try
         {

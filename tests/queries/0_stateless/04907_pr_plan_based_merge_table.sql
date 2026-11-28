@@ -1,4 +1,3 @@
--- Tags: no-parallel, no-fasttest
 -- Reading from a `Merge` table with plan-based parallel replicas. `ReadFromMerge` is opaque to the
 -- parallel-replicas plan transformation (it unites the pipelines of its per-table subplans, not their
 -- plans), so it is first expanded into a plan-level union of the underlying `ReadFromMergeTree` reads.

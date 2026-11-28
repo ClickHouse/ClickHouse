@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Context.h>
@@ -36,6 +37,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace
@@ -70,15 +72,6 @@ namespace
 
             res_matchers.emplace_back(std::move(res_matcher));
         }
-
-        /// RemoteRead matchers are not PromQL text, and the protocol permits matcher sets
-        /// such as job=~".*" that match an empty label value. TimeSeries rows always have
-        /// a non-empty metric name, so preserve that invariant when the matchers are later
-        /// serialized to PromQL and reparsed by timeSeriesSelector.
-        res_matchers.emplace_back(PrometheusQueryTree::Matcher{
-            .label_name = "__name__",
-            .label_value = "",
-            .matcher_type = PrometheusQueryTree::MatcherType::NE});
 
         return PrometheusQueryTree{std::move(instant_selector)};
     }
@@ -172,7 +165,7 @@ namespace
 
         /// The second column contains tuples (timestamp, value).
         /// These tuples are already sorted by timestamp.
-        /// The type of the second column is Array(Tuple(timestamp_data_type, value_data_type)).
+        /// The type of the second column is Array(Tuple(timestamp_data_type, scalar_data_type)).
         const auto & time_series_column = checkAndGetColumn<ColumnArray>(*block.getByName(TimeSeriesColumnNames::Samples).column);
         const auto & time_series_offsets = time_series_column.getOffsets();
         const auto & timestamp_value_tuples = checkAndGetColumn<ColumnTuple>(time_series_column.getData());
@@ -243,8 +236,18 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
               time_series_storage_id.getNameForLogs(), select_query->formatForLogging());
 
     auto context = getContext();
-    InterpreterSelectQueryAnalyzer interpreter(select_query, context, SelectQueryOptions{});
-    BlockIO io = interpreter.execute();
+    BlockIO io;
+    std::optional<InterpreterSelectQuery> interpreter_holder;
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        InterpreterSelectQueryAnalyzer interpreter(select_query, context, SelectQueryOptions{});
+        io = interpreter.execute();
+    }
+    else
+    {
+        interpreter_holder.emplace(select_query, context, SelectQueryOptions{});
+        io = interpreter_holder->execute();
+    }
     PullingPipelineExecutor executor(io.pipeline);
 
     Block block;

@@ -1,4 +1,3 @@
--- Tags: no-parallel, no-fasttest
 -- The query shapes a `Merge` table can be read with, under plan-based parallel replicas: the `merge` table
 -- function, a filter on the `_table` virtual column, a query without aggregation, a query reading in order
 -- with a limit, and the shapes which are not expanded and stay on a single replica (`FINAL`, a child which

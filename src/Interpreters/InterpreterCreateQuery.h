@@ -79,7 +79,7 @@ public:
         is_restore_from_backup = is_restore_from_backup_;
     }
 
-    static DataTypePtr getColumnType(const ASTColumnDeclaration & col_decl, bool make_columns_nullable, bool pin_current_state_version);
+    static DataTypePtr getColumnType(const ASTColumnDeclaration & col_decl, LoadingStrictnessLevel mode, bool make_columns_nullable);
 
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
@@ -92,17 +92,15 @@ public:
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
 
-    static String getDatabaseDefaultTableEngineName(const ASTCreateQuery & create, ContextPtr local_context);
+    /// The grant needed to create a table from the table function, besides `CREATE TABLE`: `TABLE ENGINE` on its engine
+    /// when the engine has a source, or `READ` and `WRITE` on the source of a function that has no engine.
+    /// A definition that cannot be a table is refused.
+    static std::optional<AccessRightsElement> getRequiredAccessOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context);
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
 
     /// Check access right, validate definer statement and replace `CURRENT USER` with actual name.
     static void processSQLSecurityOption(ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE);
-
-    /// Remove transaction metadata files (txn_version.txt and txn_version.txt.tmp) from all parts for a table.
-    /// Both routes converting a table to a replicated engine call it: `ATTACH TABLE ... AS REPLICATED` and the
-    /// `convert_to_replicated` flag `DatabaseOrdinary` acts upon while loading the table.
-    static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
 
 private:
     struct TableProperties
@@ -120,9 +118,19 @@ private:
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode);
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
-    void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties);
+    void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
+
+    /// The part of `getRequiredAccess` for settings that send the table's data elsewhere, checked again once
+    /// `setEngine` has resolved an engine inherited through `AS`, which `getRequiredAccess` cannot see.
+    void checkExportAccess(const ASTCreateQuery & create) const;
+
+    /// A `Dictionary` table, including the inner table of a materialized view and a table created `AS dictionary(...)`,
+    /// needs access to the dictionary it reads, see `StorageDictionary::checkDictionaryAccess`. Checked here, while the
+    /// query still runs as the user: `Replicated` and `ON CLUSTER` replays run with full access, and so does the deferred
+    /// creation of a table function with an explicit column list. Replaces the dictionary name argument with the evaluated name.
+    void checkDictionaryEngineAccess(ASTCreateQuery & create) const;
 
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
     bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);
@@ -196,6 +204,9 @@ private:
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
 
     void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
+
+    /// Remove transaction metadata files (txn_version.txt and txn_version.txt.tmp) from all parts for a table.
+    static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
 
     void throwIfTooManyEntities(ASTCreateQuery & create) const;
 #if CLICKHOUSE_CLOUD

@@ -173,14 +173,13 @@ void CSVFormatReader::skipRow()
             if (*pos == '\r')
             {
                 ++istr.position();
-                /// `\r\n` is a single line ending even if a bare `\r` is allowed, as in `skipEndOfLine`.
-                if (!istr.eof() && *istr.position() == '\n')
-                {
-                    ++istr.position();
-                    return;
-                }
                 if (format_settings.csv.allow_cr_end_of_line)
                     return;
+                if (!istr.eof() && *pos == '\n')
+                {
+                    ++pos;
+                    return;
+                }
             }
         }
     }
@@ -356,24 +355,14 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
     return true;
 }
 
-void CSVFormatReader::setDataTypes(const DataTypes & types)
-{
-    skip_whitespaces_before_field.resize(types.size());
-    for (size_t i = 0; i != types.size(); ++i)
-        skip_whitespaces_before_field[i]
-            = format_settings.csv.trim_whitespaces || !isStringOrFixedString(removeNullable(types[i]));
-}
-
 bool CSVFormatReader::readField(
     IColumn & column,
     const DataTypePtr & type,
     const SerializationPtr & serialization,
     bool is_last_file_column,
-    const String & /*column_name*/,
-    size_t column_index)
+    const String & /*column_name*/)
 {
-    chassert(column_index < skip_whitespaces_before_field.size());
-    if (skip_whitespaces_before_field[column_index]) [[likely]]
+    if (format_settings.csv.trim_whitespaces || !isStringOrFixedString(removeNullable(type))) [[likely]]
         skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
 
     const bool at_delimiter = !buf->eof() && *buf->position() == format_settings.csv.delimiter;

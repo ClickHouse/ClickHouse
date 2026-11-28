@@ -296,6 +296,40 @@ TEST(StorageAzureConfiguration, AddStructureAndFormatTooManyArgs)
         "Expected 3 to");
 }
 
+/// Distributed query preparation rewrites the args; extra_credentials must be skipped and kept.
+TEST(StorageAzureConfiguration, AddStructureAndFormatKeepsExtraCredentials)
+{
+    std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1', 'test_container', 'test_blob.csv', extra_credentials(client_id='test_client_id', tenant_id='test_tenant_id'))";
+
+    ASTs engine_args = getEngineArgs(query);
+    StorageAzureConfigurationFriend conf;
+    conf.addStructureAndFormatToArgsIfNeeded(engine_args, "a Int32", "Parquet", Context::getGlobalContextInstance(), /*with_structure=*/true);
+
+    /// (url, container, blobpath, format, compression, structure, extra_credentials)
+    ASSERT_EQ(engine_args.size(), 7u);
+    EXPECT_EQ(engine_args[3]->as<ASTLiteral>()->value.safeGet<String>(), "Parquet");
+    EXPECT_EQ(engine_args[5]->as<ASTLiteral>()->value.safeGet<String>(), "a Int32");
+    const auto * credentials = engine_args.back()->as<ASTFunction>();
+    ASSERT_TRUE(credentials);
+    EXPECT_EQ(credentials->name, "extra_credentials");
+}
+
+TEST(StorageAzureConfiguration, AddStructureAndFormatKeepsKeyValueArgumentsAndExtraCredentials)
+{
+    std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1', 'test_container', 'test_blob.csv', extra_credentials(client_id='test_client_id', tenant_id='test_tenant_id'), partition_strategy = 'none')";
+
+    ASTs engine_args = getEngineArgs(query);
+    StorageAzureConfigurationFriend conf;
+    conf.addStructureAndFormatToArgsIfNeeded(engine_args, "a Int32", "Parquet", Context::getGlobalContextInstance(), /*with_structure=*/true);
+
+    /// (url, container, blobpath, format, compression, structure, partition_strategy = 'none', extra_credentials)
+    ASSERT_EQ(engine_args.size(), 8u);
+    EXPECT_EQ(engine_args[5]->as<ASTLiteral>()->value.safeGet<String>(), "a Int32");
+    EXPECT_EQ(engine_args[6]->formatWithSecretsOneLine(), "partition_strategy = 'none'");
+    const auto * credentials = engine_args[7]->as<ASTFunction>();
+    ASSERT_TRUE(credentials);
+    EXPECT_EQ(credentials->name, "extra_credentials");
+}
 }
 
 #endif

@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "세션 설정",
+  "group": "Session Settings",
   "pages": [
     "ko/reference/settings/session-settings/additional",
     "ko/reference/settings/session-settings/aggregate",

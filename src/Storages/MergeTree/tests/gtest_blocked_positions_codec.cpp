@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
+#include <Storages/MergeTree/TextIndexPositionData.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -15,14 +16,22 @@ namespace
 
 using PerDocPositions = std::map<uint32_t, std::vector<uint32_t>>;
 
-std::string encodeToString(const PerDocPositions & docs)
+/// Reference model -> the writer's accumulation form.
+std::vector<DB::RoaringishEntry> toEntries(const PerDocPositions & docs)
 {
-    DB::WriteBufferFromOwnString out;
     DB::PositionListBuilder builder;
     for (const auto & [doc, positions] : docs)
         for (uint32_t position : positions)
             builder.add(doc, position);
-    builder.finalize(out);
+    builder.finalizeOrdering();
+    return builder.getEntries();
+}
+
+std::string encodeToString(const PerDocPositions & docs)
+{
+    DB::WriteBufferFromOwnString out;
+    auto entries = toEntries(docs);
+    TextIndexBlockedPositionsCodec::encode(std::span<const DB::RoaringishEntry>(entries.data(), entries.size()), out);
     return out.str();
 }
 
@@ -83,7 +92,7 @@ TEST(BlockedPositionsCodec, SingleDocSinglePosition)
 
 TEST(BlockedPositionsCodec, SingleDocManyPositions)
 {
-    /// Produces a multi-byte frequency varint.
+    /// Spans several roaringish groups and produces a multi-byte frequency varint.
     std::vector<uint32_t> positions;
     for (uint32_t k = 0; k < 300; ++k)
         positions.push_back(k * 37);

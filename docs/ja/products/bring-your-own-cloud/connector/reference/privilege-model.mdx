@@ -1,59 +1,42 @@
 ---
 title: '権限モデル'
 sidebarTitle: '権限モデル'
-description: 'ClickHouse Connector に何ができて何ができないのかを正確に解説します。アイデンティティ、送信接続、ClickHouse の grants、Kubernetes RBAC、クラウドへのアクセス、アトリビューション、データ最小化について説明します'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'privilege', 'security', 'managed mode', 'executor']
+description: 'ClickHouse Connector ができることとできないこと：アウトバウンド接続、ClickHouse の権限、Kubernetes RBAC、アクションの帰属、データ最小化'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'コネクタ', '権限', 'security']
 doc_type: 'reference'
 ---
 
-import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ja/components/Image.jsx";
+このページでは、ClickHouse Connector が確立するすべての接続、保持する正確な権限、構造上実行できない操作、およびすべてのアクションの帰属について説明します。各要素の連携方法については、[architecture](/ja/products/bring-your-own-cloud/connector/architecture)を参照してください。
 
-<PrivatePreviewBadge />
+<div id="what-the-connector-can-do">
+  ## コネクタでできること
+</div>
 
-このページは ClickHouse Connector のセキュリティリファレンスです。アイデンティティ、接続、正確な権限、構造上の制限、そして各操作がどのように帰属されるかについて説明します。各要素がどのように組み合わさるかについては、[アーキテクチャ](/ja/products/bring-your-own-cloud/connector/architecture) を参照してください。
+<div id="outbound-connections">
+  ### アウトバウンド接続
+</div>
 
-## アイデンティティ {#identities}
+コネクタが確立する接続の完全な一覧を以下に示します。いずれもお客様の環境内から発信されます。
 
-<Image img="/images/cloud/reference/byoc-connector-identity-model.svg" size="lg" alt="ClickHouse Connector identity model" />
+| 宛先                               | プロトコル                                  | 目的                                                                                                                                                                       |
+| -------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| お客様の組織のコネクタ API エンドポイント          | mTLS を使用する HTTPS (すべてのリクエストに HMAC 署名)  | `POST /v1/metrics`、`/v1/self-metrics`、`/v1/status`、`/v1/instance/sync`、`/v1/infra/sync`、`/v1/backup/sync`、`/v1/pcm/cert/renew`                                           |
+| お客様の組織のコネクタ API エンドポイント          | アウトバウンド WebSocket、`/v1/commands/ws`    | サポートセッションの状態に応じて有効化されるトラブルシューターのコマンドチャネル                                                                                                                          |
+| お客様の組織の登録エンドポイント                 | HTTPS (登録トークンまたは HMAC、mTLS なし)         | インストール時のトークン引き換えおよび証明書署名 (`/v1/pcm/cert/sign`)                                                                                                                           |
+| お客様の ClickHouse インスタンス           | ClickHouse ネイティブプロトコル                  | `pcm_scraper` および `pcm_troubleshooter` として実行する読み取り専用クエリと、スクレイパーのログフラッシュステートメント ([権限](#clickhouse-grants)を参照)                                                           |
+| Kubernetes API サーバー              | HTTPS                                  | ネームスペーススコープの読み取りと ServiceAccount トークンリクエスト (いずれのターゲットでも実行) 。更新された証明書を永続化するため、コネクタ自身の mTLS Secret を完全一致の名前で読み取り・更新 (Kubernetes インストールのみ。VM では更新内容をローカルの TLS ファイルに書き込みます)  |
+| お客様のアイデンティティプロバイダーの JWKS エンドポイント | HTTPS                                  | セッションゲートウェイが有効な場合に限り、オペレータートークンを検証                                                                                                                                       |
 
-* **コネクタの mTLS クライアント証明書**は、組織 ID をコモンネームとして持ち、すべてのデーモンをコネクタエンドポイントに対して認証します。`clicklink clctl instances create` も、エンドポイントを呼び出す際に同じ証明書と HMAC キーを使用します。
-* **`pcm_scraper` と `pcm_troubleshooter`** は、scraper と troubleshooter が接続する際に使用する読み取り専用の ClickHouse ユーザーです。executor には ClickHouse ユーザーがありません。
-* **Troubleshooter の ServiceAccount** は、プロビジョニング済みのデプロイメントごとに 1 つ存在し、サポートセッションで利用できる読み取り専用の Kubernetes ビューを提供します。
-* **`pcm-executor`** は、マネージドサービスのライフサイクルを管理する executor の Kubernetes ServiceAccount です。ValidatingAdmissionPolicy により、その書き込みはサービスのネームスペースに限定されます。
-* **`pcm-platform`** は、プラットフォーム更新に使用される executor のアイデンティティです。`clicklink clctl platform approve` を実行すると有効期間 2 時間のトークンが発行され、自動更新されることはありません。承認と承認の間、executor はプラットフォーム層への書き込みアクセスを持ちません。
-* **サービスごとの IAM ロール** (デフォルトでは `CH-S3-<service>-<region>-00-Role`) は、`clicklink clctl executor prepare` がお客様の認証情報を用いて作成します。このロールは当該サービスのデータおよびバックアップ用バケットにスコープが限定され、当該サービスの Kubernetes ServiceAccount からのみ信頼されるため、executor も ClickHouse もこれを assume できません。
-* **コネクタ EC2 VM のインスタンスプロファイル**は、プラットフォームへの直接アクセスのために、チャートのログインとイメージチェックの両方で、お客様の環境の読み取り専用 ECR プラーロールを assume します。承認 CLI も同じインスタンスプロファイルの経路を使用します。workstation の AWS プロファイルや SSO 認証情報がこれを置き換えることはありません。その他の ECR チャートレジストリでは、ambient な AWS 認証情報が使用されます。イメージのプルは、お客様のノード上でそれぞれのプルロールのもとで実行されます。executor は、お客様のバケットや IAM に対する認証情報を一切保持せず、S3 や IAM の呼び出しも行いません。[レジストリ認証情報](/ja/products/bring-your-own-cloud/connector/platform-updates#registry-credentials)を参照してください。
-* **お客様自身の認証情報**が、あらゆる権限を適用します。具体的には、`init --managed` における executor のアクセス権限、`prepare` におけるバケットとロール、`approve` における各プラットフォーム更新の permission に関する部分、そして `teardown` におけるクリーンアップです。
+インバウンド方向では、コネクタが公開するのはローカルのヘルスチェックポートとメトリクスポート、およびオプトインのセッションゲートウェイのみです。これ以外で待ち受けるものはなく、ClickHouse Cloud がお客様の環境に接続することもありません。ClickHouse Cloud ができるのは、トラブルシューターのアウトバウンド WebSocket に応答することだけです。
 
-## コネクタでできること {#what-the-connector-can-do}
+<div id="clickhouse-grants">
+  ### ClickHouse 権限
+</div>
 
-### 送信接続 {#outbound-connections}
-
-コネクタが開く接続は、いずれもお客様の環境内から発信されます。完全な一覧は次のとおりです。
-
-| 宛先                                     | プロトコル                                                                                                                      | 目的                                                                                                                                                                                                                                                                         |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| お客様のコネクタエンドポイント                        | mTLS を使用した HTTPS、すべてのリクエストは HMAC 署名付き                                                                                      | `POST /v1/metrics`、`/v1/self-metrics`、`/v1/status`、`/v1/instance/sync`、`/v1/infra/sync`、`/v1/backup/sync`、`/v1/pcm/cert/renew`。`clicklink clctl` からは `POST /v1/pcm/instances` (サービス定義の送信)                                                                                  |
-| お客様のコネクタエンドポイント                        | 送信 WebSocket、`/v1/commands/ws`                                                                                             | トラブルシューターのコマンドチャネル。サポートセッションの状態によって制御されます                                                                                                                                                                                                                                  |
-| お客様のコネクタエンドポイント                        | 送信 WebSocket、`/v1/commands/ws/executor`                                                                                    | executor のコマンドチャネル。マネージドサービスのライフサイクルコマンドとその結果                                                                                                                                                                                                                              |
-| お客様の登録エンドポイント                          | HTTPS (登録トークンまたは HMAC。mTLS なし)                                                                                             | インストール時のトークン引き換えと証明書の署名 (`/v1/pcm/cert/sign`)                                                                                                                                                                                                                              |
-| お客様の ClickHouse クラスター                  | ClickHouse ネイティブプロトコル                                                                                                      | `pcm_scraper` および `pcm_troubleshooter` としての読み取り専用クエリ、および scraper のログフラッシュステートメント ([権限](#clickhouse-grants) を参照) 。executor は ClickHouse への接続を開きません                                                                                                                      |
-| Kubernetes API server                  | HTTPS                                                                                                                      | scraper と troubleshooter (いずれの対象も) のためのネームスペース範囲の読み取りと ServiceAccount トークンのリクエスト。executor によるサービスネームスペース内への書き込み、および承認されたプラットフォーム更新中のプラットフォームネームスペース内への書き込み。更新された証明書を永続化するための、コネクタ自身の mTLS Secret に対する名前完全一致での読み取りと更新 (Kubernetes インストールのみ。VM の場合は更新をローカルの TLS ファイルに書き込みます) |
-| Amazon ECR                             | HTTPS、直接プラットフォームアクセスの場合はコネクタ EC2 VM のインスタンスプロファイルを使用して assume する読み取り専用の pull ロール。その他の ECR チャートレジストリの場合は ambient な AWS 認証情報 | プラットフォームの同期または作成が ECR からチャートを取得する際のレジストリログイン。プラットフォーム更新中にイメージの存在を確認するための `DescribeImages`                                                                                                                                                                                  |
-| AWS STS                                | HTTPS、直接プラットフォームアクセスの場合はコネクタ EC2 VM のインスタンスプロファイル。その他の ECR チャートレジストリの場合は設定された AWS 認証情報チェーン                                 | 直接プラットフォームのチャートログインおよびイメージチェックのために読み取り専用 pull ロールを assume します。その他の ECR ログイン用の認証情報を提供する場合もあります。ECR と STS は executor が呼び出す唯一のクラウド API です                                                                                                                                     |
-| クラスターノードからのコンテナレジストリ                   | HTTPS                                                                                                                      | マネージドサービスおよびプラットフォームコンポーネントのイメージのプル。ClickHouse がお客様の登録したノードロールに付与する読み取り専用 pull ロール経由、またはイメージをインポートした後のお客様独自のレジストリから行われます                                                                                                                                                   |
-| お客様の identity provider の JWKS endpoint | HTTPS                                                                                                                      | オペレータートークンの検証。セッションゲートウェイが有効な場合のみ                                                                                                                                                                                                                                          |
-
-受信については、各デーモンがローカルのヘルスポートを 1 つ公開し、これは Prometheus メトリクスの提供も兼ねます。加えて、オプトインのセッションゲートウェイがあります。executor のローカルコマンド API はループバックのみにバインドされます。それ以外は一切待ち受けません。ClickHouse Cloud がお客様の環境へ接続することはありません。可能なのは、2 つの送信 WebSocket に応答することだけです。
-
-### ClickHouse 権限 {#clickhouse-grants}
-
-プロビジョニングでは、監視対象のコンポーネントごとに1つの読み取り専用ユーザーが作成されます。ユーザーは `IDENTIFIED WITH bcrypt_hash` を使用して作成されるため、プロビジョニングSQLに含まれるのはソルト付きbcryptハッシュのみです。平文パスワードは、デーモンがランタイム時に読み取る認証情報ファイルにのみ保存されます。各 `CREATE USER` の後に続く `ALTER USER` の行は、`--force` 指定時にハッシュを更新します。executor は ClickHouse ユーザーを持たず、ClickHouse に接続することはありません。デフォルトのテーブルセットで付与される権限は、以下のとおりです。
+プロビジョニングでは、コンポーネントごとに1つの読み取り専用ユーザーが作成されます。読み取り専用ではない唯一の例外は、以下に示すスクレイパーの `SYSTEM FLUSH LOGS` 権限です。これは何かを読み取ったり変更したりするものではなく、すでにバッファリングされているエントリをログテーブルに永続化するよう強制するだけです。ユーザーは `IDENTIFIED WITH bcrypt_hash` を使用して作成されるため、プロビジョニングSQLに含まれるのはソルト付きbcryptハッシュのみです。平文パスワードは、デーモンがランタイム時に読み取る認証情報ファイルにのみ保存されます。デフォルトのテーブルセットで付与される権限は、以下のとおりです。
 
 ```sql
 CREATE USER IF NOT EXISTS `pcm_scraper` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
-ALTER USER `pcm_scraper` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
 
 GRANT SELECT ON `system`.`asynchronous_metric_log` TO `pcm_scraper`;
 GRANT SELECT ON `system`.`metric_log` TO `pcm_scraper`;
@@ -65,11 +48,10 @@ GRANT READ ON REMOTE TO `pcm_scraper`;
 GRANT SYSTEM FLUSH LOGS ON *.* TO `pcm_scraper`;
 ```
 
-スクレイプクエリでは各システムテーブルが `clusterAllReplicas()` でラップされるため、`READ ON REMOTE` が必要です。`SYSTEM FLUSH LOGS` は唯一のシステムレベルの権限です。これはスクレイプが最新のデータを参照できるよう、すでにバッファリングされているエントリを `*_log` システムテーブルに永続化させるものであり、何かを読み取ったり変更したりすることはできません。ClickHouse はこの権限をグローバルスコープでのみ受け付け、有効になるのはログテーブルに対してのみであるため、付与範囲は実際に利用できる機能よりも広くなります。
+スクレイプクエリでは各システムテーブルが `clusterAllReplicas()` でラップされるため、`READ ON REMOTE` が必要です。ClickHouse ではこの権限に対してより限定的なスコープは許可されないため、`SYSTEM FLUSH LOGS` はグローバルスコープで付与する必要があります。ClickHouse がこの権限を有効にするのは `*_log` システムテーブルに対してのみであるため、付与範囲は実際に利用できる機能よりも広くなります。
 
 ```sql
 CREATE USER IF NOT EXISTS `pcm_troubleshooter` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
-ALTER USER `pcm_troubleshooter` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
 
 GRANT SELECT ON `system`.`asynchronous_metrics` TO `pcm_troubleshooter`;
 GRANT SELECT ON `system`.`build_options` TO `pcm_troubleshooter`;
@@ -102,90 +84,57 @@ GRANT SELECT ON `system`.`users` TO `pcm_troubleshooter`;
 GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
 ```
 
-両方のユーザーに対する `system.user_directories` 権限は、1 つの診断のために使用されます。`clicklink clctl preflight` はコネクタ自身の認証情報で実行され、インスタンスが ClickHouse ユーザーをレプリケートで保存しているかローカルで保存しているかを確認します。このテーブルにはユーザーデータではなくユーザーストレージの設定メタデータが格納されています。スクレイプ対象セットにもセッションテーブルの許可リストにも含まれていないため、スクレイプまたはセッションの出力パスから読み取られることはありません。この権限がない場合、この事前チェックはスキップとして報告されますが、その他の処理はすべて続行されます。
+両方のユーザーに対する `system.user_directories` 権限は、1 つの診断のために必要です。`clicklink clctl preflight` はコネクタ自身の認証情報で実行され、インスタンスが ClickHouse ユーザーをどのように保存しているか (レプリケートかローカルか) を確認します。このテーブルにはユーザーデータではなくユーザーストレージの設定メタデータが格納されており、スクレイプ対象セットにもセッションテーブルの許可リストにも含まれていないため、スクレイプまたはセッションの出力パスから読み取られることはありません。この権限がない場合、この 1 つの事前チェックはスキップとして報告されますが、その他の処理はすべて続行されます。
 
-`INSERT`、DDL、ユーザー管理、設定、プロセス制御に関する権限はありません。2 つ目のコネクタデプロイメントが同じインスタンスを共有する場合、そのユーザー名には接尾辞 (`pcm_scraper_<suffix>`) が付き、権限セットは同じです。
+テーブル単位の `SELECT` に加え、システムレベルで必要な権限はスクレイパー用の `SYSTEM FLUSH LOGS` のみです。これは `*_log` システムテーブル内のバッファリングされたエントリをディスクに永続化し、スクレイピング時に最新のデータを取得できるようにするだけで、他の処理は行いません。ClickHouse はこの権限をグローバルスコープでのみ受け付けますが、実際に適用するのはログテーブルに対してのみです。`INSERT`、DDL、ユーザー管理、設定、プロセス制御に関する権限はありません。2 つ目のコネクタデプロイメントが同じインスタンスを共有する場合、そのユーザー名には接尾辞 (`pcm_scraper_<suffix>`) が付き、権限セットは同じです。
 
-### Kubernetes RBAC {#kubernetes-rbac}
+<div id="kubernetes-rbac">
+  ### Kubernetes RBAC
+</div>
 
-#### スクレイパーとトラブルシューター {#kubernetes-rbac-observing}
+このチャートでは、ネームスペーススコープのロールのみが作成されます。クラスター ロールおよびClusterRoleBindingは作成されません。
 
-スクレイパーとトラブルシューターには、クラスター ロールおよびClusterRoleBindingはありません。このチャートはコネクタのネームスペースにネームスペーススコープのロールを作成し、各インスタンスのaccess bundleは、そのインスタンスのClickHouseまたはserviceのネームスペースにロールを作成します。
+| リソース                                                                                            | 動詞                     | スコープ                                                                         |
+| ----------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------- |
+| `secrets`                                                                                       | `get`                  | 完全一致する名前のみ: mTLS Secret、HMAC Secret、各インスタンスのaccess-bundle Secret             |
+| `secrets`                                                                                       | `update`               | mTLS Secretのみ。デーモンが自動更新されたクライアント証明書を永続化できるよう、完全一致する名前で指定                     |
+| `serviceaccounts/token`                                                                         | `create`               | 完全一致する名前のみ: コンポーネント自身のServiceAccount、および各インスタンスのaccess-bundle ServiceAccount |
+| `pods`, `pods/log`, `pods/status`, `services`, `configmaps`, `events`, `persistentvolumeclaims` | `get`, `list`, `watch` | トラブルシューターのみ                                                             |
+| `deployments`, `statefulsets`, `replicasets` (`apps`)                                           | `get`, `list`, `watch` | トラブルシューターのみ                                                             |
 
-| リソース                                                                                            | 動詞                     | スコープ                                                                                    |
-| ----------------------------------------------------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------- |
-| `secrets`                                                                                       | `get`                  | 完全一致する名前のみ: mTLS Secret、HMAC Secret、各インスタンスのaccess-bundle Secret                        |
-| `secrets`                                                                                       | `update`               | mTLS Secretのみ。デーモンが自動更新されたクライアント証明書を永続化できるよう、完全一致する名前で指定                                |
-| `serviceaccounts/token`                                                                         | `create`               | 完全一致する名前のみ: コンポーネント自身のServiceAccount、および各インスタンスのaccess-bundle ServiceAccount            |
-| `clickhouseclusters`, `backups` (`clickhouse.com`)                                              | `get`, `list`, `watch` | スクレイパーのみ。serviceおよびbackupのステータス同期のため、各ClickHouseまたはserviceのネームスペースにあるインスタンスごとのロールを介して使用 |
-| `pods`, `pods/log`, `pods/status`, `services`, `configmaps`, `events`, `persistentvolumeclaims` | `get`, `list`, `watch` | トラブルシューターのみ                                                                             |
-| `deployments`, `statefulsets`, `replicasets` (`apps`)                                           | `get`, `list`, `watch` | トラブルシューターのみ                                                                             |
+<div id="what-the-connector-cannot-do">
+  ## コネクタで実行できないこと
+</div>
 
-#### Executor {#kubernetes-rbac-executor}
+* **ClickHouse のデータや状態への書き込みは不可。** 上記の権限には `INSERT`、DDL、ユーザー管理、設定、プロセス制御に関する権限は含まれません。唯一のシステムクラス権限であるスクレイパーの `SYSTEM FLUSH LOGS` は、ログテーブルですでにバッファリングされている内容を永続化するだけです。コネクタはデータ、スキーマ、ユーザー、設定を変更できません。
+* **exec は不可。** RBAC には `pods/exec` が含まれていないため、コネクタはポッド内でコマンドを実行できません。
+* **削除もパッチも不可。** RBAC で許可される変更は 2 つだけです。コネクタ自身の mTLS Secret に対する完全一致の名前を指定した `update` と、コネクタ自身の ServiceAccounts 用の短期間有効なトークンを発行し、保存済みオブジェクトを変更しない `serviceaccounts/token` に対する `create` です。
+* **クラスター スコープは不可。** すべてのロールはネームスペース内にバインドされます。コネクタは、許可されたネームスペース外のリソースを一覧表示したり読み取ったりできません。
+* **インバウンド接続は一切ありません。** ClickHouse Cloud からお客様の環境への接続が開始されることはありません。コマンド経路はトラブルシューターのアウトバウンド WebSocket のみであり、有効化したサポートセッションがアクティブでない限り、トラブルシューターはすべてのコマンドを拒否します。セッション中であっても、両側でスコープが制限されます。ClickHouse クエリはテーブルの許可リストに限定され、設定にかかわらず、バリデーターは `query_log` と `text_log` を拒否します。また、Kubernetes へのアクセスも、ネームスペーススコープのロールで付与された読み取り専用ビューとポッドログに個別に限定されます。
 
-managed モードでは、`clicklink clctl init --managed`(または `clicklink clctl executor access grant --cluster` に続けて `apply --cluster`)が、ユーザーの認証情報を使って executor の grant を適用します。この grant は、`pcm-executor` ServiceAccount(Kubernetes ではコネクタのネームスペース内、VM インストールでは `clicklink-system` 内)、それにバインドされた 1 つの ClusterRole、および `pcm-executor-prefix-guard` ValidatingAdmissionPolicy で構成されます。
+<div id="what-requires-your-action">
+  ## 対応が必要な項目
+</div>
 
-RBAC ではネームスペースのプレフィックスを表現できないため、これらの verb はクラスター全体に対して付与されます。そのうえで admission ポリシーが、service プレフィックス(既定では `ns-`)の範囲外のネームスペースを対象とする `pcm-executor` からの書き込みをすべて拒否します。ホームのネームスペースでは 3 つの書き込みが許可されます。自身のトークンの更新、scraper が読み取る `clicklink-instance-registry` ConfigMap、そして Kubernetes の場合は `clicklink-mtls` Secret へ書き戻される更新後のクライアント証明書です。このポリシーは当該 ServiceAccount のみに適用され、`failurePolicy: Fail` と `validationActions: [Deny]` を使用します。ClusterRoleBinding は、ポリシーとそのバインディングの後、最後に適用されます。これにより、grant が部分的にしか適用されなかった場合でも、executor はガードされていないアクセス許可を持つのではなく、アクセス許可を一切持たない状態になります。
-
-VM では、`clicklink clctl executor prepare` が service ごとの bundle も適用します。この bundle は、`ns-<name>` 内の `pcm-executor` ServiceAccount、同じ resource ファミリーを持つ Role、そしてその 1 つのネームスペースに対する `get` と `delete` に限定された ClusterRole で構成されます。executor は、bundle が存在する場合は当該 service にそれを使用し、存在しない場合はクラスター全体の grant を使用します。Kubernetes では、ポッドは常にコネクタのネームスペースの `pcm-executor` ServiceAccount として動作します。
-
-| Resources                                           | Verbs                                                   | 用途                                                                                                                                                                                                                                                                                         |
-| --------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `clickhouseclusters`(`clickhouse.com`)              | `get`、`list`、`watch`、`create`、`update`、`patch`、`delete` | ClickHouse Cloud がレンダリングする service 定義。再起動時にはアノテーションが付与され、削除時には除去されます                                                                                                                                                                                                                       |
-| `backups`(`clickhouse.com`)                         | `get`、`list`、`watch`、`create`、`delete`                  | バックアップおよびバックアップの削除                                                                                                                                                                                                                                                                         |
-| `scalingoverrides`(`clickhouse.com`)                | `get`、`create`、`update`                                 | ClickHouse Cloud が要求するレプリカ数へのスケーリング                                                                                                                                                                                                                                                        |
-| `pods`                                              | `get`、`delete`                                          | 単一ポッドの再起動                                                                                                                                                                                                                                                                                  |
-| `secrets`                                           | `get`、`list`、`create`、`update`、`delete`                 | service の認証情報 Secret                                                                                                                                                                                                                                                                       |
-| `serviceaccounts`                                   | `get`、`create`、`update`、`patch`、`delete`                | IAM ロールのアノテーションを保持する、service の ServiceAccount                                                                                                                                                                                                                                              |
-| `services`                                          | `get`、`list`、`create`                                   | 要求された場合の、service の内部ロードバランサー                                                                                                                                                                                                                                                               |
-| `namespaces`                                        | `get`、`create`、`update`、`delete`                        | service ネームスペースの作成と、service と併せた削除。プレフィックス付きの名前のみ                                                                                                                                                                                                                                          |
-| `roles`、`rolebindings`(`rbac.authorization.k8s.io`) | `get`、`create`、`update`、`patch`                         | 各 service ネームスペース内における scraper の読み取り専用アクセス。Kubernetes の escalation 防止機構により、これらは executor がすでに保持しているアクセス許可の範囲に制限されます。executor は troubleshooter 向けには何も provision しません。[マネージドサービスにおける support sessions](/ja/products/bring-your-own-cloud/connector/managed-services#support-sessions) を参照してください |
-| `serviceaccounts/token`                             | `create`                                                | 正確な名前のみ:`pcm-executor` と scraper の ServiceAccount、トークン更新用                                                                                                                                                                                                                                  |
-| `secrets`                                           | `get`、`update`                                          | コネクタの mTLS Secret のみ(名前で完全一致)、更新後のクライアント証明書を永続化するため。Kubernetes インストールのみで、コネクタのネームスペース内の chart の Role によって付与されます                                                                                                                                                                            |
-| `configmaps`                                        | `get`、`update`、`patch`、`create`                         | コネクタのネームスペース内の `clicklink-instance-registry` ConfigMap。Kubernetes インストールのみで、chart の Role によって付与されます。`get`、`update`、`patch` は名前で限定され、admission ポリシーが `create` をその名前に限定します                                                                                                                   |
-
-admission は `get`、`list`、`watch` では実行されないため、これらの resource ファミリーに対する executor の読み取りはプレフィックスに限定されません。
-
-#### プラットフォーム アイデンティティ {#kubernetes-rbac-platform}
-
-`clicklink clctl platform approve` は、プラットフォーム更新のうち権限に関わる部分を、ユーザーの認証情報で適用します。対象は、ネームスペース、CustomResourceDefinition、ServiceAccount、クラスター ロールおよび ClusterRoleBinding、ロールおよび RoleBinding、webhook および admission の設定、PriorityClass、StorageClass です。続いて、`pcm-platform` ServiceAccount、その クラスター ロール、`pcm-platform-scope-guard` ValidatingAdmissionPolicy、およびそのバインディングを適用し、有効期間 2 時間の bound トークンを発行します。
-
-このトークンで executor が書き込めるのは `deployments`、`services`、`configmaps`、`secrets`、`jobs`、`poddisruptionbudgets` のみで、しかもスコープガードが許可したプラットフォーム ネームスペース内に限られます。何かを適用する前に権限に関わる部分が整っているかを確認する目的で、`pods`、`events`、`namespaces`、`serviceaccounts`、CustomResourceDefinition、RBAC オブジェクト、webhook 設定、StorageClass、PriorityClass の読み取りは可能です。`escalate`、`bind`、`impersonate` を保持することは一切なく、クラスタースコープの kind や RBAC オブジェクトに書き込むこともなく、自身のトークンを発行・更新することもできません。このトークンが認可する bundle はただ 1 つです。承認したダイジェストが ServiceAccount に記録され、executor はそれ以外を拒否します。
-
-## コネクタができないこと {#what-the-connector-cannot-do}
-
-* **ClickHouse のデータや状態への書き込みはできません。** 上記の権限には `INSERT` も DDL も含まれず、ユーザー管理・設定・プロセス制御の権限もありません。唯一のシステム系権限である scraper の `SYSTEM FLUSH LOGS` は、ログテーブルがすでにバッファしている内容を永続化させるだけです。executor は ClickHouse ユーザーを持ちません。いかなるコンポーネントも、ClickHouse 経由でデータ、スキーマ、ユーザー、設定を変更することはできません。
-* **exec はできません。** `pods/exec` を含む RBAC は存在せず、どのコンポーネントもお客様のポッド内でコマンドを実行できません。
-* **サービスおよびプラットフォームのネームスペース外への書き込みはできません。** scraper と troubleshooter は `delete` も `patch` も保持していません。唯一のミューテーションは、コネクタ自身の mTLS Secret に対する名前を厳密に指定した `update` と、`serviceaccounts/token` に対する `create` だけです。後者は自身の ServiceAccount 向けに短命なトークンを発行するだけで、保存済みオブジェクトは一切変更しません。admission はサービスのプレフィックス外への executor の書き込みを拒否し、プラットフォームへの書き込みはお客様が発行したトークンが有効な間だけ可能です。
-* **アクセス許可を付与する権限はありません。** プラットフォームの Namespace、CRD、ServiceAccount、RBAC、webhook および admission の設定、PriorityClass、StorageClass は、`approve` の実行時にお客様の認証情報で適用されます。executor のプラットフォーム アイデンティティは、権限昇格も bind も impersonate も行えません。サービスのネームスペース内では、executor はすでに自身が保持しているアクセス許可を付与する Role しか作成できません。
-* **お客様の bucket や IAM の認証情報は持ちません。** `clicklink clctl executor prepare` が bucket とサービスごとの role を作成し、`clicklink clctl executor teardown` がそれらを削除します。いずれもお客様の認証情報で実行されます。その role を assume できるのは当該サービスのポッドだけです。プラットフォームへの直接アクセスでは、executor はコネクタの EC2 VM のインスタンスプロファイルを使用して読み取り専用の ECR プラー role を assume し、チャートへのログインとイメージ確認の両方を行います。その他の ECR チャートレジストリではアンビエントな AWS 認証情報を使用します。[identities](#identities) を参照してください。クラウド API の呼び出し先は ECR と STS のみであり、お客様のデータを読み取ったり削除したりすることはできません。
-* **お客様の default user のパスワードは知り得ません。** `clicklink clctl executor prepare` がお客様側でパスワードを生成し、一度だけ表示します (入力をフラグとして渡す場合は `clicklink clctl instances create` が行います) 。送信されるのはそのハッシュのみであるため、コネクタも ClickHouse Cloud も元のパスワードを復元できません。
-* **インバウンドの通信は一切ありません。** ClickHouse Cloud がお客様の環境に向けて connection を開くことはありません。コマンドの経路は 2 本のアウトバウンド WebSocket のみです。troubleshooter は、お客様が有効化したサポートセッションがアクティブでない限り、すべてのコマンドを拒否します。executor は、お客様が ClickHouse に管理を依頼したサービスに対してのみ、上記のスコープ内でライフサイクルコマンドを受け付けます。session 中であっても、troubleshooter は双方で制限されます。ClickHouse へのクエリはテーブルの許可リストに限定され、`query_log` と `text_log` は拒否されるため、これらが許可されることはありません。Kubernetes へのアクセスは、ネームスペーススコープの Role が付与する読み取り専用のビューとポッドのログに限定されます。
-
-## 対応が必要な項目 {#what-requires-your-action}
-
-* **マネージドモードの有効化。** executorが動作し、そのKubernetes 権限が存在するのは、`init`でマネージドモードを有効にした後のみです。権限はクラスター管理者権限で適用されます。[マネージドサービス](/ja/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)を参照してください。
-* **サービスの作成。** `clicklink clctl executor prepare` はお客様のAWS 認証情報で実行され、bucketsとIAM ロールを作成します。`clicklink clctl instances create` は定義を送信します。この両方がなければ、ClickHouse Cloudはお客様のクラスター内にサービスを作成できません。[サービスの作成](/ja/products/bring-your-own-cloud/connector/managed-services#create-a-service)を参照してください。
-* **プラットフォームの更新。** プラットフォームコンポーネントの各更新は、該当するbundleに対して `clicklink clctl platform approve` を実行した後にのみ適用されます。発行されるトークンは2時間で失効し、更新されることはありません。[プラットフォームの更新](/ja/products/bring-your-own-cloud/connector/platform-updates#approve-a-platform-update)を参照してください。
-* **削除後のクリーンアップ。** サービスを削除しても、削除されるのはそのKubernetes resourcesのみです。お客様の認証情報で実行する `clicklink clctl executor teardown` により、IAM ロールが削除され、明示的なフラグを指定した場合にのみデータとbackupsも削除されます。[サービスの削除](/ja/products/bring-your-own-cloud/connector/managed-services#delete-a-service)を参照してください。
 * **サポートセッション。** 対話型のトラブルシューティングは、有効にしたセッション内でのみ実施されます。セッションの有効期間はデフォルトで4時間、最長24時間です。無効化は直ちに反映されます。[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)を参照してください。
 * **オペレーターの許可リスト。** すべてのゲートウェイリクエストには、認証済みメールアドレスが許可リストに含まれるOIDCトークンが必要です。許可リストが空の場合はアクセスできません。リストはお客様が管理します。[設定ガイド](/ja/products/bring-your-own-cloud/connector/configuration)を参照してください。
-* **ゲートウェイの公開。** セッションゲートウェイは、有効にしない限り無効であり、イングレスを使用しない限りポートフォワード経由でのみアクセスできます。VM では、セッションコマンドから通信する前に、各オペレーターが自己署名証明書のフィンガープリントを固定するか、`--gateway-ca` として渡したCA bundleで検証する必要があります。
-* **ネットワークegress。** 強制適用CNI 環境では、`networkPolicy.allowEgressCIDRs` にCIDRを列挙するまで、いずれのデーモンもお客様のコネクタエンドポイントに到達できません。executorにはKubernetes API serverのCIDR (`networkPolicy.apiserverCIDRs`) も必要であり、これは `init --managed` がクラスターのVPCから導出します。プラットフォームチャートをAmazon ECRから取得する場合は、ECRおよびSTSの範囲も追加してください。
+* **ゲートウェイの公開。** セッションゲートウェイは、有効にしない限り無効であり、イングレスを使用しない限りポートフォワード経由でのみアクセスできます。VM では、セッションコマンドから通信する前に、各オペレーターが自己署名証明書のフィンガープリントを固定する必要があります。
+* **ネットワークegress。** 強制適用CNI 環境では、chart の NetworkPolicy でエンドポイントCIDRを許可リストに追加するまで、コネクタからのegressは行われません。
 
-## アクセスの帰属の仕組み {#how-access-is-attributed}
+<div id="how-access-is-attributed">
+  ## アクセスの帰属方法
+</div>
 
-* **デプロイメントのアイデンティティ。** mTLS クライアント証明書のコモンネームは組織 ID であり、その単一の DNS name はエンドポイントホストに紐付けられています。これにより、すべての API 接続を組織に帰属させられます。更新は自動的にデーモン内で行われ、鍵素材を扱う operator は存在しません。
-* **リクエストの完全性。** すべての API request には、登録時に発行された鍵ペアを用いて、method、path、timestamp、ボディのハッシュに対して生成した HMAC-SHA256 署名 (`Authorization: HMAC-SHA256 AccessKey=..., Signature=..., Timestamp=...`) も付加されます。
-* **operator のアイデンティティ。** ゲートウェイ呼び出しは、operator の OIDC ID トークンによって証明され、identity provider の JWKS に対して検証されたメールアドレスに帰属します。トークンが利用可能な場合、自己申告の name が信頼されることはありません。
-* **ライフサイクル commands。** executor は受け取ったすべてのコマンドを、その始点 (ClickHouse Cloud またはローカルの `clicklink clctl` 呼び出し) 、stage、結果とともにローカルストアへ記録します。結果はコマンドチャネル経由で報告されます。記録は `clicklink clctl commands list` および `clicklink clctl commands get` で参照できます。[CLI reference](/ja/products/bring-your-own-cloud/connector/reference/cli) を参照してください。
-* **プラットフォームの承認。** 承認した bundle のダイジェストは `pcm-platform` ServiceAccount に記録されます。認証情報によって適用されたすべての object にはコンテンツハッシュが付与され、executor は書き込みを行う前にこれを検証します。それ以外のダイジェストを持つ bundle は拒否されます。
-* **監査証跡。** 受理・ブロックを問わず、すべての session コマンドは、コマンドチャネルから得た組織のアイデンティティとともに NDJSON の監査ログに追記されます。ゲートウェイ呼び出しは、証明された operator のメールアドレスとともに、トラブルシューターのログに structured な `clctl.gateway` 行として記録されます。VM のローカル session の変更では、ホストの USER が `session.json` に記録されます。監査ログは `clicklink clctl troubleshoot audit tail` で参照できます。[CLI reference](/ja/products/bring-your-own-cloud/connector/reference/cli) を参照してください。
+* **デプロイメントID。** mTLSクライアント証明書のコモンネームには組織IDが設定され、エンドポイントホストには単一のDNS名が紐付けられます。そのため、すべてのAPI接続を組織に帰属させることができます。証明書の更新はデーモン内で自動的に行われ、オペレーターが秘密鍵の鍵マテリアルを扱う必要はありません。
+* **リクエストの完全性。** 各APIリクエストには、登録時に発行された鍵ペアを使用し、メソッド、パス、タイムスタンプ、ボディハッシュに基づいて算出されたHMAC-SHA256署名 (`Authorization: HMAC-SHA256 AccessKey=..., Signature=..., Timestamp=...`) も付加されます。
+* **オペレーターID。** ゲートウェイ呼び出しは、オペレーターのOIDC IDトークンで証明され、アイデンティティプロバイダーのJWKSで検証されたメールアドレスに帰属します。トークンを利用できる場合、自己申告の名前を信頼することはありません。
+* **監査証跡。** 許可・ブロックを問わず、すべてのゲートウェイ呼び出しとトラブルシューティングコマンドがNDJSON監査ログに追記されます。ゲートウェイエントリには証明済みのオペレーターのメールアドレス、VMのローカルセッション変更には実行元のホストユーザー、セッションコマンドには認証済みチャネルを通じて伝達される組織IDが記録されます。`clicklink clctl troubleshoot audit tail`で確認できます。詳細は[CLIリファレンス](/ja/products/bring-your-own-cloud/connector/reference/cli)を参照してください。
 
-## データ最小化のデフォルト {#data-minimization-defaults}
+<div id="data-minimization-defaults">
+  ## データ最小化のデフォルト
+</div>
 
-* **`query_log` はデフォルトで scrape 対象から除外されます。** そのカラムにはリテラル値を含む生の SQL が格納されており、個人データやシークレットが含まれる可能性があります。明示的に追加しない限り境界の外に出ることはありません。
-* **トラブルシューターは許可リストに登録されたテーブルのみを読み取ります。** `query_log` と `text_log` は許可リストの設定自体で拒否されるため、許可されることはなく、クエリ履歴が読み取られることもありません。デフォルトの許可リストには `system.processes` (実行中のクエリテキスト) が含まれています。セッション中もこれを秘匿する必要がある場合は、この設定 (Kubernetes では `troubleshooter.allowedTables`、VM では `troubleshooter.allowed_tables`) から削除してください。
-* **トラブルシューターの出力はすべて redact されます。** 組み込みのパターンに加え、ユーザーが定義したパターンも適用されます。組み込みパターンは IPv4 および IPv6 アドレス、bearer トークン、AWS access key、メールアドレス、JWT、SSH 秘密鍵、接続文字列に含まれる認証情報をカバーします。パターンファイルが不正な場合、デーモンは redact されないまま実行するのではなく、起動そのものを拒否します。
-* **マネージドサービスのステータスはメタデータのみです。** executor が報告するのは、サービスの状態、レプリカ数、バージョン、コマンドの実行結果です。サービスのテーブルや bucket を読み取ることは決してありません。
-* **認証情報は保存時に最小化されます。** provisioning 用の SQL に含まれるのは bcrypt ハッシュのみで、平文のパスワードは含まれません。マネージドサービスの default ユーザーのパスワードは一度だけ表示され、それ以降はハッシュとしてのみ外部に出ます。enrollment token がコマンドライン、ディスク、ログに書き込まれることはありません。鍵は Kubernetes Secrets またはモード 0600 のファイルに保管されます。
+* **`query_log` はデフォルトでスクレイプ対象から除外されます。** カラムにはリテラル値を含む生の SQL が記録されており、個人データやシークレットが含まれる可能性があるため、意図的に追加しない限り境界外に出ることはありません。
+* **トラブルシューターは許可リストに含まれるテーブルのみを読み取り**、バリデーターは `query_log` と `text_log` を無条件で拒否するため、クエリ履歴を読み取ることはできません。デフォルトの許可リストには `system.processes` (実行中のクエリテキスト) が含まれます。セッション中もこれを非表示にする必要がある場合は、セッション用のテーブル許可リスト (Kubernetes では `troubleshooter.allowedTables`、VM では `troubleshooter.allowed_tables`) を絞り込んでください。
+* **トラブルシューターのすべての出力はマスキングされます。** IPv4 および IPv6 アドレス、Bearer token、AWS アクセスキー、メールアドレス、JWT、SSH 秘密鍵、接続文字列の認証情報向けの組み込みパターンに加え、定義した任意のパターンが適用されます。デーモンは、マスキングなしで実行するのではなく、パターンファイルが無効な場合は起動を拒否します。
+* **保存時の認証情報は最小限に抑えられます。** プロビジョニング SQL には bcrypt ハッシュが含まれ、平文のパスワードが含まれることはありません。登録トークンがコマンドライン、ディスク、ログに書き込まれることはなく、キーは Kubernetes Secrets またはモード 0600 のファイルに保存されます。

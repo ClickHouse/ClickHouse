@@ -4,7 +4,7 @@
       "pages": [
         "ja/index"
       ],
-      "tab": "ホーム"
+      "tab": "Home"
     },
     {
       "menu": [
@@ -21,7 +21,7 @@
           "$ref": "./reference/navigation.json"
         }
       ],
-      "tab": "データベース"
+      "tab": "Database"
     },
     {
       "menu": [
@@ -44,7 +44,7 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "オープンソース"
+          "item": "Open source"
         },
         {
           "$ref": "./clickstack/navigation.json"
@@ -59,12 +59,12 @@
           "$ref": "./products/kubernetes-operator/navigation.json"
         }
       ],
-      "tab": "ソリューション"
+      "tab": "Solutions"
     },
     {
       "menu": [
         {
-          "item": "エコシステム",
+          "item": "Ecosystem",
           "pages": [
             "ja/integrations/home",
             "ja/integrations/data-catalogs"
@@ -80,7 +80,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "インテグレーション"
+      "tab": "Integrations"
     },
     {
       "menu": [
@@ -97,7 +97,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "リソース"
+      "tab": "Resources"
     }
   ]
 }

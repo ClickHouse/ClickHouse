@@ -57,14 +57,6 @@ else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
 endif ()
 
-# The GPU island is built against the system libstdc++, so a binary carrying it needs that library.
-# It must stay last: both runtimes define `__gxx_personality_v0`, the linker binds the first on the
-# command line, and libstdc++'s does not recognize a libc++ exception - earlier, and the server dies
-# on the first `throw` anywhere.
-if (ENABLE_GPU)
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${GPU_LIBSTDCXX_LIBRARY}")
-endif ()
-
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 
 set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})

@@ -1,9 +1,0 @@
-a join in a scalar subquery, in a relation restarted by the loop table function
-10
-the same view read once, for comparison
-3
-a join in a scalar subquery of the recursive member of a recursive CTE
-5
-05233_scalar_a_loop	1	['HASH']	['INNER']	['ALL']
-05233_scalar_b_single_read	1	['HASH']	['INNER']	['ALL']
-05233_scalar_c_recursive	1	['HASH']	['INNER']	['ALL']

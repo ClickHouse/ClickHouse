@@ -18,17 +18,6 @@ test_recover_staled_replica_run = 1
 
 cluster = ClickHouseCluster(__file__)
 
-# `bad_settings_node` runs with implicit_transaction=1, so every query on it starts a
-# transaction, and TransactionManager refuses to start unless Keeper advertises the three
-# transaction flags. The harness randomizes flags that a test does not pin.
-KEEPER_FEATURE_FLAGS = [
-    "multi_read",
-    "create_if_not_exists",
-    "list_with_stat_and_data",
-    "check_stat",
-    "filtered_list",
-]
-
 main_node = cluster.add_instance(
     "main_node",
     main_configs=["configs/config.xml"],
@@ -38,7 +27,7 @@ main_node = cluster.add_instance(
     macros={"shard": 1, "replica": 1},
     # Disable `with_remote_database_disk` as in `test_startup_without_zk`, Keeper rejects `main_node` connections before restarting
     with_remote_database_disk=False,
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 dummy_node = cluster.add_instance(
     "dummy_node",
@@ -47,7 +36,7 @@ dummy_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 2},
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 competing_node = cluster.add_instance(
     "competing_node",
@@ -56,7 +45,7 @@ competing_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 3},
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 snapshotting_node = cluster.add_instance(
     "snapshotting_node",
@@ -64,14 +53,14 @@ snapshotting_node = cluster.add_instance(
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
     macros={"shard": 2, "replica": 1},
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 snapshot_recovering_node = cluster.add_instance(
     "snapshot_recovering_node",
     main_configs=["configs/config.xml"],
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 
 all_nodes = [
@@ -88,7 +77,7 @@ bad_settings_node = cluster.add_instance(
     user_configs=["configs/inconsistent_settings.xml"],
     with_zookeeper=True,
     macros={"shard": 1, "replica": 4},
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 
 uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -1861,6 +1850,7 @@ def test_sync_database_replica_strict(started_cluster):
         # DEFAULT: needs the frozen snapshot fully processed -> times out.
         default_error = dummy_node.http_query_and_get_error(
             "system sync database replica strict_sync",
+            method="POST",
             params=sync_params,
             timeout=60,
         )
@@ -1873,6 +1863,7 @@ def test_sync_database_replica_strict(started_cluster):
         # the guard).
         dummy_node.http_query(
             "system sync database replica strict_sync strict",
+            method="POST",
             params=sync_params,
             timeout=60,
         )
@@ -2072,7 +2063,7 @@ def test_timeseries(started_cluster):
         SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
         RECENT SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
         TAGS ENGINE = ReplicatedAggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
-        METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family;
+        METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family_name;
         """,
         settings={"allow_experimental_time_series_table": 1}
     )
@@ -2579,3 +2570,32 @@ def test_mixed_alter_races_replicated_alter_metadata(started_cluster):
     )
     main_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
     competing_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
+
+
+def test_attach_mv_replays_on_replica_without_source(started_cluster):
+    # The initiator validates a full-definition ATTACH MATERIALIZED VIEW, a follower replays it as is.
+    main_node.query("CREATE DATABASE attach_mv_src")
+    main_node.query("CREATE TABLE attach_mv_src.src (n Int32) ENGINE = MergeTree ORDER BY n")
+    for i, node in enumerate([main_node, dummy_node]):
+        node.query(
+            f"CREATE DATABASE attach_mv_db ENGINE = Replicated('/test/attach_mv_db', 'shard1', 'replica{i + 1}')"
+        )
+    main_node.query(
+        "CREATE TABLE attach_mv_db.dst (n Int32) ENGINE = ReplicatedMergeTree ORDER BY n"
+    )
+    main_node.query(
+        "ATTACH MATERIALIZED VIEW attach_mv_db.mv UUID '5a2b6c61-7e43-4d6f-9b4b-1ad7b9b33d71' "
+        "TO attach_mv_db.dst (n Int32) AS SELECT n FROM attach_mv_src.src",
+        settings={"database_replicated_allow_explicit_uuid": 1},
+    )
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA attach_mv_db", timeout=60)
+    assert (
+        dummy_node.query(
+            "SELECT count() FROM system.tables WHERE database = 'attach_mv_db' AND name = 'mv'"
+        )
+        == "1\n"
+    )
+
+    for node in [main_node, dummy_node]:
+        node.query("DROP DATABASE attach_mv_db SYNC")
+    main_node.query("DROP DATABASE attach_mv_src SYNC")

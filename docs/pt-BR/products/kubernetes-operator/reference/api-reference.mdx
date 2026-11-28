@@ -10,7 +10,9 @@ sidebarTitle: 'Referência da API'
 
 Este documento fornece uma referência detalhada da API dos recursos personalizados do ClickHouse Operator.
 
-## AdditionalPort {#additionalport}
+<div id="additionalport">
+  ## AdditionalPort
+</div>
 
 AdditionalPort declara uma porta TCP adicional a ser exposta no pod do Kubernetes do ClickHouse e no Service headless público.
 
@@ -23,7 +25,9 @@ Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## CABundleSelector {#cabundleselector}
+<div id="cabundleselector">
+  ## CABundleSelector
+</div>
 
 CABundleSelector seleciona uma chave que contém um bundle de CA de um Secret no Espaço de nomes do cluster.
 
@@ -36,11 +40,15 @@ Aparece em:
 
 * [ClusterTLSSpec](#clustertlsspec)
 
-## ClickHouseCluster {#clickhousecluster}
+<div id="clickhousecluster">
+  ## ClickHouseCluster
+</div>
 
 ClickHouseCluster é o schema da API `clickhouseclusters`.
 
-### Versão da API e Kind {#clickhousecluster-api-version-and-kind}
+<div id="clickhousecluster-api-version-and-kind">
+  ### Versão da API e Kind
+</div>
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -56,11 +64,15 @@ Aparece em:
 
 * [ClickHouseClusterList](#clickhouseclusterlist)
 
-## ClickHouseClusterList {#clickhouseclusterlist}
+<div id="clickhouseclusterlist">
+  ## ClickHouseClusterList
+</div>
 
 ClickHouseClusterList contém uma lista de ClickHouseCluster.
 
-### Versão da API e Kind {#clickhouseclusterlist-api-version-and-kind}
+<div id="clickhousecluster-api-version-and-kind">
+  ### Versão da API e Kind
+</div>
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -71,7 +83,9 @@ kind: ClickHouseClusterList
 | ------- | ------------------------------------------------ | --------- | ----------- | ------ |
 | `items` | array de [ClickHouseCluster](#clickhousecluster) |           | true        |        |
 
-## ClickHouseClusterSpec {#clickhouseclusterspec}
+<div id="clickhouseclusterspec">
+  ## ClickHouseClusterSpec
+</div>
 
 ClickHouseClusterSpec define o estado desejado do ClickHouseCluster.
 
@@ -99,7 +113,9 @@ Aparece em:
 
 * [ClickHouseCluster](#clickhousecluster)
 
-## ClickHouseClusterStatus {#clickhouseclusterstatus}
+<div id="clickhouseclusterstatus">
+  ## ClickHouseClusterStatus
+</div>
 
 ClickHouseClusterStatus define o estado observado de ClickHouseCluster.
 
@@ -119,7 +135,9 @@ Aparece em:
 
 * [ClickHouseCluster](#clickhousecluster)
 
-## ClickHouseNetworkPolicySpec {#clickhousenetworkpolicyspec}
+<div id="clickhousenetworkpolicyspec">
+  ## ClickHouseNetworkPolicySpec
+</div>
 
 ClickHouseNetworkPolicySpec configura a NetworkPolicy gerenciada para o cluster do ClickHouse.
 A política gerenciada abrange o tráfego interno do cluster:
@@ -136,7 +154,9 @@ Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ClickHouseSettings {#clickhousesettings}
+<div id="clickhousesettings">
+  ## ClickHouseSettings
+</div>
 
 ClickHouseSettings define as opções de configuração do servidor ClickHouse.
 
@@ -154,7 +174,9 @@ Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ClusterTLSSpec {#clustertlsspec}
+<div id="clustertlsspec">
+  ## ClusterTLSSpec
+</div>
 
 ClusterTLSSpec define a configuração de TLS do cluster.
 
@@ -170,7 +192,9 @@ Aparece em:
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-## ConfigMapKeySelector {#configmapkeyselector}
+<div id="configmapkeyselector">
+  ## ConfigMapKeySelector
+</div>
 
 ConfigMapKeySelector seleciona uma chave de um ConfigMap.
 
@@ -183,7 +207,9 @@ Aparece em:
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-## ContainerImage {#containerimage}
+<div id="containerimage">
+  ## ContainerImage
+</div>
 
 ContainerImage define uma imagem de contêiner com repositório, tag ou hash.
 
@@ -197,7 +223,9 @@ Aparece em:
 
 * [ContainerTemplateSpec](#containertemplatespec)
 
-## ContainerTemplateSpec {#containertemplatespec}
+<div id="containertemplatespec">
+  ## ContainerTemplateSpec
+</div>
 
 ContainerTemplateSpec descreve as sobrescritas de configuração dos contêineres do cluster.
 
@@ -217,7 +245,9 @@ Aparece em:
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## DefaultPasswordSelector {#defaultpasswordselector}
+<div id="defaultpasswordselector">
+  ## DefaultPasswordSelector
+</div>
 
 DefaultPasswordSelector seleciona a origem da senha do usuário padrão.
 
@@ -231,7 +261,9 @@ Aparece em:
 
 * [ClickHouseSettings](#clickhousesettings)
 
-## EncryptionSettings {#encryptionsettings}
+<div id="encryptionsettings">
+  ## EncryptionSettings
+</div>
 
 EncryptionSettings habilita a criptografia em repouso dos dados de tabelas. Quando presente, o operador gera uma
 política de armazenamento criptografada do ClickHouse que encapsula cada disco de dados; as tabelas a utilizam por meio de `SETTINGS storage_policy`.
@@ -245,7 +277,9 @@ Aparece em:
 
 * [ClickHouseSettings](#clickhousesettings)
 
-## ExternalSecret {#externalsecret}
+<div id="externalsecret">
+  ## ExternalSecret
+</div>
 
 ExternalSecret é uma referência a um Secret no mesmo Espaço de nomes.
 
@@ -258,7 +292,9 @@ Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ExternalSecretPolicy {#externalsecretpolicy}
+<div id="externalsecretpolicy">
+  ## ExternalSecretPolicy
+</div>
 
 ExternalSecretPolicy controla como o operador trata o conteúdo do Secret externo.
 
@@ -271,11 +307,15 @@ Aparece em:
 
 * [ExternalSecret](#externalsecret)
 
-## KeeperCluster {#keepercluster}
+<div id="keepercluster">
+  ## KeeperCluster
+</div>
 
 KeeperCluster é o schema da API `keeperclusters`.
 
-### Versão da API e Kind {#keepercluster-api-version-and-kind}
+<div id="clickhousecluster-api-version-and-kind">
+  ### Versão da API e Kind
+</div>
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -291,11 +331,15 @@ Aparece em:
 
 * [KeeperClusterList](#keeperclusterlist)
 
-## KeeperClusterList {#keeperclusterlist}
+<div id="keeperclusterlist">
+  ## KeeperClusterList
+</div>
 
 KeeperClusterList contém uma lista de KeeperCluster.
 
-### Versão da API e Kind {#keeperclusterlist-api-version-and-kind}
+<div id="clickhousecluster-api-version-and-kind">
+  ### Versão da API e Kind
+</div>
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -306,7 +350,9 @@ kind: KeeperClusterList
 | ------- | ------------------------------------- | --------- | ----------- | ------ |
 | `items` | [KeeperCluster](#keepercluster) array |           | true        |        |
 
-## KeeperClusterReference {#keeperclusterreference}
+<div id="keeperclusterreference">
+  ## KeeperClusterReference
+</div>
 
 KeeperClusterReference identifica o KeeperCluster utilizado por um ClickHouseCluster.
 
@@ -319,7 +365,9 @@ Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## KeeperClusterSpec {#keeperclusterspec}
+<div id="keeperclusterspec">
+  ## KeeperClusterSpec
+</div>
 
 KeeperClusterSpec define o estado desejado do KeeperCluster.
 
@@ -342,7 +390,9 @@ Aparece em:
 
 * [KeeperCluster](#keepercluster)
 
-## KeeperClusterStatus {#keeperclusterstatus}
+<div id="keeperclusterstatus">
+  ## KeeperClusterStatus
+</div>
 
 KeeperClusterStatus define o estado observado de KeeperCluster.
 
@@ -362,7 +412,9 @@ Aparece em:
 
 * [KeeperCluster](#keepercluster)
 
-## KeeperNetworkPolicySpec {#keepernetworkpolicyspec}
+<div id="keepernetworkpolicyspec">
+  ## KeeperNetworkPolicySpec
+</div>
 
 KeeperNetworkPolicySpec configura a NetworkPolicy gerenciada para o cluster Keeper.
 A política gerenciada abrange o tráfego interno do cluster:
@@ -380,7 +432,9 @@ Aparece em:
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## KeeperSettings {#keepersettings}
+<div id="keepersettings">
+  ## KeeperSettings
+</div>
 
 KeeperSettings define as configurações do servidor ClickHouse Keeper.
 
@@ -394,7 +448,9 @@ Aparece em:
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## LoggerConfig {#loggerconfig}
+<div id="loggerconfig">
+  ## LoggerConfig
+</div>
 
 LoggerConfig define a configuração de logging do servidor.
 
@@ -411,7 +467,9 @@ Aparece em:
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-## NamedTemplateMeta {#namedtemplatemeta}
+<div id="namedtemplatemeta">
+  ## NamedTemplateMeta
+</div>
 
 NamedTemplateMeta define as configurações de metadados compatíveis para objetos de template que exigem um nome.
 
@@ -425,7 +483,9 @@ Aparece em:
 
 * [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
 
-## NetworkPolicyPolicy {#networkpolicypolicy}
+<div id="networkpolicypolicy">
+  ## NetworkPolicyPolicy
+</div>
 
 NetworkPolicyPolicy controla se o operador gerencia uma NetworkPolicy para o cluster.
 
@@ -439,7 +499,9 @@ Aparece em:
 * [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
 * [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
 
-## PDBPolicy {#pdbpolicy}
+<div id="pdbpolicy">
+  ## PDBPolicy
+</div>
 
 PDBPolicy controla se os PodDisruptionBudgets serão criados.
 
@@ -453,7 +515,9 @@ Aparece em:
 
 * [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)
 
-## PersistentVolumeClaimTemplate {#persistentvolumeclaimtemplate}
+<div id="persistentvolumeclaimtemplate">
+  ## PersistentVolumeClaimTemplate
+</div>
 
 PersistentVolumeClaimTemplate é um template nomeado para um PersistentVolumeClaim por réplica.
 
@@ -466,7 +530,9 @@ Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## PodDisruptionBudgetSpec {#poddisruptionbudgetspec}
+<div id="poddisruptionbudgetspec">
+  ## PodDisruptionBudgetSpec
+</div>
 
 PodDisruptionBudgetSpec configura o PDB criado para o cluster.
 Exatamente um entre MinAvailable ou MaxUnavailable pode ser definido.
@@ -484,7 +550,9 @@ Aparece em:
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## PodTemplateSpec {#podtemplatespec}
+<div id="podtemplatespec">
+  ## PodTemplateSpec
+</div>
 
 PodTemplateSpec descreve as substituições da configuração de pod do Kubernetes para os pods do Kubernetes do cluster.
 
@@ -503,7 +571,6 @@ PodTemplateSpec descreve as substituições da configuração de pod do Kubernet
 | `volumes`                       | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) array                                     | Volumes define a lista de volumes que podem ser montados por contêineres pertencentes ao pod do Kubernetes.<br />Mais informações: https://kubernetes.io/docs/concepts/storage/volumes<br />Mesclados aos valores padrão do operador por nome; um volume do usuário substitui qualquer volume do operador com o mesmo nome.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | false       |        |
 | `securityContext`               | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core)                   | SecurityContext contém atributos de segurança em nível de pod do Kubernetes e configurações comuns de contêiner.<br />Um SecurityContext não nulo substitui completamente os padrões do operador; o usuário é responsável por toda a<br />estrutura. Quando nulo, os padrões do operador são preservados.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | false       |        |
 | `topologyZoneKey`               | string                                                                                                                                  | TopologyZoneKey é a chave dos rótulos dos nós.<br />Nós que têm um rótulo com essa chave e valores idênticos são considerados como pertencentes ao mesmo domínio de topologia,<br />por exemplo, a mesma zona de disponibilidade para &quot;topology.kubernetes.io/zone&quot; ou o mesmo nó para &quot;kubernetes.io/hostname&quot;.<br />Defina-a para equilibrar pods que armazenam os mesmos dados (réplicas de um shard no ClickHouse, todas as réplicas no Keeper)<br />entre os domínios: uma TopologySpreadConstraint obrigatória (maxSkew 1, DoNotSchedule) mais uma regra preferencial de PodAntiAffinity.<br />Pods de shards diferentes podem compartilhar um domínio, portanto vários pods por domínio são permitidos.<br />Com menos domínios do que réplicas, várias réplicas compartilham um domínio, ainda assim distribuídas de forma uniforme.<br />Os pods do ClickHouse também preferem domínios que hospedam os pods do Keeper que eles usam.<br />Recomenda-se defini-la como &quot;topology.kubernetes.io/zone&quot;. | false       |        |
-| `topologyMinDomains`            | inteiro                                                                                                                                 | TopologyMinDomains define o campo minDomains na TopologySpreadConstraint gerada por TopologyZoneKey.<br />O agendador do Kubernetes conta como domínios de topologia apenas as zonas que já possuem nós elegíveis.<br />Com escalonadores automáticos orientados por demanda (por exemplo, Karpenter, Cluster Autoscaler), isso significa que, se houver nós<br />em apenas duas AZs no momento do agendamento, uma restrição maxSkew:1/DoNotSchedule é satisfeita com<br />uma divisão 2/1 e o escalonador automático nunca provisiona um nó na terceira AZ.<br />Definir TopologyMinDomains como o número esperado de zonas (normalmente 3) instrui o agendador a<br />tratar essa quantidade de zonas como domínios, independentemente de existirem nós em todas elas, forçando o<br />escalonador automático a provisionar na zona ausente.<br />Requer que TopologyZoneKey esteja definido. Omita (nil) para preservar o comportamento padrão<br />do agendador de contar apenas as zonas com nós elegíveis existentes.                 | false       |        |
 | `nodeHostnameKey`               | string                                                                                                                                  | NodeHostnameKey é a chave dos rótulos do nó.<br />Nós que têm um rótulo com essa chave e valores idênticos são considerados como estando no mesmo nó.<br />Defina-o para impor ocupação exclusiva do nó: uma regra obrigatória de PodAntiAffinity entre todos os pods do cluster,<br />com no máximo um pod por nó, independentemente do shard. Requer pelo menos tantos nós quanto pods;<br />com menos nós, os pods excedentes permanecem em estado Pending.<br />Para distribuir réplicas do mesmo shard entre os nós, ao mesmo tempo em que acomoda vários pods por nó,<br />defina TopologyZoneKey como &quot;kubernetes.io/hostname&quot;.<br />Recomenda-se defini-lo como &quot;kubernetes.io/hostname&quot;.                                                                                                                                                                                                                                                                                                                        | false       |        |
 | `initContainers`                | [Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core) array                               | InitContainers é a lista de contêineres de inicialização executados antes de o contêiner principal do servidor ser iniciado.<br />Mesclado com os padrões do operador por nome.<br />com o mesmo nome.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | false       |        |
 
@@ -512,7 +579,9 @@ Aparece em:
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## SecretKeySelector {#secretkeyselector}
+<div id="secretkeyselector">
+  ## SecretKeySelector
+</div>
 
 SecretKeySelector seleciona uma chave de um Secret.
 
@@ -525,7 +594,9 @@ Aparece em:
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-## TemplateMeta {#templatemeta}
+<div id="templatemeta">
+  ## TemplateMeta
+</div>
 
 TemplateMeta define as configurações de metadados compatíveis para objetos de template.
 
@@ -539,7 +610,9 @@ Aparece em:
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 * [VersionProbeTemplate](#versionprobetemplate)
 
-## VersionProbeContainer {#versionprobecontainer}
+<div id="versionprobecontainer">
+  ## VersionProbeContainer
+</div>
 
 VersionProbeContainer define substituições no nível do contêiner para a sonda de versão.
 Os nomes dos campos e as tags JSON correspondem a corev1.Container para que as mesclagens SMP sejam feitas por nome.
@@ -554,7 +627,9 @@ Aparece em:
 
 * [VersionProbePodSpec](#versionprobepodspec)
 
-## VersionProbeJobSpec {#versionprobejobspec}
+<div id="versionprobejobspec">
+  ## VersionProbeJobSpec
+</div>
 
 VersionProbeJobSpec define substituições no nível do Job para a sonda de versão.
 
@@ -567,7 +642,9 @@ Aparece em:
 
 * [VersionProbeTemplate](#versionprobetemplate)
 
-## VersionProbePodSpec {#versionprobepodspec}
+<div id="versionprobepodspec">
+  ## VersionProbePodSpec
+</div>
 
 VersionProbePodSpec define substituições no nível de pod do Kubernetes para a sonda de versão.
 Os nomes dos campos e as tags JSON correspondem a corev1.PodSpec para compatibilidade com strategic merge patch.
@@ -583,7 +660,9 @@ Aparece em:
 
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 
-## VersionProbePodTemplate {#versionprobepodtemplate}
+<div id="versionprobepodtemplate">
+  ## VersionProbePodTemplate
+</div>
 
 VersionProbePodTemplate descreve substituições para o pod do Kubernetes de sonda de versão.
 
@@ -596,7 +675,9 @@ Aparece em:
 
 * [VersionProbeJobSpec](#versionprobejobspec)
 
-## VersionProbeTemplate {#versionprobetemplate}
+<div id="versionprobetemplate">
+  ## VersionProbeTemplate
+</div>
 
 VersionProbeTemplate define substituições para o Job de detecção de versão.
 A estrutura corresponde a `batchv1.JobTemplateSpec`, expondo apenas os campos compatíveis.

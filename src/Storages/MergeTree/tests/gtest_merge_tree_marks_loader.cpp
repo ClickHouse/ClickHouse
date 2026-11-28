@@ -51,7 +51,6 @@ public:
     const MergeTreeIndexGranularityInfo & getIndexGranularityInfo() const override { unexpectedCall(); }
     const MergeTreeIndexGranularity & getIndexGranularity() const override { unexpectedCall(); }
     SerializationPtr getSerialization(const NameAndTypePair &) const override { unexpectedCall(); }
-    SerializationPtr tryGetSerialization(const String &) const override { unexpectedCall(); }
     const SerializationInfoByName & getSerializationInfos() const override { unexpectedCall(); }
     String getTableName() const override { unexpectedCall(); }
     void reportBroken() override { unexpectedCall(); }

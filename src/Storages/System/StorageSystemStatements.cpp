@@ -5,7 +5,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
-#include <Parsers/ParserRegistry.h>
+#include <Parsers/StatementFactory.h>
 
 #include <boost/algorithm/string/trim.hpp>
 
@@ -26,22 +26,22 @@ ColumnsDescription StorageSystemStatements::getColumnsDescription()
 
 void StorageSystemStatements::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    /// SQL statement documentation is stored in the parsers which parse them
-    for (const auto & creator : ParserRegistry::instance().getCreators())
-    {
-        for (const auto & [statement_name, documentation] : creator()->getDocumentation())
-        {
-            size_t i = 0;
-            res_columns[i++]->insert(statement_name);
-            res_columns[i++]->insert(documentation.syntaxAsString());
-            res_columns[i++]->insert(boost::algorithm::trim_copy(documentation.description));
-            res_columns[i++]->insert(documentation.parent);
+    const auto & factory = StatementFactory::instance();
 
-            Array related;
-            for (const auto & related_name : documentation.related)
-                related.push_back(related_name);
-            res_columns[i++]->insert(related);
-        }
+    for (const auto & name : factory.getAllRegisteredNames())
+    {
+        const auto documentation = factory.getDocumentation(name);
+
+        size_t i = 0;
+        res_columns[i++]->insert(name);
+        res_columns[i++]->insert(documentation.syntaxAsString());
+        res_columns[i++]->insert(boost::algorithm::trim_copy(documentation.description));
+        res_columns[i++]->insert(documentation.parent);
+
+        Array related;
+        for (const auto & related_name : documentation.related)
+            related.push_back(related_name);
+        res_columns[i++]->insert(related);
     }
 }
 

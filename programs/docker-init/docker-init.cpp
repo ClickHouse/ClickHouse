@@ -815,8 +815,7 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
                "  CLICKHOUSE_INIT_TIMEOUT             Max retries for server readiness (default: 1000)\n"
                "  CLICKHOUSE_WATCHDOG_ENABLE          Enable watchdog (default: 0)\n"
                "\nEnvironment variables (keeper mode):\n"
-               "  KEEPER_CONFIG                       Path to keeper config file "
-               "(default: the first existing of /etc/clickhouse-keeper/keeper_config.{xml,yaml,yml})\n"
+               "  KEEPER_CONFIG                       Path to keeper config file\n"
                "  CLICKHOUSE_DATA_DIR                 Data directory (default: /var/lib/clickhouse)\n"
                "  LOG_DIR                             Log directory (default: /var/log/clickhouse-keeper)\n";
         return 0;
@@ -936,23 +935,7 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     /// --- Keeper mode ---
     if (keeper_mode)
     {
-        /// A path set explicitly with `KEEPER_CONFIG` is used as is. Otherwise, the configuration file can be
-        /// written in any of the supported formats, the same as the default one looked up by `clickhouse-keeper`.
-        std::string keeper_config = getEnv("KEEPER_CONFIG");
-        if (keeper_config.empty())
-        {
-            keeper_config = "/etc/clickhouse-keeper/keeper_config.xml";
-            for (const char * extension : {".xml", ".yaml", ".yml"})
-            {
-                std::string candidate = std::string("/etc/clickhouse-keeper/keeper_config") + extension;
-                std::error_code exists_ec;
-                if (fs::exists(candidate, exists_ec))
-                {
-                    keeper_config = candidate;
-                    break;
-                }
-            }
-        }
+        std::string keeper_config = getEnv("KEEPER_CONFIG", "/etc/clickhouse-keeper/keeper_config.xml");
         std::string data_dir = getEnv("CLICKHOUSE_DATA_DIR", "/var/lib/clickhouse");
         std::string log_dir = getEnv("LOG_DIR", "/var/log/clickhouse-keeper");
 

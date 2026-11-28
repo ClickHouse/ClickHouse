@@ -137,7 +137,9 @@ Keeper 노드는 헤드리스 Service를 통해 파드 이름을 사용합니다
   ## 파드 구성
 </div>
 
-### 토폴로지 분산 및 어피니티 자동 설정 {#automatic-topology-spread-and-affinity}
+<div id="automatic-topology-spread-and-affinity">
+  ### 토폴로지 분산 및 어피니티 자동 설정
+</div>
 
 가용 영역에 걸쳐 파드를 분산합니다:
 
@@ -150,22 +152,6 @@ spec:
 
 <Note>
   분산 제약 조건을 충족할 수 있도록 Kubernetes 클러스터에 서로 다른 zone에 걸쳐 충분한 수의 노드가 있는지 확인하세요.
-</Note>
-
-노드 자동 스케일러(Karpenter, Cluster Autoscaler)를 사용하는 경우, 분산 제약 조건만으로는
-아직 노드가 없는 zone을 프로비저닝할 수 없습니다. 스케줄러는 인식 가능한 zone 범위 내에서만 배치를 결정하기 때문입니다.
-분산을 강제하려면 `topologyMinDomains`를 가용 영역 수로 설정하세요:
-
-```yaml
-spec:
-  podTemplate:
-    topologyZoneKey: topology.kubernetes.io/zone
-    topologyMinDomains: 3   # number of availability zones
-```
-
-<Note>
-  `topologyMinDomains`를 사용하려면 `topologyZoneKey`가 필요합니다. 요청한 수보다 적은 zone만 사용할 수 있는 동안에는
-  파드가 `Pending` 상태로 남아 있으므로, 클러스터가 제공할 수 있는 zone 범위 내에서 설정하세요.
 </Note>
 
 <div id="manual-configuration">
@@ -734,7 +720,7 @@ spec:
 
 | 플래그                               | 기본값     | 영향                                                                                                       |
 | --------------------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
-| `--version-update-interval`       | `24h`   | 연산자가 업스트림 버전 목록을 다시 가져오는 주기. 버전 업데이트 확인이 활성화된 경우 0보다 커야 합니다                                              |
+| `--version-update-interval`       | `24h`   | 연산자가 업스트림 버전 목록을 다시 가져오는 주기                                                                              |
 | `--disable-version-update-checks` | `false` | 업그레이드 검사기를 완전히 비활성화합니다. `VersionUpgraded` 조건이 설정되지 않으며, `clickhouse.com`으로 나가는 아웃바운드 HTTP 트래픽도 발생하지 않습니다 |
 
 에어갭 환경이거나 `clickhouse.com`으로의 egress가 허용되지 않는 경우 `--disable-version-update-checks=true`를 설정하십시오.
@@ -846,7 +832,9 @@ spec:
   (`passwordType: password`) 값을 사용할 때는 시크릿을 사용하십시오.
 </Note>
 
-### 구성의 사용자 지정 사용자 {#custom-users-in-configuration}
+<div id="custom-users-in-configuration">
+  ### 구성의 사용자 지정 사용자
+</div>
 
 설정 파일에서 추가 사용자를 구성합니다.
 
@@ -1095,17 +1083,4 @@ spec:
       configMap:
         key: password
         name: default-password
-```
-
-## 주기적 resync {#periodic-resync}
-
-연산자는 Kubernetes 이벤트에 반응하는 것 외에도, 일정한 인터벌마다 모든 클러스터를 다시 리컨실합니다. 이를 통해 어떤 watch로도 관찰할 수 없는 상태(ClickHouse 레플리카 health, Keeper quorum)의 상태 조건을 최신으로 유지하고, 멈춘 파드 정리와 같은 조치를 재시도합니다.
-
-이 인터벌은 연산자의 `RESYNC_PERIOD` environment variable(기본값 `30s`)로 제어됩니다. 이 설정은 `KeeperCluster` 리소스에 적용되며, `0`으로 지정하면 주기적 resync가 비활성화됩니다. `ClickHouseCluster` 리소스는 30초마다 ClickHouse `system.warnings`를 폴링하면서 이미 리컨실리에이션을 다시 트리거하므로, 현재 `RESYNC_PERIOD`는 이러한 리소스에 아무런 영향을 주지 않습니다.
-
-```yaml
-# in the operator Deployment spec
-env:
-- name: RESYNC_PERIOD
-  value: "1m"
 ```

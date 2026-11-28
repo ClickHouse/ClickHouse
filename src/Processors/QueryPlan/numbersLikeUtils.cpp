@@ -1,7 +1,6 @@
 #include <Processors/QueryPlan/numbersLikeUtils.h>
 
 #include <algorithm>
-#include <limits>
 
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -65,13 +64,11 @@ namespace
 
 bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSelectQuery::LimitInfo & lim_info)
 {
-    /// Reject negative, fractional, and zero limits for pushdown, and limits whose
-    /// `limit_length + limit_offset` does not fit in `UInt64`, leaving no representable bound.
+    /// Reject negative, fractional, and zero limits for pushdown
     if (lim_info.is_limit_length_negative
         || lim_info.fractional_limit > 0
         || lim_info.fractional_offset > 0
-        || lim_info.limit_length == 0
-        || lim_info.limit_length > std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
+        || lim_info.limit_length == 0)
         return false;
 
     chassert(query_info.query);

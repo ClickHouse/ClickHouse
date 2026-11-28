@@ -209,6 +209,7 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
+    checkDeserializedFinalizedAggregates(aggregates, *ctx.input_headers.front());
 
     std::optional<ActionsDAG> actions_dag;
     String filter_column_name;

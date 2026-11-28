@@ -456,9 +456,7 @@ void ColumnSparse::expand(const Filter & mask, bool inverted)
     if (mask.size() < _size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    /// Every non-default value moves to the position of its row in the mask. The iterator reads the old offsets,
-    /// so the new ones go into a copy.
-    auto res_offsets = offsets->cloneResized(offsets->size());
+    auto res_offsets = offsets->cloneEmpty();
     auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
 
     auto it = begin();
@@ -476,10 +474,6 @@ void ColumnSparse::expand(const Filter & mask, bool inverted)
         }
     }
 
-    if (it.getCurrentRow() != _size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
-
-    offsets = std::move(res_offsets);
     _size = mask.size();
 }
 
@@ -971,18 +965,31 @@ ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
     return Iterator(offsets_data, _size, current_offset, n);
 }
 
+namespace
+{
+
+const ColumnSparse & getSourceSparseColumn(const IColumn & source, const ColumnSparse & column, std::string_view operation)
+{
+    const auto * source_sparse = typeid_cast<const ColumnSparse *>(&source);
+    if (!source_sparse)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for {} of {} is not Sparse, but {}", operation, column.getName(), source.getName());
+    return *source_sparse;
+}
+
+}
+
 void ColumnSparse::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     VectorWithMemoryTracking<ColumnPtr> values_source_columns;
     values_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
+        values_source_columns.push_back(getSourceSparseColumn(*source_column, *this, "merge").getValuesPtr());
     values->chooseDynamicStructureForMerge(values_source_columns, max_dynamic_subcolumns);
 }
 
 void ColumnSparse::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    values->takeExactDynamicStructureFrom(assert_cast<const ColumnSparse &>(source).getValuesColumn());
+    values->takeExactDynamicStructureFrom(getSourceSparseColumn(source, *this, "dynamic structure").getValuesColumn());
 }
 
 void ColumnSparse::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
@@ -990,7 +997,7 @@ void ColumnSparse::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
     VectorWithMemoryTracking<ColumnPtr> values_source_columns;
     values_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
+        values_source_columns.push_back(getSourceSparseColumn(*source_column, *this, "statistics").getValuesPtr());
     values->takeOrCalculateStatisticsFrom(values_source_columns);
 }
 

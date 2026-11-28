@@ -1,7 +1,6 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/SingleValueData.h>
 #include <Common/memory.h>
-#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 namespace DB
@@ -34,6 +33,10 @@ public:
 
     SingleValueDataBase & data() { return v_data.get(); }
     const SingleValueDataBase & data() const { return v_data.get(); }
+
+    /// False after the nested state is destroyed until it is created again, so a throwing nested `create` does not lead
+    /// to a second nested `destroy`.
+    bool nested_created = true;
 };
 
 template <bool isMin>
@@ -56,6 +59,19 @@ private:
     const AggregateFunctionCombinatorArgMinArgMaxData & data(ConstAggregateDataPtr __restrict place) const
     {
         return *reinterpret_cast<const Key *>(place + key_offset);
+    }
+
+    /// Replaces the nested state with an empty one.
+    void resetNested(AggregateDataPtr __restrict place) const
+    {
+        auto & key = data(place);
+        if (key.nested_created)
+        {
+            nested_function->destroy(place);
+            key.nested_created = false;
+        }
+        nested_function->create(place);
+        key.nested_created = true;
     }
 
 public:
@@ -86,7 +102,8 @@ public:
                     getName(),
                     getNumericVariantSupertypeHint(type.getPtr()));
         };
-        forEachInTypeTree(*arguments[key_col], check_not_dynamic_or_variant);
+        check_not_dynamic_or_variant(*arguments[key_col]);
+        arguments[key_col]->forEachChild(check_not_dynamic_or_variant);
     }
 
     String getName() const override
@@ -120,8 +137,7 @@ public:
         if ((isMin && data(place).data().setIfSmaller(rhs_key.data(), arena))
             || (!isMin && data(place).data().setIfGreater(rhs_key.data(), arena)))
         {
-            nested_function->destroy(place);
-            nested_function->create(place);
+            resetNested(place);
             nested_function->mergeStateFromDifferentVariant(place, *rhs_nested, rhs_place, arena);
         }
         else if (data(place).data().isEqualTo(rhs_key.data()))
@@ -137,8 +153,6 @@ public:
     size_t getVersionFromRevision(size_t revision) const override { return nested_function->getVersionFromRevision(revision); }
 
     size_t getDefaultVersion() const override { return nested_function->getDefaultVersion(); }
-
-    DataTypePtr getStateType() const override { return this->getStateTypeWithVersionOf(*nested_function); }
 
     bool allocatesMemoryInArena() const override
     {
@@ -157,19 +171,31 @@ public:
     void create(AggregateDataPtr __restrict place) const override
     {
         nested_function->create(place);
-        new (place + key_offset) Key(key_type);
+        try
+        {
+            new (place + key_offset) Key(key_type);
+        }
+        catch (...)
+        {
+            nested_function->destroy(place);
+            throw;
+        }
     }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
+        const bool nested_created = data(place).nested_created;
         data(place).~Key();
-        nested_function->destroy(place);
+        if (nested_created)
+            nested_function->destroy(place);
     }
 
     void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
     {
+        const bool nested_created = data(place).nested_created;
         data(place).~Key();
-        nested_function->destroyUpToState(place);
+        if (nested_created)
+            nested_function->destroyUpToState(place);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -177,8 +203,7 @@ public:
         if ((isMin && data(place).data().setIfSmaller(*columns[key_col], row_num, arena))
             || (!isMin && data(place).data().setIfGreater(*columns[key_col], row_num, arena)))
         {
-            nested_function->destroy(place);
-            nested_function->create(place);
+            resetNested(place);
             nested_function->add(place, columns, row_num, arena);
         }
         else if (data(place).data().isEqualTo(*columns[key_col], row_num))
@@ -192,8 +217,7 @@ public:
         if ((isMin && data(place).data().setIfSmaller(data(rhs).data(), arena))
             || (!isMin && data(place).data().setIfGreater(data(rhs).data(), arena)))
         {
-            nested_function->destroy(place);
-            nested_function->create(place);
+            resetNested(place);
             nested_function->merge(place, rhs, arena);
         }
         else if (data(place).data().isEqualTo(data(rhs).data()))

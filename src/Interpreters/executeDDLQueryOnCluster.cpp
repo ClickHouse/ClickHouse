@@ -35,6 +35,7 @@ namespace Setting
     extern const SettingsInt64 distributed_ddl_task_timeout;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsBool ignore_on_cluster_for_replicated_database;
+    extern const SettingsUInt64 distributed_ddl_entry_format_version;
 }
 
 namespace ServerSetting
@@ -158,7 +159,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     bool use_local_default_database = false;
     const String & current_database = context->getCurrentDatabase();
-    Strings access_check_default_databases{current_database};
 
     if (need_replace_current_database)
     {
@@ -183,7 +183,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         }
         else
         {
-            access_check_default_databases = host_default_databases;
             for (size_t i = 0; i != access_to_check.size();)
             {
                 auto & element = access_to_check[i];
@@ -223,13 +222,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         entry.initiator_user = context->getUserName();
         entry.initiator_user_roles = context->getAccessControl().tryReadNames(context->getCurrentRoles());
     }
-
-    /// The workers run the query as the initiator's user and roles only if the entry carries them.
-    const bool workers_use_initiator_user = !entry.initiator_user.empty() && entry.version >= DDLLogEntry::INITIATOR_USER_VERSION;
-    if (params.additional_access_check)
-        for (const auto & default_database : access_check_default_databases)
-            params.additional_access_check(default_database, /* throw_if_unresolved = */ !workers_use_initiator_user);
-
     ddl_worker.updateHostIDs(entry.hosts);
     String node_path = ddl_worker.enqueueQuery(entry, params.retries_info);
 
@@ -278,6 +270,16 @@ bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
     }
 
     return false;
+}
+
+bool distributedDDLWorkersUseInitiatorUser(ContextPtr context)
+{
+    /// The same condition as in `executeDDLQueryOnCluster` and `DDLLogEntry::setSettingsIfRequired`: the user is
+    /// written to the entry only with the server setting on, and read by the hosts only from `INITIATOR_USER_VERSION`.
+    /// `setSettingsIfRequired` never lowers the configured version below `INITIATOR_USER_VERSION`.
+    return context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles]
+        && context->getSettingsRef()[Setting::distributed_ddl_entry_format_version] >= DDLLogEntry::INITIATOR_USER_VERSION
+        && !context->getUserName().empty();
 }
 
 }

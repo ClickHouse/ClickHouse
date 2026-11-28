@@ -64,21 +64,15 @@ def cleanup_after_test():
     try:
         yield
     finally:
-        # Tables left by a failed test can depend on tables in another database.
-        drop_settings = {"check_table_dependencies": 0}
-        instance.query("DROP DATABASE IF EXISTS test", settings=drop_settings)
-        instance.query("DROP DATABASE IF EXISTS test2", settings=drop_settings)
-        instance.query("DROP DATABASE IF EXISTS test3", settings=drop_settings)
-        instance.query("DROP DATABASE IF EXISTS restored", settings=drop_settings)
-        instance.query("DROP TABLE IF EXISTS default.mv_1")
+        instance.query("DROP DATABASE IF EXISTS test")
+        instance.query("DROP DATABASE IF EXISTS test2")
+        instance.query("DROP DATABASE IF EXISTS test3")
+        instance.query("DROP DATABASE IF EXISTS restored")
         instance.query("DROP USER IF EXISTS u1, u2")
         instance.query("DROP ROLE IF EXISTS r1, r2")
         instance.query("DROP SETTINGS PROFILE IF EXISTS prof1")
         instance.query("DROP ROW POLICY IF EXISTS rowpol1 ON test.table")
         instance.query("DROP QUOTA IF EXISTS q1")
-        instance.query("DROP FUNCTION IF EXISTS two_and_half")
-        instance.query("DROP FUNCTION IF EXISTS linear_equation")
-        instance.query("DROP FUNCTION IF EXISTS parity_str")
 
 
 backup_id_counter = 0
@@ -1506,6 +1500,134 @@ def test_system_users_required_privileges():
     instance.query("DROP USER u2")
 
 
+# Access backups include every entity of a type, so these checks need this module's isolated server.
+def test_restore_row_policy_replace_requires_scoped_drop():
+    instance.query("CREATE DATABASE test")
+    instance.query(
+        "CREATE TABLE test.table (owner UInt64) ENGINE = MergeTree ORDER BY owner"
+    )
+    instance.query("CREATE USER u2")
+    instance.query("GRANT READ ON DISK TO u2")
+    instance.query("GRANT CREATE ROW POLICY ON test.table TO u2")
+    instance.query(
+        "CREATE ROW POLICY rowpol1 ON test.table AS RESTRICTIVE USING 1 TO ALL"
+    )
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE system.row_policies TO {backup_name}")
+    instance.query("ALTER ROW POLICY rowpol1 ON test.table USING owner = 1")
+
+    restore = f"RESTORE TABLE system.row_policies FROM {backup_name}"
+    select_filter = "SELECT select_filter FROM system.row_policies WHERE short_name = 'rowpol1' AND database = 'test' AND table = 'table'"
+    instance.query(f"{restore} SETTINGS create_access='if-not-exists'", user="u2")
+    assert instance.query(select_filter) == "owner = 1\n"
+
+    error = instance.query_and_get_error(
+        f"{restore} SETTINGS create_access='replace'", user="u2"
+    )
+    assert "ACCESS_DENIED" in error
+    assert "DROP ROW POLICY" in error
+    assert instance.query(select_filter) == "owner = 1\n"
+
+    instance.query("GRANT DROP ROW POLICY ON test.another_table TO u2")
+    error = instance.query_and_get_error(
+        f"{restore} SETTINGS create_access='replace'", user="u2"
+    )
+    assert "ACCESS_DENIED" in error
+    assert "DROP ROW POLICY" in error
+    assert instance.query(select_filter) == "owner = 1\n"
+
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
+    error = instance.query_and_get_error(
+        f"{restore} SETTINGS create_access='replace'", user="u2"
+    )
+    assert "ACCESS_DENIED" in error
+    assert "DROP ROW POLICY" in error
+    assert instance.query(select_filter) == ""
+
+    instance.query(f"{restore} SETTINGS create_access='create'", user="u2")
+    assert instance.query(select_filter) == "1\n"
+    instance.query("ALTER ROW POLICY rowpol1 ON test.table USING owner = 1")
+    instance.query("GRANT DROP ROW POLICY ON test.table TO u2")
+    instance.query(f"{restore} SETTINGS create_access='replace'", user="u2")
+    assert instance.query(select_filter) == "1\n"
+
+
+@pytest.mark.parametrize(
+    "kind,system_table,target", [("USER", "users", "u1"), ("ROLE", "roles", "r1")]
+)
+def test_restore_access_partial_revoke_cannot_cancel_drop(kind, system_table, target):
+    instance.query(f"CREATE {kind} {target} SETTINGS max_threads = 1")
+    instance.query(f"GRANT DROP {kind} ON * TO {target}")
+    instance.query(f"REVOKE DROP {kind} ON {target} FROM {target}")
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE system.{system_table} TO {backup_name}")
+    instance.query(f"ALTER {kind} {target} SETTINGS max_threads = 2")
+
+    # Create the actor after the backup so its grants cannot mask the target's partial revoke.
+    instance.query("CREATE USER u2")
+    instance.query("GRANT READ ON DISK TO u2")
+    instance.query(f"GRANT CREATE {kind} ON {target} TO u2")
+    instance.query(f"GRANT DROP {kind} ON * TO u2 WITH GRANT OPTION")
+    instance.query(f"REVOKE DROP {kind} ON {target} FROM u2")
+    restore = f"RESTORE TABLE system.{system_table} FROM {backup_name} SETTINGS create_access='replace'"
+    error = instance.query_and_get_error(restore, user="u2")
+    assert "ACCESS_DENIED" in error
+    assert f"DROP {kind}" in error
+    assert "max_threads = 2" in instance.query(f"SHOW CREATE {kind} {target}")
+
+    # Ordinary `DROP` is sufficient; the target's grants exclude `DROP` on itself.
+    instance.query(f"GRANT DROP {kind} ON {target} TO u2")
+    instance.query(restore, user="u2")
+    assert "max_threads = 1" in instance.query(f"SHOW CREATE {kind} {target}")
+
+
+def test_restore_access_partial_revokes_preserve_grant_and_table_requirements():
+    instance.query("CREATE DATABASE test")
+    instance.query(
+        "CREATE TABLE test.table (owner UInt64) ENGINE = MergeTree ORDER BY owner"
+    )
+    instance.query("INSERT INTO test.table VALUES (1)")
+    instance.query("CREATE ROLE r1 SETTINGS max_threads = 1")
+    instance.query("GRANT SELECT, INSERT ON test.* TO r1 WITH GRANT OPTION")
+    instance.query("REVOKE GRANT OPTION FOR SELECT ON test.table FROM r1")
+    instance.query("REVOKE INSERT ON test.table FROM r1")
+    backup_name = new_backup_name()
+    backup_tables = "TABLE system.roles, TABLE test.table"
+    instance.query(f"BACKUP {backup_tables} TO {backup_name}")
+    instance.query("ALTER ROLE r1 SETTINGS max_threads = 2")
+
+    instance.query("CREATE USER u2")
+    instance.query("GRANT READ ON DISK TO u2")
+    instance.query("GRANT CREATE ROLE, DROP ROLE ON r1 TO u2")
+    instance.query("GRANT CREATE TABLE ON test.table TO u2")
+    instance.query("GRANT SELECT, INSERT ON test.* TO u2 WITH GRANT OPTION")
+    instance.query("REVOKE GRANT OPTION FOR SELECT ON test.table FROM u2")
+    restore = f"RESTORE TABLE system.roles FROM {backup_name} SETTINGS create_access='replace'"
+    error = instance.query_and_get_error(restore, user="u2")
+    assert "ACCESS_DENIED" in error
+    assert "SELECT" in error
+    assert "WITH GRANT OPTION" in error
+    assert "max_threads = 2" in instance.query("SHOW CREATE ROLE r1")
+
+    instance.query("GRANT SELECT ON test.table TO u2 WITH GRANT OPTION")
+    instance.query(restore, user="u2")
+    assert "max_threads = 1" in instance.query("SHOW CREATE ROLE r1")
+
+    instance.query("TRUNCATE TABLE test.table")
+    instance.query("REVOKE INSERT ON test.table FROM u2")
+    restore_with_table = (
+        f"RESTORE {backup_tables} FROM {backup_name} SETTINGS create_access='replace'"
+    )
+    error = instance.query_and_get_error(restore_with_table, user="u2")
+    assert "ACCESS_DENIED" in error
+    assert "INSERT" in error
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
+
+    instance.query("GRANT INSERT ON test.table TO u2")
+    instance.query(restore_with_table, user="u2")
+    assert instance.query("SELECT * FROM test.table") == "1\n"
+
+
 def test_system_users_async():
     instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS custom_c = 3")
 
@@ -2546,9 +2668,6 @@ def test_structure_only_restores_access_entities_and_udfs():
     )
 
     assert instance.query("EXISTS test.table") == "1\n"
-    # The restored row policy applies right away and admits `u1` only, so `default` cannot read the
-    # table until it is gone.
-    instance.query("DROP ROW POLICY rowpol1 ON test.table")
     assert instance.query("SELECT count() FROM test.table") == "0\n"
     assert (
         instance.query("SHOW CREATE USER u1")
@@ -2557,6 +2676,7 @@ def test_structure_only_restores_access_entities_and_udfs():
     assert instance.query("SELECT linear_equation(2, 3, 1)") == "7\n"
 
     instance.query("DROP FUNCTION linear_equation")
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
     instance.query("DROP DATABASE test")
     instance.query("DROP USER u1")
     instance.query("DROP ROLE r1")
@@ -2613,20 +2733,11 @@ def test_structure_only_restores_access_entities_and_udfs():
         f" SETTINGS structure_only=true, restore_access_entities='true', restore_functions='1'"
     )
 
-    assert instance.query("EXISTS test.table") == "1\n"
-
-    # All access entity types were restored
-    assert (
-        instance.query("SHOW CREATE ROW POLICY rowpol1")
-        == "CREATE ROW POLICY rowpol1 ON test.`table` FOR SELECT USING x < 50 TO u1\n"
-    )
-    # The restored row policy applies right away and admits `u1` only, so `default` cannot read the
-    # table until it is gone.
-    instance.query("DROP ROW POLICY rowpol1 ON test.table")
-
     # Table exists but has no data
+    assert instance.query("EXISTS test.table") == "1\n"
     assert instance.query("SELECT count() FROM test.table") == "0\n"
 
+    # All access entity types were restored
     assert (
         instance.query("SHOW CREATE USER u1")
         == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_a = 1\n"
@@ -2637,6 +2748,10 @@ def test_structure_only_restores_access_entities_and_udfs():
         instance.query("SHOW CREATE SETTINGS PROFILE prof1")
         == "CREATE SETTINGS PROFILE `prof1` SETTINGS custom_b = 2 TO u1\n"
     )
+    assert (
+        instance.query("SHOW CREATE ROW POLICY rowpol1")
+        == "CREATE ROW POLICY rowpol1 ON test.`table` FOR SELECT USING x < 50 TO u1\n"
+    )
     assert instance.query("SHOW CREATE QUOTA q1") == "CREATE QUOTA q1 TO r1\n"
 
     # UDF was restored
@@ -2644,6 +2759,7 @@ def test_structure_only_restores_access_entities_and_udfs():
 
     instance.query("DROP FUNCTION linear_equation")
 
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
     instance.query("DROP DATABASE test")
     instance.query("DROP USER u1")
     instance.query("DROP ROLE r1")

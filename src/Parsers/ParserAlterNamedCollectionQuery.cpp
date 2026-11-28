@@ -5,6 +5,8 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 namespace DB
 {
@@ -96,11 +98,14 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
     return true;
 }
 
-std::map<String, Documentation> ParserAlterNamedCollectionQuery::getDocumentation() const
-{
-    std::map<String, Documentation> documentation;
+}
 
-    documentation["ALTER NAMED COLLECTION"] =
+namespace DB
+{
+
+void registerStatementAlterNamedCollection(StatementFactory & factory)
+{
+    factory.registerStatement("ALTER NAMED COLLECTION",
     {
         .description = R"DOCS_MD(
 This query intends to modify already existing named collections.
@@ -138,9 +143,7 @@ ALTER NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
 )",
         .parent = "ALTER",
         .related = {"CREATE NAMED COLLECTION", "ALTER", "DROP"},
-    };
-
-    return documentation;
+    });
 }
 
 }

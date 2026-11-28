@@ -252,7 +252,7 @@ DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &
     {
         if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(type.get()))
         {
-            const IntervalKind::Kind current_interval = interval_type->getKind();
+            auto current_interval = interval_type->getKind().kind;
             if (current_interval > IntervalKind::Kind::Week)
                 is_higher_interval = true;
             if (current_interval < min_interval)

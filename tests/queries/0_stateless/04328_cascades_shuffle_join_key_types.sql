@@ -1,3 +1,5 @@
+-- Tags: no-darwin
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- Shuffle exchanges created by the Cascades `DistributionEnforcer` must align
 -- join key types across both sides (least supertype), as the legacy
@@ -25,8 +27,7 @@ INSERT INTO t_keys32 SELECT toInt32(number) - 50000, number FROM numbers(100000)
 INSERT INTO t_keys64 SELECT toInt64(number) - 50000, number * 2 FROM numbers(100000);
 
 SELECT '-- 1. Shuffle join with mismatched signed key types: all 100000 keys must match';
-SELECT count(), sum(l.v + r.v) FROM t_keys32 AS l JOIN t_keys64 AS r ON l.k = r.k
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count(), sum(l.v + r.v) FROM t_keys32 AS l JOIN t_keys64 AS r ON l.k = r.k;
 
 SELECT '-- 2. Baseline without Cascades';
 SELECT count(), sum(l.v + r.v) FROM t_keys32 AS l JOIN t_keys64 AS r ON l.k = r.k
@@ -35,8 +36,7 @@ SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 -- Sorted small tables: the shuffle must still cast keys to a common type so equal values
 -- from differently-typed columns land in the same bucket.
 SELECT '-- 3. Merge-join-friendly shape (sorted small tables): types still must not split buckets';
-SELECT count(), sum(l.v + r.v) FROM (SELECT * FROM t_keys32 WHERE k < -40000) AS l JOIN t_keys64 AS r ON l.k = r.k
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count(), sum(l.v + r.v) FROM (SELECT * FROM t_keys32 WHERE k < -40000) AS l JOIN t_keys64 AS r ON l.k = r.k;
 
 DROP TABLE t_keys32;
 DROP TABLE t_keys64;

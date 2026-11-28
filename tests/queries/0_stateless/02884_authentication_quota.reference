@@ -6,7 +6,7 @@
 > Login to the user account using the wrong password.
 password is incorrect
 > Quota is exceeded 1 >= 1. Login with correct password should fail.
-QUOTA_EXCEEDED
+password is incorrect
 > Check the failed_sequential_authentications, max_failed_sequential_authentications fields.
 2	1
 > Alter the quota with MAX FAILED SEQUENTIAL AUTHENTICATIONS = 4
@@ -18,9 +18,9 @@ password is incorrect
 password is incorrect
 password is incorrect
 password is incorrect
-QUOTA_EXCEEDED
+password is incorrect
 > Also try to login with correct password. Quota should stay exceeded.
-QUOTA_EXCEEDED
+password is incorrect
 > Check the failed_sequential_authentications, max_failed_sequential_authentications fields.
 6	4
 > Reset the quota by increasing MAX FAILED SEQUENTIAL AUTHENTICATIONS and successful login
@@ -32,7 +32,7 @@ QUOTA_EXCEEDED
 > Login to the user account using the wrong password.
 password is incorrect
 > Quota is exceeded 1 >= 1. Login with correct password should fail.
-QUOTA_EXCEEDED
+password is incorrect
 > Check the failed_sequential_authentications, max_failed_sequential_authentications fields.
 2	1
 > Alter the quota with MAX FAILED SEQUENTIAL AUTHENTICATIONS = 4
@@ -44,9 +44,9 @@ password is incorrect
 password is incorrect
 password is incorrect
 password is incorrect
-QUOTA_EXCEEDED
+password is incorrect
 > Also try to login with correct password. Quota should stay exceeded.
-QUOTA_EXCEEDED
+password is incorrect
 > Check the failed_sequential_authentications, max_failed_sequential_authentications fields.
 6	4
 > Reset the quota by increasing MAX FAILED SEQUENTIAL AUTHENTICATIONS and successful login

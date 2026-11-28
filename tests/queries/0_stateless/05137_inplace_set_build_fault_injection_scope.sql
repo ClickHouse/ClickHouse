@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel
 -- no-parallel: uses the global ONCE failpoint `prepared_sets_build_ordered_set_inplace_fail`.
 
 -- `prepared_sets_build_ordered_set_inplace_fail` simulates an in-place set build that stops without

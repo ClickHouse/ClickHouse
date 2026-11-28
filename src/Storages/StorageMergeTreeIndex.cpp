@@ -18,7 +18,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
-#include <Storages/getEffectiveRowPolicyFilter.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -321,8 +321,7 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     {
         Block minmax_block;
         const auto metadata_snapshot = merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-        const auto & partition_key = metadata_snapshot->getPartitionKey();
-        for (const auto & column : MergeTreeData::getMinMaxColumns(partition_key, merge_tree->getSettings()))
+        for (const auto & column : MergeTreeData::getMinMaxColumns(*metadata_snapshot, merge_tree->getSettings()))
             minmax_block.insert({nullptr, std::make_shared<DataTypeTuple>(DataTypes{makeNullableSafe(column.type), makeNullableSafe(column.type)}), fmt::format("minmax_{}", column.name)});
         minmax_sample_block = std::make_shared<const Block>(std::move(minmax_block));
     }
@@ -429,7 +428,10 @@ void StorageMergeTreeIndex::readImpl(
     context->checkAccess(AccessType::SELECT, source_storage_id, columns_from_storage);
 
     /// We cannot apply a row policy to granules, but the index leaks keys of the rows it hides
-    if (getEffectiveRowPolicyFilter(*source_table, context))
+    auto row_policy_filter = context->getRowPolicyFilter(
+        source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "Cannot read from `mergeTreeIndex` because a row policy is applied on table {}. "
             "Reading the index could violate the row policy",
