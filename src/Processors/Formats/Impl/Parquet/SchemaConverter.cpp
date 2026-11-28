@@ -613,7 +613,7 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     }
     catch (Exception & e)
     {
-        if (options.format.parquet.skip_columns_with_unsupported_types_in_schema_inference &&
+        if (!sample_block && options.format.parquet.skip_columns_with_unsupported_types_in_schema_inference &&
             (e.code() == ErrorCodes::INCORRECT_DATA || e.code() == ErrorCodes::NOT_IMPLEMENTED))
         {
             return true;
@@ -1465,7 +1465,7 @@ std::optional<size_t> SchemaConverter::addLevelsOnlyPrimitive(
 
     if (!best)
     {
-        if (leaves_start == leaves_end || options.format.parquet.skip_columns_with_unsupported_types_in_schema_inference)
+        if (leaves_start == leaves_end)
             return std::nullopt;
         throw Exception(
             ErrorCodes::INCORRECT_DATA, "No column under {} has a known physical type to read its levels from, e.g. {}",
