@@ -163,6 +163,9 @@ private:
 
     void checkNamespaceExists(const std::string & schema_name) const;
 
+    /// Whether the catalog `warehouse` has the schema `schema_name`; any error other than 404 propagates.
+    [[nodiscard]] bool schemaExists(const std::string & schema_name) const;
+
     /// Fetches a token from the OAuth server.
     AccessToken retrieveAccessToken() const;
 
@@ -174,6 +177,10 @@ private:
 
     ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
     CatalogTables getTablesForSchema(const std::string & schema, size_t limit = 0) const;
+
+    /// Like `getTablesForSchema`, but a schema that does not exist (for example, dropped after it was
+    /// listed) has no tables instead of being an error.
+    [[nodiscard]] CatalogTables getTablesForSchemaIfExists(const std::string & schema, size_t limit = 0) const;
 
     DataLakeTableFormat detectTableFormat(const Poco::JSON::Object::Ptr & table_json) const;
 

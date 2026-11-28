@@ -82,6 +82,10 @@ enum class CatalogShape
     VanishedChildListingServerError,
     VanishedTableListing,
     VanishedTableListingUnauthorized,
+    /// As `VanishedChildListing` / `VanishedTableListing`, but the 404 carries the `google.rpc.Status`
+    /// error model of Google APIs (BigLake) rather than the Iceberg REST one.
+    VanishedChildListingGoogleError,
+    VanishedTableListingGoogleError,
     /// The two shapes below serve a non-empty FIRST page and then 404 the follow-up page, modelling
     /// a namespace dropped part-way through a paginated listing. A 404 names the namespace, so every
     /// page collected so far must be discarded: returning the pages already read would report a
@@ -121,6 +125,7 @@ bool advertisesDoomedNamespace(CatalogShape shape)
     return shape == CatalogShape::VanishedChildListing || shape == CatalogShape::VanishedChildListingUnauthorized
         || shape == CatalogShape::VanishedChildListingServerError || shape == CatalogShape::VanishedTableListing
         || shape == CatalogShape::VanishedTableListingUnauthorized
+        || shape == CatalogShape::VanishedChildListingGoogleError || shape == CatalogShape::VanishedTableListingGoogleError
         || shape == CatalogShape::VanishedChildListingSecondPage || shape == CatalogShape::VanishedTableListingSecondPage
         || shape == CatalogShape::ChildListingEndpointNotFound || shape == CatalogShape::TableListingEndpointNotFound
         || shape == CatalogShape::TableListingWrongErrorType || shape == CatalogShape::TableListingUnparseableBody
@@ -172,6 +177,8 @@ std::string getRawPath(const std::string & uri)
 
 constexpr auto NO_SUCH_NAMESPACE_BODY
     = R"({"error":{"message":"Namespace doomed not found.","type":"NoSuchNamespaceException","code":404}})";
+constexpr auto GOOGLE_NOT_FOUND_BODY
+    = R"({"error":{"code":404,"message":"Requested entity was not found.","status":"NOT_FOUND"}})";
 constexpr auto ENDPOINT_NOT_FOUND_BODY = R"({"error_code":"ENDPOINT_NOT_FOUND"})";
 constexpr auto WRONG_TYPE_BODY
     = R"({"error":{"message":"NoSuchNamespaceException","type":"EndpointNotFound","code":404}})";
@@ -288,6 +295,8 @@ public:
                     ++counters->doomed_child_listing;
                 if (shape == CatalogShape::VanishedChildListing)
                     writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, NO_SUCH_NAMESPACE_BODY);
+                else if (shape == CatalogShape::VanishedChildListingGoogleError)
+                    writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, GOOGLE_NOT_FOUND_BODY);
                 else if (shape == CatalogShape::ChildListingEndpointNotFound)
                     writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, ENDPOINT_NOT_FOUND_BODY);
                 else if (shape == CatalogShape::VanishedChildListingUnauthorized)
@@ -340,6 +349,8 @@ public:
                 ++counters->doomed_table_listing;
             if (shape == CatalogShape::VanishedTableListing)
                 writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, NO_SUCH_NAMESPACE_BODY);
+            else if (shape == CatalogShape::VanishedTableListingGoogleError)
+                writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, GOOGLE_NOT_FOUND_BODY);
             else if (shape == CatalogShape::TableListingEndpointNotFound)
                 writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, ENDPOINT_NOT_FOUND_BODY);
             else if (shape == CatalogShape::TableListingWrongErrorType)
@@ -1055,6 +1066,22 @@ TEST(RestCatalog, GetTablesSkipsNamespaceVanishedDuringTableListing)
     EXPECT_EQ(sortedTableNames(catalog->getTables()), DB::Names{"alive.table_a"});
     EXPECT_FALSE(catalog->empty());
     EXPECT_GE(counters.doomed_table_listing.load(), 1u);
+}
+
+TEST(RestCatalog, GetTablesSkipsNamespaceVanishedWithGoogleErrorModel)
+{
+    /// BigLake reports the dropped namespace with the `google.rpc.Status` error model.
+    for (const auto shape : {CatalogShape::VanishedChildListingGoogleError, CatalogShape::VanishedTableListingGoogleError})
+    {
+        RequestCounters counters;
+        RestCatalogTestServer server(shape, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+        auto context = DB::Context::createCopy(getContext().context);
+        context->makeQueryContext();
+        auto catalog = makeRestCatalog(server, context);
+
+        EXPECT_EQ(sortedTableNames(catalog->getTables()), DB::Names{"alive.table_a"});
+        EXPECT_GE(counters.doomed_child_listing.load() + counters.doomed_table_listing.load(), 1u);
+    }
 }
 
 TEST(RestCatalog, ChildListingDiscardsEarlierPagesWhenNamespaceVanishes)
