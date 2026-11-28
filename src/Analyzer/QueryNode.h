@@ -717,6 +717,14 @@ public:
         return projection_columns;
     }
 
+    /// The name of projection column `index` before `projection_aliases_to_override` renamed it. INTERPOLATE names its targets so.
+    [[nodiscard]] const String & getProjectionNameBeforeOverride(size_t index) const
+    {
+        return projection_names_before_override.empty() ? projection_columns[index].name : projection_names_before_override[index];
+    }
+
+    [[nodiscard]] bool hasProjectionNamesBeforeOverride() const { return !projection_names_before_override.empty(); }
+
     /// Returns true if query node is resolved, false otherwise
     [[nodiscard]] bool isResolved() const
     {
@@ -730,6 +738,7 @@ public:
     void clearProjectionColumns()
     {
         projection_columns.clear();
+        projection_names_before_override.clear();
     }
 
     /// Remove unused projection columns
@@ -809,6 +818,8 @@ private:
     std::string cte_name;
     NamesAndTypes projection_columns;
     Names projection_aliases_to_override;
+    /// Kept when `projection_aliases_to_override` renames the projection of a query with INTERPOLATE, empty otherwise.
+    Names projection_names_before_override;
     ContextMutablePtr context;
     SettingsChanges settings_changes;
     std::vector<String> default_settings;
