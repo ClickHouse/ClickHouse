@@ -150,7 +150,8 @@ bool DatabasePostgreSQL::empty() const
     std::lock_guard lock(mutex);
 
     auto connection_holder = pool->get();
-    auto tables_list = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+    auto tables_list = connection_holder->execWithReconnect(
+        [&](pqxx::connection & connection) { return fetchPostgreSQLTablesList(connection, configuration.schema); });
 
     for (const auto & table_name : tables_list)
         if (!detached_or_dropped.contains(table_name))
@@ -170,7 +171,8 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
     try
     {
         auto connection_holder = pool->get();
-        auto table_names = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+        auto table_names = connection_holder->execWithReconnect(
+            [&](pqxx::connection & connection) { return fetchPostgreSQLTablesList(connection, configuration.schema); });
 
         /// Apply the filter before `fetchTable`: it queries the remote structure of one table, so
         /// a query that names the tables it wants must not pay for the whole schema.
@@ -222,19 +224,22 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
     }
 
     auto connection_holder = pool->get();
-    pqxx::nontransaction tx(connection_holder->get());
 
     try
     {
-        /// Casting table_name::regclass throws pqxx::indefined_table exception if table_name is incorrect.
-        pqxx::result result = tx.exec(fmt::format(
-                    "SELECT {}::regclass, tablename "
-                    "FROM pg_catalog.pg_tables "
-                    "WHERE schemaname != 'pg_catalog' AND {} "
-                    "AND tablename = {}",
-                    quoteStringPostgreSQL(formatTableName(table_name)),
-                    (configuration.schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteStringPostgreSQL(configuration.schema)),
-                    quoteStringPostgreSQL(formatTableName(table_name))));
+        connection_holder->execWithReconnect([&](pqxx::connection & connection)
+        {
+            pqxx::nontransaction tx(connection);
+            /// Casting table_name::regclass throws pqxx::indefined_table exception if table_name is incorrect.
+            tx.exec(fmt::format(
+                        "SELECT {}::regclass, tablename "
+                        "FROM pg_catalog.pg_tables "
+                        "WHERE schemaname != 'pg_catalog' AND {} "
+                        "AND tablename = {}",
+                        quoteStringPostgreSQL(formatTableName(table_name)),
+                        (configuration.schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteStringPostgreSQL(configuration.schema)),
+                        quoteStringPostgreSQL(formatTableName(table_name))));
+        });
     }
     catch (pqxx::undefined_table const &)
     {
@@ -280,7 +285,10 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
             return StoragePtr{};
 
         auto connection_holder = pool->get();
-        auto columns_info = fetchPostgreSQLTableStructure(connection_holder->get(), table_name, configuration.schema).physical_columns;
+        auto columns_info = connection_holder->execWithReconnect([&](pqxx::connection & connection)
+        {
+            return fetchPostgreSQLTableStructure(connection, table_name, configuration.schema).physical_columns;
+        });
 
         if (!columns_info)
             return StoragePtr{};
@@ -525,7 +533,8 @@ void DatabasePostgreSQL::removeOutdatedTables()
     try
     {
         auto connection_holder = pool->get();
-        actual_tables = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+        actual_tables = connection_holder->execWithReconnect(
+            [&](pqxx::connection & connection) { return fetchPostgreSQLTablesList(connection, configuration.schema); });
     }
     catch (...)
     {
