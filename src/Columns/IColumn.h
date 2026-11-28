@@ -41,6 +41,15 @@ using IColumnPermutation = PaddedPODArray<size_t>;
 using IColumnFilter = PaddedPODArray<UInt8>;
 class WriteBufferFromOwnString;
 
+/// Type trait to indicate if a column type requires endian conversion during serialization.
+/// Default is false. Specialize this for column types that need endian conversion.
+template <typename T>
+struct enable_endian_serialize : std::false_type {};
+
+/// Concept to check if a type supports endian serialization
+template <typename T>
+concept endian_serialize = enable_endian_serialize<T>::value;
+
 /// A range of column values between row indexes `from` and `to`. The name "equal range" is due to table sorting as its main use case: With
 /// a PRIMARY KEY (c_pk1, c_pk2, ...), the first PK column is fully sorted. The second PK column is sorted within equal-value runs of the
 /// first PK column, and so on. The number of runs (ranges) per column increases from one primary key column to the next. An "equal range"
