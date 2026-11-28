@@ -8,16 +8,16 @@ keywords: ['ClickStack', 'デモデイズ']
 ---
 
 <div id="improved-handling-of-secrets-in-webhooks">
-  ## Webhookにおけるシークレットの取り扱いを改善
+  ## Webhookにおけるシークレットの取り扱いを改善 {#improved-handling-of-secrets-in-webhooks}
 </div>
 
-*デモ: [@dhable](https://github.com/dhable)*
+*デモ担当者: [@dhable](https://github.com/dhable)*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/aD7sT5dc470" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/aD7sT5dc470" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-Webhook の URL やヘッダーには、認証情報がそのまま含まれていることが少なくありません。Slack の webhook URL にはシークレットトークンがパスに含まれており、HTTP webhook では通常、認証のために Authorization ヘッダーが必要です。このリリース以前は、webhook の一覧表示や編集に使われる HyperDX の内部 API が、こうした情報を毎回のリクエストでそのまま返していました。そのため、認証済みのチームメンバーであれば、API を呼び出すだけでシークレットを参照できてしまっていました。
+Webhook の URL やヘッダーには、認証情報がそのまま含まれていることが少なくありません。Slack の webhook URL にはシークレットトークンがパスに含まれており、HTTP webhook では通常、認証のために Authorization ヘッダーが必要です。このリリース以前は、webhook の一覧表示や編集に使われる ClickStack UI の内部 API が、こうした情報を毎回のリクエストでそのまま返していました。そのため、認証済みのチームメンバーであれば、API を呼び出すだけでシークレットを参照できてしまっていました。
 
 今回の変更では、公開 API ですでに使われていたものと同じマスキング方式を適用しています。Webhook の URL は、パスが `****` に置き換えられた状態で返されるため、Slack トークン (またはパスに埋め込まれたその他のキー) がサーバーの外に出ることはありません。また、どのヘッダーにシークレットが含まれているかを確実に判別する方法がないため、ヘッダーもデフォルトでマスクされます。すべての値は `****` に置き換えられ、表示されるのはヘッダー名だけです。
 
@@ -26,7 +26,7 @@ Webhook の URL やヘッダーには、認証情報がそのまま含まれて�
 **関連 PR:** [#2239](https://github.com/hyperdxio/hyperdx/pull/2239) [HDX-4173] 内部 webhook API レスポンス内の機微なフィールドをマスク
 
 <div id="extra-metadata-in-alerts">
-  ## アラートの追加メタデータ
+  ## アラートの追加メタデータ {#extra-metadata-in-alerts}
 </div>
 
 *[@dhable](https://github.com/dhable) によるデモ*
@@ -44,10 +44,10 @@ Webhook の URL やヘッダーには、認証情報がそのまま含まれて�
 **関連 PR:** [#2210](https://github.com/hyperdxio/hyperdx/pull/2210) [HDX-3044] アラートに任意の note フィールドを追加
 
 <div id="possible-themes">
-  ## テーマ案
+  ## テーマ案 {#possible-themes}
 </div>
 
-*[@elizabetdev](https://github.com/elizabetdev) によるデモ*
+*デモ担当者: [@elizabetdev](https://github.com/elizabetdev)*
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/JZYGz6ZOPf4" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
@@ -57,6 +57,6 @@ Webhook の URL やヘッダーには、認証情報がそのまま含まれて�
 
 この PR は最終的に merge ではなく close されました。チームは ClickUI への移行を進めており、現時点では単一テーマのみをサポートしています。複数のトークンセットを並行して維持すると継続的な運用コストが発生し、特に各組み合わせでコントラストを適切に検証し始めると負担が大きくなります。そのため、ClickUI 自体がマルチテーマに対応するまでは見送ることになりました。
 
-この実験で得られたデザイン上の考え方のうち、ひとつは今後この話が再び持ち上がったときにも覚えておく価値があると感じました。最初の版ではテーマごとに HyperDX のロゴを色替えしていましたが、それではブランドらしさが失われてしまいます。より適切なアプローチは、ライトテーマではダークロゴを表示し、ダークテーマではライトロゴを表示し、緑色の HyperDX ワードマーク自体には手を加えないことです。
+この実験で得られたデザイン上の考え方のうち、ひとつは今後この話が再び持ち上がったときにも覚えておく価値があると感じました。最初の版ではテーマごとに ClickStack UI のロゴを色替えしていましたが、それではブランドらしさが失われてしまいます。より適切なアプローチは、ライトテーマではダークロゴを表示し、ダークテーマではライトロゴを表示し、緑色の ClickStack UI ワードマーク自体には手を加えないことです。
 
 **関連 PR:** [#2191](https://github.com/hyperdxio/hyperdx/pull/2191) feat: IDE 風テーマ (Nord、Catppuccin、One Dark) を追加

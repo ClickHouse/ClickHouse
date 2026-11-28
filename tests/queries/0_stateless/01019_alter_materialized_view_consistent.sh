@@ -66,7 +66,7 @@ function alter_thread() {
     local TIMELIMIT=$((SECONDS+120))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        $CLICKHOUSE_CLIENT --allow_experimental_alter_materialized_view_structure=1 -q "${ALTER[$i % 6]}"
+        $CLICKHOUSE_CLIENT -q "${ALTER[$i % 6]}"
         ((i=i+1))
 
         sleep "0.0$RANDOM"

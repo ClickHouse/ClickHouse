@@ -1,14 +1,12 @@
 ---
 title: كيفية تفعيل SSL على خادم ClickHouse واحد باستخدام Let's Encrypt
-description: تعرّف على كيفية إعداد SSL لخادم ClickHouse واحد باستخدام Let's Encrypt، بما في ذلك إصدار الشهادات، والتهيئة، والتحقق.
+description: تعرّف على كيفية إعداد SSL لخادم ClickHouse واحد باستخدام Let's Encrypt، بما في ذلك إصدار الشهادات، والإعدادات، والتحقق.
 date: 2024-12-11
 tags: ['الأمان والمصادقة']
 keywords: ['SSL', 'Let/`s Encrypt']
 ---
 
-<div id="steps-to-follow">
-  ## الخطوات التي يجب اتباعها
-</div>
+## الخطوات التي يجب اتباعها {#steps-to-follow}
 
 يمكن استخدام الخطوات التالية لتمكين SSL لخادم ClickHouse واحد باستخدام [Let&#39;s Encrypt](https://letsencrypt.org/)، وهي جهة إصدار شهادات (CA) مجانية وآلية ومفتوحة، صُممت لتسهيل تأمين مواقع الويب باستخدام HTTPS على الجميع. ومن خلال أتمتة عملية إصدار الشهادات وتجديدها، تضمن Let&#39;s Encrypt بقاء مواقع الويب آمنة من دون الحاجة إلى تدخل يدوي.
 
@@ -56,13 +54,9 @@ product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![إعداد مجموعة الأمان في AWS يوضح أن المنفذ 80 مفتوح](/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp)
-
-</Frame>
-
+  <Frame>
+    ![إعدادات مجموعة الأمان في AWS توضح أن المنفذ 80 مفتوح](/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp)
+  </Frame>
 </div>
 
 3. ثبّت [`certbot`](https://certbot.eff.org/instructions)، على سبيل المثال باستخدام `apt`

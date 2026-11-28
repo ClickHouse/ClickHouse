@@ -74,7 +74,7 @@ DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
 
 ## Utilisation d’un catalogue de données {#iceberg-writes-catalogs}
 
-Les tables Iceberg peuvent également être utilisées avec différents catalogues de données, tels que [REST Catalog](https://iceberg.apache.org/rest-catalog-spec/), [AWS Glue Data Catalog](https://docs.aws.amazon.com/prescriptive-guidance/latest/serverless-etl-aws-glue/aws-glue-data-catalog.html) et [Unity Catalog](https://www.unitycatalog.io/).
+Les tables Iceberg peuvent également être utilisées avec différents catalogues de données, tels que [catalogue REST](https://iceberg.apache.org/rest-catalog-spec/), [AWS Glue Data Catalog](https://docs.aws.amazon.com/prescriptive-guidance/latest/serverless-etl-aws-glue/aws-glue-data-catalog.html) et [Unity Catalog](https://www.unitycatalog.io/).
 
 <Warning>
   Lors de l’utilisation d’un catalogue, la plupart des utilisateurs préféreront utiliser le moteur de base de données `DataLakeCatalog`, qui connecte ClickHouse à votre catalogue pour découvrir vos tables. Vous pouvez utiliser ce moteur de base de données au lieu de créer manuellement des tables individuelles avec le moteur de table `IcebergS3`.
@@ -82,7 +82,7 @@ Les tables Iceberg peuvent également être utilisées avec différents catalogu
 
 Pour les utiliser, créez une table avec le moteur `IcebergS3` et fournissez les paramètres nécessaires.
 
-Par exemple, en utilisant REST Catalog avec le stockage MinIO :
+Par exemple, en utilisant le catalogue REST avec le stockage MinIO :
 
 ```sql
 CREATE TABLE `database_name.table_name`
@@ -93,10 +93,10 @@ ENGINE = IcebergS3(
 )
 ```
 
-Ou, avec AWS Glue Data Catalog et S3 :
+Ou, avec AWS Glue Data Catalog et S3 :
 
 ```sql
-CREATE TABLE `my_database.my_table`  
+CREATE TABLE `my_database.my_table`
 ENGINE = IcebergS3(
   's3://my-data-bucket/warehouse/my_database/my_table/',
   'aws_access_key',
@@ -131,12 +131,12 @@ ClickHouse prend également en charge la lecture des [vecteurs de suppression](h
 ### Utilisation de base {#basic-usage}
 
 ```sql
-SELECT * FROM example_table ORDER BY 1 
+SELECT * FROM example_table ORDER BY 1
 SETTINGS iceberg_timestamp_ms = 1714636800000
 ```
 
 ```sql
-SELECT * FROM example_table ORDER BY 1 
+SELECT * FROM example_table ORDER BY 1
 SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```
 
@@ -163,37 +163,30 @@ Considérez la séquence d’opérations suivante :
 ```sql
 -- Create a table with two columns
  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
- order_number bigint, 
+ order_number bigint,
  product_code string
- ) 
- USING iceberg 
- OPTIONS ('format-version'='2')
+)
+USING iceberg
+OPTIONS ('format-version'='2')
 
-- - Insert data into the table
- INSERT INTO spark_catalog.db.time_travel_example VALUES 
+-- Insert data into the table
+INSERT INTO spark_catalog.db.time_travel_example VALUES
    (1, 'Mars')
 
  ts1 = now() // A piece of pseudo code
 
-- - Alter table to add a new column
- ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
+-- Alter table to add a new column
+ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
 
  ts2 = now()
 
-- - Insert data into the table
- INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+-- Insert data into the table
+INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
 
-  ts3 = now()
+ ts3 = now()
 
-- - Query the table at each timestamp
- SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
-
-+------------+------------+
-|order_number|product_code|
-+------------+------------+
-|           1|        Mars|
-+------------+------------+
- SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+-- Query the table at each timestamp
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
 
 +------------+------------+
 |order_number|product_code|
@@ -201,7 +194,15 @@ Considérez la séquence d’opérations suivante :
 |           1|        Mars|
 +------------+------------+
 
- SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
 
 +------------+------------+-----+
 |order_number|product_code|price|
@@ -216,30 +217,30 @@ Résultats de la requête à différents timestamps :
 * À ts1 &amp; ts2 : seules les deux colonnes d’origine sont présentes
 * À ts3 : les trois colonnes sont présentes, avec NULL pour le prix de la première ligne
 
-#### Scénario 2 : Différences entre le schéma historique et le schéma actuel {#scenario-2}
+#### Scénario 2 : Différences entre le schéma historique et le schéma actuel {#scenario-2}
 
-Une requête de time travel exécutée à l’instant présent peut afficher un schéma différent de celui de la table actuelle :
+Une requête de time travel exécutée à l’instant présent peut afficher un schéma différent de celui de la table actuelle :
 
 ```sql
 -- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
-  order_number bigint, 
+  order_number bigint,
   product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2')
+)
+USING iceberg
+OPTIONS ('format-version'='2')
 
 -- Insert initial data into the table
-  INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
+INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
 
 -- Alter table to add a new column
-  ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
+ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
 
   ts = now();
 
 -- Query the table at a current moment but using timestamp syntax
 
-  SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
+SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
 
     +------------+------------+
     |order_number|product_code|
@@ -248,33 +249,35 @@ Une requête de time travel exécutée à l’instant présent peut afficher un 
     +------------+------------+
 
 -- Query the table at a current moment
-  SELECT * FROM spark_catalog.db.time_travel_example_2;
-    +------------+------------+-----+
+
+SELECT * FROM spark_catalog.db.time_travel_example_2;
+
++------------+------------+-----+
     |order_number|product_code|price|
     +------------+------------+-----+
     |           2|       Venus| NULL|
     +------------+------------+-----+
 ```
 
-Cela s’explique par le fait que `ALTER TABLE` ne crée pas de nouvel instantané ; pour la table actuelle, Spark prend la valeur de `schema_id` dans le fichier de métadonnées le plus récent, et non dans un instantané.
+Cela s’explique par le fait que `ALTER TABLE` ne crée pas de nouveau snapshot ; pour la table actuelle, Spark prend la valeur de `schema_id` dans le fichier de métadonnées le plus récent, et non dans un snapshot.
 
-#### Scénario 3 : Différences entre le schéma historique et le schéma actuel {#scenario-3}
+#### Scénario 3 : Différences entre le schéma historique et le schéma actuel {#scenario-3}
 
-Le second point est que, lors d’un time travel, vous ne pouvez pas obtenir l’état de la table avant que des données n’y aient été écrites :
+Le second point est que, lors d’un time travel, vous ne pouvez pas obtenir l’état de la table avant que des données n’y aient été écrites :
 
 ```sql
 -- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
-  order_number bigint, 
+  order_number bigint,
   product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2');
+)
+USING iceberg
+OPTIONS ('format-version'='2');x
 
   ts = now();
 
 -- Query the table at a specific timestamp
-  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
+SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finishes with error: Cannot find a snapshot older than ts.
 ```
 
 Dans ClickHouse, le comportement est le même que dans Spark. Vous pouvez considérer les requêtes Select de Spark comme des requêtes Select de ClickHouse, et cela fonctionnera de la même manière.
@@ -317,7 +320,7 @@ Après avoir identifié les fichiers candidats à l’aide des règles ci-dessus
 **Remarque** : tous les paramètres mentionnés, à l’exception de `iceberg_list_only_v_prefixed_metadata_files`, sont des paramètres de fonction de table (et non des paramètres globaux ou au niveau de la requête) et doivent être spécifiés comme indiqué ci-dessous :
 
 ```sql
-SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
+SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
     SETTINGS iceberg_metadata_table_uuid = 'a90eed4c-f74b-4e5b-b630-096fb9d09021');
 ```
 
@@ -420,7 +423,7 @@ y: 993
 
 Activez `allow_insert_into_iceberg` pour utiliser cette opération.
 
-L’opération n’est prise en charge que pour les tables Iceberg en `format-version` 2 dotées d’une seule spécification de partitionnement n’ayant pas évolué. Tout manifest contenant la partition sélectionnée doit être exempt de fichiers provenant d’autres partitions. Si un manifest contient à la fois des fichiers de la partition sélectionnée et d’une autre partition, l’opération échoue sans modifier la table. Elle rejette également les manifests concernés qui contiennent des fichiers de suppression par égalité.
+L’opération n’est prise en charge que pour les tables Iceberg en `format-version` 2 dotées d’une seule spécification de partitionnement n’ayant pas évolué. Tout manifest contenant la partition sélectionnée doit être exempt de fichiers provenant d’autres partitions. Si un manifest contient à la fois des fichiers de la partition sélectionnée et d’une autre partition, l’opération échoue sans modifier la table. Lorsque `iceberg_insert_single_manifest_for_all_partitions` est activé, chaque flux d’insertion d’un `INSERT` écrit dans un seul manifest les fichiers de toutes les partitions qu’il a reçues (exactement un manifest par `INSERT` avec `max_insert_threads = 1`) ; il est donc impossible de supprimer une partition écrite par le même `INSERT` que d’autres partitions. Elle rejette également les manifests concernés qui contiennent des fichiers de suppression par égalité.
 
 La valeur de la partition suit les mêmes règles que pour `MergeTree`. Pour une partition définie par une seule colonne, fournissez un littéral scalaire ; pour une partition définie par plusieurs colonnes, fournissez un tuple de valeurs :
 
@@ -668,8 +671,8 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
   * Seules les tables Iceberg format version 2 sont prises en charge (les snapshots v1 ne garantissent pas `manifest-list`, requis pour identifier en toute sécurité les fichiers à nettoyer)
   * Le snapshot actuel est toujours conservé, même s’il est antérieur au timestamp spécifié
   * Nécessite que le paramètre `allow_insert_into_iceberg` soit activé
-  * Nécessite que le paramètre `allow_experimental_expire_snapshots` soit activé
-  * Le mécanisme d’autorisation propre au Catalogue (authentification du Catalogue REST, AWS Glue IAM, etc.) est appliqué indépendamment lorsque ClickHouse met à jour les métadonnées
+  * Nécessite que le paramètre `allow_expire_snapshots` soit activé
+  * Le mécanisme d’autorisation propre au Catalogue (authentification du catalogue REST, AWS Glue IAM, etc.) est appliqué indépendamment lorsque ClickHouse met à jour les métadonnées
 </Note>
 
 ### Supprimer les fichiers orphelins {#iceberg-remove-orphan-files}

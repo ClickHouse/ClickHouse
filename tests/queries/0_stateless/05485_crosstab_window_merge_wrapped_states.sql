@@ -1,7 +1,7 @@
--- States that a window function returns with `-State` have the ordinary layout, and a `-Merge` window
--- function merges them into its window-layout state through every combinator around the function:
+-- States that a window function returns with `-State` are ordinary states, and a `-Merge` window
+-- function merges them through every combinator around the function:
 -- `-If` and `-Array` around `-Tuple`, and `-Map` and `-ForEach` around another `-Merge`. `-MergeState`
--- builds the same merge with the ordinary layout, so the two must give the same values on every row.
+-- builds the same merge as a state, so the two must give the same values on every row.
 -- The values are compared as text, so `nan` equals `nan`, and `+ 0` turns `-0` into `0`.
 
 DROP TABLE IF EXISTS t_crosstab_window_wrapped;
@@ -9,7 +9,7 @@ CREATE TABLE t_crosstab_window_wrapped (p UInt32, k UInt32, b UInt32, c UInt32, 
 INSERT INTO t_crosstab_window_wrapped
 SELECT number % 3, intDiv(number, 3) % 20, number % 4, intDiv(number, 7) % 5, intDiv(number, 11) % 3 FROM numbers(600);
 
-SELECT '-- each row: window layout equals ordinary layout';
+SELECT '-- each row: -Merge equals -MergeState';
 SELECT
     count(),
     countIf(toString(tuple_if) != toString(tuple_if_ordinary)),

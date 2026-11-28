@@ -293,6 +293,7 @@ TTLTransform::TTLTransform(
             return;
 
         auto [default_expression, default_column_name] = build_default_expr(name);
+        auto physical_column = storage_columns.tryGetPhysical(name);
         algorithms.emplace_back(std::make_unique<TTLColumnAlgorithm>(
             getExpressions(description, subqueries_for_sets, context),
             description,
@@ -304,7 +305,7 @@ TTLTransform::TTLTransform(
             default_column_name,
             /// The columns of Compact and Parquet parts are stored in one file and are not removed when expired.
             isCompactPart(data_part) || isParquetPart(data_part),
-            shares_nested_offsets(storage_columns.getPhysical(name))));
+            physical_column && shares_nested_offsets(*physical_column)));
     };
 
     /// The TTL of a column that nothing recomputes goes first: a dependent has to read the value that

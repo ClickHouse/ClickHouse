@@ -47,6 +47,9 @@ GH_PREFIX = "env -u GH_CONFIG_DIR"
 # Retrying the whole sequence is the only reliable way to recover.
 MAX_ATTEMPTS = 3
 
+# Attempts at recording the verdict as a GitHub review, see `_update_approval`.
+APPROVAL_ATTEMPTS = 7
+
 # OpenAI API key for the Codex CLI, written into `$CODEX_HOME/auth.json`
 # via `codex login --with-api-key`.
 OPENAI_KEY_SECRET = "/ci/llm/openai_api_key"
@@ -146,10 +149,12 @@ Tools:
 - Resolve or unresolve bot-authored review threads with:
   `{GH_PREFIX} python3 -m ci.praktika.gh resolve-pr-review-thread --thread-id <thread_node_id>`
   `{GH_PREFIX} python3 -m ci.praktika.gh unresolve-pr-review-thread --thread-id <thread_node_id>`.
+- To reproduce a finding, download a CI binary as described in
+  `.claude/skills/review/references/binaries.md` into `./ci/tmp`, and run it there.
 - Do NOT run `python3 -m ci.praktika run ...` (for example to run tests): you are inside a CI job, and
   a nested local run replaces the state of this job in `ci/tmp` (the PR number, the job name), which
-  breaks the `ci.praktika.gh` wrappers above and the publishing of this review. No ClickHouse binary
-  is available here either. Rely on the CI reports of the PR for the test results.
+  breaks the `ci.praktika.gh` wrappers above and the publishing of this review. Rely on the CI reports
+  of the PR for the test results.
 """
 
 
@@ -201,13 +206,19 @@ Procedure:
 """
 
 
-def _pre_review_output():
+def _pre_review_output(pr_url):
     return f"""\
 Output:
 Write a self-contained summary of ALL findings, regardless of previous summaries, as plain Markdown
 to {REVIEW_FILE} using the REQUESTED OUTPUT FORMAT from .claude/skills/review/SKILL.md:
 start with `---
 {REVIEW_HEADER}`, then use ##### for section headers.
+In the summary, every finding that has a review thread starts with a link to that thread, before its
+location, as in this line:
+    - [Link to the thread]({pr_url}#discussion_r<databaseId>) `<path>:<line>` <Impact>
+`<databaseId>` is the one of the first comment of the thread. After posting the batched review,
+fetch the threads again to get the ids of the new ones. A finding without a thread starts with its
+`<path>:<line>`.
 Do NOT post the summary yourself: the job script will post it after you finish.
 The first line of the Final Verdict section must be exactly one of these lines, copied verbatim with no
 bold, list marker or other text on it: `{STATUS_PREFIX} {VERDICT_APPROVE}`, `{STATUS_PREFIX} {VERDICT_REQUEST_CHANGES}`,
@@ -223,7 +234,7 @@ def _pre_review_prompt(info):
         _review_target(info),
         _pre_review_tools(info.pr_number, repo_name),
         _pre_review_procedure(info.pr_url),
-        _pre_review_output(),
+        _pre_review_output(info.pr_url),
     )
 
 
@@ -279,12 +290,11 @@ def _review_approves():
     return True
 
 
-def _update_approval(info, cyber_risk_flagged):
+def _update_approval_once(info, cyber_risk_flagged):
     """Record the verdict as a GitHub review of the app: approve the reviewed commit on `✅ Approve`,
     otherwise dismiss the app's approvals left by earlier runs, so that a PR which needs changes does not
     keep an approval. A run for a commit that is no longer the PR head changes nothing: overlapping runs
-    for different commits may finish in any order, and only the head commit's verdict is current.
-    Raises on failure, failing the job."""
+    for different commits may finish in any order, and only the head commit's verdict is current."""
     repo = _pr_repository(info)
     owner, name = repo.split("/")
     variables = {"owner": owner, "name": name, "number": int(info.pr_number)}
@@ -320,6 +330,7 @@ def _update_approval(info, cyber_risk_flagged):
                 "event": "APPROVE",
             },
             strict=True,
+            retries=1,
         )
         return
 
@@ -333,7 +344,23 @@ def _update_approval(info, cyber_risk_flagged):
                 "message": "AI review of a later commit does not approve the PR, see the `AI Review` comment.",
             },
             strict=True,
+            retries=1,
         )
+
+
+def _update_approval(info, cyber_risk_flagged):
+    """Run `_update_approval_once` until it succeeds. Each attempt re-reads the reviews, so a write that GitHub
+    applied but answered with an error is not sent again. Raises on persistent failure, failing the job."""
+    for attempt in range(1, APPROVAL_ATTEMPTS + 1):
+        try:
+            _update_approval_once(info, cyber_risk_flagged)
+            return
+        except Exception as e:  # noqa: BLE001 - a GitHub 5xx burst can outlast the retries of one call
+            if attempt == APPROVAL_ATTEMPTS:
+                raise
+            delay = min(15 * 2 ** (attempt - 1), 120)
+            print(f"WARNING: Approval update attempt {attempt}/{APPROVAL_ATTEMPTS} failed: {e}, retrying in {delay}s")
+            time.sleep(delay)
 
 
 def _add_cyber_risk_note(flagged_sessions, review_model):

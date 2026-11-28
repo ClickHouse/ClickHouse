@@ -1,6 +1,6 @@
 ---
 sidebarTitle: 'Connecter Streamkap à ClickHouse'
-keywords: ['clickhouse', 'Streamkap', 'CDC', 'connecter', 'intégrer', 'etl', 'intégration de données', 'capture des changements de données']
+keywords: ['clickhouse', 'Streamkap', 'CDC', 'connecter', 'intégrer', 'etl', 'intégration de données', 'capture des modifications de données']
 slug: /integrations/sttreamkap
 description: 'Ingestion de flux de données dans ClickHouse à l’aide des pipelines de données Airbyte'
 
@@ -16,14 +16,14 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
 
 <PartnerBadge />
 
-<a href="https://streamkap.com/" target="_blank">Streamkap</a> est une plateforme d’intégration de données en temps réel spécialisée dans la capture des changements de données (CDC) en continu et le traitement de flux. Elle repose sur une stack évolutive à haut débit basée sur Apache Kafka, Apache Flink et Debezium, proposée sous forme de service entièrement géré dans des déploiements SaaS ou BYOC (Bring your own Cloud).
+<a href="https://streamkap.com/" target="_blank">Streamkap</a> est une plateforme d’intégration de données en temps réel spécialisée dans la capture des modifications de données (CDC) par diffusion en continu et le traitement de flux. Elle repose sur une stack évolutive à haut débit basée sur Apache Kafka, Apache Flink et Debezium, proposée sous forme de service entièrement géré dans des déploiements SaaS ou BYOC (Bring your own Cloud).
 
 Streamkap vous permet de répliquer en continu chaque insert, mise à jour et suppression depuis des bases de données sources comme PostgreSQL, MySQL, SQL Server, MongoDB et <a href="https://streamkap.com/connectors" target="_blank">d’autres</a> directement vers ClickHouse avec une latence de l’ordre de la milliseconde.
 
-Cela en fait une solution idéale pour alimenter des tableaux de bord analytiques en temps réel, l’analyse opérationnelle et des modèles de machine learning avec des données en direct.
+Cela en fait une solution idéale pour alimenter des tableaux de bord analytiques en temps réel, l’analyse de données opérationnelle et des modèles de machine learning avec des données en direct.
 
 <div id="key-features">
-  ## Fonctionnalités clés
+  ## Fonctionnalités clés {#key-features}
 </div>
 
 * **CDC en streaming en temps réel :** Streamkap capture les changements directement à partir des journaux de votre base de données, garantissant que les données dans ClickHouse sont une réplique en temps réel de la source.
@@ -38,13 +38,13 @@ Cela en fait une solution idéale pour alimenter des tableaux de bord analytique
 * **Livraison fiable :** La plateforme offre une garantie de livraison au moins une fois, assurant la cohérence des données entre votre source et ClickHouse. Pour les opérations d’upsert, elle effectue une déduplication basée sur la clé primaire.
 
 <div id="started">
-  ## Premiers pas
+  ## Premiers pas {#started}
 </div>
 
 Ce guide présente les grandes lignes de la configuration d’un pipeline Streamkap pour charger des données dans ClickHouse.
 
 <div id="prerequisites">
-  ### Prérequis
+  ### Prérequis {#prerequisites}
 </div>
 
 * Un <a href="https://app.streamkap.com/account/sign-up" target="_blank">compte Streamkap</a>.
@@ -90,13 +90,13 @@ Ce guide présente les grandes lignes de la configuration d’un pipeline Stream
 </Steps>
 
 <div id="how-it-works-with-clickhouse">
-  ## Fonctionnement avec ClickHouse
+  ## Fonctionnement avec ClickHouse {#how-it-works-with-clickhouse}
 </div>
 
 L’intégration Streamkap est conçue pour gérer efficacement les données CDC dans ClickHouse.
 
 <div id="table-engine-data-handling">
-  ### Moteur de table et gestion des données
+  ### Moteur de table et gestion des données {#table-engine-data-handling}
 </div>
 
 Par défaut, Streamkap utilise un mode d’ingestion par upsert. Lorsqu’il crée une table dans ClickHouse, il utilise le moteur ReplacingMergeTree. Ce moteur est idéal pour gérer les événements CDC :
@@ -109,7 +109,7 @@ Par défaut, Streamkap utilise un mode d’ingestion par upsert. Lorsqu’il cr�
   * Les enregistrements supprimés peuvent, si vous le souhaitez, être conservés dans ClickHouse à des fins d’analytique
 
 <div id="metadata-columns">
-  ### Colonnes de métadonnées
+  ### Colonnes de métadonnées {#metadata-columns}
 </div>
 
 Streamkap ajoute plusieurs colonnes de métadonnées à chaque table pour gérer l’état des données :
@@ -122,7 +122,7 @@ Streamkap ajoute plusieurs colonnes de métadonnées à chaque table pour gérer
 | `_STREAMKAP_OFFSET`       | Valeur d’offset issue des journaux internes de Streamkap, utile pour le tri et le débogage. |
 
 <div id="query-latest-data">
-  ### Interroger les données les plus récentes
+  ### Interroger les données les plus récentes {#query-latest-data}
 </div>
 
 Comme ReplacingMergeTree traite les mises à jour et les suppressions en arrière-plan, une simple requête SELECT * peut afficher des lignes historiques ou supprimées avant la fin d’une fusion. Pour obtenir l’état le plus récent de vos données, vous devez filtrer les enregistrements supprimés et ne sélectionner que la version la plus récente de chaque ligne.
@@ -152,7 +152,7 @@ GROUP BY key;
 Pour les cas d’usage en production et les requêtes récurrentes et concurrentes des utilisateurs finaux, les vues matérialisées peuvent être utilisées pour modéliser les données afin de mieux les adapter aux modes d’accès en aval.
 
 <div id="further-reading">
-  ## Pour aller plus loin
+  ## Pour aller plus loin {#further-reading}
 </div>
 
 * <a href="https://streamkap.com/" target="_blank">Site web de Streamkap</a>

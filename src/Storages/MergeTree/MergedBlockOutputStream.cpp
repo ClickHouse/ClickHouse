@@ -5,7 +5,7 @@
 #include <Core/UUID.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/FailPoint.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
@@ -380,7 +380,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     /// onto the per-user tracker permanently. Reset before the finalizer, which is the query's own work.
     /// Deliberately starts after `finalizePartOnDisk` above: the blocker is thread-wide and the block
     /// write must stay accounted.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
 
     {
         /// The checksums map lives on the part for its whole lifetime: copy it into the part under the

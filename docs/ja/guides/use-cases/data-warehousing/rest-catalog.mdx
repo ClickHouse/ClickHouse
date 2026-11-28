@@ -29,24 +29,20 @@ REST カタログ は Iceberg カタログ向けの標準化された API 仕様
 <Note>
   この機能はベータであるため、次を使用して有効にする必要があります。
   `SET allow_database_iceberg = 1;`
+
+  この機能が実験的だった 25.8 より前のバージョンでは、代わりに `SET allow_experimental_database_iceberg = 1;` を使用してください。このガイドの Docker 構成では ClickHouse 25.5.6 に固定しているため、以下の SQL ではこちらの設定名を使用しています。
 </Note>
 
-<div id="local-development-setup">
-  ## ローカル開発環境のセットアップ
-</div>
+## ローカル開発環境のセットアップ {#local-development-setup}
 
 ローカルでの開発やテストには、コンテナー化された REST カタログ構成を利用できます。この方法は、学習、プロトタイピング、開発用途に適しています。
 
-<div id="local-prerequisites">
-  ### 前提条件
-</div>
+### 前提条件 {#local-prerequisites}
 
 1. **Docker と Docker Compose**: Docker がインストールされ、起動していることを確認してください
 2. **サンプル環境のセットアップ**: 各種 `docker-compose` セットアップを利用できます (以下の「Alternative Docker Images」を参照)
 
-<div id="setting-up-local-rest-catalog">
-  ### ローカル REST カタログのセットアップ
-</div>
+### ローカル REST カタログのセットアップ {#setting-up-local-rest-catalog}
 
 各種のコンテナー化された REST カタログ実装を利用できます。たとえば **[Databricks docker-spark-iceberg](https://github.com/databricks/docker-spark-iceberg/blob/main/docker-compose.yml?ref=blog.min.io)** は、docker-compose を使って Spark + Iceberg + REST カタログの一式がそろった環境を提供しており、Iceberg インテグレーションのテストに最適です。
 
@@ -93,9 +89,7 @@ docker-compose logs -f
   REST カタログのセットアップでは、あらかじめサンプルデータが Iceberg テーブルにロードされている必要があります。ClickHouse 経由でこれらのテーブルにクエリを実行する前に、Spark 環境でテーブルが作成され、データが投入されていることを確認してください。利用可能なテーブルは、使用する `docker-compose` の構成やサンプルデータのロード用スクリプトによって異なります。
 </Note>
 
-<div id="connecting-to-local-rest-catalog">
-  ### ローカル REST カタログに接続する
-</div>
+### ローカル REST カタログに接続する {#connecting-to-local-rest-catalog}
 
 ClickHouse コンテナーに接続します。
 
@@ -106,7 +100,7 @@ docker exec -it clickhouse clickhouse-client
 次に、REST カタログへの接続用データベースを作成します。
 
 ```sql
-SET allow_database_iceberg = 1;
+SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE demo
 ENGINE = DataLakeCatalog('http://rest:8181/v1', 'admin', 'password')
@@ -116,9 +110,7 @@ SETTINGS
     warehouse = 'demo'
 ```
 
-<div id="querying-rest-catalog-tables-using-clickhouse">
-  ## ClickHouse を使用した REST カタログテーブルのクエリ
-</div>
+## ClickHouse を使用した REST カタログテーブルのクエリ {#querying-rest-catalog-tables-using-clickhouse}
 
 接続が確立されたので、REST カタログ経由でクエリを実行できます。たとえば、次のとおりです。
 
@@ -202,9 +194,7 @@ SHOW CREATE TABLE `default.taxis`;
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="loading-data-from-your-data-lake-into-clickhouse">
-  ## データレイクから ClickHouse にデータを読み込む
-</div>
+## データレイクから ClickHouse にデータを読み込む {#loading-data-from-your-data-lake-into-clickhouse}
 
 REST カタログから ClickHouse にデータを読み込む必要がある場合は、まずローカルの ClickHouse テーブルを作成します。
 

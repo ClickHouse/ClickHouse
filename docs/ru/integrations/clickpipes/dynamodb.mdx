@@ -27,13 +27,9 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
     Руководство AWS находится [здесь](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html).
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Поток Kinesis DynamoDB](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Поток Kinesis DynamoDB](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -42,18 +38,14 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
     **Вам нужно выбрать &quot;Full export&quot; в формате DynamoDB JSON.**
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Экспорт DynamoDB в S3](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Экспорт DynamoDB в S3](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="Загрузите снимок в ClickHouse" id="3-load-the-snapshot-into-clickhouse">
-    ### Создайте необходимые таблицы
+### Создайте необходимые таблицы {#create-necessary-tables}
 
     Данные из снимка DynamoDB будут выглядеть примерно так:
 
@@ -116,7 +108,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
     * В качестве ключа сортировки таблица должна использовать ключ партиционирования (задаётся через `ORDER BY`)
       * Для строк с одинаковым ключом сортировки будет выполняться дедупликация по столбцу `version`.
 
-    ### Создайте ClickPipe для снимка
+### Создайте ClickPipe для снимка {#create-the-snapshot-clickpipe}
 
     Теперь вы можете создать ClickPipe, чтобы загрузить данные снимка из S3 в ClickHouse. Следуйте руководству по S3 ClickPipe [здесь](/ru/integrations/clickpipes/object-storage/amazon-s3/overview), но используйте следующие настройки:
 
@@ -143,13 +135,9 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
       * Сопоставьте другие поля с соответствующими столбцами целевой таблицы, как показано ниже
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![DynamoDB Map Columns](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
-
-    </Frame>
-
+      <Frame>
+        ![DynamoDB Map Columns](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
+      </Frame>
     </div>
   </Step>
 
