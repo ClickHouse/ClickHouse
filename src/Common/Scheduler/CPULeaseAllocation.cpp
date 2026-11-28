@@ -155,6 +155,25 @@ void CPULeaseAllocation::RequestChain::finish()
         tail = requests.begin();
 }
 
+void CPULeaseAllocation::RequestChain::finishKeepingEarliest(size_t consuming)
+{
+    ResourceCost max_consumed = tail->max_consumed;
+    finish();
+    auto it = tail;
+    for (size_t i = 1; i < consuming; ++i)
+    {
+        std::swap(it->max_consumed, max_consumed);
+        if (++it == requests.end())
+            it = requests.begin();
+    }
+}
+
+ResourceCost CPULeaseAllocation::RequestChain::getNewestMaxConsumed() const
+{
+    auto newest = head == requests.begin() ? requests.end() : head;
+    return std::prev(newest)->max_consumed;
+}
+
 void CPULeaseAllocation::RequestChain::granted()
 {
     ++head;
@@ -162,13 +181,13 @@ void CPULeaseAllocation::RequestChain::granted()
         head = requests.begin();
 }
 
-bool CPULeaseAllocation::RequestChain::enqueue(ResourceCost cost, ResourceCost requested_ns_)
+bool CPULeaseAllocation::RequestChain::enqueue(ResourceCost cost, ResourceCost max_consumed_)
 {
     chassert(!enqueued);
 
     head->reset(cost);
     head->is_master_slot = std::exchange(request_master_slot, false);
-    head->max_consumed = requested_ns_;  // Lease expires if we consume what we requested
+    head->max_consumed = max_consumed_;
 
     // Master and worker are distinct resources, each with its own per-query scheduling state, so
     // enqueue to the leaf this request actually targets. `ResourceLink::enqueue` stamps the scheduling
@@ -460,22 +479,24 @@ bool CPULeaseAllocation::parkLease(Lease & lease)
     // We already have one free slot (the parked thread's), cancel the pending request.
     if (requests.hasEnqueued() && allocated >= effectiveMaxSlots())
     {
+        const ResourceCost cost = requests.getEnqueuedCost();
         if (requests.cancel(lock)) // removed before the scheduler processed it -> drop schedule()'s enqueue
         {
+            requested_ns -= cost;
             scheduled_increment.sub();
             wait_timer.reset();
         }
     }
 
     // Return surplus quanta to the scheduler now instead of waiting for consume() of another thread.
-    // TODO(serxa): requested_ns is not lowered here, so the next preemption is delayed by up to one quantum per parked thread.
+    // Their unconsumed CPU time stays in `requested_ns` for `schedule()` to reuse.
     while (allocated > effectiveMaxSlots())
     {
+        requests.finishKeepingEarliest(allocated);
         --allocated;
         --granted;
         if (granted == 0 && !exception) // only on the transition to non-acquirable, not every decrement
             acquirable.store(false, std::memory_order_relaxed);
-        requests.finish();
     }
 
     // A preempted thread can run on the parked thread's slot
@@ -795,9 +816,12 @@ bool CPULeaseAllocation::schedule(std::unique_lock<std::mutex> &)
     if (allocated >= effectiveMaxSlots() || shutdown)
         return true;
 
-    ResourceCost cost = settings.quantum_ns + std::max<ResourceCost>(0, consumed_ns - requested_ns);
+    // The new slot expires one quantum after the latest held one, and costs only what the budget does not cover yet
+    const ResourceCost newest_max_consumed = allocated > 0 ? requests.getNewestMaxConsumed() : 0;
+    const ResourceCost max_consumed = std::max(consumed_ns, newest_max_consumed) + settings.quantum_ns;
+    const ResourceCost cost = std::max<ResourceCost>(1, max_consumed - requested_ns);
     requested_ns += cost;
-    if (requests.enqueue(cost, requested_ns))
+    if (requests.enqueue(cost, max_consumed))
     {
         scheduled_increment.add();
         wait_timer.emplace(wait_counters->timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));
