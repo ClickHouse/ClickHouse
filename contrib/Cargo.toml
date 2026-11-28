@@ -1,0 +1,50 @@
+# The root of the cargo workspace of the Rust libraries. Its package, `_ch_rust_workspace`, and the wrapper crates of the
+# libraries are in `rust-contrib-workspace` and `<lib>-cmake`.
+#
+# The root is here, in `contrib`, and not next to the package, so that every path package (the members, and the crates of
+# the submodules they depend on, such as `wasmtime/crates/c-api`) is inside the directory of the workspace. Cargo hashes
+# the source of a path package by its path relative to the workspace root only for packages inside it, and by the absolute
+# path otherwise. The hash goes into `-C metadata`, which is a part of the symbol names, type ids and file names of the
+# crate, so with a package outside the root the binary would depend on the directory of the checkout, and the builds of
+# one commit would not be reproducible.
+[workspace]
+members = [
+    "rust-contrib-workspace",
+    "prql-cmake",
+    "polyglot-cmake",
+    "vortex-cmake",
+    "pcodec-cmake",
+    "wasmtime-cmake",
+    "delta-kernel-rs-cmake",
+    "chdig-cmake",
+]
+# Path dependencies inside the workspace directory become members automatically; these are the libraries themselves, with
+# their own workspaces.
+exclude = [
+    "chdig",
+    "delta-kernel-rs",
+    "pcodec",
+    "wasmtime",
+]
+resolver = "2"
+
+# The C Data Interface structs of arrow-rs are encoded by their C names in Clang CFI type ids (see ENABLE_CFI). Every
+# arrow-rs crate comes from the fork: they depend on each other through the fork's workspace.
+[patch.crates-io]
+arrow        = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-arith  = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-array  = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-buffer = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-cast   = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-csv    = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-data   = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-ipc    = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-json   = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-ord    = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-row    = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-schema = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-select = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-string = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+parquet      = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+# Avoids calling an `Fn` closure through `dyn FnMut`, which fails CFI: https://github.com/rust-lang/rust/issues/166062
+ipnet        = { git = "https://github.com/ClickHouse/ipnet", branch = "ClickHouse/2.12.2" }

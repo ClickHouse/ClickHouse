@@ -12,6 +12,7 @@ rustup component add --toolchain "$TOOLCHAIN" rust-src
 CH_TOP_DIR=$(git rev-parse --show-toplevel)
 
 cd "$CH_TOP_DIR/contrib/rust-contrib-workspace" || exit 1
+# The workspace root is `contrib/Cargo.toml`, and its `Cargo.lock` is `contrib/Cargo.lock`.
 # Update the Cargo.lock file only for changes of the manifests; to upgrade a dependency, run `cargo update -p <crate>` first
 cargo update --workspace
 

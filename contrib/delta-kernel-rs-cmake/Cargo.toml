@@ -1,5 +1,5 @@
 [package]
-workspace = "../rust-contrib-workspace"
+workspace = ".."
 name = "_ch_rust_delta_kernel"
 version = "0.1.0"
 edition = "2021"

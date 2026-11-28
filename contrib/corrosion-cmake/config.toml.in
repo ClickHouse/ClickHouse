@@ -2,6 +2,7 @@
 [profile.release]
 debug = false
 strip = true
+@RUST_TRIM_PATHS@
 @RUST_RELEASE_PROFILE_EXTRA@
 
 # We use LTO to slightly decrease binary size
@@ -9,11 +10,14 @@ strip = true
 inherits = "release"
 lto = "thin"
 
+[profile.dev]
+@RUST_TRIM_PATHS@
 @RUST_DEV_PROFILE@
-# Features are resolved once for all members of the workspace in `contrib/rust-contrib-workspace`,
+# Features are resolved once for all members of the workspace in `contrib/Cargo.toml`,
 # so a crate that several members use is compiled once.
 [unstable]
 feature-unification = true
+@RUST_UNSTABLE_TRIM_PATHS@
 
 [resolver]
 feature-unification = "workspace"

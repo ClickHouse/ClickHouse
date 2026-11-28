@@ -184,17 +184,10 @@ if (LINKER_NAME MATCHES "lld")
     list(APPEND RUSTFLAGS "-C" "link-arg=-fuse-ld=lld")
 endif()
 
-if (CMAKE_OSX_SYSROOT)
-    list(APPEND RUSTFLAGS "-C" "link-arg=-isysroot")
-    list(APPEND RUSTFLAGS "-C" "link-arg=${CMAKE_OSX_SYSROOT}")
-elseif(CMAKE_SYSROOT)
-    list(APPEND RUSTFLAGS "-C" "link-arg=--sysroot")
-    list(APPEND RUSTFLAGS "-C" "link-arg=${CMAKE_SYSROOT}")
-endif()
-
-if (TOOLCHAIN_PATH)
-    list(APPEND RUSTFLAGS "-C" "link-arg=--gcc-toolchain=${TOOLCHAIN_PATH}")
-endif()
+# RUSTFLAGS must not contain absolute paths (such as the sysroot): Cargo hashes them into the names of the files and the
+# directories of every crate, including the `OUT_DIR` of build scripts, whose path goes into the generated code, so the
+# build would depend on the directory of the checkout. Corrosion always passes `--target`, so RUSTFLAGS are not passed
+# to build scripts and procedural macros, the only crates that rustc links, and need no sysroot.
 
 # Rebuild the standard library with our RUSTFLAGS, so it gets the sanitizer instrumentation and the stack protector too.
 set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
@@ -344,12 +337,24 @@ endif()
 # stepping into the crates. Affects Debug only (Release uses profile.release, where this is inert).
 option(REDUCE_RUST_DEBUG_INFO "Build vendored Rust crates with reduced debug info (cargo debug=1, the \"limited\" level) and no incremental caches" ON)
 if (REDUCE_RUST_DEBUG_INFO)
-    set(RUST_DEV_PROFILE "[profile.dev]
-debug = 1
+    set(RUST_DEV_PROFILE "debug = 1
 incremental = false
 ")
 else()
     set(RUST_DEV_PROFILE "")
+endif()
+
+# Reproducible builds, the counterpart of the `-ffile-prefix-map` of ENABLE_BUILD_PATH_MAPPING for C and C++.
+# Cargo's `trim-paths` remaps the paths that rustc writes into the code (panic locations, `file!`) and the debug info: the
+# directory of every package (to `<name>-<version>`), the build directory (to `/cargo/build-dir`), where build scripts
+# generate code, and the sources of the standard library from the `rust-src` component (to `/rustc/<commit>`), which
+# rustc uses instead of the remapped paths of the prebuilt standard library when the component is installed.
+if (ENABLE_BUILD_PATH_MAPPING)
+    set(RUST_TRIM_PATHS "trim-paths = \"all\"")
+    set(RUST_UNSTABLE_TRIM_PATHS "trim-paths = true")
+else()
+    set(RUST_TRIM_PATHS "")
+    set(RUST_UNSTABLE_TRIM_PATHS "")
 endif()
 
 # ccache cannot wrap rustc, so a new build directory compiles every Rust crate again. With RUST_BUILD_CACHE_DIR, Cargo keeps
@@ -382,7 +387,7 @@ if (RUST_BUILD_CACHE_DIR)
         endforeach()
     endforeach()
     string(SHA256 _rust_native_headers "${_rust_native_headers}")
-    set(_rust_build_key "${Rust_CARGO_TARGET}|${Rust_COMPILER_CACHED}|${Rust_VERSION}|${Rust_CARGO_CACHED}|${Rust_CARGO_VERSION}|${CMAKE_C_COMPILER}|${CMAKE_C_COMPILER_VERSION}|${CMAKE_CXX_COMPILER}|${CMAKE_CXX_COMPILER_VERSION}|${CMAKE_BUILD_TYPE_UC}|${ENABLE_THINLTO}|${RUSTFLAGS}|${RUST_CARGO_BUILD_STD}|${RUST_CFLAGS}|${RUST_CXXFLAGS}|${RUSTCWRAPPER}|${RUST_RELEASE_PROFILE_EXTRA}|${RUST_DEV_PROFILE}|${_rust_native_headers}")
+    set(_rust_build_key "${Rust_CARGO_TARGET}|${Rust_COMPILER_CACHED}|${Rust_VERSION}|${Rust_CARGO_CACHED}|${Rust_CARGO_VERSION}|${CMAKE_C_COMPILER}|${CMAKE_C_COMPILER_VERSION}|${CMAKE_CXX_COMPILER}|${CMAKE_CXX_COMPILER_VERSION}|${CMAKE_BUILD_TYPE_UC}|${ENABLE_THINLTO}|${RUSTFLAGS}|${RUST_CARGO_BUILD_STD}|${RUST_CFLAGS}|${RUST_CXXFLAGS}|${RUSTCWRAPPER}|${RUST_RELEASE_PROFILE_EXTRA}|${RUST_DEV_PROFILE}|${RUST_TRIM_PATHS}|${_rust_native_headers}")
     string(FIND "${_rust_build_key}" "${CMAKE_BINARY_DIR}/" _rust_build_key_has_build_dir)
     if (NOT _rust_build_key_has_build_dir EQUAL -1)
         message(FATAL_ERROR "RUST_BUILD_CACHE_DIR does not work for this configuration: its Rust compiler flags contain the build directory (as in musl builds), so no other build directory could reuse the cache")
@@ -515,6 +520,16 @@ function(clickhouse_config_crate_env target_name)
     # but the CMake build for OpenSSL results in headers in two different places
     corrosion_set_env_vars(${target_name} "CFLAGS=${RUST_CFLAGS} -I ${ClickHouse_SOURCE_DIR}/contrib/openssl/include/")
     corrosion_set_env_vars(${target_name} "CXXFLAGS=${RUST_CXXFLAGS}")
+    # The C and C++ code of build scripts (the `cc` crate) is compiled with the same launcher as ours, which gives the
+    # compiler the source file by a relative path (see `cmake/relative_source_path.sh`). Corrosion sets `CC_<target>` with
+    # underscores in the target; the `cc` crate prefers the variant with dashes. The custom wrapper is the name of the
+    # script, so that the `cc` crate still recognizes the compiler.
+    if (RELATIVE_SOURCE_PATH_LAUNCHER)
+        corrosion_set_env_vars(${target_name}
+            "CC_${Rust_CARGO_TARGET}=${RELATIVE_SOURCE_PATH_LAUNCHER} ${CMAKE_C_COMPILER}"
+            "CXX_${Rust_CARGO_TARGET}=${RELATIVE_SOURCE_PATH_LAUNCHER} ${CMAKE_CXX_COMPILER}"
+            "CC_KNOWN_WRAPPER_CUSTOM=relative_source_path")
+    endif()
     corrosion_set_env_vars(${target_name} "RUSTFLAGS=${RUSTFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTDOCFLAGS=${RUSTFLAGS}")
     if (CMAKE_OSX_SYSROOT)

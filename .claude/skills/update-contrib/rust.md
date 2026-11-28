@@ -1,9 +1,9 @@
 # update-contrib: libraries built by cargo
 
 Read this when the library is built by cargo. Every such library is a member of the cargo workspace in
-`contrib/rust-contrib-workspace/`: `contrib/<lib>-cmake/Cargo.toml` (dependency path, crate name, enabled features),
+`contrib/Cargo.toml` (the root package is in `contrib/rust-contrib-workspace/`): `contrib/<lib>-cmake/Cargo.toml` (dependency path, crate name, enabled features),
 `CMakeLists.txt` (generated headers, copied headers, CMake target names), plus the shared
-`contrib/rust-contrib-workspace/Cargo.lock` and `contrib/rust_vendor/` (a submodule pointing at
+`contrib/Cargo.lock` and `contrib/rust_vendor/` (a submodule pointing at
 `github.com/ClickHouse/rust_vendor`).
 
 They export `ch_rust::<name>` aliases, not `ch_contrib::*`; the name may differ from the contrib directory
@@ -19,7 +19,7 @@ grep -R "contrib/${LIB}\|${LIB}" contrib/${LIB}-cmake/ contrib/rust-contrib-work
 ```
 
 Inspect `Cargo.toml` (path, crate name, features), `CMakeLists.txt` (generated/copied headers, target names) and
-the shared `contrib/rust-contrib-workspace/Cargo.lock` (what will need regenerating). Diff the surface ClickHouse uses rather than
+the shared `contrib/Cargo.lock` (what will need regenerating). Diff the surface ClickHouse uses rather than
 only the whole upstream tree: `crates/c-api/`, generated headers (`delta_kernel_ffi.hpp` is generated at build time;
 check the C++ callers under `src/`), public headers copied into the build tree, Cargo feature lists and
 crate names used by `contrib/<lib>-cmake/Cargo.toml`. If the public C/C++ API changes are additive only, the update
@@ -32,7 +32,7 @@ Update build integration:
 2. Check that `contrib/<lib>-cmake/CMakeLists.txt` still matches the upstream public headers and feature flags.
 3. If headers are copied into the build directory at configure time, changes to submodule headers may require
    re-running CMake or manually refreshing the copied headers for incremental verification.
-4. Regenerate `contrib/rust-contrib-workspace/Cargo.lock` if dependency resolution changed. Cargo environment a build
+4. Regenerate `contrib/Cargo.lock` if dependency resolution changed. Cargo environment a build
    script needs (such as the OpenSSL paths) goes into `clickhouse_config_crate_env` in
    `contrib/corrosion-cmake/CMakeLists.txt`, the same for every member and for the root package. Do not edit
    `contrib/delta-kernel-rs/Cargo.lock`: the pin brings its own and vendoring reads it `--locked`.
@@ -65,7 +65,7 @@ Stage all integration artifacts together:
 
 ```bash
 git add "contrib/$LIB" contrib/rust_vendor
-git add contrib/rust-contrib-workspace/Cargo.lock "contrib/${LIB}-cmake"
+git add contrib/Cargo.lock "contrib/${LIB}-cmake"
 ```
 
 `contrib/rust_vendor` stages the bumped submodule pointer after its own branch has been committed; the vendored files
