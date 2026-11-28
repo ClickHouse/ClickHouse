@@ -147,13 +147,18 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE bloom_filter_idx2"
 $CLICKHOUSE_CLIENT --query="DROP TABLE bloom_filter_idx3"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx_na;"
-$CLICKHOUSE_CLIENT --query="
+bloom_filter_invalid_index_error=$($CLICKHOUSE_CLIENT --query="
 CREATE TABLE bloom_filter_idx_na
 (
     na Array(Array(String)),
     INDEX bf na TYPE bloom_filter(0.1) GRANULARITY 1
 ) ENGINE = MergeTree()
-ORDER BY na" 2>&1 | grep -c 'DB::Exception: Unexpected type Array(Array(String)) of bloom filter index'
+ORDER BY na" 2>&1)
+if [[ "$bloom_filter_invalid_index_error" != *'Code: 36.'* || "$bloom_filter_invalid_index_error" != *'BAD_ARGUMENTS'* ]]; then
+    echo "$bloom_filter_invalid_index_error"
+    echo 'Expected invalid bloom filter index to fail with BAD_ARGUMENTS'
+    exit 1
+fi
 
 # NGRAM BF with IPv6
 $CLICKHOUSE_CLIENT --query="

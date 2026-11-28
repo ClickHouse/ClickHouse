@@ -1651,7 +1651,8 @@ void MergeTreeData::checkProperties(
     bool allow_empty_sorting_key,
     bool allow_nullable_key_,
     ContextPtr local_context,
-    const MergeTreeSettings * alter_effective_settings) const
+    const MergeTreeSettings * alter_effective_settings,
+    std::vector<std::pair<int, String>> * secondary_index_errors) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
@@ -1797,10 +1798,14 @@ void MergeTreeData::checkProperties(
                 new_virtuals_sample_block.dumpStructure(), old_virtuals_sample_block.dumpStructure());
     }
 
-    if (!new_metadata.secondary_indices.empty())
+    if (!new_metadata.secondary_indices.empty() || (secondary_index_errors && !secondary_index_errors->empty()))
     {
         std::unordered_set<String> indices_names;
         std::unordered_set<String> columns_with_text_indexes;
+        std::vector<std::pair<int, String>> index_errors;
+        const bool has_expression_validation_errors = secondary_index_errors && !secondary_index_errors->empty();
+        if (secondary_index_errors)
+            index_errors = *secondary_index_errors;
 
         for (const auto & index : new_metadata.secondary_indices)
         {
@@ -1858,8 +1863,8 @@ void MergeTreeData::checkProperties(
             }
             catch (Exception & e)
             {
-                e.addMessage("When validating secondary index {}", backQuote(index.name));
-                throw;
+                index_errors.emplace_back(e.code(), fmt::format("{}: {}", backQuoteIfNeed(index.name), e.message()));
+                continue;
             }
 
             if (indices_names.contains(index.name))
@@ -1881,6 +1886,25 @@ void MergeTreeData::checkProperties(
 
                 columns_with_text_indexes.insert(column);
             }
+        }
+
+        if (!index_errors.empty())
+        {
+            Strings errors;
+            for (const auto & [code, error] : index_errors)
+            {
+                (void)code;
+                errors.push_back(error);
+            }
+            if (has_expression_validation_errors)
+                throw Exception(
+                    index_errors.front().first,
+                    "Cannot apply ALTER because it breaks skip indices: {}",
+                    fmt::join(errors, "; "));
+            throw Exception(
+                index_errors.front().first,
+                "Cannot validate secondary indices: {}",
+                fmt::join(errors, "; "));
         }
     }
 
@@ -6607,12 +6631,16 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     removeImplicitStatistics(new_metadata.columns);
     auto settings_defaults = getDefaultSettings();
+    std::vector<std::pair<int, String>> secondary_index_errors;
+    /// Policy rejections used to throw before expression and type validation. Keep them first
+    /// in the aggregate to preserve their error code, with all other diagnostics following.
+    size_t policy_errors_count = 0;
     /// Keys, TTL and projections, and the indices the commands add, are built with this context. They are executed in the
     /// background, so AI functions reject it. A replica replaying an ALTER the initiator already committed must not fail on it.
     auto apply_context = Context::createCopy(local_context);
     if (auto txn = local_context->getZooKeeperMetadataTransaction(); !txn || txn->isInitialQuery())
         apply_context->setAnalyzingBackgroundExpressions(true);
-    commands.apply(new_metadata, apply_context, share_nested_offsets, settings_defaults.get());
+    commands.apply(new_metadata, apply_context, share_nested_offsets, settings_defaults.get(), &secondary_index_errors);
 
     /// Under a Replicated database every replica re-runs this interpreter over an entry the initiator already
     /// committed. A replica catching up on an ALTER accepted by an older version must not be failed by a check
@@ -6970,13 +6998,19 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     /// We use columns_in_indices to prevent alters that change column data type in a way that requires
     /// reindexing secondary indices (respecting alter_column_secondary_index_mode). But only care about explicit indices
-    std::unordered_map<String, String> columns_in_explicit_indices;
+    std::unordered_map<String, Names> columns_in_explicit_indices;
     for (const auto & index : old_metadata.getSecondaryIndices())
     {
         if (!index.isImplicitlyCreated())
         {
             for (const String & col : index.expression->getRequiredColumns())
-                columns_in_explicit_indices.emplace(col, index.name);
+            {
+                const auto column = old_metadata.getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, col);
+                const String column_name_in_storage = column ? column->getNameInStorage() : col;
+                auto & indices = columns_in_explicit_indices[column_name_in_storage];
+                if (!std::ranges::contains(indices, index.name))
+                    indices.push_back(index.name);
+            }
         }
     }
 
@@ -7105,12 +7139,15 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             {
                 if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
                 {
-                    throw Exception(
+                    secondary_index_errors.emplace(
+                        secondary_index_errors.begin() + policy_errors_count,
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "The ALTER of the column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree "
-                        "setting 'alter_column_secondary_index_mode' to change this behaviour",
-                        backQuoteIfNeed(command.column_name),
-                        it->second);
+                        fmt::format(
+                            "The ALTER of the column '{}' is forbidden because it is used by the indices {}. Check the MergeTree "
+                            "setting 'alter_column_secondary_index_mode' to change this behaviour",
+                            backQuoteIfNeed(command.column_name),
+                            backQuotedList(it->second)));
+                    ++policy_errors_count;
                 }
             }
 
@@ -7148,14 +7185,35 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 /// we will clear the index files (as we do with the column files) in any other case
                 if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
                 {
-                    if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
+                    Names affected_indices;
+                    auto add_indices = [&](const String & column_name)
                     {
-                        throw Exception(
+                        if (auto it = columns_in_explicit_indices.find(column_name); it != columns_in_explicit_indices.end())
+                        {
+                            for (const auto & index_name : it->second)
+                                if (!std::ranges::contains(affected_indices, index_name))
+                                    affected_indices.push_back(index_name);
+                        }
+                    };
+
+                    add_indices(command.column_name);
+                    if (share_nested_offsets && old_columns.hasNested(command.column_name))
+                    {
+                        for (const auto & nested_column : old_columns.getNested(command.column_name))
+                            add_indices(nested_column.name);
+                    }
+
+                    if (!affected_indices.empty())
+                    {
+                        secondary_index_errors.emplace(
+                            secondary_index_errors.begin() + policy_errors_count,
                             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                            "The ALTER CLEAR of the column '{}' is forbidden because it is used by the index '{}'. Check the "
-                            "MergeTree setting 'alter_column_secondary_index_mode' to change this behaviour",
-                            backQuoteIfNeed(command.column_name),
-                            it->second);
+                            fmt::format(
+                                "The ALTER CLEAR of the column '{}' is forbidden because it is used by the indices {}. Check the "
+                                "MergeTree setting 'alter_column_secondary_index_mode' to change this behaviour",
+                                backQuoteIfNeed(command.column_name),
+                                backQuotedList(affected_indices)));
+                        ++policy_errors_count;
                     }
                 }
             }
@@ -7217,16 +7275,21 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 }
             }
 
+            bool rejected_by_secondary_index_policy = false;
             if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
             {
                 if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
                 {
-                    throw Exception(
+                    secondary_index_errors.emplace(
+                        secondary_index_errors.begin() + policy_errors_count,
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "The ALTER of the column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree setting "
-                        "'alter_column_secondary_index_mode' to change this behaviour",
-                        backQuoteIfNeed(command.column_name),
-                        it->second);
+                        fmt::format(
+                            "The ALTER of the column '{}' is forbidden because it is used by the indices {}. Check the MergeTree setting "
+                            "'alter_column_secondary_index_mode' to change this behaviour",
+                            backQuoteIfNeed(command.column_name),
+                            backQuotedList(it->second)));
+                    ++policy_errors_count;
+                    rejected_by_secondary_index_policy = true;
                 }
             }
 
@@ -7260,7 +7323,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                                         it->second->getName(), command.data_type->getName());
                 }
 
-                if (old_metadata.getColumns().has(command.column_name))
+                if (old_metadata.getColumns().has(command.column_name)
+                    && (!rejected_by_secondary_index_policy || new_metadata.getColumns().hasPhysical(command.column_name)))
                 {
                     columns_to_check_conversion.push_back(new_metadata.getColumns().getPhysical(command.column_name));
                 }
@@ -7354,6 +7418,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
             /// Skip index (explicit or implicit): a full mutation can rebuild it, so suggest disabling the setting.
             const auto & new_indices = new_metadata.getSecondaryIndices();
+            Strings lazy_conversion_index_errors;
             for (const auto & old_index : old_metadata.getSecondaryIndices())
             {
                 if (!expression_uses_changed_subcolumn(old_index.expression))
@@ -7366,15 +7431,19 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 if (new_index_it == new_indices.end())
                     continue;
 
-                throw Exception(
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "ALTER of column {} changes the on-disk type of a subcolumn stored by the skip index '{}'; "
-                    "a metadata-only ALTER cannot rebuild the index. Disable {} to run this change as a full mutation, "
-                    "or drop the index first",
-                    backQuoteIfNeed(command.column_name),
-                    old_index.name,
-                    lazy_settings_description);
+                lazy_conversion_index_errors.push_back(backQuoteIfNeed(old_index.name));
             }
+
+            if (!lazy_conversion_index_errors.empty())
+                secondary_index_errors.emplace_back(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    fmt::format(
+                        "ALTER of column {} changes the on-disk type of a subcolumn stored by skip indices {}; "
+                        "a metadata-only ALTER cannot rebuild them. Disable {} to run this change as a full mutation, "
+                        "or drop the indices first",
+                        backQuoteIfNeed(command.column_name),
+                        fmt::join(lazy_conversion_index_errors, ", "),
+                        lazy_settings_description));
 
             /// A subcolumn can feed a projection's sort key (positionally persisted) or a filtered
             /// projection's WHERE (which fixes the stored row set); both go stale on a lazy change.
@@ -7571,7 +7640,15 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
-    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
+    checkProperties(
+        new_metadata,
+        old_metadata,
+        false,
+        false,
+        allow_nullable_key,
+        local_context,
+        alter_effective_settings.get(),
+        &secondary_index_errors);
     /// Not in `checkProperties`, which also runs when a replica applies an already committed ALTER.
     if (!is_secondary_replay)
         checkLossyCodecOnLowCardinality(new_metadata.columns);
