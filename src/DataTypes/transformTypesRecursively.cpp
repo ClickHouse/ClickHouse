@@ -8,13 +8,18 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <Formats/SchemaInferenceUtils.h>
 
+#include <numeric>
+#include <optional>
 #include <unordered_set>
 
 
 namespace DB
 {
 
-static TypeIndexesSet getTypesIndexes(const DataTypes & types)
+namespace
+{
+
+TypeIndexesSet getTypesIndexes(const DataTypes & types)
 {
     TypeIndexesSet type_indexes;
     for (const auto & type : types)
@@ -22,45 +27,126 @@ static TypeIndexesSet getTypesIndexes(const DataTypes & types)
     return type_indexes;
 }
 
+bool isComplexType(TypeIndex index)
+{
+    switch (index)
+    {
+        case TypeIndex::Nullable:
+        case TypeIndex::LowCardinality:
+        case TypeIndex::Array:
+        case TypeIndex::Map:
+        case TypeIndex::Tuple:
+        case TypeIndex::Object:
+        case TypeIndex::Variant:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool hasEqualsAmbiguousAlternatives(const DataTypes & alternatives)
+{
+    for (size_t i = 0; i + 1 < alternatives.size(); ++i)
+        for (size_t j = i + 1; j < alternatives.size(); ++j)
+            if (alternatives[i]->equals(*alternatives[j]))
+                return true;
+    return false;
+}
+
+/// For the types of one complex kind, the index of the child of each type paired with each child of the first one,
+/// or nothing when their children do not line up.
+std::optional<std::vector<std::vector<size_t>>> pairChildren(const DataTypes & types, TypeIndex kind)
+{
+    const size_t num_children = types[0]->getNumberOfChildren();
+    std::vector<std::vector<size_t>> positions(types.size(), std::vector<size_t>(num_children));
+    for (size_t i = 0; i != types.size(); ++i)
+    {
+        if (types[i]->getNumberOfChildren() != num_children)
+            return {};
+        std::iota(positions[i].begin(), positions[i].end(), 0);
+    }
+
+    if (kind == TypeIndex::Tuple)
+    {
+        const auto & first = assert_cast<const DataTypeTuple &>(*types[0]);
+        for (const auto & type : types)
+        {
+            const auto & tuple = assert_cast<const DataTypeTuple &>(*type);
+            if (tuple.hasExplicitNames() != first.hasExplicitNames() || tuple.getElementNames() != first.getElementNames())
+                return {};
+        }
+    }
+    else if (kind == TypeIndex::Object)
+    {
+        /// The children are the typed paths in the order of their names, so the same set of paths pairs them by path.
+        const auto & first_paths = assert_cast<const DataTypeObject &>(*types[0]).getTypedPaths();
+        for (const auto & type : types)
+            for (const auto & [path, _] : assert_cast<const DataTypeObject &>(*type).getTypedPaths())
+                if (!first_paths.contains(path))
+                    return {};
+    }
+    else if (kind == TypeIndex::Variant)
+    {
+        /// The position of an alternative is the order of the names, which `equals` does not compare.
+        for (size_t i = 0; i != types.size(); ++i)
+        {
+            const auto & alternatives = assert_cast<const DataTypeVariant &>(*types[i]).getVariants();
+            if (hasEqualsAmbiguousAlternatives(alternatives))
+                return {};
+            for (size_t child = 0; child != num_children; ++child)
+            {
+                auto it = std::ranges::find_if(
+                    alternatives, [&](const DataTypePtr & alternative) { return alternative->equals(*types[0]->getChild(child)); });
+                if (it == alternatives.end())
+                    return {};
+                positions[i][child] = it - alternatives.begin();
+            }
+        }
+    }
+
+    return positions;
+}
+
+}
+
 void transformTypesRecursively(
     DataTypes & types,
     std::function<void(DataTypes &, TypeIndexesSet &)> transform_simple_types,
     std::function<void(DataTypes &, TypeIndexesSet &)> transform_complex_types,
-    const FormatSettings * format_settings)
+    const FormatSettings * format_settings,
+    const TypeIndexesSet & types_to_not_descend)
 {
     TypeIndexesSet type_indexes = getTypesIndexes(types);
 
-    /// Nullable
-    if (type_indexes.contains(TypeIndex::Nullable))
+    for (const auto wrapper : {TypeIndex::Nullable, TypeIndex::LowCardinality})
     {
-        std::vector<UInt8> is_nullable;
-        is_nullable.reserve(types.size());
+        if (!type_indexes.contains(wrapper) || types_to_not_descend.contains(wrapper))
+            continue;
+
         DataTypes nested_types;
         nested_types.reserve(types.size());
         for (const auto & type : types)
-        {
-            if (const DataTypeNullable * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
-            {
-                is_nullable.push_back(1);
-                nested_types.push_back(type_nullable->getNestedType());
-            }
-            else
-            {
-                is_nullable.push_back(0);
-                nested_types.push_back(type);
-            }
-        }
+            nested_types.push_back(type->getTypeId() == wrapper ? type->getChild(0) : type);
 
-        transformTypesRecursively(nested_types, transform_simple_types, transform_complex_types, format_settings);
+        transformTypesRecursively(nested_types, transform_simple_types, transform_complex_types, format_settings, types_to_not_descend);
         for (size_t i = 0; i != types.size(); ++i)
         {
-            /// Type could be changed so it cannot be inside Nullable anymore.
-            const bool can_make_nullable = format_settings ? canBeInsideNullableBySchemaSettings(nested_types[i], *format_settings)
-                                                           : nested_types[i]->canBeInsideNullable();
-            if (is_nullable[i] && can_make_nullable)
-                types[i] = makeNullable(nested_types[i]);
-            else
-                types[i] = nested_types[i];
+            const auto & nested = nested_types[i];
+            if (types[i]->getTypeId() != wrapper)
+            {
+                types[i] = nested;
+                continue;
+            }
+
+            /// Type could be changed so it cannot be inside the wrapper anymore.
+            bool can_be_wrapped = nested->canBeInsideLowCardinality();
+            if (wrapper == TypeIndex::Nullable)
+                can_be_wrapped = format_settings ? canBeInsideNullableBySchemaSettings(nested, *format_settings) : nested->canBeInsideNullable();
+
+            if (!can_be_wrapped)
+                types[i] = nested;
+            else if (nested.get() != types[i]->getChild(0).get())
+                types[i] = types[i]->cloneWithChildren({nested});
         }
 
         if (transform_complex_types)
@@ -73,134 +159,52 @@ void transformTypesRecursively(
         return;
     }
 
-    /// Arrays
-    if (type_indexes.contains(TypeIndex::Array))
+    if (std::ranges::none_of(type_indexes, isComplexType))
     {
-        /// All types are Array
-        if (type_indexes.size() == 1)
-        {
-            DataTypes nested_types;
-            for (const auto & type : types)
-                nested_types.push_back(typeid_cast<const DataTypeArray *>(type.get())->getNestedType());
-
-            transformTypesRecursively(nested_types, transform_simple_types, transform_complex_types, format_settings);
-            for (size_t i = 0; i != types.size(); ++i)
-                types[i] = std::make_shared<DataTypeArray>(nested_types[i]);
-        }
-
-        if (transform_complex_types)
-            transform_complex_types(types, type_indexes);
-
+        transform_simple_types(types, type_indexes);
         return;
     }
 
-    /// Tuples
-    if (type_indexes.contains(TypeIndex::Tuple))
-    {
-        /// All types are Tuple
-        if (type_indexes.size() == 1)
-        {
-            std::vector<DataTypes> nested_types;
-            const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(types[0].get());
-            size_t tuple_size = type_tuple->getElements().size();
-            bool has_explicit_names = type_tuple->hasExplicitNames();
-            nested_types.resize(tuple_size);
-            for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
-                nested_types[elem_idx].reserve(types.size());
+    const TypeIndex kind = *type_indexes.begin();
+    std::optional<std::vector<std::vector<size_t>>> positions;
+    if (type_indexes.size() == 1 && !types_to_not_descend.contains(kind))
+        positions = pairChildren(types, kind);
 
-            /// Apply transform to elements only if all tuples are the same.
-            bool sizes_are_equal = true;
-            Names element_names = type_tuple->getElementNames();
-            bool all_element_names_are_equal = true;
-            for (const auto & type : types)
+    if (positions)
+    {
+        std::vector<DataTypes> children(types.size());
+        for (size_t i = 0; i != types.size(); ++i)
+            children[i] = types[i]->getChildren();
+
+        DataTypes paired(types.size());
+        for (size_t child = 0; child != children[0].size(); ++child)
+        {
+            for (size_t i = 0; i != types.size(); ++i)
+                paired[i] = children[i][(*positions)[i][child]];
+            transformTypesRecursively(paired, transform_simple_types, transform_complex_types, format_settings, types_to_not_descend);
+            for (size_t i = 0; i != types.size(); ++i)
+                children[i][(*positions)[i][child]] = std::move(paired[i]);
+        }
+
+        for (size_t i = 0; i != types.size(); ++i)
+        {
+            for (size_t child = 0; child != children[i].size(); ++child)
             {
-                type_tuple = typeid_cast<const DataTypeTuple *>(type.get());
-                if (type_tuple->getElements().size() != tuple_size)
+                if (children[i][child].get() != types[i]->getChild(child).get())
                 {
-                    sizes_are_equal = false;
+                    types[i] = types[i]->cloneWithChildren(children[i]);
                     break;
                 }
-
-                if (type_tuple->getElementNames() != element_names)
-                {
-                    all_element_names_are_equal = false;
-                    break;
-                }
-
-                for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
-                    nested_types[elem_idx].emplace_back(type_tuple->getElements()[elem_idx]);
-            }
-
-            if (sizes_are_equal && all_element_names_are_equal)
-            {
-                std::vector<DataTypes> transposed_nested_types(types.size());
-                for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
-                {
-                    transformTypesRecursively(nested_types[elem_idx], transform_simple_types, transform_complex_types, format_settings);
-                    for (size_t i = 0; i != types.size(); ++i)
-                        transposed_nested_types[i].push_back(nested_types[elem_idx][i]);
-                }
-
-                for (size_t i = 0; i != types.size(); ++i)
-                {
-                    if (has_explicit_names)
-                        types[i] = std::make_shared<DataTypeTuple>(transposed_nested_types[i], element_names);
-                    else
-                        types[i] = std::make_shared<DataTypeTuple>(transposed_nested_types[i]);
-                }
             }
         }
-
-        if (transform_complex_types)
-            transform_complex_types(types, type_indexes);
-
-        return;
     }
 
-    /// Maps
-    if (type_indexes.contains(TypeIndex::Map))
-    {
-        /// All types are Map
-        if (type_indexes.size() == 1)
-        {
-            DataTypes key_types;
-            DataTypes value_types;
-            key_types.reserve(types.size());
-            value_types.reserve(types.size());
-            for (const auto & type : types)
-            {
-                const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(type.get());
-                key_types.emplace_back(type_map->getKeyType());
-                value_types.emplace_back(type_map->getValueType());
-            }
-
-            transformTypesRecursively(key_types, transform_simple_types, transform_complex_types, format_settings);
-            transformTypesRecursively(value_types, transform_simple_types, transform_complex_types, format_settings);
-
-            for (size_t i = 0; i != types.size(); ++i)
-                types[i] = std::make_shared<DataTypeMap>(key_types[i], value_types[i]);
-        }
-
-        if (transform_complex_types)
-            transform_complex_types(types, type_indexes);
-
-        return;
-    }
-
-    transform_simple_types(types, type_indexes);
+    if (transform_complex_types)
+        transform_complex_types(types, type_indexes);
 }
 
 namespace
 {
-
-bool hasEqualsAmbiguousAlternatives(const DataTypes & alternatives)
-{
-    for (size_t i = 0; i + 1 < alternatives.size(); ++i)
-        for (size_t j = i + 1; j < alternatives.size(); ++j)
-            if (alternatives[i]->equals(*alternatives[j]))
-                return true;
-    return false;
-}
 
 DataTypePtr replaceNestedTypesInPairImpl(
     const DataTypePtr & left,

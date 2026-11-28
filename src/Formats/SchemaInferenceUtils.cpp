@@ -748,8 +748,18 @@ namespace
 
         };
 
+        /// Inference does not walk into these types and merges them together with the simple types.
+        const TypeIndexesSet types_to_not_descend = {TypeIndex::LowCardinality, TypeIndex::Object, TypeIndex::Variant};
+
         auto transform_complex_types = [&](DataTypes & data_types, TypeIndexesSet & type_indexes)
         {
+            if (!type_indexes.contains(TypeIndex::Nullable) && !type_indexes.contains(TypeIndex::Array)
+                && !type_indexes.contains(TypeIndex::Tuple) && !type_indexes.contains(TypeIndex::Map))
+            {
+                transform_simple_types(data_types, type_indexes);
+                return;
+            }
+
             /// Make types Nullable if needed.
             transformNullableTypes(data_types, type_indexes, settings);
 
@@ -784,7 +794,7 @@ namespace
                 transformVariant(data_types, type_indexes);
         };
 
-        transformTypesRecursively(types, transform_simple_types, transform_complex_types, &settings);
+        transformTypesRecursively(types, transform_simple_types, transform_complex_types, &settings, types_to_not_descend);
     }
 
     template <bool is_json>

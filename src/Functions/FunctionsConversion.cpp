@@ -1,7 +1,9 @@
 #include <Functions/FunctionsConversion.h>
+#include <DataTypes/transformTypesRecursively.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/NaNUtils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
 #include <Common/re2.h>
@@ -3779,6 +3781,57 @@ ColumnPtr convertObjectColumns(
         dst_max_dynamic_types);
 }
 
+/// The text of a `DateTime` has no time zone, so a cast between two JSON types writes and parses the `DateTime`s that pair up
+/// in UTC: returns both types with them in UTC, which does not change their columns.
+/// A typed path overlapping another typed path is kept, because an object at either one can be written or read whole.
+std::pair<DataTypePtr, DataTypePtr> withPairedDateTimesInUTC(const DataTypeObject & from, const DataTypeObject & to)
+{
+    auto to_utc = [](DataTypes & leaves, TypeIndexesSet &)
+    {
+        if (!isDateTimeOrDateTime64(leaves[0]) || !isDateTimeOrDateTime64(leaves[1]))
+            return;
+        for (auto & leaf : leaves)
+        {
+            if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(leaf.get()))
+                leaf = std::make_shared<DataTypeDateTime64>(date_time64->getScale(), "UTC");
+            else
+                leaf = std::make_shared<DataTypeDateTime>("UTC");
+        }
+    };
+    auto nested_json = [](DataTypes & types, TypeIndexesSet & type_indexes)
+    {
+        if (type_indexes.size() == 1 && type_indexes.contains(TypeIndex::Object))
+            std::tie(types[0], types[1]) = withPairedDateTimesInUTC(
+                assert_cast<const DataTypeObject &>(*types[0]), assert_cast<const DataTypeObject &>(*types[1]));
+    };
+    auto from_paths = from.getTypedPaths();
+    auto to_paths = to.getTypedPaths();
+    UnorderedSetWithMemoryTracking<std::string_view> overlapping;
+    for (const auto * paths : {&from.getTypedPaths(), &to.getTypedPaths()})
+        for (const auto & [path, _] : *paths)
+            for (size_t dot = path.find('.'); dot != String::npos; dot = path.find('.', dot + 1))
+                if (std::string_view above(path.data(), dot); from_paths.contains(above) || to_paths.contains(above))
+                    overlapping.insert({above, path});
+    for (auto & [path, from_type] : from_paths)
+    {
+        auto it = to_paths.find(path);
+        if (it == to_paths.end() || overlapping.contains(path))
+            continue;
+        /// Any alternative of a `Variant` can parse the text, also one that was written from another alternative.
+        /// A nested JSON is paired here too, by its common typed paths and with the same overlap check.
+        DataTypes types{from_type, it->second};
+        transformTypesRecursively(types, to_utc, nested_json, /*format_settings=*/ nullptr, {TypeIndex::Variant, TypeIndex::Object});
+        from_type = std::move(types[0]);
+        it->second = std::move(types[1]);
+    }
+    auto make_object = [](const DataTypeObject & object, DataTypeObject::TypedPathsMap typed_paths) -> DataTypePtr
+    {
+        return std::make_shared<DataTypeObject>(object.getSchemaFormat(), std::move(typed_paths), object.getPathsToSkip(),
+            object.getPathRegexpsToSkip(), object.getMaxDynamicPaths(), object.getMaxDynamicTypes(), object.getSharedTypedPaths());
+    };
+    return {make_object(from, std::move(from_paths)), make_object(to, std::move(to_paths))};
+}
+
 /// Format+parse fallback for Object->Object conversion (existing approach).
 ColumnPtr convertObjectViaFormatParse(
     ColumnsWithTypeAndName & arguments,
@@ -3787,13 +3840,15 @@ ColumnPtr convertObjectViaFormatParse(
     size_t input_rows_count,
     const FunctionConvertSettings & cast_settings,
     bool requested_result_is_nullable,
-    CastType cast_type)
+    CastType cast_type,
+    const DataTypePtr & text_from_type,
+    const DataTypePtr & text_to_type)
 {
     auto json_string = ColumnString::create();
     ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
     auto & write_buffer = write_helper.getWriteBuffer();
     FormatSettings format_settings = getJSONRoundTripFormatSettings(cast_settings.format_settings);
-    auto serialization = arguments[0].type->getDefaultSerialization();
+    auto serialization = (text_from_type ? text_from_type : arguments[0].type)->getDefaultSerialization();
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
@@ -3806,10 +3861,11 @@ ColumnPtr convertObjectViaFormatParse(
     parse_settings.format_settings.session_time_zone = nullptr;
 
     ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
+    const auto & parse_type = text_to_type ? text_to_type : result_type;
     if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-        return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, parse_settings);
+        return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(parse_type), nullable_source, input_rows_count, parse_settings);
 
-    return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, parse_settings);
+    return ConvertImplGenericFromString<true>::execute(args_with_json_string, parse_type, nullable_source, input_rows_count, parse_settings);
 }
 
 } /// anonymous namespace
@@ -3838,6 +3894,11 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             return ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, settings);
         };
     }
+
+    DataTypePtr text_from_type;
+    DataTypePtr text_to_type;
+    if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get()))
+        std::tie(text_from_type, text_to_type) = withPairedDateTimesInUTC(*from_object, *to_object);
 
     /// Optimized Object(JSON) -> Object(JSON) conversion: avoid full serialize+parse when
     /// only a subset of paths are affected by parameter changes (typed paths, skip rules).
@@ -3876,7 +3937,8 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
                 overflow_behavior,
                 captured_format_settings.date_time_input_format,
                 /*cast_keep_nullable_=*/false);
-            return [this, requested_result_is_nullable, captured_plan = std::move(plan), captured_format_settings, captured_convert_settings]
+            return [this, requested_result_is_nullable, captured_plan = std::move(plan), captured_format_settings, captured_convert_settings,
+                    text_from_type, text_to_type]
                 (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
             {
                 const auto & dst_type_obj = assert_cast<const DataTypeObject &>(*result_type);
@@ -3887,7 +3949,7 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
                 /// The block needs semantics the optimized path cannot reproduce.
                 return convertObjectViaFormatParse(
                     arguments, result_type, nullable_source, input_rows_count,
-                    settings, requested_result_is_nullable, cast_type);
+                    settings, requested_result_is_nullable, cast_type, text_from_type, text_to_type);
             };
         }
 
@@ -3898,11 +3960,11 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
     if (checkAndGetDataType<DataTypeTuple>(from_type.get())
         || checkAndGetDataType<DataTypeMap>(from_type.get()) || checkAndGetDataType<DataTypeObject>(from_type.get()))
     {
-        return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+        return [this, requested_result_is_nullable, text_from_type, text_to_type](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
         {
             return convertObjectViaFormatParse(
                 arguments, result_type, nullable_source, input_rows_count,
-                settings, requested_result_is_nullable, cast_type);
+                settings, requested_result_is_nullable, cast_type, text_from_type, text_to_type);
         };
     }
 
