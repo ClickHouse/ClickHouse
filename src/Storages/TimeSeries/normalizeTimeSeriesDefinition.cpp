@@ -58,22 +58,25 @@ namespace
 }
 
 
-void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextPtr & context, LoadingStrictnessLevel mode, bool is_restore_from_backup)
+void normalizeTimeSeriesDefinition(
+    ASTCreateQuery & create_query, const ContextPtr & context, LoadingStrictnessLevel mode, bool is_restore_from_backup,
+    bool generate_inner_tables)
 {
     chassert(create_query.is_time_series_table);
 
     NormalizeTimeSeriesDefinitionParams params;
     params.mode = mode;
     params.is_restore_from_backup = is_restore_from_backup;
+    params.generate_inner_tables = generate_inner_tables;
 
     /// Only a new table needs the information from outside its definition; the other tables must exist then
-    /// (on ATTACH they may not be loaded yet).
-    if (params.isNewTable())
+    /// (on ATTACH they may not be loaded yet). Generating the inner tables of an existing definition needs it too.
+    if (params.isNewTable() || params.generate_inner_tables)
     {
         params.query_settings = &context->getSettingsRef();
         params.external_target_columns = readExternalTargetColumns(create_query, context);
 
-        if (!create_query.as_table.empty())
+        if (params.isNewTable() && !create_query.as_table.empty())
             params.as_create_query = readASCreateQuery(create_query, context);
     }
 
