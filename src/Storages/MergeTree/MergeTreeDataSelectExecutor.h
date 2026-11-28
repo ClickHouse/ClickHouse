@@ -397,6 +397,16 @@ public:
         QueryStatusPtr query_status;
     };
 
+    /// Generating a condition may execute an `IN` subquery, which only the planning thread does. When the skip index
+    /// conditions need that, the parts are analyzed in two passes: the planning thread prepares the skip index conditions
+    /// in between, only for the parts the primary key keeps.
+    enum class IndexAnalysisStage : uint8_t
+    {
+        All,
+        PrimaryKey,
+        SkipIndexes,
+    };
+
     /// References into the caller's per-part state.
     struct PartRangesForIndexAnalysis
     {
@@ -413,6 +423,8 @@ public:
     /// Per-index counters go to `skip_index_stats` (the caller's slice of
     /// `IndexAnalysisStats::skip_indexes`, by position in the order).
     /// Returns whether a skip index is usable for the part, applied here or deferred to the read.
+    /// The conditions are only looked up (`ConditionTemplate::getForPart`): for a filter with an `IN` subquery set, the
+    /// planning thread prepares them beforehand (`ConditionTemplate::prepareForPart`).
     static bool analyzeSinglePart(
         const SinglePartIndexAnalysisParams & params,
         const IMergeTreeDataPartInfoForReader & part,
@@ -420,7 +432,8 @@ public:
         const VectorWithMemoryTracking<size_t> * skip_index_order,
         PartRangesForIndexAnalysis ranges,
         IndexAnalysisStats & stats,
-        std::span<IndexAnalysisStat> skip_index_stats);
+        std::span<IndexAnalysisStat> skip_index_stats,
+        IndexAnalysisStage stage = IndexAnalysisStage::All);
 
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.
