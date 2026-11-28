@@ -109,7 +109,17 @@ public:
 
     void drop() override;
 
+    /// Captures the DROP query settings for drop(), which runs without a query context.
     void checkTableCanBeDropped(ContextPtr query_context) const override;
+
+    static std::shared_ptr<const Settings> getDropQuerySettings(const ContextPtr & query_context);
+
+    static void dropImpl(
+        const StorageObjectStorageConfigurationPtr & configuration,
+        const ObjectStoragePtr & object_storage,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageID & storage_id,
+        const std::shared_ptr<const Settings> & query_settings);
 
     bool supportsPartitionBy() const override { return true; }
 
@@ -181,12 +191,6 @@ public:
     std::shared_ptr<IDataLakeMetadata> getExternalMetadata(ContextPtr query_context);
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
-
-    /// The body of `drop`, shared with `StorageObjectStorageCluster`.
-    static void dropTable(
-        const StorageObjectStorageConfigurationPtr & configuration,
-        const std::shared_ptr<DataLake::ICatalog> & catalog,
-        const StorageID & storage_id);
 
     /// True when the target commits the refresh cursor atomically with the data (Iceberg on a CAS catalog),
     /// so the refresh reads/persists the cursor here instead of in the Keeper znode.
@@ -300,6 +304,8 @@ protected:
     /// Accessed under the alter lock.
     ASTPtr data_lake_partition_by;
     ASTPtr data_lake_order_by;
+
+    mutable std::shared_ptr<const Settings> drop_query_settings;
 
     struct HivePartitioningColumns
     {

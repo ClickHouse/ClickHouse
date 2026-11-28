@@ -289,7 +289,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
 {
     auto log = getLogger("IcebergRemoveOrphanFiles");
 
-    auto [reachable, metadata_version, metadata_path] = collectReachableFiles(
+    auto [reachable, metadata_version, metadata_path, _data_files] = collectReachableFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
 
     String scan_path = resolveScanPath(persistent_table_components.table_path, params);
@@ -306,7 +306,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
     if (params.dry_run || scan.orphan_paths.empty())
         return tallyByCategory(scan.orphan_paths, scan.skipped_missing_metadata);
 
-    auto [_recheck_files, recheck_version, recheck_path] = collectReachableFiles(
+    auto [_recheck_files, recheck_version, recheck_path, _recheck_data_files] = collectReachableFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
     if (recheck_path != metadata_path)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
