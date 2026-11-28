@@ -1,0 +1,3 @@
+ALTER TABLE t (MODIFY TTL d GROUP BY )
+CREATE TABLE t (`d` Date, `v` UInt64) ENGINE = MergeTree ORDER BY d TTL d + toIntervalDay(1) GROUP BY 
+CREATE TABLE t (`d` Date, `k` UInt8, `v` UInt64) ENGINE = MergeTree ORDER BY (k, d) TTL d + toIntervalDay(1) GROUP BY k SET v = sum(v)
