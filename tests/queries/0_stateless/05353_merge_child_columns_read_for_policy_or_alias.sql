@@ -21,7 +21,7 @@ SELECT 'policy, x', x FROM m;
 SELECT 'policy, y', y FROM m;
 SELECT 'policy, x and s', x, s FROM m;
 SELECT 'policy, x IS NULL', count() FROM m WHERE x IS NULL SETTINGS optimize_functions_to_subcolumns = 0;
-SELECT 'policy, no prewhere', x FROM m SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+SELECT 'policy, no prewhere', x FROM m SETTINGS optimize_move_to_prewhere = 0;
 
 CREATE TABLE c2 (k UInt8, s String, x Nullable(UInt8)) ENGINE = MergeTree ORDER BY k;
 INSERT INTO c2 VALUES (9, 'world', 5);

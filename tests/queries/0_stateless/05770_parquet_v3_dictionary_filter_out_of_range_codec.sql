@@ -25,5 +25,5 @@ SELECT count() FROM file(currentDatabase() || '_05770.parquet') WHERE bad_codec 
 SELECT count() FROM file(currentDatabase() || '_05770_bad_codec.parquet') WHERE bad_codec = '1' SETTINGS input_format_parquet_dictionary_filter_push_down = 1048576; -- { serverError INCORRECT_DATA }
 -- '15' is inside the min/max range of `a` but not in its dictionary. Without PREWHERE, `bad_codec` is read unless the
 -- dictionary filter skips the row group.
-SELECT count() FROM file(currentDatabase() || '_05770_bad_codec.parquet') WHERE a = '15' AND bad_codec = '1' SETTINGS input_format_parquet_dictionary_filter_push_down = 1048576, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
-SELECT count() FROM file(currentDatabase() || '_05770_bad_codec.parquet') WHERE a = '15' AND bad_codec = '1' SETTINGS input_format_parquet_dictionary_filter_push_down = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0; -- { serverError INCORRECT_DATA }
+SELECT count() FROM file(currentDatabase() || '_05770_bad_codec.parquet') WHERE a = '15' AND bad_codec = '1' SETTINGS input_format_parquet_dictionary_filter_push_down = 1048576, optimize_move_to_prewhere = 0;
+SELECT count() FROM file(currentDatabase() || '_05770_bad_codec.parquet') WHERE a = '15' AND bad_codec = '1' SETTINGS input_format_parquet_dictionary_filter_push_down = 0, optimize_move_to_prewhere = 0; -- { serverError INCORRECT_DATA }

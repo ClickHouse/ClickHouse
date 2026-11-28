@@ -564,7 +564,6 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryF
 -- declared inside one is as invisible to it as a bare one, and the element comes back unrelabelled.
 -- `Variant` is refused as a partition key (that minmax index needs `min`), so the carrier is a sorting
 -- key. Both directions are asserted: unfixed, `=` loses the matching row and `!=` keeps it.
-SET enable_variant_type = 1;
 
 CREATE TABLE oracle_variant (v Variant(DateTime('UTC'), String)) ENGINE = Memory;
 INSERT INTO oracle_variant SELECT CAST(toDateTime(1675195200, 'UTC') AS Variant(DateTime('UTC'), String));

@@ -164,8 +164,7 @@ PYEOF
 # Each crafted file must be rejected with INCORRECT_DATA (code 117), not crash or leak.
 for f in nint_wrap nstr_wrap arr_wrap nint_negdef nint_neguncomp nint_badtype nint_badenc nint_negnumvals strdict_negnumvals multipage_negnrows; do
     out=$(${CLICKHOUSE_LOCAL} --query "
-        SELECT * FROM file('${WORK_DIR}/${f}_evil.parquet', Parquet) FORMAT Null
-        SETTINGS input_format_parquet_use_native_reader_v3 = 1" 2>&1)
+        SELECT * FROM file('${WORK_DIR}/${f}_evil.parquet', Parquet) FORMAT Null" 2>&1)
     if echo "$out" | grep -q "INCORRECT_DATA"; then
         echo "$f: rejected"
     else

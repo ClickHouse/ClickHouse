@@ -6,8 +6,6 @@
 
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
-SET allow_experimental_variant_type = 1;
-SET allow_experimental_dynamic_type = 1;
 SET use_variant_as_common_type = 1;
 
 DROP TABLE IF EXISTS test_fuzz_99920;

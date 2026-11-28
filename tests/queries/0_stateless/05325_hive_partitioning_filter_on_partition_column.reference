@@ -62,13 +62,13 @@ SELECT count() FROM file(currentDatabase() || '/05325/count/key=9/data.parquet',
 SELECT count() FROM file(currentDatabase() || '/05325/count/key=9/data.parquet', Parquet, 'key Int64, v Int64') PREWHERE v < 100 + 0 * rand() WHERE key = 9;
 100
 -- Neither does a join runtime filter nor the top-K filter applied by the format.
-SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT count() FROM file(currentDatabase() || '/05325/join/key=9/data.parquet', Parquet, 'key Int64, v Int64') AS f INNER JOIN (SELECT toInt64(number) AS v FROM numbers(10)) AS t ON f.v = t.v WHERE f.key = 9 SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, join_algorithm = 'hash,parallel_hash', query_plan_join_swap_table = 0, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, query_plan_max_step_description_length = 1000) WHERE explain ILIKE '%prewhere filter column: %__applyfilter(%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT count() FROM file(currentDatabase() || '/05325/join/key=9/data.parquet', Parquet, 'key Int64, v Int64') AS f INNER JOIN (SELECT toInt64(number) AS v FROM numbers(10)) AS t ON f.v = t.v WHERE f.key = 9 SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, join_algorithm = 'hash,parallel_hash', query_plan_join_swap_table = 0, optimize_move_to_prewhere = 1, query_plan_max_step_description_length = 1000) WHERE explain ILIKE '%prewhere filter column: %__applyfilter(%';
 1
-SELECT count() FROM file(currentDatabase() || '/05325/join/key=9/data.parquet', Parquet, 'key Int64, v Int64') AS f INNER JOIN (SELECT toInt64(number) AS v FROM numbers(10)) AS t ON f.v = t.v WHERE f.key = 9 SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, join_algorithm = 'hash,parallel_hash', query_plan_join_swap_table = 0, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SELECT count() FROM file(currentDatabase() || '/05325/join/key=9/data.parquet', Parquet, 'key Int64, v Int64') AS f INNER JOIN (SELECT toInt64(number) AS v FROM numbers(10)) AS t ON f.v = t.v WHERE f.key = 9 SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, join_algorithm = 'hash,parallel_hash', query_plan_join_swap_table = 0, optimize_move_to_prewhere = 1;
 10
 SELECT count() FROM file(currentDatabase() || '/05325/join/key=9/data.parquet', Parquet, 'key Int64, v Int64') SETTINGS optimize_count_from_files = 1, use_cache_for_count_from_files = 1, optimize_trivial_count_query = 1;
 1000
-SELECT v FROM file(currentDatabase() || '/05325/topk/key=9/data.parquet', Parquet, 'key Int64, v Int64') WHERE key = 9 ORDER BY v LIMIT 3 SETTINGS use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000, input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_filter_push_down = 1, max_threads = 1, max_parsing_threads = 1;
+SELECT v FROM file(currentDatabase() || '/05325/topk/key=9/data.parquet', Parquet, 'key Int64, v Int64') WHERE key = 9 ORDER BY v LIMIT 3 SETTINGS use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000, input_format_parquet_filter_push_down = 1, max_threads = 1, max_parsing_threads = 1;
 0
 1
 2

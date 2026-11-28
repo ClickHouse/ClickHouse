@@ -13,7 +13,7 @@ DROP TABLE IF EXISTS t_lwu_desc SYNC;
 CREATE TABLE t_lwu_desc (id UInt64, v UInt64)
 ENGINE = MergeTree
 ORDER BY id DESC
-SETTINGS allow_experimental_reverse_key = 1, enable_block_number_column = true, enable_block_offset_column = true;
+SETTINGS enable_block_number_column = true, enable_block_offset_column = true;
 
 INSERT INTO t_lwu_desc SELECT number, number FROM numbers(10);
 UPDATE t_lwu_desc SET v = v * 100 WHERE id % 3 = 0;
@@ -26,7 +26,7 @@ DROP TABLE IF EXISTS t_lwu_mixed SYNC;
 CREATE TABLE t_lwu_mixed (a UInt64, b UInt64, v UInt64)
 ENGINE = MergeTree
 ORDER BY (a, b DESC)
-SETTINGS allow_experimental_reverse_key = 1, enable_block_number_column = true, enable_block_offset_column = true;
+SETTINGS enable_block_number_column = true, enable_block_offset_column = true;
 
 INSERT INTO t_lwu_mixed SELECT number % 3, number, number FROM numbers(9);
 UPDATE t_lwu_mixed SET v = v * 100 WHERE b % 2 = 0;

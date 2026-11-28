@@ -18,7 +18,7 @@ SELECT count() FROM file('$DATA_DIR/data_hive/partitioning/column0=Elizabeth/sam
 PREWHERE 1 WHERE column0 = 'Elizabeth';
 
 SELECT count() FROM file('$DATA_DIR/data_hive/partitioning/column0=*/sample.parquet')
-PREWHERE 2 WHERE column0 = 'Elizabeth' SETTINGS input_format_parquet_use_native_reader_v3 = 1;
+PREWHERE 2 WHERE column0 = 'Elizabeth';
 """
 
 rm -rf "$DATA_DIR"

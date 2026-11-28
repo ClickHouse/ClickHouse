@@ -3,7 +3,6 @@
 -- `arrayElement` rejects `JSON` keys, only the key subcolumn reads them.
 SET optimize_functions_to_subcolumns = 1;
 -- It rewrites a lone `uniqExact` into a `GROUP BY`, which serializes the values instead of hashing them.
-SET count_distinct_optimization = 0;
 
 -- The paths of one object moved to the next object of an array (#129458).
 WITH data AS (SELECT arrayJoin(['{"x":[{"a":1},{"b":2,"c":3}]}', '{"x":[{"a":1,"b":2},{"c":3}]}'])::JSON AS j)

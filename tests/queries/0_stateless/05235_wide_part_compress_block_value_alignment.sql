@@ -1,4 +1,3 @@
-SET enable_alp_codec = 1;
 
 DROP TABLE IF EXISTS t_block_value_alignment;
 

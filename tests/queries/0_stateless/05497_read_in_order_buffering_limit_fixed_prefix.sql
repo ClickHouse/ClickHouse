@@ -13,7 +13,7 @@ SET optimize_read_in_order = 1, read_in_order_use_buffering = 1, read_in_order_u
     read_in_order_two_level_merge_threshold = 100, max_threads = 8, max_block_size = 128,
     preferred_block_size_bytes = 1000000, merge_tree_min_rows_for_concurrent_read = 163840,
     merge_tree_min_bytes_for_concurrent_read = 251658240, optimize_move_to_prewhere = 0,
-    query_plan_optimize_prewhere = 0, use_query_condition_cache = 0, use_skip_indexes_for_top_k = 0,
+    use_query_condition_cache = 0, use_skip_indexes_for_top_k = 0,
     use_top_k_dynamic_filtering = 0, query_plan_optimize_lazy_materialization = 0,
     short_circuit_function_evaluation = 'force_enable', log_processors_profiles = 1;
 

@@ -45,7 +45,6 @@ SET query_plan_optimize_join_order_randomize = 0;
 -- data at all: the optimization is then never applied and the test measures nothing. Diagnosed with
 -- `clickhouse-test --diagnose-random-settings`, which minimized the failure to `use_statistics False`.
 SET use_statistics = 1;
-SET use_statistics_cache = 1;
 -- With a single reading thread the cost model sees replicas as a win on tables of this size, which is
 -- what makes the optimization actually apply rather than decline.
 SET max_threads = 1;

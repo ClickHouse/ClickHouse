@@ -49,7 +49,7 @@ ALTER TABLE t_repl_05228 DELETE WHERE arrayExists(_table -> _table = 0, [key]) S
 -- through. Reading it in a mutation then hits a separate pre-existing failure (see
 -- `04510_mutation_query_plan_only_virtual_columns`), which is pinned here to show that it is not
 -- `BAD_ARGUMENTS` from the guard.
-ALTER TABLE t_repl_05228 DELETE WHERE _sample_factor = 7 SETTINGS validate_mutation_query = 1; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+ALTER TABLE t_repl_05228 DELETE WHERE _sample_factor = 7; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
 
 -- The escape hatch applies to virtual columns the same way as to functions.
 ALTER TABLE t_repl_05228 UPDATE value = _table WHERE key = 2 SETTINGS allow_nondeterministic_mutations = 1, mutations_sync = 2;

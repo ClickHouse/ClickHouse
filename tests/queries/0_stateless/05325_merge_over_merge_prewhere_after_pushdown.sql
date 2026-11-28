@@ -14,7 +14,7 @@ CREATE TABLE m_outer (a Nullable(UInt64), b Nullable(UInt64), d Nullable(String)
 CREATE TABLE t_nullable (a Nullable(UInt64), b Nullable(UInt64), d Nullable(String), t Nullable(String)) ENGINE = Memory;
 INSERT INTO t_nullable VALUES (1, 2, 'd2', 't8');
 
-SET optimize_prewhere_after_pushdown = 1, move_all_conditions_to_prewhere = 0, query_plan_optimize_prewhere = 1;
+SET optimize_prewhere_after_pushdown = 1, move_all_conditions_to_prewhere = 0;
 
 SELECT count() FROM m_outer WHERE a = 1 AND b = 2;
 SELECT count() FROM m_outer WHERE b = 2 AND a = 1;

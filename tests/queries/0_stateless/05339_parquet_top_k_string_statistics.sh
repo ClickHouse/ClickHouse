@@ -192,7 +192,7 @@ touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}/0533
 # Without parallel replicas, which would read the object storage tables on the replicas: the counters checked below
 # are those of the initial query.
 SETTINGS="use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 10000, max_threads = 1,
-    max_parsing_threads = 1, max_block_size = 65409, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
+    max_parsing_threads = 1, max_block_size = 65409, optimize_move_to_prewhere = 1,
     input_format_parquet_filter_push_down = 1, input_format_parquet_preserve_order = 0, enable_parallel_replicas = 0"
 qcc_settings="${SETTINGS}, use_top_k_dynamic_filtering_for_variable_length_types = 0"
 

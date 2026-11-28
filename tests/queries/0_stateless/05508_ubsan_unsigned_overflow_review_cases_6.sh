@@ -24,7 +24,7 @@ SETTINGS max_threads = 18446744073709551615, prefer_localhost_replica = 0, enabl
 # The reservation of a spill of the radix `uniqExact` is checked.
 $CLICKHOUSE_CLIENT -q "
 SELECT uniqExact(number) FROM numbers(3)
-SETTINGS count_distinct_optimization = 0, optimize_uniq_exact_radix_partitioning = 1, max_threads = 1,
+SETTINGS optimize_uniq_exact_radix_partitioning = 1, max_threads = 1,
     collect_hash_table_stats_during_aggregation = 0, max_bytes_before_external_group_by = 1,
     max_bytes_ratio_before_external_group_by = 0, min_bytes_before_external_group_by = 0,
     min_free_disk_space_for_temporary_data = 18446744073709551615" 2>&1 | grep -q -E '^3$|NOT_ENOUGH_SPACE' && echo 'OK'

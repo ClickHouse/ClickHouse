@@ -12,7 +12,6 @@ SET read_in_order_two_level_merge_threshold = 100;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET optimize_aggregation_in_order = 0;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET parallel_replicas_local_plan = 1;
 SET enable_parallel_replicas = 0;
 SET max_threads = 4;
@@ -21,7 +20,7 @@ SET optimize_read_in_order = 1;
 -- Settings enabling read-in-order through JOIN (as in 04657).
 SET enable_analyzer = 1;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
-SET query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1;
+SET query_plan_read_in_order_through_join = 1;
 SET read_in_order_use_virtual_row = 1;
 SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 SET query_plan_optimize_join_order_limit = 1, query_plan_join_swap_table = 0;

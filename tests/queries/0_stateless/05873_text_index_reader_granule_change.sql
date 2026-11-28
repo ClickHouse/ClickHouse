@@ -16,7 +16,7 @@ INSERT INTO tab SELECT 3100 + number, concat('abc def row ', toString(number)) F
 
 SET max_threads = 4, max_threads_min_free_memory_per_thread = 0, max_streams_to_max_threads_ratio = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 1;
-SET use_query_condition_cache = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+SET use_query_condition_cache = 0, optimize_move_to_prewhere = 0;
 SET use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1;
 SET max_rows_to_read = 0; -- A throwing row limit applies the skip indexes before the read instead of on data read.
 SET query_plan_optimize_count_from_text_index = 0;

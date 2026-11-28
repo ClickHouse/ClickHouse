@@ -22,7 +22,7 @@ mkdir -p "${USER_FILES_PATH:?}/${DATA_DIR}"
 ICEBERG_DIR="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05256"
 rm -rf "${ICEBERG_DIR}"
 
-SETTINGS="use_query_condition_cache = 1, enable_analyzer = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
+SETTINGS="use_query_condition_cache = 1, enable_analyzer = 1, optimize_move_to_prewhere = 1"
 
 function run()
 {

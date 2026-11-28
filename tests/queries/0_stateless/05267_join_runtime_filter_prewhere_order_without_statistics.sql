@@ -8,7 +8,7 @@ SET session_timezone = 'UTC';
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 SET query_plan_join_swap_table = 'false', query_plan_optimize_join_order_randomize = 0, join_runtime_filter_min_probe_rows = 0;
 SET enable_join_runtime_filters_index_analysis = 0, use_query_condition_cache = 0;
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, allow_reorder_prewhere_conditions = 1, enable_multiple_prewhere_read_steps = 1;
+SET optimize_move_to_prewhere = 1, allow_reorder_prewhere_conditions = 1, enable_multiple_prewhere_read_steps = 1;
 
 DROP TABLE IF EXISTS t41;
 DROP TABLE IF EXISTS t42;

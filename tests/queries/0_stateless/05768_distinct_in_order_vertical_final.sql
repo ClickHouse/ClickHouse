@@ -10,7 +10,7 @@ INSERT INTO t_dvf SELECT number % 10, number, 2 FROM numbers(100);
 CREATE TABLE t_dvf_right (a UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_dvf_right SELECT number FROM numbers(5);
 
-SET optimize_distinct_in_order = 1, optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_join_swap_table = 'false', join_algorithm = 'hash';
+SET optimize_distinct_in_order = 1, optimize_read_in_order = 1, query_plan_join_swap_table = 'false', join_algorithm = 'hash';
 
 -- Without a `LIMIT`, `DISTINCT` does not read in order from a vertical `FINAL` read, also through a join.
 SELECT countIf(explain ILIKE '%DistinctSortedStreamTransform%') > 0, countIf(explain ILIKE '%SelectByIndicesTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT DISTINCT a, b FROM t_dvf FINAL SETTINGS enable_vertical_final = 1);

@@ -14,7 +14,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 SETTINGS="parallel_replicas_for_cluster_engines = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-    parallel_replicas_mode = 'read_tasks', parallel_replicas_only_with_analyzer = 1"
+    parallel_replicas_mode = 'read_tasks'"
 QUERY="SELECT sum(x) FROM url('http://localhost:1/05175.tsv', TSV, 'x UInt64')"
 
 function read_step()

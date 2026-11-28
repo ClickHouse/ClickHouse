@@ -7,7 +7,7 @@ SET engine_file_truncate_on_insert = 1;
 
 INSERT INTO FUNCTION file(currentDatabase() || '_05441.parquet')
 SELECT number AS id FROM numbers(8000)
-SETTINGS output_format_parquet_row_group_size = 1000, output_format_parquet_use_custom_encoder = 1;
+SETTINGS output_format_parquet_row_group_size = 1000;
 
 SELECT sum(id) FROM file(currentDatabase() || '_05441.parquet', Parquet, 'id UInt64')
 SETTINGS max_threads = 4, parallelize_output_from_storages = 1, input_format_parquet_preserve_order = 0,

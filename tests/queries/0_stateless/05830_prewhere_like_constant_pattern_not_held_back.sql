@@ -1,7 +1,7 @@
 -- `LIKE` with a constant pattern cannot throw, so it is not kept in WHERE behind the conditions written before it,
 -- unlike a condition that can throw (see 05497_prewhere_keeps_guard_before_throwing_condition).
 
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;
 SET move_all_conditions_to_prewhere = 1;
 SET enable_multiple_prewhere_read_steps = 1;

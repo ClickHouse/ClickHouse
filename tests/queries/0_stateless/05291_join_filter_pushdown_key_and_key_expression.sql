@@ -39,7 +39,7 @@ SELECT count() FROM (
     SELECT count() FROM t1 JOIN t2 ON t1.k = t2.k AND intDiv(t1.k, 2) = intDiv(t2.k, 2)
     WHERE intDiv(t2.k, 2) >= 100
     SETTINGS enable_join_runtime_filters = 0, query_plan_filter_push_down = 1,
-             optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, enable_parallel_replicas = 0
+             optimize_move_to_prewhere = 0, enable_parallel_replicas = 0
 ) WHERE explain ILIKE '%Filter column: k DIV 2 >= 100%';
 
 -- A key expression of another type (issue #122613)

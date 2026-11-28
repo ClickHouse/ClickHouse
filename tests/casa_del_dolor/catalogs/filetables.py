@@ -837,18 +837,10 @@ class FileHandler:
             settings.append("use_cache_for_count_from_files = 0")
         if fmt in ("arrow", "arrowstream"):
             settings.append("input_format_arrow_allow_missing_columns = 1")
-            # Prefer the new native Arrow reader, keeping some runs on the library one
-            use_native_reader = 1 if random.randint(1, 4) != 4 else 0
-            settings.append(
-                f"input_format_arrow_use_native_reader = {use_native_reader}"
-            )
         elif fmt == "parquet":
             settings.append("input_format_parquet_allow_missing_columns = 1")
         elif fmt == "orc":
             settings.append("input_format_orc_allow_missing_columns = 1")
-            settings.append(
-                f"input_format_orc_use_fast_decoder = {1 if random.randint(1, 4) != 4 else 0}"
-            )
         elif fmt == "avro":
             settings.append("input_format_avro_allow_missing_fields = 1")
         return ", ".join(settings)

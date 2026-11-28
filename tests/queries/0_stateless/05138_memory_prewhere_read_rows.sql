@@ -3,7 +3,6 @@
 -- of scanned rows is what `max_rows_to_read`, the read quotas and `SelectedRows` are based on.
 
 -- The test harness may randomize this setting, and the queries below rely on it.
-SET query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS t_memory_read_rows;
 

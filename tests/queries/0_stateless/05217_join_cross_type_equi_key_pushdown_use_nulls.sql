@@ -59,7 +59,7 @@ SELECT count() FROM (
     WHERE id > 1
     SETTINGS query_plan_filter_push_down = 1, enable_join_runtime_filters = 0,
              query_plan_convert_outer_join_to_inner_join = 1,
-             optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
+             optimize_move_to_prewhere = 0
 ) WHERE explain ILIKE '%Filter column: CAST(%';
 
 SELECT count() FROM (
@@ -70,7 +70,7 @@ SELECT count() FROM (
     WHERE id > 1
     SETTINGS query_plan_filter_push_down = 0, enable_join_runtime_filters = 0,
              query_plan_convert_outer_join_to_inner_join = 1,
-             optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
+             optimize_move_to_prewhere = 0
 ) WHERE explain ILIKE '%Filter column: CAST(%';
 
 SELECT 'renamed replacement converts nothing';
@@ -85,7 +85,7 @@ SELECT count() FROM (
     WHERE id > 1
     SETTINGS query_plan_filter_push_down = 1, enable_join_runtime_filters = 0,
              query_plan_convert_outer_join_to_inner_join = 1,
-             optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
+             optimize_move_to_prewhere = 0
 ) WHERE explain ILIKE '%Filter column: CAST(id AS UInt64) > 1%';
 
 DROP TABLE IF EXISTS t_pushdown_lc;

@@ -1,6 +1,5 @@
 -- Numeric 1/0 inside containers of Variant(Bool, <integer>) must go to the integer alternative
 -- unless allow_special_bool_values_inside_variant is enabled, like at top level and in JSON.
-SET enable_variant_type = 1;
 SET allow_special_bool_values_inside_variant = 0;
 
 SELECT '[1,0,true]'::Array(Variant(Bool, Int64)) AS v, arrayMap(x -> variantType(x), v);

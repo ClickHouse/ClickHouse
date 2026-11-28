@@ -19,7 +19,7 @@ INSERT INTO t_04850 SELECT number, [toFloat32(number), toFloat32(number + 1)] FR
 
 SELECT 'WHERE on the vector column, no rescoring, no implicit PREWHERE: correct result';
 SELECT id FROM t_04850 WHERE length(vec) > 0 ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 1
-    SETTINGS vector_search_with_rescoring = 0, query_plan_optimize_prewhere = 0;
+    SETTINGS vector_search_with_rescoring = 0;
 
 SELECT 'WHERE on the vector column, no rescoring, default PREWHERE settings: correct result';
 SELECT id FROM t_04850 WHERE length(vec) > 0 ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 1
@@ -42,7 +42,7 @@ SELECT 'WHERE on the vector column, no rescoring: the vector column is kept';
 SELECT count() = 0 FROM (
     EXPLAIN actions = 1
     SELECT id FROM t_04850 WHERE length(vec) > 0 ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 1
-        SETTINGS vector_search_with_rescoring = 0, query_plan_optimize_prewhere = 0)
+        SETTINGS vector_search_with_rescoring = 0)
 WHERE explain LIKE '%_distance%';
 
 -- A `WHERE` filter over other columns must not turn the rewrite off.
@@ -50,7 +50,7 @@ SELECT 'WHERE on another column, no rescoring: the vector column is replaced';
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1
     SELECT id FROM t_04850 WHERE id >= 0 ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 1
-        SETTINGS vector_search_with_rescoring = 0, query_plan_optimize_prewhere = 0)
+        SETTINGS vector_search_with_rescoring = 0)
 WHERE explain LIKE '%_distance%';
 
 DROP TABLE t_04850;

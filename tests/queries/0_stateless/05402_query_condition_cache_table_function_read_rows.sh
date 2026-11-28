@@ -25,7 +25,7 @@ ${CLICKHOUSE_CLIENT} --query "
 touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}/data.parquet"
 
 QUERY="SELECT count() FROM file('${DATA_DIR}/data.parquet') WHERE b = 3"
-SETTINGS="enable_analyzer = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, max_threads = 1, storage_file_read_method = 'pread'"
+SETTINGS="enable_analyzer = 1, optimize_move_to_prewhere = 1, max_threads = 1, storage_file_read_method = 'pread'"
 
 ${CLICKHOUSE_CLIENT} --query_id "${CLICKHOUSE_TEST_UNIQUE_NAME}_no_cache" --query "${QUERY} SETTINGS ${SETTINGS}, use_query_condition_cache = 0"
 ${CLICKHOUSE_CLIENT} --query_id "${CLICKHOUSE_TEST_UNIQUE_NAME}_populate" --query "${QUERY} SETTINGS ${SETTINGS}, use_query_condition_cache = 1"

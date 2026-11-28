@@ -3,8 +3,6 @@
 -- codec-valued `MergeTree` settings or in the `<compression>` server config, because those paths used to
 -- upper-case the whole codec expression before parsing it.
 
-SET enable_alp_codec = 1;
-
 DROP TABLE IF EXISTS t_codec_case;
 DROP TABLE IF EXISTS t_codec_case_settings;
 DROP TABLE IF EXISTS t_codec_case_marks;

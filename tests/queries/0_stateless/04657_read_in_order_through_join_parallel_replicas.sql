@@ -18,7 +18,7 @@ INSERT INTO payloads_04657 SELECT concat('Payload ', toString(number)), toString
 
 SET enable_analyzer = 1;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
-SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1;
+SET optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1;
 SET read_in_order_use_virtual_row = 1;
 SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 SET query_plan_optimize_join_order_limit = 1, query_plan_join_swap_table = 0;

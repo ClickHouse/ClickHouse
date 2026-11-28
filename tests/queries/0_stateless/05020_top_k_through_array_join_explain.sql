@@ -13,7 +13,6 @@ FROM numbers(100);
 
 SET optimize_read_in_order = 0;
 SET query_plan_optimize_lazy_materialization = 0;
-SET query_plan_optimize_prewhere = 0;
 SET optimize_move_to_prewhere = 0;
 SET query_plan_max_limit_for_top_k_optimization = 0;
 SET use_skip_indexes_for_top_k = 0;

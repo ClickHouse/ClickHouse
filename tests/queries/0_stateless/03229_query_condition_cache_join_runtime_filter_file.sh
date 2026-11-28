@@ -44,10 +44,10 @@ touch -d '2020-01-01 00:00:00' "$DATA_FILE"
 JOIN_QUERY="SELECT count() FROM t_qcc_jrf_file AS p, t_qcc_jrf_dim AS d WHERE p.k = d.k AND p.val % 7 = 3"
 JOIN_SETTINGS="use_query_condition_cache = 1, enable_join_runtime_filters = 1,
     join_runtime_filter_min_probe_rows = 0, join_algorithm = 'hash,parallel_hash',
-    query_plan_join_swap_table = 0, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
+    query_plan_join_swap_table = 0, optimize_move_to_prewhere = 1"
 NO_RF_SETTINGS="use_query_condition_cache = 1, enable_join_runtime_filters = 0,
     join_algorithm = 'hash,parallel_hash', query_plan_join_swap_table = 0,
-    optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
+    optimize_move_to_prewhere = 1"
 
 # The plan assertions pin the shape the row counts depend on, so that a decline (no runtime filter
 # planted, or one not moved into PREWHERE) cannot pass as a fix. `pretty = 0` is required because the
@@ -109,7 +109,7 @@ ${CLICKHOUSE_CLIENT} --query "
 qid_det_miss="${CLICKHOUSE_TEST_UNIQUE_NAME}_det_miss"
 qid_det_hit="${CLICKHOUSE_TEST_UNIQUE_NAME}_det_hit"
 DET_QUERY="SELECT sum(k) FROM t_qcc_jrf_file WHERE val = 5001"
-DET_SETTINGS="use_query_condition_cache = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
+DET_SETTINGS="use_query_condition_cache = 1, optimize_move_to_prewhere = 1"
 
 echo "deterministic PREWHERE reaches the file read (expect 1):"
 ${CLICKHOUSE_CLIENT} --query "

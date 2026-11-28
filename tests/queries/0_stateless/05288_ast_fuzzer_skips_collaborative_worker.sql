@@ -86,7 +86,6 @@ SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          parallel_replicas_for_non_replicated_merge_tree = 1,
          parallel_distributed_insert_select = 2,
          parallel_replicas_local_plan = 0,
-         parallel_replicas_insert_select_local_pipeline = 0,
          automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks', parallel_replicas_plan_based = 0,
          ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1;
 
@@ -196,7 +195,6 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_rep
          parallel_replicas_for_non_replicated_merge_tree = 1,
          parallel_distributed_insert_select = 2,
          parallel_replicas_local_plan = 0,
-         parallel_replicas_insert_select_local_pipeline = 0,
          automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks', parallel_replicas_plan_based = 0,
          ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1;
 

@@ -13,6 +13,6 @@ select * from file(currentDatabase() || '_data_02302.arrow', auto, 'x UInt8, xx 
 -- answer before a reader exists, and the two count-only optimizations are randomized off in some runs, so all three are pinned.
 -- Missing columns are rejected so that a read which is not count-only fails here instead of
 -- synthesizing `d` into a correctly sized mask and returning the same count with no guard in place.
-select count() from file(currentDatabase() || '_data_02302.parquet', auto, 'x UInt64, d UInt8 default 10') settings use_cache_for_count_from_files = 0, optimize_count_from_files = 1, optimize_trivial_count_query = 1, input_format_parquet_allow_missing_columns = 0, input_format_parquet_use_native_reader_v3 = 1;
+select count() from file(currentDatabase() || '_data_02302.parquet', auto, 'x UInt64, d UInt8 default 10') settings use_cache_for_count_from_files = 0, optimize_count_from_files = 1, optimize_trivial_count_query = 1, input_format_parquet_allow_missing_columns = 0;
 -- With the setting off no `default` expression is applied, so the columns keep their type defaults.
-select * from file(currentDatabase() || '_data_02302.parquet', auto, 'x UInt8, xx UInt8 default 10, y default 42, z default x + xx + y') settings input_format_parquet_allow_missing_columns=1, input_format_defaults_for_omitted_fields=0, input_format_parquet_use_native_reader_v3=1;
+select * from file(currentDatabase() || '_data_02302.parquet', auto, 'x UInt8, xx UInt8 default 10, y default 42, z default x + xx + y') settings input_format_parquet_allow_missing_columns=1, input_format_defaults_for_omitted_fields=0;

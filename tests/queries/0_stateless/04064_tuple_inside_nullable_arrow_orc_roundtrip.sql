@@ -283,11 +283,11 @@ INSERT INTO test_nullable_tuple_import_nested VALUES ([(1, 'a'), NULL, (3, 'c')]
 
 -- Arrow import_nested
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_import_nested.arrow', 'Arrow') SELECT c0 FROM test_nullable_tuple_import_nested;
-SELECT * FROM file(currentDatabase() || '_04064_import_nested.arrow', 'Arrow', '`c0.a` Array(Nullable(UInt32)), `c0.b` Array(Nullable(String))') SETTINGS input_format_arrow_import_nested = 1;
+SELECT * FROM file(currentDatabase() || '_04064_import_nested.arrow', 'Arrow', '`c0.a` Array(Nullable(UInt32)), `c0.b` Array(Nullable(String))');
 
 -- ORC import_nested
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_import_nested.orc', 'ORC') SELECT c0 FROM test_nullable_tuple_import_nested;
-SELECT * FROM file(currentDatabase() || '_04064_import_nested.orc', 'ORC', '`c0.a` Array(Nullable(UInt32)), `c0.b` Array(Nullable(String))') SETTINGS input_format_orc_import_nested = 1;
+SELECT * FROM file(currentDatabase() || '_04064_import_nested.orc', 'ORC', '`c0.a` Array(Nullable(UInt32)), `c0.b` Array(Nullable(String))');
 
 DROP TABLE test_nullable_tuple_import_nested;
 
@@ -314,11 +314,11 @@ INSERT INTO test_nullable_tuple_arr_nested_elem VALUES ([(1, [10, 20]), NULL, (3
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_arr_nested_elem.arrow', 'Arrow') SELECT c0 FROM test_nullable_tuple_arr_nested_elem;
 
 -- Arrow import_nested: scalar becomes Nullable, Array defaults to [] at null struct positions
-SELECT * FROM file(currentDatabase() || '_04064_arr_nested_elem.arrow', 'Arrow', '`c0.a` Array(Nullable(UInt32)), `c0.b` Array(Array(UInt32))') SETTINGS input_format_arrow_import_nested = 1;
+SELECT * FROM file(currentDatabase() || '_04064_arr_nested_elem.arrow', 'Arrow', '`c0.a` Array(Nullable(UInt32)), `c0.b` Array(Array(UInt32))');
 
 -- ORC import_nested
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_arr_nested_elem.orc', 'ORC') SELECT c0 FROM test_nullable_tuple_arr_nested_elem;
-SELECT * FROM file(currentDatabase() || '_04064_arr_nested_elem.orc', 'ORC', '`c0.a` Array(Nullable(UInt32)), `c0.b` Array(Array(UInt32))') SETTINGS input_format_orc_import_nested = 1;
+SELECT * FROM file(currentDatabase() || '_04064_arr_nested_elem.orc', 'ORC', '`c0.a` Array(Nullable(UInt32)), `c0.b` Array(Array(UInt32))');
 
 DROP TABLE test_nullable_tuple_arr_nested_elem;
 

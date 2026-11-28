@@ -1,5 +1,4 @@
 -- Dynamic NULL markers in CSV and TSV.
-SET enable_dynamic_type = 1;
 SET input_format_parallel_parsing = 0;
 SET input_format_csv_detect_header = 0;
 SET input_format_tsv_detect_header = 0;

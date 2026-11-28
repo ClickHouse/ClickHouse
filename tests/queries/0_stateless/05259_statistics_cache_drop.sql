@@ -6,7 +6,7 @@
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 -- The statistics are loaded to reorder the PREWHERE conditions.
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, allow_reorder_prewhere_conditions = 1;
+SET optimize_move_to_prewhere = 1, allow_reorder_prewhere_conditions = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET min_marks_per_part_to_load_statistics = 0;
 

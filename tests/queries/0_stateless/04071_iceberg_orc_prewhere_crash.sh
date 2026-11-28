@@ -46,7 +46,6 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT count()
     FROM icebergLocal('${ICEBERG_PATH}', 'Parquet', 'c0 Int64, c1 String')
     PREWHERE c0 > 50
-    SETTINGS input_format_parquet_use_native_reader_v3 = 1
 "
 
 # Also test pure ORC read through Parquet config
@@ -65,7 +64,6 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT count()
     FROM icebergLocal('${ICEBERG_PATH_ORC}', 'Parquet', 'c0 Int64, c1 String')
     PREWHERE c0 > 50
-    SETTINGS input_format_parquet_use_native_reader_v3 = 1
 "
 
 # Cleanup

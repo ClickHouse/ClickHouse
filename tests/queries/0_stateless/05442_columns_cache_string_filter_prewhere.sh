@@ -15,7 +15,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-SETTINGS="optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, apply_string_filters_during_scan = 1, enable_parallel_replicas = 0"
+SETTINGS="optimize_move_to_prewhere = 1, apply_string_filters_during_scan = 1, enable_parallel_replicas = 0"
 CACHE="use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1"
 CACHE_LIMITS="columns_cache_max_bytes_to_write_to_cache = 0, columns_cache_max_estimated_bytes_to_write_to_cache = 0"
 

@@ -2,7 +2,7 @@
 -- when WHERE is moved to PREWHERE, although the throwing condition reads less and would be ordered first.
 -- https://github.com/ClickHouse/ClickHouse/issues/130086
 
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, allow_reorder_prewhere_conditions = 1;
+SET optimize_move_to_prewhere = 1, allow_reorder_prewhere_conditions = 1;
 SET optimize_functions_to_subcolumns = 1, use_statistics = 0, move_all_conditions_to_prewhere = 1;
 
 DROP TABLE IF EXISTS t_guard_tuple;

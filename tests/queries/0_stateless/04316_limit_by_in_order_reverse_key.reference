@@ -3,7 +3,7 @@
 -- Reverse (descending) sorting key with several overlapping parts: every part holds the same key set,
 -- so each key appears in every in-order stream and the streams must be merged descending before LIMIT BY.
 DROP TABLE IF EXISTS test_reverse_single;
-CREATE TABLE test_reverse_single (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY (k DESC) SETTINGS allow_experimental_reverse_key = 1;
+CREATE TABLE test_reverse_single (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY (k DESC);
 SYSTEM STOP MERGES test_reverse_single;
 INSERT INTO test_reverse_single SELECT number % 100, number      FROM numbers(1000);
 INSERT INTO test_reverse_single SELECT number % 100, number+1000 FROM numbers(1000);
@@ -19,7 +19,7 @@ DROP TABLE test_reverse_single;
 -- OFFSET across reverse-key streams: the per-stream pre-filter keeps `length + offset` rows per key. The
 -- optimized output must equal the two smallest `v` per key after dropping the first, computed with a window function.
 DROP TABLE IF EXISTS test_reverse_offset;
-CREATE TABLE test_reverse_offset (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY (k DESC) SETTINGS allow_experimental_reverse_key = 1;
+CREATE TABLE test_reverse_offset (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY (k DESC);
 SYSTEM STOP MERGES test_reverse_offset;
 INSERT INTO test_reverse_offset SELECT number % 100, number      FROM numbers(1000);
 INSERT INTO test_reverse_offset SELECT number % 100, number+1000 FROM numbers(1000);
@@ -32,7 +32,7 @@ SELECT (SELECT groupArray((k, v)) FROM (SELECT k, v FROM test_reverse_offset ORD
 DROP TABLE test_reverse_offset;
 -- Multi-column reverse key (both columns descending), LIMIT BY the length-1 prefix.
 DROP TABLE IF EXISTS test_reverse_multi_col;
-CREATE TABLE test_reverse_multi_col (a UInt32, b UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a DESC, b DESC) SETTINGS allow_experimental_reverse_key = 1;
+CREATE TABLE test_reverse_multi_col (a UInt32, b UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a DESC, b DESC);
 SYSTEM STOP MERGES test_reverse_multi_col;
 INSERT INTO test_reverse_multi_col SELECT number % 50, number % 7, number      FROM numbers(1000);
 INSERT INTO test_reverse_multi_col SELECT number % 50, number % 7, number+1000 FROM numbers(1000);
@@ -45,7 +45,7 @@ SELECT count() = (SELECT uniqExact(a) FROM test_reverse_multi_col) FROM (SELECT 
 DROP TABLE test_reverse_multi_col;
 -- Mixed-direction key: ascending leading column, descending second column. LIMIT BY both.
 DROP TABLE IF EXISTS test_reverse_mixed;
-CREATE TABLE test_reverse_mixed (a UInt32, b UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a, b DESC) SETTINGS allow_experimental_reverse_key = 1;
+CREATE TABLE test_reverse_mixed (a UInt32, b UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a, b DESC);
 SYSTEM STOP MERGES test_reverse_mixed;
 INSERT INTO test_reverse_mixed SELECT number % 50, number % 7, number      FROM numbers(1000);
 INSERT INTO test_reverse_mixed SELECT number % 50, number % 7, number+1000 FROM numbers(1000);
@@ -63,7 +63,7 @@ DROP TABLE IF EXISTS test_merge_mixed_dir_part_1;
 DROP TABLE IF EXISTS test_merge_mixed_dir_part_2;
 DROP TABLE IF EXISTS test_merge_mixed_dir_wrap;
 CREATE TABLE test_merge_mixed_dir_part_1 (a UInt32, v UInt32) ENGINE = MergeTree ORDER BY a;
-CREATE TABLE test_merge_mixed_dir_part_2 (a UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a DESC) SETTINGS allow_experimental_reverse_key = 1;
+CREATE TABLE test_merge_mixed_dir_part_2 (a UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a DESC);
 INSERT INTO test_merge_mixed_dir_part_1 SELECT number % 20, number      FROM numbers(1000);
 INSERT INTO test_merge_mixed_dir_part_2 SELECT number % 20, number+1000 FROM numbers(1000);
 CREATE TABLE test_merge_mixed_dir_wrap AS test_merge_mixed_dir_part_1 ENGINE = Merge(currentDatabase(), '^test_merge_mixed_dir_part_[12]$');

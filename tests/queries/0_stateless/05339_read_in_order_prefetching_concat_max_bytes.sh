@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 SETTINGS="read_in_order_two_level_merge_threshold = 100,
     merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    optimize_aggregation_in_order = 0, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
+    optimize_aggregation_in_order = 0, optimize_move_to_prewhere = 1,
     enable_parallel_replicas = 0, max_threads = 8, max_block_size = 1000, optimize_read_in_order = 1"
 
 $CLICKHOUSE_CLIENT -q "

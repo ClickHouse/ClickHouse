@@ -9,6 +9,6 @@ INSERT INTO t_memory_qcc_nonbinary VALUES (0, 'a'), (2, 'b'), (3, 'c'), (3, 'd')
 
 SELECT k, s FROM t_memory_qcc_nonbinary PREWHERE k ORDER BY s;
 SELECT k, s FROM t_memory_qcc_nonbinary PREWHERE k ORDER BY s;
-SELECT sum(k) FROM t_memory_qcc_nonbinary WHERE k SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SELECT sum(k) FROM t_memory_qcc_nonbinary WHERE k SETTINGS optimize_move_to_prewhere = 1;
 
 DROP TABLE t_memory_qcc_nonbinary;

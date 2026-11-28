@@ -23,7 +23,7 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_rep
 -- Both prewhere switches are pinned because the harness randomizes each of them off independently: the
 -- `WHERE` shapes below are the shape under test only when the `WHERE` becomes a `PREWHERE`, which is
 -- where the diverging set name reaches the read step's hash.
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 
 -- max_block_size is set explicitly to ensure enough blocks will be fed to the statistics collector
 SET max_threads=4, max_block_size=128;

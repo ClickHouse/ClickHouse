@@ -32,7 +32,7 @@ find "${ICEBERG_DIR}" -name '*.parquet' -exec touch -d '2020-01-01 00:00:00' {} 
 
 QUERY="SELECT k FROM t_05397 WHERE _time < toDateTime('2021-01-01 00:00:00', 'UTC') ORDER BY k DESC LIMIT 3
     SETTINGS use_query_condition_cache = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-    input_format_parquet_use_native_reader_v3 = 1, max_threads = 1"
+    max_threads = 1"
 
 ${CLICKHOUSE_CLIENT} --query "$QUERY"
 # Only the modification time of the first data file changes, the snapshot stays the same.

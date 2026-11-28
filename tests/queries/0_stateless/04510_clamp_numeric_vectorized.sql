@@ -28,7 +28,6 @@ SELECT clamp(materialize(-inf), materialize(0.0), materialize(inf));
 SELECT clamp(materialize(inf), materialize(0.0), materialize(1.0));
 
 SELECT 'BFloat16';
-SET allow_experimental_bfloat16_type = 1;
 SELECT clamp(materialize(toBFloat16(5)), materialize(toBFloat16(1)), materialize(toBFloat16(2))) AS x, toTypeName(x);
 SELECT clamp(materialize(toBFloat16(nan)), materialize(toBFloat16(1)), materialize(toBFloat16(2))) AS x, toTypeName(x);
 

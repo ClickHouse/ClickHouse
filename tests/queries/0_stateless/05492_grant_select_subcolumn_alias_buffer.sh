@@ -15,7 +15,6 @@ $CLICKHOUSE_CLIENT -q "
 DROP USER IF EXISTS $user;
 CREATE TABLE dst (k UInt64, t Tuple(a UInt8, b String), m Map(String, UInt8)) ENGINE = MergeTree ORDER BY k;
 INSERT INTO dst VALUES (1, (7, 'x'), {'p': 1});
-SET allow_experimental_alias_table_engine = 1;
 CREATE TABLE al ENGINE = Alias('$db', 'dst');
 CREATE TABLE buf (k UInt64, t Tuple(a UInt8, b String), m Map(String, UInt8))
     ENGINE = Buffer('$db', dst, 1, 10, 100, 10000, 1000000, 10000000, 100000000);

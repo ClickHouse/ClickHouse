@@ -23,7 +23,7 @@ ICEBERG_INSERT_SETTINGS="SET allow_experimental_insert_into_iceberg = 1; SET max
 # Single-threaded reading, so that the threshold is established from the first row groups of the
 # sorted data before the rest is read; no query condition cache, which would skip row groups too.
 SETTINGS="query_plan_max_limit_for_top_k_optimization = 1000, use_top_k_dynamic_filtering_for_variable_length_types = 0,
-    input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_filter_push_down = 1,
+    input_format_parquet_filter_push_down = 1,
     max_threads = 1, max_parsing_threads = 1, use_query_condition_cache = 0"
 ON="use_top_k_dynamic_filtering = 1"
 OFF="use_top_k_dynamic_filtering = 0"
@@ -65,8 +65,8 @@ echo "--- query condition cache"
 # With the TopN filter a row group can end up without a returned row only because the threshold had
 # excluded it, so such a read must not record it as having no match for the predicate alone: the
 # plain read below would then skip it. `v % 20 = 0` holds for every even `k`, 100000 rows.
-CACHE_SETTINGS="use_query_condition_cache = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
-    query_plan_max_limit_for_top_k_optimization = 1000, input_format_parquet_use_native_reader_v3 = 1,
+CACHE_SETTINGS="use_query_condition_cache = 1, optimize_move_to_prewhere = 1,
+    query_plan_max_limit_for_top_k_optimization = 1000,
     input_format_parquet_filter_push_down = 1, max_threads = 1, max_parsing_threads = 1"
 # A table, as the query condition cache needs a table UUID.
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05255_s3 (k UInt64, v UInt64) ENGINE = S3(s3_conn, filename = '${S3_DIR}/sorted.parquet', format = Parquet)"

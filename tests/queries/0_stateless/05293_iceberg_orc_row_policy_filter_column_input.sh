@@ -17,7 +17,6 @@ rm -rf "${ICEBERG_PATH}"
 
 ${CLICKHOUSE_CLIENT} --query "
     SET allow_experimental_insert_into_iceberg = 1;
-    SET input_format_parquet_use_native_reader_v3 = 1;
     CREATE TABLE t (k Int64, a Int64) ENGINE = IcebergLocal('${ICEBERG_PATH}', 'Parquet');
     INSERT INTO TABLE FUNCTION icebergLocal('${ICEBERG_PATH}', 'ORC', 'k Int64, a Int64')
         SELECT number, number % 3 FROM numbers(10);
@@ -25,7 +24,6 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 ${CLICKHOUSE_CLIENT} --query "
-    SET input_format_parquet_use_native_reader_v3 = 1;
     SELECT count() FROM t;
     SELECT k, a FROM t ORDER BY k;
     SELECT k FROM t WHERE k > 3 ORDER BY k;

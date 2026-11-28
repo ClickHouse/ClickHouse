@@ -20,6 +20,6 @@ BAD_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
 cp "$CURDIR/data_parquet/05318_parquet_dictionary_bit_width_0.parquet" "$BAD_FILE"
 printf '\xba' | dd of="$BAD_FILE" bs=1 seek=220 conv=notrunc status=none
 for q in "SELECT sum(c) FROM file('$BAD_FILE')" "SELECT count() FROM file('$BAD_FILE') WHERE c = 1"; do
-    $CLICKHOUSE_LOCAL -q "$q SETTINGS input_format_parquet_use_native_reader_v3 = 1" 2>&1 | grep -o -m1 'INCORRECT_DATA'
+    $CLICKHOUSE_LOCAL -q "$q" 2>&1 | grep -o -m1 'INCORRECT_DATA'
 done
 rm -f "$BAD_FILE"

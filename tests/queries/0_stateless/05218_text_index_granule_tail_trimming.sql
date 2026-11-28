@@ -38,8 +38,7 @@ SELECT count() FROM t_text_index_tail_trim WHERE hasToken(message, 'needle');
 SELECT count() > 0 FROM (
     EXPLAIN SELECT sum(id), sum(length(payload)) FROM t_text_index_tail_trim
     WHERE hasToken(message, 'needle')
-    SETTINGS query_plan_direct_read_from_text_index = 1, optimize_move_to_prewhere = 1,
-        query_plan_optimize_prewhere = 1
+    SETTINGS query_plan_direct_read_from_text_index = 1, optimize_move_to_prewhere = 1
 ) WHERE explain ILIKE '%__text_index_%';
 
 -- `sum(id)` pins WHICH rows are returned, not just how many.
@@ -47,14 +46,14 @@ SELECT count() > 0 FROM (
 -- and either one off disables it.
 SELECT sum(id), sum(length(payload)) FROM t_text_index_tail_trim WHERE hasToken(message, 'needle')
 SETTINGS log_comment = '05218_selective', query_plan_direct_read_from_text_index = 1,
-    optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
+    optimize_move_to_prewhere = 1,
     use_query_condition_cache = 0, max_threads = 1, max_block_size = 8192;
 
 -- max_block_size is not a multiple of index_granularity, so a read stops inside a mark and the next
 -- one continues there. Both a selective and a match-everything predicate must survive that.
 SELECT sum(id), sum(length(payload)) FROM t_text_index_tail_trim WHERE hasToken(message, 'needle')
 SETTINGS log_comment = '05218_selective_midmark', query_plan_direct_read_from_text_index = 1,
-    optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
+    optimize_move_to_prewhere = 1,
     use_query_condition_cache = 0, max_threads = 1, max_block_size = 3000;
 
 SELECT sum(length(payload)) FROM t_text_index_tail_trim WHERE hasToken(message, 'common')

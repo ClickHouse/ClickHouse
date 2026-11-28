@@ -21,14 +21,14 @@ INSERT INTO t_timestamp_guard VALUES ('2025-05-16 07:20:20', '2025-05-16 07:20:2
     ('invaliddatetime', 'invaliddatetime', 'invaliddatetime', 'bad');
 
 SELECT payload FROM t_timestamp_guard WHERE s != 'invaliddatetime' AND timestamp(s) > '2020-01-01'
-    SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, enable_multiple_prewhere_read_steps = 1;
+    SETTINGS optimize_move_to_prewhere = 1, enable_multiple_prewhere_read_steps = 1;
 SELECT payload FROM t_timestamp_guard WHERE s != 'invaliddatetime' AND timestamp(s) > '2020-01-01'
-    SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, enable_multiple_prewhere_read_steps = 0;
+    SETTINGS optimize_move_to_prewhere = 1, enable_multiple_prewhere_read_steps = 0;
 SELECT payload FROM t_timestamp_guard PREWHERE s != 'invaliddatetime' AND timestamp(s) > '2020-01-01';
 SELECT payload FROM t_timestamp_guard WHERE lc != 'invaliddatetime' AND timestamp(lc) > '2020-01-01'
-    SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+    SETTINGS optimize_move_to_prewhere = 1;
 SELECT payload FROM t_timestamp_guard WHERE ns != 'invaliddatetime' AND timestamp(ns) > '2020-01-01'
-    SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+    SETTINGS optimize_move_to_prewhere = 1;
 
 -- Without a guard the value really cannot be parsed.
 SELECT timestamp(materialize('invaliddatetime')); -- { serverError CANNOT_PARSE_DATETIME }

@@ -1,7 +1,7 @@
 -- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
 -- A single uniqExact without GROUP BY over a table sorted by its argument counts the changes of the sorted values when optimize_aggregation_in_order is enabled.
 -- One thread, as the sorted streams of several threads are counted in order only when the read is split into layers (below).
-SET optimize_aggregation_in_order = 1, enable_parallel_replicas = 0, count_distinct_optimization = 0, max_threads = 1;
+SET optimize_aggregation_in_order = 1, enable_parallel_replicas = 0, max_threads = 1;
 
 DROP TABLE IF EXISTS t_uint;
 CREATE TABLE t_uint (x UInt64) ENGINE = MergeTree ORDER BY x;

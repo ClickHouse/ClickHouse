@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # {2149-06-06, 2149-06-07}, only `max_value` for {1969-12-31, 1970-01-06}. Under the default
 # `date_time_overflow_behavior` the read rejects that value, so the surviving endpoint must not prune the row
 # group and turn the error into an empty result.
-SETTINGS="input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_filter_push_down = 1,
+SETTINGS="input_format_parquet_filter_push_down = 1,
     input_format_parquet_page_filter_push_down = 0"
 MIN_ONLY="$CUR_DIR/data_parquet/05230_date_min_only_statistics.parquet"
 MAX_ONLY="$CUR_DIR/data_parquet/05230_date_max_only_statistics.parquet"

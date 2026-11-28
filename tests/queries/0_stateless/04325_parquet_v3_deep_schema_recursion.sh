@@ -75,8 +75,7 @@ PYEOF
 
 # Deeply nested schema must be rejected with a catchable error (not crash the process).
 out=$(${CLICKHOUSE_LOCAL} --query "
-    DESC file('${WORK_DIR}/deep.parquet', Parquet)
-    SETTINGS input_format_parquet_use_native_reader_v3 = 1" 2>&1)
+    DESC file('${WORK_DIR}/deep.parquet', Parquet)" 2>&1)
 if echo "$out" | grep -q "TOO_DEEP_RECURSION"; then
     echo "deep: rejected"
 else
@@ -85,8 +84,7 @@ fi
 
 # A reasonably nested schema must still work.
 shallow=$(${CLICKHOUSE_LOCAL} --query "
-    DESC file('${WORK_DIR}/shallow.parquet', Parquet)
-    SETTINGS input_format_parquet_use_native_reader_v3 = 1" 2>&1)
+    DESC file('${WORK_DIR}/shallow.parquet', Parquet)" 2>&1)
 if echo "$shallow" | grep -q "Tuple"; then
     echo "shallow: ok"
 else

@@ -49,12 +49,7 @@
 2	MultiPolygon	[[[]]]
 -- typed_point
 1	Point	(1,2)
--- arrow native=1
-1	Point	(1,2)
-2	LineString	[]
-3	Polygon	[[]]
-4	MultiPolygon	[[[]]]
--- arrow native=0
+-- arrow
 1	Point	(1,2)
 2	LineString	[]
 3	Polygon	[[]]

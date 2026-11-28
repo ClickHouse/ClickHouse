@@ -15,7 +15,6 @@ trap 'rm -rf "${DIR}"' EXIT
 LOCAL=(${CLICKHOUSE_LOCAL}
     --use_top_k_dynamic_filtering_for_variable_length_types=0
     --query_plan_max_limit_for_top_k_optimization=10000
-    --input_format_parquet_use_native_reader_v3=1
     --input_format_parquet_filter_push_down=1
     --input_format_parquet_preserve_order=0
     --max_block_size=65409)
@@ -85,7 +84,7 @@ echo "-- the same for a row policy"
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS t_05317;
     CREATE TABLE t_05317 (k UInt64, v UInt64, n Nullable(UInt64)) ENGINE = File(Parquet)
-        SETTINGS output_format_parquet_row_group_size = 1000, input_format_parquet_use_native_reader_v3 = 1,
+        SETTINGS output_format_parquet_row_group_size = 1000,
             input_format_parquet_filter_push_down = 1, input_format_parquet_preserve_order = 0;
     INSERT INTO t_05317 ${DATA} SETTINGS output_format_parallel_formatting = 0, max_threads = 1, max_insert_threads = 1, max_block_size = 65409;
     CREATE ROW POLICY p_05317_${CLICKHOUSE_DATABASE} ON t_05317 USING rowNumberInAllBlocks() % 3 = 0 TO ALL;

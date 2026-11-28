@@ -3,7 +3,7 @@
 -- It cannot, when the column is read by the existing PREWHERE or the row policy.
 -- The columns cache does not affect the decision: the reader skips the filter only for the columns it writes to the cache.
 
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, optimize_prewhere_after_pushdown = 1;
+SET optimize_move_to_prewhere = 1, optimize_prewhere_after_pushdown = 1;
 SET apply_string_filters_during_scan = 1;
 SET use_columns_cache = 0;
 

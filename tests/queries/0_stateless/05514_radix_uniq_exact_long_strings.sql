@@ -1,8 +1,7 @@
 -- `uniqExact` with radix partitioning hashes the strings of 16 bytes or more of a block, and the `FixedString` values
 -- longer than 16 bytes other than `FixedString(32)`, several at a time. It must count as many distinct values as without it.
 
--- `count_distinct_optimization` would rewrite `uniqExact` to a `GROUP BY`.
-SET max_threads = 4, count_distinct_optimization = 0, collect_hash_table_stats_during_aggregation = 0, optimize_injective_functions_inside_uniq = 0;
+SET max_threads = 4, collect_hash_table_stats_during_aggregation = 0, optimize_injective_functions_inside_uniq = 0;
 
 SELECT 'long strings, repeated',
     (SELECT uniqExact(x) FROM (SELECT concat(toString(number % 1000), ':', repeat('x', 16 + number % 1000 % 285)) AS x FROM numbers_mt(100000)) SETTINGS optimize_uniq_exact_radix_partitioning = 1),

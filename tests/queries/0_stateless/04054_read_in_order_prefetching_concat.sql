@@ -13,7 +13,6 @@ SET read_in_order_two_level_merge_threshold = 100;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET optimize_aggregation_in_order = 0;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET parallel_replicas_local_plan = 1;
 SET enable_parallel_replicas = 0;
 SET max_threads = 4;
@@ -113,7 +112,7 @@ SELECT count() > 0 FROM (
     WHERE value % 7 = 0
     ORDER BY path
 ) WHERE explain LIKE '%PrefetchingConcat%'
-SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+SETTINGS optimize_move_to_prewhere = 0;
 
 -- Correctness: output of the mixed PREWHERE + residual WHERE read must still be globally sorted,
 -- and the residual filter must keep exactly the rows it should (compared against an independent
@@ -130,7 +129,7 @@ FROM (
         WHERE value % 7 = 0
         ORDER BY path
     )
-) SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+) SETTINGS optimize_move_to_prewhere = 0;
 
 -- A no-`ORDER BY` `LIMIT BY` whose `BY` columns are a prefix of the sorting key drives read-in-order
 -- via `optimizeLimitByInOrder`. `LimitByStep` then runs the optimized per-stream

@@ -6,7 +6,7 @@
 # split from `05478_parquet_corpus_clickhouse_writer` to keep each test under the time limit of the
 # flaky check. `05478` runs the variants that change the layout of values, pages and row groups on
 # every dataset and the variants below on the flat and the nested dataset; this test runs the
-# variants below on the remaining datasets, and the default format version on every dataset.
+# variants below on the remaining datasets.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,8 +18,6 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 
 VARIANTS=(
-    "v1.0:output_format_parquet_version = '1.0'"
-    "v2.4:output_format_parquet_version = '2.4'"
     "none:output_format_parquet_compression_method = 'none'"
     "snappy:output_format_parquet_compression_method = 'snappy'"
     "gzip:output_format_parquet_compression_method = 'gzip'"
@@ -28,21 +26,16 @@ VARIANTS=(
     "no_index_bloom_checksums:output_format_parquet_write_page_index = 0, output_format_parquet_write_bloom_filter = 0, output_format_parquet_write_checksums = 0"
     "no_parallel:output_format_parquet_parallel_encoding = 0, max_threads = 1"
 )
-LATEST="v2.latest:output_format_parquet_version = '2.latest'"
 
-for dataset in flat.v2.6.dpv1 nested.v2.6.dpv1 strings.dict.dpv1 numbers.plain.dpv1 decimals.flba logical all_nulls empty names
+for dataset in strings.dict.dpv1 numbers.plain.dpv1 decimals.flba logical all_nulls empty names
 do
     # The Parquet writer does not support `Time64`, which the reader produces for TIME columns.
     except=""
     [ "$dataset" = logical ] && except="EXCEPT (t32_ms, t64_us)"
-    case "$dataset" in
-        flat.v2.6.dpv1|nested.v2.6.dpv1) variants=("$LATEST") ;;
-        *) variants=("${VARIANTS[@]}" "$LATEST") ;;
-    esac
     {
         echo "CREATE TABLE src ENGINE = Memory AS SELECT * $except FROM file('$CORPUS/$dataset.parquet', Parquet);"
         echo "CREATE TABLE back AS src ENGINE = Memory;"
-        for variant in "${variants[@]}"
+        for variant in "${VARIANTS[@]}"
         do
             name=${variant%%:*}
             settings=${variant#*:}

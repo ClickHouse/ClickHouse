@@ -7,7 +7,6 @@
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET move_all_conditions_to_prewhere = 1;
 SET enable_multiple_prewhere_read_steps = 1;
 SET use_query_condition_cache = 0;

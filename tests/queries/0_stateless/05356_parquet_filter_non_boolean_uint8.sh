@@ -64,7 +64,7 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), countIf(b) FROM file('${P}_ch.parquet', Parquet, 'x UInt8, b Bool') PREWHERE x $S"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count(), countIf(b) FROM file('${P}_ch.parquet', Parquet, 'x UInt8, b Bool') WHERE x
-    $S, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
+    $S, optimize_move_to_prewhere = 1"
 
 echo "--- BYTE_ARRAY Decimal, DELTA_BYTE_ARRAY ---"
 ${CLICKHOUSE_LOCAL} --query "

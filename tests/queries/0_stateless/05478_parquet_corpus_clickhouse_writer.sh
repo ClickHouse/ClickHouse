@@ -24,16 +24,13 @@ VARIANTS=(
     "no_dictionary:output_format_parquet_max_dictionary_size = 0"
     "dictionary_fallback:output_format_parquet_max_dictionary_size = 64, output_format_parquet_batch_size = 4"
     "binary_strings:output_format_parquet_string_as_string = 0, output_format_parquet_fixed_string_as_fixed_byte_array = 0"
-    "non_compliant_nested:output_format_parquet_compliant_nested_types = 0"
     "alp:output_format_parquet_use_alp_encoding = 1"
 )
 
-# Variants that only change the format version, the codec or the file trailer do not depend on
+# Variants that only change the codec or the file trailer do not depend on
 # the column types, so they run on the flat and the nested dataset only. Every query costs about
 # the same regardless of the variant, and the full matrix ran over 180s in the flaky check.
 EXTRA_VARIANTS=(
-    "v1.0:output_format_parquet_version = '1.0'"
-    "v2.4:output_format_parquet_version = '2.4'"
     "none:output_format_parquet_compression_method = 'none'"
     "snappy:output_format_parquet_compression_method = 'snappy'"
     "gzip:output_format_parquet_compression_method = 'gzip'"

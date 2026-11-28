@@ -12,11 +12,11 @@ SELECT n, s FROM t_memory_prewhere_column PREWHERE n ORDER BY s;
 SELECT f, s FROM t_memory_prewhere_column PREWHERE f ORDER BY s;
 
 SELECT 'moved WHERE';
-SELECT k, s FROM t_memory_prewhere_column WHERE k ORDER BY s SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
-SELECT n, s FROM t_memory_prewhere_column WHERE n ORDER BY s SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SELECT k, s FROM t_memory_prewhere_column WHERE k ORDER BY s SETTINGS optimize_move_to_prewhere = 1;
+SELECT n, s FROM t_memory_prewhere_column WHERE n ORDER BY s SETTINGS optimize_move_to_prewhere = 1;
 
 SELECT 'GROUP BY and ORDER BY on the filter column';
-SELECT k, count() FROM t_memory_prewhere_column WHERE k GROUP BY k ORDER BY k SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SELECT k, count() FROM t_memory_prewhere_column WHERE k GROUP BY k ORDER BY k SETTINGS optimize_move_to_prewhere = 1;
 SELECT k FROM t_memory_prewhere_column PREWHERE k ORDER BY k DESC;
 SELECT sum(k) FROM t_memory_prewhere_column PREWHERE k;
 

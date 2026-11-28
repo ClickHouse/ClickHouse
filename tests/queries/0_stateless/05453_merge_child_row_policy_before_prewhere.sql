@@ -2,8 +2,6 @@
 -- A `Merge` table applies a child's row policy before the query's PREWHERE and WHERE, as a direct read of the child does.
 -- Only the rows the policies hide hold values `toUInt64` cannot parse, so evaluating the condition on them throws.
 
-SET query_plan_optimize_prewhere = 1;
-
 DROP ROW POLICY IF EXISTS p_05453_mt ON t_mt;
 DROP ROW POLICY IF EXISTS p_05453_memory ON t_memory;
 DROP ROW POLICY IF EXISTS p_05453_memory_default ON t_memory_default;

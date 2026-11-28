@@ -2,8 +2,6 @@
 -- whose default value the cast would otherwise put in its place, and matches a NULL of a nullable key type only
 -- with `transform_null_in = 1`, the same way a NULL of a `Nullable` key does.
 
-SET allow_experimental_variant_type = 1;
-
 {% for mode in [0, 1] %}
 SELECT {{ mode }},
     (v, 1) IN (SELECT toFloat64(0), 1) AS float_default,

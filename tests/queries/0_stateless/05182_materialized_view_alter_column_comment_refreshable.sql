@@ -2,8 +2,6 @@
 --       A refreshable view needs an Atomic database, and a Replicated one refuses a non-APPEND
 --       refreshable view over a plain MergeTree inner table.
 
-SET allow_experimental_refreshable_materialized_view = 1;
-
 DROP TABLE IF EXISTS rmv_comment_src;
 DROP TABLE IF EXISTS rmv_comment;
 

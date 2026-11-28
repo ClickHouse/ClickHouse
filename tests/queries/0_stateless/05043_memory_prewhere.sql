@@ -1,6 +1,5 @@
 -- The test harness may randomize these settings, and the EXPLAIN check below depends on them.
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS t_memory_prewhere;
 DROP TABLE IF EXISTS t_memory_prewhere_compressed;

@@ -30,7 +30,6 @@ SELECT greatest(materialize(toNullable(nan)), materialize(CAST(NULL, 'Nullable(F
 SELECT least(materialize(toNullable(nan)), materialize(toNullable(1.0))), greatest(materialize(toNullable(nan)), materialize(toNullable(1.0)));
 
 SELECT 'BFloat16: NaN before and after finite values, variadic and Nullable';
-SET allow_experimental_bfloat16_type = 1;
 SELECT least(materialize(toBFloat16(nan)), materialize(toBFloat16(1)), materialize(toBFloat16(2))) AS l, greatest(materialize(toBFloat16(nan)), materialize(toBFloat16(1)), materialize(toBFloat16(2))) AS g, toTypeName(l);
 SELECT least(materialize(toBFloat16(1)), materialize(toBFloat16(2)), materialize(toBFloat16(nan))) AS l, greatest(materialize(toBFloat16(1)), materialize(toBFloat16(2)), materialize(toBFloat16(nan))) AS g, toTypeName(l);
 SELECT least(materialize(toBFloat16(nan)), materialize(toBFloat16(nan)), materialize(toBFloat16(nan))) AS l, greatest(materialize(toBFloat16(nan)), materialize(toBFloat16(nan)), materialize(toBFloat16(nan))) AS g;

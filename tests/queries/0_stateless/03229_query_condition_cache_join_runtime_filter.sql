@@ -40,14 +40,14 @@ SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT count() FROM v_t
     SETTINGS enable_join_runtime_filters = 1, enable_join_runtime_filters_index_analysis = 0,
              join_runtime_filter_min_probe_rows = 0,
              join_algorithm = 'hash,parallel_hash', use_statistics = 1, query_plan_join_swap_table = 0,
-             optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
+             optimize_move_to_prewhere = 1,
              query_plan_max_step_description_length = 1000)
 WHERE explain ILIKE '%prewhere filter column: %__applyfilter(%';
 SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT count() FROM v_tab, dim WHERE v_tab.k = dim.k
     SETTINGS enable_join_runtime_filters = 1, enable_join_runtime_filters_index_analysis = 0,
              join_runtime_filter_min_probe_rows = 0,
              join_algorithm = 'hash,parallel_hash', use_statistics = 1, query_plan_join_swap_table = 0,
-             optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
+             optimize_move_to_prewhere = 1,
              query_plan_max_step_description_length = 1000)
 WHERE trimLeft(explain) ILIKE 'Filter column: %modulo(plus(%k, %val), 7\_%';
 SYSTEM CLEAR QUERY CONDITION CACHE;
@@ -55,7 +55,7 @@ SELECT count() FROM v_tab, dim WHERE v_tab.k = dim.k
 SETTINGS enable_join_runtime_filters = 1, enable_join_runtime_filters_index_analysis = 0,
          join_runtime_filter_min_probe_rows = 0,
          join_algorithm = 'hash,parallel_hash', use_statistics = 1, query_plan_join_swap_table = 0,
-         optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, log_comment = 'qcc_jrf_join';
+         optimize_move_to_prewhere = 1, log_comment = 'qcc_jrf_join';
 SELECT count() FROM system.query_condition_cache;
 -- Print both counts rather than a boolean, so a reference diff shows which way it broke.
 SELECT count() FROM v_tab SETTINGS use_query_condition_cache = 1;
@@ -79,14 +79,14 @@ SELECT '-- control: without runtime filters the same query leaves the view reada
 SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT count() FROM v_tab, dim WHERE v_tab.k = dim.k
     SETTINGS enable_join_runtime_filters = 0,
              join_algorithm = 'hash,parallel_hash', use_statistics = 1, query_plan_join_swap_table = 0,
-             optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
+             optimize_move_to_prewhere = 1,
              query_plan_max_step_description_length = 1000)
 WHERE explain ILIKE '%prewhere filter column: %__applyfilter(%';
 SYSTEM CLEAR QUERY CONDITION CACHE;
 SELECT count() FROM v_tab, dim WHERE v_tab.k = dim.k
 SETTINGS enable_join_runtime_filters = 0, enable_join_runtime_filters_index_analysis = 0,
          join_algorithm = 'hash,parallel_hash', use_statistics = 1, query_plan_join_swap_table = 0,
-         optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, log_comment = 'qcc_jrf_join_norf';
+         optimize_move_to_prewhere = 1, log_comment = 'qcc_jrf_join_norf';
 SELECT count() FROM v_tab SETTINGS use_query_condition_cache = 1;
 SELECT count() FROM v_tab SETTINGS use_query_condition_cache = 0;
 -- No runtime filter here, so the counters arm 1 asserts on must be absent. This is what makes those
@@ -102,7 +102,7 @@ SYSTEM CLEAR QUERY CONDITION CACHE;
 SELECT count() FROM v_tab, dim WHERE v_tab.k = dim.k
 SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0,
          join_algorithm = 'hash,parallel_hash', use_statistics = 1, query_plan_join_swap_table = 0,
-         optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+         optimize_move_to_prewhere = 0;
 SELECT count() FROM system.query_condition_cache;
 SELECT count() FROM v_tab SETTINGS use_query_condition_cache = 1;
 SELECT count() FROM v_tab SETTINGS use_query_condition_cache = 0;
@@ -116,7 +116,7 @@ SELECT count() FROM v_tab, dim WHERE v_tab.k = dim.k
 SETTINGS enable_join_runtime_filters = 1, enable_join_runtime_filters_index_analysis = 1,
          use_skip_indexes_on_data_read = 1, join_runtime_filter_min_probe_rows = 0,
          join_algorithm = 'hash,parallel_hash', use_statistics = 1, query_plan_join_swap_table = 0,
-         optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, log_comment = 'qcc_jrf_index_scan';
+         optimize_move_to_prewhere = 1, log_comment = 'qcc_jrf_index_scan';
 SELECT count() FROM system.query_condition_cache;
 SELECT count() FROM v_tab SETTINGS use_query_condition_cache = 1;
 SELECT count() FROM v_tab SETTINGS use_query_condition_cache = 0;
@@ -132,9 +132,9 @@ ORDER BY event_time_microseconds DESC LIMIT 1;
 SELECT '-- a deterministic PREWHERE must not stop the WHERE filter from populating the cache';
 SYSTEM CLEAR QUERY CONDITION CACHE;
 SELECT count() FROM tab PREWHERE k < 500000 WHERE (k + val) = 24690
-SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, log_comment = 'qcc_jrf_prewhere';
+SETTINGS optimize_move_to_prewhere = 1, log_comment = 'qcc_jrf_prewhere';
 SELECT count() FROM tab PREWHERE k < 500000 WHERE (k + val) = 24690
-SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, log_comment = 'qcc_jrf_prewhere';
+SETTINGS optimize_move_to_prewhere = 1, log_comment = 'qcc_jrf_prewhere';
 SYSTEM FLUSH LOGS query_log;
 SELECT toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
 FROM system.query_log
