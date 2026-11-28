@@ -389,6 +389,58 @@ namespace
         }
     }
 
+    /// A number type is marked as parsed from a JSON string by being a specific shared instance.
+    /// Equal types are later collapsed into one of their instances (for example, the element type of an array),
+    /// so if numbers of the same type were parsed both from strings and from bare JSON numbers,
+    /// drop the parsed-from-string mark. Otherwise a bare number could be converted to String later.
+    /// The negative mark of Int64 is kept.
+    void dropNumbersParsedFromStringMarkIfMixed(DataTypes & data_types, JSONInferenceInfo * json_info)
+    {
+        if (!json_info)
+            return;
+
+        auto has_mixed_marks = [&](TypeIndex type_index)
+        {
+            bool have_parsed_from_string = false;
+            bool have_not_parsed_from_string = false;
+            for (const auto & type : data_types)
+            {
+                if (type->getTypeId() != type_index)
+                    continue;
+                if (json_info->isNumberParsedFromString(*type))
+                    have_parsed_from_string = true;
+                else
+                    have_not_parsed_from_string = true;
+            }
+            return have_parsed_from_string && have_not_parsed_from_string;
+        };
+
+        const bool mixed_int64 = has_mixed_marks(TypeIndex::Int64);
+        const bool mixed_uint64 = has_mixed_marks(TypeIndex::UInt64);
+        const bool mixed_float64 = has_mixed_marks(TypeIndex::Float64);
+        if (!mixed_int64 && !mixed_uint64 && !mixed_float64)
+            return;
+
+        for (auto & type : data_types)
+        {
+            if (!json_info->isNumberParsedFromString(*type))
+                continue;
+
+            WhichDataType which(type);
+            if (which.isInt64() && mixed_int64)
+            {
+                if (json_info->isNegativeInteger(*type))
+                    type = json_info->getNegativeInt64();
+                else
+                    type = std::make_shared<DataTypeInt64>();
+            }
+            else if (which.isUInt64() && mixed_uint64)
+                type = std::make_shared<DataTypeUInt64>();
+            else if (which.isFloat64() && mixed_float64)
+                type = std::make_shared<DataTypeFloat64>();
+        }
+    }
+
     /// If we have numbers (Int64/UInt64/Float64) and String types and numbers were parsed from String,
     /// convert all numbers to String.
     void transformJSONNumbersBackToString(
@@ -728,6 +780,9 @@ namespace
 
             /// Check settings specific for JSON formats.
 
+            /// Numbers of the same type parsed both from strings and from bare numbers are not parsed-from-string.
+            dropNumbersParsedFromStringMarkIfMixed(data_types, json_info);
+
             /// Convert numbers inferred from strings back to strings if needed.
             if (settings.json.try_infer_numbers_from_strings || settings.json.read_numbers_as_strings)
                 transformJSONNumbersBackToString(data_types, settings, type_indexes, json_info);
@@ -935,7 +990,13 @@ namespace
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
 
         if (checkIfTypesAreEqual(nested_types))
+        {
+            /// Only one of the equal types is kept, it should not keep the parsed-from-string mark
+            /// if some of the elements are bare numbers.
+            if constexpr (is_json)
+                transformEqualInferredJSONTypesIfNeeded(nested_types, settings, json_info);
             return std::make_shared<DataTypeArray>(std::move(nested_types.back()));
+        }
 
         /// If element types are not equal, we should try to find common type.
         /// If after transformation element types are still different, we return Tuple for JSON and
@@ -1530,6 +1591,11 @@ bool JSONInferenceInfo::isNumberParsedFromString(const IDataType & type) const
         || &type == float64_from_string.get();
 }
 
+bool JSONInferenceInfo::hasNumbersParsedFromStrings() const
+{
+    return int64_from_string || negative_int64_from_string || uint64_from_string || float64_from_string;
+}
+
 bool canBeInsideNullableBySchemaSettings(const DataTypePtr & type, const FormatSettings & settings)
 {
     if (isTuple(type) && !settings.schema_inference_allow_nullable_tuple_type)
@@ -1571,6 +1637,30 @@ void transformInferredJSONTypesIfNeeded(
 void transformInferredJSONTypesIfNeeded(DataTypes & types, const FormatSettings & settings, JSONInferenceInfo * json_info)
 {
     transformInferredTypesIfNeededImpl<true>(types, settings, json_info);
+}
+
+void transformEqualInferredJSONTypesIfNeeded(
+    DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, JSONInferenceInfo * json_info)
+{
+    DataTypes types = {first, second};
+    transformEqualInferredJSONTypesIfNeeded(types, settings, json_info);
+    first = std::move(types[0]);
+    second = std::move(types[1]);
+}
+
+void transformEqualInferredJSONTypesIfNeeded(DataTypes & types, const FormatSettings & settings, JSONInferenceInfo * json_info)
+{
+    /// The marks are created only with try_infer_numbers_from_strings and are not used with read_numbers_as_strings.
+    if (!json_info || !settings.json.try_infer_numbers_from_strings || settings.json.read_numbers_as_strings
+        || !json_info->hasNumbersParsedFromStrings())
+        return;
+
+    auto transform_simple_types = [&](DataTypes & data_types, TypeIndexesSet &)
+    {
+        dropNumbersParsedFromStringMarkIfMixed(data_types, json_info);
+    };
+
+    transformTypesRecursively(types, transform_simple_types, {}, &settings);
 }
 
 void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings)

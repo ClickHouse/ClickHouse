@@ -43,6 +43,9 @@ public:
 
     virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
     virtual void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) { transformTypesIfNeeded(type, new_type); }
+    /// Called instead of transformTypesIfNeeded when the types are already equal and only one of them will be kept.
+    /// Needed for formats where equal types can carry different additional information (see JSONInferenceInfo).
+    virtual void transformEqualTypesIfNeeded(DataTypePtr & /*type*/, DataTypePtr & /*new_type*/) {}
 
     virtual ~ISchemaReader() = default;
 
@@ -169,8 +172,14 @@ void chooseResultColumnType(
         return;
     }
 
-    if (!new_type || type->equals(*new_type))
+    if (!new_type)
         return;
+
+    if (type->equals(*new_type))
+    {
+        schema_reader.transformEqualTypesIfNeeded(type, new_type);
+        return;
+    }
 
     schema_reader.transformTypesIfNeeded(type, new_type);
     if (type->equals(*new_type))

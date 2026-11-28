@@ -237,6 +237,11 @@ void JSONCompactEachRowRowSchemaReader::transformTypesIfNeeded(DataTypePtr & typ
     transformInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
 }
 
+void JSONCompactEachRowRowSchemaReader::transformEqualTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
+{
+    transformEqualInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
+}
+
 void JSONCompactEachRowRowSchemaReader::transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
 {
     transformInferredJSONTypesFromDifferentFilesIfNeeded(type, new_type, format_settings);

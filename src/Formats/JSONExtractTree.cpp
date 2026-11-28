@@ -2304,7 +2304,10 @@ private:
                     return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
 
                 if (checkIfTypesAreEqual(types))
+                {
+                    transformEqualInferredJSONTypesIfNeeded(types, format_settings, &json_inference_info);
                     return std::make_shared<DataTypeArray>(types.back());
+                }
 
                 /// For JSON if we have not complete types, we should not try to transform them
                 /// and return it as a Tuple.
