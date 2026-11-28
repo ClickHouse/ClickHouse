@@ -1,0 +1,7 @@
+--- without READ ON FILE, the incremental backup is refused
+Code: 497 grant READ ON FILE
+--- so is an override that names the full backup only for this user
+Code: 36
+--- a literal override is accepted
+created
+0

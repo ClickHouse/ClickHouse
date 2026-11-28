@@ -1,5 +1,6 @@
 #include <Databases/DatabaseBackup.h>
 
+#include <algorithm>
 #include <filesystem>
 
 #include <boost/algorithm/string.hpp>
@@ -21,6 +22,7 @@
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -44,6 +46,7 @@
 
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupInfo.h>
+#include <Backups/BackupUtils.h>
 
 #include <Disks/DiskBackup.h>
 #include <Disks/SingleDiskVolume.h>
@@ -557,6 +560,28 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool 
     return result;
 }
 
+/// The database reads its backup with no user, so whoever introduces it must be allowed to read every backup of the chain.
+void authorizeBackupChain(BackupInfo backup_info, const ContextPtr & context)
+{
+    /// The database evaluates the overrides again in its own context, so only literals name the backup authorized here.
+    auto is_expression = [](const ASTPtr & arg) { return !arg->as<ASTLiteral>() && !arg->as<ASTIdentifier>(); };
+    for (const auto & kv_arg : backup_info.kv_args)
+    {
+        const auto & arguments = kv_arg->as<const ASTFunction &>().arguments;
+        if (arguments && std::ranges::any_of(arguments->children, is_expression))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The named collection overrides in the backup destination of a `Backup` database must be literals");
+    }
+
+    BackupFactory::CreateParams params;
+    params.open_mode = IBackup::OpenMode::READ;
+    params.for_authorization_only = true;
+    params.context = context;
+    params.backup_info = std::move(backup_info);
+    auto backup = BackupFactory::instance().createBackup(params);
+    BackupUtils::checkAccessToBaseBackupChain(backup, context->getProcessListElement());
+}
+
 }
 
 void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context)
@@ -575,7 +600,7 @@ void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextP
       * not be echoed.
       */
     auto config = parseArguments(engine_args, query_context, /*allow_locator_in_string_literal=*/ false);
-    BackupFactory::instance().checkSourceAccess(BackupInfo::fromString(config.backup_info), query_context, IBackup::OpenMode::READ);
+    authorizeBackupChain(BackupInfo::fromString(config.backup_info), query_context);
 }
 
 namespace
@@ -838,7 +863,7 @@ void registerDatabaseBackup(DatabaseFactory & factory)
 
         auto config = parseArguments(engine_args, args.context, /*allow_locator_in_string_literal=*/ from_existing_metadata);
         if (has_real_user && !from_existing_metadata)
-            BackupFactory::instance().checkSourceAccess(BackupInfo::fromString(config.backup_info), args.context, IBackup::OpenMode::READ);
+            authorizeBackupChain(BackupInfo::fromString(config.backup_info), args.context);
 
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };

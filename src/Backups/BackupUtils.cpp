@@ -1,11 +1,13 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLAdjustingForBackupVisitor.h>
+#include <Backups/IBackup.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -17,11 +19,17 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
 
+
+namespace DB::ErrorCodes
+{
+    extern const int WRONG_BASE_BACKUP;
+}
 
 namespace DB::BackupUtils
 {
@@ -195,6 +203,19 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
     }
 
     return required_access;
+}
+
+void checkAccessToBaseBackupChain(const std::shared_ptr<const IBackup> & backup, const QueryStatusPtr & process_list_element)
+{
+    SetWithMemoryTracking<UUID> seen_uuids{backup->getUUID()};
+    for (auto base_backup = backup->getBaseBackup(); base_backup; base_backup = base_backup->getBaseBackup())
+    {
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+        if (!seen_uuids.insert(base_backup->getUUID()).second)
+            throw Exception(ErrorCodes::WRONG_BASE_BACKUP, "Backup {}: Its chain of base backups returns to {}",
+                backup->getNameForLogging(), base_backup->getNameForLogging());
+    }
 }
 
 bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context)
