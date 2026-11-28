@@ -9,7 +9,6 @@
 #include <Core/DecimalFunctions.h>
 #include <Columns/ColumnVector.h>
 #include <Common/intExp10.h>
-#include <base/preciseExp10.h>
 #include <Interpreters/castColumn.h>
 #include <Functions/IFunction.h>
 #include <Common/intExp.h>
@@ -282,30 +281,54 @@ struct FloatRoundingComputation
 };
 
 
+/// `hi + lo` approximates `10^n * 2^-192` within a relative 2^-104, with `|lo| <= ulp(hi) / 2`.
+struct ScaledExp10
+{
+    Float64 hi;
+    Float64 lo;
+};
+
+inline constexpr int max_scaled_exp10 = 338;
+
+const ScaledExp10 & scaledExp10(int n);
+
 /// Rounding with `|N| > 19`, where `10^N` is not exact in the argument type or out of its range. Computed in `Float64`.
 template <RoundingMode rounding_mode, ScaleMode scale_mode>
 struct FloatRoundingLargeScale
 {
     static constexpr int max_exp10 = 308;
-    /// From 2^52 on every `Float64` is an integer, so rounding returns it unchanged.
-    static constexpr Float64 integer_limit = 4503599627370496.0;
+    /// From `|x * 10^N| >= 2^53` on, the neighbours of `x` are at least 10^-N away, so `x` is a grid value.
+    static constexpr Float64 integer_limit = 0x1p53;
+    static constexpr Float64 shift_up = 0x1p192;
+    static constexpr Float64 shift_down = 0x1p-192;
 
     struct Scales
     {
         int digits;
-        Float64 scale;
-        Float64 extra_scale;
+        Float64 hi;
+        Float64 lo;
     };
 
-    /// 10^digits = scale * extra_scale, with scale <= 10^308.
+    /// `hi + lo` approximates `10^digits`, times 2^-192 for a positive `N`.
     static Scales prepare(int digits)
     {
-        if (digits <= max_exp10)
-            return {digits, preciseExp10(digits), 1.0};
-        return {digits, preciseExp10(max_exp10), preciseExp10(digits - max_exp10)};
+        if constexpr (scale_mode == ScaleMode::Positive)
+        {
+            if (digits > max_scaled_exp10)
+                return {digits, 0, 0};
+            const auto & power = scaledExp10(digits);
+            return {digits, power.hi, power.lo};
+        }
+        else
+        {
+            if (digits > max_exp10)
+                return {digits, 0, 0};
+            const auto & power = scaledExp10(digits);
+            return {digits, power.hi * shift_up, power.lo * shift_up};
+        }
     }
 
-    /// An inexact `10^N` may move the result to the wrong side of `x`.
+    /// Rounding `x * 10^N` to nearest may reach an integer from the wrong side of `x`.
     static Float64 clampToDirection(Float64 res, Float64 x)
     {
         if constexpr (rounding_mode == RoundingMode::Floor)
@@ -318,14 +341,88 @@ struct FloatRoundingLargeScale
             return res;
     }
 
+    static Float64 divide(Float64 a, Float64 hi, Float64 lo)
+    {
+        const Float64 quotient = a / hi;
+        return quotient + (std::fma(-quotient, hi, a) - quotient * lo) / hi;
+    }
+
+    /// `k * 10^-N`.
+    static Float64 unscale(Float64 k, const Scales & scales)
+    {
+        if constexpr (scale_mode == ScaleMode::Positive)
+        {
+            const Float64 res = divide(k, scales.hi, scales.lo) * shift_down;
+            /// Shifting a result at or below `DBL_MIN` down can round it a second time.
+            if (std::abs(res) <= std::numeric_limits<Float64>::min())
+                return divide(k * shift_down, scales.hi, scales.lo);
+            return res;
+        }
+        else
+            return std::fma(k, scales.hi, k * scales.lo);
+    }
+
+    /// Rounds `value + residual` to an integer, with `|residual| <= ulp(value) / 2`.
+    template <RoundingMode mode>
+    static Float64 roundSum(Float64 value, Float64 residual)
+    {
+        const Float64 res = roundWithMode(value, mode);
+        if constexpr (mode == RoundingMode::Round)
+        {
+            if (value - res == 0.5 && residual > 0)
+                return res + 1;
+            if (value - res == -0.5 && residual < 0)
+                return res - 1;
+        }
+        else if (res == value)
+        {
+            if ((mode == RoundingMode::Floor || (mode == RoundingMode::Trunc && value > 0)) && residual < 0)
+                return res - 1;
+            if ((mode == RoundingMode::Ceil || (mode == RoundingMode::Trunc && value < 0)) && residual > 0)
+                return res + 1;
+        }
+        return res;
+    }
+
+    /// `round` rounds `x * 10^N` as a `Float64`, so a decimal tie like `round(4.5e-20, 20)` goes to even.
+    static Float64 roundToInteger(Float64 scaled, Float64 residual)
+    {
+        if constexpr (rounding_mode == RoundingMode::Round)
+            return roundWithMode(scaled, RoundingMode::Round);
+        else
+            return roundSum<rounding_mode>(scaled, residual);
+    }
+
+    /// Returns `x` itself when it is the nearest `Float64` to `k * 10^-N`, with `k` the nearest integer to `scaled + residual`.
+    static Float64 roundScaled(Float64 x, Float64 scaled, Float64 residual, Float64 rounded, const Scales & scales)
+    {
+        /// Below 2^50, `round` already returns a grid value unchanged.
+        if (rounding_mode != RoundingMode::Round || std::abs(scaled) >= 0x1p50)
+        {
+            const Float64 nearest = roundSum<RoundingMode::Round>(scaled, residual);
+            if (rounded != nearest && unscale(nearest, scales) == x)
+                return x;
+        }
+        return std::copysign(clampToDirection(unscale(rounded, scales), x), x);
+    }
+
     static Float64 compute(Float64 x, const Scales & scales)
     {
         if constexpr (scale_mode == ScaleMode::Positive)
         {
-            const Float64 scaled = x * scales.extra_scale * scales.scale;
+            /// Even subnormal neighbours of `x` are more than 10^-digits apart.
+            if (scales.digits > max_scaled_exp10)
+                return x;
+
+            const Float64 shifted = x * shift_up;
+            const Float64 product = shifted * scales.hi;
+            const Float64 error = std::fma(shifted, scales.hi, -product) + shifted * scales.lo;
+            const Float64 scaled = product + error;
             if (!(std::abs(scaled) < integer_limit))
                 return x;
-            return clampToDirection(roundWithMode(scaled, rounding_mode) / scales.scale / scales.extra_scale, x);
+
+            const Float64 residual = error - (scaled - product);
+            return roundScaled(x, scaled, residual, roundToInteger(scaled, residual), scales);
         }
         else
         {
@@ -347,17 +444,20 @@ struct FloatRoundingLargeScale
                 return std::copysign(0.0, x);
             }
 
-            const Float64 quotient = x / scales.scale;
+            const Float64 approx = x / scales.hi;
+            const Float64 error = (std::fma(-approx, scales.hi, x) - approx * scales.lo) / scales.hi;
+            const Float64 quotient = approx + error;
             if (!(std::abs(quotient) < integer_limit))
                 return x;
 
-            Float64 res = roundWithMode(quotient, rounding_mode);
+            const Float64 residual = error - (quotient - approx);
+            Float64 res = roundToInteger(quotient, residual);
             /// `x / scale` underflows to zero for a tiny nonzero `x`.
             if constexpr (rounding_mode == RoundingMode::Ceil)
                 res = (quotient == 0 && x > 0) ? 1 : res;
             else if constexpr (rounding_mode == RoundingMode::Floor)
                 res = (quotient == 0 && x < 0) ? -1 : res;
-            return clampToDirection(res * scales.scale, x);
+            return roundScaled(x, quotient, residual, res, scales);
         }
     }
 };
