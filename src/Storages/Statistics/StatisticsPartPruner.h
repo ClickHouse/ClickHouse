@@ -26,6 +26,9 @@ public:
     /// Returns true if no columns with MinMax statistics are used in the filter, then all parts will match.
     [[nodiscard]] bool isUseless() const { return useless; }
 
+    /// True when the predicate can prove that every row of some part matches.
+    [[nodiscard]] bool canMatchWholePart();
+
     /// Get the list of column names used in the filter condition that have statistics.
     [[nodiscard]] Names getUsedColumns() const { return {used_column_names.begin(), used_column_names.end()}; }
 

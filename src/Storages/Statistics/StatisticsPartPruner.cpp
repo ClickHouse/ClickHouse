@@ -336,6 +336,19 @@ NameSet StatisticsPartPruner::getRequiredColumns() const
     return result;
 }
 
+bool StatisticsPartPruner::canMatchWholePart()
+{
+    if (stats_column_name_to_type_map.empty())
+        return false;
+
+    NamesAndTypesList columns;
+    for (const auto & [col_name, col_type] : stats_column_name_to_type_map)
+        columns.emplace_back(col_name, col_type);
+
+    const KeyCondition * key_condition = getKeyConditionForEstimates(columns, /*record_used_columns=*/ false);
+    return key_condition && !key_condition->isRelaxed();
+}
+
 KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndTypesList & columns, bool record_used_columns)
 {
     const auto column_names = columns.getNames();
@@ -429,7 +442,11 @@ BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates)
         types.push_back(col_type);
     }
 
-    return key_condition->checkInHyperrectangle(hyperrectangle, types);
+    auto mask = key_condition->checkInHyperrectangle(hyperrectangle, types);
+    /// A relaxed or unknown atom must not prove that every row matches.
+    if (key_condition->isRelaxed())
+        mask.can_be_false = true;
+    return mask;
 }
 
 }

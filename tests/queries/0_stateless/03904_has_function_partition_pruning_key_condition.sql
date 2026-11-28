@@ -2,6 +2,8 @@
 -- EXPLAIN output may differ
 
 SET explain_query_plan_default = 'legacy';
+-- Keep `ReadFromMergeTree` in the plan so `EXPLAIN indexes = 1` still reports partition pruning.
+SET use_statistics_for_min_max_aggregation = 0, use_statistics_for_sum_avg_aggregation = 0;
 
 -- { echo }
 

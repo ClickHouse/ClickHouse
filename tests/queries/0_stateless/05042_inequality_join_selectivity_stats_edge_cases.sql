@@ -153,9 +153,12 @@ SELECT extract(explain, 'Conditions: .*') FROM (
 ) WHERE explain LIKE '%Conditions:%';
 
 -- Read limits are checked against the progress of the whole query, here including the left side.
+-- `b2` is at least 1000 in every row, so column statistics would answer this filtered `count`
+-- without reading and `read_overflow_mode = 'break'` would not truncate it.
 SELECT '-- a non-throwing read limit drops value ranges';
 SELECT count() < 1000 FROM t_sel_edge_chunks WHERE b2 >= 1000
-SETTINGS max_rows_to_read = 100, read_overflow_mode = 'break', max_block_size = 128, max_threads = 1;
+SETTINGS max_rows_to_read = 100, read_overflow_mode = 'break', max_block_size = 128, max_threads = 1,
+    use_statistics_for_min_max_aggregation = 0, use_statistics_for_sum_avg_aggregation = 0;
 
 SELECT extract(explain, 'Conditions: .*') FROM (
     EXPLAIN actions = 1

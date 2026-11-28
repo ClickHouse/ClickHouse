@@ -4,6 +4,8 @@ SET analyze_index_with_space_filling_curves = 1;
 SET use_primary_key = 1;
 SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;
+-- Keep `ReadFromMergeTree` in the plan so `EXPLAIN indexes = 1` still reports space-filling curve analysis.
+SET use_statistics_for_min_max_aggregation = 0, use_statistics_for_sum_avg_aggregation = 0;
 
 CREATE TABLE test_sfc_uint32_pk (x UInt32, y UInt32)
 ENGINE = MergeTree ORDER BY mortonEncode(x, y)

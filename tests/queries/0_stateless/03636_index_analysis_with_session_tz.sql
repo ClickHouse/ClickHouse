@@ -2,6 +2,8 @@ SET explain_query_plan_default = 'legacy';
 SET session_timezone = 'UTC';
 -- For explain with indexes and key condition values verification
 SET parallel_replicas_local_plan = 1;
+-- Keep `ReadFromMergeTree` in the plan so `EXPLAIN indexes = 1` still reports the key condition.
+SET use_statistics_for_min_max_aggregation = 0, use_statistics_for_sum_avg_aggregation = 0;
 
 DROP TABLE IF EXISTS 03636_data_pk, 03636_data_partitions, 03636_data_parsed;
 

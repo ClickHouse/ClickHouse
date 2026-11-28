@@ -1,0 +1,66 @@
+1. all matching parts answered from statistics (no ReadFromMergeTree)
+200	200	100	0	595	10	109	49600	248	(49600,200)	12425	62.125	5950	59.5
+200	200	100	0	595	10	109	49600	248	(49600,200)	12425	62.125	5950	59.5
+1	0
+2. hybrid: pruned + exact-matched + boundary + missing-statistics parts
+401	221	-50	595	70725	176.3715710723192	16813	76.07692307692308
+401	221	-50	595	70725	176.3715710723192	16813	76.07692307692308
+1	1
+3. count() with non-PK filter falls back from exact_count to statistics; PK filter keeps exact_count
+301
+301
+1	0
+301
+1
+4. PREWHERE and FilterStep (optimize_move_to_prewhere = 0 and 1)
+200	49600	0	595
+200	49600	0	595
+1	1
+200	49600
+1	1
+5. Nullable filter column three-valued logic
+291	60670	21234
+291	60670	21234
+1	1
+291	60670
+291	60670
+291	60670
+291	60670
+1	1
+209	23030
+209	23030
+1	1
+291	60670
+209	23030
+6. Float64 NaN must never be falsely whole-matched
+499	83600
+499	83600
+0
+498	82660
+498	82660
+7. Disjunction (OR) with stats columns and OR with throwing unknown branch
+200	34700
+200	34700
+1	1
+0
+8. Non-deterministic filter, disabled setting, empty match
+0
+0
+0	0	0	nan	0	0
+0	0	0	nan	0	0
+9. Stale filter column type after killed MODIFY COLUMN
+1	10
+1	10
+0
+10. Row policy and lightweight delete disable statistics aggregation
+200	49600
+200	49600
+0
+99	34625
+99	34625
+0
+11. Small cold reads do not load statistics; warm reads still use them
+0
+100	49500
+1
+1
