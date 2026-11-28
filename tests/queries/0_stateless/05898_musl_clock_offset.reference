@@ -1,0 +1,14 @@
+now
+shifted
+1	1
+file timestamps follow the clock
+hello	1
+MergeTree with TTL, merges and mutations
+10	10	1
+5
+timed waits with a large monotonic offset
+0
+0
+malformed value
+MUSL_CLOCK_REALTIME_OFFSET: invalid value, expected a signed integer number of seconds
+127

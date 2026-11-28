@@ -1304,6 +1304,7 @@ set(MUSL_SOURCES_BASE_COMMON
     "${MUSL_SOURCE_DIR}/src/thread/tss_delete.c"
     "${MUSL_SOURCE_DIR}/src/thread/tss_set.c"
     "${MUSL_SOURCE_DIR}/src/thread/vmlock.c"
+    "${MUSL_SOURCE_DIR}/src/time/__clock_offset.c"
     "${MUSL_SOURCE_DIR}/src/time/__map_file.c"
     "${MUSL_SOURCE_DIR}/src/time/__month_to_secs.c"
     "${MUSL_SOURCE_DIR}/src/time/__secs_to_tm.c"
