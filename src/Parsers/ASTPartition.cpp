@@ -38,11 +38,25 @@ void ASTPartition::setPartitionValue(const ASTPtr & ast)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot have multiple children for partition AST");
 }
 
+void ASTPartition::setPartitionPredicate(const ASTPtr & ast)
+{
+    if (children.empty())
+    {
+        children.push_back(ast);
+        predicate = children[0].get();
+    }
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot have multiple children for partition AST");
+}
+
 
 String ASTPartition::getID(char delim) const
 {
     if (value)
         return "Partition";
+
+    if (predicate)
+        return "Partition_Where";
 
     std::string id_string = id ? id->getID() : "";
     return "Partition_ID" + (delim + id_string);
@@ -65,6 +79,12 @@ ASTPtr ASTPartition::clone() const
         res->id = res->children[0].get();
     }
 
+    if (predicate)
+    {
+        res->children.push_back(children[0]->clone());
+        res->predicate = res->children[0].get();
+    }
+
     return res;
 }
 
@@ -73,6 +93,7 @@ void ASTPartition::writeJSON(WriteBuffer & out) const
     JSONObjectWriter w(out, "Partition");
     w.writeChild("value", value);
     w.writeChild("id", id);
+    w.writeChild("predicate", predicate);
     w.writeBool("all", all);
     if (fields_count.has_value())
         w.writeUInt("fields_count", *fields_count);
@@ -89,22 +110,26 @@ void ASTPartition::readJSON(const Poco::JSON::Object & json)
 
     auto val_child = r.readChild("value");
     auto id_child = r.readChild("id");
+    auto predicate_child = r.readChild("predicate");
 
-    /// `ParserPartition` produces exactly one shape: `PARTITION ALL` (`all = true`, no value/id),
-    /// `PARTITION <expr>` (only `value`), or `PARTITION ID '<id>'` (only `id`). `formatImpl`
-    /// unconditionally dereferences `id` when neither `value` nor `all` is set, emits only `ALL`
-    /// when `all` is set (dropping any value/id), and emits only `value` when it is set (dropping
-    /// any id). Reject all the parser-impossible combinations: `{"type":"Partition"}` (no target),
-    /// `all` together with a `value`/`id`, and `value` together with `id`.
-    if (!val_child && !id_child && !all)
+    /// The parser produces exactly one shape: `PARTITION ALL` (`all = true`, no value/id),
+    /// `PARTITION <expr>` (only `value`), `PARTITION ID '<id>'` (only `id`), or
+    /// `PARTITION WHERE <expr>` (only `predicate`). `formatImpl` unconditionally dereferences `id`
+    /// when no other field is set and emits only one of them otherwise. Reject all the
+    /// parser-impossible combinations: `{"type":"Partition"}` (no target) and any two targets at once.
+    size_t targets_count = (val_child != nullptr) + (id_child != nullptr) + (predicate_child != nullptr) + all;
+    if (targets_count == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`Partition` AST requires one of 'value', 'id', or 'all' = true during AST JSON deserialization");
-    if (all && (val_child || id_child))
+            "`Partition` AST requires one of 'value', 'id', 'predicate', or 'all' = true during AST JSON deserialization");
+    if (targets_count > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`Partition` AST cannot set 'all' together with 'value' or 'id' during AST JSON deserialization");
-    if (val_child && id_child)
+            "`Partition` AST can set only one of 'value', 'id', 'predicate', or 'all' = true during AST JSON deserialization");
+    if (predicate_child && fields_count.has_value())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`Partition` AST cannot set both 'value' and 'id' during AST JSON deserialization");
+            "`Partition` AST cannot set 'fields_count' together with 'predicate' during AST JSON deserialization");
+
+    if (predicate_child)
+        setPartitionPredicate(predicate_child);
 
     if (id_child)
     {
@@ -170,6 +195,11 @@ void ASTPartition::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
     else if (all)
     {
         ostr << "ALL";
+    }
+    else if (predicate)
+    {
+        ostr << "WHERE ";
+        predicate->format(ostr, settings, state, frame);
     }
     else
     {

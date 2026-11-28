@@ -104,6 +104,8 @@ void validateDropPartitionAST(const ASTPartition & ast, const PartitionCommand &
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} ALL is not supported for Iceberg", command.typeToString());
     if (ast.id)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} ID is not supported for Iceberg", command.typeToString());
+    if (ast.predicate)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} WHERE is not supported for Iceberg", command.typeToString());
     if (!ast.value)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} doesn't have partition value", command.typeToString());
 }
