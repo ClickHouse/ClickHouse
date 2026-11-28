@@ -3233,7 +3233,8 @@ ColumnPtr castColumnWithSettings(
     };
 
     auto func_cast = createFunctionBaseCast(
-        convert_settings, cast_type == CastType::accurate ? "accurateCast" : "_CAST", arguments, type, {}, cast_type);
+        convert_settings, cast_type == CastType::accurate ? "accurateCast" : "_CAST", arguments, type, {}, cast_type,
+        /*nulls_from_source_only=*/ false);
     return func_cast->execute(arguments, type, arg.column->size(), /* dry_run = */ false);
 }
 
