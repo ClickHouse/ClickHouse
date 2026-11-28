@@ -790,13 +790,38 @@ bool getListenTry(const Poco::Util::AbstractConfiguration & config, const Server
     return listen_try;
 }
 
-#if USE_GRPC || USE_ARROWFLIGHT
+/// Whether listeners on the same port and these hosts conflict whatever `IPV6_V6ONLY` is: the same address, or a wildcard that covers
+/// the other one. An IPv4-mapped address binds its IPv4 address, and an IPv6 wildcard covers IPv4 only without `IPV6_V6ONLY`.
+bool listenHostsOverlap(const std::string & lhs, const std::string & rhs)
+{
+    using Poco::Net::IPAddress;
+    IPAddress lhs_address;
+    IPAddress rhs_address;
+    if (!IPAddress::tryParse(lhs, lhs_address) || !IPAddress::tryParse(rhs, rhs_address))
+        return lhs == rhs;
+
+    const auto unmapped = [](const IPAddress & address)
+    {
+        if (address.family() == IPAddress::IPv6 && address.isIPv4Mapped())
+            return IPAddress(reinterpret_cast<const char *>(address.addr()) + 12, 4);
+        return address;
+    };
+    const auto covers = [&](const IPAddress & wildcard, const IPAddress & address)
+    {
+        if (wildcard.isWildcard() && wildcard.family() == IPAddress::IPv6)
+            return address.family() == IPAddress::IPv6;
+        return unmapped(wildcard).isWildcard() && unmapped(address).family() == IPAddress::IPv4;
+    };
+    return unmapped(lhs_address) == unmapped(rhs_address) || covers(lhs_address, rhs_address) || covers(rhs_address, lhs_address);
+}
+
 bool isWildcardListenHost(const std::string & listen_host)
 {
     Poco::Net::IPAddress address;
     return Poco::Net::IPAddress::tryParse(listen_host, address) && address.isWildcard();
 }
 
+#if USE_GRPC || USE_ARROWFLIGHT
 /// gRPC treats `::` and `0.0.0.0` as one family-agnostic wildcard: for either of them it binds a
 /// dual-stack `::` socket and falls back to `0.0.0.0` only on a host without IPv6 (see
 /// `add_wildcard_addrs_to_server` in `contrib/grpc`). A wildcard listener therefore overlaps every
@@ -826,6 +851,32 @@ void Server::createServer(
     std::vector<ProtocolServerAdapter> & servers,
     CreateServerFunc && func) const
 {
+    /// An introspection listener keeps its address until restart, so a reload or `SYSTEM START LISTEN` must not bind it again.
+    if (introspection_servers_ptr && global_context->isServerCompletelyStarted() && !config.getString(port_name, "").empty())
+    {
+        const auto port = config.getInt(port_name);
+        /// A gRPC-based listener on a wildcard address overlaps every listener on its port, see `getGRPCListenHosts`.
+        const std::string_view name = port_name;
+        const bool is_grpc_wildcard = (name == "grpc_port" || name == "arrowflight_port") && isWildcardListenHost(listen_host);
+        const auto overlaps = [&](const ProtocolServerAdapter & server)
+        {
+            return !server.isStopping() && server.portNumber() == port
+                && (is_grpc_wildcard || listenHostsOverlap(server.getListenHost(), listen_host));
+        };
+        const auto is_listening = [&](const ProtocolServerAdapter & server)
+        {
+            return !server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == port_name;
+        };
+        const auto it = std::ranges::find_if(*introspection_servers_ptr, overlaps);
+        if (it != introspection_servers_ptr->end() && std::ranges::none_of(servers, is_listening))
+        {
+            LOG_WARNING(&logger(), "Not listening on [{}]:{} for {}: the address is used by the introspection listener for {}, "
+                "which is not reconfigured on config reload. Restart the server to apply the configuration",
+                listen_host, port, port_name, it->getPortName());
+            return;
+        }
+    }
+
     if (DB::createServer(config, listen_host, port_name, listen_try, start_server, servers, std::move(func), &logger())
         && (start_server || !servers.back().bindsOnStart()))
     {
@@ -3806,6 +3857,7 @@ try
             /* start_servers= */ true,
             ServerType(ServerType::Type::QUERIES_ALL),
             /* only_introspection_protocols= */ true);
+        introspection_servers_ptr = &introspection_servers;
     }
 
     try
@@ -4614,7 +4666,7 @@ void Server::createServers(
     for (const auto & protocol : protocols)
     {
         const bool is_introspection = isIntrospectionProtocol(config, protocol);
-        if (is_introspection != only_introspection_protocols)
+        if (!is_introspection && only_introspection_protocols)
             continue;
 
         if (!server_type.shouldStart(ServerType::Type::CUSTOM, protocol))
@@ -4628,6 +4680,26 @@ void Server::createServers(
 
         if (!config.has(prefix + "port"))
             continue;
+
+        if (!only_introspection_protocols)
+        {
+            /// Whether an endpoint is an introspection one is fixed at startup.
+            const bool has_introspection_server = introspection_servers_ptr
+                && std::ranges::any_of(*introspection_servers_ptr, [&](const auto & server) { return server.getPortName() == port_name; });
+            if (has_introspection_server && !is_introspection)
+            {
+                LOG_WARNING(&logger(), "Protocol '{}' is served by an introspection listener, which is not reconfigured on config reload. "
+                    "Restart the server to apply its configuration", protocol);
+                continue;
+            }
+            if (is_introspection)
+            {
+                if (!has_introspection_server && global_context->isServerCompletelyStarted())
+                    LOG_WARNING(&logger(), "Protocol '{}' is marked as introspection, but introspection listeners are created only at startup. "
+                        "Restart the server to apply its configuration", protocol);
+                continue;
+            }
+        }
 
         std::vector<std::string> hosts;
         if (config.has(prefix + "host"))

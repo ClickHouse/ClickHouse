@@ -79,6 +79,8 @@ private:
     ConfigurationPtr latest_config;
     /// The `application.*` properties that `Poco::Util::Application` sets before any file or command-line layer is added.
     ConfigurationPtr application_properties;
+    /// The introspection listeners of `main`, which are not reconfigured on config reload. Set once at startup, read under `servers_lock`.
+    const std::vector<ProtocolServerAdapter> * introspection_servers_ptr = nullptr;
 
     HTTPContextPtr httpContext() const;
 
