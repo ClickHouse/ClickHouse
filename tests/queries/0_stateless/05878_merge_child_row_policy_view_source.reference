@@ -1,0 +1,10 @@
+nested
+direct log	[1,2]
+direct mt	[1,2]
+merge log	[1,2]
+merge mt	[1,2]
+materialized cte
+direct log	[1,2]
+direct mt	[1,2]
+merge log	[1,2]
+merge mt	[1,2]
