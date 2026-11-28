@@ -33,13 +33,14 @@ def is_healthy(access_key=None, secret_key=None):
         return False
 
 
-def start(test_type, log_path, temp_dir, *, pid_file=None, disable_cache=False, access_key=None, secret_key=None):
+def start(test_type, log_path, temp_dir, *, pid_file=None, disable_cache=False, upload_limit_mb=None, access_key=None, secret_key=None):
     """Provision the service and wait for authenticated bucket readiness."""
     Path(log_path).parent.mkdir(parents=True, exist_ok=True)
     Path(temp_dir).mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "TEMP_DIR": str(temp_dir)}
     env.pop("SEAWEEDFS_PID_FILE", None)
     env.pop("SEAWEEDFS_DISABLE_CACHE", None)
+    env.pop("SEAWEEDFS_S3_UPLOAD_LIMIT_MB", None)
     if access_key is not None:
         env["SEAWEEDFS_ACCESS_KEY"] = access_key
     if secret_key is not None:
@@ -48,6 +49,8 @@ def start(test_type, log_path, temp_dir, *, pid_file=None, disable_cache=False, 
         env["SEAWEEDFS_PID_FILE"] = str(pid_file)
     if disable_cache:
         env["SEAWEEDFS_DISABLE_CACHE"] = "1"
+    if upload_limit_mb is not None:
+        env["SEAWEEDFS_S3_UPLOAD_LIMIT_MB"] = str(upload_limit_mb)
 
     with open(log_path, "w", encoding="utf-8") as log:
         proc = subprocess.Popen(
