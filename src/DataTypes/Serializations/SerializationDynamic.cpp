@@ -45,6 +45,44 @@ void reserveOrThrowTooManyTypes(Container & container, size_t num_types)
     container.reserve(std::min(num_types, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS));
 }
 
+/// Returns a copy of the column in which the values of types containing JSON are in regular variants instead of
+/// the shared variant, or nullptr if the shared variant has no such values.
+ColumnPtr moveTypesWithDynamicStructureFromSharedVariant(const ColumnDynamic & column)
+{
+    const auto & variant_info = column.getVariantInfo();
+    const auto & shared_variant = column.getSharedVariant();
+    DataTypes types;
+    std::unordered_set<String> type_names;
+    for (size_t i = 0; i != shared_variant.size(); ++i)
+    {
+        ReadBufferFromMemory buf(shared_variant.getDataAt(i));
+        auto type = decodeDataType(buf);
+        if (type->hasDynamicStructure() && !variant_info.variant_name_to_discriminator.contains(type->getName())
+            && type_names.insert(type->getName()).second)
+            types.push_back(std::move(type));
+    }
+
+    if (types.empty())
+        return nullptr;
+
+    /// Types containing JSON take the slots first; when there are too many types, the others go to the shared variant.
+    DataTypes other_types;
+    for (const auto & variant : assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants())
+    {
+        if (variant->getName() != ColumnDynamic::getSharedVariantTypeName())
+            (variant->hasDynamicStructure() ? types : other_types).push_back(variant);
+    }
+    types.insert(types.end(), other_types.begin(), other_types.end());
+    types.resize(std::min(types.size(), ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT));
+    types.push_back(ColumnDynamic::getSharedVariantDataType());
+
+    /// The limit is the number of types, so no other type leaves the shared variant.
+    auto result = ColumnDynamic::create(types.size() - 1);
+    result->setVariantType(std::make_shared<DataTypeVariant>(types));
+    result->insertRangeFrom(column, 0, column.size());
+    return result;
+}
+
 }
 
 UInt128 SerializationDynamic::getHash(size_t max_dynamic_types_, const SerializationInfoSettings & serialization_info_settings_)
@@ -64,6 +102,8 @@ struct SerializeBinaryBulkStateDynamic : public ISerialization::SerializeBinaryB
     Names variant_names;
     SerializationPtr variant_serialization;
     ISerialization::SerializeBinaryBulkStatePtr variant_state;
+    /// Set when the column is written with the types containing JSON moved out of the shared variant.
+    ColumnPtr column_to_serialize;
 
     /// Variants statistics.
     ColumnDynamic::Statistics statistics;
@@ -185,7 +225,6 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkStatePtr & state) const
 {
     const auto & column_dynamic = assert_cast<const ColumnDynamic &>(column);
-    const auto & variant_info = column_dynamic.getVariantInfo();
 
     settings.path.push_back(Substream::DynamicStructure);
     auto * stream = settings.getter(settings.path);
@@ -235,9 +274,14 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
         return;
     }
 
+    if (settings.native_format && settings.format_settings && settings.format_settings->native.write_json_as_string)
+        dynamic_state->column_to_serialize = moveTypesWithDynamicStructureFromSharedVariant(column_dynamic);
+    const auto & column_to_write = dynamic_state->column_to_serialize ? assert_cast<const ColumnDynamic &>(*dynamic_state->column_to_serialize) : column_dynamic;
+    const auto & variant_info = column_to_write.getVariantInfo();
+
     dynamic_state->variant_type = variant_info.variant_type;
     dynamic_state->variant_names = variant_info.variant_names;
-    const auto & variant_column = column_dynamic.getVariantColumn();
+    const auto & variant_column = column_to_write.getVariantColumn();
 
     /// Write information about dynamic types.
     dynamic_state->num_dynamic_types = dynamic_state->variant_names.size() - 1; ///  -1 for SharedVariant
@@ -270,7 +314,7 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
     /// Write statistics in prefix if needed.
     if (settings.write_statistics == SerializeBinaryBulkSettings::StatisticsMode::PREFIX)
     {
-        const auto & statistics = column_dynamic.getOrCalculateStatistics();
+        const auto & statistics = column_to_write.getOrCalculateStatistics();
 
         /// In V3 serialization write flag that statistics is not empty.
         /// It is needed to be able to write empty statistics if needed.
@@ -577,7 +621,6 @@ void SerializationDynamic::serializeBinaryBulkWithMultipleStreamsAndCountTotalSi
     SerializeBinaryBulkStatePtr & state,
     size_t & total_size_of_variants) const
 {
-    const auto & column_dynamic = assert_cast<const ColumnDynamic &>(column);
     auto * dynamic_state = checkAndGetState<SerializeBinaryBulkStateDynamic>(state);
     if (dynamic_state->structure_version.value == SerializationVersion::FLATTENED)
     {
@@ -597,6 +640,7 @@ void SerializationDynamic::serializeBinaryBulkWithMultipleStreamsAndCountTotalSi
         return;
     }
 
+    const auto & column_dynamic = assert_cast<const ColumnDynamic &>(dynamic_state->column_to_serialize ? *dynamic_state->column_to_serialize : column);
     const auto & variant_info = column_dynamic.getVariantInfo();
     const auto * variant_column = &column_dynamic.getVariantColumn();
 
