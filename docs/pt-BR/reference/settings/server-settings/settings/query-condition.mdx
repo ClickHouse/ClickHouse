@@ -14,7 +14,7 @@ Essas configurações definem o servidor ClickHouse e são geradas automaticamen
 
 ## query_condition_cache_policy {#query_condition_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de evicção do cache de condições de consulta. Valores possíveis: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Política de evicção do cache de condições de consulta. Valores possíveis: `LRU`, `SLRU`, `SIEVE`. Consulte [`query_condition_cache_size`](/pt-BR/reference/settings/server-settings/settings/query-condition#query_condition_cache_size) para a capacidade do cache e [`query_condition_cache_size_ratio`](/pt-BR/reference/settings/server-settings/settings/query-condition#query_condition_cache_size_ratio) para o tamanho da fila protegida na política SLRU.
 
 ## query_condition_cache_size {#query_condition_cache_size}
 

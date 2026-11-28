@@ -180,6 +180,9 @@ public:
     [[nodiscard]] TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
     /// Whether the index can answer the predicate of the function node.
     [[nodiscard]] bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
+    /// Whether `node` is the index expression itself, not an expression the index answers through it,
+    /// such as an element of an indexed `mapValues` or a JSON path.
+    [[nodiscard]] bool isIndexExpression(const ActionsDAG::Node & node) const;
     /// Returns the name of the virtual column that replaces the function node of the query,
     /// or nothing if the query is not one of this condition or cannot be read directly.
     [[nodiscard]] std::optional<String> tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const;
@@ -230,12 +233,19 @@ private:
     /// is a constant one that denotes the index tokenizer.
     [[nodiscard]] bool tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const;
 
+    /// `function_node` is the whole predicate, `function_name` is how it is analyzed, e.g. `like` for `position(s, 'x') > 0`.
+    /// `ascii_case_folding`: `ilike` stands for a function that folds the case of ASCII letters only.
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
+        const String & function_name,
         const RPNBuilderTreeNode & argument_node,
         DataTypePtr value_type,
         Field value_field,
-        RPNElement & out) const;
+        RPNElement & out,
+        bool ascii_case_folding = false) const;
+
+    /// `position(s, 'x') > 0` and similar checks, handled as `s LIKE '%x%'`.
+    bool traverseSubstringOccurrenceNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
     [[nodiscard]] TextIndexDirectReadMode getHintOrNoneMode() const;
 
@@ -285,7 +295,7 @@ private:
     /// Supports '%needle%', 'needle%' and '%needle'. See isInfixPattern for which of them is exact.
     /// `allow_arbitrary_patterns` needs a non-nullable value: an exact read of a NULL raises in the fallback (#113332).
     [[nodiscard]] std::vector<OptimizedRegularExpression>
-    stringLikeToPatterns(const Field & field, bool case_insensitive, bool allow_arbitrary_patterns) const;
+    stringLikeToPatterns(const Field & field, bool case_insensitive, bool allow_arbitrary_patterns, bool ascii_case_folding = false) const;
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
@@ -303,8 +313,6 @@ private:
     Block header;
     /// Argument types of the JSON index functions of this index, by position in `header`.
     JSONIndexArgumentTypes json_argument_types;
-    /// Whether the index is defined over an `Array` column, whose positions restart for every element.
-    bool indexed_column_is_array = false;
     /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;

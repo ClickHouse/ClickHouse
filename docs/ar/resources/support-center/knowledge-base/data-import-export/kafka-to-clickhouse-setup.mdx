@@ -6,19 +6,15 @@ tags: ['إدخال البيانات']
 keywords: ['Kafka']
 ---
 
-<div id="overview">
-  ## نظرة عامة
-</div>
+## نظرة عامة {#overview}
 
-تستعرض هذه المقالة عملية إرسال البيانات من موضوع في Kafka إلى جدول ClickHouse. سنستخدم موجز أحدث التغييرات في Wiki، والذي يوفّر [دفقًا من الأحداث](https://stream.wikimedia.org/v2/stream/recentchange) يمثّل التغييرات التي أُجريت على مختلف مواقع ويكيميديا. وتتضمن الخطوات ما يلي:
+تستعرض هذه المقالة عملية إرسال البيانات من موضوع في Kafka إلى جدول ClickHouse. سنستخدم موجز أحدث التغييرات في Wiki، والذي يوفّر [دفقًا من الأحداث](https://stream.wikimedia.org/v2/stream/recentchange) يمثّل التغييرات التي أُجريت على مختلف مواقع Wikimedia. وتتضمن الخطوات ما يلي:
 
 1. كيفية إعداد Kafka على Ubuntu
 2. إدخال دفق من البيانات إلى موضوع في Kafka
 3. إنشاء جدول ClickHouse يشترك في الموضوع
 
-<div id="1-setup-kafka-on-ubuntu">
-  # 1. إعداد Kafka على Ubuntu
-</div>
+# 1. إعداد Kafka على Ubuntu {#1-setup-kafka-on-ubuntu}
 
 1. أنشئ مثيل Ubuntu على **ec2** واتصل به عبر SSH:
 
@@ -70,9 +66,7 @@ bin/kafka-topics.sh --create --topic wikimedia --bootstrap-server localhost:9092
 bin/kafka-topics.sh --list --bootstrap-server localhost:9092
 ```
 
-<div id="2-ingest-the-wikimedia-stream-into-kafka">
-  # 2. إدخال تدفّق Wikimedia إلى Kafka
-</div>
+# 2. إدخال تدفّق Wikimedia إلى Kafka {#2-ingest-the-wikimedia-stream-into-kafka}
 
 1. نحتاج أولًا إلى بعض الأدوات:
 
@@ -101,9 +95,7 @@ bin/kafka-console-consumer.sh --topic wikimedia --from-beginning --bootstrap-ser
 
 5. اضغط على **Ctrl+c** لإيقاف الأمر السابق.
 
-<div id="3-ingest-the-data-into-clickhouse">
-  # 3. إدخال البيانات إلى ClickHouse
-</div>
+# 3. إدخال البيانات إلى ClickHouse {#3-ingest-the-data-into-clickhouse}
 
 1. إليك شكل البيانات الواردة:
 

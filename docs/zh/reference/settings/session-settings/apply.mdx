@@ -56,11 +56,15 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 过滤掉本应在 ReplacingMergeTree 或类似引擎中用于去重的行时，可能会导致结果不同。
 
 如果行策略表达式是确定性的，并且仅依赖 ORDER BY 中的非浮点列，出于优化考虑，它仍会
-在 FINAL 之前应用，因为这种过滤不会影响去重结果。浮点列
+在 FINAL 之前应用，因为这种过滤不会影响去重结果。对整个查询只计算一次的值
+(例如 `currentUser()`、`now()` 或 `IN (subquery)` 的集合) 不会妨碍此
+优化；而 `Set` 表的集合可能在查询运行期间发生变化，因此会妨碍此优化。浮点列
 或包含浮点数的列 (例如 `Tuple(Float64, ...)`、`Array(Float64)`、`Nullable(Float64)` 等)
 会被排除在外，因为 `-0.0` 和 `0.0` 在去重时被视为同一个键，而策略条件却能区分二者。
+`GraphiteMergeTree` 会将不同时间的行汇总为一行，因此对它而言只考虑 path 列，并且仅
+当该列是第一个 `ORDER BY` 列时才适用。
 
-可能的值：
+可选值：
 
 * 0 — 行策略在 FINAL 之前应用。
 * 1 — 行策略在 FINAL 之后应用 (默认) 。

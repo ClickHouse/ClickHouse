@@ -75,10 +75,15 @@ void ConcatReadBufferFromFile::appendBuffer(SeekableReadBuffer * buffer, bool ow
     total_size += size;
 
     if (current == buffers.size() - 1)
-    {
-        working_buffer = buffers[current].in->buffer();
-        pos = buffers[current].in->position();
-    }
+        setWorkingBufferFromCurrent();
+}
+
+void ConcatReadBufferFromFile::setWorkingBufferFromCurrent()
+{
+    /// The bytes before the position of a buffer may be outside of it (e.g. `ReadBufferFromFileView`).
+    auto & in = *buffers[current].in;
+    working_buffer = in.buffer().subrange(in.position(), in.buffer().end());
+    pos = working_buffer.begin();
 }
 
 bool ConcatReadBufferFromFile::nextImpl()
@@ -101,8 +106,7 @@ bool ConcatReadBufferFromFile::nextImpl()
         return false;
     }
 
-    working_buffer = buffers[current].in->buffer();
-    pos = buffers[current].in->position();
+    setWorkingBufferFromCurrent();
     return true;
 }
 
@@ -156,8 +160,7 @@ off_t ConcatReadBufferFromFile::seek(off_t off, int whence)
         current_start_pos += buffers[current++].size;
 
     buffers[current].in->seek(new_position - current_start_pos, SEEK_SET);
-    working_buffer = buffers[current].in->buffer();
-    pos = buffers[current].in->position();
+    setWorkingBufferFromCurrent();
     return new_position;
 }
 

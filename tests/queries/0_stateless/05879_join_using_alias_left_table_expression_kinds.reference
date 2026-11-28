@@ -1,0 +1,11 @@
+the key comes from a subquery in the left JOIN
+11	5
+the key comes from a UNION ALL in the left JOIN
+11	5
+the key comes from a table function in the left JOIN
+11
+the key comes from the other member of a CROSS JOIN
+11
+no key anywhere on the left side
+the same subquery case with no Distributed table
+0	0

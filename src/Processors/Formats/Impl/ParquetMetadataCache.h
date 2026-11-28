@@ -68,7 +68,6 @@ struct ParquetKeptStatistics : private boost::noncopyable
     };
 
     explicit ParquetKeptStatistics(size_t max_bytes_) : max_bytes(max_bytes_) {}
-    ~ParquetKeptStatistics();
 
     /// A copy of `ranges` to `add`, or nothing if ranges are already kept under `column_key` or all kept ranges would
     /// exceed `max_bytes`. `ranges_bytes` is `sizeof(Range)` and the heap bytes of the bounds, for every range.
@@ -161,7 +160,7 @@ public:
         const ParquetKeptStatistics::Ranges & ranges,
         size_t ranges_bytes);
 
-    /// Keeps copies of the offset indexes of `entries`, read from the file of `cell`, in `cell` and counts them in its weight,
+    /// Keeps copies of the offset and column indexes of `entries`, read from the file of `cell`, in `cell` and counts them in its weight,
     /// if the cache still holds `cell` (or a cell that replaced it) under `key`. Moves the cell in the cache like a hit.
     void keepOffsetIndexes(
         const ParquetMetadataCacheKey & key, const MappedPtr & cell, const VectorWithMemoryTracking<Parquet::KeptOffsetIndexes::Entry> & entries);
