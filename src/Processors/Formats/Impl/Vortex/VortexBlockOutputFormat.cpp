@@ -4,15 +4,13 @@
 
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBuffer.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
+#include <Processors/Formats/Impl/ArrowBatchRowLimit.h>
+#include <Processors/Formats/Impl/ArrowIPC/ArrowCData.h>
+#include <base/scope_guard.h>
 #include <Processors/Port.h>
 #include <Common/Exception.h>
 #include <Common/isValidUTF8.h>
 
-#include <arrow/api.h>
-#include <arrow/c/bridge.h>
-#include <arrow/result.h>
 
 #include <vortex_ffi.h>
 
@@ -59,21 +57,14 @@ extern "C" int32_t vortexFFIWriteCallback(void * context, const uint8_t * data, 
     throw Exception(ErrorCodes::CANNOT_WRITE_TO_OSTREAM, "Error while writing Vortex file: {}", message);
 }
 
-static void throwFromArrowStatusIfFailed(const arrow::Status & status)
-{
-    if (!status.ok())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Error while writing Vortex file: {}", status.ToString());
-}
-
 /// Vortex takes the values of a `Utf8` array on trust.
-static void checkStringsAreValidUTF8(const std::shared_ptr<arrow::ArrayData> & data, const String & column_name)
+static void checkStringsAreValidUTF8(const ::ArrowArray & array, const ::ArrowSchema & schema, const String & column_name)
 {
-    if (data->type->id() == arrow::Type::STRING && data->length > 0)
+    if (std::string_view(schema.format) == "u" && array.length > 0)
     {
-        arrow::StringArray strings(data);
-        const int64_t rows = strings.length();
-        const int32_t * offsets = strings.raw_value_offsets();
-        const auto * bytes = reinterpret_cast<const UInt8 *>(strings.raw_data());
+        const auto * offsets = static_cast<const int32_t *>(array.buffers[1]) + array.offset;
+        const auto * bytes = static_cast<const UInt8 *>(array.buffers[2]);
+        const int64_t rows = array.length;
         const int32_t begin = offsets[0];
         const int32_t end = offsets[rows];
         if (begin != end)
@@ -91,15 +82,36 @@ static void checkStringsAreValidUTF8(const std::shared_ptr<arrow::ArrayData> & d
         }
     }
 
-    for (const auto & child : data->child_data)
-        checkStringsAreValidUTF8(child, column_name);
-    if (data->dictionary)
-        checkStringsAreValidUTF8(data->dictionary, column_name);
+    for (int64_t i = 0; i < array.n_children; ++i)
+        checkStringsAreValidUTF8(*array.children[i], *schema.children[i], column_name);
+}
+
+static FormatSettings getArrowFormatSettings(const FormatSettings & format_settings)
+{
+    FormatSettings result = format_settings;
+    /// The mapping to Arrow is the one of Vortex, not of the `Arrow` format: no `output_format_arrow_*` setting applies
+    /// (`output_format_arrow_date_as_uint16`, which older compatibility values enable, would turn `Date` into a number).
+    result.arrow = FormatSettings{}.arrow;
+    result.arrow.output_unsupported_types = FormatSettings::ArrowUnsupportedTypes::THROW;
+    /// A chunk is handed to Vortex as Arrow record batches, which have the same 32-bit offset limit.
+    result.arrow.output_max_record_batch_bytes = format_settings.arrow.output_max_record_batch_bytes;
+    result.arrow.output_string_as_string = format_settings.vortex.output_string_as_string;
+    /// There is no fixed-width binary type on the Vortex side, so `FixedString` is written as `Binary`.
+    result.arrow.output_fixed_string_as_fixed_byte_array = false;
+    result.arrow.output_fixed_string_as_string = false;
+    /// As a plain `U32` a `DateTime` would come back as a number; as a timestamp with second
+    /// precision it survives the round trip, arriving as `DateTime64(0)`.
+    result.arrow.output_datetime_as_timestamp = true;
+    /// The `Nothing` type (`SELECT NULL`) has a counterpart of its own: the Vortex `Null` type.
+    result.arrow.output_nothing_as_null = true;
+    result.arrow.low_cardinality_as_dictionary = false;
+    return result;
 }
 
 VortexBlockOutputFormat::VortexBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : IOutputFormat(header_, out_)
     , format_settings(format_settings_)
+    , arrow_format_settings(getArrowFormatSettings(format_settings_))
 {
 }
 
@@ -109,32 +121,24 @@ VortexBlockOutputFormat::~VortexBlockOutputFormat()
         vortex_ffi_writer_free(writer);
 }
 
-void VortexBlockOutputFormat::initWriter(const Chunk * chunk)
+void VortexBlockOutputFormat::initWriter()
 {
-    CHColumnToArrowColumn::Settings arrow_settings;
-    arrow_settings.output_string_as_string = format_settings.vortex.output_string_as_string;
-    /// There is no fixed-width binary type on the Vortex side, so `FixedString` is written as `Binary`.
-    arrow_settings.output_fixed_string_as_fixed_byte_array = false;
-    arrow_settings.output_fixed_string_as_string = false;
-    /// As a plain `U32` a `DateTime` would come back as a number; as a timestamp with second
-    /// precision it survives the round trip, arriving as `DateTime64(0)`.
-    arrow_settings.output_datetime_as_timestamp = true;
-    /// The `Nothing` type (`SELECT NULL`) has a counterpart of its own: the Vortex `Null` type.
-    arrow_settings.output_nothing_as_null = true;
-    /// A chunk is handed to Vortex as Arrow record batches, which have the same 32-bit offset limit.
-    arrow_settings.output_max_record_batch_bytes = format_settings.arrow.output_max_record_batch_bytes;
-
-    ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(getPort(PortKind::Main).getHeader(), "Vortex", arrow_settings);
-    ch_column_to_arrow_column->initializeArrowSchema(chunk);
-    auto arrow_schema = ch_column_to_arrow_column->getArrowSchema();
-
-    ArrowSchema c_schema{};
-    throwFromArrowStatusIfFailed(arrow::ExportSchema(*arrow_schema, &c_schema));
+    const auto & header = getPort(PortKind::Main).getHeader();
+    ::ArrowSchema c_schema{};
+    ArrowIPC::exportSchemaToC(header.getNames(), header.getDataTypes(), arrow_format_settings, c_schema);
+    /// The library takes the schema over (it moves the struct out without marking ours released), so it is
+    /// released here only when an exception comes before it is handed over.
+    bool handed_over = false;
+    SCOPE_EXIT({
+        if (!handed_over)
+            c_schema.release(&c_schema);
+    });
 
     write_context = std::make_unique<VortexWriteContext>();
     write_context->out = &out;
 
     char * error = nullptr;
+    handed_over = true;
     writer = vortex_ffi_writer_create(write_context.get(), vortexFFIWriteCallback, &c_schema, &error);
     if (!writer)
         throwVortexError(error, write_context->exception);
@@ -142,42 +146,60 @@ void VortexBlockOutputFormat::initWriter(const Chunk * chunk)
 
 void VortexBlockOutputFormat::consume(Chunk chunk)
 {
-    if (!chunk.getNumRows())
+    const size_t num_rows = chunk.getNumRows();
+    if (!num_rows)
         return;
 
     if (!writer)
-        initWriter(&chunk);
+        initWriter();
 
-    size_t columns_num = chunk.getNumColumns();
-    std::shared_ptr<arrow::Table> arrow_table;
+    const auto & header = getPort(PortKind::Main).getHeader();
+    const Names names = header.getNames();
+    const DataTypes types = header.getDataTypes();
+    Columns columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = column->convertToFullColumnIfConst()->convertToFullColumnIfSparse()->convertToFullColumnIfReplicated();
 
-    Chunks chunks;
-    chunks.push_back(std::move(chunk));
-    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunks, columns_num);
-
-    if (format_settings.vortex.output_string_as_string)
-        for (int i = 0; i < arrow_table->num_columns(); ++i)
-            for (const auto & array : arrow_table->column(i)->chunks())
-                checkStringsAreValidUTF8(array->data(), arrow_table->field(i)->name());
-
-    /// A chunk too large for one Arrow record batch comes back as several table chunks. Recombining them
-    /// would hit the same 32-bit offset limit, so write each record batch separately.
-    arrow::TableBatchReader batch_reader(*arrow_table);
-    while (true)
+    /// Arrow record batches have a 32-bit offset limit, so a chunk too large for one batch is written as several.
+    size_t begin = 0;
+    do
     {
-        std::shared_ptr<arrow::RecordBatch> batch;
-        throwFromArrowStatusIfFailed(batch_reader.ReadNext(&batch));
-        if (!batch)
-            break;
+        size_t rows = maxRowsFittingOneArrowBatch(
+            columns,
+            types,
+            begin,
+            num_rows,
+            arrow_format_settings.arrow.output_fixed_string_as_fixed_byte_array,
+            arrow_format_settings.arrow.output_max_record_batch_bytes);
+        /// A row that does not fit on its own cannot be represented at all; let the export reject it.
+        rows = std::min(std::max<size_t>(rows, 1), num_rows - begin);
 
-        ArrowArray c_array{};
-        ArrowSchema c_schema{};
-        throwFromArrowStatusIfFailed(arrow::ExportRecordBatch(*batch, &c_array, &c_schema));
+        ::ArrowArray c_array{};
+        ::ArrowSchema c_schema{};
+        /// The library takes both over (it moves the structs out without marking ours released), so they are
+        /// released here only when an exception comes before they are handed over.
+        bool handed_over = false;
+        SCOPE_EXIT({
+            if (!handed_over && c_array.release)
+                c_array.release(&c_array);
+            if (!handed_over && c_schema.release)
+                c_schema.release(&c_schema);
+        });
+        ArrowIPC::exportSchemaToC(names, types, arrow_format_settings, c_schema);
+        ArrowIPC::exportRecordBatchToC(columns, types, arrow_format_settings, begin, begin + rows, c_array);
+        begin += rows;
+
+        if (format_settings.vortex.output_string_as_string)
+        {
+            for (int64_t i = 0; i < c_array.n_children; ++i)
+                checkStringsAreValidUTF8(*c_array.children[i], *c_schema.children[i], names[i]);
+        }
 
         char * error = nullptr;
+        handed_over = true;
         if (vortex_ffi_writer_write(writer, &c_array, &c_schema, &error) != 0)
             throwVortexError(error, write_context->exception);
-    }
+    } while (begin < num_rows);
 }
 
 void VortexBlockOutputFormat::finalizeImpl()
@@ -185,7 +207,7 @@ void VortexBlockOutputFormat::finalizeImpl()
     /// Not a single row came through, but the file still has to be a valid one with the header's
     /// schema in it.
     if (!writer)
-        initWriter(nullptr);
+        initWriter();
 
     char * error = nullptr;
     if (vortex_ffi_writer_finish(writer, &error) != 0)
@@ -202,7 +224,6 @@ void VortexBlockOutputFormat::resetFormatterImpl()
         vortex_ffi_writer_free(writer);
         writer = nullptr;
     }
-    ch_column_to_arrow_column.reset();
     write_context.reset();
 }
 

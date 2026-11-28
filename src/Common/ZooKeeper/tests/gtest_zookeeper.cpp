@@ -330,6 +330,20 @@ TEST(ZooKeeperTest, MultiRequestRejectsCloseSubrequest)
     EXPECT_THROW(request->readImpl(in), Coordination::Exception);
 }
 
+TEST(ZooKeeperTest, SetWatchesRequestWithoutDataWatchesGetPath)
+{
+    ZooKeeperSetWatchesRequest set_watches;
+    set_watches.child_watches = {"/child"};
+    EXPECT_EQ(set_watches.getPath(), "");
+
+    ZooKeeperSetWatches2Request set_watches2;
+    set_watches2.persistent_watches = {"/persistent"};
+    EXPECT_EQ(set_watches2.getPath(), "");
+
+    set_watches2.data_watches = {"/data"};
+    EXPECT_EQ(set_watches2.getPath(), "/data");
+}
+
 TEST(ZooKeeperTest, WaitForDisappearWithLateGetResponses)
 {
     /// `waitForDisappear` issues a new `get` with the same callback in every iteration, so responses of earlier
@@ -381,6 +395,29 @@ TEST(ZooKeeperTest, WaitForDisappearWithLateGetResponses)
 
     for (size_t i = 0; i < 100000; ++i)
         ASSERT_TRUE(zk->waitForDisappear("/node")) << "iteration " << i;
+}
+
+TEST(ZooKeeperTest, WaitForDisappearIsWokenByWatchOnEveryCall)
+{
+    auto zk = makeTestKeeperClient(/*session_timeout_ms=*/ 10000);
+    zk->create("/node", "", zkutil::CreateMode::Persistent);
+
+    /// Several waits for the same path in one session must each be woken by the watch.
+    for (size_t call = 0; call < 2; ++call)
+    {
+        /// The condition runs after the first `get` of the call. Recreating the node from here makes the next `get`
+        /// find the node again, so only the watch can report the removal.
+        size_t checks = 0;
+        const auto recreate_once = [&]
+        {
+            if (++checks > 1)
+                return true;
+            zk->remove("/node");
+            zk->create("/node", "", zkutil::CreateMode::Persistent);
+            return false;
+        };
+        EXPECT_TRUE(zk->waitForDisappear("/node", recreate_once)) << "call " << call;
+    }
 }
 
 TEST(ZooKeeperTest, AsyncTryGetIsAwaitedOnFirstAccess)

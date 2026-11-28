@@ -192,7 +192,13 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
 
         writeJSONString(source_file, wb, settings);
         DB::writeChar(':', wb);
-        writeJSONString(msg.getSourceFile(), wb, settings);
+        std::string source_file_value = msg.getSourceFile();
+        if (*msg.getSourceFunction() != '\0')
+        {
+            source_file_value += "; ";
+            source_file_value += msg.getSourceFunction();
+        }
+        writeJSONString(source_file_value, wb, settings);
     }
 
     if (!source_line.empty())

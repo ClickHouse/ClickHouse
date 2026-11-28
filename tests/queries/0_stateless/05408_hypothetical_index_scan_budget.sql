@@ -2,6 +2,9 @@
 -- the twin table with the materialized indexes gives the real granules, and the sampled span must hold them
 -- a full scan is exact, as the twin table shows. The later cases give the real granules of a full scan as constants that follow from their data
 
+-- Disable force_primary_key_reverse_order: the reference pins the sampled index windows, which depend on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_budget;
 DROP TABLE IF EXISTS t_budget_real;
 

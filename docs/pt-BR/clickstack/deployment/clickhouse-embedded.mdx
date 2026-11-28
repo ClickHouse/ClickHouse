@@ -6,10 +6,10 @@ doc_type: 'guide'
 keywords: ['ClickStack embutido', 'ClickHouse embutido', 'ClickStack no servidor ClickHouse', 'observabilidade integrada']
 ---
 
-O ClickStack vem embutido diretamente no binário do servidor ClickHouse. Isso significa que você pode acessar a UI do ClickStack (HyperDX) na sua instância do ClickHouse sem implantar nenhum componente adicional. Essa implantação é semelhante à demonstração pública em [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com), mas roda na sua própria instância do ClickHouse e com seus próprios dados.
+O ClickStack vem embutido diretamente no binary do servidor ClickHouse. Isso significa que você pode acessar a UI do ClickStack na sua instância do ClickHouse sem implantar nenhum componente adicional. Essa implantação é semelhante à demonstração pública em [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com), mas roda na sua própria instância do ClickHouse e com seus próprios dados.
 
 <div id="suitable-for">
-  ### Indicado para
+  ### Indicado para {#suitable-for}
 </div>
 
 * Experimentar o ClickStack com configuração mínima
@@ -17,7 +17,7 @@ O ClickStack vem embutido diretamente no binário do servidor ClickHouse. Isso s
 * Demonstrações e avaliações
 
 <div id="limitations">
-  ### Limitações
+  ### Limitações {#limitations}
 </div>
 
 Esta versão embutida **não foi projetada para uso em produção**. Os recursos a seguir não estão disponíveis em comparação com as [implantações OSS prontas para produção](/pt-BR/clickstack/deployment/oss):
@@ -27,9 +27,7 @@ Esta versão embutida **não foi projetada para uso em produção**. Os recursos
 * Configurações de consulta personalizáveis
 * [Padrões de eventos](/pt-BR/clickstack/features/event-patterns)
 
-<div id="deployment-steps">
-  ## Etapas de implantação
-</div>
+## Etapas de implantação {#deployment-steps}
 
 <Tabs>
   <Tab title="Docker">
@@ -58,29 +56,21 @@ Esta versão embutida **não foi projetada para uso em produção**. Os recursos
         Digite o nome de usuário `default` e a senha `password` para se conectar à instância local.
 
         <div className="ch-image-lg">
-
-        <Frame>
-
-        ![Autenticar](/images/clickstack/deployment/embedded/authenticate.webp)
-
-        </Frame>
-
+          <Frame>
+            ![Autenticar](/images/clickstack/deployment/embedded/authenticate.webp)
+          </Frame>
         </div>
       </Step>
 
       <Step title="Crie uma fonte" id="create-a-source-docker">
-        Se você já tiver tabelas do OpenTelemetry, o ClickStack vai detectá-las e criar fontes automaticamente.
+        Se você já tiver tabelas do OpenTelemetry, o ClickStack vai detectá-las e criar fontes de dados automaticamente.
 
-        Em uma instalação nova, será solicitado que você crie uma fonte. Preencha o campo **Table** com o nome de tabela apropriado (por exemplo, `otel_logs`) e clique em **Save New Source**.
+        Em uma instalação nova, será solicitado que você crie uma fonte de dados. Preencha o campo **Tabela** com o nome de tabela apropriado (por exemplo, `otel_logs`) e clique em **Salvar nova fonte de dados**.
 
         <div className="ch-image-lg">
-
-        <Frame>
-
-        ![Criar fonte](/images/clickstack/deployment/embedded/inferred-source.webp)
-
-        </Frame>
-
+          <Frame>
+            ![Criar fonte de dados](/images/clickstack/deployment/embedded/inferred-source.webp)
+          </Frame>
         </div>
 
         Se você ainda não tiver dados, consulte [Ingestão de dados](/pt-BR/clickstack/ingesting-data/overview) para ver as opções disponíveis.
@@ -127,13 +117,13 @@ Esta versão embutida **não foi projetada para uso em produção**. Os recursos
           EOF
           ```
 
-          Com isso ativado, você pode criar uma **Log Source** apontando para `system.query_log` após abrir o ClickStack:
+          Com isso ativado, você pode criar uma **Fonte de dados de log** apontando para `system.query_log` após abrir o ClickStack:
 
           | Setting              | Value                                                                                                                                   |
           | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
           | **Name**             | `Query Logs`                                                                                                                            |
           | **Database**         | `system`                                                                                                                                |
-          | **Table**            | `query_log`                                                                                                                             |
+          | **Tabela**            | `query_log`                                                                                                                             |
           | **Timestamp Column** | `event_time`                                                                                                                            |
           | **Default Select**   | `event_time, query_kind, query, databases, tables, initial_user, projections, memory_usage, written_rows, read_rows, query_duration_ms` |
         </Accordion>
@@ -150,18 +140,14 @@ Esta versão embutida **não foi projetada para uso em produção**. Os recursos
       </Step>
 
       <Step title="Crie uma fonte" id="create-a-source-binary">
-        Se você já tiver tabelas do OpenTelemetry, o ClickStack vai detectá-las e criar fontes automaticamente.
+        Se você já tiver tabelas do OpenTelemetry, o ClickStack vai detectá-las e criar fontes de dados automaticamente.
 
         Se você ainda não tiver dados, consulte [Ingestão de dados](/pt-BR/clickstack/ingesting-data/overview) para ver as opções disponíveis.
 
         <div className="ch-image-lg">
-
-        <Frame>
-
-        ![Criar fonte](/images/clickstack/deployment/embedded/inferred-source.webp)
-
-        </Frame>
-
+          <Frame>
+            ![Criar fonte de dados](/images/clickstack/deployment/embedded/inferred-source.webp)
+          </Frame>
         </div>
       </Step>
     </Steps>
@@ -169,7 +155,7 @@ Esta versão embutida **não foi projetada para uso em produção**. Os recursos
 </Tabs>
 
 <div id="next-steps">
-  ## Próximos passos
+  ## Próximos passos {#next-steps}
 </div>
 
 Se você está pronto para avançar além da avaliação, considere uma implantação adequada para produção:
@@ -177,4 +163,4 @@ Se você está pronto para avançar além da avaliação, considere uma implanta
 * [All-in-One](/pt-BR/clickstack/deployment/all-in-one) — contêiner único com todos os componentes, incluindo persistência e autenticação
 * [Docker Compose](/pt-BR/clickstack/deployment/docker-compose) — componentes individuais para maior controle
 * [Helm](/pt-BR/clickstack/deployment/helm) — recomendado para implantações Kubernetes em produção
-* [Managed ClickStack](/pt-BR/clickstack/getting-started/managed) — totalmente gerenciado no ClickHouse Cloud
+* [Self-managed ClickHouse Observability](/pt-BR/clickstack/self-configured/getting-started/managed) — gerencie sua ingestão e seus esquemas no ClickHouse Cloud

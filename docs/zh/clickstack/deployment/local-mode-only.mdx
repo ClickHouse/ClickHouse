@@ -8,65 +8,55 @@ keywords: ['clickstack', '部署', '设置', '配置', '可观测性']
 
 import JSONSupport from '/snippets/zh/_json_support.mdx';
 
-与[一体化镜像](/zh/clickstack/deployment/docker-compose)类似，这个完整的 Docker 镜像集成了所有 ClickStack 组件：
+与[一体化镜像](/zh/clickstack/deployment/all-in-one)类似，这个完整的 Docker 镜像集成了所有 ClickStack 组件：
 
 * **ClickHouse**
-* **HyperDX**
+* **ClickStack 用户界面**
 * **OpenTelemetry (OTel) 收集器** (通过端口 `4317` 和 `4318` 提供 OTLP)
 * **MongoDB** (用于持久化应用状态)
 
-**不过，此 HyperDX 发行版已禁用用户身份验证功能**
+**不过，此 ClickStack 用户界面发行版已禁用用户身份验证功能**
 
 <div id="suitable-for">
-  ### 适用场景
+  ### 适用场景 {#suitable-for}
 </div>
 
 * 演示
 * 调试
-* 使用 HyperDX 的开发场景
+* 使用 ClickStack 用户界面的开发场景
 
-<div id="deployment-steps">
-  ## 部署步骤
-</div>
+## 部署步骤 {#deployment-steps}
 
 <br />
 
 <Steps>
   <Step title="使用 Docker 部署" id="deploy-with-docker">
-    本地模式会在 8080 端口部署 HyperDX UI。
+    本地模式会在 8080 端口上部署 ClickStack 用户界面。
 
     ```shell
     docker run -p 8080:8080 clickhouse/clickstack-local:latest
     ```
   </Step>
 
-  <Step title="访问 HyperDX UI" id="navigate-to-hyperdx-ui">
-    访问 [http://localhost:8080](http://localhost:8080) 即可进入 HyperDX UI。
+  <Step title="访问 ClickStack 用户界面" id="navigate-to-hyperdx-ui">
+    访问 [http://localhost:8080](http://localhost:8080) 即可打开 ClickStack 用户界面。
 
-    **你不会被提示创建用户，因为此部署模式未启用身份验证。**
+    **由于此部署模式未启用身份验证，系统不会提示您创建用户。**
 
-    连接到你自己的外部 ClickHouse 集群，例如 ClickHouse Cloud。
+    连接到您自己的外部 ClickHouse 集群，例如 ClickHouse Cloud。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![创建登录](/images/use-cases/observability/hyperdx-2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![创建登录](/images/use-cases/observability/hyperdx-2.webp)
+      </Frame>
     </div>
 
-    创建一个数据源，保留所有默认值，并在 `Table` 字段中填入 `otel_logs`。其他设置应会自动检测，因此你可以直接点击 `Save New Source`。
+    创建一个 source，保留所有默认值，并在 `Table` 字段中填入 `otel_logs`。其余设置均会自动检测，随后即可点击 `Save New Source`。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![创建日志数据源](/images/use-cases/observability/hyperdx-logs.webp)
-
-    </Frame>
-
+      <Frame>
+        ![创建日志源](/images/use-cases/observability/hyperdx-logs.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>

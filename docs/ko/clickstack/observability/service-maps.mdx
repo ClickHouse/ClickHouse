@@ -1,0 +1,46 @@
+---
+slug: /clickstack/observability/service-maps
+title: '서비스 맵'
+sidebarTitle: '서비스 맵'
+description: 'ClickHouse Observability 서비스 맵으로 서비스 의존성과 요청 흐름을 시각화합니다.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', '서비스 맵', '토폴로지', 'trace', '의존성', '분산 추적(distributed tracing)', '관측성', '요청 그래프']
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+서비스 맵은 서비스 간의 상호 작용을 시각화합니다. ClickHouse Observability는 동일한 트레이스 내의 클라이언트 스팬(나가는 요청)과 서버 스팬(들어오는 요청)을 서로 매칭하여 서비스 간 요청 경로를 재구성하는 방식으로 그래프를 생성합니다.
+
+전체 그래프를 보려면 왼쪽 탐색 메뉴에서 **서비스 맵**을 클릭하십시오. OpenTelemetry로 [트레이스 데이터를 수집](/ko/clickstack/observability/ingesting-data/overview)하기 시작하면 서비스가 표시됩니다.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![서비스 노드와 노드 간 요청 흐름을 보여주는 서비스 맵](/images/clickstack/observability-service-map-overview.png)
+  </Frame>
+</div>
+
+## 서비스 맵 살펴보기 {#exploring-the-service-map}
+
+각 노드는 `service.name` 리소스 속성으로 식별되는 서비스를 나타냅니다. 모서리(점선)는 한 서비스의 클라이언트 스팬이 다른 서비스의 서버 스팬과 일치할 때 두 서비스를 연결합니다. 노드 크기는 상대적인 트래픽 양을 나타냅니다. **Error rate** 모드에서 빨간색 노드는 선택한 시간 범위 내에 오류가 발생한 서비스를 의미합니다. 오른쪽 상단의 범례에서 **Latency**, **Error rate**, **Throughput** 간에 전환할 수 있습니다.
+
+맵 위의 도구 모음에서 뷰를 필터링하고 조정할 수 있습니다.
+
+**소스 선택기** — 맵을 구성하는 데 사용할 트레이스 소스(예: **Traces**)를 선택합니다.
+
+**샘플링 슬라이더** — 샘플링 비율을 조정하여 성능과 정확도 간의 균형을 맞춥니다. 데이터 양이 많은 클러스터에서는 비율을 낮출수록 더 빠르게 로드됩니다.
+
+**날짜 범위 선택기** — 맵을 구성하는 데 사용할 트레이스 데이터의 시간 윈도우(time window)를 설정합니다.
+
+맵 왼쪽 하단의 **+/-** 버튼을 누르거나 스크롤하여 확대 및 축소할 수 있습니다.
+
+## 트레이스 수준 서비스 맵 {#trace-level-service-maps}
+
+개별 트레이스를 살펴볼 때 **서비스 맵** 탭을 선택하면 해당 요청이 서비스 간에 어떻게 이동했는지 확인할 수 있습니다. 워터폴 화면으로 돌아가려면 **트레이스** 탭을 다시 선택하십시오.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![개별 트레이스에서 트레이스 워터폴 화면을 서비스 맵으로 전환하는 모습](/images/clickstack/observability-trace-service-map.gif)
+  </Frame>
+</div>

@@ -1,0 +1,56 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/deno
+description: 'Installation et configuration de Deno pour ClickHouse Observability et les déploiements autogérés.'
+title: 'Deno'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
+sidebarTitle: 'Deno'
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/fr/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Utilisez la prise en charge native d&#39;OpenTelemetry intégrée à Deno pour envoyer des logs, des métriques et des traces vers ClickHouse Observability. Vous n&#39;avez besoin ni du SDK Node.js de ClickStack, ni du paquet de journalisation legacy de Deno.
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## Configurer OpenTelemetry {#set-up-opentelemetry}
+
+Suivez les [instructions officielles de configuration d’OpenTelemetry pour Deno](https://docs.deno.com/runtime/fundamentals/open_telemetry/) afin d’instrumenter votre application. Configurez la destination ci-dessous, puis activez l&#39;intégration native de Deno au démarrage de votre application :
+
+```shell
+OTEL_DENO=true OTEL_SERVICE_NAME='my-deno-app' deno run app.ts
+```
+
+Ajoutez les autorisations nécessaires à votre application. Remplacez les éventuelles destinations d&#39;exemple ou les paramètres de l&#39;exportateur console provenant des instructions en amont, y compris les surcharges d&#39;endpoint propres à chaque signal.
+
+## Configurer votre destination {#configure-destination}
+
+<Tabs>
+  <Tab title="Entièrement géré">
+    <BetaBadge label="Offre bêta" />
+
+    Dans votre service, ouvrez **Paramètres de l’équipe → Données → Managed Telemetry**, puis copiez l’**endpoint OTLP HTTP** et l’**API key**. Utilisez l’endpoint HTTPS complet, port compris :
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="Autogéré">
+    Utilisez l’endpoint OTLP HTTP et la clé d’ingestion de votre collecteur. Remplacez `https://` par `http://` si TLS n’est pas configuré sur votre collecteur. Pour la configuration du collecteur, consultez [Ingestion avec OpenTelemetry](/fr/clickstack/observability/ingesting-data/opentelemetry#self-managed).
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## Vérifier l&#39;ingestion {#verify-ingestion}
+
+Démarrez votre application et générez de l&#39;activité. Dans ClickHouse Observability, sélectionnez un intervalle de temps récent, puis recherchez le nom du service de votre application dans Logs ou Traces. Consultez ensuite Metrics, en laissant aux données le temps d&#39;être exportées.

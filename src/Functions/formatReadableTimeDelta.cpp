@@ -135,6 +135,11 @@ public:
             }
             else
             {
+                /// Turn `-0.` into `0.`: it is not less than zero, but `std::modf` keeps its sign and `getFractionalString`
+                /// would return `.000000000` for it, so the sub-second units would be computed from the '.' character.
+                if (value == 0)
+                    value = 0;
+
                 bool is_negative = value < 0;
                 if (is_negative)
                 {
@@ -146,7 +151,7 @@ public:
                 bool has_output = false;
 
                 Float64 whole_part = 0;
-                std::string fractional_str = getFractionalString(std::modf(value, &whole_part));
+                std::string fractional_str = getFractionalString(std::modf(value, &whole_part), whole_part);
 
                 switch (max_unit) /// A kind of Duff Device.
                 {
@@ -214,7 +219,9 @@ public:
         UInt64 unit_multiplier, UInt32 unit_scale, const char * unit_name, size_t unit_name_size, Float64 & whole_part,
         String & fractional_str, WriteBuffer & buf_to, bool & has_output,  Unit min_unit, bool is_minimum_unit)
     {
-        if (unlikely(whole_part + 1.0 == whole_part))
+        /// The number of sub-second units is accumulated in `UInt64`, so it must stay below 2^64 together with the fractional part.
+        if (unlikely(whole_part + 1.0 == whole_part
+            || (unit_scale && (whole_part + 1.0) * static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(unit_scale)) >= 0x1p64)))
         {
             /// The case when value is too large so exact representation for subsequent smaller units is not possible.
             writeText(
@@ -235,8 +242,8 @@ public:
 
             if (!num_units)
             {
-                /// Zero units, no need to print. But if it's seconds and no other unit is printed, print "0 seconds" nevertheless.
-                if (unit_multiplier != 1 || has_output
+                /// Zero units, no need to print. But if it's seconds or the minimum unit and no other unit is printed, print zero of it.
+                if ((unit_multiplier != 1 && !is_minimum_unit) || has_output
                     || fractional_str.substr(0, subSecondDigits(min_unit)) != std::string(subSecondDigits(min_unit), '0'))
                     return;
             }
@@ -325,7 +332,7 @@ private:
         return whole_part < 1 && fractional_str.substr(0, digits) == std::string(digits, '0');
     }
 
-    static std::string getFractionalString(const Float64 & fractional_part)
+    static std::string getFractionalString(const Float64 & fractional_part, Float64 & whole_part)
     {
         DB::DoubleConverter<true>::BufferType buffer;
         double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
@@ -333,7 +340,13 @@ private:
         if (!DB::DoubleConverter<false>::instance().ToFixed(fractional_part, 9, &builder))
             throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print double number: {}", fractional_part);
 
-        return std::string(buffer, builder.position()).substr(2);   /// do not return `0.` -- we don't need it
+        std::string str(buffer, builder.position());
+
+        /// A fraction close to 1 is rounded to `1.000000000`, carry it into the whole part.
+        if (str[0] == '1')
+            whole_part += 1;
+
+        return str.substr(2);   /// do not return `0.` -- we don't need it
     }
 
     [[nodiscard]] Unit dispatchUnit(const std::string_view & unit_str, const Unit default_unit, const std::string & bound_name) const

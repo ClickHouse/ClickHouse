@@ -33,6 +33,7 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
@@ -49,6 +50,8 @@ namespace ProfileEvents
     extern const Event KeeperSnapshotCreationsFailed;
     extern const Event KeeperSnapshotApplys;
     extern const Event KeeperSnapshotApplysFailed;
+    extern const Event KeeperSnapshotApplyMicroseconds;
+    extern const Event KeeperSnapshotWriteMicroseconds;
     extern const Event KeeperReadSnapshot;
     extern const Event KeeperReadSnapshotObject;
     extern const Event KeeperReadSnapshotFailed;
@@ -345,9 +348,9 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
         /// separately before calling this function; reaching it here (e.g. nested in a `Multi`) fails closed.
         case OpNum::Close:
             return false;
-        /// `SetWatches`/`SetWatches2` carry lists of paths rather than a single one (`getPath()` must not
-        /// be called on them: it dereferences `data_watches[0]` without checking that the list is
-        /// non-empty). `KeeperStorage::setWatches` resolves the data, child (list), and exist watch paths
+        /// `SetWatches`/`SetWatches2` carry lists of paths rather than a single one (`getPath()` returns
+        /// only the first data watch, or an empty string if there are no data watches).
+        /// `KeeperStorage::setWatches` resolves the data, child (list), and exist watch paths
         /// against the tree -- whether the node exists, its `mzxid` for a data watch and its `pzxid` for a
         /// child watch decide between an immediate `DELETED`/`CHANGED`/`CREATED` watch event and
         /// re-registering the watch -- so a watch on a pruned path would replay differently after orphan
@@ -1543,6 +1546,9 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
 
 bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 {
+    Stopwatch watch;
+    SCOPE_EXIT({ ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplyMicroseconds, watch.elapsedMicroseconds()); });
+
     try
     {
         LOG_DEBUG(log, "Applying snapshot {}", s.get_last_log_idx());
@@ -1813,6 +1819,9 @@ void KeeperStateMachine::persistRepairedSnapshot()
 
 SnapshotFileInfoPtr KeeperStateMachine::writeSnapshotToDisk(const KeeperStorageSnapshot & snapshot)
 {
+    Stopwatch watch;
+    SCOPE_EXIT({ ProfileEvents::increment(ProfileEvents::KeeperSnapshotWriteMicroseconds, watch.elapsedMicroseconds()); });
+
     /// Streaming serialization for local disks; buffer-then-write for remote disks.
     if (isLocalDisk(*keeper_context->getLatestSnapshotDisk()))
         return snapshot_manager.writeSnapshotFile(snapshot);

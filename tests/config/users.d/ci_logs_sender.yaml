@@ -12,7 +12,6 @@ profiles:
         async_insert_busy_timeout_max_ms: 5000
         # Avoid polluting caches
         enable_filesystem_cache_on_write_operations: 0
-        write_through_distributed_cache: 0
         # Override local default limit of 32G
         max_memory_usage_for_user: 0
         # Force INSERT in background
@@ -38,8 +37,6 @@ profiles:
                 readonly: true
             enable_filesystem_cache_on_write_operations:
                 readonly: true
-            write_through_distributed_cache:
-                readonly: true
             max_memory_usage_for_user:
                 readonly: true
             distributed_foreground_insert:
@@ -49,7 +46,15 @@ profiles:
 users:
     ci_logs_sender:
         profile: ci_logs_sender
-        no_password: true
+        # Nobody ever authenticates as this user: it only exists as the DEFINER
+        # of the `<table>_watcher` views, so the hash below is random and there
+        # is no password that matches it. It is not `no_password`, because a
+        # server started with `allow_no_password: 0` refuses to parse a users
+        # config that defines such a user (`UsersConfigParser.cpp`,
+        # `Authentication type NO_PASSWORD is not allowed`), and the export
+        # installs this file on servers of the tests that set it, e.g.
+        # tests/integration/test_no_password_existing_user.
+        password_sha256_hex: "a25c4b2ecd6f5f8bc9f3b06fb4dd41c6338c76f1d8fe1cd1d0e0ee0bcbaef0dd"
         networks:
             ip:
             - ::1

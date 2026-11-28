@@ -118,6 +118,7 @@ struct ProjectionDescription
         const ASTPtr & partition_columns,
         const Names & minmax_columns,
         const KeyDescription & primary_key,
+        const KeyDescription & sorting_key,
         const KeyDescription * partition_key,
         const ContextPtr & query_context);
 
@@ -182,9 +183,6 @@ struct ProjectionsDescription : public IHints<>
         const ColumnsDescription & columns,
         const KeyDescription * parent_partition_key,
         const ContextPtr & query_context);
-
-    /// Return common expression for all stored projections
-    [[nodiscard]] ExpressionActionsPtr getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr query_context) const;
 
     bool operator==(const ProjectionsDescription & other) const { return projections == other.projections; }
     bool operator!=(const ProjectionsDescription & other) const { return !(*this == other); }

@@ -15,8 +15,10 @@ function escaped()
 {
     # That's the simplest way I found to escape a string in bash. Yep, bash is the most convenient programming language.
     # Also limit lines width just in case (too long lines are not really useful usually)
+    # The row separator is the two characters `\n`, at the same escape level as the payload,
+    # so callers must append the result with `printf '%s'` and not with `echo -e`.
     clickhouse local -S 's String' --input-format=LineAsString -q "select substr(s, 1, $FAILURE_CONTEXT_MAX_LINE_WIDTH)
-      from table format CustomSeparated settings format_custom_row_after_delimiter='\\\\\\\\n'"
+      from table format CustomSeparated settings format_custom_row_after_delimiter='\\\\n'"
 }
 
 function head_escaped()
@@ -222,6 +224,8 @@ EOL
     # window views, and `clickhouse-test --upgrade-check` passes `--fake-drop`, so they stay in the
     # metadata for the new binary to fail on. Keep it readonly, rather than set to `false`, until
     # that suite stops creating them: assigning an obsolete setting makes the new binary warn.
+    # allow_reserved_column_names is readonly too: a column that hides a MergeTree virtual column
+    # can crash merges.
     cat > /etc/clickhouse-server/users.d/stress_test_tweaks-users.xml <<EOL
 <clickhouse>
     <profiles>
@@ -258,6 +262,10 @@ EOL
                     <readonly/>
                 </allow_experimental_window_view>
 
+                <allow_reserved_column_names>
+                    <readonly/>
+                </allow_reserved_column_names>
+
             </constraints>
         </default>
     </profiles>
@@ -282,13 +290,30 @@ EOL
 EOL
 }
 
+# The PID of the process that serves. With the filesystem isolation and `CAP_SYS_ADMIN`, the pid file has the PID of
+# its supervisor, whose child is the init of the PID namespace, whose child is the watchdog or the server.
+function serving_server_pid()
+{
+    local pid
+    pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)" || return 1
+    if [[ "$(cat "/proc/$pid/comm" 2>/dev/null)" == clickhouse-isol ]]; then
+        pid="$(cut -d' ' -f1 "/proc/$pid/task/$pid/children")"
+        pid="$(cut -d' ' -f1 "/proc/$pid/task/$pid/children")"
+        if [[ "$(cat "/proc/$pid/comm" 2>/dev/null)" == ClickHouseWatch ]]; then
+            pid="$(cut -d' ' -f1 "/proc/$pid/task/$pid/children")"
+        fi
+    fi
+    echo "$pid"
+}
+
 function stop_server()
 {
     local max_tries=${1:-300}
     local check_hang=${2:-true}
-    local pid
+    local pid serving_pid
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
+    serving_pid="$(serving_server_pid)"
 
     # FIXME: workaround for slow shutdown of Distributed tables (due to
     # sequential tables shutdown), since flush_on_detach=0 will not help if the
@@ -316,14 +341,14 @@ function stop_server()
       # - gdb detach can be slow
       # - server may do some work at shutdown
       # - main use case it not to mark failure as hung check when server exits abnormally with sanitizer/crash
-      kill -s CONT "$pid" ||:
+      kill -s CONT "$serving_pid" ||:
       kill -s 0 "$pid" && sleep 60
 
       # The server could finally stop while we were terminating gdb, let's recheck if it's still running
       kill -s 0 "$pid" || return 0
       echo -e "Possible deadlock on shutdown (see gdb.log)$FAIL" >> /test_output/test_results.tsv
       echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
-      timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+      timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$serving_pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
       clickhouse stop --force
     else
       echo -e "Warning: server did not stop yet$OK" >> /test_output/test_results.tsv
@@ -379,7 +404,7 @@ function report_start_failure()
 {
     echo "Cannot start clickhouse-server"
     rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt ||:
-    echo -e "Cannot start clickhouse-server$FAIL$1$(trim_server_logs application_errors.txt)" >> /test_output/test_results.tsv
+    printf "Cannot start clickhouse-server$FAIL%s%s\n" "$1" "$(trim_server_logs application_errors.txt)" >> /test_output/test_results.tsv
     cat /var/log/clickhouse-server/stdout.log
     tail -n100 /var/log/clickhouse-server/stderr.log
     tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n100
@@ -424,7 +449,7 @@ function start_server()
 
     # Positive evidence in the job log that the core limit is usable (the sudoers
     # rlimit_core drop-in worked and the server re-raised its soft limit).
-    server_pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid 2>/dev/null)" \
+    server_pid="$(serving_server_pid 2>/dev/null)" \
         && grep -H "^Max core file size" "/proc/${server_pid}/limits" ||:
 }
 
@@ -432,7 +457,7 @@ function check_server_start()
 {
     clickhouse-client --receive_timeout 30 --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
         || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
-        && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
+        && printf "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL%s\n" "$(trim_server_logs application_errors.txt)" \
         >> /test_output/test_results.tsv)
 
     # Remove file application_errors.txt if it's empty
@@ -454,7 +479,7 @@ function check_logs_for_critical_errors()
     rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log | grep -v -e "a.myext" -e "ReadBuffer is canceled by the exception" -e "DistributedCacheTCPHandler" -e "ReadBufferFromDistributedCache" -e "ReadBufferFromS3" -e "ReadBufferFromAzureBlobStorage" -e "AsynchronousBoundedReadBuffer" -e "Error during background download" -e "caller id: None:DistribCache" > /test_output/no_such_key_errors.txt \
         && { python3 /repo/ci/jobs/scripts/s3_key_lifecycle.py /test_output/no_such_key_errors.txt /var/log/clickhouse-server >> /test_output/no_such_key_errors.txt \
                  || echo "--- lifecycle collection FAILED, see the runner log for the traceback ---" >> /test_output/no_such_key_errors.txt ; \
-             echo -e "S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)$FAIL$(trim_server_logs no_such_key_errors.txt)" >> /test_output/test_results.tsv ; } \
+             printf "S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)$FAIL%s\n" "$(trim_server_logs no_such_key_errors.txt)" >> /test_output/test_results.tsv ; } \
         || echo -e "No lost s3 keys$OK" >> /test_output/test_results.tsv
 
     rg -Fa "it is lost forever" /var/log/clickhouse-server/clickhouse-server*.log | grep 'SharedMergeTreePartCheckThread' > /dev/null \
@@ -506,7 +531,8 @@ function collect_query_and_trace_logs()
     for table in query_log trace_log metric_log aggregated_zookeeper_log
     do
         # Don't ignore errors here, it leads to ignore sanitizer reports when running clickhouse-local
-        clickhouse-local --config-file=/etc/clickhouse-server/config.xml --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst
+        # --config-file loads the stress profile, which enables the server-side AST fuzzer.
+        clickhouse-local --config-file=/etc/clickhouse-server/config.xml --only-system-tables --ast_fuzzer_runs 0 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst
     done
 }
 

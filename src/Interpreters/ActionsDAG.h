@@ -649,8 +649,11 @@ public:
         bool single_output_condition_node = true);
 
     /// Check if `predicate` is a combination of AND functions.
-    /// Returns a list of nodes representing atomic predicates.
+    /// Returns a list of nodes representing atomic predicates. Right to left.
+    /// An `and` with several parents contributes its atoms once.
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
+    /// Same, in the written order, the order `and` evaluates them.
+    static NodeRawConstPtrs extractConjunctionAtomsInWrittenOrder(const Node * predicate);
 
     [[nodiscard]] UInt64 getHash() const;
     /// `build_independent` leaves out anything that differs between two builds of the same query -

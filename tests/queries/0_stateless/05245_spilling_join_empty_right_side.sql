@@ -7,6 +7,8 @@
 -- `MergeJoin` and its never-fed `SortedBlocksWriter` must finalize to zero spilled blocks
 -- instead of failing with "Can't initialize pipeline with empty pipe".
 
+-- Disable force_primary_key_reverse_order: the reference pins the read type in the sorting key direction
+SET force_primary_key_reverse_order = 0;
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;

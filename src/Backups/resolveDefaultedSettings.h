@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/SettingsChanges.h>
+#include <Parsers/IAST_fwd.h>
 
 #include <span>
 #include <string_view>
@@ -49,10 +50,19 @@ SettingsWithDefaultsResolved resolveDefaultedSettings(
 CoreSettingsFromQuery extractCoreSettings(
     const ASTBackupQuery & query, std::span<const std::string_view> specific_names, CanonicalSettingNameFn canonical_name);
 
-/// Removes from `changes` every override of a setting in `default_names`, under any of its names, for a clause sent to other hosts.
+/// The `SETTINGS` clause an ON CLUSTER initiator sends to the other hosts: `specific_changes` (the BACKUP/RESTORE-specific
+/// settings to forward), then `core_settings`, without any override of a setting in `core_default_names` (the core resets of
+/// the incoming clause). Returns `nullptr` if no change is left.
 ///
-/// The reset itself is not sent: it cleared the `changed` bit on the initiator, so the DDL settings packet already omits the setting.
-/// A receiver applies the text over that packet, so `max_threads = 4, max_threads = DEFAULT` must not arrive as `max_threads = 4`.
-void eraseOverridesOfResetSettings(SettingsChanges & changes, const std::vector<String> & default_names);
+/// Other hosts re-parse this clause as text, and older parsers reject `name = DEFAULT` after a comma, so no reset is sent.
+///
+/// Nor is a core reset sent as its default: that marks it changed on the receiver, where e.g. `BackupWriterS3` then overrides `<s3>`.
+/// The reset cleared the `changed` bit on the initiator, so the DDL settings packet already omits the setting. A receiver applies
+/// the text over that packet, so `max_threads = 4, max_threads = DEFAULT` must not arrive as `max_threads = 4`: every override of a
+/// reset setting is dropped, under any of its names.
+///
+/// A BACKUP/RESTORE-specific reset is not sent: `specific_changes` carry resolved state, and resolving it again would lose `backup_uuid`.
+ASTPtr makeSettingsClauseForOtherHosts(
+    SettingsChanges specific_changes, const SettingsChanges & core_settings, const std::vector<String> & core_default_names);
 
 }

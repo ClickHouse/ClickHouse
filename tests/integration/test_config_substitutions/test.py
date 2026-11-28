@@ -2,6 +2,7 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -61,6 +62,12 @@ node8 = cluster.add_instance(
     user_configs=["configs/config_include_from_yml.xml"],
     main_configs=["configs/include_from_source.yml"],
 )
+node9 = cluster.add_instance(
+    "node9",
+    main_configs=["configs/config_zk_shared_node_main.xml"],
+    user_configs=["configs/config_zk_shared_node_users.xml"],
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -88,6 +95,9 @@ def start_cluster():
                 path="/merge_max_block_size",
                 value=b"<merge_max_block_size>8888</merge_max_block_size>",
                 makepath=True,
+            )
+            zk.create(
+                path="/shared_by_main_and_users_config", value=b"77777", makepath=True
             )
 
         cluster.add_zookeeper_startup_command(create_zk_roots)
@@ -359,3 +369,21 @@ def test_config_multiple_zk_substitutions(start_cluster):
             )
     finally:
         zk.delete(path="/background_pool_size")
+
+
+def test_zk_node_shared_by_main_and_users_config(start_cluster):
+    zk = cluster.get_kazoo_client("zoo1")
+    for value in ["12345", "54321"]:
+        zk.set("/shared_by_main_and_users_config", value.encode())
+        assert_eq_with_retry(
+            node9,
+            "SELECT value FROM system.server_settings WHERE name = 'max_concurrent_queries'",
+            value,
+            retry_count=60,
+        )
+        assert_eq_with_retry(
+            node9,
+            "SELECT value FROM system.settings WHERE name = 'max_query_size'",
+            value,
+            retry_count=60,
+        )

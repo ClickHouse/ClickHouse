@@ -82,8 +82,9 @@ class Labels:
 
     CI_BUILD = "ci-build"
     CI_FORCE_ALL = "ci-force-all"
-    # Exempts a bug fix PR from the requirement to add new tests in `new_tests_check.py`,
-    # e.g. a dependency bump that has no meaningful regression test.
+    # Exempts a bug fix PR from the bugfix validation in `new_tests_check.py`, e.g. when
+    # the added tests cannot reproduce the bug on master HEAD in CI. A bug fix PR that
+    # adds no tests passes that check without this label.
     CI_SKIP_NEW_TESTS_CHECK = "ci-skip-new-tests-check"
 
     CI_PERFORMANCE = "ci-performance"
@@ -242,6 +243,26 @@ def get_category(pr_body: str) -> Tuple[str, str]:
     return error, matched
 
 
+def _submodule_paths() -> set:
+    # Each line reads "submodule.<name>.path <path>". A changed submodule shows up in
+    # the PR file list as that path itself, because a gitlink is a single tree entry.
+    paths = set()
+    for line in Shell.get_output("git config --file .gitmodules --get-regexp path").splitlines():
+        _, _, path = line.partition(" ")
+        path = path.strip()
+        if path:
+            paths.add(path)
+    return paths
+
+
+def submodule_changed(changed_files, submodule_paths) -> bool:
+    # A bump leaves `.gitmodules` alone but touches the submodule path, which is still
+    # registered. Adding, removing or renaming one always edits `.gitmodules` itself.
+    if ".gitmodules" in changed_files:
+        return True
+    return bool(set(changed_files) & set(submodule_paths))
+
+
 # PRs opened by an automated agent: the agent's own token has no triage rights on
 # the repository, so this hook, which runs with the CI bot's rights, adds the labels
 # and the human owner. The owner answers reviewers; the agent never does.
@@ -298,7 +319,7 @@ def check_labels(category, info):
             "most likely failed to fetch the PR file list from the GitHub API. "
             "See the Config Workflow logs for the underlying error."
         )
-        if "contrib/" in " ".join(changed_files):
+        if submodule_changed(changed_files, _submodule_paths()):
             pr_labels_to_add.append(Labels.SUBMODULE_CHANGED)
 
     if any(label in Labels.AUTO_BACKPORT for label in pr_labels_to_add):

@@ -209,17 +209,17 @@ namespace
     using DenseHashSet = google::dense_hash_set<std::string_view, StringViewHash>;
 }
 
-void StorageSnapshot::check(const Names & column_names) const
+void StorageSnapshot::check(const Names & column_names, bool list_columns_in_error) const
 {
     const auto & columns = metadata->getColumns();
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+    auto list_of_columns = [&]
+    {
+        return list_columns_in_error ? fmt::format(". There are columns: {}", listOfColumns(columns.get(options))) : String{};
+    };
 
     if (column_names.empty())
-    {
-        auto list_of_columns = listOfColumns(columns.get(options));
-        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
-            "Empty list of columns queried. There are columns: {}", list_of_columns);
-    }
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED, "Empty list of columns queried{}", list_of_columns());
 
     DenseHashSet unique_names;
     unique_names.set_empty_key(std::string_view());
@@ -229,12 +229,9 @@ void StorageSnapshot::check(const Names & column_names) const
         bool has_column = columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name) || metadata->virtuals.has(name);
 
         if (!has_column)
-        {
-            auto list_of_columns = listOfColumns(columns.get(options));
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                "There is no column with name {} in table {}. There are columns: {}",
-                backQuote(name), storage.getStorageID().getNameForLogs(), list_of_columns);
-        }
+                "There is no column with name {} in table {}{}",
+                backQuote(name), storage.getStorageID().getNameForLogs(), list_of_columns());
 
         if (unique_names.count(name))
             throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE, "Column {} queried more than once", name);

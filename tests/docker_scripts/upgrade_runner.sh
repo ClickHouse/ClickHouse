@@ -180,6 +180,10 @@ sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
+# The previous release's tests create projections with positional arguments under a session setting, and loading
+# such a projection again (ATTACH, a restart, the upgraded server) needs it in the profile. Both servers read this file.
+echo "<clickhouse><profiles><default><enable_positional_arguments_for_projections>1</enable_positional_arguments_for_projections></default></profiles></clickhouse>" > /etc/clickhouse-server/users.d/enable_positional_arguments_for_projections.xml
+
 start_server || (echo "Failed to start server" && exit 1)
 
 clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', version()"
@@ -207,13 +211,60 @@ rm -rf tmp_stress_output
 timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables" ||
 (
     echo "thread apply all backtrace (on select tables count)" >> /test_output/gdb.log
-    timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+    timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$(serving_server_pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
     clickhouse stop --force
 )
 
 # A query can outlive the stress phase and hold its table locks until it ends (one that reads an unreachable S3
 # endpoint retries for tens of minutes). The replica restarts below need their tables exclusively, so cancel them.
 timeout 2m clickhouse-client --query "KILL QUERY WHERE 1 SYNC" ||:
+
+# A detached database or table is not in `system.mutations`, so the kill below does not see its mutations,
+# while the upgraded server loads it from its metadata and resumes them. The stress runner leaves such objects
+# behind: `01254_dict_load_after_detach_attach` detaches and attaches its database, which several test files
+# share under `--upgrade-check`, and `ATTACH DATABASE` fails when another test left a table there that cannot
+# be attached by a query (an experimental engine without its setting). The database then stays detached with
+# a broken mutation of an interrupted test in it, and the `<Error>` scan at the end reports that mutation.
+#
+# Restarting the old server loads the same set of objects that the upgraded server is going to load, which
+# attaching them one by one does not: the server tolerates at startup a table that it refuses in a query.
+# Restart only when something is detached, so the other runs still upgrade a server exactly as the stress
+# phase left it.
+#
+# The metadata files of the databases are listed from the default metadata disk, because a detached database
+# is not known to the server. Their names are the database names escaped for the file system, which
+# `decodeURLComponent` reverses. Not finding the `default` database there means that the listing is wrong,
+# and it is reported instead of being read as "nothing is detached".
+echo "Restart the server if the stress phase left detached databases or tables"
+
+detached_objects=unknown
+if database_metadata_files=$(find /var/lib/clickhouse/metadata -maxdepth 1 -name '*.sql' -printf '%f ' 2> /test_output/detached_objects_error.txt)
+then
+    detached_objects=$(timeout 1m clickhouse-client --param_metadata_files="$database_metadata_files" --query "
+        SELECT
+            (
+                SELECT throwIf(NOT has(groupArray(name), 'default'), 'No metadata file of the default database')
+                    + countIf(name NOT IN (SELECT name FROM system.databases))
+                FROM
+                (
+                    SELECT decodeURLComponent(replaceRegexpOne(arrayJoin(splitByChar(' ', {metadata_files:String})), '\\\\.sql\$', '')) AS name
+                )
+                WHERE name != ''
+            )
+            + (SELECT count() FROM system.detached_tables WHERE NOT is_permanently)" \
+        2> /test_output/detached_objects_error.txt) || detached_objects=unknown
+fi
+[ -s /test_output/detached_objects_error.txt ] || rm -f /test_output/detached_objects_error.txt
+
+if [ "$detached_objects" = unknown ]
+then
+    echo -e "Cannot count the databases and tables left detached by the stress phase (see detached_objects_error.txt)$FAIL" >> /test_output/test_results.tsv
+elif [ "$detached_objects" != 0 ]
+then
+    echo "The stress phase left $detached_objects detached databases and tables, restarting the server"
+    stop_server 300 false || (echo "Failed to stop server" && exit 1)
+    start_server || (echo "Failed to start server" && exit 1)
+fi
 
 # Kill the mutations that the stress phase left unfinished, before the server is upgraded.
 #
@@ -336,7 +387,7 @@ then
 
     if [ "$restart_failed" != 0 ]
     then
-        echo -e "Cannot restart a read-only replica holding a mutation left unfinished by the stress phase (see unkilled_mutation_errors.txt)$FAIL$(head_escaped /test_output/unkilled_mutation_errors.txt)" >> /test_output/test_results.tsv
+        printf "Cannot restart a read-only replica holding a mutation left unfinished by the stress phase (see unkilled_mutation_errors.txt)$FAIL%s\n" "$(head_escaped /test_output/unkilled_mutation_errors.txt)" >> /test_output/test_results.tsv
     fi
 
     kill_unfinished_mutations ||:
@@ -360,7 +411,7 @@ then
             WHERE NOT is_done
             ORDER BY database, table, mutation_id
             FORMAT Vertical" > /test_output/unkilled_mutations.txt ||:
-        echo -e "$unfinished_mutations mutations could not be killed before the upgrade (see unkilled_mutations.txt and unkilled_mutation_errors.txt)$FAIL$(head_escaped /test_output/unkilled_mutations.txt)" >> /test_output/test_results.tsv
+        printf "$unfinished_mutations mutations could not be killed before the upgrade (see unkilled_mutations.txt and unkilled_mutation_errors.txt)$FAIL%s\n" "$(head_escaped /test_output/unkilled_mutations.txt)" >> /test_output/test_results.tsv
     fi
 else
     echo -e "Cannot count the mutations left unfinished by the stress phase$FAIL" >> /test_output/test_results.tsv
@@ -426,7 +477,7 @@ fi
 
 if [ "$drain_failed" != 0 ]
 then
-    echo -e "Cannot run the mutation entries left behind by the killed mutations (see undrained_mutation_errors.txt)$FAIL$(head_escaped /test_output/undrained_mutation_errors.txt)" >> /test_output/test_results.tsv
+    printf "Cannot run the mutation entries left behind by the killed mutations (see undrained_mutation_errors.txt)$FAIL%s\n" "$(head_escaped /test_output/undrained_mutation_errors.txt)" >> /test_output/test_results.tsv
 fi
 if [ "$queued_mutation_entries" != 0 ]
 then
@@ -584,11 +635,11 @@ fi
 
 if [ "$row_policy_check_failed" != 0 ]
 then
-    echo -e "Cannot check whether the row policies can be applied (see unchecked_row_policy_errors.txt)$FAIL$(head_escaped /test_output/unchecked_row_policy_errors.txt)" >> /test_output/test_results.tsv
+    printf "Cannot check whether the row policies can be applied (see unchecked_row_policy_errors.txt)$FAIL%s\n" "$(head_escaped /test_output/unchecked_row_policy_errors.txt)" >> /test_output/test_results.tsv
 fi
 if [ "$row_policy_drop_failed" != 0 ] || [ -s /test_output/undropped_row_policy_errors.txt ]
 then
-    echo -e "Cannot drop the row policies that cannot be applied (see undropped_row_policy_errors.txt)$FAIL$(head_escaped /test_output/undropped_row_policy_errors.txt)" >> /test_output/test_results.tsv
+    printf "Cannot drop the row policies that cannot be applied (see undropped_row_policy_errors.txt)$FAIL%s\n" "$(head_escaped /test_output/undropped_row_policy_errors.txt)" >> /test_output/test_results.tsv
 fi
 
 [ -s /test_output/dropped_row_policies.txt ] || rm -f /test_output/dropped_row_policies.txt
@@ -633,7 +684,7 @@ fi
 # rendering difference - a row where the old value is exactly the new value wrapped in single quotes -
 # so it is not reported as a setting change. A genuine change of an auto-valued setting's default is
 # still caught and must have a settings changes history entry.
-IS_SANITIZED=$(clickhouse-local $local_tmp_option --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
+IS_SANITIZED=$(clickhouse-local $local_tmp_option --query "SELECT value LIKE '%-DSANITIZER%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
   save_settings_clean 'new_settings.native'
@@ -722,7 +773,7 @@ then
   if [ -s changed_settings.txt ]
   then
       mv changed_settings.txt /test_output/
-      echo -e "Changed settings are not reflected in the settings changes history (see changed_settings.txt)$FAIL$(head_escaped /test_output/changed_settings.txt)" >> /test_output/test_results.tsv
+      printf "Changed settings are not reflected in the settings changes history (see changed_settings.txt)$FAIL%s\n" "$(head_escaped /test_output/changed_settings.txt)" >> /test_output/test_results.tsv
   else
       echo -e "There are no changed settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
   fi
@@ -730,7 +781,7 @@ then
   if [ -s changed_merge_tree_settings.txt ]
   then
       mv changed_merge_tree_settings.txt /test_output/
-      echo -e "Changed MergeTree settings are not reflected in the settings changes history (see changed_merge_tree_settings.txt)$FAIL$(head_escaped /test_output/changed_merge_tree_settings.txt)" >> /test_output/test_results.tsv
+      printf "Changed MergeTree settings are not reflected in the settings changes history (see changed_merge_tree_settings.txt)$FAIL%s\n" "$(head_escaped /test_output/changed_merge_tree_settings.txt)" >> /test_output/test_results.tsv
   else
       echo -e "There are no changed MergeTree settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
   fi
@@ -738,7 +789,7 @@ then
   if [ -s new_settings.txt ]
   then
       mv new_settings.txt /test_output/
-      echo -e "New settings are not reflected in settings changes history (see new_settings.txt)$FAIL$(head_escaped /test_output/new_settings.txt)" >> /test_output/test_results.tsv
+      printf "New settings are not reflected in settings changes history (see new_settings.txt)$FAIL%s\n" "$(head_escaped /test_output/new_settings.txt)" >> /test_output/test_results.tsv
   else
       echo -e "There are no new settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
   fi
@@ -746,7 +797,7 @@ then
   if [ -s new_merge_tree_settings.txt ]
   then
       mv new_merge_tree_settings.txt /test_output/
-      echo -e "New MergeTree settings are not reflected in settings changes history (see new_merge_tree_settings.txt)$FAIL$(head_escaped /test_output/new_merge_tree_settings.txt)" >> /test_output/test_results.tsv
+      printf "New MergeTree settings are not reflected in settings changes history (see new_merge_tree_settings.txt)$FAIL%s\n" "$(head_escaped /test_output/new_merge_tree_settings.txt)" >> /test_output/test_results.tsv
   else
       echo -e "There are no new MergeTree settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
   fi
@@ -762,8 +813,6 @@ echo "<clickhouse>
     <profiles>
         <default>
             <compatibility>$old_major_version</compatibility>
-            <!-- Allow loading projections with positional arguments (e.g., GROUP BY 1, 2) created by the old server. -->
-            <enable_positional_arguments_for_projections>1</enable_positional_arguments_for_projections>
         </default>
     </profiles>
 </clickhouse>" > /etc/clickhouse-server/users.d/compatibility.xml
@@ -787,7 +836,7 @@ start_server || check_allow_list || (echo "Failed to start server" && exit 1)
 
 clickhouse-client --receive_timeout 30 --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
-    && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
+    && printf "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL%s\n" "$(trim_server_logs application_errors.txt)" \
     >> /test_output/test_results.tsv)
 
 # Remove file application_errors.txt if it's empty
@@ -830,13 +879,13 @@ then
         echo -e "The mutation submitted before the upgrade was finished by the new server$OK" >> /test_output/test_results.tsv
     elif [ "$mutation_across_upgrade_finished" = cannot_check ]
     then
-        echo -e "Cannot check whether the mutation submitted before the upgrade was finished (see mutation_across_upgrade_error.txt)$FAIL$(head_escaped /test_output/mutation_across_upgrade_error.txt)" >> /test_output/test_results.tsv
+        printf "Cannot check whether the mutation submitted before the upgrade was finished (see mutation_across_upgrade_error.txt)$FAIL%s\n" "$(head_escaped /test_output/mutation_across_upgrade_error.txt)" >> /test_output/test_results.tsv
     else
         timeout 1m clickhouse-client --query "
             SELECT * FROM system.mutations
             WHERE database = 'default' AND table = 'mutation_across_upgrade'
             FORMAT Vertical" > /test_output/mutation_across_upgrade.txt 2>&1 ||:
-        echo -e "The mutation submitted before the upgrade was not finished by the new server (see mutation_across_upgrade.txt)$FAIL$(head_escaped /test_output/mutation_across_upgrade.txt)" >> /test_output/test_results.tsv
+        printf "The mutation submitted before the upgrade was not finished by the new server (see mutation_across_upgrade.txt)$FAIL%s\n" "$(head_escaped /test_output/mutation_across_upgrade.txt)" >> /test_output/test_results.tsv
     fi
 
     [ -s /test_output/mutation_across_upgrade_error.txt ] || rm -f /test_output/mutation_across_upgrade_error.txt
@@ -871,6 +920,11 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       the previous one. Filtered via regex in the secondary pipe below to require the `Cluster` logger AND
 #       `Code: 198` AND a first host label of 64 or more identical characters, which is past the 63 octets
 #       RFC 1035 permits a label, so a genuine failure to resolve a cluster peer still fails this job.
+# `getInfoIfClickHouseDictionarySource` + `Code: 198` + the host `[x` is the same class for the dictionary of
+#       `05493_dictionary_host_unclosed_bracket`, whose source host cannot be resolved by design: `--fake-drop` keeps it in
+#       a shared `--database=test_N`, and the upgrade restart logs the failed resolution while it collects the dependencies
+#       of the dictionary. `[x` is neither a host name nor a bracketed IPv6 address, so a failure to resolve any real host
+#       still fails this job.
 # `StorageKeeperMap` + a `05024_keeper_map_parenthesized_metadata*` table + `Failed to activate table because of
 #       invalid metadata in ZooKeeper` is the same class: that test rewrites its own `metadata` znode into shapes a
 #       server must refuse and reverts them at the end of the file, but stress worker 1 (`--database=test_1`) runs
@@ -879,6 +933,10 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       them and logs this per table instead of refusing to start, which is what #115941 made it do on purpose.
 #       Requires the `StorageKeeperMap` logger AND the backquoted fixture-table prefix, so the same message on any
 #       other KeeperMap table - the shape a real metadata-compatibility regression takes - still fails this job.
+# `RefreshTask` + a `test_*_r.bad_mv` view + `Keeper server doesn't have all feature flags` is the same class for
+#       `04218_refreshable_mv_secondary_create`, whose `ATTACH`ed coordinated view a Keeper drawn without
+#       `create_if_not_exists` stops already in the stress phase; a stop of the file before its final `DROP DATABASE`
+#       leaves it to the upgraded server, which on the same flags stops it again. Any other stopped view still fails.
 # `shard_1.data` + `ReplicatedMergeTreeAttachThread` + a read-only initialization on an empty `columns` znode is
 #       `02980_dist_insert_readonly_replica` breaking it on purpose; an injected fault can stop the file before its
 #       final `DROP DATABASE`. Other tables and error codes still fail; a `columns` value cut inside its header does not.
@@ -940,6 +998,10 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       it does not match. That scope is needed because the count line carries no error text of its own and
 #       `Authentication failed` above can already remove its partner line. Removable once the previous
 #       release's copies of these tests stop deleting a topic whose table may survive.
+# `Code: 669` + a `05816_kafka_server_local_file_properties_` collection + `kafka_altered_table` or `kafka_altered_null_table`
+#       is that test's table left detached: when a statement between its `DETACH` and the last `ATTACH` does not reach the
+#       server (stress worker 1 injects memory faults), the cleanup drops the collection but not the detached table, and the
+#       upgrade restart cannot attach it. Removable once the previous release's copy of the test detaches it `PERMANENTLY`.
 # `No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed` is the unique signature of
 #       issue #102259 (`getFileNameForRenamedColumnStream` uses `substr(0, N)` instead of `substr(N)`, producing
 #       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until it lands, the
@@ -1038,8 +1100,24 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       message, AND the `TABLE_ALREADY_EXISTS` code together. So a real `LOGICAL_ERROR` UUID-mapping crash, the same
 #       collision on a non-test database, a different init failure on an `rdb_test_` DB, and unrelated
 #       `TABLE_ALREADY_EXISTS` errors all still surface.
+# `DDLWorker(rdb2_03206_replication_lag_metric_...)` + `Mapping for table with UUID=... already exists` +
+#       `TABLE_ALREADY_EXISTS` comes from `03206_replication_lag_metric`, which creates two replicas of one `Replicated`
+#       database on one server and creates its table through the first one, `rdb1_...`. Every replica creates a table
+#       with the UUID from the DDL log, so the second replica, `rdb2_...`, collides with the table of `rdb1_...`, and its
+#       DDLWorker retries every 5s, replaying the entry and then recovering the replica, until the test drops both
+#       databases. When the stress run stops the test before its `DROP DATABASE` queries, the previous release and the
+#       upgraded server both retry without end. Filtered via regex in the secondary pipe below to require the DDLWorker
+#       of the fixture's second replica, the UUID mapping message AND `TABLE_ALREADY_EXISTS` together, so the same
+#       collision on any other database, or any other error of that database, still fails this job.
 # `StorageFileLog` + `The absolute data path should be inside` is expected:
 #       `04202_filelog_attach_path_outside_user_files` has an explicit `ATTACH` query for a path outside `user_files_path`.
+# `StorageFileLog::StorageFileLog` + `neither a regular file, nor a directory` (a file path) or
+#       `The directory ... of the path ... does not exist` (a glob path) is a `FileLog` table left behind without its
+#       files by an interrupted test. Scoped to the tests that do this, so a missing path of any other table still fails.
+# `PartMovesBetweenShardsOrchestrator` + `NO_SUCH_DATA_PART` on the shard of `05565_part_move_to_shard_source_part_removed`
+#       is that test's move, whose part it removes on purpose: the stress phase can stop the file before its
+#       `KILL PART_MOVE_TO_SHARD`, and the upgraded server retries the move every 3 seconds. Requires the orchestrator, the
+#       fixture's destination shard and the code together, so a failed move of any other table still fails this job.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -1105,9 +1183,12 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Error on initialization of rdb_test_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
+    | grep -av -e "DDLWorker(rdb2_03206_replication_lag_metric_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
     | grep -av -e "Cluster: Code: 198.*Not found address of host: \(.\)\1\{63,\}" \
+    | grep -av -e "getInfoIfClickHouseDictionarySource.*Code: 198\. DB::NetException: Not found address of host: \[x\. (DNS_ERROR)" \
     | grep -av -e "StorageKeeperMap (.*\.\`05024_keeper_map_parenthesized_metadata.*Failed to activate table because of invalid metadata in ZooKeeper" \
+    | grep -av -e "RefreshTask(test_[a-z0-9_]*_r\.bad_mv): Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS\. The view is stopped\." \
     | grep -av -e "<Error> shard_1\.data (ReplicatedMergeTreeAttachThread): Initialization failed, table will remain readonly\. Error: Code: 27\. DB::Exception: Cannot parse input: expected 'columns format version: 1.n' at end of stream" \
     | grep -av -e "SystemLogQueue.*Queue had been full" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
@@ -1117,6 +1198,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "StorageKafka2.*Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     | grep -av -e "StorageKafka.*\.\`[0-9]\{5\}_kafka.*Consumer error: Broker: Unknown topic or partition" \
     | grep -av -e "StorageKafka.*\.\`[0-9]\{5\}_kafka.*There were [0-9][0-9]* messages with an error" \
+    | grep -av -e "Code: 669\. DB::Exception: There is no named collection \`05816_kafka_server_local_file_properties_[^\`]*\`: Cannot attach table \`[^\`]*\`\.\`kafka_altered\(_null\)\?_table\` " \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
@@ -1132,10 +1214,13 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "backup_database.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "03277_database_backup_database_file_engine.*_restore.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "StorageFileLog (.*): The absolute data path should be inside" \
+    | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: The path .*/user_files/\(05316_file_log_copytruncate\|05316_file_log_error_does_not_lock_table\|05317_file_log_partial_last_line\|05318_file_log_one_bad_file\|05394_filelog_engine_file_source_grant\|05395_filelog_drop_idle_while_other_busy\)_.* neither a regular file, nor a directory" \
+    | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: The directory .*/user_files/05316_file_log_globs_.* of the path .* does not exist" \
+    | grep -av -e "(PartMovesBetweenShardsOrchestrator): .*Code: 232\. DB::Exception: Part [^ ]* is not active on replica [^ ]*, it cannot be attached on shard /clickhouse/05565_part_move_to_shard_source_part_removed_[^/]*/dst\. (NO_SUCH_DATA_PART)" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
-    echo -e "Error message in clickhouse-server.log (see upgrade_error_messages.txt)$FAIL$(head_escaped /test_output/upgrade_error_messages.txt)" >> /test_output/test_results.tsv
+    printf "Error message in clickhouse-server.log (see upgrade_error_messages.txt)$FAIL%s\n" "$(head_escaped /test_output/upgrade_error_messages.txt)" >> /test_output/test_results.tsv
 else
     echo -e "No Error messages after server upgrade$OK" >> /test_output/test_results.tsv
 fi

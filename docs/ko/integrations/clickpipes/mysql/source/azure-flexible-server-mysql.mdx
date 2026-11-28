@@ -16,7 +16,7 @@ doc_type: 'guide'
 </Warning>
 
 <div id="configure-database-user">
-  ## 데이터베이스 사용자 구성
+  ## 데이터베이스 사용자 구성 {#configure-database-user}
 </div>
 
 관리자 사용자로 Azure Flexible Server for MySQL 인스턴스에 연결한 후, 다음 명령을 실행합니다:
@@ -39,9 +39,7 @@ doc_type: 'guide'
    FLUSH PRIVILEGES;
    ```
 
-<div id="configure-network-access">
-  ## 네트워크 액세스 구성
-</div>
+## 네트워크 액세스 구성 {#configure-network-access}
 
 <Note>
   ClickPipes는 아직 Azure Private Link를 지원하지 않습니다. 퍼블릭 액세스를 허용하지 않는 인스턴스에 연결하려면 SSH 터널을 사용하십시오. 자세한 내용은 [ClickPipes 네트워킹](/ko/integrations/clickpipes/networking)을 참조하십시오.
@@ -58,13 +56,9 @@ doc_type: 'guide'
     3. **Firewall rules** 섹션에서 서비스가 배포된 Region에 해당하는 [ClickPipes 고정 IP 주소 목록](/ko/integrations/clickpipes/networking/static-ips)을 입력합니다.
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![IP 허용 목록을 사용해 퍼블릭 액세스용 네트워킹을 구성합니다](/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp)
-
-       </Frame>
-
+         <Frame>
+           ![IP 허용 목록을 사용해 퍼블릭 액세스용 네트워킹을 구성합니다](/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp)
+         </Frame>
        </div>
 
     4. **Save**를 클릭하여 네트워크 보안 구성 변경 사항을 저장합니다.
@@ -83,8 +77,6 @@ doc_type: 'guide'
   </Tab>
 </Tabs>
 
-<div id="whats-next">
-  ## 다음 단계
-</div>
+## 다음 단계 {#whats-next}
 
 이제 [ClickPipe를 생성](/ko/integrations/clickpipes/mysql/index)하고 Azure Flexible Server for MySQL 인스턴스에서 ClickHouse Cloud로 데이터 수집을 시작할 수 있습니다. ClickPipe 생성 과정에서 필요하므로, 인스턴스를 설정할 때 사용한 연결 정보를 반드시 기록해 두십시오.

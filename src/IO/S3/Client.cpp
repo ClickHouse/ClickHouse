@@ -1282,8 +1282,10 @@ void ClientCache::clearCache()
 
 ClientCacheRegistry & ClientCacheRegistry::instance()
 {
-    static ClientCacheRegistry registry;
-    return registry;
+    /// Never destroyed: an `S3::Client` owned by a static can outlive static destruction, and
+    /// `~Client` would then unregister from a destroyed registry. Reachable, so not a leak.
+    static ClientCacheRegistry * registry = new ClientCacheRegistry;
+    return *registry;
 }
 
 void ClientCacheRegistry::registerClient(const std::shared_ptr<ClientCache> & client_cache)
@@ -1510,6 +1512,10 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     if (!credentials_configuration.forbid_implicit_credentials)
         credentials_configuration.use_environment_credentials =
             credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
+
+    /// The web identity credentials provider calls STS in the region of this S3 client,
+    /// which `updateSchemeAndRegion` took from the `region` setting or from the endpoint.
+    credentials_configuration.s3_client_region = client_configuration.region;
 
     auto credentials_provider = getCredentialsProvider(client_configuration, credentials, credentials_configuration);
 

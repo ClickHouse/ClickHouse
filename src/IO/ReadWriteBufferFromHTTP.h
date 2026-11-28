@@ -23,9 +23,11 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/config_version.h>
 
+#include <chrono>
 #include <condition_variable>
 #include <filesystem>
 #include <mutex>
+#include <optional>
 
 namespace DB
 {
@@ -137,6 +139,9 @@ public:
 
     const Poco::URI & getCurrentURI() const { return current_uri; }
 
+    /// Whether a response was received from another resource than the initial URI (by following a redirect).
+    bool wasRedirected() const { return redirects > 0; }
+
 private:
     /// Byte range, including right bound [begin, end].
     struct HTTPRange
@@ -154,6 +159,10 @@ private:
     const ProxyConfiguration proxy_config;
     const ReadSettings read_settings;
     const ConnectionTimeouts timeouts;
+
+    /// The request ends by it: each try's socket timeouts are capped at the time left, and no try or backoff
+    /// starts after it. Not strict against a reply that trickles in: each received byte restarts the receive timeout.
+    const std::optional<std::chrono::steady_clock::time_point> deadline;
 
     const Poco::Net::HTTPBasicCredentials & credentials;
     const RemoteHostFilter * remote_host_filter;
@@ -189,6 +198,12 @@ private:
     HTTPHeaderEntries http_header_entries;
     std::function<void(size_t)> next_callback;
 
+    /// If not empty, every response must come from the initial URI without a redirect and carry exactly this `ETag`,
+    /// otherwise the read fails with `FILE_CHANGED_DURING_READ`: the bytes are of another generation of the resource
+    /// than the one that the caller has seen (and e.g. keys a cache on). An `ETag` identifies a generation only of
+    /// one resource, so it cannot validate the bytes of another resource that a redirect leads to.
+    String expected_etag;
+
     size_t offset_from_begin_pos = 0;
     HTTPRange read_range;
     std::optional<HTTPFileInfo> file_info;
@@ -213,6 +228,15 @@ private:
 
     /// Waits before the next retry attempt. Returns true if the read has been cancelled while waiting.
     bool waitBeforeRetry(size_t milliseconds) const;
+
+    /// `timeouts` capped at the time left before `deadline`.
+    [[nodiscard]] ConnectionTimeouts getTimeoutsForTry() const;
+
+    [[noreturn]] static void throwDeadlineExceeded(const Poco::URI & uri, const String & error_message);
+
+    /// Throws `ReadInterruptedException` for a read that is cancelled or whose query reached its soft time limit; the
+    /// deadline exits call it first.
+    static void throwIfInterrupted(const CancellationPtr & cancellation, std::exception_ptr exception);
 
     /// Whether the code that reads from this buffer has cancelled the read, see doWithRetries.
     bool isReadCancelled() const;
@@ -261,6 +285,7 @@ private:
         ProxyConfiguration proxy_config_,
         ReadSettings read_settings_,
         ConnectionTimeouts timeouts_,
+        std::optional<std::chrono::steady_clock::time_point> deadline_,
         const Poco::Net::HTTPBasicCredentials & credentials_,
         const RemoteHostFilter * remote_host_filter_,
         size_t buffer_size_,
@@ -274,7 +299,8 @@ private:
         HTTPHeaderEntries http_header_entries_,
         RedirectCallback redirect_callback_,
         bool delay_initialization,
-        std::optional<HTTPFileInfo> file_info_);
+        std::optional<HTTPFileInfo> file_info_,
+        String expected_etag_);
 
 public:
     bool nextImpl() override;
@@ -326,6 +352,7 @@ class BuilderRWBufferFromHTTP
     bool bypass_proxy = false;
     ReadSettings read_settings{};
     ConnectionTimeouts timeouts{};
+    std::optional<std::chrono::steady_clock::time_point> deadline{};
     const RemoteHostFilter * remote_host_filter = nullptr;
     size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     size_t max_redirects = 0;
@@ -338,6 +365,7 @@ class BuilderRWBufferFromHTTP
     HTTPHeaderEntries http_header_entries{};
     ReadWriteBufferFromHTTP::CancellationPtr cancellation;
     bool delay_initialization = true;
+    String expected_etag;
 
 public:
     explicit BuilderRWBufferFromHTTP(Poco::URI uri_)
@@ -357,6 +385,7 @@ public:
     setterMember(withBypassProxy, bypass_proxy)
     setterMember(withSettings, read_settings)
     setterMember(withTimeouts, timeouts)
+    setterMember(withDeadline, deadline)
     setterMember(withHostFilter, remote_host_filter)
     setterMember(withBufSize, buffer_size)
     setterMember(withRedirects, max_redirects)
@@ -369,6 +398,7 @@ public:
     setterMember(withExternalBuf, use_external_buffer)
     setterMember(withDelayInit, delay_initialization)
     setterMember(withSkipNotFound, http_skip_not_found_url)
+    setterMember(withExpectedETag, expected_etag)
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 

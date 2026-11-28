@@ -23,6 +23,10 @@ SET query_plan_enable_optimizations = 1;
 -- aggregation, so each query below pins it to the level it means to exercise.
 SET max_threads=4;
 
+-- The adaptive aggregator also takes an aggregation with both two-level thresholds at 0, and it records its
+-- output in its own way, so the pipelines under test are those of the ordinary aggregation.
+SET enable_adaptive_aggregator=0;
+
 DROP TABLE IF EXISTS oba_u16;
 DROP TABLE IF EXISTS oba_u32;
 DROP TABLE IF EXISTS oba_part;

@@ -1,4 +1,6 @@
 -- Tags: long, no-msan, no-distributed-cache
+-- Disable force_primary_key_reverse_order: reverses physical read order breaking arrayDifference expectations
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t;
 

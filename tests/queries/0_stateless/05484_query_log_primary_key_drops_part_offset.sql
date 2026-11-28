@@ -1,5 +1,7 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: index analysis runs on the replicas, the initiator does not see it
+-- Disable force_primary_key_reverse_order: the reference pins the granule counts of the primary key analysis, which depend on the sorting key direction
+SET force_primary_key_reverse_order = 0;
 
 -- with `use_primary_key = 0` the primary key search runs only for `_part_offset` conditions, which are not primary key drops
 
