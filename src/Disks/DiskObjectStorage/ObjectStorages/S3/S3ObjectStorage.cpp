@@ -563,7 +563,8 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
 
     Strings successful_keys;
 
-    SCOPE_EXIT({
+    auto collect_results = [&]()
+    {
         if (successful_objects)
         {
             UnorderedSetWithMemoryTracking<std::string_view> successful_keys_set(successful_keys.begin(), successful_keys.end());
@@ -574,32 +575,42 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
                     successful_objects->emplace_back(object);
             }
         }
-    });
+    };
 
-    for (const auto & [bucket, objects_in_bucket] : groupByBucket(objects))
+    try
     {
-        Strings keys = collectRemotePaths(objects_in_bucket);
-
-        auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
-        Strings local_paths_for_blob_storage_log;
-        VectorWithMemoryTracking<size_t> file_sizes_for_blob_storage_log;
-        if (blob_storage_log)
+        for (const auto & [bucket, objects_in_bucket] : groupByBucket(objects))
         {
-            local_paths_for_blob_storage_log.reserve(objects_in_bucket.size());
-            file_sizes_for_blob_storage_log.reserve(objects_in_bucket.size());
-            for (const auto & object : objects_in_bucket)
-            {
-                local_paths_for_blob_storage_log.push_back(object.local_path);
-                file_sizes_for_blob_storage_log.push_back(object.bytes_size);
-            }
-        }
+            Strings keys = collectRemotePaths(objects_in_bucket);
 
-        deleteFilesFromS3(client.get(), bucket, keys, if_exists,
-                          s3_capabilities, settings_ptr->request_settings, settings_ptr->request_settings[S3RequestSetting::objects_chunk_size_to_delete],
-                          blob_storage_log, local_paths_for_blob_storage_log, file_sizes_for_blob_storage_log,
-                          ProfileEvents::DiskS3DeleteObjects,
-                          &successful_keys);
+            auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+            Strings local_paths_for_blob_storage_log;
+            VectorWithMemoryTracking<size_t> file_sizes_for_blob_storage_log;
+            if (blob_storage_log)
+            {
+                local_paths_for_blob_storage_log.reserve(objects_in_bucket.size());
+                file_sizes_for_blob_storage_log.reserve(objects_in_bucket.size());
+                for (const auto & object : objects_in_bucket)
+                {
+                    local_paths_for_blob_storage_log.push_back(object.local_path);
+                    file_sizes_for_blob_storage_log.push_back(object.bytes_size);
+                }
+            }
+
+            deleteFilesFromS3(client.get(), bucket, keys, if_exists,
+                              s3_capabilities, settings_ptr->request_settings, settings_ptr->request_settings[S3RequestSetting::objects_chunk_size_to_delete],
+                              blob_storage_log, local_paths_for_blob_storage_log, file_sizes_for_blob_storage_log,
+                              ProfileEvents::DiskS3DeleteObjects,
+                              &successful_keys);
+        }
     }
+    catch (...)
+    {
+        collect_results();
+        throw;
+    }
+
+    collect_results();
 }
 
 void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
