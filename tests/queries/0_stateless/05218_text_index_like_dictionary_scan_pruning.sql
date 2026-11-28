@@ -1,5 +1,9 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: the assertions below read ProfileEvents of the initiator query.
+
+-- Disable force_primary_key_reverse_order: `groupArray` output follows the physical row order
+SET force_primary_key_reverse_order = 0;
+
 -- Tests that a text index dictionary scan for LIKE/ILIKE patterns visits only the dictionary blocks an
 -- anchored pattern can match, and that neither the narrowed block range nor the filtering of a block's
 -- tokens by the pattern's mandatory literal changes which rows are returned. Every scenario is compared

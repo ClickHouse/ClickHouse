@@ -2,6 +2,9 @@
 -- so the index is read only for the granules that passed the preceding steps (including the TopK filter).
 -- Without that, the prewhere readers would read every selected row twice: once for `flag`/`ts`, once from the index.
 
+-- Disable force_primary_key_reverse_order: the granules passed by the TopK filter follow the physical order of the rows, which depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 SET enable_full_text_index = 1;
 SET use_skip_indexes = 1;
 -- Analyze the indexes in advance, so that only the PREWHERE readers count in `RowsReadByPrewhereReaders`.

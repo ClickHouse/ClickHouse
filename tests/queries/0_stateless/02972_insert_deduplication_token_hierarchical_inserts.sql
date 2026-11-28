@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests deduplication with materialized views, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 SET insert_deduplicate = 1;
 SET deduplicate_blocks_in_dependent_materialized_views = 1;
 SET insert_deduplication_token = 'test';

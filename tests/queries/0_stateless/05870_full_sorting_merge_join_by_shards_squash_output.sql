@@ -1,5 +1,7 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: reading with parallel replicas disables the split of the join by primary key ranges.
+-- Disable force_primary_key_reverse_order: the join is split by primary key ranges only for inputs sorted by an ascending key
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS fsm_sq_1;
 DROP TABLE IF EXISTS fsm_sq_2;

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the reference pins which row is the first one of a block, which follows the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 -- The distinct-paths subcolumn of a `JSON` column holds the paths in the first row of a block and nothing in the other rows.
 -- A `JSON` column omitted from the part (all values are the default) must be filled the same way.
 

@@ -1,0 +1,3 @@
+database replicas	0
+table replicas	['r_keep']
+sorting key	k

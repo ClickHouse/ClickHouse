@@ -3,6 +3,9 @@
 -- A shard's partial aggregation in order, with GROUP BY keys longer than the sorted prefix, must not run the
 -- GROUP BY top-K heap: it skipped whole blocks of keys and made AggregatingInOrderTransform abort.
 
+-- Disable force_primary_key_reverse_order: the reference pins `AggregationTopKRowsSkipped`, which depends on the order rows are read in, i.e. on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_top_k_in_order;
 CREATE TABLE t_top_k_in_order (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_top_k_in_order SELECT number, number FROM numbers(10000);

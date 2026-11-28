@@ -3,6 +3,9 @@
 -- hint's non-nullable result type threw, so wrapping a working predicate in `indexHint` - documented
 -- as a row-level no-op - turned the query into an exception.
 
+-- Disable force_primary_key_reverse_order: the reference pins the granule counts, which depend on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_hint_null;
 CREATE TABLE t_hint_null (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 10;
 INSERT INTO t_hint_null SELECT number FROM numbers(100);
