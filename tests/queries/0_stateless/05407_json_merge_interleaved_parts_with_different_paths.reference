@@ -1,0 +1,9 @@
+t_json_merge_ranges	1
+t_json_merge_rows	1
+t_json_merge_rows_vertical	1
+rows	8000	8000
+rows_vertical	8000	8000
+ranges	8000	8000
+rows	8	1
+rows_vertical	8	1
+ranges	8	1
