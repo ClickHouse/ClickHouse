@@ -593,7 +593,14 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
     std::vector<UUID> entity_uuids;
     entity_uuids.reserve(entity_uuid_strs.size());
     for (const String & entity_uuid_str : entity_uuid_strs)
-        entity_uuids.emplace_back(parseUUID(entity_uuid_str));
+    {
+        UUID uuid;
+        if (tryParse(uuid, entity_uuid_str) && toString(uuid) == entity_uuid_str)
+            entity_uuids.emplace_back(uuid);
+        else
+            LOG_WARNING(&Poco::Logger::get(storage_name), "Ignoring node {}/{}: its name is not the id of an access entity",
+                zookeeper_uuids_path, entity_uuid_str);
+    }
 
     if (all)
     {
