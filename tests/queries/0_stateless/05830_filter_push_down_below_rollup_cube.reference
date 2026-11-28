@@ -1,0 +1,116 @@
+rollup, first key
+Condition: (id in [4, 4])
+4	0	78
+4	0	174
+4	1	38
+4	2	58
+cube, first key
+Condition: (id in [4, 4])
+4	0	78
+4	0	174
+4	1	38
+4	2	58
+cube, second key
+Condition: (k in [2, 2])
+0	2	70
+0	2	610
+1	2	52
+2	2	34
+3	2	76
+4	2	58
+5	2	40
+6	2	82
+7	2	64
+8	2	46
+9	2	88
+range
+Condition: and((id in (-Inf, 4]), (id in [3, +Inf)))
+3	0	36
+3	0	168
+3	1	56
+3	2	76
+4	0	78
+4	0	174
+4	1	38
+4	2	58
+string key
+Condition: and((id in [4, 4]), (s in [\'a\', \'a\']))
+a	4	102
+having with grouping
+Condition: (id in [4, 4])
+4	0	1	174
+disjunction with an aggregate
+Condition: or((id in [5, 5]), (id in [4, 4]))
+4	0	174
+5	0	180
+having, then where
+Condition: and((id in [4, 4]), (k in [2, 2]))
+4	2	58
+the condition has the name of a column below the step
+1	18
+2	18
+1	1	2
+2	1	2
+3	1	2
+0	3	12
+0	4	12
+1	3	12
+1	4	12
+1	1	1	2
+only the conjunct that rejects the subtotal value
+Condition: (id in [4, 4])
+4	0	78
+4	0	174
+4	2	58
+with totals
+4	0	78
+4	0	174
+4	1	38
+4	2	58
+
+0	0	1770
+not pushed: the filter keeps the subtotal value
+Condition: true
+0	0	30
+0	0	150
+0	0	1770
+0	1	50
+0	2	70
+	0	60
+	0	150
+	0	420
+	0	1770
+	1	156
+not pushed: two keys in one conjunct
+Condition: true
+3	2	76
+4	1	38
+5	0	60
+5	0	180
+not pushed: group_by_use_nulls
+Condition: true
+4	0	78
+4	1	38
+4	2	58
+4	\N	174
+only the conditions that cannot throw, the whole filter is on the keys
+Condition: and((k not in [1, 1]), (id in [4, 4]))
+4	2	58
+not pushed: a condition that can throw after a condition on an aggregate
+Condition: (id in [4, 4])
+4	2	58
+4	2	58
+2	1
+2	1
+not pushed: a condition that can throw on a constant key
+not pushed: a filter with side effects
+Condition: true
+1	40
+1	40
+not pushed: a condition that reads the representation of a key
+1	10
+1	10
+1	10
+1	10
+1	10
+1	10
