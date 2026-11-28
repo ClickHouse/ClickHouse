@@ -313,8 +313,9 @@ bool patchSplitsWithRead(const DataPartPtr & original_part, const PatchPartInfoF
     switch (patch.mode)
     {
         case PatchMode::Merge:
-            /// Its ranges are those of the rows the range of the part takes.
-            return true;
+            /// Its ranges are those of the rows the range of the part takes, but a granule of a sparse patch can take the
+            /// rows of all the ranges.
+            break;
         case PatchMode::Join:
             return false;
         case PatchMode::MergeOnKey:
@@ -350,7 +351,7 @@ bool patchSplitsWithRead(const DataPartPtr & original_part, const PatchPartInfoF
                 taken_from_range = 0;
             }
         }
-        for (const auto & range : getRangesInPatchPartMergeOnKey(original_part, patch, piece))
+        for (const auto & range : getRangesInPatchPart(original_part, patch, piece))
         {
             bounds.emplace_back(range.begin, 1);
             bounds.emplace_back(range.end, -1);

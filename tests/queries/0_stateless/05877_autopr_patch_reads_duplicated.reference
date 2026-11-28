@@ -16,3 +16,6 @@ patch_dup_one_granule_3_disabled	0	1
 patch_dup_small_read_1_collect	0	0
 patch_dup_small_read_2_at_default	1	0
 patch_dup_small_read_3_disabled	0	1
+patch_dup_sparse_merge_1_collect	0	0
+patch_dup_sparse_merge_2_at_default	1	0
+patch_dup_sparse_merge_3_disabled	0	1
