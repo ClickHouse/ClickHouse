@@ -10431,11 +10431,13 @@ When the setting is enabled, the analyzer additionally:
   a table created with `CREATE TABLE ... AS f(...)` is read), where `a.b` is always table `b` of database `a`,
   except in the query argument of table functions `view`, `viewIfPermitted`, `eval`, `obfuscate`,
   `explain` and `executable` that such SQL calls. Nor is it applied to a table that an engine reads
-  by its stored name: a table of a `Merge` table or of the `merge` table function, and the table that
+  by its stored name: a table of a `Merge` table or of the `merge` table function, the table that
+  the `loop` table function reads by its name, and the table that
   a `Distributed` table or the `remote` / `cluster` table functions read from a shard that the initiator
   plans itself (its local replica with `prefer_localhost_replica`, or a shard that gets a serialized
   query plan). A shard that receives the query as text reads it with its own current database. A filter
-  from `additional_table_filters` applied to such a table is read as written too. A `Buffer` table over
+  from `additional_table_filters` applied to such a table is read as written too. For `loop`, so is
+  a filter from `additional_result_filter`. A `Buffer` table over
   such a table (for example, over a `Distributed` table) reads the rows it still holds through a query
   generated from the calling one, and table names in that query are read as written too.
   When `parallel_distributed_insert_select` runs an `INSERT ... SELECT` from a `Distributed` table (or from

@@ -3360,8 +3360,9 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
     """
     A `Merge` child and the local shard of a `Distributed` table are read through generated SQL
     which names the table as `db`.`table`; the name is read as written, not also as table
-    `db.table` of the current database. The input query of an `Executable` table is read as
-    written too, while that of the `executable` table function is a part of the calling query.
+    `db.table` of the current database. The table of the `loop` table function is read the same way
+    on every pass. The input query of an `Executable` table is read as written too, while that of
+    the `executable` table function is a part of the calling query.
     An `INSERT ... SELECT` between `Distributed` tables runs a rewritten query on the local replica,
     and the tables of that query are read as written too.
     A `Buffer` table over a `Distributed` table analyzes the printed query again for the rows
@@ -3440,6 +3441,17 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
             node1.query(f"USE {CATALOG_NAME}; SELECT count() FROM merge('default', '^({L}|{D})$')", settings=on)
         )
         assert result == 2, f"`Merge` over the table and a `Distributed` table over it: expected 2 rows, got {result}"
+
+        # `loop` names its table in a query generated on every pass
+        for loop_argument in (f"'default', '{L}'", f"default.{L}"):
+            result = node1.query(
+                f"USE {CATALOG_NAME}; SELECT symbol FROM loop({loop_argument}) LIMIT 1", settings=on
+            ).strip()
+            assert result == "a", f"`loop({loop_argument})` must read the database table: {result}"
+        result = node1.query(
+            f"USE {CATALOG_NAME}; SELECT symbol FROM loop('{CATALOG_NAME}', 'default.{L}') LIMIT 1", settings=on
+        ).strip()
+        assert result == "kek", f"`loop` over the catalog table: {result}"
 
         # the user can read the catalog table but not `default.L`
         node1.query(f"DROP USER IF EXISTS {user}")
