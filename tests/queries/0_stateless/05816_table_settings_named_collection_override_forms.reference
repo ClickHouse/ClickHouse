@@ -1,0 +1,9 @@
+--- the format each table uses
+kafka_expression_key	JSONEachRow	1
+kafka_identifier_value	CSV	1
+kafka_literal_key	TSV	1
+kafka_number_value	CSV	1
+--- the stored definition keeps the key of an expression as a literal
+\'kafka_format\' = \'JSONEachRow\'
+--- a number given to a string setting
+123	1

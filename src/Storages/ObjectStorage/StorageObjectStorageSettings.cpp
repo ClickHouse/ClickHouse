@@ -7,6 +7,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -55,5 +56,7 @@ void StorageObjectStorageSettings::loadFromSettingsChanges(const SettingsChanges
             impl->set(name, value);
     }
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(StorageObjectStorageSettings)
 
 }

@@ -2007,6 +2007,7 @@ void registerStorageGenerateRandom(StorageFactory & factory)
     {
         .supports_settings = true,
         .has_builtin_setting_fn = GenerateRandomSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = enumerateCompiledDefaults<GenerateRandomSettings>,
     },
     Documentation{
         .description = R"DOCS_MD(

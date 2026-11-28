@@ -354,12 +354,17 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         collection_copy->markQueryOverridden(key);
         collection_copy->setOrUpdate<String>(key, value_string, {});
 
-        /// The definition of a table keeps the value an expression had when the table was created.
+        /// The definition of a table keeps the key and the value an expression had when the table was created, so that
+        /// readers of the definition, such as `system.table_settings`, see them without evaluating anything. A key spelled
+        /// otherwise than its plain name (see `normalizeKey`) stays an expression: the rules that hide secrets in the
+        /// definition compare plain names, and hide the value of a key they cannot read.
         if (dependent_table_id)
         {
-            auto & value_ast = (*it)->as<ASTFunction &>().arguments->children[1];
-            if (!value_ast->as<ASTLiteral>() && !value_ast->as<ASTIdentifier>())
-                value_ast = make_intrusive<ASTLiteral>(value_string);
+            auto & arguments = (*it)->as<ASTFunction &>().arguments->children;
+            if (!arguments[0]->as<ASTLiteral>() && !arguments[0]->as<ASTIdentifier>() && normalizeKey(key) == key)
+                arguments[0] = make_intrusive<ASTLiteral>(key);
+            if (!arguments[1]->as<ASTLiteral>() && !arguments[1]->as<ASTIdentifier>())
+                arguments[1] = make_intrusive<ASTLiteral>(value_string);
         }
     }
 
