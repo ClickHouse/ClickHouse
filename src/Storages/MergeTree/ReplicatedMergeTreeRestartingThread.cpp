@@ -59,6 +59,10 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     check_period_ms = (*storage_settings)[MergeTreeSetting::zookeeper_session_expiration_check_period].totalSeconds() * 1000;
 
     task = storage.getContext()->getSchedulePool()->createTask(storage.getStorageID(), log_name, [this]{ run(); });
+
+    /// Not schedulable until `start`: the attach path calls `run` inline, and a pool execution of
+    /// `run` must not overlap that call.
+    task->deactivate();
 }
 
 void ReplicatedMergeTreeRestartingThread::start(bool schedule)
