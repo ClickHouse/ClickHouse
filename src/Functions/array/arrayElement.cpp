@@ -1,4 +1,5 @@
 #include <base/arithmeticOverflow.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
@@ -62,6 +63,17 @@ extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 
 namespace
 {
+
+/// `byteSize` of aggregate states counts only the pointers, and several rows can share one state.
+bool hasAggregateStates(const IColumn & column)
+{
+    bool found = typeid_cast<const ColumnAggregateFunction *>(&column) != nullptr;
+    column.forEachSubcolumnRecursively([&](const IColumn & subcolumn)
+    {
+        found = found || typeid_cast<const ColumnAggregateFunction *>(&subcolumn) != nullptr;
+    });
+    return found;
+}
 
 enum class ArrayElementExceptionMode : uint8_t
 {
@@ -1557,34 +1569,75 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
     if (!col_array)
         return nullptr;
 
-    auto res = result_type->createColumn();
-
     size_t rows = input_rows_count;
     const IColumn & array_elements = col_array->getData();
     size_t array_size = array_elements.size();
 
-    auto execute = [&](auto && insert_value, auto && insert_default)
+    if (rows == 0)
+        return result_type->createColumn();
+
+    static constexpr UInt64 no_element = std::numeric_limits<UInt64>::max();
+
+    /// Appending a default to a copy of shared aggregate states copies the states, so insert the rows one by one.
+    /// The default after all elements needs a position, which an array of the maximum size of empty tuples has not.
+    const bool copy_all_elements = array_elements.byteSize() <= rows * sizeof(UInt64) && !hasAggregateStates(array_elements)
+        && array_size < no_element;
+    const UInt64 default_marker = copy_all_elements ? array_size : no_element;
+    auto positions_column = ColumnUInt64::create(rows);
+    auto & positions = positions_column->getData();
+    size_t num_defaults = 0;
+
+    for (size_t i = 0; i < rows; ++i)
     {
-        for (size_t i = 0; i < rows; ++i)
+        IndexType index = indices[i];
+        if (index > 0 && static_cast<size_t>(index) <= array_size)
         {
-            IndexType index = indices[i];
-            if (index > 0 && static_cast<size_t>(index) <= array_size)
-            {
-                size_t j = index - 1;
-                insert_value(j);
-                builder.update(j);
-            }
-            else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
-            {
-                size_t j = array_size - common::negateIgnoreOverflow(static_cast<size_t>(index));
-                insert_value(j);
-                builder.update(j);
-            }
-            else
-            {
+            size_t j = index - 1;
+            positions[i] = j;
+            builder.update(j);
+        }
+        else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
+        {
+            size_t j = array_size - common::negateIgnoreOverflow(static_cast<size_t>(index));
+            positions[i] = j;
+            builder.update(j);
+        }
+        else
+        {
+            positions[i] = default_marker;
+            ++num_defaults;
+            builder.update();
+        }
+    }
+
+    if (num_defaults == 0)
+        return array_elements.index(*positions_column, rows);
+
+    if (num_defaults == rows)
+    {
+        auto res = result_type->createColumn();
+        res->insertManyDefaults(rows);
+        return res;
+    }
+
+    if (copy_all_elements)
+    {
+        auto source = result_type->createColumn();
+        source->insertRangeFrom(array_elements, 0, array_size);
+        source->insertDefault();
+        return source->index(*positions_column, rows);
+    }
+
+    /// A copy of the selected elements can be as large as the result, so insert the rows one by one.
+    auto res = result_type->createColumn();
+    auto insert_rows = [&](auto && insert_value, auto && insert_default)
+    {
+        for (const auto position : positions)
+        {
+            if (position == no_element)
                 insert_default();
-                builder.update();
-            }
+            else
+                insert_value(position);
         }
     };
 
@@ -1606,7 +1659,7 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
             auto & result_offsets = result_arrays->getOffsets();
             /// Keep range insertion for the first nonempty copy and its initial allocation.
             bool copied_data = false;
-            execute(
+            insert_rows(
                 [&](size_t j)
                 {
                     const size_t offset = source_offsets[static_cast<ssize_t>(j) - 1];
@@ -1627,8 +1680,7 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
         }
     }
 
-    execute([&](size_t j) { res->insertFrom(array_elements, j); }, [&] { res->insertDefault(); });
-
+    insert_rows([&](size_t j) { res->insertFrom(array_elements, j); }, [&] { res->insertDefault(); });
     return res;
 }
 

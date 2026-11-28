@@ -302,7 +302,10 @@ void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t sta
                         "in ColumnAggregateFunction::insertRangeFrom method (data.size() = {}).",
                         toString(start), toString(length), toString(from_concrete.data.size()));
 
-    if (force_data_ownership || (!empty() && src.get() != &from_concrete))
+    /// `from` is a view of our source: its states are already kept alive by `src`.
+    const bool same_source = src && src == from_concrete.src;
+
+    if (force_data_ownership || (!empty() && src.get() != &from_concrete && !same_source))
     {
         /// Must create new states of aggregate function and take ownership of it,
         ///  because ownership of states of aggregate function cannot be shared for individual rows,
@@ -314,8 +317,12 @@ void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t sta
     }
     else
     {
-        /// Keep shared ownership of aggregation states.
-        src = from_concrete.getPtr();
+        /// Keep shared ownership of aggregation states. Hold the source of a view rather than the view itself,
+        /// so that later views of the same source still match.
+        if (from_concrete.src && !same_source)
+            src = from_concrete.src;
+        else if (!same_source)
+            src = from_concrete.getPtr();
 
         size_t old_size = data.size();
         data.resize(old_size + length);
@@ -844,7 +851,11 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max, size_t /*sta
 ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 {
     auto res = create(func, concatArenas(foreign_arenas, my_arena), version);
-    res->src = getPtr();
+    /// A view of a view refers to the owner of the states, so all views of the same states have the same `src`.
+    if (src)
+        res->src = src;
+    else
+        res->src = getPtr();
     /// The view refers to the same states, so it must keep the state version:
     /// the version affects how the states are serialized (e.g. in `groupArray` over a state column).
     res->version = version;
