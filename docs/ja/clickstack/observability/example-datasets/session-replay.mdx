@@ -1,0 +1,223 @@
+---
+slug: /clickstack/observability/example-datasets/session-replay
+title: 'セッションリプレイのデモ'
+description: 'ClickHouse オブザーバビリティでセッションリプレイを利用できるよう、Web アプリケーションをインストルメントする方法を紹介するインタラクティブなデモアプリケーション'
+doc_type: 'guide'
+keywords: ['clickstack', 'session replay', 'browser sdk', 'demo', 'observability', 'instrumentation']
+sidebarTitle: 'セッションリプレイのデモ'
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<Note>
+  以下のインストルメンテーション例では `@clickhouse/clickstack-browser` を使用しています。デモリポジトリには現在もレガシーのブラウザー SDK がバンドルされており、[SDK の移行](https://github.com/ClickHouse/clickstack-session-replay-demo/pull/2)は保留中です。リポジトリが更新されるまでは、クローンして実行するワークフローではこのバンドル済みの SDK が使用されます。
+</Note>
+
+<Info>
+  **概要**
+
+  このガイドでは、ブラウザー SDK と、完全マネージド型またはセルフマネージドの ClickHouse オブザーバビリティを使用して、Web アプリケーションをセッションリプレイ向けにインストルメントする手順を説明します。事前に生成されたデータを読み込む他のサンプルデータセットとは異なり、このデモでは対話型のアプリケーションを操作することで、ご自身でセッションデータを生成します。
+
+  所要時間: 10〜15 分
+</Info>
+
+## 概要 {#overview}
+
+[セッションリプレイのデモアプリケーション](https://github.com/ClickHouse/clickstack-session-replay-demo)は、バニラ JavaScript で構築されたドキュメントエクスプローラーです。セッションリプレイのインストルメンテーションがいかに少ないコードで済むかを示しており、script タグ 1 つと初期化呼び出し 1 回だけで、ユーザー操作が自動的に収集されます。
+
+このリポジトリには 2 つのブランチがあります。
+
+* **`main`** — 計装済みで、すぐに使用可能
+* **`pre-instrumented`** — インストルメンテーションを含まないクリーンなバージョン。追加すべき箇所がコードコメントで示されています
+
+本ガイドでは、まず `main` ブランチでセッションリプレイの動作を確認し、続いてインストルメンテーションのコードを順に解説します。これにより、同じパターンを独自のアプリケーションにも適用できるようになります。
+
+セッションリプレイの概要と ClickStack における位置付けについては、[セッションリプレイ](/ja/clickstack/observability/features/session-replay)の機能ページを参照してください。
+
+## 前提条件 {#prerequisites}
+
+* Docker がインストール済みで実行中であり、Docker Compose が利用可能であること
+* デモアプリ用にポート 3000 が使用可能であること
+* 完全マネージド型またはセルフマネージドの ClickHouse オブザーバビリティ サービスが既に用意されていること
+* ブラウザから、以下で設定するテレメトリーエンドポイントへネットワークアクセスできること
+
+## デモの実行 {#running-the-demo}
+
+<Steps>
+  <Step title="リポジトリをクローンする" id="clone-repository">
+    ```shell
+    git clone https://github.com/ClickHouse/clickstack-session-replay-demo
+    cd clickstack-session-replay-demo
+    ```
+  </Step>
+
+  <Step title="接続を設定する" id="configure-connection">
+    デプロイメントモードを選択します。
+
+    <Tabs>
+      <Tab title="完全マネージド型">
+        <BetaBadge label="ベータ版" />
+
+        既存の[完全マネージド型サービス](/ja/clickstack/observability/getting-started)が必要です。インジェスト用のcollectorはClickHouseが提供します。
+
+        ClickHouse オブザーバビリティのサービスで **Team Settings → Data → Managed Telemetry** を開き、**OTLP HTTP endpoint** と **API key** をコピーします。
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![マスクされたOTLP HTTPエンドポイントとAPIキーが表示されたManaged Telemetry画面](/images/clickstack/getting-started/observability-managed-telemetry.png)
+          </Frame>
+        </div>
+
+        `CLICKSTACK_UI_URL` には、マネージドサービスのUIのURLを設定します。リプレイを直接開けるようにするには、**Client Sessions** を開いた状態のブラウザーのURLをコピーしてください。以下のプレースホルダーを実際の接続情報に置き換え、ターミナルで次のコマンドを実行します。
+
+        ```shell
+        export CLICKSTACK_OTEL_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+        export CLICKSTACK_API_KEY='Bearer YOUR_API_KEY'
+        export CLICKSTACK_UI_URL='YOUR_OBSERVABILITY_UI_URL'
+        ```
+
+        `https://` プレフィックスは残し、`/v1/traces` のようなシグナルパスは含めないでください。完全マネージド型のインジェストでは、上記のように `Bearer ` プレフィックスを付けてください。
+
+        `CLICKSTACK_UI_URL` はデモの **Open Observability** リンクの遷移先を指定するもので、テレメトリーのインジェスト用エンドポイントとは別物です。
+
+        サーバーはテレメトリーのエンドポイントとAPIキーをブラウザー SDKに渡します。インジェスト用のキーはブラウザー上から参照できてしまうため、このデモにはテスト用のサービスを使用してください。
+      </Tab>
+
+      <Tab title="セルフマネージド">
+        既存の[セルフマネージドサービス](/ja/clickstack/self-configured/getting-started/managed)と、そこに接続された稼働中のClickStack OpenTelemetryコレクターが必要です。接続手順については [OpenTelemetry によるデータの取り込み](/ja/clickstack/observability/ingesting-data/opentelemetry#installing-otel-collector-managed-self-configured) を、collectorの起動方法については[デプロイメントガイド](/ja/clickstack/self-configured/deployment/managed#start-a-collector-existing)を参照してください。
+
+        collectorのOTLP HTTPエンドポイントにブラウザーからアクセスでき、かつCORSで `http://localhost:3000` が許可されている必要があります。また、UIのクライアントセッションが新しいSDKの `session.id` 属性に対応している必要があります。詳しくは[SDK互換性要件](https://github.com/ClickHouse/clickstack-browser#clickstack-versions)を参照してください。
+
+        `CLICKSTACK_OTEL_ENDPOINT` には、collectorのOTLP HTTPエンドポイントを `/v1/traces` のようなシグナルパスを付けずに設定します。`CLICKSTACK_UI_URL` には、セルフマネージドサービスのUIからコピーした **Client Sessions** のURLを設定します。
+
+        ```shell
+        export CLICKSTACK_OTEL_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+        export CLICKSTACK_API_KEY='YOUR_COLLECTOR_TOKEN'
+        export CLICKSTACK_UI_URL='YOUR_CLIENT_SESSIONS_URL'
+        ```
+
+        collectorのreceiverに設定済みの認証トークンを使用します。`OTLP_AUTH_TOKEN` で保護されたClickStack コレクターの場合は、`Bearer` プレフィックスを付けずにその値をそのまま使用してください。receiverで認証が不要な場合は、`CLICKSTACK_API_KEY` に空文字列を設定します。ここにClickHouseデータベースのパスワードを使用しないでください。
+
+        インジェスト用トークンはブラウザー SDKに渡されるため、ブラウザー上から参照できます。一方、collectorが使用するClickHouseデータベースの認証情報はcollector側にとどまります。
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="デモアプリケーションを起動する" id="start-demo-app">
+    リポジトリのディレクトリで、接続用の変数をエクスポートしたのと同じ端末から次のコマンドを実行します。
+
+    ```shell
+    docker compose --profile demo up --build --no-deps demo-app
+    ```
+
+    `--no-deps` を指定すると、設定済みのテレメトリーエンドポイントを使用してデモアプリのみが起動します。リポジトリに同梱されているローカルの ClickStack サービスは起動しません。
+
+    ブラウザーで [http://localhost:3000](http://localhost:3000) を開き、アプリを操作してみてください。トピックの検索、カテゴリでのフィルタ、コード例の表示、項目のブックマークなどを行えます。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![セッションリプレイのデモアプリ](/images/clickstack/session-replay/demo-app.webp)
+      </Frame>
+    </div>
+
+    ブラウザー SDK がセッションを記録し、設定済みのテレメトリーエンドポイントに送信します。
+  </Step>
+
+  <Step title="セッションリプレイを表示" id="view-session-replay">
+    デモで **Open Observability** を選択し、サービスで **Client Sessions** を開いて、テストを実施した時間帯を含む時間範囲 (例: **Last 15 minutes**) を選択します。デモを使用した時刻に一致する匿名セッションを探してください。SDK はこのセッションをサービス名 `clickhouse-session-replay-demo` で記録します。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse オブザーバビリティのサイドバーで Client Sessions を選択し、記録されたセッションが一覧表示されている画面](/images/clickstack/session-replay/observability-client-sessions.png)
+      </Frame>
+    </div>
+
+    セッションを開き、**Play** を選択すると、記録された操作が再生されます。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse オブザーバビリティでの Documentation Explorer のセッションリプレイ](/images/clickstack/session-replay/observability-session-replay.png)
+      </Frame>
+    </div>
+
+    **Highlighted** モードと **All Events** モードを切り替えると、タイムラインに表示される詳細度を調整できます。
+  </Step>
+</Steps>
+
+## インストルメンテーション {#instrumentation}
+
+このデモアプリケーションを見ると、セッションリプレイを有効にするのに必要なコードがいかに少ないかがわかります。アプリケーションに 2 箇所追加するだけです。以下の例では、新しい ClickStack Browser SDK を使用しています。
+
+**1. SDK を読み込む (`app/public/index.html`):**
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js" integrity="sha384-NW4JhbuY4Thx4fMuqFwKvifcPn7ad9dJ7DU/MTxhkoHeadG27i4F38Yo1Gz6y0WA" crossorigin="anonymous"></script>
+```
+
+**2. ブラウザー SDK の初期化 (`app/public/js/app.js`) ：**
+
+```javascript
+window.ClickStack.init({
+  endpoint: window.CLICKSTACK_CONFIG.endpoint,
+  apiKey: window.CLICKSTACK_CONFIG.apiKey,
+  serviceName: 'clickhouse-session-replay-demo',
+  console: 'debug',
+});
+```
+
+`app/server.js` は、環境変数 `CLICKSTACK_OTEL_ENDPOINT`、`CLICKSTACK_API_KEY`、`CLICKSTACK_UI_URL` の値をもとに `window.CLICKSTACK_CONFIG` を提供します。SDK はエンドポイントと APIキーを使用し、デモのリンクは UI の URL を使用します。SDK は、アプリケーションのビジネスロジックに手を加えることなく、セッションリプレイ、コンソールログ、ネットワークリクエスト、エラーを収集します。
+
+テキストと入力値はデフォルトでマスキングされます。マスキングの設定を変更する前に、[ブラウザー SDK のプライバシー制御](/ja/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy)を確認してください。
+
+### 実際に試してみる {#try-it-yourself}
+
+アプリをゼロからインストルメントするには、`Ctrl+C` で実行中のデモを停止し、`pre-instrumented` ブランチに切り替えます。
+
+```shell
+git checkout pre-instrumented
+```
+
+このブランチには、ブラウザー SDK を有効にしていない状態の同じアプリケーションが含まれています。`app/public/index.html` と `app/public/js/app.js` 内のコードコメントに、上記 2 つのスニペットを追加する箇所が記載されています。先ほど設定した接続用の変数はそのままにして、アプリを再ビルドして起動します:
+
+```shell
+docker compose --profile demo up --build --no-deps demo-app
+```
+
+ブラウザでデモを再読み込みして操作し、新しいセッションを生成します。
+
+## トラブルシューティング {#troubleshooting}
+
+### セッションが表示されない {#sessions-not-appearing}
+
+1. ブラウザのコンソールにエラーが出ていないか確認します
+2. デモアプリが実行中であることを確認します: `docker compose ps demo-app`
+3. アプリの起動に使用した端末で `CLICKSTACK_OTEL_ENDPOINT` と `CLICKSTACK_API_KEY` が設定されていることを確認します。これらを変更した場合は、起動コマンドを再実行し、ブラウザのタブを再読み込みしてください。
+4. セルフマネージドの場合は、collector のエクスポートエラー、CORS の設定、および前述の SDK の互換性要件を確認します
+5. クライアントセッションビューで時間範囲を調整します (例: **Last 15 minutes**)
+6. ブラウザをハードリフレッシュします: `Cmd+Shift+R` (Mac) または `Ctrl+Shift+R` (Windows/Linux)
+
+### 401 Unauthorized エラー {#401-errors}
+
+APIキーが正しく設定されていません。次の点を確認してください。
+
+1. デプロイメントモードに応じた値を使って、端末で `CLICKSTACK_API_KEY` をエクスポートしていること
+2. エクスポートを実行したのと**同じ端末**でデモアプリを起動していること
+3. 完全マネージド型の場合は、**チーム設定 → Data → Managed Telemetry** で取得したインジェスト API key を、`Bearer ` プレフィックスを付けて使用していること。セルフマネージドの場合は、collector の receiver トークンをプレフィックスなしで使用していること。
+
+## クリーンアップ {#cleanup}
+
+デモ用のブラウザタブを閉じてブラウザからのテレメトリー送信を停止し、アプリを実行している端末で `Ctrl+C` を押します。別の端末から停止するには、リポジトリのディレクトリで次のコマンドを実行します。
+
+```bash
+docker compose stop demo-app
+```
+
+これによりローカルアプリは停止しますが、サービスに取り込み済みのテレメトリーはそのまま残ります。
+
+## 詳細情報 {#learn-more}
+
+* [セッションリプレイ](/ja/clickstack/observability/features/session-replay) — 機能の概要、SDK オプション、プライバシー制御
+* [ブラウザー SDK リファレンス](/ja/clickstack/observability/ingesting-data/sdks/browser) — SDK オプションの一覧と詳細設定
+* [はじめに (完全マネージド型) ](/ja/clickstack/observability/getting-started) — 最初のデータソースを接続する
+* [はじめに (セルフマネージド) ](/ja/clickstack/self-configured/getting-started/managed) — collector を接続し、最初のデータを取り込む
+* [すべてのサンプルデータセット](/ja/clickstack/observability/example-datasets) — その他のサンプルデータセットとガイド

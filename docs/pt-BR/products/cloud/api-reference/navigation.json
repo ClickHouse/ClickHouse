@@ -1,9 +1,9 @@
 [
   {
-    "group": "Organização",
+    "group": "Organization",
     "pages": [
       {
-        "group": "Organização",
+        "group": "Organization",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -38,7 +38,7 @@
         ]
       },
       {
-        "group": "Faturamento",
+        "group": "Billing",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
           "products/cloud/api-reference/billing/inference-usage-cost-get",
@@ -47,7 +47,7 @@
         ]
       },
       {
-        "group": "Gerenciamento de usuários",
+        "group": "User management",
         "pages": [
           "products/cloud/api-reference/user-management/whoami-get",
           "GET /v1/organizations/{organizationId}/members",
@@ -61,7 +61,7 @@
         ]
       },
       {
-        "group": "Gerenciamento de funções",
+        "group": "Role Management",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -90,10 +90,10 @@
     ]
   },
   {
-    "group": "Serviço",
+    "group": "Service",
     "pages": [
       {
-        "group": "Serviço",
+        "group": "Service",
         "pages": [
           "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
@@ -175,7 +175,7 @@
     ]
   },
   {
-    "group": "Chaves de API",
+    "group": "API keys",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",

@@ -8,7 +8,7 @@ keywords: ['IP-фильтры', 'IP Access List']
 ---
 
 <div id="setting-ip-filters">
-  ## Настройка IP-фильтров
+  ## Настройка IP-фильтров {#setting-ip-filters}
 </div>
 
 IP Access List фильтруют трафик к сервисам ClickHouse или ключам API, указывая, каким исходным адресам разрешено подключаться. Эти списки настраиваются отдельно для каждого сервиса и каждого ключа API. Их можно настроить при создании сервиса или ключа API, а также позже.
@@ -20,16 +20,14 @@ IP Access List фильтруют трафик к сервисам ClickHouse и
 </Warning>
 
 <div id="prepare">
-  ## Подготовка
+  ## Подготовка {#prepare}
 </div>
 
 Прежде чем начать, соберите IP-адреса или диапазоны, которые нужно добавить в IP Access List. Учитывайте удалённых сотрудников, места дежурств, VPN и т. д. В интерфейсе IP Access List можно указать отдельные адреса и адреса в нотации CIDR.
 
 Нотация Classless Inter-domain Routing (CIDR) позволяет задавать диапазоны IP-адресов меньше, чем при традиционных масках подсети классов A, B или C (8, 16 или 24). [ARIN](https://account.arin.net/public/cidrCalculator) и ряд других организаций предоставляют калькуляторы CIDR, если они вам нужны. Если вы хотите узнать больше о нотации CIDR, см. RFC [Classless Inter-domain Routing (CIDR)](https://www.rfc-editor.org/rfc/rfc4632.html).
 
-<div id="create-or-modify-an-ip-access-list">
-  ## Создать или изменить IP Access List
-</div>
+## Создать или изменить IP Access List {#create-or-modify-an-ip-access-list}
 
 <Info>
   **Применимо только к подключениям вне PrivateLink**
@@ -63,31 +61,21 @@ IP Access List фильтруют трафик к сервисам ClickHouse и
 На этом снимке экрана показан IP Access List, который разрешает трафик из диапазона IP-адресов, обозначенного как &quot;NY Office range&quot;:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Существующий IP Access List в ClickHouse Cloud](/images/cloud/security/ip-filtering-after-provisioning.webp)
-
-</Frame>
-
+  <Frame>
+    ![Существующий IP Access List в ClickHouse Cloud](/images/cloud/security/ip-filtering-after-provisioning.webp)
+  </Frame>
 </div>
 
-<div id="possible-actions">
-  ### Возможные действия
-</div>
+### Возможные действия {#possible-actions}
 
 1. Чтобы добавить новую запись, можно использовать **+ Add new IP**
 
 В этом примере добавляется один IP-адрес с описанием `London server`:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Добавление одного IP-адреса в IP Access List в ClickHouse Cloud](/images/cloud/security/ip-filter-add-single-ip.webp)
-
-</Frame>
-
+  <Frame>
+    ![Добавление одного IP-адреса в IP Access List в ClickHouse Cloud](/images/cloud/security/ip-filter-add-single-ip.webp)
+  </Frame>
 </div>
 
 2. Удаление существующей записи
@@ -105,7 +93,7 @@ IP Access List фильтруют трафик к сервисам ClickHouse и
 Чтобы применить внесённые изменения, необходимо нажать **Save**.
 
 <div id="verification">
-  ## Проверка
+  ## Проверка {#verification}
 </div>
 
 После создания фильтра проверьте, что к сервису можно подключиться из разрешённого диапазона и что подключения из-за его пределов отклоняются. Для проверки можно использовать простую команду `curl`:
@@ -133,7 +121,7 @@ Ok.
 ```
 
 <div id="limitations">
-  ## Ограничения
+  ## Ограничения {#limitations}
 </div>
 
 * В настоящее время IP Access List поддерживают только IPv4

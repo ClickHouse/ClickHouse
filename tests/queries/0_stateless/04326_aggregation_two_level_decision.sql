@@ -4,6 +4,8 @@
 
 -- Pin settings necessary for two-level conversion to trigger.
 SET max_threads = 1;
+-- The adaptive aggregator also takes one thread and does not convert to two-level by these thresholds.
+SET enable_adaptive_aggregator = 0;
 SET max_untracked_memory = 0;
 SET max_bytes_before_external_group_by = 1000000000; -- Ensure conversion to two level is enabled even in single threaded cases.
 SET max_bytes_ratio_before_external_group_by = 0;

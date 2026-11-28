@@ -57,6 +57,10 @@ bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const 
 /// Same, resolving a View / MaterializedView storage to the table that would actually be read.
 bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context);
 
+/// Whether concatenating the results of the query run by each replica on its share of the rows gives the result
+/// of the query: it does not aggregate, number, sort, deduplicate, limit or skip rows.
+bool canRunQueryOnEachReplicaShare(const QueryNode & query_node);
+
 /// Find a UNION node whose every child query reads from a table eligible for parallel replicas.
 /// Used for views with UNION ALL where each branch reads from a separate MergeTree table.
 const UnionNode * findTableUnionForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);

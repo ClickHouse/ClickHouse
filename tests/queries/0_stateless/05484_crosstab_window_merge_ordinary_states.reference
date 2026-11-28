@@ -1,4 +1,4 @@
--- each row: window layout equals ordinary layout
+-- each row: -Merge equals -MergeState
 60	0	0	0	0	0	0	0	0	0	0	0	0	0	0
 -- whole partition: window merge, then the plain aggregate
 0	0.158611	0.158611

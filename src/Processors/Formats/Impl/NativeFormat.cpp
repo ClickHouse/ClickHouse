@@ -97,8 +97,14 @@ protected:
     {
         if (chunk)
         {
+            const size_t num_rows = chunk.getNumRows();
             auto block = getPort(PortKind::Main).getHeader();
             block.setColumns(chunk.detachColumns());
+
+            /// A block takes its number of rows from its columns, so without them it has to be told.
+            if (block.columns() == 0)
+                block.setRowsWithoutColumns(num_rows);
+
             writer.write(block);
         }
     }

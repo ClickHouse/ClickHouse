@@ -15,14 +15,14 @@ import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-nginx">
-  ## Intégration à une installation Nginx existante
+  ## Intégration à une installation Nginx existante {#existing-nginx}
 </div>
 
 Cette section explique comment configurer votre installation Nginx existante pour envoyer les logs vers ClickStack en modifiant la configuration du ClickStack OTel collector.
 Si vous souhaitez tester l’intégration avant de configurer votre propre environnement, vous pouvez utiliser notre configuration préconfigurée et des données d’exemple dans la [section suivante](/fr/clickstack/integration-examples/nginx-logs#demo-dataset).
 
 <div id="prerequisites">
-  ##### Prérequis
+  ##### Prérequis {#prerequisites}
 </div>
 
 * Une instance ClickStack en cours d’exécution
@@ -31,15 +31,15 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre envir
 
 <Steps>
   <Step title="Configurer le format des logs Nginx" id="configure-nginx">
-    Commencez par configurer Nginx pour qu&#39;il génère des logs au format JSON afin d&#39;en faciliter l&#39;analyse. Ajoutez cette définition du format des logs à votre `nginx.conf` :
+    Commencez par configurer Nginx pour qu&#39;il génère des logs au format JSON afin d&#39;en faciliter l&#39;analyse. Ajoutez cette définition du format des logs à votre nginx.conf :
 
-    Le fichier `nginx.conf` se trouve généralement à l&#39;emplacement suivant :
+    Le fichier `nginx.conf` se trouve généralement à l&#39;emplacement suivant :
 
-    * **Linux (apt/yum)** : `/etc/nginx/nginx.conf`
-    * **macOS (Homebrew)** : `/usr/local/etc/nginx/nginx.conf` ou `/opt/homebrew/etc/nginx/nginx.conf`
-    * **Docker** : la configuration est généralement montée comme volume
+    * **Linux (apt/yum)** : `/etc/nginx/nginx.conf`
+    * **macOS (Homebrew)** : `/usr/local/etc/nginx/nginx.conf` ou `/opt/homebrew/etc/nginx/nginx.conf`
+    * **Docker** : la configuration est généralement montée comme volume
 
-    Ajoutez cette définition du format des logs au bloc `http` :
+    Ajoutez cette définition du format des logs au bloc `http` :
 
     ```nginx
     http {
@@ -66,9 +66,9 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre envir
   </Step>
 
   <Step title="Créer une configuration personnalisée pour l’OTel collector" id="custom-otel">
-    ClickStack vous permet d’étendre la configuration de base de l’OpenTelemetry Collector en montant un fichier de configuration personnalisé et en définissant une variable d’environnement. La configuration personnalisée est fusionnée avec la configuration de base gérée par HyperDX via OpAMP.
+    ClickStack vous permet d’étendre la configuration de base de l’OpenTelemetry Collector en montant un fichier de configuration personnalisé et en définissant une variable d’environnement. La configuration personnalisée est fusionnée avec la configuration de base gérée par l’interface utilisateur de ClickStack via OpAMP.
 
-    Créez un fichier nommé nginx-monitoring.yaml avec la configuration suivante :
+    Créez un fichier nommé nginx-monitoring.yaml avec la configuration suivante :
 
     ```yaml
     receivers:
@@ -100,32 +100,32 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre envir
             - clickhouse
     ```
 
-    Cette configuration :
+    Cette configuration :
 
     * Lit les logs Nginx depuis leurs emplacements standard
     * Analyse les entrées de log JSON
     * Extrait et préserve les horodatages d’origine des logs
-    * Ajoute l’attribut source : Nginx pour le filtrage dans HyperDX
+    * Ajoute l’attribut source : Nginx pour le filtrage dans l’interface utilisateur de ClickStack
     * Achemine les logs vers le ClickHouse exporter via un pipeline dédié
 
     <Note>
       - Vous définissez uniquement de nouveaux receivers et pipelines dans la configuration personnalisée
-      - Les processors (memory&#95;limiter, transform, batch) et exporters (clickhouse) sont déjà définis dans la configuration de base de ClickStack ; vous vous contentez de les référencer par leur nom
+      - Les processors (memory&#95;limiter, transform, batch) et exporters (clickhouse) sont déjà définis dans la configuration de base de ClickStack ; vous vous contentez de les référencer par leur nom
       - L’opérateur time&#95;parser extrait les horodatages du champ time&#95;local de Nginx afin de préserver l’heure d’origine des logs
       - Les pipelines achemine les données de vos receivers vers le ClickHouse exporter via les processors existants
     </Note>
   </Step>
 
   <Step title="Configurer ClickStack pour charger une configuration personnalisée" id="load-custom">
-    Pour activer une configuration personnalisée du collecteur dans votre déploiement ClickStack existant, vous devez :
+    Pour activer une configuration personnalisée du collecteur dans votre déploiement ClickStack existant, vous devez :
 
     1. Monter le fichier de configuration personnalisé à l’emplacement /etc/otelcol-contrib/custom.config.yaml
     2. Définir la variable d’environnement CUSTOM&#95;OTELCOL&#95;CONFIG&#95;FILE=/etc/otelcol-contrib/custom.config.yaml
     3. Monter vos répertoires de logs Nginx pour que le collecteur puisse les lire
 
-    ##### Option 1 : Docker Compose
+##### Option 1 : Docker Compose {#docker-compose}
 
-    Mettez à jour la configuration de votre déploiement ClickStack :
+    Mettez à jour la configuration de votre déploiement ClickStack :
 
     ```yaml
     services:
@@ -140,9 +140,9 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre envir
           # ... other volumes ...
     ```
 
-    ##### Option 2 : Docker Run (image tout-en-un)
+##### Option 2 : Docker Run (image tout-en-un) {#all-in-one}
 
-    Si vous utilisez l&#39;image tout-en-un avec docker run :
+    Si vous utilisez l&#39;image tout-en-un avec docker run :
 
     ```bash
     docker run --name clickstack \
@@ -158,38 +158,30 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre envir
     </Note>
   </Step>
 
-  <Step title="Vérifier les logs dans HyperDX" id="verifying-logs">
-    Une fois la configuration terminée, connectez-vous à HyperDX et vérifiez que les logs remontent bien :
+  <Step title="Vérifier les logs dans l’interface utilisateur de ClickStack" id="verifying-logs">
+    Une fois la configuration terminée, connectez-vous à l&#39;interface utilisateur de ClickStack et vérifiez que les logs remontent bien :
 
     1. Accédez à la vue Search
     2. Définissez la source sur Logs, puis vérifiez que vous voyez des entrées de logs avec des champs tels que request, request&#95;time, upstream&#95;response&#95;time, etc.
 
-    Voici un exemple de ce que vous devriez voir :
+    Voici un exemple de ce que vous devriez voir :
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Vue Log](/images/clickstack/nginx-logs-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Vue Log](/images/clickstack/nginx-logs-search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Vue Log](/images/clickstack/log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Vue Log](/images/clickstack/log-view.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## Jeu de données de démonstration
+  ## Jeu de données de démonstration {#demo-dataset}
 </div>
 
 Pour les utilisateurs qui souhaitent tester l’intégration nginx avant de configurer leurs systèmes de production, nous fournissons un jeu de données d’exemple composé de logs d’accès nginx pré-générés avec des schémas de trafic réalistes.
@@ -201,7 +193,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration nginx avant de conf
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/access.log
     ```
 
-    Le jeu de données comprend :
+    Le jeu de données comprend :
 
     * Des entrées de log avec des schémas de trafic réalistes
     * Divers endpoints et méthodes HTTP
@@ -210,7 +202,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration nginx avant de conf
   </Step>
 
   <Step title="Créer une configuration de collector de test" id="test-config">
-    Créez un fichier nommé `nginx-demo.yaml` avec la configuration suivante :
+    Créez un fichier nommé `nginx-demo.yaml` avec la configuration suivante :
 
     ```yaml
     cat > nginx-demo.yaml << 'EOF'
@@ -245,7 +237,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration nginx avant de conf
   </Step>
 
   <Step title="Exécuter ClickStack avec la configuration de démonstration" id="run-demo">
-    Exécutez ClickStack avec les logs et la configuration de démonstration :
+    Exécutez ClickStack avec les logs et la configuration de démonstration :
 
     ```bash
     docker run --name clickstack-demo \
@@ -257,46 +249,36 @@ Pour les utilisateurs qui souhaitent tester l’intégration nginx avant de conf
     ```
   </Step>
 
-  <Step title="Vérifier les logs dans HyperDX" id="verify-demo-logs">
-    Une fois ClickStack en cours d’exécution :
+  <Step title="Vérifier les logs dans l’interface utilisateur de ClickStack" id="verify-demo-logs">
+    Une fois ClickStack en cours d’exécution :
 
-    1. Ouvrez [HyperDX](http://localhost:8080/) et connectez-vous à votre compte (vous devrez peut-être d’abord en créer un)
+    1. Ouvrez l’[interface utilisateur de ClickStack](http://localhost:8080/) et connectez-vous à votre compte (vous devrez peut-être d’abord en créer un)
     2. Accédez à la Search view et définissez la source sur `Logs`
     3. Définissez l’intervalle de temps sur **2025-10-19 11:00:00 - 2025-10-22 11:00:00**
 
-    Voici ce que vous devriez voir dans la Search view :
+    Voici ce que vous devriez voir dans la Search view :
 
     <Info>
       **Affichage du fuseau horaire**
 
-      HyperDX affiche les timestamps dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent la période du 2025-10-20 11:00:00 au 2025-10-21 11:00:00 UTC. Cet intervalle de temps large garantit que vous verrez les logs de démonstration, quel que soit votre lieu. Une fois les logs affichés, vous pouvez réduire l’intervalle à 24 heures pour obtenir des visualisations plus claires.
+      L’interface utilisateur de ClickStack affiche les timestamps dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent la période du 2025-10-20 11:00:00 au 2025-10-21 11:00:00 UTC. Cet intervalle de temps large garantit que vous verrez les logs de démonstration, quel que soit votre lieu. Une fois les logs affichés, vous pouvez réduire l’intervalle à 24 heures pour obtenir des visualisations plus claires.
     </Info>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Log view](/images/clickstack/nginx-logs-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Log view](/images/clickstack/nginx-logs-search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Log view](/images/clickstack/log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Log view](/images/clickstack/log-view.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## Tableaux de bord et visualisations
-</div>
+## Tableaux de bord et visualisations {#dashboards}
 
 Pour vous aider à commencer à surveiller Nginx avec ClickStack, nous fournissons des visualisations essentielles pour les logs Nginx.
 
@@ -306,29 +288,21 @@ Pour vous aider à commencer à surveiller Nginx avec ClickStack, nous fournisso
   </Step>
 
   <Step title="Importer le tableau de bord préconfiguré" id="import-dashboard">
-    1. Ouvrez HyperDX et accédez à la section Dashboards.
-    2. Cliquez sur &quot;Import Dashboard&quot; dans l’angle supérieur droit, sous les points de suspension.
+    1. Ouvrez l’interface utilisateur de ClickStack et accédez à la section Tableaux de bord.
+    2. Cliquez sur &quot;Importer un tableau de bord&quot; dans l’angle supérieur droit, sous les points de suspension.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Importer le tableau de bord](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Importer un tableau de bord](/images/clickstack/import-dashboard.webp)
+      </Frame>
     </div>
 
-    3. Téléversez le fichier nginx-logs-dashboard.json, puis cliquez sur Finish Import.
+    3. Téléversez le fichier nginx-logs-dashboard.json, puis cliquez sur Terminer l’Import.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Terminer l’importation](/images/clickstack/finish-nginx-logs-import.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Terminer l’Import](/images/clickstack/finish-nginx-logs-import.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -338,23 +312,19 @@ Pour vous aider à commencer à surveiller Nginx avec ClickStack, nous fournisso
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Exemple de tableau de bord](/images/clickstack/nginx-logs-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Exemple de tableau de bord](/images/clickstack/nginx-logs-dashboard.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## Dépannage
+  ## Dépannage {#troubleshooting}
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### La configuration personnalisée ne se charge pas
+  ### La configuration personnalisée ne se charge pas {#troubleshooting-not-loading}
 </div>
 
 * Vérifiez que la variable d’environnement CUSTOM&#95;OTELCOL&#95;CONFIG&#95;FILE est correctement définie
@@ -375,9 +345,7 @@ docker exec <container-name> ls -lh /etc/otelcol-contrib/custom.config.yaml
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml
 ```
 
-<div id="no-logs">
-  ### Aucun log ne s’affiche dans HyperDX
-</div>
+### Aucun log ne s’affiche dans l’interface utilisateur de ClickStack {#no-logs}
 
 * Assurez-vous que nginx écrit des logs au format JSON
 
@@ -404,14 +372,12 @@ docker exec `<container>` cat /etc/otel/supervisor-data/agent.log
 ```
 
 <div id="next-steps">
-  ## Prochaines étapes
+  ## Prochaines étapes {#next-steps}
 </div>
 
 * Configurez des [alertes](/fr/clickstack/features/alerts) pour les métriques critiques (taux d’erreur, seuils de latence)
 * Créez des [tableaux de bord](/fr/clickstack/features/dashboards/overview) supplémentaires pour des cas d’usage spécifiques (surveillance des API, événements de sécurité)
 
-<div id="going-to-production">
-  ## Passage en production
-</div>
+## Passage en production {#going-to-production}
 
 Ce guide utilise l’OpenTelemetry Collector intégré à ClickStack pour une configuration rapide. Pour les déploiements en production, nous vous recommandons d’exécuter votre propre OTel Collector et d’envoyer les données vers le point de terminaison OTLP de ClickStack. Consultez [Envoyer des données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration en production.

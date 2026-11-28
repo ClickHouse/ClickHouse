@@ -1,0 +1,159 @@
+---
+slug: /clickstack/observability/getting-started
+title: 'Primeros pasos con ClickHouse Observability'
+sidebarTitle: 'Primeros pasos'
+description: 'Primeros pasos con ClickHouse Observability, totalmente gestionado'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'primeros pasos', 'totalmente gestionado']
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="Oferta Beta" />
+
+Dé sus primeros pasos con ClickHouse Observability: envíe un evento de prueba y compruebe que está disponible en la interfaz de usuario de observabilidad.
+
+El servicio proporciona un endpoint de telemetría gestionado. Envíe a este endpoint los datos de sus aplicaciones, agentes o de un Colector de OpenTelemetry existente.
+
+Si gestiona su propia canalización de ingestión y su propio esquema, siga la [guía de primeros pasos para entornos autogestionados](/es/clickstack/self-configured/getting-started/managed).
+
+## Antes de comenzar {#before-you-begin}
+
+Necesita un servicio de ClickHouse Observability totalmente gestionado, así como acceso a su endpoint de telemetría y a su clave de API.
+
+### Crear un servicio {#create-a-service}
+
+Si aún no tiene un servicio, comience con [Crear un servicio de ClickHouse](/es/get-started/setup/cloud#1-create-a-clickhouse-service) en la guía de inicio rápido de ClickHouse Cloud. Cuando su servicio esté en ejecución, abra ClickHouse Observability. Si el servicio aún no tiene datos, la página **Primeros pasos** se abrirá automáticamente. Elija una de las tres opciones siguientes para enviar telemetría.
+
+## Configurar ClickHouse Observability {#set-up-clickhouse-observability}
+
+Elija la opción que mejor se adapte a su entorno.
+
+<Tabs>
+  <Tab title="Usar una configuración existente de OpenTelemetry">
+    <div className="ch-image-md">
+      <Frame>
+        ![Cuadro de diálogo Set up OpenTelemetry con las opciones URL, Collector config y Env vars y los datos de conexión enmascarados](/images/clickstack/getting-started/observability-connection-details.png)
+      </Frame>
+    </div>
+
+    Elija esta opción si su aplicación, agente o recolector ya genera datos de OpenTelemetry.
+
+    1. Seleccione **Ver datos de conexión** en la página de primeros pasos.
+
+    2. Copie la configuración correspondiente a su emisor de telemetría. Los datos de conexión ofrecen las opciones **URL**, **Collector config** y **Env vars**.
+
+    3. Configure su emisor para que exporte la telemetría al endpoint administrado con los datos de autenticación proporcionados.
+
+    4. Genere actividad habitual en su aplicación y, a continuación, compruebe que los datos resultantes aparecen en [Búsqueda](/es/clickstack/observability/features/search).
+
+    También puede consultar estos datos de conexión en **Team Settings → Data → Managed Telemetry**.
+
+    <Tip>
+      Si desea hacer una comprobación rápida opcional, seleccione **send a test log** en la página de primeros pasos. El botón envía al instante un log de prueba desde la interfaz de usuario; no verifica la configuración de su aplicación ni de su recolector.
+    </Tip>
+  </Tab>
+
+  <Tab title="Instrumentar con IA">
+    <div className="ch-image-md">
+      <Frame>
+        ![Cuadro de diálogo Set it up with an AI agent que muestra el prompt de instrumentación y las variables de entorno enmascaradas del endpoint y la clave de API](/images/clickstack/getting-started/observability-ai-instrumentation.png)
+      </Frame>
+    </div>
+
+    Elija esta opción si dispone de código de aplicación y desea que su asistente de programación le ayude a añadir instrumentación de OpenTelemetry.
+
+    1. En **Instrumentar con IA**, seleccione **Copy prompt** para abrir el cuadro de diálogo **Set it up with an AI agent**.
+    2. Copie el prompt del cuadro de diálogo y péguelo en un asistente de programación que tenga acceso a su código de aplicación, como Cursor, Copilot o Claude Code.
+    3. Defina `CLICKSTACK_OTLP_ENDPOINT` y `CLICKSTACK_API_KEY` con los valores que aparecen en el cuadro de diálogo. Guárdelos en un archivo `.env` excluido del control de versiones o en su almacén de secretos.
+    4. Revise y aplique la instrumentación sugerida; después, ejecute su aplicación y genere un evento.
+
+    Para aplicar este flujo de trabajo a su propia aplicación, consulte [Instrumentar con IA](/es/clickstack/observability/ingesting-data/sdks/instrument-with-ai).
+
+    Si desea ver un ejemplo completo con código de aplicación y un prompt de instrumentación, consulte la [demo de HackerNews Analyzer](/es/clickstack/observability/example-datasets/instrument-application). En ella se explica paso a paso cómo enviar registros de aplicaciones, trazas, métricas y reproducciones de sesiones del navegador a su servicio administrado.
+  </Tab>
+
+  <Tab title="Seguir guías de configuración">
+    <div className="ch-image-md">
+      <Frame>
+        ![Cuadro de diálogo Send data con guías de configuración que admiten búsqueda para lenguajes, frameworks, infraestructura y recolectores](/images/clickstack/getting-started/observability-setup-guides.png)
+      </Frame>
+    </div>
+
+    Elija esta opción si desea instrucciones para una aplicación o fuente de infraestructura concreta.
+
+    1. Seleccione **Browse setup guides**.
+    2. Elija la guía correspondiente a su lenguaje, framework o infraestructura.
+    3. Siga los pasos de instrumentación y configuración que se indican y, a continuación, genere telemetría desde esa fuente.
+
+    Para ver ejemplos de configuración administrada, empiece por [monitorización de Kubernetes](/es/clickstack/observability/example-datasets/kubernetes), [logs y métricas locales](/es/clickstack/observability/example-datasets/local-data) o la [aplicación HackerNews Analyzer](/es/clickstack/observability/example-datasets/instrument-application). Si desea probar la ingestión sin instrumentar ninguna aplicación, utilice [otelgen](/es/clickstack/observability/example-datasets/otelgen) o [telemetrygen](/es/clickstack/observability/example-datasets/telemetrygen).
+  </Tab>
+</Tabs>
+
+## Verificar la ingestión y comenzar a explorar {#verify-ingestion}
+
+Después de completar la opción elegida, seleccione **Start exploring** para abrir [Búsqueda](/es/clickstack/observability/features/search). Busque un evento que haya generado y confirme que aparece antes de continuar.
+
+En el caso de los logs, seleccione la fuente **Logs** y un intervalo de tiempo que incluya el momento en que envió el evento. En el siguiente ejemplo se muestra un log enviado con el botón **send a test log** de la interfaz de usuario, con `example-service` como nombre del servicio. Expanda un evento para inspeccionar sus atributos.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Búsqueda con un log de prueba de la interfaz de usuario para example-service y sus atributos de evento expandidos](/images/clickstack/getting-started/observability-verify-ingestion.png)
+  </Frame>
+</div>
+
+## Próximos pasos {#next-steps}
+
+### Enviar datos de aplicaciones e infraestructura {#send-application-and-infrastructure-data}
+
+Elija una guía según los datos que desee enviar a ClickHouse Observability:
+
+<CardGroup cols={1}>
+  <Card title="Descripción general de la ingesta de datos" icon="arrow-right-to-bracket" href="/es/clickstack/observability/ingesting-data/overview">
+    Explore las opciones de ingestión y las guías para aplicaciones, recolectores e integraciones.
+  </Card>
+</CardGroup>
+
+<CardGroup cols={2}>
+  <Card title="Instrumentar una aplicación" icon="code" href="/es/clickstack/observability/example-datasets/instrument-application">
+    Instrumente la aplicación HackerNews Analyzer y explore logs, trazas, métricas y reproducción de sesiones.
+  </Card>
+
+  <Card title="Monitorizar Kubernetes" icon="cubes" href="/es/clickstack/observability/example-datasets/kubernetes">
+    Recopile logs y métricas del cluster y explore el Panel de Kubernetes.
+  </Card>
+</CardGroup>
+
+### Explorar datos de muestra {#explore-sample-data}
+
+Use un conjunto de datos de ejemplo para explorar ClickHouse Observability con una telemetría más completa:
+
+<CardGroup cols={2}>
+  <Card title="Logs, trazas y métricas de ejemplo" href="/es/clickstack/observability/example-datasets/sample-data">
+    <img src="/images/clickstack/getting-started/observability-sample-data-payment-errors-chart.png" alt="" />
+
+    Cargue datos de la demo pública y diagnostique un problema.
+  </Card>
+
+  <Card title="Logs y métricas locales" href="/es/clickstack/observability/example-datasets/local-data">
+    <img src="/images/clickstack/observability-local-memory-percentage.png" alt="" />
+
+    Recopile archivos locales y métricas del sistema en macOS o Linux.
+  </Card>
+</CardGroup>
+
+### Generar datos sintéticos {#generate-synthetic-data}
+
+Use un generador para probar la ingestión sin necesidad de una aplicación o un conjunto de datos existentes:
+
+<CardGroup cols={2}>
+  <Card title="Generar datos con otelgen" icon="terminal" href="/es/clickstack/observability/example-datasets/otelgen">
+    Envíe logs, trazas y métricas OTLP sintéticos a su endpoint de telemetría gestionado.
+  </Card>
+
+  <Card title="Generar datos con telemetrygen" icon="terminal" href="/es/clickstack/observability/example-datasets/telemetrygen">
+    Genere señales configurables de OpenTelemetry para probar su servicio administrado.
+  </Card>
+</CardGroup>
+
+Consulte [todos los datos de muestra y demos](/es/clickstack/observability/example-datasets).
