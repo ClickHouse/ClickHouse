@@ -1,0 +1,11 @@
+int8	8
+int128	3
+int256	3
+nullable	3
+keyexpr	4
+tuple	1
+suffix_int	3
+suffix_float	4
+float_gt	4
+float_lt	4
+float_nan	1

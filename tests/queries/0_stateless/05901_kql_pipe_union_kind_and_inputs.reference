@@ -1,0 +1,13 @@
+-- parenthesized tabular expressions as union inputs --
+11
+22
+33
+-- a bare tabular source as a union input --
+44
+55
+-- both input forms in one union --
+66
+77
+88
+-- `kind=outer` and `kind=inner` are recognised, but not implemented --
+-- any other word is not a union kind at all --

@@ -1,0 +1,17 @@
+--- one-character escapes, doubled backslash, enclosing quote ---
+07080C0A0D090B
+5C
+22
+27
+--- byte escapes and code point escapes ---
+Qq
+004992DB
+Qq
+F09F9880F48FBFBF
+--- a literal in backticks keeps its backslashes ---
+615C6E62
+--- malformed: hexadecimal byte escape ---
+--- malformed: octal byte escape ---
+--- malformed: four-digit code point escape ---
+--- malformed: eight-digit code point escape ---
+--- malformed: unknown escape, quote that does not enclose the literal ---

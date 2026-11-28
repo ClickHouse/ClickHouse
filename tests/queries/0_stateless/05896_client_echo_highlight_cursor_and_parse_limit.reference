@@ -1,0 +1,11 @@
+identifiers echo  {identifier underlined:number}, {identifier underlined:number} {keyword:FROM} {function:numbers}{parentheses 0:(}{number:1}{parentheses 0:)};
+identifiers value 0	0
+parentheses echo  {parentheses 0:(}{keyword:SELECT} {number:1}{parentheses 0:)};
+parentheses value 1
+parentheses pairs 1 matching True distinct True
+parentheses echo  {keyword:SELECT} {parentheses 0:(}{parentheses 1:(}{number:1}{parentheses 1:)}{parentheses 0:)}
+parentheses value 1
+parentheses pairs 2 matching True distinct True
+limit echo classes keyword, function, error, colored runs 3
+limit echo bytes 10217, colors stop before the limit True
+limit value 10200
