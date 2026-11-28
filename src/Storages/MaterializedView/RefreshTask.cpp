@@ -11,6 +11,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/StreamingCursor.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Core/Streaming/CursorTree.h>

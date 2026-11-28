@@ -1,6 +1,7 @@
 #include <Processors/Transforms/WaitForStreamingCursorTransform.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/StreamingCursor.h>
 #include <Processors/Port.h>
 #include <Common/EventFD.h>
 #include <Common/Exception.h>

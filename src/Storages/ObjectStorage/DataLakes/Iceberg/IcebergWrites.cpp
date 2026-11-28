@@ -30,6 +30,7 @@
 #include <Functions/identity.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/StreamingCursor.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>

@@ -16,9 +16,9 @@
 
 #include <Processors/IProcessor.h>
 
-#include <map>
-#include <Interpreters/Context.h>
+#include <Interpreters/StreamingCursor.h>
 
+#include <map>
 #include <optional>
 #include <string>
 

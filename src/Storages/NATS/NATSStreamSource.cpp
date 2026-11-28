@@ -7,6 +7,7 @@
 #include <IO/EmptyReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/StreamingCursor.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/StorageInMemoryMetadata.h>
