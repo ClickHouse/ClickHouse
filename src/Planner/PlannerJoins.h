@@ -315,4 +315,9 @@ std::set<JoinTableSide> extractJoinTableSidesFromExpression(
 
 QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node);
 
+PreparedJoinStorage tryGetLookupJoinStorage(
+    const Names & right_key_names,
+    const QueryTreeNodePtr & table_expression,
+    const PlannerContextPtr & planner_context);
+
 }

@@ -1,0 +1,11 @@
+join of allowed columns succeeds (regular path):
+1	a
+2	b
+no SELECT on secret: DirectKeyValueJoin declined:
+0
+reading the denied secret column is still ACCESS_DENIED:
+full access: join result unchanged:
+1	a
+2	b
+full access: DirectKeyValueJoin used:
+1

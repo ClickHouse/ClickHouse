@@ -1,0 +1,164 @@
+#include <Storages/MergeTree/MergeTreeIndexTableLookup.h>
+
+#include <Common/Exception.h>
+#include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
+#include <DataTypes/hasNullable.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseQuery.h>
+
+#include <unordered_set>
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_INDEX;
+    extern const int INCORRECT_QUERY;
+}
+
+bool isLookupIndexType(std::string_view type)
+{
+    return type == TABLE_SET_INDEX_TYPE || type == TABLE_JOIN_INDEX_TYPE;
+}
+
+namespace
+{
+
+void validateTableLookupKeys(const IndexDescription & index, std::string_view index_type)
+{
+    if (index.arguments && !index.arguments->children.empty())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Index of type '{}' does not accept arguments", index_type);
+
+    if (!index.expression_list_ast || index.expression_list_ast->children.empty())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Index '{}' must have at least one key column", index.name);
+
+    std::unordered_set<String> unique_columns;
+    for (const auto & child : index.expression_list_ast->children)
+    {
+        const auto * identifier = child->as<ASTIdentifier>();
+        /// Reject compound identifiers such as `m.keys`: those are subcolumns, not plain columns.
+        /// `IndexDescription::initExpressionInfo` analyzes with subcolumns enabled, so such a key would
+        /// be accepted here, but the lookup entity is built from top-level physical columns only and
+        /// cannot serve a subcolumn, leaving an accepted but unusable lookup index. A quoted top-level
+        /// column name containing a dot stays a single-part identifier (`compound()` is false) and is
+        /// still allowed.
+        if (!identifier || identifier->compound())
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Index of type '{}' supports only plain top-level column names in expression, got '{}'",
+                index_type,
+                child->formatForErrorMessage());
+        }
+
+        if (!unique_columns.emplace(identifier->name()).second)
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Index of type '{}' contains duplicate key column '{}'",
+                index_type,
+                identifier->name());
+        }
+    }
+}
+
+IndicesDescription buildLookupIndices(const ASTs & lookup_index_asts, const ColumnsDescription & columns, ContextPtr context)
+{
+    IndicesDescription result;
+
+    for (const auto & lookup_index_ast : lookup_index_asts)
+    {
+        /// Mark the declaration as a lookup index before interpretation. Lookup indexes
+        /// have no GRANULARITY (it is meaningless for a table-wide structure), so the flag
+        /// must already be set when `getIndexFromAST` runs, otherwise its granularity check
+        /// would reject the expected zero granularity. The metadata re-parse path
+        /// (`parseLookupIndices`) does not set the flag in the parser, so we set it here.
+        auto definition_ast = lookup_index_ast->clone();
+        if (auto * index_ast = typeid_cast<ASTIndexDeclaration *>(definition_ast.get()))
+        {
+            index_ast->granularity = 0;
+            index_ast->is_lookup_index = true;
+        }
+
+        IndexDescription index = IndexDescription::getIndexFromAST(
+            definition_ast,
+            columns,
+            /* is_implicitly_created */ false,
+            /* escape_filenames */ true,
+            context);
+
+        if (result.has(index.name))
+            throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated lookup index name {} is not allowed. Please use a different index name", backQuoteIfNeed(index.name));
+
+        validateLookupIndex(index);
+
+        result.push_back(std::move(index));
+    }
+
+    return result;
+}
+
+}
+
+void validateLookupIndex(const IndexDescription & index)
+{
+    if (index.type == TABLE_SET_INDEX_TYPE)
+    {
+        validateTableLookupKeys(index, TABLE_SET_INDEX_TYPE);
+        return;
+    }
+
+    if (index.type == TABLE_JOIN_INDEX_TYPE)
+    {
+        validateTableLookupKeys(index, TABLE_JOIN_INDEX_TYPE);
+
+        for (const auto & type : index.data_types)
+        {
+            if (isNullableOrLowCardinalityNullable(type))
+            {
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Index of type '{}' does not support nullable key columns",
+                    TABLE_JOIN_INDEX_TYPE);
+            }
+        }
+
+        return;
+    }
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "`LOOKUP INDEX` supports only '{}' and '{}', got '{}'",
+        TABLE_SET_INDEX_TYPE,
+        TABLE_JOIN_INDEX_TYPE,
+        index.type);
+}
+
+IndicesDescription getLookupIndicesFromAST(const ASTExpressionList * lookup_indices_ast, const ColumnsDescription & columns, ContextPtr context)
+{
+    if (!lookup_indices_ast)
+        return {};
+
+    return buildLookupIndices(lookup_indices_ast->children, columns, context);
+}
+
+IndicesDescription parseLookupIndices(const String & str, const ColumnsDescription & columns, ContextPtr context)
+{
+    if (str.empty())
+        return {};
+
+    ParserList parser(
+        std::make_unique<ParserIndexDeclaration>(false),
+        std::make_unique<ParserToken>(TokenType::Comma),
+        false);
+    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    return buildLookupIndices(list->children, columns, context);
+}
+
+}
