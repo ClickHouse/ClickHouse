@@ -464,9 +464,10 @@ ASTPtr mapWithIndex(QCompiler & compiler, const ASTPtr & list, const std::functi
     return fn("arrayMap", makeLambda({item, index}, body(ident(item), ident(index))), list, fn("arrayEnumerate", list));
 }
 
-ASTPtr previousItem(const ASTPtr & list, const ASTPtr & index)
+/// The item before the one at `index`, and `first` for the first item, which has no predecessor.
+ASTPtr previousItem(const ASTPtr & list, const ASTPtr & index, ASTPtr first = lit(Field()))
 {
-    return fn("if", fn("equals", index, one()), lit(Field()), fn("arrayElement", list, fn("minus", index, one())));
+    return fn("if", fn("equals", index, one()), std::move(first), fn("arrayElement", list, fn("minus", index, one())));
 }
 
 /// Converts a q `like` pattern into a regular expression.
@@ -1538,6 +1539,7 @@ QValue sqlTable(Call & call)
 }
 
 /// `where` of a boolean list: the indices of the true items.
+/// `where` of a list of integers: the index of every item, as many times as the item says (`where 2 0 1` is `0 0 2`).
 QValue h_where(Call & c)
 {
     c.expectArgs(1);
@@ -1545,13 +1547,25 @@ QValue h_where(Call & c)
     if (value.kind == QValueKind::Column)
         c.unsupported("where of a column (use the where phrase)");
     if (value.depth != 1)
-        c.fail(ErrorCodes::TYPE_MISMATCH, "expected a boolean list");
+        c.fail(ErrorCodes::TYPE_MISMATCH, "expected a list of booleans or integers");
     String index = c.compiler.newLambdaParameter();
     String item = c.compiler.newLambdaParameter();
-    String position = c.compiler.newLambdaParameter();
-    ASTPtr selected = fn("arrayFilter", makeLambda({index, item}, ident(item)), fn("arrayEnumerate", value.ast), value.ast);
     QValue result = value;
-    result.ast = fn("arrayMap", makeLambda({position}, fn("minus", ident(position), one())), selected);
+    if (value.qtype == QType::Boolean)
+    {
+        String position = c.compiler.newLambdaParameter();
+        ASTPtr selected = fn("arrayFilter", makeLambda({index, item}, ident(item)), fn("arrayEnumerate", value.ast), value.ast);
+        result.ast = fn("arrayMap", makeLambda({position}, fn("minus", ident(position), one())), selected);
+    }
+    else if (!value.qtype || value.qtype == QType::Byte || value.qtype == QType::Short || value.qtype == QType::Int || value.qtype == QType::Long)
+    {
+        /// Also for a list of an unknown type, like one from a query in SQL: a boolean is one copy or none.
+        /// A negative number of copies is an error, as in q.
+        ASTPtr copies = fn("arrayWithConstant", fn("toUInt64", fn("assumeNotNull", ident(item))), fn("toInt64", fn("minus", ident(index), one())));
+        result.ast = fn("arrayFlatten", fn("arrayMap", makeLambda({index, item}, copies), fn("arrayEnumerate", value.ast), value.ast));
+    }
+    else
+        c.fail(ErrorCodes::TYPE_MISMATCH, "expected a list of booleans or integers");
     result.qtype = QType::Long;
     return result;
 }
@@ -2219,7 +2233,17 @@ const std::unordered_map<String, Handler> & handlers()
             }
             return listFunction(c, [](ASTPtr list) { return fn("arrayDistinct", list); });
         };
-        h["asc"] = [](Call & c) { return listFunction(c, [](ASTPtr list) { return fn("arraySort", list); }); };
+        /// A null of q is less than every other value, so the nulls are the first in the ascending order
+        /// (and the last in the descending one, where `arrayReverseSort` puts them).
+        h["asc"] = [](Call & c)
+        {
+            return listFunction(c,
+                [&](ASTPtr list)
+                {
+                    String item = c.compiler.newLambdaParameter();
+                    return fn("arraySort", makeLambda({item}, fn("tuple", fn("isNotNull", ident(item)), ident(item))), list);
+                });
+        };
         h["desc"] = [](Call & c) { return listFunction(c, [](ASTPtr list) { return fn("arrayReverseSort", list); }); };
         h["reverse"] = [](Call & c)
         {
@@ -2238,8 +2262,10 @@ const std::unordered_map<String, Handler> & handlers()
                     {
                         String index = c.compiler.newLambdaParameter();
                         String item = c.compiler.newLambdaParameter();
+                        /// The nulls are the first in the ascending order, as for `asc`.
+                        ASTPtr key = descending ? ident(item) : fn("tuple", fn("isNotNull", ident(item)), ident(item));
                         ASTPtr sorted = fn(descending ? "arrayReverseSort" : "arraySort",
-                            makeLambda({index, item}, ident(item)), fn("arrayEnumerate", list), list);
+                            makeLambda({index, item}, key), fn("arrayEnumerate", list), list);
                         String position = c.compiler.newLambdaParameter();
                         return fn("arrayMap", makeLambda({position}, fn("minus", ident(position), one())), sorted);
                     });
@@ -2372,24 +2398,32 @@ const std::unordered_map<String, Handler> & handlers()
                         });
                 });
         };
-        h["deltas"] = [lag](Call & c)
+        /// The predecessor of the first item (of the first row) is the identity of the operation: 0 for `deltas`
+        /// and 1 for `ratios`. Only the first one: a null among the items is the predecessor of the next item as it is.
+        auto predecessor = [lag](Call & c, ASTPtr column, ASTPtr first)
+        {
+            ASTPtr position = c.compiler.makeWindowFunction("count", {}, c.scope, std::nullopt, 0);
+            return fn("if", fn("equals", std::move(position), one()), std::move(first), lag(c, column, 1));
+        };
+        h["deltas"] = [predecessor](Call & c)
         {
             c.expectArgs(1);
-            return uniform(c, [&](ASTPtr column) { return fn("minus", column, fn("ifNull", lag(c, column, 1), lit(Field(static_cast<UInt64>(0))))); },
+            auto zero = [] { return lit(Field(static_cast<UInt64>(0))); };
+            return uniform(c, [&](ASTPtr column) { return fn("minus", column, predecessor(c, column, zero())); },
                 [&](ASTPtr list)
                 {
                     return mapWithIndex(c.compiler, list,
-                        [&](ASTPtr item, ASTPtr index) { return fn("minus", item, fn("ifNull", previousItem(list, index), lit(Field(static_cast<UInt64>(0))))); });
+                        [&](ASTPtr item, ASTPtr index) { return fn("minus", item, previousItem(list, index, zero())); });
                 });
         };
-        h["ratios"] = [lag](Call & c)
+        h["ratios"] = [predecessor](Call & c)
         {
             c.expectArgs(1);
-            return uniform(c, [&](ASTPtr column) { return ratio(column, fn("ifNull", lag(c, column, 1), one())); },
+            return uniform(c, [&](ASTPtr column) { return ratio(column, predecessor(c, column, one())); },
                 [&](ASTPtr list)
                 {
                     return mapWithIndex(c.compiler, list,
-                        [&](ASTPtr item, ASTPtr index) { return ratio(item, fn("ifNull", previousItem(list, index), one())); });
+                        [&](ASTPtr item, ASTPtr index) { return ratio(item, previousItem(list, index, one())); });
                 });
         };
         h["differ"] = [lag](Call & c)

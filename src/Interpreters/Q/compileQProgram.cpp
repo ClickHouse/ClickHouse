@@ -221,7 +221,10 @@ ASTPtr QSelectBuilder::build() const
         {
             auto element = make_intrusive<ASTOrderByElement>();
             element->direction = descending ? -1 : 1;
-            element->nulls_direction = element->direction;
+            /// A null of q is less than every other value: the nulls are the first in the ascending order
+            /// and the last in the descending one.
+            element->nulls_direction = -1;
+            element->nulls_direction_was_explicitly_specified = true;
             element->children.push_back(expression);
             elements.push_back(element);
         }
@@ -1951,12 +1954,20 @@ QValue QCompiler::applyDerived(const QFunction & function, QValues args, QEnviro
         auto widened = [&](ASTPtr ast) -> ASTPtr { return widen.empty() ? ast : ASTPtr(makeASTFunction(widen, std::move(ast))); };
         initial = widened(initial);
 
+        /// The result of a step is a value of the generated expression. A function, a table, or a dictionary is not one.
+        auto check_step = [&](const QValue & step)
+        {
+            if (step.kind == QValueKind::Function || step.kind == QValueKind::Dictionary || step.kind == QValueKind::Table)
+                throwQError(ErrorCodes::NOT_IMPLEMENTED, offset, "Over and scan with a function that returns a function or a table are not supported");
+        };
+
         QValue acc = seed_value;
         acc.aggregated = false;
         if (over)
         {
             acc.ast = makeIdentifier(accumulator);
             QValue step = apply_operand({acc, element});
+            check_step(step);
             if (step.depth == 0)
                 step.ast = widened(step.ast);
             QValue result = scalar(makeASTFunction("arrayFold", makeLambda({accumulator, item}, step.ast), items, initial), step.depth);
@@ -1967,6 +1978,7 @@ QValue QCompiler::applyDerived(const QFunction & function, QValues args, QEnviro
 
         acc.ast = makeASTFunction("arrayElement", makeIdentifier(accumulator), makeLiteral(Field(static_cast<Int64>(-1))));
         QValue step = apply_operand({acc, element});
+        check_step(step);
         if (step.depth != seed_value.depth)
             throwQError(ErrorCodes::NOT_IMPLEMENTED, offset, "A scan with a function that changes the shape of the items is not supported");
         ASTPtr step_ast = makeASTFunction("arrayPushBack", makeIdentifier(accumulator), widened(step.ast));
