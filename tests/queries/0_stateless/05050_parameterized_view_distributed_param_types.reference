@@ -1,0 +1,9 @@
+scalar	a1	y	2020-01-02	00000000-0000-0000-0000-000000000001	1.2.3.4	1.25
+array	a1	y
+array	a2	x
+forwarded-in	1
+forwarded-in-scalar	1
+ast-cast	SELECT * FROM (SELECT \'a1\' AS name, _CAST(1, \'Enum8(\\\'x\\\' = 0, \\\'y\\\' = 1)\') AS val, _CAST(18263, \'Date\') AS d, _CAST(\'00000000-0000-0000-0000-000000000001\', \'UUID\') AS u, _CAST(\'1.2.3.4\', \'IPv4\') AS ip, _CAST(_CAST(\'1.25\', \'Decimal(18, 2)\'), \'Decimal(10, 2)\') AS dec FROM system.one) AS v_pv
+ast-cast-array	SELECT name, val FROM (SELECT tupleElement(tup, 1) AS name, tupleElement(tup, 2) AS val, toDate(\'2020-01-02\') AS d, toUUID(\'00000000-0000-0000-0000-000000000001\') AS u, toIPv4(\'1.2.3.4\') AS ip, toDecimal64(1.25, 2) AS dec FROM (SELECT arrayJoin(_CAST([(\'a1\', 1), (\'a2\', 0)], \'Array(Tuple(String, Enum8(\\\'x\\\' = 0, \\\'y\\\' = 1)))\')) AS tup FROM system.one)) AS v_pv_array
+shard saw the view call	1
+shard saw the scalar view call	1
