@@ -60,6 +60,9 @@
 #include <Common/quoteString.h>
 #include <Parsers/toOneLineQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/Q/ASTQQuery.h>
+#include <Parsers/Q/parseQQuery.h>
+#include <Interpreters/Q/compileQProgram.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Trino/ParserTrinoQuery.h>
@@ -187,6 +190,7 @@ namespace Setting
     extern const SettingsBool enable_kusto_dialect;
     extern const SettingsBool enable_prql_dialect;
     extern const SettingsBool enable_trino_dialect;
+    extern const SettingsBool enable_q_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
     extern const SettingsBool ast_fuzzer_oracle;
@@ -218,6 +222,7 @@ namespace Setting
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsUInt64 max_expanded_ast_elements;
+    extern const SettingsUInt64 max_memory_usage;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
@@ -2749,6 +2754,9 @@ static BlockIO executeQueryImpl(
 
     String query;
     String query_for_logging;
+    /// The text of a program in the `q` dialect with the secrets of its embedded queries (`.ch.sql "..."`) hidden,
+    /// if it has them. The program is logged in this form.
+    String q_text_without_secrets;
     UInt64 normalized_query_hash = 0;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
@@ -2835,6 +2843,63 @@ static BlockIO executeQueryImpl(
             {
                 context->setSetting("join_use_nulls", true);
                 context->setSetting("use_variant_as_common_type", false);
+            }
+        }
+        else if (settings[Setting::dialect] == Dialect::q && use_request_dialect)
+        {
+            const char * q_pos = begin;
+            if (!settings[Setting::enable_q_dialect])
+            {
+                /// A plain `SET` passes even when the gate is off, so that a session in `dialect = 'q'` can switch back.
+                out_ast = tryParseQSetQuery(
+                    q_pos, end, max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
+                if (!out_ast)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the q dialect is disabled (turn on setting 'enable_q_dialect')");
+            }
+            else
+            {
+                out_ast = parseQQuery(
+                    q_pos, end, /*allow_multi_statements=*/false, max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
+
+                /// The q program is compiled into a ClickHouse query here, because the compilation depends on the structure of
+                /// the tables. From here on it is a query like any other: the parameters, the settings that construct
+                /// the result, the logging without secrets, and the limits apply to it in the usual way.
+                if (ASTPtr q_ast = out_ast; const auto * q_query = q_ast->as<ASTQQuery>())
+                {
+                    /// An embedded query (`.ch.sql "..."`) can hold credentials. The compiled query hides them when it is
+                    /// logged, but it is the text of the program that is logged when the compilation fails, and when
+                    /// the embedded query does not get to the compiled query (the value of a variable that is not used).
+                    /// So the text is logged without the secrets, and it is ready before the compilation can fail.
+                    if (q_ast->hasSecretParts())
+                    {
+                        q_text_without_secrets = q_ast->formatForLogging();
+                        query = q_text_without_secrets;
+                    }
+
+                    /// The compilation analyzes the queries that it generates for their structure, and the analysis folds
+                    /// the constants: a list of ten million numbers takes its memory already here. The memory limit of
+                    /// the query is set when the query is put to the process list, which is later, so it is set for
+                    /// this work in advance. `ProcessList::insert` sets the same value.
+                    if (auto thread_group = CurrentThread::getGroup(); thread_group && settings[Setting::max_memory_usage])
+                        thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
+
+                    /// And the memory is charged to the user, under `max_memory_usage_for_user`, which is otherwise done
+                    /// when the query is put to the process list as well: a table that the program does not use is
+                    /// analyzed and freed before that.
+                    context->getProcessList().chargeCurrentThreadGroupToUser(context);
+
+                    /// The compilation resolves the names of the tables and writes them into the compiled query. So
+                    /// the database of the request (the setting `database`) and its external tables are set up before
+                    /// it, while for a query in SQL it is enough to do that below, before the query is interpreted.
+                    if (const String & database_setting = settings[Setting::database];
+                        !database_setting.empty() && database_setting != context->getCurrentDatabase())
+                    {
+                        context->setCurrentDatabase(database_setting);
+                    }
+                    context->initializeExternalTablesIfSet();
+
+                    out_ast = compileQProgram(*q_query, context);
+                }
             }
         }
         else if (settings[Setting::dialect] == Dialect::clickhouse_json && use_request_dialect)
@@ -3058,6 +3123,16 @@ static BlockIO executeQueryImpl(
                 query_end = insert_query->data;
         }
 
+        /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
+        /// A program in the `q` dialect is copied without the secrets of its embedded queries.
+        auto copy_query_text = [&]
+        {
+            if (q_text_without_secrets.empty())
+                query.assign(begin, query_end);
+            else
+                query = q_text_without_secrets;
+        };
+
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
         /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters.
         /// The visitor handles parameterized views internally: it substitutes parameters in
@@ -3071,12 +3146,11 @@ static BlockIO executeQueryImpl(
             if (visitor.getNumberOfReplacedParameters())
                 query = out_ast->formatWithSecretsOneLine();
             else
-                query.assign(begin, query_end);
+                copy_query_text();
         }
         else
         {
-            /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
-            query.assign(begin, query_end);
+            copy_query_text();
         }
 
         /// Wipe any sensitive information (e.g. passwords) from the query.

@@ -563,6 +563,12 @@ public:
       */
     EntryPtr insert(const String & query_, UInt64 normalized_query_hash, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds, bool is_internal);
 
+    /// Charges the memory of the current thread group to the user of the query, with the limit of the user, as `insert`
+    /// does. It is for the work on a query that is done before the query is in the list and can take much memory:
+    /// a program in the `q` dialect is compiled at that point, and the compilation analyzes the queries that it generates.
+    /// `insert` finds the group already charged to the user and leaves it so.
+    void chargeCurrentThreadGroupToUser(const ContextPtr & query_context);
+
     /// Number of currently executing queries.
     /// WARNING: includes internal queries (e.g. those executed by dictionaries, RMVs, async inserts).
     size_t size() const { return processes.size(); }

@@ -67,6 +67,8 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/Q/ASTQQuery.h>
+#include <Parsers/Q/parseQQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Trino/ParserTrinoQuery.h>
@@ -773,6 +775,28 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             throw;
         }
     }
+    else if (dialect == Dialect::q && !is_set_escape)
+    {
+        /// q is lexically a different language as well (backticks are symbols, `/` starts comments).
+        /// The program is only parsed here: it is compiled into a ClickHouse query on the server.
+        try
+        {
+            res = parseQQuery(
+                pos, end, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        }
+        catch (const Exception & e)
+        {
+            /// Syntax errors of q are thrown. Under `--ignore-error` they are reported like those of ClickHouse queries:
+            /// the caller then skips the whole (possibly multiline) q query and continues with the next one.
+            if (ignore_error)
+            {
+                error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+                client_exception.reset(e.clone());
+                return nullptr;
+            }
+            throw;
+        }
+    }
     else if (dialect == Dialect::kusto && !is_set_escape)
     {
         /// KQL is lexically a different language, so it does not go through the SQL
@@ -888,7 +912,8 @@ void ClientBase::adjustQueryEnd(
 /// Convert external tables to ExternalTableData and send them using the connection.
 void ClientBase::sendExternalTables(ASTPtr parsed_query)
 {
-    const auto * select = parsed_query->as<ASTSelectWithUnionQuery>();
+    /// A program in the `q` dialect is compiled into a `SELECT` query on the server.
+    bool select = parsed_query->as<ASTSelectWithUnionQuery>() || parsed_query->as<ASTQQuery>();
     bool has_external_data = !external_tables.empty() || !external_scalars.empty();
     if (!select && has_external_data)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External tables could be sent only with select query");
@@ -3639,6 +3664,11 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
                 /// Malformed input (e.g. an unterminated string): let the parser report it properly.
             }
         }
+        if (client_context->getSettingsRef()[Setting::dialect] == Dialect::q)
+        {
+            /// q queries routinely contain tokens that are erroneous for the ClickHouse lexer (`` `a`b ``, `2024.01m`).
+            only_comments_left = isQQueryTextEmpty(this_query_begin, all_queries_end);
+        }
         if (only_comments_left)
             return MultiQueryProcessingStage::QUERIES_END;
     }
@@ -3660,7 +3690,11 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     {
         if (ignore_error)
         {
-            if (client_context->getSettingsRef()[Setting::dialect] == Dialect::logsql)
+            if (client_context->getSettingsRef()[Setting::dialect] == Dialect::q)
+            {
+                this_query_begin = skipQQuery(this_query_begin, all_queries_end);
+            }
+            else if (client_context->getSettingsRef()[Setting::dialect] == Dialect::logsql)
             {
                 /// The ClickHouse lexer stops at the first LogsQL-only token (`~`, `!`, ...)
                 /// as at an erroneous one, which would resume parsing in the middle of the
@@ -3831,14 +3865,21 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
 
+    /// Disable the logs if errors are expected.
+    bool logs_disabled_for_expected_errors = false;
+    auto disable_logs_for_expected_errors = [&]
     {
-        /// disable logs if expects errors
+        if (logs_disabled_for_expected_errors)
+            return;
+        logs_disabled_for_expected_errors = true;
+        auto u = processTextAsSingleQuery("SET send_logs_level = 'fatal'");
+        UNUSED(u);
+    };
+
+    {
         TestHint test_hint(all_queries_text);
         if (test_hint.hasClientErrors() || test_hint.hasServerErrors())
-        {
-            auto u = processTextAsSingleQuery("SET send_logs_level = 'fatal'");
-            UNUSED(u);
-        }
+            disable_logs_for_expected_errors();
     }
 
     /// Test tags are started with "--" so they are interpreted as comments anyway.
@@ -3900,6 +3941,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 is_first = false;
                 have_error |= buzz_house;
                 error_code = buzz_house ? ErrorCodes::SYNTAX_ERROR : error_code;
+                const bool q_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::q;
 
                 /// The AST fuzzer feeds whole test files to one session, often several files in
                 /// a row, so a statement that does not parse is expected rather than a finding -
@@ -3910,21 +3952,42 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 {
                     unsigned max_parser_depth = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]);
                     unsigned max_parser_backtracks = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]);
-                    Tokens tokens(this_query_begin, all_queries_end);
-                    IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
-                    while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
-                        ++token_iterator;
-                    this_query_begin = token_iterator->end;
+                    if (q_dialect)
+                    {
+                        this_query_begin = skipQQuery(this_query_begin, all_queries_end);
+                    }
+                    else
+                    {
+                        Tokens tokens(this_query_begin, all_queries_end);
+                        IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+                        while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+                            ++token_iterator;
+                        this_query_begin = token_iterator->end;
+                    }
                     current_exception.reset();
                     continue;
                 }
 
-                this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
-
-                // Try to find test hint for syntax error. We don't know where
-                // the query ends because we failed to parse it, so we consume
-                // the entire line.
-                TestHint hint(String(this_query_begin, this_query_end - this_query_begin));
+                String hint_text;
+                if (q_dialect)
+                {
+                    /// A q query may span several lines, and its end is known even when it does not parse: a `;` at the end
+                    /// of a line. The whole query is skipped, and the hint is looked for only in the comment after that `;`,
+                    /// because the text of a q query cannot be scanned with the ClickHouse lexer.
+                    const char * q_query_end = skipQQuery(this_query_begin, all_queries_end);
+                    this_query_end = find_first_symbols<'\n'>(q_query_end, all_queries_end);
+                    const char * hint_begin = q_query_end > this_query_begin && q_query_end[-1] == ';' ? q_query_end - 1 : q_query_end;
+                    hint_text.assign(hint_begin, this_query_end);
+                }
+                else
+                {
+                    // Try to find test hint for syntax error. We don't know where
+                    // the query ends because we failed to parse it, so we consume
+                    // the entire line.
+                    this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
+                    hint_text.assign(this_query_begin, this_query_end);
+                }
+                TestHint hint(hint_text);
                 if (hint.hasServerErrors() && !hint.hasClientErrors())
                 {
                     // Syntax errors are considered as client errors.
@@ -3965,6 +4028,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // after we have processed the query. But even this guess is
                 // beneficial so that we see proper trailing comments in "echo" and
                 // server log.
+                const char * parsed_query_end = this_query_end;
                 {
                     unsigned max_parser_depth = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]);
                     unsigned max_parser_backtracks = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]);
@@ -3993,7 +4057,22 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // Look for the hint in the text of query + insert data + trailing
                 // comments, e.g. insert into t format CSV 'a' -- { serverError 123 }.
                 // Use the updated query boundaries we just calculated.
-                TestHint test_hint(full_query);
+                /// The text of a q query cannot be scanned with the ClickHouse lexer (a backtick starts a symbol in q,
+                /// but a quoted identifier in SQL, which would swallow the hint), so only its trailing comment is used.
+                std::string_view hint_text = full_query;
+                if (parsed_query->as<ASTQQuery>() && parsed_query_end > this_query_begin && parsed_query_end <= this_query_end)
+                {
+                    /// Start at the terminating `;`, so that the comment after it is not a leading comment (which cannot hold error hints).
+                    const char * hint_begin = parsed_query_end[-1] == ';' ? parsed_query_end - 1 : parsed_query_end;
+                    hint_text = std::string_view(hint_begin, this_query_end - hint_begin);
+                }
+                TestHint test_hint(hint_text);
+
+                /// The scan of the whole text above uses the ClickHouse lexer, which does not see the hints behind the text
+                /// of another dialect: e.g., a single `"` inside a q comment starts a quoted identifier that swallows
+                /// the hints after it. So the logs are also disabled here, where the hint of a single query is known.
+                if (test_hint.hasClientErrors() || test_hint.hasServerErrors())
+                    disable_logs_for_expected_errors();
 
                 // Echo all queries if asked; makes for a more readable reference file.
                 echo_query = test_hint.echoQueries().value_or(echo_query);

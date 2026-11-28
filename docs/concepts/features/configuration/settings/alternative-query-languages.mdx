@@ -18,6 +18,7 @@ The currently supported dialects are:
 - `kusto`: [Kusto Query Language (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
 - `logsql`: [LogsQL](https://docs.victoriametrics.com/victorialogs/logsql/), the query language of VictoriaLogs
 - `trino`: [Trino SQL](https://trino.io/docs/current/language.html)
+- `q`: [q](https://code.kx.com/q/), the language of kdb+
 
 Which query language is used is controlled by setting `dialect`.
 
@@ -106,6 +107,24 @@ _time:5m error | stats by (level) count() as hits | sort by (hits desc)
 ```
 
 See the [LogsQL dialect guide](/guides/clickhouse/logsql) for the supported subset and the differences from VictoriaLogs.
+
+## q {#q}
+
+<ExperimentalBadge/>
+
+q is the language of kdb+. ClickHouse compiles a q program (q-sql templates, joins, and array expressions)
+into a ClickHouse query over ClickHouse tables:
+
+```sql
+SET enable_q_dialect = 1;
+SET dialect = 'q'
+```
+
+```text title="Query"
+select vwap: size wavg price, n: count i by sym from trades where size > 100
+```
+
+See the [q dialect guide](/guides/clickhouse/q) for the supported subset and the differences from q.
 
 ## Trino SQL {#trino-sql}
 

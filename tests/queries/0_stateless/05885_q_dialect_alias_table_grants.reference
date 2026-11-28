@@ -1,0 +1,7 @@
+--- a grant on the alias alone
+ACCESS_DENIED
+ACCESS_DENIED
+--- and a grant on one column of the target
+['a']
+--- and a grant on the target
+['a','hidden']

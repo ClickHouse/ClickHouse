@@ -516,6 +516,41 @@ ProcessList::EntryPtr ProcessList::insert(
 }
 
 
+void ProcessList::chargeCurrentThreadGroupToUser(const ContextPtr & query_context)
+{
+    auto thread_group = CurrentThread::getGroup();
+
+    /// A nested group is charged through the group above it: see `insert`.
+    if (!thread_group || thread_group->isNested())
+        return;
+
+    const ClientInfo & client_info = query_context->getClientInfo();
+    const Settings & settings = query_context->getSettingsRef();
+
+    LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); /// To avoid deadlock in case of OOM
+
+    auto user_process_list_it = user_to_queries.find(client_info.current_user);
+    if (user_process_list_it == user_to_queries.end())
+    {
+        /// Lives as long as the server (entries are never erased), not the query that first comes from this user.
+        MemoryTrackerBlockerInThread not_charged_to_the_query;
+        user_process_list_it = user_to_queries.emplace(std::piecewise_construct,
+            std::forward_as_tuple(client_info.current_user),
+            std::forward_as_tuple(query_context->getGlobalContext(), this)).first;
+    }
+    ProcessListForUser & user_process_list = user_process_list_it->second;
+
+    /// The limit is written like in `insert`: the first query of the user sets it, the next ones can only raise it.
+    if (user_process_list.queries.empty())
+        user_process_list.user_memory_tracker.setHardLimit(settings[Setting::max_memory_usage_for_user]);
+    else
+        user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage_for_user]);
+    user_process_list.user_memory_tracker.setDescription("User");
+
+    thread_group->memory_tracker.reparent(&user_process_list.user_memory_tracker);
+}
+
+
 ProcessListEntry::~ProcessListEntry()
 {
     if (registered_in_cancellation_checker)
