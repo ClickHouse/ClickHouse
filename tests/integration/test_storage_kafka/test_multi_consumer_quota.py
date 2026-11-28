@@ -567,6 +567,441 @@ def test_temporary_lock_quota_is_retained_across_rounds(kafka_cluster):
         )
 
 
+# Short rounds: the locks are only refreshed on the slow path of `prepareToPoll`, once every
+# LOCKS_REFRESH_POLLS (15) polls, which takes minutes with the default timeouts.
+FAST_ROUND_SETTINGS = {
+    "kafka_poll_timeout_ms": 50,
+    "kafka_consumer_reschedule_ms": 100,
+    "kafka_flush_interval_ms": 500,
+}
+
+
+def consumer_partition_counts(instance, table):
+    """Number of topic partitions (permanent and temporary locks) held by each consumer of `table`."""
+    raw = instance.query(
+        "SELECT length(assignments.partition_id) FROM system.kafka_consumers "
+        f"WHERE database = 'test' AND table = '{table}' ORDER BY consumer_id"
+    ).strip()
+    return [int(x) for x in raw.split("\n") if x.strip()]
+
+
+def produce_one_message_per_partition(kafka_cluster, topic_name, num_partitions, key_offset):
+    producer = k.get_kafka_producer(kafka_cluster.kafka_port, k.producer_serializer, 15)
+    for p in range(num_partitions):
+        producer.send(
+            topic=topic_name,
+            value=json.dumps({"key": key_offset + p, "value": 1}),
+            partition=p,
+        )
+    producer.flush()
+
+
+def count_consumed_rows(instance, tables):
+    return sum(int(instance.query(f"SELECT count() FROM test.dst_{table}").strip()) for table in tables)
+
+
+def test_failover_converges_to_the_permanent_quota(kafka_cluster):
+    """
+    After a replica is lost, the survivors must converge to their permanent quota, and no consumer may keep a
+    temporary lock on a topic partition that another consumer needs for its permanent quota.
+
+    12 partitions, 3 replicas x 2 consumers: node_quota = 4, 2 per consumer. When r3 is detached, node_quota becomes
+    6, 3 per consumer, and the 4 topic partitions of r3 are free. Before the fix the first consumer that refreshed took
+    its 3rd permanent lock and a temporary lock on top of it. It released and retook the temporary lock in every round,
+    so the consumer waiting for that topic partition only got it if its own round happened to fall into the short
+    window in between: some consumers held 4 topic partitions, others 2, and in production this took hours.
+
+    With the fix the holder leaves the free topic partitions to the consumer below its quota, so every consumer ends
+    up with exactly 3. All rows produced after the failover must arrive, i.e. no topic partition is left unconsumed.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "failover_12p_3r_2c"
+    keeper_path = f"/clickhouse/test/{topic_name}"
+    num_partitions = 12
+    num_consumers = 2
+    replicas = ["r1", "r2", "r3"]
+    tables = {replica: f"kafka_failover_{replica}" for replica in replicas}
+    survivors = ["r1", "r2"]
+    timeout = 180
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        instance.query("\n".join(
+            create_kafka_table(
+                table_name=tables[replica],
+                topic_name=topic_name,
+                consumer_group=topic_name,
+                keeper_path=keeper_path,
+                replica_name=replica,
+                settings={
+                    "kafka_num_consumers": num_consumers,
+                    "kafka_thread_per_consumer": 1,
+                    **FAST_ROUND_SETTINGS,
+                },
+            )
+            for replica in replicas
+        ))
+        wait_for_replicas_registered(kafka_cluster, keeper_path, len(replicas))
+        instance.query("\n".join(attach_materialized_view(tables[replica]) for replica in replicas))
+        wait_for_partitions_claimed(instance, list(tables.values()), num_partitions)
+
+        # Lose r3 gracefully: its `is_active` node and all of its locks disappear at once.
+        instance.query(f"DROP TABLE test.mv_{tables['r3']}; DETACH TABLE test.{tables['r3']} SYNC;")
+        try:
+            expected_per_consumer = num_partitions // len(survivors) // num_consumers
+            start = time.time()
+            counts = {}
+            while time.time() - start < timeout:
+                counts = {replica: consumer_partition_counts(instance, tables[replica]) for replica in survivors}
+                if all(c == [expected_per_consumer] * num_consumers for c in counts.values()):
+                    break
+                time.sleep(1)
+            else:
+                pytest.fail(
+                    f"The survivors did not converge to {expected_per_consumer} topic partitions per consumer "
+                    f"within {timeout}s, last seen: {counts}"
+                )
+
+            # Every topic partition is consumed after the failover.
+            produce_one_message_per_partition(kafka_cluster, topic_name, num_partitions, key_offset=1000)
+            start = time.time()
+            consumed = 0
+            while time.time() - start < timeout:
+                consumed = count_consumed_rows(instance, [tables[replica] for replica in survivors])
+                if consumed >= num_partitions:
+                    break
+                time.sleep(1)
+            assert consumed == num_partitions, (
+                f"Expected {num_partitions} rows, one per topic partition, got {consumed}"
+            )
+        finally:
+            # The cleanup drops only attached tables. A detached replica keeps its Keeper entry, so the Keeper path
+            # with the committed offsets would survive into the next run of the test.
+            instance.query(f"ATTACH TABLE test.{tables['r3']}")
+
+
+def test_survivors_reach_their_quota_next_to_consumers_without_partitions(kafka_cluster):
+    """
+    After a failover every survivor must reach its permanent quota, also when the survivors have consumers without
+    topic partitions.
+
+    12 partitions, 4 replicas x 8 consumers: node_quota = 3, so 3 consumers of every replica hold a topic partition and
+    5 hold none. When r4 is detached, node_quota becomes 4 and every survivor is below its quota, while still holding
+    locks. A consumer without topic partitions refreshes its locks on every reschedule. Before the fix all of these
+    refreshes counted as yield rounds, so such a consumer stopped yielding within a second, could take a free topic
+    partition that a survivor needs for its quota as a temporary lock, and released and retook it in the same refresh
+    from then on.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "idle_consumers_12p_4r_8c"
+    keeper_path = f"/clickhouse/test/{topic_name}"
+    num_partitions = 12
+    replicas = ["r1", "r2", "r3", "r4"]
+    tables = {replica: f"kafka_idle_cons_{replica}" for replica in replicas}
+    survivors = ["r1", "r2", "r3"]
+    node_quota = num_partitions // len(survivors)
+    stable_samples = 5
+    timeout = 180
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        instance.query("\n".join(
+            create_kafka_table(
+                table_name=tables[replica],
+                topic_name=topic_name,
+                consumer_group=topic_name,
+                keeper_path=keeper_path,
+                replica_name=replica,
+                settings={"kafka_num_consumers": 8, "kafka_thread_per_consumer": 1, **FAST_ROUND_SETTINGS},
+            )
+            for replica in replicas
+        ))
+        wait_for_replicas_registered(kafka_cluster, keeper_path, len(replicas))
+        instance.query("\n".join(attach_materialized_view(tables[replica]) for replica in replicas))
+        wait_for_partitions_claimed(instance, list(tables.values()), num_partitions)
+
+        instance.query(f"DROP TABLE test.mv_{tables['r4']}; DETACH TABLE test.{tables['r4']} SYNC;")
+        try:
+            # The topic partitions move between consumers while they settle, so require the quota in a few samples in
+            # a row.
+            start = time.time()
+            in_a_row = 0
+            counts = {}
+            while time.time() - start < timeout:
+                counts = {replica: replica_partition_count(instance, tables[replica]) for replica in survivors}
+                in_a_row = in_a_row + 1 if all(c == node_quota for c in counts.values()) else 0
+                if in_a_row >= stable_samples:
+                    break
+                time.sleep(1)
+            else:
+                pytest.fail(
+                    f"The survivors did not settle at their quota of {node_quota} topic partitions within {timeout}s, "
+                    f"last seen: {counts}"
+                )
+
+            produce_one_message_per_partition(kafka_cluster, topic_name, num_partitions, key_offset=0)
+            start = time.time()
+            consumed = 0
+            while time.time() - start < timeout:
+                consumed = count_consumed_rows(instance, [tables[replica] for replica in survivors])
+                if consumed >= num_partitions:
+                    break
+                time.sleep(1)
+            assert consumed == num_partitions, (
+                f"Expected {num_partitions} rows, one per topic partition, got {consumed}"
+            )
+        finally:
+            # See `test_failover_converges_to_the_permanent_quota`: a detached replica would keep the Keeper path.
+            instance.query(f"ATTACH TABLE test.{tables['r4']}")
+
+
+def test_replica_that_does_not_consume_is_still_covered(kafka_cluster):
+    """
+    A replica that is active in Keeper but does not consume (no materialized view attached) holds no locks. Its share
+    of the topic partitions must still be consumed by the others with temporary locks. Guards the coverage path of the
+    temporary-lock policy: it must not treat such a replica as "below quota" and wait for it forever.
+
+    12 partitions, 3 replicas x 2 consumers, r3 never gets a materialized view.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "not_consuming_12p_3r_2c"
+    keeper_path = f"/clickhouse/test/{topic_name}"
+    num_partitions = 12
+    replicas = ["r1", "r2", "r3"]
+    tables = {replica: f"kafka_idle_{replica}" for replica in replicas}
+    consuming = ["r1", "r2"]
+    timeout = 240
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        instance.query("\n".join(
+            create_kafka_table(
+                table_name=tables[replica],
+                topic_name=topic_name,
+                consumer_group=topic_name,
+                keeper_path=keeper_path,
+                replica_name=replica,
+                settings={"kafka_num_consumers": 2, "kafka_thread_per_consumer": 1, **FAST_ROUND_SETTINGS},
+            )
+            for replica in replicas
+        ))
+        wait_for_replicas_registered(kafka_cluster, keeper_path, len(replicas))
+        instance.query("\n".join(attach_materialized_view(tables[replica]) for replica in consuming))
+
+        produce_one_message_per_partition(kafka_cluster, topic_name, num_partitions, key_offset=0)
+        start = time.time()
+        consumed = 0
+        while time.time() - start < timeout:
+            consumed = count_consumed_rows(instance, [tables[replica] for replica in consuming])
+            if consumed >= num_partitions:
+                break
+            time.sleep(2)
+        assert consumed == num_partitions, (
+            f"Expected {num_partitions} rows, one per topic partition, got {consumed}: the share of the replica "
+            f"that does not consume was not covered"
+        )
+
+
+
+def replica_partition_count(instance, table):
+    """Number of topic partitions (permanent and temporary locks) held by all consumers of `table`."""
+    return sum(consumer_partition_counts(instance, table))
+
+
+def test_replica_holds_at_most_one_temporary_lock(kafka_cluster):
+    """
+    The consumers of a replica share one temporary lock, so a replica never holds more than node_quota + 1 topic
+    partitions while every active replica holds locks.
+
+    14 partitions, 3 replicas x 2 consumers: node_quota = 4, 2 per consumer, and 2 topic partitions are left for
+    temporary locks. With a temporary lock per consumer both of them could end up on the two consumers of the same
+    replica, i.e. 6 topic partitions on one replica.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "tmp_lock_cap_14p_3r_2c"
+    keeper_path = f"/clickhouse/test/{topic_name}"
+    num_partitions = 14
+    replicas = ["r1", "r2", "r3"]
+    tables = {replica: f"kafka_cap_{replica}" for replica in replicas}
+    node_quota = num_partitions // len(replicas)
+    timeout = 180
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        instance.query("\n".join(
+            create_kafka_table(
+                table_name=tables[replica],
+                topic_name=topic_name,
+                consumer_group=topic_name,
+                keeper_path=keeper_path,
+                replica_name=replica,
+                settings={"kafka_num_consumers": 2, "kafka_thread_per_consumer": 1, **FAST_ROUND_SETTINGS},
+            )
+            for replica in replicas
+        ))
+        wait_for_replicas_registered(kafka_cluster, keeper_path, len(replicas))
+        instance.query("\n".join(attach_materialized_view(tables[replica]) for replica in replicas))
+
+        # Wait until every replica holds its permanent quota, then for a few more rounds, so the temporary locks taken
+        # while some replica still had no locks at all are released.
+        start = time.time()
+        counts = {}
+        while time.time() - start < timeout:
+            counts = {replica: replica_partition_count(instance, tables[replica]) for replica in replicas}
+            if all(c >= node_quota for c in counts.values()):
+                break
+            time.sleep(1)
+        else:
+            pytest.fail(f"The replicas did not reach their quota of {node_quota} within {timeout}s, last seen: {counts}")
+        time.sleep(10)
+
+        # The consumers of a replica are read one after the other, so a single sample can count the temporary lock twice
+        # while it moves from one consumer to the other. More than node_quota + 1 in two samples in a row is a violation.
+        previous_over = set()
+        for _ in range(30):
+            counts = {replica: replica_partition_count(instance, tables[replica]) for replica in replicas}
+            over = {replica for replica, c in counts.items() if c > node_quota + 1}
+            assert not (over & previous_over), (
+                f"A replica holds more than node_quota + 1 = {node_quota + 1} topic partitions: {counts}"
+            )
+            previous_over = over
+            time.sleep(1)
+
+        # The cap must not leave any topic partition unconsumed.
+        produce_one_message_per_partition(kafka_cluster, topic_name, num_partitions, key_offset=0)
+        start = time.time()
+        consumed = 0
+        while time.time() - start < timeout:
+            consumed = count_consumed_rows(instance, list(tables.values()))
+            if consumed >= num_partitions:
+                break
+            time.sleep(1)
+        assert consumed == num_partitions, f"Expected {num_partitions} rows, one per topic partition, got {consumed}"
+
+
+def test_replica_stuck_below_quota_does_not_block_temporary_partitions(kafka_cluster):
+    """
+    When a replica stays below its permanent quota after the yield rounds, the other replicas must keep consuming the
+    free topic partitions with their temporary lock.
+
+    A fake replica `ghost` is active and holds a single lock, so it stays below its quota forever. 64 partitions,
+    r1 with 1 consumer: node_quota = 32, r1 holds 32 permanent locks and 31 topic partitions are free. After the yield
+    rounds r1 must cover all of them, not only one temporary lock per replica. With the default
+    `stream_kafka_locks_refresh_polls` (15) an assignment is polled 16 times: if r1 dropped its temporary locks in every
+    other round, its assignment would alternate between 32 and more topic partitions, and the polling cursor, which
+    survives the refresh, would never reach the temporary partitions.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "stuck_below_quota_64p"
+    keeper_path = f"/clickhouse/test/{topic_name}"
+    num_partitions = 64
+    table = "kafka_stuck_r1"
+    expected_rows = num_partitions - 1  # the topic partition locked by `ghost` is never consumed
+    timeout = 400
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        instance.query(create_kafka_table(
+            table_name=table,
+            topic_name=topic_name,
+            consumer_group=topic_name,
+            keeper_path=keeper_path,
+            replica_name="r1",
+            settings={"kafka_num_consumers": 1, "kafka_thread_per_consumer": 1, **FAST_ROUND_SETTINGS},
+        ))
+        wait_for_replicas_registered(kafka_cluster, keeper_path, 1)
+
+        zk = kafka_cluster.get_kazoo_client("zoo1")
+        try:
+            zk.ensure_path(f"{keeper_path}/replicas/ghost/is_active")
+            zk.ensure_path(f"{keeper_path}/topic_partition_locks")
+            zk.create(f"{keeper_path}/topic_partition_locks/{topic_name}_0.lock", b"ghost")
+
+            instance.query(attach_materialized_view(table))
+            produce_one_message_per_partition(kafka_cluster, topic_name, num_partitions, key_offset=0)
+
+            start = time.time()
+            consumed = 0
+            while time.time() - start < timeout:
+                consumed = count_consumed_rows(instance, [table])
+                if consumed >= expected_rows:
+                    break
+                time.sleep(1)
+            assert consumed == expected_rows, (
+                f"Expected {expected_rows} rows, one per topic partition not locked by the stuck replica, got "
+                f"{consumed}: the free topic partitions were not covered by temporary locks"
+            )
+        finally:
+            zk.delete(f"{keeper_path}/replicas/ghost", recursive=True)
+            zk.delete(f"{keeper_path}/topic_partition_locks/{topic_name}_0.lock")
+            zk.stop()
+            zk.close()
+
+
+def test_temporary_lock_of_replica_is_given_back_after_an_exception(kafka_cluster):
+    """
+    An exception after a consumer took the temporary lock of its replica must give it back, otherwise no consumer of the
+    replica could take a temporary lock again.
+
+    5 partitions, 2 replicas x 1 consumer: node_quota = 2, and the remaining topic partition can only be consumed with
+    the temporary lock of a replica. The failpoint throws right after the temporary lock of the replica is taken, in
+    every round of both replicas while it is enabled.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "tmp_lock_exception_5p_2r_1c"
+    keeper_path = f"/clickhouse/test/{topic_name}"
+    num_partitions = 5
+    replicas = ["r1", "r2"]
+    tables = {replica: f"kafka_tmp_exc_{replica}" for replica in replicas}
+    failpoint = "kafka2_throw_after_taking_replica_tmp_lock"
+    injected = "Injected failure after taking the temporary lock of the replica"
+    timeout = 180
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        instance.query("\n".join(
+            create_kafka_table(
+                table_name=tables[replica],
+                topic_name=topic_name,
+                consumer_group=topic_name,
+                keeper_path=keeper_path,
+                replica_name=replica,
+                settings={"kafka_num_consumers": 1, "kafka_thread_per_consumer": 1, **FAST_ROUND_SETTINGS},
+            )
+            for replica in replicas
+        ))
+        wait_for_replicas_registered(kafka_cluster, keeper_path, len(replicas))
+        instance.query("\n".join(attach_materialized_view(tables[replica]) for replica in replicas))
+        wait_for_partitions_claimed(instance, list(tables.values()), num_partitions)
+
+        injected_before = instance.count_in_log(injected)
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            # Both replicas take their temporary lock in every round, so a few rounds are enough for both to hit it.
+            start = time.time()
+            while time.time() - start < timeout:
+                if int(instance.count_in_log(injected)) >= int(injected_before) + 4:
+                    break
+                time.sleep(1)
+            else:
+                pytest.fail(f"The failpoint {failpoint} was not hit within {timeout}s")
+            time.sleep(5)
+        finally:
+            instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        produce_one_message_per_partition(kafka_cluster, topic_name, num_partitions, key_offset=0)
+        start = time.time()
+        consumed = 0
+        while time.time() - start < timeout:
+            consumed = count_consumed_rows(instance, list(tables.values()))
+            if consumed >= num_partitions:
+                break
+            time.sleep(1)
+        assert consumed == num_partitions, (
+            f"Expected {num_partitions} rows, one per topic partition, got {consumed}: the temporary lock of a replica "
+            f"was not given back after the exception"
+        )
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
