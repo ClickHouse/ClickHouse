@@ -30,6 +30,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalComparison.h>
@@ -1065,43 +1066,71 @@ private:
         return as_variant;
     }
 
-    /// The path of Tuple positions leading to the first erased type inside `type`, or nothing when
-    /// `type` erases nothing. Mirrors hasTypeErasingElement's traversal, including its Array/Map stop.
-    static std::optional<VectorWithMemoryTracking<size_t>> findErasedPath(const IDataType & type)
+    using ErasedPath = VectorWithMemoryTracking<size_t>;
+
+    /// The paths of Tuple positions leading to every erased type inside `type`; none when `type`
+    /// erases nothing. Mirrors hasTypeErasingElement's traversal, including its Array/Map stop.
+    static void collectErasedPaths(const IDataType & type, ErasedPath & prefix, VectorWithMemoryTracking<ErasedPath> & paths)
     {
         checkStackSize();
 
         if (isDynamic(type) || isVariant(type))
-            return VectorWithMemoryTracking<size_t>{};
+        {
+            paths.push_back(prefix);
+            return;
+        }
 
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type.getPtr()).get());
         if (!tuple_type)
-            return {};
+            return;
 
         const auto & elements = tuple_type->getElements();
         for (size_t position = 0; position < elements.size(); ++position)
         {
-            if (auto nested = findErasedPath(*elements[position]))
-            {
-                VectorWithMemoryTracking<size_t> path{position};
-                path.insert(path.end(), nested->begin(), nested->end());
-                return path;
-            }
+            prefix.push_back(position);
+            collectErasedPaths(*elements[position], prefix, paths);
+            prefix.pop_back();
+        }
+    }
+
+    /// The erased columns of one operand, one per erased position of its type, each kept alive by
+    /// the holder at the same index.
+    struct ErasedSites
+    {
+        VectorWithMemoryTracking<const ColumnVariant *> variants;
+        VectorWithMemoryTracking<ColumnPtr> holders;
+    };
+
+    /// Every erased column inside `column`, or nothing when the column shape does not match `type`
+    /// or an erased column is not aligned with the `expected_size` rows of `column`.
+    static std::optional<ErasedSites> findErasedSites(const IColumn & column, const IDataType & type, size_t expected_size)
+    {
+        ErasedPath prefix;
+        VectorWithMemoryTracking<ErasedPath> paths;
+        collectErasedPaths(type, prefix, paths);
+
+        ErasedSites sites;
+        sites.variants.reserve(paths.size());
+        sites.holders.reserve(paths.size());
+
+        for (const auto & path : paths)
+        {
+            ColumnPtr holder;
+            const auto * variant_column = findVariantAtPath(column, path, holder);
+            if (!variant_column || variant_column->size() != expected_size)
+                return {};
+
+            sites.variants.push_back(variant_column);
+            sites.holders.push_back(std::move(holder));
         }
 
-        return {};
+        return sites;
     }
 
-    /// A row's alternatives on both sides of the comparison, packed so rows agreeing on both share a
-    /// group. Both halves are ColumnVariant::Discriminator, so the pair fits a UInt16; the wider type
-    /// leaves a sentinel for a row that belongs to no group.
+    /// The label of a group of rows that carry the same alternatives, or no_group for a row that
+    /// belongs to no group.
     using GroupKey = UInt32;
     static constexpr GroupKey no_group = std::numeric_limits<GroupKey>::max();
-
-    static GroupKey makeGroupKey(ColumnVariant::Discriminator elements, ColumnVariant::Discriminator needle)
-    {
-        return static_cast<GroupKey>(elements) << 8 | needle;
-    }
 
     /// The one global discriminator every element of `row` carries, NULL_DISCRIMINATOR when it holds
     /// only NULLs, or nothing when its elements disagree. NULLs are skipped: the peel answers those
@@ -1128,60 +1157,65 @@ private:
         return alternative.value_or(ColumnVariant::NULL_DISCRIMINATOR);
     }
 
-    /// One group label per row, keyed by the alternatives it carries on both sides: a group is only
-    /// answerable as a whole if every member peels the same way. A row whose own elements disagree is
-    /// labelled no_group, and nothing means no group formed at all. A side that erases nothing gives
-    /// every row the same key half, so grouping keys off whichever side is erased.
+    /// Append to `alternatives` what the positions [begin, end) carry at every erased site, or
+    /// return false when they disagree at any of them.
+    static bool appendRowAlternatives(
+        const ErasedSites & sites, size_t begin, size_t end, VectorWithMemoryTracking<ColumnVariant::Discriminator> & alternatives)
+    {
+        for (const auto * variant_column : sites.variants)
+        {
+            auto alternative = rowAlternative(*variant_column, begin, end);
+            if (!alternative)
+                return false;
+
+            alternatives.push_back(*alternative);
+        }
+
+        return true;
+    }
+
+    /// One group label per row, keyed by the alternatives it carries at every erased position of
+    /// both sides: a group is only answerable as a whole if every member peels the same way at each
+    /// of them, so a Tuple with several erased fields is keyed by all of them and not by the first.
+    /// A row whose own elements disagree at some position is labelled no_group, and nothing means no
+    /// group formed at all. A side that erases nothing adds nothing to the key, so grouping keys off
+    /// whichever side is erased.
     static std::optional<VectorWithMemoryTracking<GroupKey>> groupRowsByAlternative(
         const ColumnArray & array, const DataTypePtr & element_type,
         const IColumn & needle, const DataTypePtr & needle_type)
     {
         const auto & offsets = array.getOffsets();
 
-        const ColumnVariant * variant_column = nullptr;
-        ColumnPtr variant_holder;
-        if (auto path = findErasedPath(*element_type))
-        {
-            variant_column = findVariantAtPath(array.getData(), *path, variant_holder);
-            if (!variant_column || variant_column->size() != array.getData().size())
-                return {};
-        }
+        auto element_sites = findErasedSites(array.getData(), *element_type, array.getData().size());
+        if (!element_sites)
+            return {};
 
-        const ColumnVariant * needle_variant = nullptr;
-        ColumnPtr needle_holder;
-        if (auto needle_path = findErasedPath(*needle_type))
-        {
-            needle_variant = findVariantAtPath(needle, *needle_path, needle_holder);
-            if (!needle_variant || needle_variant->size() != offsets.size())
-                return {};
-        }
+        auto needle_sites = findErasedSites(needle, *needle_type, offsets.size());
+        if (!needle_sites)
+            return {};
+
+        using Alternatives = VectorWithMemoryTracking<ColumnVariant::Discriminator>;
 
         VectorWithMemoryTracking<GroupKey> labels(offsets.size(), no_group);
-        bool any_grouped = false;
+        MapWithMemoryTracking<Alternatives, GroupKey> group_keys;
+        Alternatives alternatives;
+        alternatives.reserve(element_sites->variants.size() + needle_sites->variants.size());
         ColumnArray::Offset current_offset = 0;
 
         for (size_t row = 0; row < offsets.size(); ++row)
         {
-            auto elements_alternative = variant_column
-                ? rowAlternative(*variant_column, current_offset, offsets[row])
-                : std::optional<ColumnVariant::Discriminator>{ColumnVariant::NULL_DISCRIMINATOR};
+            const auto row_begin = current_offset;
             current_offset = offsets[row];
 
-            if (!elements_alternative)
+            alternatives.clear();
+            if (!appendRowAlternatives(*element_sites, row_begin, offsets[row], alternatives)
+                || !appendRowAlternatives(*needle_sites, row, row + 1, alternatives))
                 continue;
 
-            auto needle_alternative = needle_variant
-                ? rowAlternative(*needle_variant, row, row + 1)
-                : std::optional<ColumnVariant::Discriminator>{ColumnVariant::NULL_DISCRIMINATOR};
-
-            if (!needle_alternative)
-                continue;
-
-            labels[row] = makeGroupKey(*elements_alternative, *needle_alternative);
-            any_grouped = true;
+            labels[row] = group_keys.try_emplace(alternatives, static_cast<GroupKey>(group_keys.size())).first->second;
         }
 
-        if (!any_grouped)
+        if (group_keys.empty())
             return {};
 
         return labels;
