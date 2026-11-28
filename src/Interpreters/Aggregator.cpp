@@ -6015,9 +6015,15 @@ void NO_INLINE Aggregator::mergeBucketImpl(
         const auto seen_result_keys = static_cast<double>(res->merged_buckets_result_keys.load(std::memory_order_acquire));
         const UInt64 seen_input_keys = res->merged_buckets_input_keys.load(std::memory_order_relaxed);
         if (seen_input_keys)
+        {
+            const auto bytes_before_reserve = check_bytes ? dst.getBufferSizeInBytes() : 0;
             dst.reserve(std::min(
                 input_keys,
                 static_cast<size_t>(seen_result_keys / static_cast<double>(seen_input_keys) * static_cast<double>(input_keys))));
+            /// The conversion of the bucket releases the reserved buffer, so it is charged as well.
+            if (check_bytes)
+                updateAndCheckMemoryUsage(static_cast<Int64>(dst.getBufferSizeInBytes()) - static_cast<Int64>(bytes_before_reserve));
+        }
     }
 
     DeferredMerges deferred;
