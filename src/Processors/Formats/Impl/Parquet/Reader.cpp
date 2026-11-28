@@ -3473,7 +3473,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
     /// A row group that is read from the columns cache or written to it is read in its chunks: a row
     /// subgroup that is a whole chunk is served the cached column itself, or written to the cache as
     /// decoded, without a copy. The chunk is read whole even if the block size settings ask for less,
-    /// since the cache holds those rows anyway, and never together with another chunk.
+    /// since the cache holds those rows anyway (but see below), and never together with another chunk.
     const bool aligned_with_columns_cache = !row_group.cached_columns.empty() || !row_group.columns_cache_writes.empty();
     if (aligned_with_columns_cache)
     {
@@ -3515,9 +3515,15 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         const size_t memory_limit = memoryLimitOfCurrentThread();
         const bool chunk_too_large = memory_limit != 0 && rows_per_subgroup < COLUMNS_CACHE_CHUNK_ROWS
             && (size_unknown || bytes_per_row * static_cast<double>(COLUMNS_CACHE_CHUNK_ROWS) > static_cast<double>(memory_limit) / 4);
+        /// A row group that is only served from the cache, and not written to it, is also read in the blocks the settings
+        /// ask for, when a whole chunk is more than twice as many rows: the rows are cut out of the cached chunk, which
+        /// costs a copy, but a chunk served whole is a single block, processed by a single thread. E.g. a file of wide
+        /// rows that fits in one chunk was processed by one thread from the cache, but by all of them when decoded.
+        const size_t chunk_rows = std::min(COLUMNS_CACHE_CHUNK_ROWS, size_t(std::max<Int64>(0, row_group.meta->num_rows)));
+        const bool serve_requested_blocks = row_group.columns_cache_writes.empty() && 2 * rows_per_subgroup < chunk_rows;
         if (chunk_too_large)
             row_group.columns_cache_writes.clear();
-        else
+        else if (!serve_requested_blocks)
             rows_per_subgroup = COLUMNS_CACHE_CHUNK_ROWS;
     }
     chassert(rows_per_subgroup > 0);

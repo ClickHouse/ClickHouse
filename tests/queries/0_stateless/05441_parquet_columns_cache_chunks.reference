@@ -6,9 +6,9 @@
 250000	31249875000	1388890
 id	4	250000	53392	65536	0	250000
 s	4	250000	53392	65536	0	250000
---- the second read is served from the cache, in blocks of the chunks
+--- the second read is served from the cache, in the blocks the settings ask for, within the chunks
 250000	31249875000	1388890
-4	65536	53392
+252	1000	392
 --- PREWHERE filters the rows served from the cache
 35715	4464339285	198415
 35715	4464339285	198415
