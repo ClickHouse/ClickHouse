@@ -194,6 +194,8 @@ public:
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
         /// The locality can be auto-reinitialized by reloading cluster config if DNSCacheUpdater is enabled
         bool is_local = false;
+        /// The replica is this server, also when `default_database` keeps it from being `is_local` (it is then queried over TCP).
+        bool is_this_server = false;
         bool user_specified = false;
 
         Protocol::Compression compression = Protocol::Compression::Enable;
@@ -245,7 +247,7 @@ public:
         bool operator==(const Address & other) const { return tuple() == other.tuple(); }
 
     private:
-        [[nodiscard]] bool isLocal(UInt16 clickhouse_port) const;
+        [[nodiscard]] bool isThisServer(UInt16 clickhouse_port) const;
     };
 
     using Addresses = std::vector<Address>;
