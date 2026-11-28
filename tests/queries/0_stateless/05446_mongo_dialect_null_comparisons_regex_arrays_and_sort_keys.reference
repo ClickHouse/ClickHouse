@@ -1,0 +1,50 @@
+-- the dot of a regular expression and a newline
+3
+1
+3
+1
+3
+1	0
+2	0
+3	1
+-- the extended mode
+2
+3
+-- comparisons of null
+1	1	1	1	1	0	1	-1	1
+2	0	0	1	1	1	1	0	1
+3	0	1	0	1	1	1	1	1
+2
+3
+-- an element past the ends of an array
+1	\N	10	\N	\N	10	10
+2	\N	\N	\N	\N	\N	\N
+3	\N	2	\N	\N	2	10
+-- size of a path of a JSON column
+1
+2
+3
+4
+-- min and max of null
+min null: \N \N 
+min 1: 1 \N 
+min 10: 5 \N 
+max null: 5 \N 
+max 1: 5 1 
+max 10: 10 10 
+-- a nested projection
+alice
+bob
+A	alice	5
+B	bob	\N
+-- a sort on an array
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+B
+-- an unwind that replaces a sort key
+(NOT_IMPLEMENTED)
+\N	['A','A','B','B']	B
+-- the depth of a request
+(TOO_DEEP_RECURSION)
+(TOO_DEEP_AST)
+2

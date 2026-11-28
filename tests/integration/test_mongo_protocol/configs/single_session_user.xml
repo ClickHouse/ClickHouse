@@ -1,0 +1,18 @@
+<clickhouse>
+    <profiles>
+        <!-- `max_sessions_for_user` cannot be set by a user, only by a profile of the configuration. -->
+        <single_session>
+            <max_sessions_for_user>1</max_sessions_for_user>
+        </single_session>
+    </profiles>
+
+    <users>
+        <mongo_limited_user>
+            <password>mongo_pass</password>
+            <profile>single_session</profile>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+        </mongo_limited_user>
+    </users>
+</clickhouse>

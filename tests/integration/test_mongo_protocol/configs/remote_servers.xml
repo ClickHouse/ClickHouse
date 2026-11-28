@@ -1,0 +1,16 @@
+<clickhouse>
+    <remote_servers>
+        <!-- A shard on the same server, at an address that is not recognized as the local one, so
+             that an insert into a `Distributed` table over it is sent rather than written locally. -->
+        <mongo_remote_shard>
+            <shard>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                    <user>default</user>
+                    <password>123</password>
+                </replica>
+            </shard>
+        </mongo_remote_shard>
+    </remote_servers>
+</clickhouse>

@@ -1,0 +1,26 @@
+-- $round rounds a tie to even
+20	40	2	2
+-- constant group keys
+0	3
+2	3
+1	a	1
+1	b	2
+-- $stdDevSamp of one value is null
+a	\N
+b	1.4142135623730951
+-- $first and $last after $unwind follow the array
+\N	20	10
+-- $toDecimal of a document
+only exact for an integer or a boolean
+-- dates moved by milliseconds
+2026-01-01 00:00:00.001	2026-01-01 00:00:01.000	2026-01-01 00:00:00.001	2025-12-31 23:59:59.999
+2026-01-01 00:00:00.004	2026-01-01 00:00:00.003
+-- find projection strings
+k	a
+-- limits
+QUERY_IS_TOO_LARGE
+1
+2
+3
+Code: 167. '$multiply' has 10002 arguments, more than the 10000 that are supported
+1

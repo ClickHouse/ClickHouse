@@ -1,0 +1,5 @@
+-- a table with an `_id` column keeps it
+1	1
+-- a table without one is an error, and nothing is written
+NO_SUCH_COLUMN_IN_TABLE
+0
