@@ -109,6 +109,8 @@ public:
 
     [[nodiscard]] const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & engine_name) const;
 
+    [[nodiscard]] Strings getAllRegisteredNames() const;
+
 private:
     struct RegisteredEngine
     {

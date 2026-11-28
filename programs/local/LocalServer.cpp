@@ -6,6 +6,8 @@
 #include <Common/Config/getConfigPath.h>
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/FactoryRestrictions.h>
+#include <Interpreters/isRegisteredInFactory.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
@@ -1449,6 +1451,9 @@ try
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
     QueryPlanStepRegistry::registerPlanSteps();
+
+    /// After the registration of all factories, because the names in the lists are checked against them.
+    FactoryRestrictions::instance().set(FactoryRestrictions::parse(getClientConfiguration(), isRegisteredInFactory));
 
     /// `workerFunction()` returns only on `terminateThread()`, so it must not hold a slot of a
     /// bounded pool. SCOPE_EXIT is LIFO, so registering this guard before the `cleanup()` one keeps

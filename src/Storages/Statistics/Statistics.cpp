@@ -25,6 +25,7 @@
 #include <Storages/Statistics/StatisticsUniqV2.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
@@ -1035,6 +1036,12 @@ MergeTreeStatisticsFactory & MergeTreeStatisticsFactory::instance()
     return instance;
 }
 
+/// Called on every creation path: definitions, collectors for inserts and merges, and deserialization.
+static void checkStatisticsAllowed(StatisticsType type)
+{
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::Statistics, statisticsTypeToString(type));
+}
+
 void MergeTreeStatisticsFactory::validate(
     const ColumnStatisticsDescription & stats, const DataTypePtr & data_type, bool allow_deprecated_minmax) const
 {
@@ -1048,6 +1055,8 @@ void MergeTreeStatisticsFactory::validate(
         auto it = validators.find(type);
         if (it == validators.end())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'", type);
+
+        checkStatisticsAllowed(type);
 
         if (!it->second(desc, data_type))
             throw Exception(
@@ -1092,6 +1101,7 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
                 "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'",
                 type);
 
+        checkStatisticsAllowed(type);
         auto stat_ptr = (it->second)(desc, stats_desc.data_type);
         column_stat->stats[type] = stat_ptr;
     }
@@ -1112,6 +1122,8 @@ MergeTreeStatisticsFactory::get(const std::vector<StatisticsType> & stat_types, 
                 "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'",
                 type);
 
+        checkStatisticsAllowed(type);
+
         auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
         SingleStatisticsDescription desc(type, ast, false);
 
@@ -1121,6 +1133,15 @@ MergeTreeStatisticsFactory::get(const std::vector<StatisticsType> & stat_types, 
 
         result.emplace(type, desc);
     }
+    return result;
+}
+
+Strings MergeTreeStatisticsFactory::getAllRegisteredNames() const
+{
+    Strings result;
+    result.reserve(creators.size());
+    for (const auto & [type, _] : creators)
+        result.push_back(statisticsTypeToString(type));
     return result;
 }
 
@@ -1140,6 +1161,7 @@ StatisticsPtr MergeTreeStatisticsFactory::tryCreateSingle(StatisticsType type, c
     if (cit == creators.end())
         return nullptr;
 
+    checkStatisticsAllowed(type);
     return cit->second(desc, data_type);
 }
 

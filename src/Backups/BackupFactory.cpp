@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Common/Exception.h>
+#include <Common/FactoryRestrictions.h>
 
 #include <fmt/format.h>
 
@@ -72,6 +73,8 @@ BackupMutablePtr BackupFactory::createBackup(const CreateParams & params) const
     if (it == engines.end())
         throw Exception(ErrorCodes::BACKUP_ENGINE_NOT_FOUND, "Not found backup engine '{}'", engine_name);
 
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::BackupEngines, engine_name);
+
     /// Authorize the location before the creator does any network or filesystem I/O.
     checkSourceAccess(params.backup_info, params.context, params.open_mode);
 
@@ -110,6 +113,15 @@ void BackupFactory::registerBackupEngine(
     if (engines.contains(engine_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup engine '{}' was registered twice", engine_name);
     engines.emplace(engine_name, RegisteredEngine{creator_fn, destination_identity_fn, source_access_fn, std::move(secret_arguments)});
+}
+
+Strings BackupFactory::getAllRegisteredNames() const
+{
+    Strings result;
+    result.reserve(engines.size());
+    for (const auto & [name, _] : engines)
+        result.push_back(name);
+    return result;
 }
 
 const SecretArgumentsSpec * BackupFactory::tryGetSecretArgumentsSpec(const String & engine_name) const
