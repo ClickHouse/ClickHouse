@@ -2231,6 +2231,48 @@ def test_postgres_delete_type_mismatch_rejected(started_cluster):
     cursor.execute("DROP TABLE test_delete_mismatch")
 
 
+def test_postgres_delete_integer_narrowing_rejected(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_narrow")
+    cursor.execute("CREATE TABLE test_delete_narrow (id integer NOT NULL)")
+    cursor.execute("INSERT INTO test_delete_narrow VALUES (255), (1)")
+
+    # A remote `integer` read into a ClickHouse `Int8` is narrowed by insertPostgreSQLValue (255 -> -1),
+    # so `id > 0` matches different rows in the two engines; a pushed-down delete would remove what
+    # PostgreSQL matched. The narrowing mapping is therefore rejected.
+    node1.query(
+        f"CREATE TABLE test.pg_delete_narrow (id Int8) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_narrow', 'postgres', '{pg_pass}')"
+    )
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_narrow WHERE id > 0")
+    assert "cannot be pushed down" in error
+    node1.query("DROP TABLE test.pg_delete_narrow")
+
+    # An unsigned ClickHouse integer is rejected too: a negative remote value would wrap.
+    node1.query(
+        f"CREATE TABLE test.pg_delete_unsigned (id UInt32) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_narrow', 'postgres', '{pg_pass}')"
+    )
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_unsigned WHERE id > 0")
+    assert "cannot be pushed down" in error
+    node1.query("DROP TABLE test.pg_delete_unsigned")
+
+    # Nothing was deleted by the rejected predicates.
+    cursor.execute("SELECT count(*) FROM test_delete_narrow")
+    assert cursor.fetchall() == [(2,)]
+
+    # A signed ClickHouse integer at least as wide as the remote `integer` represents it losslessly.
+    node1.query(
+        f"CREATE TABLE test.pg_delete_wide (id Int64) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_narrow', 'postgres', '{pg_pass}')"
+    )
+    node1.query("DELETE FROM test.pg_delete_wide WHERE id > 0")
+    cursor.execute("SELECT count(*) FROM test_delete_narrow")
+    assert cursor.fetchall() == [(0,)]
+    node1.query("DROP TABLE test.pg_delete_wide")
+    cursor.execute("DROP TABLE test_delete_narrow")
+
+
 def test_postgres_delete_non_deterministic_collation_rejected(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     cursor.execute("DROP TABLE IF EXISTS test_delete_ci")

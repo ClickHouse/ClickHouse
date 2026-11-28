@@ -215,9 +215,37 @@ void checkRemoteColumnEquivalenceForDelete(
         case PG_TYPE_OID_INT2:
         case PG_TYPE_OID_INT4:
         case PG_TYPE_OID_INT8:
+        {
+            /// The remote value is read into the ClickHouse column with a `static_cast` to its type, so
+            /// the ClickHouse type must represent the whole range of the remote integer without narrowing
+            /// or a sign change — otherwise the row ClickHouse sees (e.g. a remote `255` as `Int8` -> -1,
+            /// or a negative value as a `UInt`) differs from the row the remote matches, and the
+            /// pushed-down predicate would delete a row ClickHouse's own predicate does not. PostgreSQL
+            /// integers are signed, so require a signed ClickHouse integer at least as wide.
             if (!which.isInteger())
                 reject("is an integer in PostgreSQL but not an integer in ClickHouse");
+            const int remote_bits
+                = remote.type_oid == PG_TYPE_OID_INT2 ? 16 : (remote.type_oid == PG_TYPE_OID_INT4 ? 32 : 64);
+            int clickhouse_signed_bits = 0;
+            if (which.isInt8())
+                clickhouse_signed_bits = 8;
+            else if (which.isInt16())
+                clickhouse_signed_bits = 16;
+            else if (which.isInt32())
+                clickhouse_signed_bits = 32;
+            else if (which.isInt64())
+                clickhouse_signed_bits = 64;
+            else if (which.isInt128())
+                clickhouse_signed_bits = 128;
+            else if (which.isInt256())
+                clickhouse_signed_bits = 256;
+            if (clickhouse_signed_bits < remote_bits)
+                reject(fmt::format(
+                    "is a {}-bit signed integer in PostgreSQL that the ClickHouse column cannot hold without "
+                    "narrowing or a sign change (use a signed ClickHouse integer at least {} bits wide)",
+                    remote_bits, remote_bits));
             return;
+        }
         case PG_TYPE_OID_DATE:
             if (!(which.isDate() || which.isDate32()))
                 reject("is a date in PostgreSQL but not a Date/Date32 in ClickHouse");
@@ -826,6 +854,13 @@ void StoragePostgreSQL::mutate(const MutationCommands & commands, ContextPtr loc
     try
     {
         pqxx::work tx(connection);
+
+        /// Hold the relation against concurrent DDL for the whole transaction. `ACCESS SHARE` (what any
+        /// reader takes, and which needs only `SELECT` privilege) conflicts with the `ACCESS EXCLUSIVE`
+        /// lock an `ALTER` acquires, so the column types and collations validated below cannot change
+        /// under the delete. Taken before the catalog read, it closes the window between validating the
+        /// schema and deleting against it; a relation that does not exist raises `42P01` here.
+        tx.exec("LOCK TABLE " + quoted_table + " IN ACCESS SHARE MODE");
 
         /// Translate the predicate against the remote column types/collations read in THIS transaction,
         /// so the schema the delete runs against is exactly the one that was validated. The predicate is
