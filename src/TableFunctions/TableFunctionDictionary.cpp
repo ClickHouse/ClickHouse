@@ -46,6 +46,15 @@ void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, Contex
     dictionary_name = checkAndGetLiteralArgument<String>(args[0], "dictionary_name");
 }
 
+std::optional<ITableFunction::QualifiedArguments> TableFunctionDictionary::getQualifiedArguments(const ContextPtr & context) const
+{
+    auto qualified_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
+    /// A dictionary name cannot carry a database name that contains a dot.
+    if (qualified_name.database.contains('.'))
+        return {};
+    return QualifiedArguments{1, {qualified_name.getFullName()}};
+}
+
 ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     const ExternalDictionariesLoader & external_loader = context->getExternalDictionariesLoader();

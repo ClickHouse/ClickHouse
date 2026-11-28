@@ -25,6 +25,12 @@ public:
 private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
+    std::optional<QualifiedArguments> getQualifiedArguments(const ContextPtr &) const override
+    {
+        const auto & table_id = config.time_series_storage_id;
+        return QualifiedArguments{config.num_table_arguments, {table_id.getDatabaseName(), table_id.getTableName()}};
+    }
+
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
         ContextPtr context,

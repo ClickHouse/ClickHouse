@@ -29,6 +29,10 @@ private:
     /// The call names the target table of the `TimeSeries` table it is given, so it denotes the same
     /// table on every replica even though the target itself is a hidden table named after a UUID.
     std::optional<String> getParallelReplicasReadID() const override;
+    std::optional<QualifiedArguments> getQualifiedArguments(const ContextPtr &) const override
+    {
+        return QualifiedArguments{num_table_arguments, {time_series_storage_id.getDatabaseName(), time_series_storage_id.getTableName()}};
+    }
 
     /// The returned storage is the target table itself, so a persisted table would rename a live table in memory.
     bool canBeUsedToCreateTable() const override { return false; }
@@ -46,6 +50,7 @@ private:
     StoragePtr getTargetTable(const ContextPtr & context) const;
 
     StorageID time_series_storage_id = StorageID::createEmpty();
+    size_t num_table_arguments = 0;
     String target_table_type_name;
 };
 

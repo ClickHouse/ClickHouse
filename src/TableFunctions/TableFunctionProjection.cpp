@@ -27,6 +27,10 @@ public:
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+    std::optional<QualifiedArguments> getQualifiedArguments(const ContextPtr &) const override
+    {
+        return QualifiedArguments{2, {source_table_id.database_name, source_table_id.table_name}};
+    }
 
     void checkSourceObjectAccess(const ContextPtr & context, bool for_structure) const override
     {

@@ -33,6 +33,10 @@ public:
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+    std::optional<QualifiedArguments> getQualifiedArguments(const ContextPtr &) const override
+    {
+        return QualifiedArguments{2, {source_table_id.database_name, source_table_id.table_name}};
+    }
 
 private:
     /// The fixed structure. It is not derived from the source table, but the table function does not declare it as

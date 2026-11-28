@@ -16,6 +16,8 @@ public:
     {
         std::shared_ptr<const PrometheusQueryTree> promql_query;
         PrometheusQueryEvaluationSettings evaluation_settings;
+        /// Leading table function arguments naming the TimeSeries table: two when the database is passed separately.
+        size_t num_table_arguments = 0;
     };
 
     static Configuration getConfiguration(ASTs & args, const ContextPtr & context, bool over_range);
