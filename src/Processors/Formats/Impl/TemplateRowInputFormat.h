@@ -124,6 +124,7 @@ public:
 
 private:
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
     PeekableReadBuffer buf;
     const ParsedTemplateFormatString format;
