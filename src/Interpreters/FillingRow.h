@@ -28,6 +28,9 @@ class FillingRow
     /// finds last value <= to
     Field doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to);
 
+    /// Whether the steps of the column from the current row land exactly on `value`.
+    [[nodiscard]] bool stepsReach(size_t pos, const Field & value);
+
     /// Resets the keys after `pos` to FROM, or to `next_original_row` without FROM. Returns whether the row goes before it:
     /// never if equal to it in all keys, or up to `pos` with a first differing later key (neither NULL nor NaN) that is not less.
     [[nodiscard]] bool resetKeysAfter(size_t pos, const FillingRow & next_original_row);
@@ -61,6 +64,9 @@ public:
     /// up front once the anchor of the filling is known.
     void checkFillingTowardsConstraintsFitsColumnTypes();
 
+    /// Makes a key at or past its TO limit only its own values: the later keys are filled in its groups as without TO.
+    void fillGroupsPastTo();
+
     Field & operator[](size_t index) { return row[index]; }
     const Field & operator[](size_t index) const { return row[index]; }
     [[nodiscard]] size_t size() const { return row.size(); }
@@ -83,6 +89,7 @@ private:
     Row checked_walk_cursor;
     Row checked_walk_constraint;
     SortDescription sort_description;
+    bool fills_groups_past_to = false;
 };
 
 WriteBuffer & operator<<(WriteBuffer & out, const FillingRow & row);

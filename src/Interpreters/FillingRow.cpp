@@ -212,8 +212,58 @@ Field FillingRow::doLongJump(const FillColumnDescription & descr, size_t column_
     return shifted_value;
 }
 
+/// `doLongJump` makes a bounded number of jumps and multiplies the step with wraparound, so integer distances are divided exactly.
+/// The unsigned differences wrap around on purpose: `to` is not before `from`, so they are exact.
+template <typename T>
+NO_SANITIZE_UNSIGNED_OVERFLOW static bool integerStepsReach(T from, T to, T step, int direction)
+{
+    using U = make_unsigned_t<T>;
+    const U distance = direction > 0 ? U(to) - U(from) : U(from) - U(to);
+    const U step_length = direction > 0 ? U(step) : U(0) - U(step);
+    /// A numeric step truncated to zero ticks of `DateTime64` does not advance.
+    return step_length != 0 && distance % step_length == 0;
+}
+
+template <typename T>
+static bool integerStepsReach(const Field & from, const Field & to, const Field & step, int direction)
+{
+    return integerStepsReach<T>(from.safeGet<T>(), to.safeGet<T>(), step.safeGet<T>(), direction);
+}
+
+static Int64 decimal64Ticks(const Field & field)
+{
+    return field.safeGet<DecimalField<Decimal64>>().getValue().value;
+}
+
+bool FillingRow::stepsReach(size_t pos, const Field & value)
+{
+    const auto & descr = getFillDescription(pos);
+    const int direction = getDirection(pos);
+    /// The step of an INTERVAL is a number of time units, not a distance between values.
+    if (!descr.step_kind)
+    {
+        switch (descr.fill_step.getType())
+        {
+            case Field::Types::Int64: return integerStepsReach<Int64>(row[pos], value, descr.fill_step, direction);
+            case Field::Types::Decimal64:
+                return integerStepsReach<Int64>(decimal64Ticks(row[pos]), decimal64Ticks(value), decimal64Ticks(descr.fill_step), direction);
+            case Field::Types::Int128: return integerStepsReach<Int128>(row[pos], value, descr.fill_step, direction);
+            case Field::Types::UInt128: return integerStepsReach<UInt128>(row[pos], value, descr.fill_step, direction);
+            case Field::Types::Int256: return integerStepsReach<Int256>(row[pos], value, descr.fill_step, direction);
+            case Field::Types::UInt256: return integerStepsReach<UInt256>(row[pos], value, descr.fill_step, direction);
+            default: break;
+        }
+    }
+    return equals(doLongJump(descr, pos, value), value);
+}
+
 bool FillingRow::hasSomeConstraints(size_t pos) const
 {
+    /// A key at or past its TO limits only its own values.
+    if (fills_groups_past_to && !row[pos].isNull() && !constraints[pos].isNull()
+        && !less(row[pos], constraints[pos], getDirection(pos)))
+        return false;
+
     return !constraints[pos].isNull();
 }
 
@@ -264,6 +314,11 @@ void FillingRow::checkGeneratedValueFitsColumnType(const Field & value, size_t c
             applyVisitor(FieldVisitorToString(), value),
             sort_description[column_ind].column_name,
             descr.fill_column_type->getName());
+}
+
+void FillingRow::fillGroupsPastTo()
+{
+    fills_groups_past_to = true;
 }
 
 void FillingRow::checkFillingTowardsConstraintsFitsColumnTypes()
@@ -346,7 +401,11 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         if (row[pos].isNull())
             continue;
 
-        const Field & border = findBorder(constraints[pos], next_original_row[pos], getDirection(pos));
+        if (next_original_row[pos].isNull() && !hasSomeConstraints(pos))
+            continue;
+
+        const Field & border = fills_groups_past_to && !next_original_row[pos].isNull() ? next_original_row[pos]
+            : findBorder(constraints[pos], next_original_row[pos], getDirection(pos));
         logDebug("border: {}", border);
 
         if (!border.isNull() && !equals(row[pos], border))
@@ -367,7 +426,9 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     if (!next_original_row[pos].isNull() && less(next_original_row[pos], row[pos], getDirection(pos)))
         return false;
 
-    if (!constraints[pos].isNull() && !less(row[pos], constraints[pos], getDirection(pos)))
+    /// TO limits only the values generated for its own column: towards a next row, the later columns are walked first.
+    const bool towards_next_row = fills_groups_past_to && !next_original_row[pos].isNull();
+    if (!towards_next_row && !constraints[pos].isNull() && !less(row[pos], constraints[pos], getDirection(pos)))
         return false;
 
     /// A NaN border (a NaN `fill_to` or a staleness border derived from a NaN row) generates nothing: `accurateLess`
@@ -432,6 +493,18 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 
     auto next_value = row[pos];
     getFillDescription(pos).step_func(next_value, 1);
+
+    /// The steps from the filling row reach the next row's value at or past TO, where no value is generated.
+    if (towards_next_row && !constraints[pos].isNull()
+        && !less(next_original_row[pos], constraints[pos], getDirection(pos))
+        && !(less(row[pos], next_value, getDirection(pos)) && less(next_value, constraints[pos], getDirection(pos)))
+        && !(getFillDescription(pos).step_kind && getFillDescription(pos).step_kind->getKind() > IntervalKind::Kind::Hour)
+        && stepsReach(pos, next_original_row[pos]))
+    {
+        row[pos] = next_original_row[pos];
+        value_changed = true;
+        return resetKeysAfter(pos, next_original_row);
+    }
 
     /// A step below the precision of the cursor leaves it unchanged (`1e17 + 0.25 == 1e17` for
     /// `Float64`), so the fill cannot make progress and must stop here. Without this the same row
