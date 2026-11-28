@@ -1,0 +1,6 @@
+host: 127.0.0.1
+port: 19603
+tcp_port: 19601
+database: default
+table: r1
+scheme: http

@@ -1,0 +1,2 @@
+clickhouse_add_executable(keeper_request_fuzzer keeper_request_fuzzer.cpp)
+target_link_libraries(keeper_request_fuzzer PRIVATE dbms)

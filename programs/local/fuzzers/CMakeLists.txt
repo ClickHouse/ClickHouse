@@ -1,10 +1,15 @@
 clickhouse_add_executable(clickhouse_fuzzer clickhouse_fuzzer.cpp)
-target_include_directories (clickhouse_fuzzer PRIVATE ..)
+# Runs `clickhouse local` like `clickhouse_fuzzer`, with the hooks of `clickhouse_fuzzer.cpp` defined.
+clickhouse_add_executable(mergetree_part_fuzzer clickhouse_fuzzer.cpp mergetree_part_fuzzer.cpp)
 
-target_link_libraries(clickhouse_fuzzer PRIVATE clickhouse-local-lib)
+foreach (target clickhouse_fuzzer mergetree_part_fuzzer)
+    target_include_directories (${target} PRIVATE ..)
 
-target_link_libraries(clickhouse_fuzzer PRIVATE common dbms)
+    target_link_libraries(${target} PRIVATE clickhouse-local-lib)
 
-if (TARGET ch_contrib::jemalloc)
-    target_link_libraries(clickhouse_fuzzer PRIVATE ch_contrib::jemalloc)
-endif()
+    target_link_libraries(${target} PRIVATE common dbms)
+
+    if (TARGET ch_contrib::jemalloc)
+        target_link_libraries(${target} PRIVATE ch_contrib::jemalloc)
+    endif()
+endforeach()

@@ -1,0 +1,15 @@
+[libfuzzer]
+timeout = 20
+use_value_profile = 1
+rss_limit_mb = 4096
+# `clickhouse local` keeps caches and other global state between inputs, see `clickhouse_fuzzer.options`.
+detect_leaks = 0
+
+[asan]
+max_allocation_size_mb = 4096
+allocator_may_return_null = 0
+
+[fuzzer_arguments]
+# An input runs several queries, and one that fails must not skip the next ones.
+--ignore-error=
+--max_execution_time=10
