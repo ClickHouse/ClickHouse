@@ -202,7 +202,7 @@ LANGUAGE WASM
 FROM 'module_name' [:: 'source_function_name']
 ARGUMENTS ( [name type[, ...]] | [type[, ...]] )
 RETURNS return_type
-[ABI ROW_DIRECT | ABI BUFFERED_V1 | ABI ASSEMBLYSCRIPT]
+[ABI ROW_DIRECT | ABI BUFFERED_V1 | ABI ASSEMBLYSCRIPT | ABI COLUMNAR_V1]
 [DETERMINISTIC]
 [SHA256_HASH 'hex']
 [SETTINGS key = value[, ...]];
@@ -217,6 +217,7 @@ RETURNS return_type
   - `ROW_DIRECT`: Direct type mapping, row-by-row processing
   - `BUFFERED_V1`: Block-based processing with serialization
   - `ASSEMBLYSCRIPT`: Row-by-row processing for modules produced by the [AssemblyScript](https://www.assemblyscript.org) compiler. Numeric types map to AssemblyScript primitives; ClickHouse `String` maps to AssemblyScript `string`.
+  - `COLUMNAR_V1`: Block-based processing. Columns are copied into the module's memory in a simple binary layout, with no text or row format in between
 - `DETERMINISTIC`: Declares the function as deterministic — always returns the same output for the same input. When specified, ClickHouse may constant-fold calls where all arguments are constants: the function is evaluated once at query analysis time and the result is reused for every row.
 - `SHA256_HASH`: Expected module hash for verification (auto-filled if omitted), can be used to ensure the correct WASM module loaded across different replicas.
 - `SETTINGS`: Per-function settings
@@ -227,9 +228,10 @@ RETURNS return_type
 
 To interact with ClickHouse, WebAssembly modules must adhere to one of the supported ABIs (Application Binary Interfaces).
 
-- `ROW_DIRECT`: Direct type mapping (primitive types `Int32`, `UInt32`, `Int64`, `UInt64`, `Float32`, `Float64` only)
+- `ROW_DIRECT`: Direct type mapping (numeric types `Int32`, `UInt32`, `Int64`, `UInt64`, `Float32`, `Float64`, `Int128`, `UInt128` only)
 - `BUFFERED_V1`: Complex types with serialization
 - `ASSEMBLYSCRIPT`: Row-by-row interop with [AssemblyScript](https://www.assemblyscript.org) modules; supports numeric types and `String`.
+- `COLUMNAR_V1`: Block-based processing; the module reads and writes columns directly in its memory.
 
 ### ABI ROW_DIRECT
 
@@ -465,6 +467,124 @@ CREATE FUNCTION as_greet
     ARGUMENTS (name String) RETURNS String;
 ```
 
+### ABI COLUMNAR_V1 {#abi-columnar-v1}
+
+<Note>
+This ABI is experimental and subject to change in future releases.
+</Note>
+
+`COLUMNAR_V1` passes a block of rows to the module as columns. ClickHouse copies each argument column into the module's memory as it is stored in ClickHouse: numbers as plain arrays, strings as one byte array plus an array of offsets. The module writes its result back the same way. Nothing is converted to text or to a row format, so this ABI is the fastest choice for large blocks and for wide types such as `Array`, `Map` or `UUID`.
+
+The module exports the same functions as for `BUFFERED_V1`:
+
+```
+(module
+  ;; Allocate a buffer of the given size and return its handle
+  (func (export "clickhouse_create_buffer")
+    (param $size i32)
+    (result i32))
+
+  ;; Free a buffer by its handle
+  (func (export "clickhouse_destroy_buffer")
+    (param $handle i32)
+    (result))
+
+  ;; The function itself: input buffer handle and row count in, result buffer handle out
+  (func (export "my_func")
+    (param $input_handle i32)
+    (param $n_rows i32)
+    (result i32))
+)
+```
+
+For each call, ClickHouse allocates one buffer with `clickhouse_create_buffer`, writes the input into it, and calls the function with the buffer handle and the number of rows. The function returns the handle of a buffer it allocated for the result; returning `0` fails the query. ClickHouse frees both buffers afterwards.
+
+#### Buffer layout {#columnar-v1-buffer-layout}
+
+Both the input and the result buffer hold a *frame*. All numbers are little-endian, and every offset is counted in bytes from the start of the frame.
+
+```
+[header: 16 bytes]
+[one column descriptor per column: 40 bytes each]
+[column data]
+```
+
+The header holds, in order:
+
+- the magic number `0x4E494243` (the bytes `CBIN`), as a `uint32`;
+- the format version, a `uint16`, currently `1`;
+- a reserved `uint16`, always `0`;
+- the number of rows, a `uint32`;
+- the number of columns, a `uint32`.
+
+ClickHouse rejects a result whose magic, version or reserved field is different. A result frame must have exactly one column and the same number of rows as the input.
+
+Each column descriptor is five `uint64` values:
+
+- `type` — what kind of column this is (see below);
+- `null_offset` — where the null map starts, or `0` if the column is not nullable. The null map has one byte per row: `1` for `NULL`, `0` otherwise. `COL_VARIANT` uses it differently, see below;
+- `offsets_offset` — where the offsets array starts, for column kinds that have one, otherwise `0`. Its meaning depends on the column kind;
+- `data_offset` — where the column's data starts;
+- `data_size` — the size of the data in bytes.
+
+Column kinds, stored in the low bits of `type`:
+
+| Value | Name | Used for | Data |
+|---|---|---|---|
+| `0` | `COL_BYTES` | `String` | All values concatenated, with no terminators. `offsets_offset` points to `num_rows + 1` `uint64` offsets; value `i` runs from offset `i` to offset `i + 1`. |
+| `1`–`4` | `COL_FIXED8`, `COL_FIXED16`, `COL_FIXED32`, `COL_FIXED64` | Numbers, dates and other types 1, 2, 4 or 8 bytes wide | One value after another, as stored in ClickHouse. |
+| `7` | `COL_FIXEDN` | Fixed-width types of any other width: `UUID`, `IPv6`, `Int128`, `Decimal128`, `FixedString(N)` and so on | One value after another. The width of one value is `data_size / num_rows`. |
+| `5` | `COL_COMPLEX` | `Array`, `Tuple` and `Map` | Nested data; see below. |
+| `6` | `COL_VARIANT` | `Variant` | One sub-column per variant type that occurs in the block. |
+| `8` | `COL_LOWCARD` | `LowCardinality(T)` arguments | A dictionary of distinct values plus one index per row. |
+
+Two flags can be added to the kind:
+
+- `0x20` — the column is nullable and `null_offset` points to its null map;
+- `0x80` — the column is constant: its data holds a single value that applies to every row.
+
+In frames ClickHouse sends, the data of every `COL_FIXED*` and `COL_FIXEDN` descriptor, including a `Variant` sub-column and a `LowCardinality` dictionary, starts at an offset that is a multiple of the largest power of two dividing the value width, at most 16. If `clickhouse_create_buffer` returns 16-byte aligned memory, the module can read these values in place. Values inside `COL_COMPLEX` data and in frames the module returns have no alignment guarantee.
+
+The sizes above use the number of rows stored in the column: `1` for a constant column, otherwise the row count from the header. A constant `String` column has 2 offsets, and a constant `COL_FIXEDN` value is `data_size` bytes wide.
+
+`COL_COMPLEX` data is nested. An `Array` is `num_rows + 1` `uint64` offsets into its elements, followed by the elements laid out the same way. A `Tuple` is its elements laid out one after another, each for all rows. A `Map(K, V)` is laid out as `Array(Tuple(K, V))`. A `Nullable(T)` is `n` `uint8` null map bytes, `1` for `NULL`, followed by `T` laid out for all `n` values, including those in `NULL` slots; inside an `Array`, `n` is the total number of its elements. Strings inside these types use the `COL_BYTES` layout, and fixed-width values are stored one after another.
+
+`COL_VARIANT`:
+
+- `null_offset` points to one `uint8` discriminator per row: the index of the row's type in the `Variant` type, or `255` for `NULL`;
+- `offsets_offset` points to one `uint32` per row: the row's position in the sub-column of its type;
+- `data_offset` points to a `uint32` count `K`, then `K` records of a `uint8` discriminator, 3 padding bytes and a column descriptor for that type's sub-column. In these descriptors `null_offset` holds the sub-column's row count.
+
+`COL_LOWCARD`:
+
+- `null_offset` is `0`;
+- `offsets_offset` points to one index per row into the dictionary;
+- `data_offset` points to a `uint32` dictionary row count, a `uint8` index width (1, 2, 4 or 8 bytes), 3 padding bytes and a column descriptor for the dictionary. Dictionary row `0` is the default value of `T`. The other dictionary rows are exactly the values that this frame's rows reference, so the guest never sees a value from a row it was not given, such as a row removed by a row policy.
+
+#### Types and `NULL` {#columnar-v1-types-and-null}
+
+`COLUMNAR_V1` supports numbers, `String`, `FixedString`, dates and times, `UUID`, IP addresses, decimals, `Array`, `Tuple`, `Map`, `Variant`, `Nullable` and `LowCardinality`. A function with an argument or result type it cannot represent, such as `JSON` or `Dynamic`, is rejected at `CREATE FUNCTION`. Some combinations are rejected too:
+
+- `LowCardinality(Nullable(T))` arguments; declare `Nullable(T)` or `LowCardinality(T)` instead;
+- a nullable value passed to a `LowCardinality(T)` argument;
+- a `LowCardinality(Nullable(T))` value passed to a function that declares no `Nullable` parameter, because it would bypass the default `NULL` handling;
+- a `LowCardinality` result type;
+- `Nullable(Variant(...))`;
+- `Variant` inside `Array` or `Tuple`.
+
+A top-level `LowCardinality(T)` argument arrives as `COL_LOWCARD`, so the module sees the dictionary. Inside `Array` or `Tuple`, `LowCardinality(T)` arrives as plain `T`.
+
+By default `NULL` works as for any other function: if an argument is `NULL`, ClickHouse returns `NULL` for that row and the module never sees the null. A result type that cannot be `Nullable`, such as `Array` or `Map`, is the exception: the module gets the default value in place of the `NULL` and its result is returned. If the function declares at least one `Nullable(...)` argument, ClickHouse instead passes every argument to the module with its null map, and the value the module returns for a row with a `NULL` argument is the result. In the same way, a declared `Variant` argument is passed to the module as a whole, not split by variant type.
+
+Example:
+
+```sql
+CREATE FUNCTION str_byte_sum
+    LANGUAGE WASM ABI COLUMNAR_V1 FROM 'my_module' :: 'byte_sum'
+    ARGUMENTS (s String) RETURNS UInt64
+    DETERMINISTIC;
+```
+
 ### Note for developing UDFs in Rust
 
 For Rust programs we provide a helper crate [clickhouse-wasm-udf](https://crates.io/crates/clickhouse-wasm-udf) to simplify development of WebAssembly UDFs for ClickHouse. The crate provides function for memory management, so you don't need to implement `clickhouse_create_buffer` and `clickhouse_destroy_buffer` functions manually, but rather add the crate as a dependency. Also there are macros `#[clickhouse_wasm_udf]` to wrap your regular Rust functions into the required ABI format.
@@ -502,9 +622,9 @@ The following query-level settings control WebAssembly UDF execution:
 
 - `webassembly_udf_max_memory` — Memory limit in bytes per WebAssembly UDF instance.
 
-- `webassembly_udf_max_input_block_size` — Maximum number of rows passed to a WebAssembly UDF in a single block, for every ABI. Set to 0 to let `webassembly_udf_input_split_memory_ratio` size the calls of an `ABI BUFFERED_V1` function; other ABIs then receive the whole pipeline block.
+- `webassembly_udf_max_input_block_size` — Maximum number of rows passed to a WebAssembly UDF in a single call, for every ABI. Set to 0 to let `webassembly_udf_input_split_memory_ratio` size the calls of an `ABI BUFFERED_V1` or `ABI COLUMNAR_V1` function; other ABIs then receive the whole pipeline block.
 
-- `webassembly_udf_input_split_memory_ratio` — The fraction of the linear memory a module declares it starts with (of its memory ceiling, for a module that starts with no pages) that one call's input may occupy. Used to split the blocks of an `ABI BUFFERED_V1` function when `webassembly_udf_max_input_block_size` is 0; other ABIs carry no serialized input block and ignore it. Default: `0.5`, leaving the rest of the memory to the guest's own working set — a ratio close to 1 can still fail inside the guest's allocator. Set to 0, or set `compatibility` to a version before 26.9, to pass the whole pipeline block in one call. Must be at least 0 and at most 1.
+- `webassembly_udf_input_split_memory_ratio` — The fraction of the linear memory a module declares it starts with (of its memory ceiling, for a module that starts with no pages) that one call's input may occupy. Used to split the blocks of an `ABI BUFFERED_V1` or `ABI COLUMNAR_V1` function when `webassembly_udf_max_input_block_size` is 0; other ABIs do not copy their input into the module's memory and ignore it. Default: `0.5`, leaving the rest of the memory to the guest's own working set — a ratio close to 1 can still fail inside the guest's allocator. Set to 0, or set `compatibility` to a version before 26.9, to pass the whole pipeline block in one call. Must be at least 0 and at most 1.
 
 - `webassembly_udf_max_instances` — Maximum number of WebAssembly UDF instances that can run in parallel per function.
 
