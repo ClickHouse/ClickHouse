@@ -3,6 +3,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/SingleValueData.h>
 
 #include <base/sort.h>
 #include <algorithm>
@@ -361,6 +362,150 @@ private:
     SerializationPtr serialization;
 };
 
+/// The values of a type that contains a `Variant`, a `Dynamic` or a `JSON` are kept in a column of that type and are
+/// compared as in `ORDER BY`. A `Field` would lose the types of the values: e.g. a `UUID2` value of a `Dynamic` is
+/// extracted in the layout of `UUID`, and the comparison of the fields would follow the order of `UUID`.
+struct GroupArraySortedColumnData
+{
+    MutableColumnPtr values;
+};
+
+class GroupArraySortedColumn final : public IAggregateFunctionDataHelper<GroupArraySortedColumnData, GroupArraySortedColumn>
+{
+public:
+    GroupArraySortedColumn(const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elements_)
+        : IAggregateFunctionDataHelper<GroupArraySortedColumnData, GroupArraySortedColumn>(
+            {data_type_}, parameters_, std::make_shared<DataTypeArray>(data_type_))
+        , max_elements(max_elements_)
+        , data_type(data_type_)
+        , serialization(data_type_->getDefaultSerialization())
+    {
+        if (max_elements > aggregate_function_group_array_sorted_max_element_size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Too large limit parameter for groupArraySorted aggregate function, it should not exceed {}",
+                aggregate_function_group_array_sorted_max_element_size);
+    }
+
+    String getName() const override { return "groupArraySorted"; }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    {
+        auto & values = getValues(place);
+        values->insertFrom(*columns[0], row_num);
+        limitIfNeeded(values);
+    }
+
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    {
+        const auto & rhs_values = data(rhs).values;
+        if (!rhs_values || rhs_values->empty())
+            return;
+
+        auto & values = getValues(place);
+        values->insertRangeFrom(*rhs_values, 0, rhs_values->size());
+        limitIfNeeded(values);
+    }
+
+    /// The same format as for the values kept in a `Field`.
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    {
+        const auto & values = data(place).values;
+        IColumn::Permutation permutation;
+        size_t size = getSortedPermutation(values, permutation);
+        writeVarUInt(size, buf);
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            size_t row = permutation[i];
+            if (values->isNullAt(row))
+            {
+                writeBinary(false, buf);
+            }
+            else
+            {
+                writeBinary(true, buf);
+                serialization->serializeBinary(*values, row, buf, {});
+            }
+        }
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    {
+        size_t size = 0;
+        readVarUInt(size, buf);
+
+        if (unlikely(size > max_elements))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elements);
+
+        auto & values = getValues(place);
+        for (size_t i = 0; i < size; ++i)
+        {
+            bool has_value = false;
+            readBinary(has_value, buf);
+            if (has_value)
+                serialization->deserializeBinary(*values, buf, {});
+            else
+                values->insertDefault();
+        }
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        auto & result_array = assert_cast<ColumnArray &>(to);
+        auto & result_array_offsets = result_array.getOffsets();
+
+        const auto & values = data(place).values;
+        IColumn::Permutation permutation;
+        size_t size = getSortedPermutation(values, permutation);
+
+        auto & result_array_data = result_array.getData();
+        for (size_t i = 0; i < size; ++i)
+            result_array_data.insertFrom(*values, permutation[i]);
+        result_array_offsets.push_back(result_array_offsets.back() + size);
+    }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+private:
+    /// Like the comparison of fields, where `Null` is the smallest value, put `NULL` first.
+    static constexpr int nan_direction_hint = -1;
+
+    UInt64 max_elements;
+    DataTypePtr data_type;
+    SerializationPtr serialization;
+
+    MutableColumnPtr & getValues(AggregateDataPtr __restrict place) const
+    {
+        auto & values = data(place).values;
+        if (!values)
+            values = data_type->createColumn();
+        return values;
+    }
+
+    /// Returns the number of the first values in ascending order, which are the first in `permutation`.
+    size_t getSortedPermutation(const MutableColumnPtr & values, IColumn::Permutation & permutation) const
+    {
+        if (!values || values->empty())
+            return 0;
+
+        size_t size = std::min<size_t>(values->size(), max_elements);
+        values->getPermutation(
+            IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortStability::Unstable, size, nan_direction_hint, permutation);
+        return size;
+    }
+
+    /// Keeps only the first `max_elements` values when there are twice as many of them.
+    void limitIfNeeded(MutableColumnPtr & values) const
+    {
+        if (values->size() < max_elements * 2)
+            return;
+
+        IColumn::Permutation permutation;
+        size_t size = getSortedPermutation(values, permutation);
+        values = IColumn::mutate(values->permute(permutation, size));
+    }
+};
+
 template <typename T>
 using GroupArraySortedHeap = GroupArraySorted<GroupArraySortedDataHeap<T>, T>;
 
@@ -413,6 +558,12 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} does not support this number of arguments", name);
+
+    if (!canUseFieldForValueData(argument_types[0]))
+        return std::make_shared<GroupArraySortedColumn>(argument_types[0], parameters, max_elems);
+
+    /// The values of a type without a specialization are kept in a `Field`.
+    assertTypeCanBeKeptInField(name, *argument_types[0]);
 
     if (max_elems > group_array_sorted_sort_strategy_max_elements_threshold)
         return createAggregateFunctionGroupArraySortedImpl<GroupArraySortedSort>(argument_types[0], parameters, max_elems);

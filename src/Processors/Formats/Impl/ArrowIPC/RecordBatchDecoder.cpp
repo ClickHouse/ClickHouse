@@ -392,7 +392,7 @@ MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, con
                 n, to_no_null->getName(), width);
     };
 
-    if (which.isUUID())
+    if (which.isUUID() || which.isUUID2())
     {
         require(16);
         auto out = ColumnVector<UUID>::create(rows);
@@ -402,6 +402,9 @@ MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, con
             memcpy(dst, &fixed.getChars()[i * 16], 16);
             std::reverse(dst, dst + 8);
             std::reverse(dst + 8, dst + 16);
+            /// The `UUID2` in-memory layout keeps the two halves in canonical order (swapped relative to `UUID`).
+            if (which.isUUID2())
+                out->getData()[i] = UUIDHelpers::swapHalves(out->getData()[i]);
         }
         return out;
     }
@@ -1313,6 +1316,9 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             if (isUUIDField(field))
             {
                 /// 16 bytes per value, with the two 64-bit halves byte-reversed (matches the writer).
+                /// A field flagged as the correctly-sorting `UUID2` decodes into the `UUID2` in-memory
+                /// layout, which keeps the two halves in canonical order (swapped relative to `UUID`).
+                const bool is_uuid2 = isUUID2Field(field);
                 auto & data = assert_cast<ColumnVector<UUID> &>(*column).getData();
                 data.resize(rows);
                 for (size_t i = 0; i < rows; ++i)
@@ -1329,6 +1335,8 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                     memcpy(dst, values.ptr + i * 16, 16);
                     std::reverse(dst, dst + 8);
                     std::reverse(dst + 8, dst + 16);
+                    if (is_uuid2)
+                        data[i] = UUIDHelpers::swapHalves(data[i]);
                 }
                 break;
             }

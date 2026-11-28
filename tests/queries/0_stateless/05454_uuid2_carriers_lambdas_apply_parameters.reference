@@ -1,0 +1,11 @@
+-- kv
+00000000-0000-0000-0000-000000000001	1	7
+-- bloom filter
+1
+1
+-- transform
+7	7	7	7
+-- lambda
+UUID	UUID2
+-- apply parameters
+2

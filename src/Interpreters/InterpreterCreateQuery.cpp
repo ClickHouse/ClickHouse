@@ -40,6 +40,8 @@
 #include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTDataType.h>
+#include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -155,6 +157,7 @@ namespace Setting
     extern const SettingsBool database_replicated_allow_heavy_create;
     extern const SettingsBool database_replicated_allow_only_replicated_engine;
     extern const SettingsBool data_type_default_nullable;
+    extern const SettingsUUIDTypeVersion uuid_type_version;
     extern const SettingsSQLSecurityType default_materialized_view_sql_security;
     extern const SettingsSQLSecurityType default_normal_view_sql_security;
     extern const SettingsDefaultTableEngine default_table_engine;
@@ -620,7 +623,7 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
 }
 
 DataTypePtr InterpreterCreateQuery::getColumnType(
-    const ASTColumnDeclaration & col_decl, const bool make_columns_nullable, const bool pin_current_state_version)
+    const ASTColumnDeclaration & col_decl, const bool make_columns_nullable, const bool pin_current_state_version, const UInt64 uuid_type_version)
 {
     auto col_type = col_decl.getType();
     if (!col_type)
@@ -628,6 +631,9 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         /// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
         return std::make_shared<DataTypeUInt8>();
     }
+
+    /// Materialize the `uuid_type_version` setting: a bare `UUID` becomes `UUID2` when the setting is 2.
+    col_type = applyUUIDTypeVersion(col_type, uuid_type_version);
 
     DataTypePtr column_type = DataTypeFactory::instance().get(col_type);
 
@@ -751,7 +757,7 @@ void applyCodecDeclarations(
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTColumns & columns_list, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns)
+    const ASTColumns & columns_list, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns, bool materialize_uuid_type_version)
 {
     if (!columns_list.columns)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Column list is empty");
@@ -769,10 +775,18 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     /// On a DDL worker (ON CLUSTER / Replicated database) the query was already normalized on the initiator.
     const bool already_normalized_on_initiator = context_->isDDLOrOnClusterInternal();
 
-    bool make_columns_nullable = mode < LoadingStrictnessLevel::SECONDARY_CREATE
+    /// These transforms materialize session settings into the concrete stored column types, so they must only run
+    /// on a primary, user-issued CREATE - never when attaching or loading an already-normalized table definition,
+    /// otherwise existing tables would silently change their column types.
+    const bool normalize_on_create = mode < LoadingStrictnessLevel::SECONDARY_CREATE
         && !already_normalized_on_initiator
-        && !is_restore_from_backup
-        && context_->getSettingsRef()[Setting::data_type_default_nullable];
+        && !is_restore_from_backup;
+
+    bool make_columns_nullable = normalize_on_create && context_->getSettingsRef()[Setting::data_type_default_nullable];
+
+    /// `uuid_type_version == 2` materializes a bare `UUID` column type as the correctly-sorting `UUID2` type.
+    const UInt64 uuid_type_version
+        = normalize_on_create && materialize_uuid_type_version ? context_->getSettingsRef()[Setting::uuid_type_version] : 1;
 
     /// The current aggregate-function state version is pinned into the type only for a definition
     /// the user wrote. A normalized query already spells any pinned version out in the type name,
@@ -793,7 +807,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         }
 
 
-        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, make_columns_nullable, pin_current_state_version));
+        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, make_columns_nullable, pin_current_state_version, uuid_type_version));
 
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);
@@ -936,6 +950,13 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
 
 namespace
 {
+    /// Defined below; forward-declared so the normalization path can materialize dictionary attribute types.
+    void materializeUUIDTypeVersion(ASTCreateQuery & create, UInt64 uuid_type_version);
+}
+
+
+namespace
+{
 
 /// A table function whose storage is chosen by the current user's grants cannot be persisted at any
 /// nesting depth: the outermost one is refused through `canBeUsedToCreateTable`, but the same
@@ -1058,6 +1079,27 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "CLONE AS requires a source table name, not a SELECT query or table function");
 
+    /// Materialize the `uuid_type_version` setting into the CREATE query AST on the initiator: column and
+    /// dictionary attribute types, and cast type literals inside column default expressions and the
+    /// `AS SELECT` / view definition, from which column types may be inferred. This is gated to a primary,
+    /// user-issued CREATE only, so a normalized query re-executed on a DDL worker or restored from a backup
+    /// keeps its already-materialized types. A full-definition `ATTACH TABLE ... (...) ENGINE = ...`
+    /// (including `ATTACH ... FROM '/path/'`) is create-like user input rather than a replay of stored
+    /// metadata, so it takes the same materialization; the short `ATTACH TABLE t` syntax and internal
+    /// server-issued queries (including an internal `CREATE`, such as the inner table of a materialized view or a
+    /// system log table, built from already resolved types) replay already-materialized metadata and are excluded.
+    /// This must run before `setEngine`: the storage definition (or the table function) it copies from the table of
+    /// the `AS` / `CLONE AS` clause is stored metadata, where a bare `UUID` already denotes the historical type, so it
+    /// must be inherited as is - otherwise the inherited keys would silently change their semantics, and
+    /// `CLONE AS` would reject a source table with a `UUID` in its keys.
+    const bool is_create_like_attach = create.attach && !create.attach_short_syntax && !internal;
+    if (((mode < LoadingStrictnessLevel::SECONDARY_CREATE && !internal) || is_create_like_attach)
+        && !getContext()->isDDLOrOnClusterInternal()
+        && !is_restore_from_backup)
+    {
+        materializeUUIDTypeVersion(create, getContext()->getSettingsRef()[Setting::uuid_type_version]);
+    }
+
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
 
@@ -1097,8 +1139,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             /// target metadata), so a default over a virtual column is inert there and must not be rejected.
             const bool check_defaults_over_virtual_columns
                 = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
+            /// An internal query replays already resolved metadata (e.g. the inner table of a materialized view, or a
+            /// system log table), where a bare `UUID` denotes the historical type.
             properties.columns = getColumnsDescription(
-                *create.columns_list, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
+                *create.columns_list, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns,
+                /*materialize_uuid_type_version=*/ !internal);
         }
         else if (create.columns_list->codec_declarations)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec declarations require a list of columns");
@@ -3766,6 +3811,32 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
     }
 
     return {};
+}
+
+namespace
+{
+
+/** Materialize the `uuid_type_version` setting into a `CREATE` query AST.
+  *
+  * The whole query is normalized in one pass, because every AST a `CREATE` persists can name a type: column
+  * declarations and their `DEFAULT` / `MATERIALIZED` / `ALIAS` expressions, codecs, statistics and TTL, the
+  * `AS SELECT` / view definition (from which column types may be inferred), dictionary attributes, skipping
+  * indices, constraints, projections, and the storage definition (`ORDER BY`, `PARTITION BY`, `PRIMARY KEY`,
+  * `SAMPLE BY`, table TTL). Leaving any of them out would let the same stored metadata resolve a bare `UUID`
+  * to the historical `UUID` later - on a node with a different `uuid_type_version`, or after the default flips.
+  *
+  * The substitution is done in place: an AST member that aliases its own child (`ASTColumnDeclaration::type`,
+  * `ASTDictionaryAttributeDeclaration::type`) then stays consistent with `children` without extra bookkeeping.
+  *
+  * This runs on the initiator, from `getTablePropertiesAndNormalizeCreateQuery`, for a primary user-issued
+  * `CREATE` only. An `ON CLUSTER` query is normalized on the initiator before it is enqueued, so workers, which
+  * treat the forwarded query as already-normalized internal DDL, receive the materialized type names.
+  */
+void materializeUUIDTypeVersion(ASTCreateQuery & create, UInt64 uuid_type_version)
+{
+    applyUUIDTypeVersionInPlace(create, uuid_type_version);
+}
+
 }
 
 bool InterpreterCreateQuery::shouldPopulateMaterializedViewAtomically(const ASTCreateQuery & create) const

@@ -10,6 +10,13 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnTuple.h>
+#include <Common/assert_cast.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/convertFieldToType.h>
@@ -44,18 +51,58 @@ Field executeFunctionOnField(
     return (*ret.column)[0];
 }
 
+/// The source type of a constant matters for conversions that change the layout of the value while
+/// keeping the same `Field` representation - notably `UUID` and `UUID2`, which differ only by the order
+/// of the two 64-bit halves. Without the hint `convertFieldToType` leaves such a constant untouched, the
+/// sharding expression is then evaluated on the wrong 16 bytes and the shard that owns the row can be
+/// pruned. `Nullable`/`LowCardinality` wrappers are stripped because the hint is compared against the
+/// destination type of the value itself.
+DataTypePtr getSourceTypeHint(const DataTypePtr & type)
+{
+    if (!type)
+        return nullptr;
+    return removeNullable(removeLowCardinality(type));
+}
+
 /// @param column_value - one of values from IN
 /// @param sharding_column_name - name of that column
+/// @param from_type_hint - type of the constant `column_value` came from, if known
 /// @return true if shard may contain such value (or it is unknown), otherwise false.
 bool shardContains(
     Field column_value,
     const std::string & sharding_column_name,
-    const OptimizeShardingKeyRewriteInMatcher::Data & data)
+    const OptimizeShardingKeyRewriteInMatcher::Data & data,
+    const IDataType * from_type_hint = nullptr)
 {
     /// Type of column in storage (used for implicit conversion from i.e. String to Int)
     const DataTypePtr & column_type = data.sharding_key_expr->getSampleBlock().getByName(sharding_column_name).type;
+
+    /// A `Variant` or `Dynamic` constant carries its active value under the declared type. `convertFieldToType` takes the
+    /// layout of a `UUID` / `UUID2` value from the single such alternative of a `Variant`, but with a `Dynamic` or with
+    /// both alternatives the layout is unknown: keep the value rather than risk routing it to the wrong shard.
+    if (from_type_hint && (isVariant(*from_type_hint) || isDynamic(*from_type_hint)))
+    {
+        const auto decayed_column_type = removeNullable(removeLowCardinality(column_type));
+        if (isUUID(decayed_column_type) || isUUID2(decayed_column_type))
+        {
+            const auto * variant_hint = typeid_cast<const DataTypeVariant *>(from_type_hint);
+            if (!variant_hint)
+                return true;
+            bool has_uuid = false;
+            bool has_uuid2 = false;
+            for (const auto & alternative : variant_hint->getVariants())
+            {
+                const auto decayed_alternative = removeNullable(removeLowCardinality(alternative));
+                has_uuid |= isUUID(decayed_alternative);
+                has_uuid2 |= isUUID2(decayed_alternative);
+            }
+            if (has_uuid && has_uuid2)
+                return true;
+        }
+    }
+
     /// Implicit conversion.
-    column_value = convertFieldToType(column_value, *column_type);
+    column_value = convertFieldToType(column_value, *column_type, from_type_hint);
 
     /// NULL is not allowed in sharding key,
     /// so it should be safe to assume that shard cannot contain it.
@@ -114,6 +161,10 @@ void OptimizeShardingKeyRewriteInMatcher::visit(ASTFunction & function, Data & d
     if (!data.sharding_key_expr->getRequiredColumnsWithTypes().contains(name))
         return;
 
+    /// Without the analyzer only plain literals are rewritten, and a literal carries no data type: a
+    /// `toUUID(...)` call stays an `ASTFunction` and is left alone (the shard is kept, never pruned),
+    /// while a string literal is parsed into the destination type by text deserialization, which already
+    /// yields the right layout for both `UUID` and `UUID2`. So there is no source type to thread here.
     if (auto * tuple_func = right->as<ASTFunction>(); tuple_func && tuple_func->name == "tuple")
     {
         auto * tuple_elements = tuple_func->children.front()->as<ASTExpressionList>();
@@ -224,22 +275,57 @@ public:
                 if (tuple.empty())
                     return;
 
-                Tuple new_tuple;
-                new_tuple.reserve(tuple.size());
+                /// Per-element source types of the constant tuple: they tell `shardContains` in which layout
+                /// the value is encoded, which is what makes `IN (toUUID(...))` over a `UUID2` sharding key
+                /// (and the other way around) prune the right shards.
+                const auto & element_types = assert_cast<const DataTypeTuple &>(*constant->getResultType()).getElements();
 
-                for (const auto & child : tuple)
+                const bool have_element_types = element_types.size() == tuple.size();
+
+                std::vector<size_t> retained_indices;
+                retained_indices.reserve(tuple.size());
+
+                for (size_t i = 0; i < tuple.size(); ++i)
                 {
-                    if (shardContains(child, name, data))
-                        new_tuple.push_back(child);
+                    auto element_type_hint = have_element_types ? getSourceTypeHint(element_types[i]) : nullptr;
+                    if (shardContains(tuple[i], name, data, element_type_hint.get()))
+                        retained_indices.push_back(i);
                 }
 
-                if (new_tuple.empty())
-                    new_tuple.push_back(tuple.back());
+                if (retained_indices.empty())
+                    retained_indices.push_back(tuple.size() - 1);
 
-                if (new_tuple.size() == tuple.size())
+                if (retained_indices.size() == tuple.size())
                     return;
 
-                arguments[1] = std::make_shared<ConstantNode>(new_tuple);
+                if (!have_element_types)
+                {
+                    Tuple new_tuple;
+                    new_tuple.reserve(retained_indices.size());
+                    for (size_t i : retained_indices)
+                        new_tuple.push_back(tuple[i]);
+                    arguments[1] = std::make_shared<ConstantNode>(std::move(new_tuple));
+                }
+                else
+                {
+                    /// Build the new constant from the retained subcolumns of the original typed column rather
+                    /// than from `Field`s: a `Field` loses the active alternative of a `Variant` (a value stored
+                    /// under `UUID2` in `Variant(UUID, UUID2)` would be reinserted as `UUID`) and the nested types
+                    /// of a `Dynamic`, which would send a different value to the shard.
+                    const auto & tuple_column = assert_cast<const ColumnTuple &>(constant->getColumn()->getDataColumn());
+                    Columns new_element_columns;
+                    DataTypes new_element_types;
+                    new_element_columns.reserve(retained_indices.size());
+                    new_element_types.reserve(retained_indices.size());
+                    for (size_t i : retained_indices)
+                    {
+                        new_element_columns.push_back(tuple_column.getColumnPtr(i));
+                        new_element_types.push_back(element_types[i]);
+                    }
+                    auto new_column = ColumnConst::create(ColumnTuple::create(std::move(new_element_columns)), 1);
+                    arguments[1] = std::make_shared<ConstantNode>(
+                        std::move(new_column), std::make_shared<DataTypeTuple>(std::move(new_element_types)));
+                }
                 rerunFunctionResolve(function_node, getContext());
             }
         }

@@ -3,6 +3,7 @@
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Storages/ColumnsDescription.h>
+#include <base/types.h>
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 #include <map>
@@ -11,6 +12,7 @@
 namespace DB
 {
 class ASTCreateQuery;
+class SettingsChanges;
 struct Settings;
 
 /// The parameters of the normalization of a TimeSeries table definition (see `normalizeTimeSeriesDefinitionImpl`).
@@ -39,6 +41,12 @@ struct NormalizeTimeSeriesDefinitionParams
     /// The query-level settings (the `default_table_engine` setting chooses the engines of the inner tables).
     /// Required for a new table.
     const Settings * query_settings = nullptr;
+
+    /// The `uuid_type_version` setting to materialize into the types of the inner columns: under version 2 a bare `UUID`
+    /// declared by the user (in INNER COLUMNS or in the `id_type` setting) becomes `UUID2`, and so does the default `id` type.
+    /// Must stay 1 (the historical `UUID`) unless the query is a primary user CREATE: an ATTACH, a restore from a backup
+    /// or a replayed DDL query must keep the stored types as they are, see `normalizeTimeSeriesDefinition`.
+    UInt64 uuid_type_version = 1;
 };
 
 /// Normalizes a TimeSeries table definition using only the definition and `params`, without access to the database catalog.
@@ -48,5 +56,12 @@ struct NormalizeTimeSeriesDefinitionParams
 /// `normalizeTimeSeriesDefinition` (see normalizeTimeSeriesDefinition.h) collects `params` from the database catalog
 /// and the query context, then calls this function.
 void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const NormalizeTimeSeriesDefinitionParams & params);
+
+/// Materializes the `uuid_type_version` setting into the expression of the `id_generator` setting, which is stored as a
+/// string: a type named in it, as in `CAST(..., 'UUID')`, is rewritten the same way as in a `DEFAULT` expression, so the
+/// expression keeps computing the same identifiers when the definition is replayed. Used for the SETTINGS clause of
+/// `CREATE` and for `ALTER TABLE ... MODIFY SETTING`. The setting is rewritten only if the rewrite changed something.
+/// An unparsable expression is left as is: `TimeSeriesSettings::loadFromQuery` reports it properly later.
+void materializeUUIDTypeVersionInIdGeneratorSetting(SettingsChanges & changes, UInt64 uuid_type_version);
 
 }

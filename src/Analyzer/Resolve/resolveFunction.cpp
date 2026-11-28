@@ -46,6 +46,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/exists.h>
 #include <Columns/validateColumnType.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -1714,7 +1715,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             parameter_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
 
-        parameters.push_back(constant_node->getValue());
+        /// The parameters lose their types, so their `UUID2` values are brought to the layout of an untyped `UUID` value.
+        parameters.push_back(convertUUID2LeavesToUUIDLayout(constant_node->getValue(), *constant_node->getResultType()));
     }
 
     /** Early short-circuit optimization for ordinary builtin AND/OR functions. Perform this

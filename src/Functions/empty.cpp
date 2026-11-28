@@ -177,7 +177,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(String | FixedString | Array | Map | UUID | IPv4 | IPv6 | JSON) -> UInt8";
+        return "(String | FixedString | Array | Map | UUID | UUID2 | IPv4 | IPv6 | JSON) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

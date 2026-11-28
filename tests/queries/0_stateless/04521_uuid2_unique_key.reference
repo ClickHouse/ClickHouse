@@ -1,0 +1,10 @@
+-- explicit UUID2 unique key: rows read back in canonical order
+00000000-0000-0000-0000-000000000001	a
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	b
+ffffffff-ffff-ffff-ffff-ffffffffffff	c
+-- composite UUID2 unique key
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	10	x
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	20	y
+-- bare UUID under uuid_type_version = 2 stores UUID2 in the unique key
+UUID2
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	z

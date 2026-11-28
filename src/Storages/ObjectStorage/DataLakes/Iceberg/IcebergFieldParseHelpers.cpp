@@ -11,6 +11,9 @@
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/FormatSettings.h>
+#include <IO/ReadBufferFromString.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 
@@ -227,6 +230,18 @@ std::optional<Field> deserializeFieldFromBinaryRepr(
     /// disagree, so even a byte-swapped pair can exclude a value the file holds.
     if (non_nullable_type->getTypeId() == TypeIndex::UUID)
         return std::nullopt;
+    /// `UUID2` orders by the canonical big-endian bytes, which is the order of the spec. Its binary
+    /// serialization reads exactly these 16 bytes, whereas `insertData` would copy them as the raw
+    /// in-memory value.
+    if (non_nullable_type->getTypeId() == TypeIndex::UUID2)
+    {
+        if (str.size() != sizeof(UUID))
+            return std::nullopt;
+        ReadBufferFromString buf(str);
+        Field result;
+        non_nullable_type->getDefaultSerialization()->deserializeBinary(result, buf, FormatSettings{});
+        return result;
+    }
 
     /// `insertData` of a fixed-size column ignores the length and reads the width of the type, so a
     /// shorter bound would read past the buffer. Iceberg keeps the bound as written, which for a

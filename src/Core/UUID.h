@@ -92,6 +92,24 @@ namespace UUIDHelpers
         return uuid.toUnderType().items[LowBytes];
     }
 
+    /** Convert between the layout used by the `UUID` data type and the layout used by the `UUID2` data type.
+      *
+      * The `UUID` type stores the two textual halves so that natural integer comparison of the underlying
+      * 128-bit value sorts by the *second* half of the UUID (a historical defect, see the `UUID` docs).
+      * The `UUID2` type stores the value as a plain big-endian integer of the 16 canonical bytes, so that
+      * natural integer comparison matches the lexicographic (textual) order.
+      *
+      * The two representations differ only by swapping the high and low 64-bit halves, so this transform
+      * is its own inverse and converts in both directions.
+      */
+    inline UUID swapHalves(UUID uuid)
+    {
+        UUID res;
+        getHighBytes(res) = getLowBytes(uuid);
+        getLowBytes(res) = getHighBytes(uuid);
+        return res;
+    }
+
     const UUID Nil{};
 }
 

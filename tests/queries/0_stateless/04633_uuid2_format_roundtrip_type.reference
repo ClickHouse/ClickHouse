@@ -1,0 +1,22 @@
+-- Arrow, all writer/reader combinations
+native_writer=1 native_reader=1: UUID2	UUID	61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+native_writer=1 native_reader=0: UUID2	UUID	61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+native_writer=0 native_reader=1: UUID2	UUID	61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+native_writer=0 native_reader=0: UUID2	UUID	61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+-- ArrowStream
+UUID2	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+-- Arrow, nested and Nullable
+Array(UUID2)	Nullable(UUID2)	61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+-- Arrow, explicit schema hint wins
+UUID	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+UUID2	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+-- Parquet, scalar and mixed
+UUID2	UUID	61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+-- Parquet, nested (per-leaf discrimination) and Nullable
+Array(UUID2)	Map(UUID2, UUID)	Tuple(\n    a UUID2,\n    b UUID)	Nullable(UUID2)	61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+-- Parquet, explicit schema hint wins
+UUID	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+UUID2	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+-- Parquet, filter pushdown on an inferred UUID2 column
+1
+999

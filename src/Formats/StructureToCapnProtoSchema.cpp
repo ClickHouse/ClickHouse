@@ -50,6 +50,7 @@ namespace
     {TypeIndex::String, "Data"},
     {TypeIndex::FixedString, "Data"},
     {TypeIndex::UUID, "Data"},
+    {TypeIndex::UUID2, "Data"},
     {TypeIndex::Date, "UInt16"},
     {TypeIndex::Date32, "Int32"},
     {TypeIndex::DateTime, "UInt32"},

@@ -55,7 +55,8 @@ namespace
 bool dictionaryValueTypesEqual(const ArrowIPC::ArrowType & a, const ArrowIPC::ArrowType & b);
 
 /// Struct and union element names identify dictionary value types; list and map container labels do not.
-/// Metadata matters only where it changes value decoding: `isUUIDField`, and the `clickhouse.opaque` tag
+/// Metadata matters only where it changes value decoding: `isUUIDField` and `isUUID2Field` (the byte layout
+/// of `UUID` and `UUID2` differs), and the `clickhouse.opaque` tag
 /// naming the ClickHouse type a binary payload deserializes back into.
 bool dictionaryValueFieldsEqual(const ArrowIPC::ArrowField & a, const ArrowIPC::ArrowField & b, bool compare_name)
 {
@@ -66,6 +67,8 @@ bool dictionaryValueFieldsEqual(const ArrowIPC::ArrowField & a, const ArrowIPC::
     if (a.dictionary != b.dictionary)
         return false;
     if (ArrowIPC::isUUIDField(a) != ArrowIPC::isUUIDField(b))
+        return false;
+    if (ArrowIPC::isUUID2Field(a) != ArrowIPC::isUUID2Field(b))
         return false;
     if (ArrowIPC::opaqueFieldTypeName(a) != ArrowIPC::opaqueFieldTypeName(b))
         return false;
@@ -414,10 +417,13 @@ bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & 
         const size_t n = assert_cast<const DataTypeFixedString &>(*decoded).getN();
         if (which.isFixedString())
             return assert_cast<const DataTypeFixedString &>(*to).getN() == n;
-        return which.isString() || (which.isUUID() && n == 16) || ArrowIPC::rawByteWidth(which) == n;
+        return which.isString() || ((which.isUUID() || which.isUUID2()) && n == 16) || ArrowIPC::rawByteWidth(which) == n;
     }
+    /// `UUID` and `UUID2` are not paired with each other: the decoded element keeps the type its field declares.
     if (from.isUUID())
         return which.isUUID() || which.isString();
+    if (from.isUUID2())
+        return which.isUUID2() || which.isString();
     if (from.isDecimal())
         return which.isDecimal();
     /// Another scale or time zone is what the flat column path returns for the same request.
@@ -725,14 +731,19 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     }
 
     const WhichDataType which(to_leaf);
-    const bool raw_target = which.isUUID() || ArrowIPC::rawByteWidth(which) != 0;
+    const bool raw_target = which.isUUID() || which.isUUID2() || ArrowIPC::rawByteWidth(which) != 0;
     if (!raw_target)
         return {col, from_type};
 
     /// The decoder already converts a variable binary leaf whose type hint reaches it (mask-aware, so
     /// it also covers invisibility this phase cannot see: dropped struct null maps, masked list
     /// ranges); only the declared type needs reconciling then.
-    if (nested.getDataType() == to_leaf->getTypeId())
+    /// `UUID` and `UUID2` share `ColumnVector<UUID>` but store the two 64-bit halves in the opposite
+    /// order, so the physical column type cannot tell them apart: a column decoded as one of them and
+    /// requested as the other must not be relabeled, the later cast performs the swap.
+    const WhichDataType from_which(from_no_null);
+    const bool uuid_layout_differs = (from_which.isUUID() && which.isUUID2()) || (from_which.isUUID2() && which.isUUID());
+    if (!uuid_layout_differs && nested.getDataType() == to_leaf->getTypeId())
     {
         if (from_no_null->equals(*to_leaf))
             return {col, from_type};

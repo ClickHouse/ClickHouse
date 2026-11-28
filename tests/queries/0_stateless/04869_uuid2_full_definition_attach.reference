@@ -1,0 +1,8 @@
+-- Full-definition ATTACH materializes bare UUID as UUID2, like CREATE
+CREATE TABLE default.t_uuid2_attach\n(\n    `id` UUID2,\n    `id_explicit` UUID2,\n    `id_legacy` UUID,\n    `arr` Array(UUID2),\n    `s` String,\n    `d` UUID2 DEFAULT CAST(s, \'UUID2\')\n)\nENGINE = Memory
+-- ATTACH ... ON CLUSTER (modern DDL format) materializes on the initiator
+CREATE TABLE default.t_uuid2_attach_cluster\n(\n    `id` UUID2,\n    `s` String,\n    `d` UUID2 DEFAULT CAST(s, \'UUID2\')\n)\nENGINE = Memory
+-- Short ATTACH replays stored metadata and does not rewrite types
+CREATE TABLE default.t_uuid2_reattach\n(\n    `id` UUID,\n    `d` UUID DEFAULT CAST(\'00000000-0000-0000-0000-000000000000\', \'UUID\')\n)\nENGINE = Memory
+-- Under version 1 a full-definition ATTACH keeps the historical UUID
+CREATE TABLE default.t_uuid1_attach\n(\n    `id` UUID,\n    `d` UUID DEFAULT CAST(toString(id), \'UUID\')\n)\nENGINE = Memory

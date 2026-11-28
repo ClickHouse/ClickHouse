@@ -1,0 +1,10 @@
+-- Cardinality statistics of UUID2 columns
+10
+-- The partition value and its active Variant alternative come from one evaluation
+10 00000000-0000-0001-0000-000000000000
+-- A SQL UDF in the parameters of an aggregate function in APPLY keeps the name of the column
+2
+2
+-- A lambda of the query shadows a function in the body of a SQL UDF in APPLY
+UUID
+UUID

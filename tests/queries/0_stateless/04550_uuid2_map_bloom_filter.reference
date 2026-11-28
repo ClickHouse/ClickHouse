@@ -1,0 +1,8 @@
+-- mapKeys(Map(UUID2, UInt64)) bloom filter, lookup key given as UUID
+2
+1
+3
+-- mapValues(Map(UInt64, UUID2)) bloom filter, comparison value given as UUID
+2
+1
+3

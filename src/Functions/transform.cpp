@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
@@ -801,6 +802,28 @@ namespace
         const bool cast_is_string_family_conversion = isStringOrFixedString(removeNullable(from_type))
             && isStringOrFixedString(removeNullable(from_array_nested_type));
 
+        /// A cast between `UUID` and `UUID2` (also nested, e.g. `Tuple(UUID)` to `Tuple(UUID2)`) keeps the value but
+        /// swaps the halves of its representation, so compare both entries with their `UUID` values in the same layout.
+        /// A `Field` of a `Dynamic` value has its `UUID2` values in the `UUID` layout (see `ColumnDynamic::get`), so a
+        /// `Dynamic` entry, or an entry cast to a `Dynamic` input type (also nested), is compared in the same way.
+        const auto is_dynamic = [](const IDataType & t) { return isDynamic(t); };
+        const bool cast_between_uuid_types = typesHaveDifferentUUIDLayouts(*from_type, *from_array_nested_type)
+            || anyInTypeTree(*from_array_nested_type, is_dynamic) || anyInTypeTree(*from_type, is_dynamic);
+
+        const auto entry_converted_exactly = [&](size_t i)
+        {
+            if (cast_checked_enum_membership)
+                return true;
+            if (cast_is_string_family_conversion && !(*cache->from_column)[i].isNull())
+                return true;
+            const Field original = (*from_column_uncast)[i];
+            if (cast_between_uuid_types)
+                return accurateEquals(
+                    convertUUID2LeavesToUUIDLayout((*cache->from_column)[i], *from_type),
+                    convertUUID2LeavesToUUIDLayout(original, *from_array_nested_type));
+            return accurateEquals((*cache->from_column)[i], original);
+        };
+
         /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
         if (isNativeNumber(which) || which.isDecimal32() || which.isDecimal64() || which.isEnum())
         {
@@ -808,7 +831,7 @@ namespace
             auto & table = *cache->table_num_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || (cast_is_string_family_conversion && !(*cache->from_column)[i].isNull()) || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (entry_converted_exactly(i))
                 {
                     UInt64 key = 0;
                     auto * dst = reinterpret_cast<char *>(&key);
@@ -831,7 +854,7 @@ namespace
             auto & table = *cache->table_string_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || (cast_is_string_family_conversion && !(*cache->from_column)[i].isNull()) || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (entry_converted_exactly(i))
                 {
                     std::string_view ref = cache->from_column->getDataAt(i);
                     table.insertIfNotPresent(ref, i);
@@ -844,7 +867,7 @@ namespace
             auto & table = *cache->table_anything_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || (cast_is_string_family_conversion && !(*cache->from_column)[i].isNull()) || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (entry_converted_exactly(i))
                 {
                     SipHash hash;
                     cache->from_column->updateHashWithValue(i, hash);
