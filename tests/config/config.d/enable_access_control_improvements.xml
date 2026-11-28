@@ -8,5 +8,6 @@
         <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
         <table_engines_require_grant>true</table_engines_require_grant>
         <allow_impersonate_user>true</allow_impersonate_user>
+        <throw_on_ambiguous_user_or_role_names>true</throw_on_ambiguous_user_or_role_names>
     </access_control_improvements>
 </clickhouse>

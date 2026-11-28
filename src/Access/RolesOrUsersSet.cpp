@@ -18,6 +18,15 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+    [[noreturn]] void throwAmbiguousName(const String & name)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Name {} is ambiguous because both a user and a role with this name exist", backQuote(name));
+    }
 }
 
 
@@ -78,7 +87,11 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
         {
             auto id = access_control->find<User>(name);
             if (id)
+            {
+                if (access_control->shouldThrowOnAmbiguousUserOrRoleNames() && access_control->find<Role>(name))
+                    throwAmbiguousName(name);
                 return *id;
+            }
             return access_control->getID<Role>(name);
         }
         if (ast.allow_users)
@@ -290,6 +303,28 @@ void RolesOrUsersSet::throwIfTargetingUsersFromUsersConfig(const AccessControl &
                 backQuote(name_and_type->first));
         }
     }
+}
+
+
+void RolesOrUsersSet::throwIfAmbiguousNames(const ASTRolesOrUsersSet & ast, const AccessControl & access_control, const Strings & new_user_names)
+{
+    if (ast.id_mode || !ast.allow_users || !ast.allow_roles || !access_control.shouldThrowOnAmbiguousUserOrRoleNames())
+        return;
+
+    auto check = [&](const String & name)
+    {
+        bool is_user = access_control.find<User>(name) || std::ranges::find(new_user_names, name) != new_user_names.end();
+        if (is_user && access_control.find<Role>(name))
+            throwAmbiguousName(name);
+    };
+
+    if (ast.names)
+        for (const String & name : ast.names->toStrings())
+            check(name);
+
+    if (ast.except_names)
+        for (const String & name : ast.except_names->toStrings())
+            check(name);
 }
 
 
