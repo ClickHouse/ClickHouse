@@ -2810,14 +2810,15 @@ static bool isPartitionKeyDeterminedByPrimaryKey(const MergeTreeData & data, con
       * partition expression can tell exactly those values apart - `toString(f)` maps `-0.0` and `0.0`
       * to `'-0'` and `'0'`, `reinterpretAsUInt64(f)` separates `NaN` payloads - so rows the comparator
       * treats as one key land in different partitions, and skipping the cross-partition merge would
-      * return both of them.
+      * return both of them. Likewise every `NULL` compares equal to every other, while `assumeNotNull(k)`
+      * reads the value stored under each one.
       */
     for (const auto & required_column : partition_key_expression->getRequiredColumnsWithTypes())
     {
         if (!primary_key_columns_set.contains(required_column.name))
             return false;
 
-        if (anyInTypeTree(*required_column.type, [](const IDataType & type) { return isFloat(type); }))
+        if (anyInTypeTree(*required_column.type, [](const IDataType & type) { return isFloat(type) || type.isNullable(); }))
             return false;
     }
 
@@ -2838,6 +2839,11 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     return isPartitionKeyDeterminedByPrimaryKey(data, *storage_snapshot->metadata);
 }
 
+bool ReadFromMergeTree::isPartitionKeyDerivedFromPrimaryKey() const
+{
+    return isPartitionKeyDeterminedByPrimaryKey(data, *storage_snapshot->metadata);
+}
+
 static bool expandSkipIndexGranulesWithinPartition(const MergeTreeData & data, const StorageInMemoryMetadata & metadata)
 {
     /// Other engines combine rows in `FINAL`, so a partition can return a matching row built from rows the skip index rejected.
@@ -2846,7 +2852,6 @@ static bool expandSkipIndexGranulesWithinPartition(const MergeTreeData & data, c
         case MergeTreeData::MergingParams::Replacing:
         case MergeTreeData::MergingParams::Collapsing:
         case MergeTreeData::MergingParams::VersionedCollapsing:
-            /// Not the settings-based rule: lazy `FINAL` deduplicates across partitions even with `do_not_merge_across_partitions_select_final`.
             return isPartitionKeyDeterminedByPrimaryKey(data, metadata);
         case MergeTreeData::MergingParams::Ordinary:
         case MergeTreeData::MergingParams::Summing:
