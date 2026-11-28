@@ -560,6 +560,11 @@ void StorageFileLog::startup()
 
 void StorageFileLog::shutdown(bool)
 {
+    stopBackgroundWrites();
+}
+
+void StorageFileLog::stopBackgroundWrites()
+{
     if (task)
     {
         task->stream_cancelled = true;

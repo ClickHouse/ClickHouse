@@ -31,6 +31,9 @@ public:
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
     void shutdown(bool is_drop) override;
+    /// Discards the queued jobs, cancels the running cluster ones and waits for the running local ones.
+    void stopBackgroundWrites() override;
+    bool hasBackgroundWrites() const override { return true; }
     void drop() override;
 
     void waitForQueriesToFinish(const QueryStatusPtr & query_status);
