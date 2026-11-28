@@ -386,7 +386,10 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     set_settings.transform_null_in = false;
     set_settings.size_limits = settings.network_transfer_limits;
 
-    auto in_source = std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes, *settings.source_plan));
+    /// The set plan is put back into the source plan by `addPlansForSets`, so it must not copy its resources.
+    auto in_source = std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes));
+    in_source->setMaxThreads(settings.source_plan->getMaxThreads());
+    in_source->setConcurrencyControl(settings.source_plan->getConcurrencyControl());
     /// An in-place build of the set materializes these CTEs first; a deferred build strips the steps and uses the outer gate.
     for (auto it = right_ctes.ctes.rbegin(); it != right_ctes.ctes.rend(); ++it)
         in_source->addStep(std::make_unique<DelayedMaterializingCTEsStep>(
