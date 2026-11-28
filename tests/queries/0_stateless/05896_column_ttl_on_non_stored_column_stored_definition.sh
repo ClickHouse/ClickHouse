@@ -46,6 +46,8 @@ SYSTEM REFRESH VIEW db.mv;
 SYSTEM WAIT VIEW db.mv;
 SELECT id, al FROM db.r;
 SELECT countSubstrings(create_table_query, 'ALIAS id TTL dt + toIntervalMonth(1)') FROM system.tables WHERE database = 'db' AND name = 'r';
+-- The view refreshes at every start of clickhouse-local, so no later run may exit while a refresh is in progress.
+DROP TABLE db.mv;
 -- Inserted after the TTLs are in the definition, so the parts carry TTL infos for the merge to apply.
 INSERT INTO db.a VALUES (1, '2000-01-01', [1, 2, 3]), (2, '2100-01-01', [4]);
 OPTIMIZE TABLE db.a FINAL;
