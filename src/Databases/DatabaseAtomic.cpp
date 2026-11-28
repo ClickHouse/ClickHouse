@@ -376,6 +376,13 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         assert_can_move_mat_view(other_table);
     }
 
+    /// The metadata file is moved by a rename on this database's disk.
+    if (!inside_database && getDisk()->getName() != other_db.getDisk()->getName())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Moving tables between databases that store metadata on different disks is not supported "
+            "(database {} uses disk {}, database {} uses disk {})",
+            backQuoteIfNeed(database_name), getDisk()->getName(), backQuoteIfNeed(other_db.database_name), other_db.getDisk()->getName());
+
     /// Check the destination `max_tables` quota only after the source table has been resolved
     /// and validated, so that a full destination does not mask `UNKNOWN_TABLE` and other
     /// source-side errors. An exchange does not change the number of tables.
@@ -1049,6 +1056,8 @@ CREATE DATABASE db SETTINGS disk = disk(type = 'local', path = '/var/lib/clickho
 ```
 
 If unspecified, the disk defined in `database_disk.disk` is used by default.
+
+Tables and dictionaries cannot be moved with `RENAME` or `EXCHANGE` between two `Atomic` databases that store metadata on different disks; such a query fails with `NOT_IMPLEMENTED`.
 
 The same `SETTINGS` clause works for `ATTACH DATABASE`, which is how a database whose metadata files
 live on another disk is attached to a server. `Atomic` requires the `UUID` of the database to be given
