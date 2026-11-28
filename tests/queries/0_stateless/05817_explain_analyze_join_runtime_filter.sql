@@ -68,7 +68,10 @@ SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (
 FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe AS p LEFT ANTI JOIN t_build AS b ON p.k = b.k)
 WHERE explain LIKE '%Runtime filter (%';
 
-SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (size|set bits) [^,)]+', '')
+-- A partial exact set has the keys of the blocks read before it overflowed, so only their range is checked.
+SELECT
+    replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (size|set bits) [^,)]+|, [0-9]+ unique keys', ''),
+    toUInt64OrZero(extract(explain, ', ([0-9]+) unique keys')) BETWEEN 101 AND 1000
 FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe AS p LEFT ANTI JOIN t_build AS b ON p.k = b.k SETTINGS join_runtime_filter_exact_values_limit = 100)
 WHERE explain LIKE '%Runtime filter (%';
 
