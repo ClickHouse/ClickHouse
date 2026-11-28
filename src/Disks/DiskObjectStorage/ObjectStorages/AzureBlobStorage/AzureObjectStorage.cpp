@@ -150,13 +150,15 @@ AzureObjectStorage::AzureObjectStorage(
     const AzureBlobStorage::ConnectionParams & connection_params_,
     const String & object_namespace_,
     const String & description_,
-    const String & common_key_prefix_)
+    const String & common_key_prefix_,
+    const String & blob_version_id_)
     : name(name_)
     , client(std::move(client_))
     , settings(std::move(settings_))
     , object_namespace(object_namespace_)
     , description(description_)
     , common_key_prefix(common_key_prefix_)
+    , blob_version_id(blob_version_id_)
     , connection_params(std::make_unique<AzureBlobStorage::ConnectionParams>(connection_params_))
     , log(getLogger("AzureObjectStorage"))
 {
@@ -173,7 +175,8 @@ ObjectStoragePtr AzureObjectStorage::cloneImpl() const
         *connection_params.get(),
         object_namespace,
         description,
-        common_key_prefix);
+        common_key_prefix,
+        blob_version_id);
 
     std::lock_guard lock(client_inputs_mutex);
     /// The copy is not shared with anyone yet; its mutex is taken to satisfy the thread safety analysis.
@@ -327,7 +330,8 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         /// that sizes itself by `getFileSize` (`CachedInMemoryReadBufferFromFile` does, and treats
         /// an earlier end of the file as corruption) sees the bound the read has, and not the size
         /// of whatever generation a live `GetProperties` request would meet.
-        /* file_size */ known_size);
+        /* file_size */ known_size,
+        blob_version_id);
 }
 
 SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -747,7 +751,9 @@ ObjectMetadata AzureObjectStorage::getObjectMetadataOfListedGeneration(const Sto
 ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
     auto client_ptr = client.get();
-    auto blob_client = client_ptr->GetBlobClient(path);
+    /// The metadata must describe the version that `readObject` reads, not the current one:
+    /// the size bounds the read, and the current version can be absent (a deleted blob).
+    auto blob_client = client_ptr->GetBlobClient(path, blob_version_id);
     auto properties = blob_client.GetProperties().Value;
 
     ProfileEvents::increment(ProfileEvents::AzureGetProperties);

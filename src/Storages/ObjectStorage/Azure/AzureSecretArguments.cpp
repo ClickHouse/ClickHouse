@@ -101,7 +101,7 @@ bool isAzureCollectionKey(std::string_view key)
 {
     static const std::unordered_set<std::string_view> keys = {"blob_path", "container", "format", "compression", "structure",
         "compression_method", "account_name", "account_key", "connection_string", "storage_account_url", "partition_strategy",
-        "partition_columns_in_data_file", "client_id", "tenant_id"};
+        "partition_columns_in_data_file", "client_id", "tenant_id", "version_id"};
     return keys.contains(key);
 }
 
@@ -243,7 +243,7 @@ std::vector<size_t> azureSlotArguments(FunctionSecretArgumentsFinder & finder, s
             const auto key = tryGetAzureKey(*f);
             if (!key)
                 finder.markSecretArgument(i);
-            else if ((key != "partition_strategy" && key != "partition_columns_in_data_file") || !f->arguments->at(1)->tryGetLiteralText(nullptr))
+            else if ((key != "partition_strategy" && key != "partition_columns_in_data_file" && key != "version_id") || !f->arguments->at(1)->tryGetLiteralText(nullptr))
                 finder.markSecretArgument(i, /* argument_is_named= */ true);
             continue;
         }

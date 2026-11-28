@@ -75,12 +75,22 @@ namespace ErrorCodes
     "partition_columns_in_data_file",
     "client_id",
     "tenant_id",
+    "version_id",
 };
 
 void StorageAzureConfiguration::check(ContextPtr context)
 {
     auto url = parseURI(connection_params.getConnectionURLWithoutQuery());
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url);
+
+    /// A version ID belongs to one blob (it is the time of the write that created the version), and a listing
+    /// returns only the blobs that have a current version, so a deleted blob would be skipped silently.
+    if (!blob_version_id.empty() && blob_path.hasGlobs())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The `version_id` argument selects a version of a single blob, so it cannot be used with a path with globs: {}",
+            blob_path.path);
+
     StorageObjectStorageConfiguration::check(context);
 }
 
@@ -129,7 +139,8 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
         connection_params,
         connection_params.getContainer(),
         connection_params.getConnectionURL(),
-        /*common_key_prefix*/ "");
+        /*common_key_prefix*/ "",
+        blob_version_id);
 }
 
 AzureBlobStorage::ConnectionParams getAzureConnectionParams(
@@ -278,6 +289,7 @@ void AzureStorageParsedArguments::fromNamedCollection(const NamedCollection & co
     structure = collection.getOrDefault<String>("structure", "auto");
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
+    blob_version_id = collection.getOrDefault<String>("version_id", "");
 
     if (collection.has("partition_strategy"))
     {
@@ -442,11 +454,11 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
     const auto key_value_args = parseKeyValueArguments(ASTs(engine_args.begin() + count, engine_args.end()), context);
     for (const auto & [key, _] : key_value_args)
     {
-        if (key != "partition_strategy" && key != "partition_columns_in_data_file")
+        if (key != "partition_strategy" && key != "partition_columns_in_data_file" && key != "version_id")
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Unexpected key-value argument `{}`: only `partition_strategy` and `partition_columns_in_data_file` "
-                "can be passed as key-value arguments",
+                "Unexpected key-value argument `{}`: only `partition_strategy`, `partition_columns_in_data_file` "
+                "and `version_id` can be passed as key-value arguments",
                 key);
     }
 
@@ -779,6 +791,9 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
         partition_columns_in_data_file_was_set = true;
     }
 
+    if (auto it = key_value_args.find("version_id"); it != key_value_args.end())
+        blob_version_id = it->second.safeGet<String>();
+
     /// A key-value strategy gets the same default as the named-collection form.
     if (key_value_args.contains("partition_strategy") && !partition_columns_in_data_file_was_set)
         partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
@@ -976,6 +991,7 @@ void StorageAzureConfiguration::initializeFromParsedArguments(const AzureStorage
     StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
     blob_path = parsed_arguments.blob_path;
     connection_params = parsed_arguments.connection_params;
+    blob_version_id = parsed_arguments.blob_version_id;
 }
 
 std::string StorageAzureConfiguration::getMetadataLocationURI() const

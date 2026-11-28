@@ -154,6 +154,14 @@ BlobClient ContainerClientWrapper::GetBlobClient(const String & blob_name) const
     return client.GetBlobClient(blob_prefix + blob_name);
 }
 
+BlobClient ContainerClientWrapper::GetBlobClient(const String & blob_name, const String & version_id) const
+{
+    auto blob_client = GetBlobClient(blob_name);
+    if (version_id.empty())
+        return blob_client;
+    return blob_client.WithVersionId(version_id);
+}
+
 BlockBlobClient ContainerClientWrapper::GetBlockBlobClient(const String & blob_name) const
 {
     return client.GetBlockBlobClient(blob_prefix + blob_name);

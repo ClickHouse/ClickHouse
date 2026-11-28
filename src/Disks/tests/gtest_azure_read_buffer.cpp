@@ -307,12 +307,20 @@ public:
     /// The `If-Match` condition of the last download, or empty if it had none.
     [[nodiscard]] const std::string & getLastIfMatch() const { return last_if_match; }
 
+    /// The `versionid` query parameter of each request, empty for a request without it.
+    [[nodiscard]] const std::vector<std::string> & getVersionIds() const { return version_ids; }
+
     std::unique_ptr<Azure::Core::Http::RawResponse> Send(
         Azure::Core::Http::Request & request, const Azure::Core::Context &) override
     {
         const bool is_download = request.GetMethod() == Azure::Core::Http::HttpMethod::Get;
         if (request.GetMethod() == Azure::Core::Http::HttpMethod::Head)
             ++properties_requests;
+
+        const auto query_parameters = request.GetUrl().GetQueryParameters();
+        const auto version_id_it = query_parameters.find("versionid");
+        version_ids.push_back(version_id_it == query_parameters.end() ? "" : version_id_it->second);
+
         if (is_download)
         {
             ++downloads;
@@ -394,6 +402,7 @@ private:
     size_t downloads = 0;
     size_t properties_requests = 0;
     std::string last_if_match;
+    std::vector<std::string> version_ids;
 };
 
 std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeCountingBuffer(size_t extra_bytes, size_t buffer_size)
@@ -696,7 +705,8 @@ namespace
 
 /// An `AzureObjectStorage` whose every request is answered by `CountingRangeTransport`, so that the
 /// blob has a generation (`etag`) and the endpoint either honours `If-Match` or ignores it.
-std::unique_ptr<DB::AzureObjectStorage> makeCountingObjectStorage(std::shared_ptr<CountingRangeTransport> transport)
+std::unique_ptr<DB::AzureObjectStorage> makeCountingObjectStorage(
+    std::shared_ptr<CountingRangeTransport> transport, const std::string & blob_version_id = {})
 {
     DB::AzureBlobStorage::ConnectionParams connection_params;
     connection_params.endpoint.container_name = "container";
@@ -714,7 +724,8 @@ std::unique_ptr<DB::AzureObjectStorage> makeCountingObjectStorage(std::shared_pt
         connection_params,
         /* object_namespace */ "container",
         /* description */ "azure",
-        /* common_key_prefix */ "");
+        /* common_key_prefix */ "",
+        blob_version_id);
 }
 
 constexpr auto listed_etag = "\"0x8DA000000000000\"";
@@ -916,6 +927,46 @@ TEST(AzureReadObject, UnknownObjectSizeIsAskedFromTheEndpoint)
 
     ASSERT_EQ(buffer->getFileSize(), static_cast<size_t>(0));
     ASSERT_EQ(transport->getPropertiesCount(), static_cast<size_t>(1));
+}
+
+/// With a version of the blob selected, the properties and the download are requested for that
+/// version: the size of the current version does not bound the read of another one, and the
+/// current version of a deleted blob does not exist at all.
+TEST(AzureReadObject, ReadsTheSelectedVersion)
+{
+    auto transport = std::make_shared<CountingRangeTransport>(/* extra_bytes */ 0);
+    auto object_storage = makeCountingObjectStorage(transport, "version-1");
+
+    object_storage->getObjectMetadata("blob", /* with_tags */ false);
+
+    DB::StoredObject object("blob", /* local_path */ "", /* bytes_size */ 100);
+    auto buffer = object_storage->readObject(object, DB::ReadSettings{});
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+
+    ASSERT_EQ(transport->getPropertiesCount(), static_cast<size_t>(1));
+    ASSERT_GE(transport->getDownloadCount(), static_cast<size_t>(1));
+    for (const auto & version_id : transport->getVersionIds())
+        ASSERT_EQ(version_id, "version-1");
+}
+
+/// Without a selected version no request names one.
+TEST(AzureReadObject, ReadsTheCurrentVersionByDefault)
+{
+    auto transport = std::make_shared<CountingRangeTransport>(/* extra_bytes */ 0);
+    auto object_storage = makeCountingObjectStorage(transport);
+
+    object_storage->getObjectMetadata("blob", /* with_tags */ false);
+
+    DB::StoredObject object("blob", /* local_path */ "", /* bytes_size */ 100);
+    auto buffer = object_storage->readObject(object, DB::ReadSettings{});
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+
+    ASSERT_FALSE(transport->getVersionIds().empty());
+    for (const auto & version_id : transport->getVersionIds())
+        ASSERT_EQ(version_id, "");
 }
 
 TEST(AzureQuotedETag, Spellings)

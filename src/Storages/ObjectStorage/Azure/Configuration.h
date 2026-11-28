@@ -78,6 +78,8 @@ struct AzureStorageParsedArguments : private StorageParsedArguments
 
     Path blob_path;
     AzureBlobStorage::ConnectionParams connection_params;
+    /// The `version_id` argument: the version of the blob to read. Empty for the current version.
+    String blob_version_id;
 };
 
 class StorageAzureConfiguration : public StorageObjectStorageConfiguration
@@ -117,6 +119,8 @@ public:
     String getAccountName() const { return connection_params.endpoint.account_name; }
     String getAccountKey() const { return connection_params.endpoint.account_key; }
     String getSasKey() const { return connection_params.endpoint.sas_auth; }
+    /// The version of the blob that is read (the `version_id` argument), or an empty string for the current version.
+    const String & getBlobVersionId() const { return blob_version_id; }
 
     void check(ContextPtr context) override;
 
@@ -159,6 +163,7 @@ private:
     Path blob_path;
     Paths blobs_paths TSA_GUARDED_BY(paths_mutex);
     AzureBlobStorage::ConnectionParams connection_params;
+    String blob_version_id;
     DiskPtr disk;
 
     String onelake_client_id;

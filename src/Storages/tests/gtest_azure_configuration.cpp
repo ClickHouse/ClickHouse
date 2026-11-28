@@ -63,6 +63,8 @@ public:
 class StorageAzureConfigurationFriend : private StorageAzureConfiguration
 {
 public:
+    using StorageAzureConfiguration::getBlobVersionId;
+
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override
     {
         StorageAzureConfiguration::fromNamedCollection(collection, context);
@@ -289,6 +291,28 @@ TEST(StorageAzureConfiguration, FromASTWithURL)
     conf.fromAST(engine_args, Context::getGlobalContextInstance(), false);
 
     ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(conf.getConnectionParams().auth_method));
+}
+
+TEST(StorageAzureConfiguration, FromASTWithVersionId)
+{
+    std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1', 'test_container', 'test_blob.csv', 'account_name', 'account_key', version_id = '2026-11-23T10:00:00.1234567Z')";
+
+    ASTs engine_args = getEngineArgs(query);
+    StorageAzureConfigurationFriend conf;
+    conf.fromAST(engine_args, Context::getGlobalContextInstance(), false);
+
+    EXPECT_EQ(conf.getBlobVersionId(), "2026-11-23T10:00:00.1234567Z");
+}
+
+TEST(StorageAzureConfiguration, FromASTWithoutVersionId)
+{
+    std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1', 'test_container', 'test_blob.csv', 'account_name', 'account_key')";
+
+    ASTs engine_args = getEngineArgs(query);
+    StorageAzureConfigurationFriend conf;
+    conf.fromAST(engine_args, Context::getGlobalContextInstance(), false);
+
+    EXPECT_TRUE(conf.getBlobVersionId().empty());
 }
 
 TEST(StorageAzureConfiguration, FromASTWithExtraCredentialsAndAccount)
