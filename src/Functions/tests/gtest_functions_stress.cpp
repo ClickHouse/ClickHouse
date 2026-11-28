@@ -361,6 +361,7 @@ const std::unordered_set<std::string_view> excluded_functions = {
     /// Avoid aggregate functions (for no strong reason).
     "initializeAggregation",
     "finalizeAggregation",
+    "intersectAggregations",
     "arrayReduce",
     "arrayReduceInRanges",
 

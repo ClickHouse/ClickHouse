@@ -59,6 +59,14 @@ public:
         return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
     }
 
+    /// The state is the state of the nested function.
+    [[nodiscard]] bool canIntersect() const override { return nested_func->canIntersect(); }
+
+    bool intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+        return nested_func->intersect(place, rhs, arena);
+    }
+
     DataTypePtr getNormalizedStateType() const override
     {
         return nested_func->getNormalizedStateType();

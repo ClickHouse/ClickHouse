@@ -171,6 +171,11 @@ char * IAggregateFunction::serializeToMemory(ConstAggregateDataPtr __restrict, c
         ErrorCodes::NOT_IMPLEMENTED, "Method serializeToMemory is not implemented for {}, it reported no serialized size bound", getName());
 }
 
+bool IAggregateFunction::intersect(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, Arena * /*arena*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Aggregate function {} does not support the intersection of states", getName());
+}
+
 void IAggregateFunction::setSumAndCount(AggregateDataPtr __restrict /*place*/, const Field & /*sum*/, UInt64 /*count*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method setSumAndCount is not implemented for {}", getName());

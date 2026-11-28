@@ -50,6 +50,15 @@ public:
         this->data(place).roaring_bitmap_with_small_set.merge(this->data(rhs).roaring_bitmap_with_small_set);
     }
 
+    [[nodiscard]] bool canIntersect() const override { return true; }
+
+    bool intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    {
+        auto & bitmap = this->data(place).roaring_bitmap_with_small_set;
+        bitmap.rb_and(this->data(rhs).roaring_bitmap_with_small_set);
+        return bitmap.size() > 0;
+    }
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).roaring_bitmap_with_small_set.write(buf);

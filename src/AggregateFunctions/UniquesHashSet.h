@@ -200,11 +200,18 @@ private:
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree
     void rehash()
     {
+        eraseIf([this](HashValue x) { return !good(x); });
+    }
+
+    /// Delete all values (except the zero, which is not kept in the buffer) for which `pred` returns true.
+    template <typename Pred>
+    void eraseIf(Pred && pred)
+    {
         for (size_t i = 0; i < buf_size(); ++i)
         {
             if (buf[i])
             {
-                if (!good(buf[i]))
+                if (pred(buf[i]))
                 {
                     buf[i] = 0;
                     --m_size;
@@ -426,11 +433,18 @@ private:
     /// Delete all values of the wide set whose hashes do not divide by 2 ^ skip_degree.
     static void wideRehash(WideSet & set)
     {
+        wideEraseIf(set, [&set](UInt64 x) { return !set.good(x); });
+    }
+
+    /// Delete all values of the wide set (except the zero, which is not kept in the buffer) for which `pred` returns true.
+    template <typename Pred>
+    static void wideEraseIf(WideSet & set, Pred && pred)
+    {
         for (size_t i = 0; i < set.bufSize(); ++i)
         {
             if (set.buf[i])
             {
-                if (!set.good(set.buf[i]))
+                if (pred(set.buf[i]))
                 {
                     set.buf[i] = 0;
                     --set.m_size;
@@ -453,6 +467,28 @@ private:
                 wideReinsertImpl(set, x);
             }
         }
+    }
+
+    [[nodiscard]] bool containsHash(HashValue x) const
+    {
+        if (x == 0)
+            return has_zero;
+
+        for (size_t place_value = place(x); buf[place_value]; place_value = (place_value + 1) & mask())
+            if (buf[place_value] == x)
+                return true;
+        return false;
+    }
+
+    [[nodiscard]] static bool wideContains(const WideSet & set, UInt64 x)
+    {
+        if (x == 0)
+            return set.has_zero;
+
+        for (size_t place_value = set.place(x); set.buf[place_value]; place_value = (place_value + 1) & set.mask())
+            if (set.buf[place_value] == x)
+                return true;
+        return false;
     }
 
     /// Insert a value of the wide set, i.e. a full hash already passed through `wideHash`.
@@ -824,6 +860,13 @@ public:
 
     [[nodiscard]] size_t size() const
     {
+        /** An empty sample at a positive skip degree comes only from `intersect` (thinning never removes
+          * the last element), and it means the intersection is empty: there is nothing to extrapolate.
+          * The wide set is a subset of the main sample (see `widePrefilterMask`), so it is empty too.
+          */
+        if (m_size == 0)
+            return 0;
+
         /** The wide set gives a reliable estimate once it has enough values;
           * below that the 32-bit main set is more precise. If the wide sample does not cover
           * all the elements (see `wide_incomplete`), it is not there at all and the legacy
@@ -962,6 +1005,63 @@ public:
                 if (x && (x & ((1ULL << wideSkipDegree()) - 1)) == 0)
                     wideInsert(x);
             }
+        }
+    }
+
+    /** Leave only the elements that `rhs` has too, so that the set becomes a sample of the intersection
+      * of the two sets of elements. Both sets are deterministic samples (all the hashes with skip_degree zero
+      * low-order bits), so the sample of the intersection is taken with the larger of the two skip degrees:
+      * a hash passing it is in `rhs` if and only if its element was inserted into `rhs`.
+      * The result is a valid state of the intersection, but it may be thinned out more than a state
+      * built from the intersection directly, so its estimate is less precise for a small intersection.
+      * The same is done with the wide set.
+      */
+    void intersect(const UniquesHashSet & rhs)
+    {
+        if (rhs.skip_degree > skip_degree)
+        {
+            skip_degree = rhs.skip_degree;
+            rehash();
+        }
+
+        eraseIf([&rhs](HashValue x) { return !rhs.containsHash(x); });
+
+        if (has_zero && !rhs.has_zero)
+        {
+            has_zero = false;
+            --m_size;
+        }
+
+        if (rhs.wide_incomplete)
+        {
+            markWideIncomplete();
+            return;
+        }
+
+        /// No wide set in a complete state means that none of its elements passed the wide thinning,
+        /// so none of the elements of the intersection did either.
+        if (wide_incomplete || !wide)
+            return;
+
+        if (!rhs.wide)
+        {
+            freeWide();
+            return;
+        }
+
+        if (rhs.wide->skip_degree > wide->skip_degree)
+        {
+            wide->skip_degree = rhs.wide->skip_degree;
+            wideRehash(*wide);
+        }
+
+        const WideSet & rhs_wide = *rhs.wide;
+        wideEraseIf(*wide, [&rhs_wide](UInt64 x) { return !wideContains(rhs_wide, x); });
+
+        if (wide->has_zero && !rhs_wide.has_zero)
+        {
+            wide->has_zero = false;
+            --wide->m_size;
         }
     }
 

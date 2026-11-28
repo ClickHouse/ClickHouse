@@ -5328,6 +5328,11 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
             static const Strings theta_ops = {"uniqThetaUnion", "uniqThetaIntersect", "uniqThetaNot"};
             child = makeASTFunction(pickRandomly(fuzz_rand, theta_ops), child, child->clone());
         }
+        /// Intersect two states of a function that supports it; both sides have the same type.
+        else if ((agg == "uniqState" || agg == "uniqExactState" || agg == "uniqThetaState") && fuzz_rand() % 3 == 0)
+        {
+            child = makeASTFunction("intersectAggregations", child, child->clone());
+        }
         if (fuzz_rand() % 3 == 0)
             child = makeASTFunction("finalizeAggregation", child);
     }

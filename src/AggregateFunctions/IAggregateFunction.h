@@ -227,6 +227,20 @@ public:
         return false;
     }
 
+    /// Whether `intersect` is implemented. It is possible for the functions whose state holds the set of distinct
+    /// arguments (`uniqExact`, `groupUniqArray`, `groupBitmap`) or a deterministic sample or a sketch of it (`uniq`, `uniqTheta`).
+    virtual bool canIntersect() const { return false; }
+
+    /// Replaces the state in `place` with the state of the intersection of the sets of arguments aggregated in `place`
+    /// and in `rhs`, i.e. with the state that would be produced by aggregating only the arguments present in both.
+    /// The functions keeping the exact set produce exactly such a state. The functions keeping a sample or a sketch
+    /// produce a valid state of the intersection, which estimates it with an error of the same kind, but which is not
+    /// necessarily identical to a state aggregated from the intersection directly (it may be sampled more coarsely).
+    /// The states must belong to the same function or have the same state representation (see `haveSameStateRepresentation`).
+    /// Returns whether the resulting state has aggregated any value (for the `Nullable` adapter, which keeps a flag of that).
+    /// Throws `NOT_IMPLEMENTED` if `canIntersect` returns false.
+    virtual bool intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const;
+
     /// Return true if it is allowed to replace call of `addBatch`
     /// to `addBatchSinglePlace` for ranges of consecutive equal keys.
     virtual bool canOptimizeEqualKeysRanges() const { return true; }

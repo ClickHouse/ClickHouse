@@ -168,6 +168,19 @@ public:
         nested_function->merge(nestedPlace(place), nestedPlace(rhs), arena);
     }
 
+    [[nodiscard]] bool canIntersect() const override { return nested_function->canIntersect(); }
+
+    bool intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+        /// The flag tells whether any non-NULL value was aggregated, i.e. whether the intersection is not empty.
+        /// It is cleared both when an operand had no values and when the operands are disjoint.
+        const bool has_values = nested_function->intersect(nestedPlace(place), nestedPlace(rhs), arena);
+        if constexpr (result_is_nullable)
+            if (!has_values)
+                initFlag(place);
+        return has_values;
+    }
+
     [[nodiscard]] bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
     [[nodiscard]] bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
     [[nodiscard]] size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override
