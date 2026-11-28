@@ -3,6 +3,7 @@
 #if USE_HIGHWAY
 
 #include <Functions/HighwayMath.h>
+#include <base/sanitizer_defs.h>
 
 #include <gtest/gtest.h>
 #include <hwy/targets.h>
@@ -58,8 +59,8 @@ T sigmoidLibm(T x)
     return (x < 0 ? e : T(1)) / (T(1) + e);
 }
 
-/// A pseudorandom generator that gives the same sequence on every platform.
-uint64_t splitmix64(uint64_t & state)
+/// A pseudorandom generator that gives the same sequence on every platform. The wraparound of unsigned arithmetic is intended.
+NO_SANITIZE_UNSIGNED_OVERFLOW uint64_t splitmix64(uint64_t & state)
 {
     uint64_t z = (state += 0x9E3779B97F4A7C15ULL);
     z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
@@ -162,9 +163,9 @@ std::vector<T> platformIndependentArguments(size_t size)
     return res;
 }
 
-/// FNV-1a over the bits of the results.
+/// FNV-1a over the bits of the results (with intended wraparound).
 template <typename T>
-uint64_t resultHash(Kernel<T> kernel, const std::vector<T> & args)
+NO_SANITIZE_UNSIGNED_OVERFLOW uint64_t resultHash(Kernel<T> kernel, const std::vector<T> & args)
 {
     std::vector<T> res(args.size());
     kernel(args.data(), args.size(), res.data());
