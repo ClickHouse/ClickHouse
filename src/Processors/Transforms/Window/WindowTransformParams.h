@@ -28,6 +28,7 @@ struct WindowTransformParams
     const RangeOffsetComparator range_offset_comparator;
     const WindowFunctionRequirements requirements;
     const bool needs_peer_group_indexes;
+    const bool needs_missing_keys;
 
 public:
     static WindowTransformParams create(

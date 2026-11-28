@@ -1,0 +1,144 @@
+asc nulls first, around the current row, block size 1: 5069991203429166030
+asc nulls first, around the current row, block size 2: 5069991203429166030
+asc nulls first, around the current row, block size 3: 5069991203429166030
+asc nulls first, around the current row, block size 5: 5069991203429166030
+asc nulls first, around the current row, block size 8: 5069991203429166030
+asc nulls first, around the current row, block size 65505: 5069991203429166030
+asc nulls last, around the current row, block size 1: 5069991203429166030
+asc nulls last, around the current row, block size 2: 5069991203429166030
+asc nulls last, around the current row, block size 3: 5069991203429166030
+asc nulls last, around the current row, block size 5: 5069991203429166030
+asc nulls last, around the current row, block size 8: 5069991203429166030
+asc nulls last, around the current row, block size 65505: 5069991203429166030
+desc nulls first, around the current row, block size 1: 11940410940341952927
+desc nulls first, around the current row, block size 2: 11940410940341952927
+desc nulls first, around the current row, block size 3: 11940410940341952927
+desc nulls first, around the current row, block size 5: 11940410940341952927
+desc nulls first, around the current row, block size 8: 11940410940341952927
+desc nulls first, around the current row, block size 65505: 11940410940341952927
+desc nulls last, around the current row, block size 1: 11940410940341952927
+desc nulls last, around the current row, block size 2: 11940410940341952927
+desc nulls last, around the current row, block size 3: 11940410940341952927
+desc nulls last, around the current row, block size 5: 11940410940341952927
+desc nulls last, around the current row, block size 8: 11940410940341952927
+desc nulls last, around the current row, block size 65505: 11940410940341952927
+asc nulls first, ahead of the current row, block size 1: 17363461368920401135
+asc nulls first, ahead of the current row, block size 2: 17363461368920401135
+asc nulls first, ahead of the current row, block size 3: 17363461368920401135
+asc nulls first, ahead of the current row, block size 5: 17363461368920401135
+asc nulls first, ahead of the current row, block size 8: 17363461368920401135
+asc nulls first, ahead of the current row, block size 65505: 17363461368920401135
+asc nulls last, ahead of the current row, block size 1: 17363461368920401135
+asc nulls last, ahead of the current row, block size 2: 17363461368920401135
+asc nulls last, ahead of the current row, block size 3: 17363461368920401135
+asc nulls last, ahead of the current row, block size 5: 17363461368920401135
+asc nulls last, ahead of the current row, block size 8: 17363461368920401135
+asc nulls last, ahead of the current row, block size 65505: 17363461368920401135
+desc nulls first, behind the current row, block size 1: 17363461368920401135
+desc nulls first, behind the current row, block size 2: 17363461368920401135
+desc nulls first, behind the current row, block size 3: 17363461368920401135
+desc nulls first, behind the current row, block size 5: 17363461368920401135
+desc nulls first, behind the current row, block size 8: 17363461368920401135
+desc nulls first, behind the current row, block size 65505: 17363461368920401135
+desc nulls last, behind the current row, block size 1: 17363461368920401135
+desc nulls last, behind the current row, block size 2: 17363461368920401135
+desc nulls last, behind the current row, block size 3: 17363461368920401135
+desc nulls last, behind the current row, block size 5: 17363461368920401135
+desc nulls last, behind the current row, block size 8: 17363461368920401135
+desc nulls last, behind the current row, block size 65505: 17363461368920401135
+asc nulls first, from the partition start, block size 1: 17580630440109144353
+asc nulls first, from the partition start, block size 2: 17580630440109144353
+asc nulls first, from the partition start, block size 3: 17580630440109144353
+asc nulls first, from the partition start, block size 5: 17580630440109144353
+asc nulls first, from the partition start, block size 8: 17580630440109144353
+asc nulls first, from the partition start, block size 65505: 17580630440109144353
+asc nulls last, from the partition start, block size 1: 7670444774863426964
+asc nulls last, from the partition start, block size 2: 7670444774863426964
+asc nulls last, from the partition start, block size 3: 7670444774863426964
+asc nulls last, from the partition start, block size 5: 7670444774863426964
+asc nulls last, from the partition start, block size 8: 7670444774863426964
+asc nulls last, from the partition start, block size 65505: 7670444774863426964
+desc nulls first, to the partition end, block size 1: 7670444774863426964
+desc nulls first, to the partition end, block size 2: 7670444774863426964
+desc nulls first, to the partition end, block size 3: 7670444774863426964
+desc nulls first, to the partition end, block size 5: 7670444774863426964
+desc nulls first, to the partition end, block size 8: 7670444774863426964
+desc nulls first, to the partition end, block size 65505: 7670444774863426964
+desc nulls last, to the partition end, block size 1: 17580630440109144353
+desc nulls last, to the partition end, block size 2: 17580630440109144353
+desc nulls last, to the partition end, block size 3: 17580630440109144353
+desc nulls last, to the partition end, block size 5: 17580630440109144353
+desc nulls last, to the partition end, block size 8: 17580630440109144353
+desc nulls last, to the partition end, block size 65505: 17580630440109144353
+asc nulls first, from an offset to the current row, block size 1: 17097769264175441562
+asc nulls first, from an offset to the current row, block size 2: 17097769264175441562
+asc nulls first, from an offset to the current row, block size 3: 17097769264175441562
+asc nulls first, from an offset to the current row, block size 5: 17097769264175441562
+asc nulls first, from an offset to the current row, block size 8: 17097769264175441562
+asc nulls first, from an offset to the current row, block size 65505: 17097769264175441562
+asc nulls last, from the current row to an offset, block size 1: 3294821991790026795
+asc nulls last, from the current row to an offset, block size 2: 3294821991790026795
+asc nulls last, from the current row to an offset, block size 3: 3294821991790026795
+asc nulls last, from the current row to an offset, block size 5: 3294821991790026795
+asc nulls last, from the current row to an offset, block size 8: 3294821991790026795
+asc nulls last, from the current row to an offset, block size 65505: 3294821991790026795
+nullable float key asc nulls first, block size 1: 14722874558004060744
+nullable float key asc nulls first, block size 2: 14722874558004060744
+nullable float key asc nulls first, block size 3: 14722874558004060744
+nullable float key asc nulls first, block size 5: 14722874558004060744
+nullable float key asc nulls first, block size 8: 14722874558004060744
+nullable float key asc nulls first, block size 65505: 14722874558004060744
+nullable float key asc nulls last, block size 1: 14722874558004060744
+nullable float key asc nulls last, block size 2: 14722874558004060744
+nullable float key asc nulls last, block size 3: 14722874558004060744
+nullable float key asc nulls last, block size 5: 14722874558004060744
+nullable float key asc nulls last, block size 8: 14722874558004060744
+nullable float key asc nulls last, block size 65505: 14722874558004060744
+nullable float key desc nulls first, block size 1: 5587677874241692906
+nullable float key desc nulls first, block size 2: 5587677874241692906
+nullable float key desc nulls first, block size 3: 5587677874241692906
+nullable float key desc nulls first, block size 5: 5587677874241692906
+nullable float key desc nulls first, block size 8: 5587677874241692906
+nullable float key desc nulls first, block size 65505: 5587677874241692906
+nullable float key desc nulls last, block size 1: 5587677874241692906
+nullable float key desc nulls last, block size 2: 5587677874241692906
+nullable float key desc nulls last, block size 3: 5587677874241692906
+nullable float key desc nulls last, block size 5: 5587677874241692906
+nullable float key desc nulls last, block size 8: 5587677874241692906
+nullable float key desc nulls last, block size 65505: 5587677874241692906
+float key asc nulls first, block size 1: 5898048937160100412
+float key asc nulls first, block size 2: 5898048937160100412
+float key asc nulls first, block size 3: 5898048937160100412
+float key asc nulls first, block size 5: 5898048937160100412
+float key asc nulls first, block size 8: 5898048937160100412
+float key asc nulls first, block size 65505: 5898048937160100412
+float key asc nulls last, block size 1: 5898048937160100412
+float key asc nulls last, block size 2: 5898048937160100412
+float key asc nulls last, block size 3: 5898048937160100412
+float key asc nulls last, block size 5: 5898048937160100412
+float key asc nulls last, block size 8: 5898048937160100412
+float key asc nulls last, block size 65505: 5898048937160100412
+float key desc nulls first, block size 1: 6530615647717280643
+float key desc nulls first, block size 2: 6530615647717280643
+float key desc nulls first, block size 3: 6530615647717280643
+float key desc nulls first, block size 5: 6530615647717280643
+float key desc nulls first, block size 8: 6530615647717280643
+float key desc nulls first, block size 65505: 6530615647717280643
+float key desc nulls last, block size 1: 6530615647717280643
+float key desc nulls last, block size 2: 6530615647717280643
+float key desc nulls last, block size 3: 6530615647717280643
+float key desc nulls last, block size 5: 6530615647717280643
+float key desc nulls last, block size 8: 6530615647717280643
+float key desc nulls last, block size 65505: 6530615647717280643
+float key asc nulls first, from the partition start, block size 1: 9481248442609109193
+float key asc nulls first, from the partition start, block size 2: 9481248442609109193
+float key asc nulls first, from the partition start, block size 3: 9481248442609109193
+float key asc nulls first, from the partition start, block size 5: 9481248442609109193
+float key asc nulls first, from the partition start, block size 8: 9481248442609109193
+float key asc nulls first, from the partition start, block size 65505: 9481248442609109193
+float key desc nulls last, to the partition end, block size 1: 9481248442609109193
+float key desc nulls last, to the partition end, block size 2: 9481248442609109193
+float key desc nulls last, to the partition end, block size 3: 9481248442609109193
+float key desc nulls last, to the partition end, block size 5: 9481248442609109193
+float key desc nulls last, to the partition end, block size 8: 9481248442609109193
+float key desc nulls last, to the partition end, block size 65505: 9481248442609109193

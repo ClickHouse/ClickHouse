@@ -1,8 +1,12 @@
 #include <Processors/Transforms/Window/SlidingIndexes.h>
 
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 
+#include <Common/NaNUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/typeid_cast.h>
 
 #include <Core/SortCursor.h>
 
@@ -95,6 +99,31 @@ VectorWithMemoryTracking<int64_t> assignPeerGroupIndexes(
     return peer_group_indexes;
 }
 
+template <typename T>
+void markNaNKeys(const PaddedPODArray<T> & values, VectorWithMemoryTracking<bool> & missing_keys)
+{
+    for (size_t row = 0; row < values.size(); ++row)
+        if (isNaN(values[row]))
+            missing_keys[row] = true;
+}
+
+VectorWithMemoryTracking<bool> markMissingKeys(const IColumn & key)
+{
+    const auto * nullable = typeid_cast<const ColumnNullable *>(&key);
+    const IColumn & values = nullable ? nullable->getNestedColumn() : key;
+
+    VectorWithMemoryTracking<bool> missing_keys(key.size(), false);
+    if (nullable)
+        missing_keys.assign(nullable->getNullMapData().begin(), nullable->getNullMapData().end());
+
+    if (const auto * float64_values = typeid_cast<const ColumnFloat64 *>(&values))
+        markNaNKeys(float64_values->getData(), missing_keys);
+    else if (const auto * float32_values = typeid_cast<const ColumnFloat32 *>(&values))
+        markNaNKeys(float32_values->getData(), missing_keys);
+
+    return missing_keys;
+}
+
 Columns cutLastKey(const Columns & columns, size_t rows_count, const VectorWithMemoryTracking<size_t> & key_indices)
 {
     Columns last_row(columns.size());
@@ -127,6 +156,12 @@ SlidingIndex SlidingIndexes::calculate(const Columns & materialized_columns, int
         index.peer_group_indexes = assignPeerGroupIndexes(materialized_columns, rows_count, params, index.partition_starts, last_order_key, last_peer_group_index);
         last_order_key = cutLastKey(materialized_columns, rows_count, params.order_by_indices);
         last_peer_group_index = index.peer_group_indexes.back();
+    }
+
+    /// Missing keys
+    if (params.needs_missing_keys)
+    {
+        index.missing_keys = markMissingKeys(*materialized_columns[params.order_by_indices[0]]);
     }
 
     return index;

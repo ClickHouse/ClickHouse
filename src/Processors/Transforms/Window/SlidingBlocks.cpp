@@ -3,12 +3,12 @@
 namespace DB
 {
 
-void SlidingBlocks::add(Chunk chunk, Columns materialized_columns, SlidingIndex index)
+void SlidingBlocks::add(Chunk chunk, Columns materialized_columns, Columns non_nullable_columns, SlidingIndex index)
 {
     int64_t rows_count = chunk.getNumRows();
     Columns input_columns = chunk.detachColumns();
 
-    blocks.emplace_back(std::move(input_columns), std::move(materialized_columns), rows_count, next_block_number++, end_position, end_position + rows_count, std::move(index));
+    blocks.emplace_back(std::move(input_columns), std::move(materialized_columns), std::move(non_nullable_columns), rows_count, next_block_number++, end_position, end_position + rows_count, std::move(index));
     end_position += rows_count;
 }
 
