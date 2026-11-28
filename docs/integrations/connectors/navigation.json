@@ -244,7 +244,8 @@
         "integrations/connectors/tools/misc-index",
         "integrations/connectors/tools/gui",
         "integrations/connectors/tools/proxy",
-        "integrations/connectors/tools/third-party-libraries"
+        "integrations/connectors/tools/third-party-libraries",
+        "integrations/connectors/tools/nightingale/index"
       ]
     }
   ],
