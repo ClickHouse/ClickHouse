@@ -16,3 +16,20 @@
 -- leftantisemi is the same kind under another name --
 1	a
 -- the set of kind names is closed --
+-- a join inside the right input keeps the aliases of the outer leftsemi join --
+2	b
+-- a join inside the right input keeps the aliases of the outer rightanti join --
+3	q	3	y
+-- leftsemi with the same column names on both sides, then project --
+2	b
+-- rightsemi with the same column names on both sides, then project --
+2	p
+-- leftanti with the same column names on both sides, then project --
+1	a
+-- rightanti with the same column names on both sides, then project --
+3	q
+-- rightsemi with the same column names on both sides, then where --
+3	q
+-- rightanti with the same column names on both sides sorts by the right key --
+3	q
+4	r
