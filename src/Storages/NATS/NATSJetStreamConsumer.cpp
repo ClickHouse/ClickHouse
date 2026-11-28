@@ -84,8 +84,9 @@ void NATSJetStreamConsumer::subscribeImpl()
     {
         const auto config = info->getObject("config");
 
-        /// A consumer with filter subjects delivers only their messages, which must be the subjects of the table:
-        /// otherwise the table would consume, and acknowledge, messages of other subjects.
+        /// A consumer with filter subjects delivers only their messages, which must be exactly the subjects of the table:
+        /// otherwise the table would consume, and acknowledge, messages of other subjects (an extra filter subject), or
+        /// expect messages that the consumer never delivers (a missing one).
         std::vector<String> filters;
         if (config->has("filter_subject") && !config->getValue<String>("filter_subject").empty())
             filters.push_back(config->getValue<String>("filter_subject"));
@@ -95,12 +96,20 @@ void NATSJetStreamConsumer::subscribeImpl()
                     filters.push_back(array->getElement<String>(static_cast<unsigned>(i)));
         if (!filters.empty())
         {
-            for (const auto & subject : getSubjects())
+            const auto & subjects = getSubjects();
+            for (const auto & subject : subjects)
                 if (std::find(filters.begin(), filters.end(), subject) == filters.end())
                     throw Exception(
                         ErrorCodes::CANNOT_CONNECT_NATS,
                         "Subject {} does not match the filter subjects ({}) of the NATS JetStream consumer {} of stream {}",
                         subject, fmt::join(filters, ", "), consumer_name, stream_name);
+            for (const auto & filter : filters)
+                if (std::find(subjects.begin(), subjects.end(), filter) == subjects.end())
+                    throw Exception(
+                        ErrorCodes::CANNOT_CONNECT_NATS,
+                        "The NATS JetStream consumer {} of stream {} has the filter subject {}, which is not among the subjects "
+                        "of the table ({}): the table would consume its messages",
+                        consumer_name, stream_name, filter, fmt::join(subjects, ", "));
         }
 
         if (config->has("max_batch") && config->getValue<Int64>("max_batch") > 0)
