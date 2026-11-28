@@ -2,22 +2,32 @@
 #include <cmath>
 #include <functional>
 #include <optional>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 #include <Analyzer/AggregationUtils.h>
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/InverseDictionaryLookupPass.h>
+#include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/SetUtils.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/Set.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -30,13 +40,23 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsExternalDictionaries.h>
 #include <Storages/StorageDictionary.h>
+#include <Storages/StorageView.h>
 #include <TableFunctions/ITableFunction.h>
 
-#include <Access/ContextAccess.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithElement.h>
+
 #include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/TypeTree.h>
+#include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 
 
@@ -50,6 +70,7 @@ extern const SettingsUInt64 max_rows_in_set;
 extern const SettingsOverflowMode set_overflow_mode;
 extern const SettingsBool make_distributed_plan;
 extern const SettingsBool enable_cascades_optimizer;
+extern const SettingsBool analyzer_inline_views;
 extern const SettingsBool optimize_inverse_dictionary_lookup;
 extern const SettingsBool rewrite_in_to_join;
 extern const SettingsBool validate_enum_literals_in_operators;
@@ -68,6 +89,7 @@ struct DictGetFunctionInfo
     ConstantNodePtr dict_name_node;
     ConstantNodePtr attr_col_name_node;
     QueryTreeNodePtr key_expr_node;
+    String function_name;
 
     /// Necessary for type casting for functions like `dictGetString`, `dictGetInt32`, etc
     DataTypePtr return_type;
@@ -103,11 +125,442 @@ bool isSupportedDictGetFunction(const String & name)
     return supported_functions.contains(name);
 }
 
-std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodePtr & node)
+bool isSafePassThroughQuery(const QueryNode & query_node)
+{
+    if (query_node.hasGroupBy() || query_node.isGroupByWithTotals() || query_node.isDistinct() || query_node.hasHaving()
+        || query_node.hasWindow() || query_node.hasQualify() || query_node.hasLimit() || query_node.hasOffset() || query_node.hasLimitBy()
+        || query_node.hasInterpolate())
+        return false;
+
+    /// `WITH FILL` synthesizes rows where the projected columns hold their types' defaults instead of
+    /// the result of their defining expressions.
+    for (const auto & sort_node : query_node.getOrderBy().getNodes())
+    {
+        if (sort_node->as<const SortNode &>().withFill())
+            return false;
+    }
+
+    auto join_tree_node_type = query_node.getJoinTree().getNodeType();
+    return join_tree_node_type == QueryTreeNodeType::TABLE || join_tree_node_type == QueryTreeNodeType::QUERY;
+}
+
+/// Collect the table expressions of a join tree whose columns hold values read from their source in
+/// every output row. The side of an outer join that is extended with defaults (or `NULL`s) for
+/// unmatched rows is excluded: there a column defined as `dictGet(..., key)` holds the default
+/// value instead of the result of `dictGet` for the default key.
+void collectRowPreservingTableExpressions(const QueryTreeNodePtr & node, std::unordered_set<const IQueryTreeNode *> & result)
+{
+    switch (node->getNodeType())
+    {
+        case QueryTreeNodeType::TABLE:
+        case QueryTreeNodeType::TABLE_FUNCTION:
+        case QueryTreeNodeType::QUERY:
+        case QueryTreeNodeType::UNION:
+            result.insert(node.get());
+            return;
+        case QueryTreeNodeType::ARRAY_JOIN:
+            collectRowPreservingTableExpressions(node->as<const ArrayJoinNode &>().getTableExpressionNode(), result);
+            return;
+        case QueryTreeNodeType::JOIN:
+        {
+            const auto & join_node = node->as<const JoinNode &>();
+            const auto kind = join_node.getKind();
+            if (isInner(kind) || isCrossOrComma(kind) || isLeft(kind))
+                collectRowPreservingTableExpressions(join_node.getLeftTableExpressionNode(), result);
+            if (isInner(kind) || isCrossOrComma(kind) || isRight(kind))
+                collectRowPreservingTableExpressions(join_node.getRightTableExpressionNode(), result);
+            return;
+        }
+        default:
+            return;
+    }
+}
+
+/// Collect the function nodes of an expression, not inside subqueries: the nodes whose arguments a rewrite can replace.
+void collectFunctionNodes(const QueryTreeNodePtr & node, std::unordered_set<const IQueryTreeNode *> & result)
+{
+    if (!node || node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
+        return;
+
+    if (node->as<FunctionNode>())
+        result.insert(node.get());
+
+    for (const auto & child : node->getChildren())
+        collectFunctionNodes(child, result);
+}
+
+/// An expression with an alias is one node shared by every section of the query that uses the alias, e.g. by `WHERE`
+/// and `HAVING` in `WITH name = 'x' AS c ... WHERE c ... HAVING c`. A rewrite of the node in one section changes it in all.
+/// A section is identified by its place among the children of the query, as the same node can be the whole of two sections.
+bool isSharedWithOtherSections(const QueryNode & query_node, const QueryTreeNodePtr * section)
+{
+    std::unordered_set<const IQueryTreeNode *> section_nodes;
+    std::unordered_set<const IQueryTreeNode *> other_nodes;
+    for (const auto & child : query_node.getChildren())
+        collectFunctionNodes(child, &child == section ? section_nodes : other_nodes);
+
+    return std::ranges::any_of(section_nodes, [&](const IQueryTreeNode * function_node) { return other_nodes.contains(function_node); });
+}
+
+/// A view's inner query is resolved for inspection only (`QueryAnalyzer` with `only_analyze`), separately
+/// from the analysis done when the view is read. The definition is usable only if both agree on which
+/// dictionary and attribute every `dictGet` reads, and this is decided by the definition itself, before
+/// it is resolved. Two things make it unusable:
+///
+/// - A scalar subquery. It is not executed for inspection, but replaced by a placeholder holding the
+///   default value of its type (see `evaluateScalarSubqueryIfNeeded`). The placeholder does not describe
+///   what the view reads, and resolving an expression that depends on it can even throw: generic `dictGet`
+///   needs the dictionary to infer its return type, and fails on the placeholder dictionary name.
+///   A subquery is not scalar if it is a table expression, a CTE, or the set of an `IN` operator.
+///
+/// - A `dictGet` whose dictionary or attribute name is not a string literal. Each analysis folds such
+///   an expression on its own, so if it is not deterministic (`randConstant`, `now`) the rewritten filter
+///   can select the keys by another attribute than the one the view projects. The resolved tree cannot
+///   tell this reliably: the analyzer replaces a dictionary name by its database-qualified form, which
+///   drops the expression the name was folded from.
+bool dependsOnInspectionTimeValue(const ASTPtr & ast)
+{
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (isSupportedDictGetFunction(function->name))
+        {
+            if (!function->arguments || function->arguments->children.size() < 2)
+                return true;
+
+            for (size_t i = 0; i < 2; ++i)
+            {
+                const auto * literal = function->arguments->children[i]->as<ASTLiteral>();
+                if (!literal || literal->value.getType() != Field::Types::String)
+                    return true;
+            }
+        }
+        else if (functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
+        {
+            const auto & arguments = function->arguments->children;
+            if (arguments[0]->as<ASTSubquery>() || dependsOnInspectionTimeValue(arguments[0]))
+                return true;
+            return dependsOnInspectionTimeValue(arguments[1]);
+        }
+    }
+
+    const bool children_are_table_subqueries = ast->as<ASTTableExpression>() || ast->as<ASTWithElement>();
+    for (const auto & child : ast->children)
+    {
+        if (!children_are_table_subqueries && child->as<ASTSubquery>())
+            return true;
+        if (dependsOnInspectionTimeValue(child))
+            return true;
+    }
+
+    return false;
+}
+
+bool hasSettingsClause(const ASTPtr & ast)
+{
+    if (ast->as<ASTSetQuery>())
+        return true;
+
+    for (const auto & child : ast->children)
+    {
+        if (hasSettingsClause(child))
+            return true;
+    }
+
+    return false;
+}
+
+/// The definition of a view includes the definitions of the views it reads: with `analyzer_inline_views` their bodies
+/// are inlined into the tree resolved for inspection, and `dependsOnInspectionTimeValue` cannot see them there.
+/// A sealed view is not inlined and is not inspected, so its definition is not looked at.
+bool readsViewDependingOnInspectionTimeValue(const ASTPtr & ast, const ContextPtr & context)
+{
+    checkStackSize();
+
+    if (const auto * table_expression = ast->as<ASTTableExpression>())
+    {
+        const auto * identifier = table_expression->database_and_table_name ? table_expression->database_and_table_name->as<ASTTableIdentifier>() : nullptr;
+        if (identifier)
+        {
+            auto table_id = context->tryResolveStorageID(identifier->getTableId());
+            auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+            const auto * view = typeid_cast<const StorageView *>(storage.get());
+            if (view && !view->isParameterizedView())
+            {
+                const auto metadata = view->getInMemoryMetadataPtr(context, false);
+                if (!view->isSealed(*metadata, context))
+                {
+                    const auto & inner_query = metadata->getSelectQuery().inner_query;
+                    if (dependsOnInspectionTimeValue(inner_query) || readsViewDependingOnInspectionTimeValue(inner_query, context))
+                        return true;
+                }
+            }
+        }
+    }
+
+    for (const auto & child : ast->children)
+    {
+        if (readsViewDependingOnInspectionTimeValue(child, context))
+            return true;
+    }
+
+    return false;
+}
+
+/// Resolving a view's inner query (buildQueryTree + full QueryAnalyzer::resolve) is expensive, and
+/// enterImpl below is invoked once per allowed comparison node, so the same view can be inspected
+/// many times over for a single outer query (e.g. `WHERE a = 1 AND b = 2 AND c = 3`). Memoize by
+/// TableNode identity, including negative results, so each view is resolved at most once per query.
+using ViewInspectionCache = std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr>;
+
+QueryTreeNodePtr
+tryResolveViewInnerQueryForInspection(const TableNode & table_node, const ContextPtr & context, ViewInspectionCache & cache)
+{
+    if (auto it = cache.find(&table_node); it != cache.end())
+        return it->second;
+
+    QueryTreeNodePtr result;
+
+    const auto & storage = table_node.getStorage();
+    const auto * view = typeid_cast<const StorageView *>(storage.get());
+    const auto & storage_snapshot = table_node.getStorageSnapshot();
+
+    /// A sealed view hides its definition from the invoker (see `StorageView::isSealed`), so its body
+    /// must not leak into the outer query tree, e.g. through `EXPLAIN QUERY TREE`.
+    if (view && !view->isParameterizedView() && !table_node.hasTableExpressionModifiers() && !context->hasInsertionTable()
+        && !view->isSealed(*storage_snapshot->metadata, context))
+    {
+        auto view_context = StorageView::getViewSubqueryContext(context, storage_snapshot);
+
+        const auto & inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
+        /// Views are inlined only with `analyzer_inline_views`, set by the session or by the `SETTINGS` of the view:
+        /// without it, there is nothing to look through and the definitions of nested views are not walked.
+        const bool may_inline_views = view_context->getSettingsRef()[Setting::analyzer_inline_views] || hasSettingsClause(inner_query);
+        if (!dependsOnInspectionTimeValue(inner_query)
+            && !(may_inline_views && readsViewDependingOnInspectionTimeValue(inner_query, view_context)))
+        {
+            QueryTreeNodePtr view_query_tree = buildQueryTree(inner_query->clone(), view_context);
+
+            QueryAnalyzer view_analyzer(/*only_analyze_=*/true);
+            view_analyzer.resolve(view_query_tree, {}, view_context);
+
+            if (view_query_tree->as<QueryNode>())
+                result = view_query_tree;
+        }
+    }
+
+    cache.emplace(&table_node, result);
+    return result;
+}
+
+/// A subquery nested inside an inspected view is resolved for inspection only as well, and the view's
+/// definition is checked for scalar subqueries before it is resolved (see `dependsOnInspectionTimeValue`).
+/// This is the same check on the resolved defining expression of a column. Constant folding keeps the
+/// folded expression as the source expression of the resulting `ConstantNode`, so look through it as well.
+bool dependsOnScalarSubquery(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    const auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        return true;
+
+    if (const auto * constant_node = node->as<ConstantNode>())
+        return dependsOnScalarSubquery(constant_node->getSourceExpression());
+
+    if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->getFunctionName() == "__getScalar")
+        return true;
+
+    for (const auto & child : node->getChildren())
+    {
+        if (dependsOnScalarSubquery(child))
+            return true;
+    }
+
+    return false;
+}
+
+/// The key of `dictGet` is matched with a column of the view in the tree resolved for inspection, where two constants
+/// are equal if their values are (`ConstantNode::isEqual`). A constant folded from a non-deterministic function, such as
+/// `randConstant` or `now`, can get another value when the view is read, and then the column is not the key of `dictGet`.
+bool hasNonDeterministicConstant(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    if (const auto * constant_node = node->as<ConstantNode>())
+        return !constant_node->isDeterministic();
+
+    for (const auto & child : node->getChildren())
+    {
+        if (hasNonDeterministicConstant(child))
+            return true;
+    }
+
+    return false;
+}
+
+struct ColumnDefinition
+{
+    QueryTreeNodePtr defining_expression;
+    QueryNodePtr source_query_node;
+};
+
+std::optional<ColumnDefinition>
+tryResolveColumnDefinition(const ColumnNode & column_node, const ContextPtr & context, ViewInspectionCache & cache)
+{
+    auto column_source = column_node.getColumnSourceOrNull();
+    if (!column_source)
+        return std::nullopt;
+
+    QueryNodePtr source_query_node;
+
+    if (column_source->as<QueryNode>())
+    {
+        source_query_node = std::static_pointer_cast<QueryNode>(column_source);
+    }
+    else if (auto * table_node = column_source->as<TableNode>())
+    {
+        /// The rewrite removes the reference to the view column, so the planner would no longer check access to it.
+        /// Check it before looking into the view: the inspection and the load of the dictionary can throw, and an invoker
+        /// who may not read the column must get `ACCESS_DENIED` from the query without the rewrite.
+        if (!typeid_cast<const StorageView *>(table_node->getStorage().get()))
+            return std::nullopt;
+        const auto & storage_id = table_node->getStorageID();
+        if (!context->getAccess()->isGranted(
+                AccessType::SELECT, storage_id.getDatabaseName(), storage_id.getTableName(), column_node.getColumnName()))
+            return std::nullopt;
+
+        auto resolved = tryResolveViewInnerQueryForInspection(*table_node, context, cache);
+        if (!resolved)
+            return std::nullopt;
+        source_query_node = std::static_pointer_cast<QueryNode>(resolved);
+    }
+    else
+    {
+        return std::nullopt;
+    }
+
+    if (!isSafePassThroughQuery(*source_query_node))
+        return std::nullopt;
+
+    const auto & projection_columns = source_query_node->getProjectionColumns();
+    const auto & projection_nodes = source_query_node->getProjection().getNodes();
+    if (projection_columns.size() != projection_nodes.size())
+        return std::nullopt;
+
+    for (size_t i = 0; i < projection_columns.size(); ++i)
+    {
+        if (projection_columns[i].name == column_node.getColumnName() && projection_columns[i].type->equals(*column_node.getColumnType()))
+        {
+            /// Also for a subquery: inside an inspected view it is resolved for inspection only as well.
+            if (dependsOnScalarSubquery(projection_nodes[i]))
+                return std::nullopt;
+            return ColumnDefinition{projection_nodes[i], source_query_node};
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<DictGetFunctionInfo>
+tryParseDictFunctionCall(const QueryTreeNodePtr & node, const ContextPtr & context, ViewInspectionCache & cache)
 {
     const auto * function_node = node->as<FunctionNode>();
 
-    if (!function_node || !isSupportedDictGetFunction(function_node->getFunctionName()))
+    if (!function_node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return std::nullopt;
+
+        auto column_definition = tryResolveColumnDefinition(*column_node, context, cache);
+        if (!column_definition)
+            return std::nullopt;
+
+        auto info = tryParseDictFunctionCall(column_definition->defining_expression, context, cache);
+        if (!info || hasNonDeterministicConstant(info->key_expr_node))
+            return std::nullopt;
+
+        /// The `dictGet` comes from the view definition, which may run under the definer's rights
+        /// (`SQL SECURITY DEFINER`). After the rewrite the dictionary is read with the invoker's rights,
+        /// so skip the optimization if the invoker is not allowed to use the dictionary directly.
+        /// The access is checked without loading the dictionary: loading may contact its source or fail,
+        /// and neither must be visible to an invoker without access. The dictionary is loaded only to build
+        /// the rewrite (see `tryGetDictionaryLookup`), as for a `dictGet` written in the query.
+        const String dict_name = info->dict_name_node->getValue().safeGet<String>();
+        const auto resolved_dict = context->getExternalDictionariesLoader().resolveDictionary(dict_name, context);
+        if (!context->getAccess()->isGranted(
+                AccessType::dictGet, IDictionary::getDatabaseOrNoDatabaseTag(resolved_dict.id), resolved_dict.id.getTableName()))
+            return std::nullopt;
+
+        const auto & projection_columns = column_definition->source_query_node->getProjectionColumns();
+        const auto & projection_nodes = column_definition->source_query_node->getProjection().getNodes();
+
+        for (size_t i = 0; i < projection_nodes.size(); ++i)
+        {
+            if (!info->key_expr_node->isEqual(*projection_nodes[i]) || hasNonDeterministicConstant(projection_nodes[i]))
+                continue;
+
+            NameAndTypePair outer_key_column{projection_columns[i].name, projection_columns[i].type};
+            auto outer_source = column_node->getColumnSource();
+
+            if (const auto * outer_table_node = outer_source->as<TableNode>())
+            {
+                /// The view may declare its own type for the key column position (independent of
+                /// the defining column's own cast, already checked in tryResolveColumnDefinition).
+                /// Reading through a mismatched declared type silently changes the comparison domain
+                /// (e.g. a UInt64 key narrowed to UInt8), so bail unless the view's exposed key type
+                /// exactly matches the inner key's natural type.
+                const auto & declared_columns = outer_table_node->getStorageSnapshot()->metadata->getColumns().getOrdinary();
+                const NameAndTypePair * declared_key_column = nullptr;
+                for (const auto & declared_column : declared_columns)
+                {
+                    if (declared_column.name == outer_key_column.name)
+                    {
+                        declared_key_column = &declared_column;
+                        break;
+                    }
+                }
+                if (!declared_key_column || !declared_key_column->type->equals(*outer_key_column.type))
+                    return std::nullopt;
+
+                /// Crossed a view boundary: check access on the view's own exposed key column, not on
+                /// whatever table its private inner resolution happens to use (which can run under
+                /// the view definer's rights, not the invoker's). The original column is checked in
+                /// tryResolveColumnDefinition, before the view is looked into.
+                const auto & storage_id = outer_table_node->getStorageID();
+                if (!context->getAccess()->isGranted(
+                        AccessType::SELECT, storage_id.getDatabaseName(), storage_id.getTableName(), outer_key_column.name))
+                    return std::nullopt;
+            }
+            else if (const auto * key_column_node = info->key_expr_node->as<ColumnNode>())
+            {
+                /// Plain subquery boundary: no separate grant object, so check access on whatever
+                /// real table the key column is actually read from.
+                if (auto key_source = key_column_node->getColumnSourceOrNull())
+                {
+                    if (const auto * key_table_node = key_source->as<TableNode>())
+                    {
+                        const auto & key_storage_id = key_table_node->getStorageID();
+                        if (!context->getAccess()->isGranted(
+                                AccessType::SELECT,
+                                key_storage_id.getDatabaseName(),
+                                key_storage_id.getTableName(),
+                                key_column_node->getColumnName()))
+                            return std::nullopt;
+                    }
+                }
+            }
+
+            info->key_expr_node = std::make_shared<ColumnNode>(outer_key_column, outer_source);
+            return info;
+        }
+
+        return std::nullopt;
+    }
+
+    if (!isSupportedDictGetFunction(function_node->getFunctionName()))
         return std::nullopt;
 
     const auto & arguments = function_node->getArguments().getNodes();
@@ -127,6 +580,7 @@ std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodeP
         return std::nullopt;
 
     func_info.key_expr_node = arguments[2];
+    func_info.function_name = function_node->getFunctionName();
     func_info.return_type = function_node->getResultType();
 
     return func_info;
@@ -490,10 +944,37 @@ class InverseDictionaryLookupVisitor : public InDepthQueryTreeVisitorWithContext
 {
 public:
     using Base = InDepthQueryTreeVisitorWithContext<InverseDictionaryLookupVisitor>;
-    using Base::Base;
+
+    InverseDictionaryLookupVisitor(ContextPtr context, bool only_analyze_)
+        : Base(std::move(context))
+        , only_analyze(only_analyze_)
+    {
+    }
+
+    bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    {
+        if (!query_scopes.empty() && parent.get() == query_scopes.back().query_node)
+        {
+            query_scopes.back().current_section = &child;
+            query_scopes.back().current_section_is_shared.reset();
+        }
+        return true;
+    }
+
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        if (!query_scopes.empty() && node.get() == query_scopes.back().query_node)
+            query_scopes.pop_back();
+    }
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (node->as<QueryNode>())
+        {
+            query_scopes.push_back(QueryScope{.query_node = node.get()});
+            return;
+        }
+
         if (!getSettings()[Setting::optimize_inverse_dictionary_lookup] || !node->as<FunctionNode>())
             return;
 
@@ -547,20 +1028,26 @@ public:
         Side dict_side = Side::NONE;
         DictGetFunctionInfo dictget_function_info;
 
-        if (auto info_lhs = tryParseDictFunctionCall(arguments[0]); info_lhs && arguments[1]->as<ConstantNode>())
+        if (arguments[1]->as<ConstantNode>() && canLookThroughColumn(arguments[0]))
         {
-            dict_side = Side::LHS;
-            dictget_function_info = std::move(*info_lhs);
+            if (auto info_lhs = tryParseDictFunctionCall(arguments[0], getContext(), view_inspection_cache))
+            {
+                dict_side = Side::LHS;
+                dictget_function_info = std::move(*info_lhs);
+            }
         }
-        else if (auto info_rhs = tryParseDictFunctionCall(arguments[1]); info_rhs && arguments[0]->as<ConstantNode>())
+
+        if (dict_side == Side::NONE && arguments[0]->as<ConstantNode>() && canLookThroughColumn(arguments[1]))
         {
-            dict_side = Side::RHS;
-            dictget_function_info = std::move(*info_rhs);
+            if (auto info_rhs = tryParseDictFunctionCall(arguments[1], getContext(), view_inspection_cache))
+            {
+                dict_side = Side::RHS;
+                dictget_function_info = std::move(*info_rhs);
+            }
         }
-        else
-        {
+
+        if (dict_side == Side::NONE)
             return;
-        }
 
         auto lookup = tryGetDictionaryLookup(dictget_function_info);
         if (!lookup)
@@ -582,8 +1069,7 @@ public:
                 getContext()))
             return;
 
-        const String dictget_function_name = dict_side == Side::LHS ? static_cast<FunctionNode *>(arguments[0].get())->getFunctionName()
-                                                                    : static_cast<FunctionNode *>(arguments[1].get())->getFunctionName();
+        const String dictget_function_name = dictget_function_info.function_name;
 
         const bool can_replace_with_dictgetkeys = canReplaceWithDictGetKeys(
             attr_comparison_function_name,
@@ -603,8 +1089,9 @@ public:
             auto dict_get_keys_fn = std::make_shared<FunctionNode>("dictGetKeys");
             auto & dict_get_keys_args = dict_get_keys_fn->getArguments().getNodes();
 
-            dict_get_keys_args.push_back(dictget_function_info.dict_name_node);
-            dict_get_keys_args.push_back(dictget_function_info.attr_col_name_node);
+            /// The constants may belong to a cached view inspection tree shared by every comparison of the query: do not alias them.
+            dict_get_keys_args.push_back(dictget_function_info.dict_name_node->clone());
+            dict_get_keys_args.push_back(dictget_function_info.attr_col_name_node->clone());
             dict_get_keys_args.push_back(dict_side == Side::LHS ? arguments[1] : arguments[0]);
 
             QueryAnalyzer analyzer(false);
@@ -874,9 +1361,12 @@ private:
         if (arguments.size() != 2)
             return;
 
-        auto dictget_function_info = tryParseDictFunctionCall(arguments[0]);
         const auto * constants_node = arguments[1]->as<ConstantNode>();
-        if (!dictget_function_info || !constants_node)
+        if (!constants_node || !canLookThroughColumn(arguments[0]))
+            return;
+
+        auto dictget_function_info = tryParseDictFunctionCall(arguments[0], getContext(), view_inspection_cache);
+        if (!dictget_function_info)
             return;
 
         /// A `Nullable` result means a `Nullable` key, and `dictGetX` returns `NULL` for a `NULL` key.
@@ -971,7 +1461,8 @@ private:
         const auto & dict_structure = lookup.dict->getStructure();
 
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
-        dict_table_function->getArguments().getNodes().push_back(lookup.dictget_function_info.dict_name_node);
+        /// The constant may belong to a cached view inspection tree shared by every comparison of the query: do not alias it.
+        dict_table_function->getArguments().getNodes().push_back(lookup.dictget_function_info.dict_name_node->clone());
 
         auto dict_table_storage = std::make_shared<StorageDictionary>(
             StorageID(ITableFunction::getDatabaseName(), "dictionary"),
@@ -1054,6 +1545,61 @@ private:
         return replacement_node;
     }
 
+    struct QueryScope
+    {
+        const IQueryTreeNode * query_node = nullptr;
+        /// The child of `query_node` that is being visited, e.g. its `WHERE` or projection: its place among the children,
+        /// because the same node can be the whole of two sections (`WHERE c ... HAVING c`).
+        const QueryTreeNodePtr * current_section = nullptr;
+        /// Whether `current_section` shares a node with another section, see `isSharedWithOtherSections`. Computed when needed.
+        std::optional<bool> current_section_is_shared = std::nullopt;
+    };
+
+    /// A comparison with a column of a view or a subquery is rewritten into a comparison with the key
+    /// column of the same source. This is equivalent only where the key column is available and every
+    /// row of the source column holds the result of its `dictGet`. So the rewrite is limited to `WHERE`
+    /// and `PREWHERE` of the query that reads the source: after aggregation the key column is not
+    /// available, and on the side of an outer join extended with defaults the source column holds the
+    /// default value. A direct `dictGet` call is not restricted: its key expression is evaluated in place.
+    [[nodiscard]] bool canLookThroughColumn(const QueryTreeNodePtr & node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return true;
+
+        /// A query that is only analyzed does not read the source, see the constructor of `InverseDictionaryLookupPass`.
+        if (only_analyze || query_scopes.empty())
+            return false;
+
+        auto & scope = query_scopes.back();
+        const auto & query_node = scope.query_node->as<const QueryNode &>();
+        if (!scope.current_section || (scope.current_section != &query_node.getWhere() && scope.current_section != &query_node.getPrewhere()))
+            return false;
+
+        auto column_source = column_node->getColumnSourceOrNull();
+        if (!column_source)
+            return false;
+
+        /// Only a column of a subquery or a view is looked through, see `tryResolveColumnDefinition`.
+        const auto * table_node = column_source->as<TableNode>();
+        if (!column_source->as<QueryNode>() && !(table_node && typeid_cast<const StorageView *>(table_node->getStorage().get())))
+            return false;
+
+        std::unordered_set<const IQueryTreeNode *> row_preserving_table_expressions;
+        collectRowPreservingTableExpressions(query_node.getJoinTreeNode(), row_preserving_table_expressions);
+        if (!row_preserving_table_expressions.contains(column_source.get()))
+            return false;
+
+        /// The rewrite replaces a node of the section in place. If the node is shared with another section,
+        /// the rewrite applies there too, where it is not valid: after aggregation the key column is not available.
+        if (!scope.current_section_is_shared)
+            scope.current_section_is_shared = isSharedWithOtherSections(query_node, scope.current_section);
+        return !*scope.current_section_is_shared;
+    }
+
+    const bool only_analyze;
+    std::vector<QueryScope> query_scopes;
+
     bool isCreateTemporaryTableGranted()
     {
         if (!create_temporary_table_granted.has_value())
@@ -1062,6 +1608,9 @@ private:
     }
 
     std::optional<bool> create_temporary_table_granted;
+
+    /// Scoped to this visitor instance, i.e. one outer query: see tryResolveViewInnerQueryForInspection.
+    ViewInspectionCache view_inspection_cache;
     std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> rewritten_nodes;
 };
 
@@ -1069,7 +1618,7 @@ private:
 
 void InverseDictionaryLookupPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    InverseDictionaryLookupVisitor visitor(std::move(context));
+    InverseDictionaryLookupVisitor visitor(std::move(context), only_analyze);
     visitor.visit(query_tree_node);
 }
 
