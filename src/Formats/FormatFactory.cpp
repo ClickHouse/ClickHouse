@@ -551,6 +551,37 @@ UInt64 getFormatSettingsHash(const Settings & settings)
     return hash.get64();
 }
 
+/// Settings for writing values as JSON text that is parsed back right away: numbers unquoted (inf and nan
+/// quoted, JSON has no number for them), maps and named tuples as objects. Decimals keep the user's quoting:
+/// an unquoted decimal is read back through Float64.
+FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_settings)
+{
+    FormatSettings result = format_settings;
+    result.json.quote_64bit_integers = false;
+    result.json.quote_denormals = true;
+    result.json.quote_64bit_floats = false;
+    result.json.write_named_tuples_as_objects = true;
+    result.json.skip_null_value_in_named_tuples = false;
+    result.json.write_map_as_array_of_tuples = false;
+    /// The round trip must not depend on the user's presentation settings, which would change the stored value.
+    result.float_precision = 0;
+    result.trim_fixed_string = false;
+    result.bool_true_representation = "true";
+    result.bool_false_representation = "false";
+    /// The text holds stored values, not user input, so a date/time is read back in its type's zone.
+    result.session_time_zone = nullptr;
+    return result;
+}
+
+/// The same, but a DateTime is written as a CAST to String writes it, so a value converted through text does not
+/// depend on date_time_output_format or on how it is stored.
+FormatSettings getJSONRoundTripFormatSettingsForValues(const FormatSettings & format_settings)
+{
+    FormatSettings result = getJSONRoundTripFormatSettings(format_settings);
+    result.date_time_output_format = FormatSettings::DateTimeOutputFormat::Simple;
+    return result;
+}
+
 FileBucketInfoPtr FormatFactory::getFileBucketInfo(const String & format)
 {
     auto creator = getCreators(format);

@@ -2962,33 +2962,6 @@ bool newLeafTypedPathsNeedFormatParse(
     return false;
 }
 
-/// Settings for writing values as JSON text that is parsed back right away: numbers are written unquoted
-/// so they are read back as numbers, and inf and nan, which JSON has no number for, are quoted instead of
-/// being written as null.
-FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_settings)
-{
-    FormatSettings result = format_settings;
-    result.json.quote_64bit_integers = false;
-    result.json.quote_denormals = true;
-    /// An internal round trip must be lossless and independent of the user's presentation settings, which
-    /// would otherwise change the stored value: shortest float text and canonical Boolean tokens.
-    result.float_precision = 0;
-    result.bool_true_representation = "true";
-    result.bool_false_representation = "false";
-    /// The text holds stored values, not user input, so a date/time is read back in its type's zone.
-    result.session_time_zone = nullptr;
-    return result;
-}
-
-/// The round trip of the optimized conversion: a DateTime is written as a CAST to String writes it, so a
-/// value converted through text does not depend on date_time_output_format or on how it is stored.
-FormatSettings getJSONRoundTripFormatSettingsForValues(const FormatSettings & format_settings)
-{
-    FormatSettings result = getJSONRoundTripFormatSettings(format_settings);
-    result.date_time_output_format = FormatSettings::DateTimeOutputFormat::Simple;
-    return result;
-}
-
 /// The round trip of date and time values into date and time values: text holds the wall clock of a
 /// DateTime without its time zone, so it would come back at another instant in another zone or in the
 /// repeated hour of a daylight saving time fall-back. ISO text in UTC carries the instant; it is ours,
