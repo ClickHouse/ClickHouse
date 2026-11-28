@@ -58,8 +58,8 @@ struct Authentication
       *    their `VALID UNTIL`. A `sha256_password`, `scram_sha256_password` or `bcrypt_password` method cannot be matched
       *    by the Native41 response, so it would silently drop out of that combination, and the login would regain
       *    the broader rights or lifetime of the other method.
-      * Methods verified against an external system never take part in that combination and are not password hashes
-      * that a plaintext password could check better, so they do not count.
+      * It also returns true for `ldap` and `http` methods: the external system needs the actual password, which the Native41
+      * response does not carry. Other externally verified methods cannot be checked with a password, so they do not count.
       */
     static bool mysqlNative41CannotVerify(const AuthenticationData & authentication_method);
 

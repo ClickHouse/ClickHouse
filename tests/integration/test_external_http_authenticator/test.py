@@ -2,6 +2,7 @@ import json
 import os
 import typing
 
+import pymysql
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -12,7 +13,7 @@ from .http_auth_server import GOOD_PASSWORD, USER_RESPONSES
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "node",
-    main_configs=["configs/config.xml"],
+    main_configs=["configs/config.xml", "configs/mysql.xml"],
     user_configs=["configs/users.xml"],
 )
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -88,6 +89,20 @@ def test_user_create_basic_auth_pass(started_cluster: ClickHouseCluster):
     )
 
     instance.query("DROP USER basic_user")
+
+
+def test_mysql_protocol_basic_auth(started_cluster: ClickHouseCluster):
+    conn = pymysql.connections.Connection(host=instance.ip_address, user="good_user", password=GOOD_PASSWORD, port=9004)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT currentUser()")
+        assert cursor.fetchall() == (("good_user",),)
+    finally:
+        conn.close()
+
+    with pytest.raises(pymysql.err.MySQLError) as exc_info:
+        pymysql.connections.Connection(host=instance.ip_address, user="good_user", password="bad_password", port=9004)
+    assert exc_info.value.args[0] == 516  # AUTHENTICATION_FAILED
 
 
 def test_basic_auth_failed(started_cluster: ClickHouseCluster):
