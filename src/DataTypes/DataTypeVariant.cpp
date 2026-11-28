@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 
 /// Nullable(...), LowCardinality(Nullable(...)), Variant(...) and Dynamic types are not allowed inside Variant type.
-static void checkAllowedInsideVariant(const DataTypePtr & type)
+void DataTypeVariant::checkAllowedInsideVariant(const DataTypePtr & type)
 {
     if (isNullableOrLowCardinalityNullable(type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nullable/LowCardinality(Nullable) types are not allowed inside Variant type");
