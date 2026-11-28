@@ -1,11 +1,6 @@
-default	projections	improved_sorting_key	Normal	1000	1	1	['d1','key']	SELECT * ORDER BY d1, key	{}
-default	projections_2	agg	Aggregate	2	1	1	['name']	SELECT name, max(frequency) AS max_frequency GROUP BY name	{}
-default	projections_2	agg_no_key	Aggregate	1	1	1	[]	SELECT max(frequency) AS max_frequency	{}
-projections	improved_sorting_key	1	1	1
-projections_2	agg	1	1	1
-projections_2	agg_no_key	1	1	1
+default	projections	improved_sorting_key	Normal	['d1','key']	SELECT * ORDER BY d1, key	{}
+default	projections_2	agg	Aggregate	['name']	SELECT name, max(frequency) AS max_frequency GROUP BY name	{}
+default	projections_2	agg_no_key	Aggregate	[]	SELECT max(frequency) AS max_frequency	{}
 1
 2
 improved_sorting_key
-p	0	0	0
-p	100	1	1

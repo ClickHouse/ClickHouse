@@ -47,22 +47,22 @@ public:
         clearImpl();
     }
 
-    [[nodiscard]] size_t sizeInBytes() const override
+    size_t sizeInBytes() const override
     {
         return current_size_in_bytes;
     }
 
-    [[nodiscard]] size_t count() const override
+    size_t count() const override
     {
         return cells.size();
     }
 
-    [[nodiscard]] size_t maxSizeInBytes() const override
+    size_t maxSizeInBytes() const override
     {
         return max_size_in_bytes;
     }
 
-    [[nodiscard]] size_t maxCount() const override
+    size_t maxCount() const override
     {
         return max_count;
     }
@@ -186,11 +186,8 @@ public:
         cell.size = cell.value ? weight_function(*cell.value) : 0;
         current_size_in_bytes += cell.size;
 
-        /// Both operands have to be cast, as in `TTLCachePolicy`: with an unsigned right-hand side
-        /// the subtraction happens in `size_t` and a shrinking cache only reports a negative delta
-        /// because the wrapped result is converted back afterwards.
-        CurrentMetrics::add(current_size_in_bytes_metric, static_cast<Int64>(current_size_in_bytes) - static_cast<Int64>(old_size_in_bytes));
-        CurrentMetrics::add(count_metric, static_cast<Int64>(cells.size()) - static_cast<Int64>(old_size));
+        CurrentMetrics::add(current_size_in_bytes_metric, static_cast<Int64>(current_size_in_bytes) - old_size_in_bytes);
+        CurrentMetrics::add(count_metric, static_cast<Int64>(cells.size()) - old_size);
 
         removeOverflow();
     }
@@ -212,7 +209,7 @@ private:
     struct Cell
     {
         MappedPtr value;
-        size_t size{};
+        size_t size;
         LRUQueueIterator queue_iterator;
     };
 

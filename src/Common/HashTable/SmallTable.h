@@ -46,7 +46,7 @@ protected:
 
 
     /// Find a cell with the same key or an empty cell, starting from the specified position and then by the collision resolution chain.
-    [[nodiscard]] const Cell * ALWAYS_INLINE findCell(const Key & x) const
+    const Cell * ALWAYS_INLINE findCell(const Key & x) const
     {
         const Cell * it = buf;
         while (it < buf + m_size)
@@ -152,7 +152,7 @@ public:
         Cell & operator* () const { return *ptr; }
         Cell * operator->() const { return ptr; }
 
-        [[nodiscard]] Cell * getPtr() const { return ptr; }
+        Cell * getPtr() const { return ptr; }
     };
 
 
@@ -180,14 +180,14 @@ public:
         const Cell & operator* () const { return *ptr; }
         const Cell * operator->() const { return ptr; }
 
-        [[nodiscard]] const Cell * getPtr() const { return ptr; }
+        const Cell * getPtr() const { return ptr; }
     };
 
 
-    [[nodiscard]] const_iterator begin() const { return iteratorTo(buf); }
+    const_iterator begin() const { return iteratorTo(buf); }
     iterator begin()             { return iteratorTo(buf); }
 
-    [[nodiscard]] const_iterator end() const   { return iteratorTo(buf + m_size); }
+    const_iterator end() const   { return iteratorTo(buf + m_size); }
     iterator end()               { return iteratorTo(buf + m_size); }
 
 
@@ -248,7 +248,7 @@ public:
     }
 
     iterator ALWAYS_INLINE find(Key x)                 { return iteratorTo(findCell(x)); }
-    [[nodiscard]] const_iterator ALWAYS_INLINE find(Key x) const     { return iteratorTo(findCell(x)); }
+    const_iterator ALWAYS_INLINE find(Key x) const     { return iteratorTo(findCell(x)); }
 
 
     void write(DB::WriteBuffer & wb) const
@@ -314,12 +314,12 @@ public:
     }
 
 
-    [[nodiscard]] size_t size() const
+    size_t size() const
     {
         return m_size;
     }
 
-    [[nodiscard]] bool empty() const
+    bool empty() const
     {
         return 0 == m_size;
     }
@@ -333,7 +333,7 @@ public:
         m_size = 0;
     }
 
-    [[nodiscard]] size_t getBufferSizeInBytes() const
+    size_t getBufferSizeInBytes() const
     {
         return sizeof(buf);
     }

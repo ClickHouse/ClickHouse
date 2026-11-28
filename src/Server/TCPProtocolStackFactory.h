@@ -25,7 +25,6 @@ private:
     IServer & server [[maybe_unused]];
     LoggerPtr log;
     std::string conf_name;
-    bool is_introspection;
     std::vector<TCPServerConnectionFactory::Ptr> stack;
     AllowedClientHosts allowed_client_hosts;
 
@@ -38,8 +37,8 @@ private:
 
 public:
     template <typename... T>
-    explicit TCPProtocolStackFactory(IServer & server_, const std::string & conf_name_, bool is_introspection_, T... factory)
-        : server(server_), log(getLogger("TCPProtocolStackFactory")), conf_name(conf_name_), is_introspection(is_introspection_), stack({factory...})
+    explicit TCPProtocolStackFactory(IServer & server_, const std::string & conf_name_, T... factory)
+        : server(server_), log(getLogger("TCPProtocolStackFactory")), conf_name(conf_name_), stack({factory...})
     {
         const auto & config = server.config();
         /// Fill list of allowed hosts.
@@ -71,7 +70,7 @@ public:
         try
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
-            return new TCPProtocolStackHandler(server, tcp_server, socket, stack, conf_name, is_introspection);
+            return new TCPProtocolStackHandler(server, tcp_server, socket, stack, conf_name);
         }
         catch (const Poco::Net::NetException &)
         {

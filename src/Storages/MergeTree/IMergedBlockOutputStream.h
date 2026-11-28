@@ -36,12 +36,12 @@ public:
     virtual void write(const Block & block) = 0;
     virtual void cancel() noexcept = 0;
 
-    [[nodiscard]] MergeTreeIndexGranularityPtr getIndexGranularity() const
+    MergeTreeIndexGranularityPtr getIndexGranularity() const
     {
         return writer->getIndexGranularity();
     }
 
-    [[nodiscard]] MergeTreeWriterSettings getWriterSettings() const
+    MergeTreeWriterSettings getWriterSettings() const
     {
         return writer->getWriterSettings();
     }
@@ -56,20 +56,13 @@ public:
         return writer ? writer->releaseCachedIndexMarks() : PlainMarksByName{};
     }
 
-    [[nodiscard]] size_t getNumberOfOpenStreams() const
+    size_t getNumberOfOpenStreams() const
     {
         return writer->getNumberOfOpenStreams();
     }
 
-    /// See IMergeTreeDataPartWriter::getSkipIndicesPackedWriter.
-    class PackedFilesWriter * getSkipIndicesPackedWriter()
-    {
-        return writer ? writer->getSkipIndicesPackedWriter() : nullptr;
-    }
-
 protected:
-    /// Remove all columns in @empty_columns, except that one column is always kept, because a
-    /// part with no columns cannot be loaded. Also, clears checksums
+    /// Remove all columns in @empty_columns. Also, clears checksums
     /// and columns array. Return set of removed files names.
     NameSet removeEmptyColumnsFromPart(
         const MergeTreeDataPartPtr & data_part,

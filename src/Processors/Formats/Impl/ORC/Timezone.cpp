@@ -6,7 +6,7 @@
 #include <string_view>
 
 /// The embedded time zone files, see `DateLUTImpl.cpp`.
-std::string_view getTimeZone(std::string_view name);  /// NOLINT(misc-use-internal-linkage)
+std::string_view getTimeZone(const char * name);  /// NOLINT(misc-use-internal-linkage)
 
 namespace DB
 {
@@ -22,15 +22,12 @@ namespace DB::ORC
 TimezoneOffset::TimezoneOffset(const DateLUTImpl & lut_)
     : lut(lut_)
 {
-    const std::string_view name = lut.getTimeZone();
-    const std::string_view file = getTimeZone(name);
-    /// `Fixed/UTC±HH:MM:SS` zones are synthesized without a file and have no transitions.
+    const std::string & name = lut.getTimeZone();
+    const std::string_view file = getTimeZone(name.c_str());
+    /// `Fixed/UTC±HH:MM:SS` zones have no file. On this branch `DateLUT` also loads zones that are not embedded
+    /// (`libc:` names, the host database), so keep the offsets of `DateLUTImpl` for all of them.
     if (file.empty())
-    {
-        if (!name.starts_with("Fixed/"))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No time zone file for {}", name);
         return;
-    }
 
     /// Raw records, as `cctz::time_zone::next_transition` skips no-op ones (Europe/Lisbon has one in 1884).
     static constexpr size_t header_size = 44;

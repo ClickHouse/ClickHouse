@@ -57,16 +57,16 @@ public:
         createAttributes(dictionary_structure);
     }
 
-    [[nodiscard]] bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return true; }
+    bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return true; }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         if (dictionary_key_type == DictionaryKeyType::Simple)
             return "Cache";
         return "ComplexKeyCache";
     }
 
-    [[nodiscard]] bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }
+    bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
@@ -95,7 +95,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for complex key storage");
     }
 
-    [[nodiscard]] PaddedPODArray<UInt64> getCachedSimpleKeys() const override
+    PaddedPODArray<UInt64> getCachedSimpleKeys() const override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return getCachedKeysImpl();
@@ -103,7 +103,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedSimpleKeys is not supported for complex key storage");
     }
 
-    [[nodiscard]] bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::Complex; }
+    bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::Complex; }
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<std::string_view> & keys,
@@ -132,7 +132,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for simple key storage");
     }
 
-    [[nodiscard]] PaddedPODArray<std::string_view> getCachedComplexKeys() const override
+    PaddedPODArray<std::string_view> getCachedComplexKeys() const override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             return getCachedKeysImpl();
@@ -140,11 +140,11 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedComplexKeys is not supported for simple key storage");
     }
 
-    [[nodiscard]] size_t getSize() const override { return size; }
+    size_t getSize() const override { return size; }
 
-    [[nodiscard]] double getLoadFactor() const override { return static_cast<double>(size) / static_cast<double>(configuration.max_size_in_cells); }
+    double getLoadFactor() const override { return static_cast<double>(size) / static_cast<double>(configuration.max_size_in_cells); }
 
-    [[nodiscard]] size_t getBytesAllocated() const override
+    size_t getBytesAllocated() const override
     {
         size_t attributes_size_in_bytes = 0;
         size_t attributes_size = attributes.size();
@@ -262,24 +262,6 @@ private:
                                 [&](Array & value) { fetched_column.insert(value); },
                                 default_value_provider);
                         }
-                        else if constexpr (std::is_same_v<ValueType, Map>)
-                        {
-                            getItemsForFetchedKeys<ValueType>(
-                                attribute,
-                                fetched_columns_index,
-                                fetched_keys,
-                                [&](Map & value) { fetched_column.insert(value); },
-                                default_value_provider);
-                        }
-                        else if constexpr (std::is_same_v<ValueType, Object>)
-                        {
-                            getItemsForFetchedKeys<ValueType>(
-                                attribute,
-                                fetched_columns_index,
-                                fetched_keys,
-                                [&](Object & value) { fetched_column.insert(value); },
-                                default_value_provider);
-                        }
                         else if constexpr (std::is_same_v<ValueType, std::string_view>)
                         {
                             getItemsForFetchedKeys<ValueType>(
@@ -335,24 +317,6 @@ private:
                                 fetched_columns_index,
                                 fetched_keys,
                                 [&](Array & value) { fetched_column.insert(value); },
-                                *default_mask);
-                        }
-                        else if constexpr (std::is_same_v<ValueType, Map>)
-                        {
-                            getItemsForFetchedKeysShortCircuit<ValueType>(
-                                attribute,
-                                fetched_columns_index,
-                                fetched_keys,
-                                [&](Map & value) { fetched_column.insert(value); },
-                                *default_mask);
-                        }
-                        else if constexpr (std::is_same_v<ValueType, Object>)
-                        {
-                            getItemsForFetchedKeysShortCircuit<ValueType>(
-                                attribute,
-                                fetched_columns_index,
-                                fetched_keys,
-                                [&](Object & value) { fetched_column.insert(value); },
                                 *default_mask);
                         }
                         else if constexpr (std::is_same_v<ValueType, std::string_view>)
@@ -570,7 +534,7 @@ private:
         }
     }
 
-    [[nodiscard]] PaddedPODArray<KeyType> getCachedKeysImpl() const
+    PaddedPODArray<KeyType> getCachedKeysImpl() const
     {
         PaddedPODArray<KeyType> result;
         result.reserve(size);
@@ -624,14 +588,14 @@ private:
 
     template<typename ValueType>
     using ContainerType = std::conditional_t<
-        std::is_same_v<ValueType, Field> || std::is_same_v<ValueType, Array> || std::is_same_v<ValueType, Map> || std::is_same_v<ValueType, Object>,
+        std::is_same_v<ValueType, Field> || std::is_same_v<ValueType, Array>,
         VectorWithMemoryTracking<ValueType>,
         PaddedPODArray<ValueType>>;
 
     struct Attribute
     {
-        AttributeUnderlyingType type{};
-        bool is_nullable{};
+        AttributeUnderlyingType type;
+        bool is_nullable;
 
         std::variant<
             ContainerType<UInt8>,
@@ -658,8 +622,6 @@ private:
             ContainerType<IPv6>,
             ContainerType<std::string_view>,
             ContainerType<Array>,
-            ContainerType<Map>,
-            ContainerType<Object>,
             ContainerType<Field>> attribute_container;
     };
 
@@ -807,7 +769,7 @@ private:
         cell.deadline = std::chrono::system_clock::to_time_t(deadline);
     }
 
-    [[nodiscard]] size_t getCellIndex(const KeyType key) const
+    size_t getCellIndex(const KeyType key) const
     {
         const size_t hash = DefaultHash<KeyType>()(key);
         const size_t index = hash & size_overlap_mask;
@@ -816,7 +778,7 @@ private:
 
     using KeyStateAndCellIndex = std::pair<KeyState::State, size_t>;
 
-    [[nodiscard]] KeyStateAndCellIndex getKeyStateAndCellIndex(const KeyType key, const time_t now) const
+    KeyStateAndCellIndex getKeyStateAndCellIndex(const KeyType key, const time_t now) const
     {
         size_t place_value = getCellIndex(key);
         const size_t place_value_end = place_value + max_collision_length;
@@ -843,7 +805,7 @@ private:
         return std::make_pair(KeyState::not_found, place_value & size_overlap_mask);
     }
 
-    [[nodiscard]] size_t getCellIndexForInsert(const KeyType & key) const
+    size_t getCellIndexForInsert(const KeyType & key) const
     {
         size_t place_value = getCellIndex(key);
         const size_t place_value_end = place_value + max_collision_length;

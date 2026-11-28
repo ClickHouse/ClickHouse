@@ -8,7 +8,7 @@ namespace DB
 class ParserDropNamedCollectionQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "DROP NAMED COLLECTION query"; }
+    const char * getName() const override { return "DROP NAMED COLLECTION query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 }

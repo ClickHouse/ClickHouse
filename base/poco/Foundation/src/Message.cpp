@@ -45,8 +45,7 @@ Message::Message(
     const std::string & source,
     const std::string & text,
     Priority prio,
-    const char * file,
-    const char * function,
+    std::string && file,
     int line,
     std::string_view fmt_str,
     const std::vector<std::string> & fmt_str_args)
@@ -55,7 +54,6 @@ Message::Message(
     , _prio(prio)
     , _tid(0)
     , _file(file)
-    , _function(function)
     , _line(line)
     , _fmt_str(fmt_str)
     , _fmt_str_args(fmt_str_args)
@@ -68,8 +66,7 @@ Message::Message(
     std::string && source,
     std::string && text,
     Priority prio,
-    const char * file,
-    const char * function,
+    std::string && file,
     int line,
     std::string_view fmt_str,
     std::vector<std::string> && fmt_str_args)
@@ -78,7 +75,6 @@ Message::Message(
     , _prio(prio)
     , _tid(0)
     , _file(file)
-    , _function(function)
     , _line(line)
     , _fmt_str(fmt_str)
     , _fmt_str_args(std::move(fmt_str_args))
@@ -95,7 +91,6 @@ Message::Message(const Message& msg):
 	_thread(msg._thread),
 	_pid(msg._pid),
 	_file(msg._file),
-	_function(msg._function),
 	_line(msg._line),
 	_fmt_str(msg._fmt_str),
 	_fmt_str_args(msg._fmt_str_args)
@@ -112,7 +107,6 @@ Message::Message(const Message& msg, const std::string& text):
 	_thread(msg._thread),
 	_pid(msg._pid),
 	_file(msg._file),
-	_function(msg._function),
 	_line(msg._line),
 	_fmt_str(msg._fmt_str),
 	_fmt_str_args(msg._fmt_str_args)
@@ -157,7 +151,6 @@ void Message::swap(Message& msg)
 	swap(_thread, msg._thread);
 	swap(_pid, msg._pid);
 	swap(_file, msg._file);
-	swap(_function, msg._function);
 	swap(_line, msg._line);
 	swap(_fmt_str, msg._fmt_str);
 	swap(_fmt_str_args, msg._fmt_str_args);

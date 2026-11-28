@@ -1,4 +1,4 @@
-# build-dir should be a link to the build directory
+# package sources should be placed in ${PWD}/root
 # nfpm should run from the same directory with a config
 name: "clickhouse-common-static"
 description: |
@@ -32,22 +32,14 @@ suggests:
 - clickhouse-common-static-dbg
 
 contents:
-- src: build-dir/programs/stripped/bin/clickhouse
+- src: root/usr/bin/clickhouse
   dst: /usr/bin/clickhouse
-  file_info:
-    mode: 0755
-- src: clickhouse
+- src: root/usr/bin/clickhouse-extract-from-config
   dst: /usr/bin/clickhouse-extract-from-config
-  type: symlink
-- src: ../programs/bash-completion/completions/clickhouse*
+- src: root/usr/share/bash-completion/completions
   dst: /usr/share/bash-completion/completions
-  file_info:
-    mode: 0644
-# well-known Protobuf types, found by the server through `google_protos_path`
-- src: "../contrib/google-protobuf/src/google/protobuf/{any,api,descriptor,duration,empty,field_mask,source_context,struct,timestamp,type,wrappers}.proto"
-  dst: /usr/share/clickhouse/protos/google/protobuf
-  file_info:
-    mode: 0644
+- src: root/usr/share/clickhouse
+  dst: /usr/share/clickhouse
 # docs
 - src: ../AUTHORS
   dst: /usr/share/doc/clickhouse-common-static/AUTHORS

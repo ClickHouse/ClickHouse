@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <session_timezone>Etc/UTC</session_timezone>
-        </default>
-    </profiles>
-</clickhouse>

@@ -1,5 +1,4 @@
 #include <base/getFQDNOrHostName.h>
-#include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -28,23 +27,21 @@ ColumnsDescription ObjectStorageQueueLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname"},
-        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
-        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "Event date of writing this log row"},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Event time of writing this log row"},
-        {"database", std::make_shared<DataTypeString>(), "The name of the database where the queue table (`S3Queue` or `AzureQueue`) lives."},
-        {"table", std::make_shared<DataTypeString>(), "The name of the queue table (`S3Queue` or `AzureQueue`)."},
-        {"uuid", std::make_shared<DataTypeString>(), "The UUID of the queue table (`S3Queue` or `AzureQueue`)."},
-        {"file_name", std::make_shared<DataTypeString>(), "File name of the processing file."},
-        {"rows_processed", std::make_shared<DataTypeUInt64>(), "Number of processed rows."},
-        {"status", status_datatype, "Status of the processing file."},
-        {"processing_start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time of the start of processing the file."},
-        {"processing_end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time of the end of processing the file."},
-        {"exception", std::make_shared<DataTypeString>(), "Exception message if happened."},
-        {"commit_id", std::make_shared<DataTypeUInt64>(), "Id of the transaction in which this file was committed."},
-        {"commit_time", std::make_shared<DataTypeDateTime>(), "Time of committing file in keeper (as either failed or processed)."},
-        {"transaction_start_time", std::make_shared<DataTypeDateTime>(), "Time when the whole processing transaction started."},
-        {"get_object_time_ms", std::make_shared<DataTypeUInt64>(), "Time which took us to find the object in object storage."},
+        {"database", std::make_shared<DataTypeString>(), "The name of a database where current S3Queue table lives."},
+        {"table", std::make_shared<DataTypeString>(), "The name of S3Queue table."},
+        {"uuid", std::make_shared<DataTypeString>(), "The UUID of S3Queue table"},
+        {"file_name", std::make_shared<DataTypeString>(), "File name of the processing file"},
+        {"rows_processed", std::make_shared<DataTypeUInt64>(), "Number of processed rows"},
+        {"status", status_datatype, "Status of the processing file"},
+        {"processing_start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time of the start of processing the file"},
+        {"processing_end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time of the end of processing the file"},
+        {"exception", std::make_shared<DataTypeString>(), "Exception message if happened"},
+        {"commit_id", std::make_shared<DataTypeUInt64>(), "Id of the transaction in which this file was committed"},
+        {"commit_time", std::make_shared<DataTypeDateTime>(), "Time of committing file in keeper (as either failed or processed)"},
+        {"transaction_start_time", std::make_shared<DataTypeDateTime>(), "Time when the whole processing transaction started"},
+        {"get_object_time_ms", std::make_shared<DataTypeUInt64>(), "Time which took us to find the object in s3"},
     };
 }
 
@@ -52,8 +49,6 @@ void ObjectStorageQueueLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
     columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(VERSION_STRING);
-    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(database);

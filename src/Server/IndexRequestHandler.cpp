@@ -1,11 +1,9 @@
 #include <Server/IndexRequestHandler.h>
 #include <Server/StaticRequestHandler.h>
 #include <Server/HTTPResponseHeaderWriter.h>
-#include <Server/HTTP/HTTPResponseHelpers.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/HTTPCommon.h>
 
-/// Embedded HTML pages
 constexpr unsigned char resource_index_html[] =
 {
 #embed "../../programs/server/index.html"
@@ -32,9 +30,9 @@ void IndexRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
 
         setResponseDefaultHeaders(response);
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-        auto buf = responseWriteBuffer(request, response);
-        buf.get()->write(reinterpret_cast<const char *>(resource_index_html), std::size(resource_index_html));
-        buf.get()->finalize();
+        auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
+        wb.write(reinterpret_cast<const char *>(resource_index_html), std::size(resource_index_html));
+        wb.finalize();
     }
     else
     {

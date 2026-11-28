@@ -1,7 +1,5 @@
 #include <Client/BuzzHouse/Utils/BackgroundWorker.h>
 
-#include <Common/Exception.h>
-
 namespace BuzzHouse
 {
 
@@ -29,6 +27,18 @@ void BackgroundWorker::stop()
     }
 }
 
+bool BackgroundWorker::is_empty() const
+{
+    std::lock_guard<std::mutex> lock(queue_mutex_);
+    return task_queue_.empty();
+}
+
+size_t BackgroundWorker::queue_size() const
+{
+    std::lock_guard<std::mutex> lock(queue_mutex_);
+    return task_queue_.size();
+}
+
 void BackgroundWorker::worker_loop()
 {
     while (true)
@@ -40,13 +50,16 @@ void BackgroundWorker::worker_loop()
 
             cv_.wait(lock, [this] { return stop_ || !task_queue_.empty(); });
 
-            /// Drain the remaining tasks before stopping.
-            if (task_queue_.empty())
+            if (stop_ && task_queue_.empty())
             {
                 break;
             }
-            task = std::move(task_queue_.front());
-            task_queue_.pop();
+
+            if (!task_queue_.empty())
+            {
+                task = std::move(task_queue_.front());
+                task_queue_.pop();
+            }
         }
 
         /// Execute the task outside the lock
@@ -56,10 +69,9 @@ void BackgroundWorker::worker_loop()
             {
                 task();
             }
-            catch (...)
+            catch (const std::exception & e)
             {
-                /// Any exception, not only `std::exception`, must not escape and terminate the worker thread.
-                LOG_ERROR(log, "Error while executing background task {}", DB::getCurrentExceptionMessage(false));
+                LOG_ERROR(log, "Error while executing background task {}", e.what());
             }
         }
     }

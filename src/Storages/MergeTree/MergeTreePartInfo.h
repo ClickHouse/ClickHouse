@@ -60,8 +60,8 @@ public:
     {
     }
 
-    [[nodiscard]] Kind getKind() const { return kind;}
-    [[nodiscard]] bool isPatch() const { return kind == Kind::Patch; }
+    Kind getKind() const { return kind;}
+    bool isPatch() const { return kind == Kind::Patch; }
 
     void setPartitionId(const String & new_partition_id)
     {
@@ -69,22 +69,19 @@ public:
         partition_id = new_partition_id;
     }
 
-    [[nodiscard]] const String & getPartitionId() const { return partition_id; }
-    [[nodiscard]] String getOriginalPartitionId() const;
+    const String & getPartitionId() const { return partition_id; }
+    String getOriginalPartitionId() const;
 
-    [[nodiscard]] auto toTuple() const { return std::tie(kind, partition_id, min_block, max_block, level, mutation); }
+    auto toTuple() const { return std::tie(kind, partition_id, min_block, max_block, level, mutation); }
     auto operator<=>(const MergeTreePartInfo & rhs) const { return toTuple() <=> rhs.toTuple();}
     bool operator==(const MergeTreePartInfo & rhs) const { return toTuple() == rhs.toTuple(); }
 
-    /// Agrees with `operator==`, for use as a hash-table key.
-    [[nodiscard]] UInt64 hash() const;
-
     /// Get block number that can be used to determine which mutations we still need to apply to this part
     /// (all mutations with version greater than this block number).
-    [[nodiscard]] Int64 getDataVersion() const { return mutation ? mutation : min_block; }
+    Int64 getDataVersion() const { return mutation ? mutation : min_block; }
 
     /// True if contains rhs (this part is obtained by merging rhs with some other parts or mutating rhs)
-    [[nodiscard]] bool contains(const MergeTreePartInfo & rhs) const
+    bool contains(const MergeTreePartInfo & rhs) const
     {
         /// Containing part may have equal level iff block numbers are equal (unless level is MAX_LEVEL)
         /// (e.g. all_0_5_2 does not contain all_0_4_2, but all_0_5_3 or all_0_4_2_9 do)
@@ -102,7 +99,7 @@ public:
     }
 
     /// Part was created with mutation of parent_candidate part
-    [[nodiscard]] bool isMutationChildOf(const MergeTreePartInfo & parent_candidate) const
+    bool isMutationChildOf(const MergeTreePartInfo & parent_candidate) const
     {
         return partition_id == parent_candidate.getPartitionId()
             && min_block == parent_candidate.min_block
@@ -112,36 +109,36 @@ public:
     }
 
     /// Return part mutation version, if part wasn't mutated return zero
-    [[nodiscard]] Int64 getMutationVersion() const
+    Int64 getMutationVersion() const
     {
         return mutation;
     }
 
     /// True if parts do not intersect in any way.
-    [[nodiscard]] bool isDisjoint(const MergeTreePartInfo & rhs) const
+    bool isDisjoint(const MergeTreePartInfo & rhs) const
     {
         return partition_id != rhs.getPartitionId()
             || min_block > rhs.max_block
             || max_block < rhs.min_block;
     }
 
-    [[nodiscard]] bool isFakeDropRangePart() const
+    bool isFakeDropRangePart() const
     {
         /// LEGACY_MAX_LEVEL was previously used for REPLACE/MOVE PARTITION
         return level == MergeTreePartInfo::MAX_LEVEL || level == MergeTreePartInfo::LEGACY_MAX_LEVEL;
     }
 
-    [[nodiscard]] String getPartNameAndCheckFormat(MergeTreeDataFormatVersion format_version) const;
-    [[nodiscard]] String getPartNameForLogs() const;
-    [[nodiscard]] String getPartNameV1() const;
-    [[nodiscard]] String getPartNameV0(DayNum left_date, DayNum right_date) const;
-    [[nodiscard]] UInt64 getBlocksCount() const
+    String getPartNameAndCheckFormat(MergeTreeDataFormatVersion format_version) const;
+    String getPartNameForLogs() const;
+    String getPartNameV1() const;
+    String getPartNameV0(DayNum left_date, DayNum right_date) const;
+    UInt64 getBlocksCount() const
     {
         return static_cast<UInt64>(max_block - min_block + 1);
     }
 
     void serialize(WriteBuffer & out) const;
-    [[nodiscard]] String describe() const;
+    String describe() const;
     void deserialize(ReadBuffer & in);
 
     /// Simple sanity check for partition ID. Checking that it's not too long or too short, doesn't contain a lot of '_'.
@@ -184,13 +181,7 @@ struct DetachedPartInfo : public MergeTreePartInfo
     DiskPtr disk;
 
     /// If false, MergeTreePartInfo is in invalid state (directory name was not successfully parsed).
-    bool valid_name{};
-
-    /// True if the directory name carried a "_tryN" suffix that was stripped before parsing.
-    /// Such directories are leftover copies created by failed detach renames: they are valid
-    /// enough to be listed and dropped, but must not be considered as candidates for ATTACH,
-    /// because their on-disk name is not a parsable part name.
-    bool has_try_suffix{};
+    bool valid_name;
 
     static constexpr auto DETACH_REASONS = std::to_array<std::string_view>({
         "broken",
@@ -206,7 +197,6 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "merge-not-byte-identical",
         "mutate-not-byte-identical",
         "broken-from-backup",
-        "fsync-failed",
     });
 
     static constexpr auto DETACHED_REASONS_REMOVABLE_BY_TIMEOUT = std::to_array<std::string_view>({
@@ -222,8 +212,6 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "broken-from-backup",
     });
 
-    inline static const std::string TRY_N_SUFFIX = "_try";
-
     /// NOTE: It may parse part info incorrectly.
     /// For example, if prefix contains '_' or if DETACH_REASONS doesn't contain prefix.
     // This method has different semantics with MergeTreePartInfo::tryParsePartName.
@@ -236,15 +224,5 @@ private:
 };
 
 using DetachedPartsInfo = std::vector<DetachedPartInfo>;
-
-}
-
-namespace std
-{
-
-template <> struct hash<DB::MergeTreePartInfo>
-{
-    size_t operator()(const DB::MergeTreePartInfo & part) const { return part.hash(); }
-};
 
 }

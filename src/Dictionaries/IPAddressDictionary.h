@@ -3,6 +3,9 @@
 #include <atomic>
 #include <memory>
 #include <variant>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -88,7 +91,7 @@ public:
 private:
 
     template <typename Value>
-    using ContainerType = std::conditional_t<is_column_attribute_value<Value>, ColumnAttributeContainer<Value>, VectorWithMemoryTracking<Value>>;
+    using ContainerType = VectorWithMemoryTracking<Value>;
 
     using IPAddress = Poco::Net::IPAddress;
 
@@ -123,9 +126,7 @@ private:
             IPv4,
             IPv6,
             String,
-            Array,
-            Map,
-            Object>
+            Array>
             null_values;
         std::variant<
             ContainerType<UInt8>,
@@ -151,9 +152,7 @@ private:
             ContainerType<IPv4>,
             ContainerType<IPv6>,
             ContainerType<std::string_view>,
-            ContainerType<Array>,
-            ContainerType<Map>,
-            ContainerType<Object>>
+            ContainerType<Array>>
             maps;
         std::unique_ptr<Arena> string_arena;
         AttributeUnderlyingType type;
@@ -169,9 +168,9 @@ private:
     void calculateBytesAllocated();
 
     template <typename T>
-    static void createAttributeImpl(Attribute & attribute, const DictionaryAttribute & dictionary_attribute);
+    static void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    static Attribute createAttributeWithType(const DictionaryAttribute & dictionary_attribute);
+    static Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value); /// NOLINT
 
     template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsByTwoKeyColumnsImpl(

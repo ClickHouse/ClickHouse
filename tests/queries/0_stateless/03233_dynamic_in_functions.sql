@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
 
+set allow_experimental_dynamic_type = 1;
+
 drop table if exists test;
 create table test (x UInt64, d Dynamic) engine=Memory;
 insert into test select number, number from numbers(4);

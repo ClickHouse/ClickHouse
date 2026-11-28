@@ -3,9 +3,6 @@
 #include <base/types.h>
 #include <base/scope_guard.h>
 
-#include <compare>
-#include <map>
-
 #include <Interpreters/Context_fwd.h>
 
 #include <Parsers/IAST_fwd.h>
@@ -18,8 +15,6 @@ namespace DB
 
 class IAST;
 struct Settings;
-class BackupEntriesCollector;
-class RestorerFromBackup;
 
 enum class WorkloadEntityType : uint8_t
 {
@@ -29,48 +24,35 @@ enum class WorkloadEntityType : uint8_t
     MAX
 };
 
-/// Identifies a workload entity
-struct WorkloadEntityKey
-{
-    WorkloadEntityType type = WorkloadEntityType::MAX;
-    String name;
-
-    auto operator<=>(const WorkloadEntityKey &) const = default;
-};
-
-/// Maps a workload entity into its CREATE query
-using WorkloadEntities = std::map<WorkloadEntityKey, ASTPtr>;
-
 /// Interface for a storage of workload entities (WORKLOAD and RESOURCE).
-/// An entity is identified by its kind and name: a workload and a resource may have the same name.
 class IWorkloadEntityStorage
 {
 public:
     virtual ~IWorkloadEntityStorage() = default;
 
-    [[nodiscard]] virtual std::string_view getName() const = 0;
+    virtual std::string_view getName() const = 0;
 
     /// Whether this storage can replicate entities to another node.
-    [[nodiscard]] virtual bool isReplicated() const { return false; }
-    [[nodiscard]] virtual String getReplicationID() const { return ""; }
+    virtual bool isReplicated() const { return false; }
+    virtual String getReplicationID() const { return ""; }
 
     /// Loads all entities. Can be called once - if entities are already loaded the function does nothing.
     virtual void loadEntities(const Poco::Util::AbstractConfiguration & config) = 0;
 
-    /// Get entity by kind and name. If no such entity is stored throws exception.
-    [[nodiscard]] virtual ASTPtr get(WorkloadEntityType entity_type, const String & entity_name) const = 0;
+    /// Get entity by name. If no entity stored with entity_name throws exception.
+    virtual ASTPtr get(const String & entity_name) const = 0;
 
-    /// Get entity by kind and name. If no such entity is stored return nullptr.
-    [[nodiscard]] virtual ASTPtr tryGet(WorkloadEntityType entity_type, const String & entity_name) const = 0;
+    /// Get entity by name. If no entity stored with entity_name return nullptr.
+    virtual ASTPtr tryGet(const String & entity_name) const = 0;
 
-    /// Check if entity with entity_type and entity_name is stored.
-    [[nodiscard]] virtual bool has(WorkloadEntityType entity_type, const String & entity_name) const = 0;
+    /// Check if entity with entity_name is stored.
+    virtual bool has(const String & entity_name) const = 0;
 
     /// Get all entities.
-    [[nodiscard]] virtual WorkloadEntities getAllEntities() const = 0;
+    virtual std::vector<std::pair<String, ASTPtr>> getAllEntities() const = 0;
 
     /// Check whether any entity have been stored.
-    [[nodiscard]] virtual bool empty() const = 0;
+    virtual bool empty() const = 0;
 
     /// Stops watching.
     virtual void stopWatching() {}
@@ -101,8 +83,6 @@ public:
     using OnChangedHandler = std::function<void(const std::vector<Event> &)>;
 
     /// Gets all current entries, pass them through `handler` and subscribes for all later changes.
-    /// Destroying the returned guard stops further calls and, if `handler` is already running, waits for it to return.
-    /// Destroy it before any state `handler` reads.
     virtual scope_guard getAllEntitiesAndSubscribe(const OnChangedHandler & handler) = 0;
 
     /// Returns the name of resource used for CPU scheduling of the master query threads
@@ -113,15 +93,6 @@ public:
 
     /// Returns the name of resource used for query slot scheduling
     virtual String getQueryResourceName() = 0;
-
-    /// Returns the name of resource used for memory reservation
-    virtual String getMemoryReservationResourceName() = 0;
-
-    /// Makes backup entries to back up all the workload entities of the specified type.
-    virtual void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, WorkloadEntityType entity_type) const = 0;
-
-    /// Restores workload entities of the specified type from a backup.
-    virtual void restore(RestorerFromBackup & restorer, const String & data_path_in_backup, WorkloadEntityType entity_type) = 0;
 };
 
 }

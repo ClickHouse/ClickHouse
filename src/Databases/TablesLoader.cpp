@@ -2,7 +2,6 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
-#include <Databases/DatabasesCommon.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -61,7 +60,7 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
         databases[database_name]->loadTablesMetadata(global_context, metadata, isLoadingFromExistingMetadata(strictness_mode));
     }
 
-    LOG_INFO(log, "Parsed metadata of {} tables in {} databases in {:.3f} sec",
+    LOG_INFO(log, "Parsed metadata of {} tables in {} databases in {} sec",
              metadata.parsed_tables.size(), databases_to_load.size(), stopwatch.elapsedSeconds());
 
     stopwatch.restart();
@@ -202,13 +201,7 @@ void TablesLoader::removeUnresolvableDependencies()
         if (metadata.parsed_tables.contains(table_id.getQualifiedName()))
             return false;
 
-        /// Only a database with its own tables has loaded ones, and it answers from memory. Any other database resolves
-        /// a name on access, and checking it reaches the data (a path, a remote server), which can be unavailable.
-        /// Dependencies parsed from metadata are database-qualified names without a UUID, so a lookup by name is enough.
-        auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name);
-        const auto * database_with_own_tables = dynamic_cast<const DatabaseWithOwnTablesBase *>(database.get());
-
-        if (database_with_own_tables && database_with_own_tables->isTableExist(table_id.table_name, global_context))
+        if (DatabaseCatalog::instance().isTableExist(table_id, global_context))
         {
             /// Table exists and it's already loaded
         }
@@ -218,14 +211,10 @@ void TablesLoader::removeUnresolvableDependencies()
             /// Tables depend on a XML dictionary.
             LOG_WARNING(
                 log,
-                "Tables {} depend on XML dictionary {}, but XML dictionaries are loaded independently. "
+                "Tables {} depend on XML dictionary {}, but XML dictionaries are loaded independently."
                 "Consider converting it to DDL dictionary.",
                 fmt::join(all_loading_dependencies.getDependents(table_id), ", "),
                 table_id);
-        }
-        else if (database && !database_with_own_tables)
-        {
-            /// The table is resolved on access, there is nothing to load.
         }
         else
         {
@@ -239,11 +228,11 @@ void TablesLoader::removeUnresolvableDependencies()
                 table_id);
         }
 
-        size_t num_dependencies = 0;
-        size_t num_dependents = 0;
+        size_t num_dependencies;
+        size_t num_dependents;
         all_loading_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
         if (num_dependencies || !num_dependents)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependencies and dependent tables as it expected to. "
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependencies and dependent tables as it expected to."
                                                        "It's a bug", table_id);
 
         return true; /// Exclude this dependency.

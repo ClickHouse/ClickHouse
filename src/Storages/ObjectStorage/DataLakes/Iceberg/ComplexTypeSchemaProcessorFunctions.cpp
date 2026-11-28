@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ComplexTypeSchemaProcessorFunctions.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <base/defines.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -405,7 +404,7 @@ public:
 
     void transformChildNode(Tuple & initial_node) override { initial_node.erase(initial_node.begin() + index_to_delete); }
 
-    [[nodiscard]] size_t getDeleteIndex() const { return index_to_delete; }
+    size_t getDeleteIndex() const { return index_to_delete; }
 
 private:
     IcebergDeletingOperation operation;
@@ -415,8 +414,7 @@ private:
 class AddingTransform : public IIcebergSchemaTransform
 {
 public:
-    explicit AddingTransform(
-        const IcebergAddingOperation & operation_, DataTypePtr type, DataTypePtr old_type, const Poco::JSON::Object::Ptr & subfield)
+    explicit AddingTransform(const IcebergAddingOperation & operation_, DataTypePtr type, DataTypePtr old_type)
         : IIcebergSchemaTransform(operation_.getPath())
         , operation(operation_)
     {
@@ -498,21 +496,18 @@ public:
         }
         if (index_to_insert == current_types.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find field {} in data", operation.field_name);
-
-        const auto & inserted_type = current_types[index_to_insert];
-        inserted_value = getIcebergInitialDefault(subfield, inserted_type).value_or(inserted_type->getDefault());
     }
 
     void transformChildNode(Tuple & initial_node) override
     {
-        initial_node.insert(initial_node.begin() + index_to_insert, inserted_value);
+        Field inserted_field = current_types[index_to_insert]->getDefault();
+        initial_node.insert(initial_node.begin() + index_to_insert, inserted_field);
     }
 
 private:
     IcebergAddingOperation operation;
     size_t index_to_insert;
     DataTypes current_types;
-    Field inserted_value;
 };
 
 class ReorderingTransform : public IIcebergSchemaTransform
@@ -713,7 +708,7 @@ void ExecutableEvolutionFunction::pushNewNode(
     }
 }
 
-static std::shared_ptr<ReorderingTransform> makeReorderingTransform(
+std::shared_ptr<ReorderingTransform> makeReorderingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     const std::vector<size_t> & initial_permutation,
     DataTypePtr old_type)
@@ -723,7 +718,7 @@ static std::shared_ptr<ReorderingTransform> makeReorderingTransform(
     return transform;
 }
 
-static std::shared_ptr<DeletingTransform> makeDeletingTransform(
+std::shared_ptr<DeletingTransform> makeDeletingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     const std::vector<size_t> & initial_permutation,
     DataTypePtr old_type,
@@ -735,14 +730,14 @@ static std::shared_ptr<DeletingTransform> makeDeletingTransform(
 }
 
 
-static std::shared_ptr<AddingTransform> makeAddingTransform(
+std::shared_ptr<AddingTransform> makeAddingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     DataTypePtr type,
     DataTypePtr old_type,
     Poco::JSON::Object::Ptr subfield)
 {
     auto operation = IcebergAddingOperation(current_path, subfield->getValue<String>("name"));
-    auto transform = std::make_shared<AddingTransform>(operation, type, old_type, subfield);
+    auto transform = std::make_shared<AddingTransform>(operation, type, old_type);
     return transform;
 }
 

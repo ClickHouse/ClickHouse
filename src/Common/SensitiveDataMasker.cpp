@@ -109,15 +109,6 @@ public:
 
     }
 
-    /// Whether `applyNoThrow` would replace anything in `data`, without replacing it.
-    bool matchesNoThrow(std::string_view data) const
-    {
-        if (throw_on_match)
-            return false;
-
-        return RE2::PartialMatch(data, regexp);
-    }
-
     const std::string & getName() const { return name; }
     const std::string & getReplacementString() const { return replacement_string; }
 #ifndef NDEBUG
@@ -229,14 +220,6 @@ size_t SensitiveDataMasker::wipeSensitiveDataThrow(std::string & data) const
     for (const auto & rule : all_masking_rules)
         matches += rule->applyThrow(data);
     return matches;
-}
-
-bool SensitiveDataMasker::hasSensitiveData(std::string_view data) const
-{
-    for (const auto & rule : all_masking_rules)
-        if (rule->matchesNoThrow(data))
-            return true;
-    return false;
 }
 
 size_t SensitiveDataMasker::wipeSensitiveData(std::string & data) const

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 
 namespace DB
@@ -19,10 +18,7 @@ class ASTFunction;
 class ArithmeticOperationsInAgrFuncMatcher
 {
 public:
-    struct Data
-    {
-        const TablesWithColumns & tables;
-    };
+    struct Data {};
 
     static void visit(ASTPtr & ast, Data & data);
     static void visit(const ASTFunction &, ASTPtr & ast, Data & data);

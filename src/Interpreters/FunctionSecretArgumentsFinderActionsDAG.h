@@ -5,7 +5,7 @@
 #include <Core/Field.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/SecretArgumentsRegistry.h>
+#include <Parsers/FunctionSecretArgumentsFinder.h>
 
 
 namespace DB
@@ -13,6 +13,7 @@ namespace DB
 
   /// This class lets `FunctionSecretArgumentsFinder` read a FUNCTION node of an `ActionsDAG`.
   /// It is the sibling of `FunctionAST` (parser AST) and `FunctionTreeNodeImpl` (analyzer query tree).
+  /// Those two are used by `FunctionSecretArgumentsFinderAST` and `FunctionSecretArgumentsFinderTreeNodeImpl`.
   /// The finder code is written one time against `AbstractFunction`. This class answers its four
   /// questions about an argument for each DAG node type:
   ///
@@ -34,13 +35,13 @@ public:
     {
     public:
         explicit ArgumentActionsDAG(const ActionsDAG::Node * argument_) : argument(unwrapAlias(argument_)) {}
-        [[nodiscard]] std::unique_ptr<AbstractFunction> getFunction() const override
+        std::unique_ptr<AbstractFunction> getFunction() const override
         {
             if (argument->type == ActionsDAG::ActionType::FUNCTION)
                 return std::make_unique<FunctionActionsDAG>(*argument);
             return nullptr;
         }
-        [[nodiscard]] bool isIdentifier() const override { return argument->type == ActionsDAG::ActionType::INPUT; }
+        bool isIdentifier() const override { return argument->type == ActionsDAG::ActionType::INPUT; }
         bool tryGetString(String * res, bool allow_identifier) const override
         {
             Field field;
@@ -92,8 +93,8 @@ public:
     {
     public:
         explicit ArgumentsActionsDAG(const ActionsDAG::NodeRawConstPtrs * arguments_) : arguments(arguments_) {}
-        [[nodiscard]] size_t size() const override { return arguments ? arguments->size() : 0; }
-        [[nodiscard]] std::unique_ptr<Argument> at(size_t n) const override
+        size_t size() const override { return arguments ? arguments->size() : 0; }
+        std::unique_ptr<Argument> at(size_t n) const override
         {
             return std::make_unique<ArgumentActionsDAG>(arguments->at(n));
         }
@@ -107,16 +108,24 @@ public:
             arguments = std::make_unique<ArgumentsActionsDAG>(&function->children);
     }
 
-    [[nodiscard]] String name() const override { return function->function_base->getName(); }
+    String name() const override { return function->function_base->getName(); }
 private:
     const ActionsDAG::Node * function = nullptr;
 };
 
 /// Finds secret arguments of a FUNCTION node of an `ActionsDAG`. A DAG function is always an ordinary
 /// function (table engines, database engines and backup names never become DAG nodes).
-inline SecretArgumentsResult findSecretArguments(const ActionsDAG::Node & function)
+class FunctionSecretArgumentsFinderActionsDAG : public FunctionSecretArgumentsFinder
 {
-    return SecretArgumentsRegistry::instance().find(ASTFunction::Kind::ORDINARY_FUNCTION, FunctionActionsDAG(function));
-}
+public:
+    explicit FunctionSecretArgumentsFinderActionsDAG(const ActionsDAG::Node & function_)
+        : FunctionSecretArgumentsFinder(std::make_unique<FunctionActionsDAG>(function_))
+    {
+        if (!function->hasArguments())
+            return;
+
+        findOrdinaryFunctionSecretArguments();
+    }
+};
 
 }

@@ -1,4 +1,0 @@
-one stream	40000	320000	froze	thawed
-four streams	40000	320000	froze	did not thaw
-one stream again	40000	320000	did not freeze	did not thaw
-four streams again	40000	320000	froze	did not thaw

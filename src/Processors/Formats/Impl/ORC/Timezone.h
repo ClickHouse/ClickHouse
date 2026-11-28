@@ -3,7 +3,6 @@
 #include <Common/DateLUTImpl.h>
 
 #include <limits>
-#include <optional>
 
 namespace DB::ORC
 {
@@ -16,17 +15,6 @@ public:
     explicit TimezoneOffset(const DateLUTImpl & lut_);
 
     Int64 operator()(Int64 t) const { return t < first_transition ? ancient_offset : lut.timezoneOffset(t); }
-
-    /// The offset if the zone has no transitions at all. Not `hasFixedOffset`, which only covers the years 1900-2299.
-    [[nodiscard]] std::optional<Int64> fixedOffset() const
-    {
-        if (first_transition != std::numeric_limits<Int64>::min())
-            return std::nullopt;
-        return lut.timezoneOffset(0);
-    }
-
-    /// UTC under any name: `UTC`, `Etc/UTC`, `Zulu`, `Etc/GMT+0`, `Fixed/UTC+00:00:00`.
-    [[nodiscard]] bool isUTC() const { return fixedOffset() == 0; }
 
 private:
     const DateLUTImpl & lut;

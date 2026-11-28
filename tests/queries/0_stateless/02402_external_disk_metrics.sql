@@ -8,8 +8,6 @@ SELECT number FROM (SELECT number FROM numbers(2097152)) ORDER BY number * 12345
 SETTINGS log_comment='02402_external_disk_mertrics/sort'
 FORMAT Null;
 
--- The adaptive aggregator takes the single stream of the query below too, and it stays below the threshold and
--- writes no temporary files. The metrics checked are those of the external aggregation, so the query turns it off.
 SET max_bytes_before_external_group_by = '100M';
 SET max_bytes_ratio_before_external_group_by = 0;
 SET max_memory_usage = '410M';
@@ -17,7 +15,7 @@ SET group_by_two_level_threshold = '100K';
 SET group_by_two_level_threshold_bytes = '50M';
 
 SELECT sum(k), sum(c) FROM (SELECT number AS k, sum(number) AS c FROM (SELECT * FROM system.numbers LIMIT 2097152) GROUP BY k)
-SETTINGS log_comment='02402_external_disk_mertrics/aggregation', enable_adaptive_aggregator = 0
+SETTINGS log_comment='02402_external_disk_mertrics/aggregation'
 FORMAT Null;
 
 SET join_algorithm = 'partial_merge';
@@ -33,8 +31,6 @@ SETTINGS log_comment='02402_external_disk_mertrics/partial_merge_join'
 FORMAT Null;
 
 SET join_algorithm = 'grace_hash', grace_hash_join_initial_buckets=32, grace_hash_join_max_buckets=32;
--- `max_bytes_in_join` is a hard cap, not a spill trigger: use the spill threshold to force temporary files.
-SET max_bytes_in_join = 0, max_bytes_before_external_join = '20M';
 
 SELECT n, j * 2097152 FROM
 (SELECT number * 200000 as n FROM numbers(5)) nums

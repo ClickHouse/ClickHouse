@@ -13,7 +13,7 @@ namespace DB
 namespace
 {
 
-class DeltaLakeTableChangesSource final : public ISource
+class DeltaLakeTableChangesSource : public ISource
 {
 public:
     DeltaLakeTableChangesSource(

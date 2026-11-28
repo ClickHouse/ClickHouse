@@ -11,7 +11,7 @@ isNull and isNotNull compared with a constant
 (c0 IS NOT NULL) < true	2	2
 not(1 < (c0 IS NULL))	5	5
 the partition step is the sole pruner here, and it now keeps the NULL partition
-Min-Max
+MinMax
 Condition: true
 Parts: 4/4
 Partition
@@ -22,7 +22,7 @@ ifNull(c0, 0) = 0	3	3
 coalesce(c0, 0) = 0	3	3
 NOT (ifNull(c0, 0) >= 7)	5	5
 NOT (coalesce(nullIf(c0, 5), 0) = 1)	4	4
-Min-Max
+MinMax
 Parts: 4/4
 Partition
 Parts: 3/4
@@ -32,7 +32,7 @@ SummingMergeTree, the query the fuzzer reported
 1
 control: with no NULL row the partition step is the only pruner and still prunes
 isZeroOrNull(c0) >= true	1
-Min-Max
+MinMax
 Parts: 3/3
 Partition
 Parts: 1/3

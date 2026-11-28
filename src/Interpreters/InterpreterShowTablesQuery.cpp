@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -42,7 +42,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT name FROM system.databases";
 
-        if (query.has_like)
+        if (!query.like.empty())
         {
             rewritten_query
                 << " WHERE name "
@@ -66,7 +66,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT DISTINCT cluster FROM system.clusters";
 
-        if (query.has_like)
+        if (!query.like.empty())
         {
             rewritten_query
                 << " WHERE cluster "
@@ -110,7 +110,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         if (query.changed)
             rewritten_query << " WHERE changed = 1";
 
-        if (query.has_like)
+        if (!query.like.empty())
         {
             rewritten_query
                 << (query.changed ? " AND name " : " WHERE name ")
@@ -141,7 +141,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
             FROM system.merges
             )";
 
-        if (query.has_like)
+        if (!query.like.empty())
         {
             rewritten_query
                 << " WHERE table "
@@ -167,8 +167,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
     WriteBufferFromOwnString rewritten_query;
 
-    /// `system.dictionaries` has no `engine` column.
-    if (query.full && !query.dictionaries)
+    if (query.full)
     {
         rewritten_query << "SELECT name, engine FROM system.";
     }
@@ -193,7 +192,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     else
         rewritten_query << "database = " << DB::quote << database;
 
-    if (query.has_like)
+    if (!query.like.empty())
         rewritten_query
             << " AND name "
             << (query.not_like ? "NOT " : "")
@@ -233,6 +232,16 @@ BlockIO InterpreterShowTablesQuery::execute()
     }
     auto rewritten_query = getRewrittenQuery();
     String database = getContext()->resolveDatabase(query.getFrom());
+    if (query.databases || DatabaseCatalog::instance().isRemoteDatabase(database))
+    {
+        auto query_context = Context::createCopy(getContext());
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId("");
+        /// HACK To always show them in explicit "SHOW TABLES" queries
+        query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
+        return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
+    }
+
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
@@ -256,7 +265,6 @@ BlockIO InterpreterShowTablesQuery::execute()
 ///     SQL tests can take advantage of this.
 
 
-void registerInterpreterShowTablesQuery(InterpreterFactory & factory);
 void registerInterpreterShowTablesQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

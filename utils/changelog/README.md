@@ -21,19 +21,11 @@ python3 changelog.py --output=changelog-v22.4.1.2305-prestable.md --gh-user-or-t
 python3 changelog.py --output=changelog-v22.4.1.2305-prestable.md --gh-user-or-token="$USER" --gh-password="$PASSWORD" v21.6.2.7-prestable
 ```
 
-The script requests every pull request and the author of every entry from GitHub, and a token has a limit of 5000 requests per hour. With `--reuse-entries-from=../../CHANGELOG.md`, a pull request that already has an entry in that file is not requested: the entry is copied as it is.
-
 ## How to use it on Mac
 
 Python has notoriously poor developer experience - it is a pile of garbage.
 
-Here is how to use it (variant 1 with `uv`):
-
-```bash
-uv run --no-project --with-requirements requirements.txt changelog.py --gh-user-or-token ghp_... --from a79faf5da8027c201a94cdc5c9a6a1d7852d69b5 95ccb0e1a86fd26a50b11a9479586e973dba66ce
-```
-
-Here is how to use it (variant 2 with `venv`):
+Here is how to use it:
 
 ```bash
 brew install python

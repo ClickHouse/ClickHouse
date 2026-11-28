@@ -38,21 +38,18 @@ RefreshSet::Handle::~Handle()
 
 void RefreshSet::Handle::rename(StorageID new_id, std::optional<StorageID> new_inner_table_id)
 {
-    StorageID old_id = id;
-    {
-        std::lock_guard lock(parent_set->mutex);
-        RefreshTaskPtr task = *iter;
-        parent_set->removeDependenciesLocked(task, dependencies);
-        parent_set->removeTaskLocked(id, iter);
-        if (inner_table_id)
-            parent_set->removeInnerTableLocked(*inner_table_id, inner_table_iter);
-        id = new_id;
-        inner_table_id = new_inner_table_id;
-        iter = parent_set->addTaskLocked(id, task);
-        if (inner_table_id)
-            inner_table_iter = parent_set->addInnerTableLocked(*inner_table_id, task);
-        parent_set->addDependenciesLocked(task, dependencies);
-    }
+    std::lock_guard lock(parent_set->mutex);
+    RefreshTaskPtr task = *iter;
+    parent_set->removeDependenciesLocked(task, dependencies);
+    parent_set->removeTaskLocked(id, iter);
+    if (inner_table_id)
+        parent_set->removeInnerTableLocked(*inner_table_id, inner_table_iter);
+    id = new_id;
+    inner_table_id = new_inner_table_id;
+    iter = parent_set->addTaskLocked(id, task);
+    if (inner_table_id)
+        inner_table_iter = parent_set->addInnerTableLocked(*inner_table_id, task);
+    parent_set->addDependenciesLocked(task, dependencies);
 }
 
 void RefreshSet::Handle::changeDependencies(std::vector<StorageID> deps)

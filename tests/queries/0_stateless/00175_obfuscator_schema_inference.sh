@@ -18,8 +18,7 @@ $CLICKHOUSE_OBFUSCATOR --input-format TSV --output-format TSV --seed hello --lim
 
 # Test obfuscator with saving the model
 $CLICKHOUSE_OBFUSCATOR --input-format TSV --output-format TSV --seed hello --limit 0 --save "$model" < "${CLICKHOUSE_TMP}"/data.tsv 2>/dev/null
-# The model is compressed, so its exact size depends on the version of the compression library.
-[ "$(wc -c < "$model")" -gt 100000 ] && echo "The model is saved"
+wc -c < "$model"
 $CLICKHOUSE_OBFUSCATOR --input-format TSV --output-format TSV --seed hello --limit 2500 --load "$model" < "${CLICKHOUSE_TMP}"/data.tsv > "${CLICKHOUSE_TMP}"/data2500_load_from_model.tsv 2>/dev/null
 rm "$model"
 

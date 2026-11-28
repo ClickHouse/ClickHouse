@@ -1,5 +1,4 @@
 #include <Functions/IFunction.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeString.h>
@@ -23,70 +22,35 @@ namespace
 
 /** Get scalar value of sub queries from query context via IASTHash.
   */
-class FunctionGetScalar final : public IFunction
+class FunctionGetScalar : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "__getScalar";
+    static FunctionPtr create(ContextPtr context_)
+    {
+        return std::make_shared<FunctionGetScalar>(context_);
+    }
 
-    explicit FunctionGetScalar(ColumnWithTypeAndName scalar_) : scalar(std::move(scalar_)) {}
+    explicit FunctionGetScalar(ContextPtr context_) : WithContext(context_) {}
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override
+    bool useDefaultImplementationForLowCardinalityColumns() const override
     {
         return false;
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] bool isServerConstant() const override { return true; }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
-    {
-        return scalar.type;
-    }
-
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        return ColumnConst::create(scalar.column, input_rows_count);
-    }
-
-private:
-    ColumnWithTypeAndName scalar;
-};
-
-
-class FunctionGetScalarOverloadResolver final : public IFunctionOverloadResolver, private WithContext
-{
-public:
-    static constexpr auto name = "__getScalar";
-
-    static FunctionOverloadResolverPtr create(ContextPtr context_)
-    {
-        return std::make_unique<FunctionGetScalarOverloadResolver>(context_);
-    }
-
-    explicit FunctionGetScalarOverloadResolver(ContextPtr context_) : WithContext(context_) {}
-
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
     bool isServerConstant() const override { return true; }
-
-    /// Documentation-only — internal helper; the result type comes from the
-    /// scalar subquery cached under the const-string name in the query
-    /// context, so the DSL can't resolve it.
-    String getSignatureString() const override
-    {
-        return "(const String) -> Any";
-    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -94,33 +58,23 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} accepts one const string argument", getName());
         auto scalar_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
         ContextPtr query_context = getContext()->hasQueryContext() ? getContext()->getQueryContext() : getContext();
-        return query_context->getScalar(scalar_name).getByPosition(0).type;
+        scalar = query_context->getScalar(scalar_name).getByPosition(0);
+        return scalar.type;
     }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        /// buildImpl receives original arguments which may still have Nullable types/columns.
-        auto args = createBlockWithNestedColumns(arguments);
-        if (args.size() != 1 || !isString(args[0].type) || !args[0].column || !isColumnConst(*args[0].column))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} accepts one const string argument", getName());
-        auto scalar_name = assert_cast<const ColumnConst &>(*args[0].column).getValue<String>();
-        ContextPtr query_context = getContext()->hasQueryContext() ? getContext()->getQueryContext() : getContext();
-        auto scalar = query_context->getScalar(scalar_name).getByPosition(0);
-
-        auto function = std::make_shared<FunctionGetScalar>(std::move(scalar));
-
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-
-        return std::make_unique<FunctionToFunctionBaseAdaptor>(function, data_types, return_type);
+        return ColumnConst::create(scalar.column, input_rows_count);
     }
+
+private:
+    mutable ColumnWithTypeAndName scalar;
 };
 
 
 /** Get special scalar values
   */
-class FunctionGetSpecialScalar final : public IFunction
+class FunctionGetSpecialScalar : public IFunction
 {
 public:
     static FunctionPtr create(ContextPtr context_, const char * function_name_, const char * scalar_name_)
@@ -145,37 +99,30 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return function_name;
     }
 
-    [[nodiscard]] bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    [[nodiscard]] bool isServerConstant() const override { return true; }
+    bool isServerConstant() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return !is_distributed; }
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override
     {
         return scalar.type;
     }
 
-    /// Both `shardNum` and `shardCount` are always populated with a `UInt32` scalar
-    /// (either supplied by the distributed-query coordinator or defaulted to `(0, UInt32)`
-    /// in `createScalar`). The declarative signature reflects that — even though the
-    /// `scalar.type` getter is still consulted by the dispatcher, having a signature
-    /// here lets `system.functions` advertise it to users and tooling.
-    [[nodiscard]] String getSignatureString() const override { return "() -> UInt32"; }
-
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto result = ColumnConst::create(scalar.column, input_rows_count);
 
@@ -195,7 +142,7 @@ private:
 
 REGISTER_FUNCTION(GetScalar)
 {
-    factory.registerFunction<FunctionGetScalarOverloadResolver>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
+    factory.registerFunction<FunctionGetScalar>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 
     FunctionDocumentation::Description description_shardNum = R"(
 Returns the index of a shard which processes a part of data in a distributed query.

@@ -4,14 +4,12 @@
 #include <Processors/Formats/Impl/TSKVRowOutputFormat.h>
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/EscapingRuleUtils.h>
-#include <Formats/registerWithNamesAndTypes.h>
 
 namespace DB
 {
 
 TSKVRowOutputFormat::TSKVRowOutputFormat(WriteBuffer & out_, SharedHeader header, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header, out_), format_settings(format_settings_), fields(header->getNamesAndTypes())
+    : TabSeparatedRowOutputFormat(out_, header, false, false, false, format_settings_), fields(header->getNamesAndTypes())
 {
     for (auto & field : fields)
     {
@@ -31,12 +29,6 @@ void TSKVRowOutputFormat::writeField(const IColumn & column, const ISerializatio
 }
 
 
-void TSKVRowOutputFormat::writeFieldDelimiter()
-{
-    writeChar('\t', out);
-}
-
-
 void TSKVRowOutputFormat::writeRowEndDelimiter()
 {
     writeChar('\n', out);
@@ -44,7 +36,6 @@ void TSKVRowOutputFormat::writeRowEndDelimiter()
 }
 
 
-void registerOutputFormatTSKV(FormatFactory & factory);
 void registerOutputFormatTSKV(FormatFactory & factory)
 {
     factory.registerOutputFormat("TSKV", [](
@@ -57,19 +48,6 @@ void registerOutputFormatTSKV(FormatFactory & factory)
     });
     factory.markOutputFormatSupportsParallelFormatting("TSKV");
     factory.setContentType("TSKV", "text/tab-separated-values; charset=UTF-8");
-
-    /// `TSKV` always writes the column names into the header (`writeAnyEscapedString<'='>`, which
-    /// escapes control characters but does not validate UTF-8), so a column name that is not valid
-    /// UTF-8 (a quoted identifier with arbitrary bytes) makes the output non-textual. The values are
-    /// written through the `Escaped` serializations, which write the `TSV` `NULL` representation and
-    /// the `Bool` representations verbatim (see `settingsLiteralsMayProduceRawBytes`). All of this is
-    /// knowable from the header and the settings, so the text framings reject or base64-encode the
-    /// output accordingly.
-    factory.registerOutputFormatMayProduceRawBytesChecker("TSKV", [](const FormatSettings & settings, const Block & header)
-    {
-        return headerNamesMayProduceRawBytes(header, /*with_names=*/true, /*with_types=*/false)
-            || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::Escaped);
-    });
 }
 
 }

@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
-class FunctionGenerateULID final : public IFunction
+class FunctionGenerateULID : public IFunction
 {
 public:
     static constexpr size_t ULID_LENGTH = 26;
@@ -32,44 +32,36 @@ public:
         return std::make_shared<FunctionGenerateULID>();
     }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isVariadic() const override { return true; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "([Any]) -> FixedString(26)";
+        if (arguments.size() > 1)
+            throw Exception(
+                ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                "Number of arguments for function {} doesn't match: passed {}, should be 0 or 1.",
+                getName(), arguments.size());
+
+        return std::make_shared<DataTypeFixedString>(ULID_LENGTH);
     }
 
-    /// The function accepted at most one (ignored) argument and reported anything beyond that as
-    /// `TOO_MANY_ARGUMENTS_FOR_FUNCTION` before it adopted the declarative signature; tests pin that code.
-    [[nodiscard]] int getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/) const override
-    {
-        return ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    /// `useDefaultImplementationForConstants` is deliberately not enabled: with a constant argument
-    /// it would generate one identifier and stamp it onto every row, which is the opposite of what
-    /// the argument is for - it exists to get an independent identifier per call.
-    ///
-    /// The argument is ignored, so it does not take part in null propagation either: `generateULID(NULL)`
-    /// generates an identifier, the way `generateUUIDv4(NULL)` and `generateSnowflakeID(NULL)` do.
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_res = ColumnFixedString::create(ULID_LENGTH);
         auto & vec_res = col_res->getChars();
 
         vec_res.resize(input_rows_count * ULID_LENGTH);
 
-        ulid_generator generator{};
+        ulid_generator generator;
         ulid_generator_init(&generator, 0);
 
         for (size_t offset = 0, size = vec_res.size(); offset < size; offset += ULID_LENGTH)
@@ -88,7 +80,7 @@ Generates a [Universally Unique Lexicographically Sortable Identifier (ULID)](ht
     )";
     FunctionDocumentation::Syntax syntax = "generateULID([x])";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "Optional. An expression resulting in any of the supported data types. The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) if the function is called multiple times in one query.", {"Any"}}
+        {"x", "Optional. An expression resulting in any of the supported data types. The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in one query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a ULID.", {"FixedString(26)"}};
     FunctionDocumentation::Examples examples = {

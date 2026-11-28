@@ -1,5 +1,0 @@
-plain before	300
-holding rows before	['t_file','t_join','t_log','t_memory','t_mv','t_set','t_stripe_log','t_tiny_log']
-plain after	0
-holding rows after	[]
-plain after LIKE	0

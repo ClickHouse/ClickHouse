@@ -14,11 +14,7 @@ class ParserPrometheusQuery final : public IParserBase
 public:
     ParserPrometheusQuery(const String & database_name_, const String & table_name_, const Field & evaluation_time_);
 
-    [[nodiscard]] const char * getName() const override { return "PromQL Statement"; }
-
-    /// PromQL is parsed from the raw text by its own grammar, which has tokens such as `=~` that
-    /// the SQL lexer rejects; the SQL tokens are only used here to find the end of the statement.
-    [[nodiscard]] bool consumesRawText() const override { return true; }
+    const char * getName() const override { return "PromQL Statement"; }
 
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

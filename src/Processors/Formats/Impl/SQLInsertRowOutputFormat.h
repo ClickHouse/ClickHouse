@@ -9,7 +9,7 @@ namespace DB
 
 class WriteBuffer;
 
-class SQLInsertRowOutputFormat final : public IRowOutputFormat
+class SQLInsertRowOutputFormat : public IRowOutputFormat
 {
 public:
     SQLInsertRowOutputFormat(

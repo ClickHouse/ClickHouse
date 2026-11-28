@@ -14,7 +14,7 @@ namespace DB
 class ParserShowProcesslistQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "SHOW PROCESSLIST query"; }
+    const char * getName() const override { return "SHOW PROCESSLIST query"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {

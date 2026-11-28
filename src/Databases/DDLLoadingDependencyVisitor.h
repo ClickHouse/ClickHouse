@@ -2,7 +2,6 @@
 #include <Core/QualifiedTableName.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -40,7 +39,7 @@ public:
         ContextPtr global_context;
         ASTPtr create_query;
         QualifiedTableName table_name;
-        bool can_throw{};
+        bool can_throw;
     };
 
     using Visitor = ConstInDepthNodeVisitor<DDLLoadingDependencyVisitor, true>;

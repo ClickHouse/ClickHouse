@@ -139,14 +139,13 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     HTTPServerResponse & response_,
     bool is_http_method_head_,
-    const ProfileEvents::Event & write_event_,
-    size_t buf_size)
-    : HTTPWriteBuffer(response_.getSocket(), write_event_, buf_size)
+    const ProfileEvents::Event & write_event_)
+    : HTTPWriteBuffer(response_.getSocket(), write_event_)
     , response(response_)
     , is_http_method_head(is_http_method_head_)
 {
     if (response.getChunkedTransferEncoding())
-        setChunked(buf_size);
+        setChunked();
 
     exception_tag = getRandomASCIIString(EXCEPTION_TAG_LENGTH);
 }
@@ -328,7 +327,7 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
                 {
                     breakFixedLength();
                     throw Exception(ErrorCodes::CANNOT_WRITE_TO_SOCKET,
-                        "There is no space left in the fixed length HTTP-write buffer to write the exception header. "
+                        "There is no space left in the fixed length HTTP-write buffer to write the exception header."
                         "But the client should notice the broken HTTP protocol.");
                 }
                 else
@@ -387,7 +386,7 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
 
             LOG_DEBUG(
                 getLogger("WriteBufferFromHTTPServerResponse"),
-                "Write buffer has been canceled with an error. "
+                "Write buffer has been canceled with an error."
                 "Error has been sent at the end of the response. HTTP protocol has been broken by server."
                 " HTTP code: {}, message: <{}>, error code: {}, message: <{}>."
                 " use compression: {}, data has been send through buffers: {}, compression discarded data: {}, discarded data: {}",

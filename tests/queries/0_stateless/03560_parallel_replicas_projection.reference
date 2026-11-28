@@ -1,42 +1,27 @@
 ---normal : contains both projections and parts ---
-Row 1:
-──────
-reads_projection:    1
-reads_from_replicas: 1
+ReadFromMergeTree (default.normal)
+ReadFromMergeTree (p_normal)
+ReadFromRemoteParallelReplicas
 100045
 ---normal : contains only projections ---
-Row 1:
-──────
-reads_projection:    1
-reads_from_replicas: 1
+ReadFromMergeTree (p_normal)
+ReadFromRemoteParallelReplicas
 100045
 ---agg : contains both projections and parts ---
-Row 1:
-──────
-reads_projection:    1
-reads_from_replicas: 1
+ReadFromMergeTree (default.agg)
+ReadFromMergeTree (p_agg)
+ReadFromRemoteParallelReplicas
 1900
 ---agg : contains only projections ---
-Row 1:
-──────
-reads_projection:    1
-reads_from_replicas: 1
+ReadFromMergeTree (p_agg)
+ReadFromRemoteParallelReplicas
 1900
 --- min-max projection ---
-Row 1:
-──────
-reads_projection:    1
-reads_from_replicas: 1
+ReadFromPreparedSource (_minmax_count_projection)
+ReadFromRemoteParallelReplicas
 9
 --- exact-count projection ---
-Row 1:
-──────
-reads_projection:    1
-reads_from_replicas: 1
+ReadFromMergeTree (default.x)
+ReadFromPreparedSource (_exact_count_projection)
+ReadFromRemoteParallelReplicas
 5
-03560_agg_only_projections	20
-03560_agg_projection_and_parts	110
-03560_exact_count_projection	2
-03560_minmax_projection	0
-03560_normal_only_projections	11
-03560_normal_projection_and_parts	10010

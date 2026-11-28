@@ -26,6 +26,11 @@
 #include "Poco/StreamUtil.h"
 
 
+namespace DB
+{
+class ReadBufferFromIStream;
+}
+
 namespace Poco
 {
 
@@ -120,6 +125,8 @@ protected:
     openmode getMode() const { return _mode; }
 
 private:
+    friend class DB::ReadBufferFromIStream;
+
     virtual int readFromDevice(char_type * /*buffer*/, std::streamsize /*length*/) { return 0; }
 
     virtual int writeToDevice(const char_type * /*buffer*/, std::streamsize /*length*/) { return 0; }

@@ -153,7 +153,7 @@ void XMLConfiguration::load(std::istream& istr)
 
 void XMLConfiguration::load(const std::string& path)
 {
-	Poco::XML::InputSource src(Poco::XML::toXMLString(path));
+	Poco::XML::InputSource src(path);
 	load(&src);	
 }
 
@@ -186,7 +186,7 @@ void XMLConfiguration::load(const Poco::XML::Node* pNode)
 void XMLConfiguration::loadEmpty(const std::string& rootElementName)
 {
 	_pDocument = new Poco::XML::Document;
-	_pRoot     = _pDocument->createElement(Poco::XML::toXMLString(rootElementName));
+	_pRoot     = _pDocument->createElement(rootElementName);
 	_pDocument->appendChild(_pRoot);
 }
 
@@ -242,7 +242,7 @@ void XMLConfiguration::setRaw(const std::string& key, const std::string& value)
         unsigned short nodeType = pNode->nodeType();
         if (Poco::XML::Node::ATTRIBUTE_NODE == nodeType)
         {
-            pNode->setNodeValue(Poco::XML::toXMLString(value));
+            pNode->setNodeValue(value);
         }
         else if (Poco::XML::Node::ELEMENT_NODE == nodeType)
         {
@@ -251,12 +251,12 @@ void XMLConfiguration::setRaw(const std::string& key, const std::string& value)
             {
                 if (Poco::XML::Node::TEXT_NODE == pChildNode->nodeType())
                 {
-                    pChildNode->setNodeValue(Poco::XML::toXMLString(value));
+                    pChildNode->setNodeValue(value);
                 }
             }
             else
             {
-				Poco::AutoPtr<Poco::XML::Node> pText = _pDocument->createTextNode(Poco::XML::toXMLString(value));
+				Poco::AutoPtr<Poco::XML::Node> pText = _pDocument->createTextNode(value);
 				pNode->appendChild(pText);
             }
         }
@@ -278,7 +278,7 @@ void XMLConfiguration::enumerate(const std::string& key, Keys& range) const
 		{
 			if (pChild->nodeType() == Poco::XML::Node::ELEMENT_NODE)
 			{
-				std::string nodeName = Poco::XML::fromXMLString(pChild->nodeName());
+				std::string nodeName = pChild->nodeName();
 				size_t& count = keys[nodeName];
 				replaceInPlace(nodeName, ".", "\\.");
 				if (count)
@@ -410,13 +410,13 @@ Poco::XML::Node* XMLConfiguration::findElement(const std::string& name, Poco::XM
 	Poco::XML::Node* pChild = pNode->firstChild();
 	while (pChild)
 	{
-		if (pChild->nodeType() == Poco::XML::Node::ELEMENT_NODE && pChild->nodeName() == std::string_view(name))
+		if (pChild->nodeType() == Poco::XML::Node::ELEMENT_NODE && pChild->nodeName() == name)
 			return pChild;
 		pChild = pChild->nextSibling();
 	}
 	if (create)
 	{
-		Poco::AutoPtr<Poco::XML::Element> pElem = pNode->ownerDocument()->createElement(Poco::XML::toXMLString(name));
+		Poco::AutoPtr<Poco::XML::Element> pElem = pNode->ownerDocument()->createElement(name);
 		pNode->appendChild(pElem);
 		return pElem;
 	}
@@ -457,7 +457,7 @@ Poco::XML::Node* XMLConfiguration::findElement(const std::string& attr, const st
 {
 	Poco::XML::Node* pRefNode = pNode;
 	Poco::XML::Element* pElem = dynamic_cast<Poco::XML::Element*>(pNode);
-	if (!(pElem && pElem->getAttribute(Poco::XML::toXMLString(attr)) == std::string_view(value)))
+	if (!(pElem && pElem->getAttribute(attr) == value))
 	{
 		pNode = pNode->nextSibling();
 		while (pNode)
@@ -465,7 +465,7 @@ Poco::XML::Node* XMLConfiguration::findElement(const std::string& attr, const st
 			if (pNode->nodeName() == pRefNode->nodeName())
 			{
 				pElem = dynamic_cast<Poco::XML::Element*>(pNode);
-				if (pElem && pElem->getAttribute(Poco::XML::toXMLString(attr)) == std::string_view(value)) break;
+				if (pElem && pElem->getAttribute(attr) == value) break;
 			}
 			pNode = pNode->nextSibling();
 		}
@@ -480,10 +480,10 @@ Poco::XML::Node* XMLConfiguration::findAttribute(const std::string& name, Poco::
 	Poco::XML::Element* pElem = dynamic_cast<Poco::XML::Element*>(pNode);
 	if (pElem)
 	{
-		pResult = pElem->getAttributeNode(Poco::XML::toXMLString(name));
+		pResult = pElem->getAttributeNode(name);
 		if (!pResult && create)
 		{
-			Poco::AutoPtr<Poco::XML::Attr> pAttr = pNode->ownerDocument()->createAttribute(Poco::XML::toXMLString(name));
+			Poco::AutoPtr<Poco::XML::Attr> pAttr = pNode->ownerDocument()->createAttribute(name);
 			pElem->setAttributeNode(pAttr);
 			return pAttr;
 		}

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel, no-fasttest, no-shared-merge-tree
+# Tags: no-replicated-database, no-parallel
 # Tag no-replicated-database: Unsupported type of ALTER query
-# Tag no-shared-merge-tree: MetaInKeeper doesn't implement removeMetadataRecursive -- and we are Ok with it
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

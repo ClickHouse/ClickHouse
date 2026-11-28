@@ -21,37 +21,33 @@ namespace ErrorCodes
 
 namespace
 {
-class FunctionReverse final : public IFunction
+class FunctionReverse : public IFunction
 {
 public:
     static constexpr auto name = "reverse";
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionReverse>();
+    }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override
+    bool isInjective(const ColumnsWithTypeAndName &) const override
     {
         return true;
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// `FunctionReverse` covers String/FixedString/Tuple inputs — the
-    /// `ReverseOverloadResolver` routes Array(...) inputs to `arrayReverse`
-    /// before this class is built, so Array is not part of this signature.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(S : StringOrFixedString) -> S OR (T : Tuple) -> reverseTuple(T)";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0]) && !isArray(arguments[0]) && !isTuple(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
@@ -82,9 +78,9 @@ public:
         return arguments[0];
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
@@ -123,37 +119,23 @@ public:
 
 
 /// Also works with arrays.
-class ReverseOverloadResolver final : public IFunctionOverloadResolver
+class ReverseOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "reverse";
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ReverseOverloadResolver>(context); }
 
-    explicit ReverseOverloadResolver(ContextPtr context)
-        : array_reverse(FunctionFactory::instance().get("arrayReverse", context))
-    {
-    }
+    explicit ReverseOverloadResolver(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
 
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
-
-    /// `reverse` works on arrays (delegated to `arrayReverse`), strings,
-    /// fixed strings, and tuples. The DSL signature is authoritative.
-    String getSignatureString() const override
-    {
-        return "(Array(T : Any)) -> Array(T)"
-               " OR (S : StringOrFixedString) -> S"
-               " OR (T : Tuple) -> reverseTuple(T)";
-    }
-
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
-            return array_reverse->build(arguments);
+            return FunctionFactory::instance().getImpl("arrayReverse", context)->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
-            std::make_shared<FunctionReverse>(),
+            FunctionReverse::create(context),
             DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
             return_type);
     }
@@ -161,7 +143,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return FunctionReverse{}.getReturnTypeImpl(arguments); }
 
 private:
-    FunctionOverloadResolverPtr array_reverse;
+    ContextPtr context;
 };
 
 }
@@ -175,8 +157,8 @@ REGISTER_FUNCTION(Reverse)
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array or string with the order of elements or characters reversed."};
     FunctionDocumentation::Examples examples = {
-        {"Reverse array", "SELECT reverse([1, 2, 3, 4]);", "[4,3,2,1]"},
-        {"Reverse string", "SELECT reverse('abcd');", "dcba"}
+        {"Reverse array", "SELECT reverse([1, 2, 3, 4]);", "[4, 3, 2, 1]"},
+        {"Reverse string", "SELECT reverse('abcd');", "'dcba'"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

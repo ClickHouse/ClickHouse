@@ -1,3 +1,4 @@
+# package sources should be placed in ${PWD}/root
 # nfpm should run from the same directory with a config
 name: "clickhouse-client"
 description: |
@@ -35,44 +36,31 @@ overrides:
     - clickhouse-common-static = ${CLICKHOUSE_VERSION_STRING}
 
 contents:
-- src: ../programs/client/clickhouse-client.xml
+- src: root/etc/clickhouse-client/config.xml
   dst: /etc/clickhouse-client/config.xml
   type: config|noreplace
-  file_info:
-    mode: 0644
-- src: clickhouse
+- src: root/usr/bin/clickhouse-benchmark
   dst: /usr/bin/clickhouse-benchmark
-  type: symlink
-- src: clickhouse
+- src: root/usr/bin/clickhouse-compressor
   dst: /usr/bin/clickhouse-compressor
-  type: symlink
-- src: clickhouse
+- src: root/usr/bin/clickhouse-format
   dst: /usr/bin/clickhouse-format
-  type: symlink
-- src: clickhouse
+- src: root/usr/bin/clickhouse-client
   dst: /usr/bin/clickhouse-client
-  type: symlink
-- src: clickhouse
+- src: root/usr/bin/clickhouse-local
   dst: /usr/bin/clickhouse-local
-  type: symlink
-- src: clickhouse
+- src: root/usr/bin/ch
   dst: /usr/bin/ch
-  type: symlink
-- src: clickhouse
+- src: root/usr/bin/chc
   dst: /usr/bin/chc
-  type: symlink
-- src: clickhouse
+- src: root/usr/bin/chl
   dst: /usr/bin/chl
-  type: symlink
-- src: clickhouse
+- src: root/usr/bin/clickhouse-obfuscator
   dst: /usr/bin/clickhouse-obfuscator
-  type: symlink
-- src: clickhouse
+- src: root/usr/bin/clickhouse-chdig
   dst: /usr/bin/clickhouse-chdig
-  type: symlink
-- src: clickhouse
+- src: root/usr/bin/chdig
   dst: /usr/bin/chdig
-  type: symlink
 # docs
 - src: ../AUTHORS
   dst: /usr/share/doc/clickhouse-client/AUTHORS

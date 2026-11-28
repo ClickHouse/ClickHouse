@@ -3,14 +3,12 @@
 #include <memory>
 #include <vector>
 
-#include <Common/VectorWithMemoryTracking.h>
-
 namespace DB
 {
 class IDataType;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
+using DataTypes = std::vector<DataTypePtr>;
 
 struct Array;
 
@@ -20,11 +18,11 @@ struct Array;
 class IResolvedFunction
 {
 public:
-    [[nodiscard]] virtual const DataTypePtr & getResultType() const = 0;
+    virtual const DataTypePtr & getResultType() const = 0;
 
-    [[nodiscard]] virtual const DataTypes & getArgumentTypes() const = 0;
+    virtual const DataTypes & getArgumentTypes() const = 0;
 
-    [[nodiscard]] virtual const Array & getParameters() const = 0;
+    virtual const Array & getParameters() const = 0;
 
     virtual ~IResolvedFunction() = default;
 };

@@ -53,14 +53,48 @@ def serverHello():
     return bytes(ba)
 
 
+def readVarUInt(connection):
+    x = 0
+    for shift in range(0, 63, 7):
+        byte = connection.recv(1)
+        if not byte:
+            raise EOFError
+        x |= (byte[0] & 0x7F) << shift
+        if not byte[0] & 0x80:
+            break
+    return x
+
+
+def skipStringBinary(connection):
+    size = readVarUInt(connection)
+    while size:
+        chunk = connection.recv(size)
+        if not chunk:
+            raise EOFError
+        size -= len(chunk)
+
+
 def serveOneQuery(listener, reply):
-    """Answers the query of one client with `reply`, without parsing what the client sends."""
+    """Answers the query of one client with `reply`, without parsing the query that the client sends."""
     connection, _ = listener.accept()
     with connection:
         connection.settimeout(60)
         received = connection.recv(65536)  # the Hello of the client
         connection.sendall(serverHello())
-        # The addendum and the Query packet follow. Once the text of the query is here, the
+        try:
+            # The addendum: quota key (>= 54458), proto_send and proto_recv chunked (>= 54470),
+            # parallel replicas protocol version (>= 54471).
+            for _ in range(3):
+                skipStringBinary(connection)
+            readVarUInt(connection)
+            # A client may check the connection with a Ping before the query, and waits for the Pong.
+            packet_type = readVarUInt(connection)
+            while packet_type == 4:  # Ping
+                connection.sendall(bytes([4]))  # Pong
+                packet_type = readVarUInt(connection)
+        except EOFError:
+            return
+        # The Query packet follows. Once the text of the query is here, the
         # client is about to wait for the result.
         while QUERY.encode() not in received:
             chunk = connection.recv(65536)

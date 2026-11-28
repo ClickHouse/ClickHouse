@@ -1,3 +1,4 @@
+SET allow_experimental_analyzer = 1;
 
 SELECT '-- Basic arrayMap tests --';
 

@@ -7,8 +7,10 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 
+#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
 namespace DB::GatherUtils
@@ -55,12 +57,12 @@ struct NumericArraySink : public ArraySinkImpl<NumericArraySink<T>>
         ++row_num;
     }
 
-    [[nodiscard]] bool isEnd() const
+    bool isEnd() const
     {
         return row_num == offsets.size();
     }
 
-    [[nodiscard]] size_t rowNum() const
+    size_t rowNum() const
     {
         return row_num;
     }
@@ -92,12 +94,12 @@ struct StringSink
         ++row_num;
     }
 
-    [[nodiscard]] bool isEnd() const
+    bool isEnd() const
     {
         return row_num == offsets.size();
     }
 
-    [[nodiscard]] size_t rowNum() const
+    size_t rowNum() const
     {
         return row_num;
     }
@@ -130,12 +132,12 @@ struct FixedStringSink
         ++row_num;
     }
 
-    [[nodiscard]] bool isEnd() const
+    bool isEnd() const
     {
         return row_num == total_rows;
     }
 
-    [[nodiscard]] size_t rowNum() const
+    size_t rowNum() const
     {
         return row_num;
     }
@@ -170,12 +172,12 @@ struct GenericArraySink : public ArraySinkImpl<GenericArraySink>
         ++row_num;
     }
 
-    [[nodiscard]] bool isEnd() const
+    bool isEnd() const
     {
         return row_num == offsets.size();
     }
 
-    [[nodiscard]] size_t rowNum() const
+    size_t rowNum() const
     {
         return row_num;
     }

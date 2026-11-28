@@ -7,8 +7,8 @@
 -- so the final assertion can prove none of them leaks. They used to leak in plaintext in SHOW CREATE
 -- and logged query text.
 
--- Engine form: SHOW CREATE hides every secret; the non-secret extra_credentials identifier
--- (role_arn) stays visible while external_id is hidden.
+-- Engine form: SHOW CREATE hides every secret; the non-secret extra_credentials identifiers
+-- (role_arn, role_session_name) stay visible while external_id is hidden.
 DROP TABLE IF EXISTS t_04510;
 CREATE TABLE t_04510 (x UInt8)
 ENGINE = S3('http://localhost:11111/test/04510', 'ak', 'SEKRIT_SAK',
@@ -115,7 +115,8 @@ SELECT * FROM s3('url_dup', 'ak', 'sk',
                  structure = 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
 -- A nested map with a malformed child (not `key = value`) must fail closed in formatting.
--- The analyzer rejects `extra_credentials` as an unknown function.
+-- The analyzer rejects `extra_credentials` as an unknown function; with `enable_analyzer = 0`
+-- the S3 URI validation is reached first.
 SELECT * FROM s3('url_badmap', 'ak', 'SEKRIT_SAK',
                  extra_credentials('SEKRIT_RAWCRED'),
                  format = 'TSV', structure = 'x UInt8'); -- { serverError UNKNOWN_FUNCTION, BAD_ARGUMENTS }
@@ -255,10 +256,7 @@ BACKUP TABLE nonexistent_04510 TO Null(); -- { serverError UNKNOWN_TABLE }
 -- name: a named collection with an optional filename, three arguments (connection string or account url,
 -- container, path), or five (adding account_name and account_key). An argument outside those shapes is
 -- rejected only after the statement is logged, and AzureQueue has no backup engine at all. The last
--- two statements are the controls: a connection string hides its AccountKey, and the three-argument
--- shape has nothing to hide, so it stays visible verbatim.
--- Let statements without explicit credentials reach argument validation instead of `ACCESS_DENIED`.
-SET s3_allow_server_credentials_in_user_queries = 1;
+-- statement is the control: the three-argument shape has nothing to hide, so it stays visible verbatim.
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct', 'cont', 'blob',
                  'SEKRIT_AZTO4'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing, 'dir',
@@ -267,9 +265,7 @@ BACKUP TABLE nonexistent_04510 TO AzureQueue('http://localhost:11111/acct', 'con
                  'SEKRIT_AZQTO'); -- { serverError BACKUP_ENGINE_NOT_FOUND }
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=a;AccountKey=SEKRIT_AZTOCSKEY==;',
                  'cont', 'blob', 'acct', 'SEKRIT_AZTOCS5'); -- { serverError BAD_ARGUMENTS }
-BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=a;AccountKey=c2VrcmV0Cg==;',
-                 'cont', 'visible_04510_dir/b.zip'); -- { serverError BAD_ARGUMENTS }
-BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct', 'visible_04510_cont', 'visible_04510_dir/b.zip'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct', 'visible_04510_cont', 'visible_04510_dir/b.zip'); -- { serverError STD_EXCEPTION }
 
 -- A named collection can be overridden per statement, and the destination evaluates those overrides as
 -- constant expressions. An override this rule cannot read may hold either credential, and hiding a
@@ -486,19 +482,13 @@ CREATE DATABASE db_04510_azure ENGINE = Backup('', AzureBlobStorage('http://loca
 CREATE DATABASE db_04510_s3pos ENGINE = S3('url_dbs3pos', 'ak', 'SEKRIT_SAK',
                  'SEKRIT_S3DBTOK'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
--- A valid non-secret named override (use_environment_credentials) must stay visible while
--- secret_access_key is hidden. This CREATE succeeds (the S3 database is lazy), so use a unique
--- database name to avoid collisions across parallel runs, and drop it after.
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
-CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = S3('url_dbenv', 'ak', 'SEKRIT_SAK', use_environment_credentials = 1);
-DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-
 -- The query-tree surface (EXPLAIN QUERY TREE) must hide the same carriers as the logged query text:
 -- a credential-bearing url (masked whole, since a tree dump cannot represent partial masking), the
 -- positional secrets, and the values of headers(...) / extra_credentials(...).
 -- run_passes = 0 keeps the table function unresolved: the masking visitor runs before the passes
 -- either way, and resolution would touch the storage (URI validation, credential checks), which
 -- varies across test configurations.
+SET enable_analyzer = 1;
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('https://user:SEKRIT_PW@localhost:11111/test/04510qt?X-Amz-Signature=SEKRIT_SIG', 'ak', 'SEKRIT_SAK', 'TSV', 'x UInt8');
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('http://localhost:11111/test/04510qt', NOSIGN, 'TSV', 'x UInt8', headers('Authorization' = 'SEKRIT_HDR'));
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('http://localhost:11111/test/04510qt', 'ak', 'SEKRIT_SAK', 'TSV', 'x UInt8', extra_credentials(external_id = 'SEKRIT_EID'));
@@ -528,10 +518,7 @@ WHERE current_database = currentDatabase()
   AND type != 'QueryStart'
   AND query_kind != 'Set' -- sent by the test harness, not by this test
   AND query NOT ILIKE 'SYSTEM FLUSH%' -- its own terminal event races with the flush it performs
-  AND query_id = initial_query_id -- only the statements issued here: a Replicated database logs
-                                  -- each DDL again from the replay worker, which inherits the
-                                  -- initiator's initial_query_id but gets a fresh query_id
-  AND event_date >= yesterday() AND event_time >= now() - 600
+  AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE
 ORDER BY event_time_microseconds;
 
 -- The transcript above is scoped to the statements this test issued. A Replicated database also
@@ -550,4 +537,4 @@ SELECT count() > 0, countIf(query LIKE '%SEKRIT%'),
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type != 'QueryStart'
-  AND event_date >= yesterday() AND event_time >= now() - 600;
+  AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE;

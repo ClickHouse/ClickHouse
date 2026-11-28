@@ -2,15 +2,12 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
-#include <Columns/ColumnSet.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/DataTypeFunction.h>
-#include <Functions/FunctionHelpers.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/PreparedSets.h>
 
 
 namespace DB
@@ -29,34 +26,11 @@ struct LambdaCapture
     String return_name;
     DataTypePtr return_type;
     bool allow_constant_folding = false;
-    /// JIT replaces function nodes in the executing DAG; this keeps the body as built for readers.
-    std::shared_ptr<const ActionsDAG> uncompiled_actions_dag = nullptr;
 };
 
 using LambdaCapturePtr = std::shared_ptr<LambdaCapture>;
 
-inline ExpressionActionsPtr createLambdaExpressionActions(
-    ActionsDAG actions_dag, const ExpressionActionsSettings & actions_settings, LambdaCapture & capture)
-{
-    std::shared_ptr<const ActionsDAG> uncompiled_actions_dag;
-    auto actions = std::make_shared<ExpressionActions>(
-        std::move(actions_dag), actions_settings, /*project_inputs=*/false, &uncompiled_actions_dag);
-
-    if (uncompiled_actions_dag)
-    {
-        for (const auto & node : actions->getActionsDAG().getNodes())
-        {
-            if (node.is_function_compiled)
-            {
-                capture.uncompiled_actions_dag = std::move(uncompiled_actions_dag);
-                break;
-            }
-        }
-    }
-    return actions;
-}
-
-class ExecutableFunctionExpression final : public IExecutableFunction
+class ExecutableFunctionExpression : public IExecutableFunction
 {
 public:
     struct Signature
@@ -72,19 +46,9 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return "FunctionExpression"; }
+    String getName() const override { return "FunctionExpression"; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return executeImpl(arguments, result_type, input_rows_count, /*dry_run=*/false);
-    }
-
-    [[nodiscard]] ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return executeImpl(arguments, result_type, input_rows_count, /*dry_run=*/true);
-    }
-
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return result_type->createColumn();
@@ -100,163 +64,26 @@ public:
             expr_columns.insert({argument.column, argument.type, signature->argument_names[i]});
         }
 
-        /// Do not propagate the outer dry_run into the lambda body: non-deterministic
-        /// functions (e.g. WASM UDFs) would return defaults during dry-run, producing
-        /// wrong constant-folding results for higher-order functions.
-        expression_actions->execute(expr_columns, dry_run);
+        expression_actions->execute(expr_columns);
 
         return expr_columns.getByName(signature->return_name).column;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     /// It's possible if expression_actions contains function that don't use
     /// default implementation for Nothing.
     /// Example: arrayMap(x -> CAST(x, 'UInt8'), []);
-    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
     /// Example: SELECT arrayMap(x -> (x + (arrayMap(y -> ((x + y) + toLowCardinality(1)), [])[1])), [])
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    /// The mix of full and replicated columns falls back to full materialization.
-    [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
 private:
     ExpressionActionsPtr expression_actions;
     SignaturePtr signature;
 };
 
-/// Whether the function a column stands for and the functions of its captured columns all satisfy the predicate.
-/// This is about a `ColumnFunction`, which is what constant folding turns a lambda without non-constant
-/// captured columns into; a lambda nested in it becomes one of its captured columns.
-template <typename Predicate>
-bool allColumnFunctions(const IColumn & column, const Predicate & predicate)
-{
-    const IColumn * data = &column;
-    if (const auto * column_const = typeid_cast<const ColumnConst *>(data))
-        data = &column_const->getDataColumn();
-
-    const auto * column_function = typeid_cast<const ColumnFunction *>(data);
-    if (!column_function)
-        return true;
-
-    if (!predicate(*column_function->getFunction()))
-        return false;
-
-    for (const auto & captured : column_function->getCapturedColumns())
-        if (captured.column && !allColumnFunctions(*captured.column, predicate))
-            return false;
-
-    return true;
-}
-
-/// Whether every function a node stands for satisfies the predicate: the function of a FUNCTION node, or, for a
-/// COLUMN node holding a constant-folded lambda, the lambda and the lambdas nested in it.
-template <typename Predicate>
-bool allNodeFunctions(const ActionsDAG::Node & node, const Predicate & predicate)
-{
-    if (node.type == ActionsDAG::ActionType::FUNCTION)
-        return predicate(*node.function_base);
-
-    if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
-        return allColumnFunctions(*node.column, predicate);
-
-    return true;
-}
-
-/// Whether every function in the body of a lambda satisfies the predicate. Nested lambdas are covered by
-/// recursion through their own `FunctionCapture` or `FunctionExpression`.
-template <typename Predicate>
-bool allLambdaBodyFunctions(const ExpressionActions & expression_actions, const Predicate & predicate)
-{
-    for (const auto & inner_node : expression_actions.getActionsDAG().getNodes())
-        if (!allNodeFunctions(inner_node, predicate))
-            return false;
-    return true;
-}
-
-/// A lambda is exactly as deterministic and as stateful as the functions in its body.
-/// Without this, a higher-order function like `arrayExists(x -> rand() % 2 = 0, arr)` looks like an
-/// ordinary deterministic function, and an optimization that moves expressions across a row-multiplying
-/// step such as `ARRAY JOIN` (`liftUpArrayJoin`, filter pushdown) changes how many times the
-/// non-deterministic function is drawn.
-inline bool isLambdaBodyDeterministic(const ExpressionActions & expression_actions)
-{
-    return allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return function.isDeterministic(); });
-}
-
-inline bool isLambdaBodyDeterministicInScopeOfQuery(const ExpressionActions & expression_actions)
-{
-    return allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
-}
-
-inline bool isLambdaBodyStateful(const ExpressionActions & expression_actions)
-{
-    return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.isStateful(); });
-}
-
-inline bool isLambdaBodyExpensive(const ExpressionActions & expression_actions)
-{
-    return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.isExpensive(); });
-}
-
-/// A lambda has observable side effects if any function in its body has them. Without this, a higher-order
-/// function like `arrayExists(x -> sleepEachRow(0.001) = 0, arr)` looks free of side effects, and the
-/// reordering of short-circuit arguments evaluates `sleepEachRow` on fewer rows than in the written order.
-inline bool isLambdaBodyWithObservableSideEffects(const ExpressionActions & expression_actions)
-{
-    return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.hasObservableSideEffects(); });
-}
-
-/// Whether the body of a lambda can be evaluated once and its value reused for every row of the query.
-/// Every function in the body has to allow constant folding, and it also has to keep the same value for the
-/// whole query: a folded lambda becomes a constant `ColumnFunction`, which makes the higher-order function
-/// around it constant as well, so a single draw of `rand` decides the value of every row. This is what
-/// `arrayExists(y -> rand(y) % 2 = 0, [1])` in a `WHERE` used to do: it either kept all rows or dropped them
-/// all, while `rand(y) % 2 = 0` outside a lambda is drawn per row.
-/// Nested lambdas are covered as well - the body of a lambda nested in this one is either a `FUNCTION` node
-/// standing for its own `FunctionCapture`, or, once constant folding got to it, a `COLUMN` node holding a
-/// `ColumnFunction` carrier, and both recurse back here.
-inline bool isLambdaBodySuitableForConstantFolding(const ExpressionActions & expression_actions)
-{
-    auto function_can_be_folded = [](const IFunctionBase & function)
-    { return function.isSuitableForConstantFolding() && function.isDeterministicInScopeOfQuery(); };
-
-    for (const auto & inner_node : expression_actions.getActionsDAG().getNodes())
-    {
-        switch (inner_node.type)
-        {
-            case ActionsDAG::ActionType::FUNCTION:
-                if (!function_can_be_folded(*inner_node.function_base))
-                    return false;
-                break;
-            case ActionsDAG::ActionType::COLUMN:
-                if (inner_node.column)
-                {
-                    /// Same check getFunctionArguments does for direct children: an IN set
-                    /// that has not been built yet cannot be substituted at plan time.
-                    if (const auto * column_set = typeid_cast<const ColumnSet *>(&inner_node.column->getDataColumn()))
-                    {
-                        auto future_set = column_set->getData();
-                        if (!future_set || !future_set->get())
-                            return false;
-                    }
-
-                    /// A nested lambda, folded into a constant `ColumnFunction`, together with the lambdas nested in it.
-                    if (!allColumnFunctions(*inner_node.column, function_can_be_folded))
-                        return false;
-                }
-                break;
-            case ActionsDAG::ActionType::ARRAY_JOIN:
-            case ActionsDAG::ActionType::PLACEHOLDER:
-                return false;
-            case ActionsDAG::ActionType::INPUT:
-            case ActionsDAG::ActionType::ALIAS:
-                break;
-        }
-    }
-    return true;
-}
-
 /// Executes expression. Uses for lambda functions implementation. Can't be created from factory.
-class FunctionExpression final : public IFunctionBase
+class FunctionExpression : public IFunctionBase
 {
 public:
     using Signature = ExecutableFunctionExpression::Signature;
@@ -287,35 +114,13 @@ public:
 
     String getName() const override { return "FunctionExpression"; }
 
-    /// ExecutableFunctionCapture builds a new FunctionExpression per chunk; identity is the shared
-    /// LambdaCapture + ExpressionActions, not the FunctionExpression object itself.
-    bool isEqual(const IFunctionBase & rhs) const override
-    {
-        const auto * other = typeid_cast<const FunctionExpression *>(&rhs);
-        if (!other)
-            return false;
-        return capture.get() == other->capture.get()
-            && expression_actions.get() == other->expression_actions.get();
-    }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
-    bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
-    bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
-    bool isExpensive() const override { return isLambdaBodyExpensive(*expression_actions); }
-    bool hasObservableSideEffects() const override { return isLambdaBodyWithObservableSideEffects(*expression_actions); }
-    bool isSuitableForConstantFolding() const override { return isLambdaBodySuitableForConstantFolding(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return capture->return_type; }
 
     const LambdaCapture & getCapture() const { return *capture; }
     const ActionsDAG & getAcionsDAG() const { return expression_actions->getActionsDAG(); }
-    const ActionsDAG & getActionsDAGForSemanticAnalysis() const
-    {
-        return capture->uncompiled_actions_dag ? *capture->uncompiled_actions_dag : getAcionsDAG();
-    }
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
@@ -335,7 +140,7 @@ private:
 /// Returns ColumnFunction with captured columns.
 /// For lambda(x, x + y) x is in lambda_arguments, y is in captured arguments, expression_actions is 'x + y'.
 ///  execute(y) returns ColumnFunction(FunctionExpression(x + y), y) with type Function(x) -> function_return_type.
-class ExecutableFunctionCapture final : public IExecutableFunction
+class ExecutableFunctionCapture : public IExecutableFunction
 {
 public:
     ExecutableFunctionCapture(ExpressionActionsPtr expression_actions_, LambdaCapturePtr capture_)
@@ -343,20 +148,17 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return "FunctionCapture"; }
+    String getName() const override { return "FunctionCapture"; }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     /// It's possible if expression_actions contains function that don't use
     /// default implementation for Nothing and one of captured columns can be Nothing
     /// Example: SELECT arrayMap(x -> [x, arrayElement(y, 0)], []), [] as y
-    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    /// Keep replicated captured columns (e.g. produced by lazy ARRAY JOIN) lazy:
-    /// they are stored in ColumnFunction and handled when the lambda is executed.
-    [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         Names names;
         DataTypes types;
@@ -393,70 +195,36 @@ public:
         }
         else
         {
-            return ColumnFunction::create(
-                input_rows_count,
-                std::move(function),
-                arguments,
-                /*is_short_circuit_argument_=*/ false,
-                /*is_function_compiled_=*/ false,
-                /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
-                /*allow_lazy_replicated_captures_=*/ expression_actions->getSettings().enable_lazy_columns_replication);
+            return ColumnFunction::create(input_rows_count, std::move(function), arguments);
         }
     }
 
-    [[nodiscard]] const ExpressionActionsPtr & getActions() const { return expression_actions; }
-    [[nodiscard]] const LambdaCapturePtr & getCapture() const { return capture; }
+    const ExpressionActionsPtr & getActions() const { return expression_actions; }
+    const LambdaCapturePtr & getCapture() const { return capture; }
 
 private:
     ExpressionActionsPtr expression_actions;
     LambdaCapturePtr capture;
 };
 
-class FunctionCapture final : public IFunctionBase
+class FunctionCapture : public IFunctionBase
 {
 public:
     FunctionCapture(
         ExpressionActionsPtr expression_actions_,
         LambdaCapturePtr capture_,
-        DataTypePtr return_type_)
+        DataTypePtr return_type_,
+        String name_)
         : expression_actions(std::move(expression_actions_))
         , capture(std::move(capture_))
         , return_type(std::move(return_type_))
-        , name(composeName(*capture))
+        , name(std::move(name_))
     {
-    }
-
-    /// The name of a lambda is composed of its signature: the types of the captured columns, of the lambda arguments
-    /// and of the result. A lambda is never given a name from outside (`ActionsDAG::deserialize` does not take it from
-    /// the serialized data either), because functions are told apart by name: for example, a function with the name
-    /// `indexHint` is cast to `FunctionIndexHint`. So a lambda must not have the name of another function.
-    static String composeName(const LambdaCapture & capture)
-    {
-        DataTypes argument_types;
-        argument_types.reserve(capture.lambda_arguments.size());
-        for (const auto & lambda_argument : capture.lambda_arguments)
-            argument_types.push_back(lambda_argument.type);
-
-        return "Capture[" + toString(capture.captured_types) + "](" + toString(argument_types) + ") -> "
-            + capture.return_type->getName();
     }
 
     String getName() const override { return name; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    /// A lambda is suitable for constant folding only if every node in its inner DAG is.
-    /// Without this, a higher-order function like arrayMap with a constant array and a lambda
-    /// whose body contains a non-deterministic call (e.g. a non-deterministic WASM UDF) or an
-    /// unbuilt ColumnSet would be folded to a stale value at analysis time.
-    bool isSuitableForConstantFolding() const override { return isLambdaBodySuitableForConstantFolding(*expression_actions); }
-
-    bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
-    bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
-    bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
-    bool hasObservableSideEffects() const override { return isLambdaBodyWithObservableSideEffects(*expression_actions); }
-
-    bool isExpensive() const override { return isLambdaBodyExpensive(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
@@ -468,9 +236,81 @@ public:
 
     const LambdaCapture & getCapture() const { return *capture; }
     const ActionsDAG & getAcionsDAG() const { return expression_actions->getActionsDAG(); }
-    const ActionsDAG & getActionsDAGForSemanticAnalysis() const
+
+private:
+    ExpressionActionsPtr expression_actions;
+    LambdaCapturePtr capture;
+    DataTypePtr return_type;
+    String name;
+};
+
+class FunctionCaptureOverloadResolver : public IFunctionOverloadResolver
+{
+public:
+    FunctionCaptureOverloadResolver(
+        ActionsDAG actions_dag,
+        const ExpressionActionsSettings & actions_settings,
+        const Names & captured_names,
+        const NamesAndTypesList & lambda_arguments,
+        const DataTypePtr & function_return_type,
+        const String & expression_return_name,
+        bool allow_constant_folding)
     {
-        return capture->uncompiled_actions_dag ? *capture->uncompiled_actions_dag : getAcionsDAG();
+        /// Check that expression does not contain unusual actions that will break columns structure.
+        if (actions_dag.hasArrayJoin())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression with arrayJoin or other unusual action cannot be captured");
+
+        std::unordered_map<std::string, DataTypePtr> arguments_map;
+
+        for (const auto * input : actions_dag.getInputs())
+            arguments_map[input->result_name] = input->result_type;
+
+        DataTypes captured_types;
+        captured_types.reserve(captured_names.size());
+
+        for (const auto & captured_name : captured_names)
+        {
+            auto it = arguments_map.find(captured_name);
+            if (it == arguments_map.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Lambda captured argument {} not found in required columns.", captured_name);
+
+            captured_types.push_back(it->second);
+            arguments_map.erase(it);
+        }
+
+        DataTypes argument_types;
+        argument_types.reserve(lambda_arguments.size());
+        for (const auto & lambda_argument : lambda_arguments)
+            argument_types.push_back(lambda_argument.type);
+
+        return_type = std::make_shared<DataTypeFunction>(argument_types, function_return_type);
+
+        name = "Capture[" + toString(captured_types) + "](" + toString(argument_types) + ") -> "
+               + function_return_type->getName();
+
+        capture = std::make_shared<LambdaCapture>(LambdaCapture{
+            .captured_names = captured_names,
+            .captured_types = std::move(captured_types),
+            .lambda_arguments = lambda_arguments,
+            .return_name = expression_return_name,
+            .return_type = function_return_type,
+            .allow_constant_folding = allow_constant_folding,
+        });
+
+        expression_actions = std::make_shared<ExpressionActions>(std::move(actions_dag), actions_settings);
+    }
+
+    String getName() const override { return name; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    /// See comment in ExecutableFunctionCapture.
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return return_type; }
+    size_t getNumberOfArguments() const override { return capture->captured_types.size(); }
+
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
+    {
+        return std::make_unique<FunctionCapture>(expression_actions, capture, return_type, name);
     }
 
 private:
@@ -497,81 +337,6 @@ private:
 
         return result;
     }
-};
-
-class FunctionCaptureOverloadResolver final : public IFunctionOverloadResolver
-{
-public:
-    FunctionCaptureOverloadResolver(
-        ActionsDAG actions_dag,
-        const ExpressionActionsSettings & actions_settings,
-        const Names & captured_names,
-        const NamesAndTypesList & lambda_arguments,
-        const DataTypePtr & function_return_type,
-        const String & expression_return_name,
-        bool allow_constant_folding)
-    {
-        /// Check that expression does not contain unusual actions that will break columns structure.
-        if (actions_dag.hasArrayJoin())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression with arrayJoin or other unusual action cannot be captured");
-
-        UnorderedMapWithMemoryTracking<std::string, DataTypePtr> arguments_map;
-
-        for (const auto * input : actions_dag.getInputs())
-            arguments_map[input->result_name] = input->result_type;
-
-        DataTypes captured_types;
-        captured_types.reserve(captured_names.size());
-
-        for (const auto & captured_name : captured_names)
-        {
-            auto it = arguments_map.find(captured_name);
-            if (it == arguments_map.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Lambda captured argument {} not found in required columns.", captured_name);
-
-            captured_types.push_back(it->second);
-            arguments_map.erase(it);
-        }
-
-        DataTypes argument_types;
-        argument_types.reserve(lambda_arguments.size());
-        for (const auto & lambda_argument : lambda_arguments)
-            argument_types.push_back(lambda_argument.type);
-
-        return_type = std::make_shared<DataTypeFunction>(argument_types, function_return_type);
-
-        capture = std::make_shared<LambdaCapture>(LambdaCapture{
-            .captured_names = captured_names,
-            .captured_types = std::move(captured_types),
-            .lambda_arguments = lambda_arguments,
-            .return_name = expression_return_name,
-            .return_type = function_return_type,
-            .allow_constant_folding = allow_constant_folding,
-        });
-
-        name = FunctionCapture::composeName(*capture);
-
-        expression_actions = createLambdaExpressionActions(std::move(actions_dag), actions_settings, *capture);
-    }
-
-    String getName() const override { return name; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    /// See comment in ExecutableFunctionCapture.
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return return_type; }
-    size_t getNumberOfArguments() const override { return capture->captured_types.size(); }
-
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
-    {
-        return std::make_unique<FunctionCapture>(expression_actions, capture, return_type);
-    }
-
-private:
-    ExpressionActionsPtr expression_actions;
-    LambdaCapturePtr capture;
-    DataTypePtr return_type;
-    String name;
 };
 
 }

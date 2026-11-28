@@ -21,12 +21,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-#if USE_KRB5
-/// Copy a GSS buffer into a String verbatim, preserving any trailing NUL bytes.
-/// Exposed for unit testing; see the definition for the rationale.
-String bufferToString(const gss_buffer_desc & buf);
-#endif
-
 class GSSAcceptorContext
     : public Credentials
 {
@@ -47,8 +41,8 @@ public:
     GSSAcceptorContext & operator= (const GSSAcceptorContext &) = delete;
     GSSAcceptorContext & operator= (GSSAcceptorContext &&) = delete;
 
-    [[nodiscard]] const String & getRealm() const;
-    [[nodiscard]] bool isFailed() const;
+    const String & getRealm() const;
+    bool isFailed() const;
     MAYBE_NORETURN String processToken(const String & input_token, LoggerPtr log);
 
 private:

@@ -3,14 +3,9 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 PeekableWriteBuffer::PeekableWriteBuffer(DB::WriteBuffer & sub_buf_) : BufferWithOwnMemory(0), sub_buf(sub_buf_)
 {
-    const Buffer & sub_working = sub_buf.buffer();
+    Buffer & sub_working = sub_buf.buffer();
     BufferBase::set(sub_working.begin() + sub_buf.offset(), sub_working.size() - sub_buf.offset(), 0);
 }
 
@@ -44,7 +39,7 @@ void PeekableWriteBuffer::nextImpl()
 
 void PeekableWriteBuffer::dropCheckpoint()
 {
-    chassert(checkpoint);
+    assert(checkpoint);
     checkpoint = std::nullopt;
 
     /// If we have saved data in own memory, write it to sub-buf.
@@ -54,7 +49,7 @@ void PeekableWriteBuffer::dropCheckpoint()
         {
             sub_buf.next();
             sub_buf.write(memory.data(), position() - memory.data());
-            const Buffer & sub_working = sub_buf.buffer();
+            Buffer & sub_working = sub_buf.buffer();
             BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
             write_to_own_memory = false;
         }
@@ -62,7 +57,7 @@ void PeekableWriteBuffer::dropCheckpoint()
         {
             /// If exception happened during writing to sub buffer, we should
             /// update buffer to not leave it in invalid state.
-            const Buffer & sub_working = sub_buf.buffer();
+            Buffer & sub_working = sub_buf.buffer();
             BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
             write_to_own_memory = false;
             throw;
@@ -70,27 +65,14 @@ void PeekableWriteBuffer::dropCheckpoint()
     }
 }
 
-void PeekableWriteBuffer::reattachToSubBuffer()
-{
-    if (checkpoint || write_to_own_memory || isFinalized() || isCanceled())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot re-attach PeekableWriteBuffer to its sub-buffer: a checkpoint is active ({}), or the buffer is finalized ({}) "
-            "or canceled ({})",
-            checkpoint.has_value(), isFinalized(), isCanceled());
-
-    const Buffer & sub_working = sub_buf.buffer();
-    BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
-}
-
 void PeekableWriteBuffer::rollbackToCheckpoint(bool drop)
 {
-    chassert(checkpoint);
+    assert(checkpoint);
 
     /// Just ignore all data written after checkpoint.
     if (write_to_own_memory)
     {
-        const Buffer & sub_working = sub_buf.buffer();
+        Buffer & sub_working = sub_buf.buffer();
         BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
         write_to_own_memory = false;
     }

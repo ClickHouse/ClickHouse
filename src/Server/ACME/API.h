@@ -73,13 +73,13 @@ public:
 
     explicit API(Configuration);
 
-    [[nodiscard]] bool isReady() const { return !key_id.empty(); }
+    bool isReady() const { return !key_id.empty(); }
 
-    [[nodiscard]] DirectoryPtr getDirectory() const;
-    [[nodiscard]] std::string order(const Domains &, OrderCallback) const;
-    [[nodiscard]] Order describeOrder(const Poco::URI &) const;
-    [[nodiscard]] std::string pullCertificate(const Poco::URI &) const;
-    bool finalizeOrder(const Poco::URI &, const Domains &, const KeyPair &) const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
+    DirectoryPtr getDirectory() const;
+    std::string order(const Domains &, OrderCallback) const;
+    Order describeOrder(const Poco::URI &) const;
+    std::string pullCertificate(const Poco::URI &) const;
+    bool finalizeOrder(const Poco::URI &, const Domains &, const KeyPair &) const;
     void processAuthorization(const Poco::URI &, OrderCallback) const;
 
 private:
@@ -94,11 +94,11 @@ private:
     LoggerPtr log = getLogger("ACME::API");
 
     std::string authenticate();
-    [[nodiscard]] std::string requestNonce() const;
-    std::string doJWSRequest(const Poco::URI &, const std::string &, std::shared_ptr<Poco::Net::HTTPResponse>) const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
-    [[nodiscard]] std::string doJWSRequestWithEmptyPayload(const Poco::URI &) const;
-    [[nodiscard]] std::string formatJWSRequestData(const Poco::URI &, const std::string &, const std::string &) const;
-    [[nodiscard]] Poco::JSON::Object::Ptr doJWSRequestExpectingJSON(const Poco::URI &, const std::string &, std::shared_ptr<Poco::Net::HTTPResponse>) const;
+    std::string requestNonce() const;
+    std::string doJWSRequest(const Poco::URI &, const std::string &, std::shared_ptr<Poco::Net::HTTPResponse>) const;
+    std::string doJWSRequestWithEmptyPayload(const Poco::URI &) const;
+    std::string formatJWSRequestData(const Poco::URI &, const std::string &, const std::string &) const;
+    Poco::JSON::Object::Ptr doJWSRequestExpectingJSON(const Poco::URI &, const std::string &, std::shared_ptr<Poco::Net::HTTPResponse>) const;
 };
 
 }

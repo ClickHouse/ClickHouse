@@ -30,12 +30,12 @@ SELECT id, key FROM 04627_hive ORDER BY id;
 
 DROP TABLE 04627_hive;
 
--- Wrong credentials make the resolution fail fast. By default the triggering query fails,
--- without `throw_on_hive_partitioning_resolution_failure` it runs with only a warning.
+-- Wrong credentials make the resolution fail fast. By default the triggering query runs
+-- with only a warning, with `throw_on_hive_partitioning_resolution_failure` it fails.
 CREATE TABLE 04627_wrong_creds (id UInt64)
 ENGINE = S3('http://localhost:11111/test/04627_hive/**.parquet', 'invalid', 'invalid', 'Parquet');
 
-DESCRIBE TABLE 04627_wrong_creds; -- {serverError S3_ERROR}
-DESCRIBE TABLE 04627_wrong_creds SETTINGS throw_on_hive_partitioning_resolution_failure = 0 FORMAT Null;
+DESCRIBE TABLE 04627_wrong_creds FORMAT Null;
+DESCRIBE TABLE 04627_wrong_creds SETTINGS throw_on_hive_partitioning_resolution_failure = 1; -- {serverError S3_ERROR}
 
 DROP TABLE 04627_wrong_creds;
