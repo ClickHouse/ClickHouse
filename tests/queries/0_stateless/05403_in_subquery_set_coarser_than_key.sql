@@ -119,6 +119,11 @@ CREATE TABLE t_boolb (b Bool) ENGINE = MergeTree ORDER BY b SETTINGS index_granu
 INSERT INTO t_boolb SELECT * FROM format(RowBinary, 'b Bool', unhex('000102'));
 SELECT count() FROM t_boolb WHERE b IN (SELECT 'true');
 
+-- An array of pairs is cast into the `Map` pair by pair, and the parse into `UInt8` merges the keys '01' and '1'.
+CREATE TABLE t_map (k Array(Tuple(String, String))) ENGINE = MergeTree PARTITION BY k ORDER BY k SETTINGS index_granularity = 1;
+INSERT INTO t_map VALUES ([('01', 'a')]), ([('1', 'a')]), ([('2', 'b')]);
+SELECT count() FROM t_map WHERE k IN (SELECT map(toUInt8(1), 'a'));
+
 -- A set whose cast merges nothing keeps pruning.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT toDateTime('2023-02-01 12:00:01', 'UTC'))) WHERE explain ILIKE '%Granules: 1/2%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT toDateTime64('2023-02-01 12:00:01', 3, 'UTC'))) WHERE explain ILIKE '%Granules: 1/2%';
@@ -170,3 +175,4 @@ DROP TABLE t_dec10;
 DROP TABLE t_d32s;
 DROP TABLE t_time;
 DROP TABLE t_boolb;
+DROP TABLE t_map;
