@@ -476,7 +476,8 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
         RemoteInserter remote{*connection, timeouts,
             distributed_header.insert_query,
             insert_settings,
-            distributed_header.client_info};
+            distributed_header.client_info,
+            storage.getContext()->getAccessControl()};
         remote.initialize();
 
         bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;

@@ -519,3 +519,41 @@ def test_secure_cluster_distributed_over_distributed_different_users_cluster():
     )
     assert get_query_user_info(n1, id_) == [["nopass", "nopass"]] * 4
     assert get_query_user_info(n2, id_) == [["nopass", "nopass"]] * 3
+
+
+# `u_roles` may insert column `a` of `t_roles` on n2 only through its default role there, and column `b` only through a
+# role granted to it on n1: the roles n1 pushes must be added to the shard's own roles, not replace them.
+@pytest.mark.parametrize("foreground", [1, 0])
+def test_secure_insert_adds_pushed_roles_to_shard_roles(foreground):
+    for n in (n1, n2):
+        n.query("DROP TABLE IF EXISTS dist_t_roles")
+        n.query("DROP TABLE IF EXISTS t_roles")
+        n.query("DROP USER IF EXISTS u_roles")
+        n.query("DROP ROLE IF EXISTS r_initiator, r_shard")
+        n.query("CREATE TABLE t_roles (a Int, b Int) ENGINE = Memory")
+        n.query("CREATE USER u_roles IDENTIFIED WITH no_password")
+        n.query("CREATE ROLE r_initiator")
+    n1.query(
+        "CREATE TABLE dist_t_roles AS t_roles ENGINE = Distributed(secure, currentDatabase(), t_roles, a)"
+    )
+    n1.query("GRANT INSERT ON dist_t_roles TO r_initiator")
+    n1.query("GRANT r_initiator TO u_roles")
+    n2.query("GRANT INSERT(b) ON t_roles TO r_initiator")
+    n2.query("CREATE ROLE r_shard")
+    n2.query("GRANT INSERT(a) ON t_roles TO r_shard")
+    n2.query("GRANT r_shard TO u_roles")
+    try:
+        # a = 1 goes to the second shard, n2.
+        n1.query(
+            "INSERT INTO dist_t_roles VALUES (1, 10)",
+            user="u_roles",
+            settings={"distributed_foreground_insert": foreground},
+        )
+        n1.query("SYSTEM FLUSH DISTRIBUTED dist_t_roles")
+        assert n2.query("SELECT a, b FROM t_roles") == "1\t10\n"
+    finally:
+        for n in (n1, n2):
+            n.query("DROP TABLE IF EXISTS dist_t_roles")
+            n.query("DROP TABLE IF EXISTS t_roles")
+            n.query("DROP USER IF EXISTS u_roles")
+            n.query("DROP ROLE IF EXISTS r_initiator, r_shard")
