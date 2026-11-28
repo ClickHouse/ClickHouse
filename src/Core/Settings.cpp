@@ -10301,11 +10301,12 @@ The automatic decision on whether to use parallel replicas (see `automatic_paral
         {"24.11", false, true, "Use local plan for local replica in a query with parallel replicas"}, \
         {"24.10", false, true, "Use local plan for local replica in a query with parallel replicas"}, \
         {"24.9", false, false, "Use local plan for local replica in a query with parallel replicas"}) \
-    DECLARE(Bool, parallel_replicas_plan_based, false, R"(
-Decide whether and where to use parallel replicas by analyzing the query plan, as opposed to the query-tree-based analysis. As a result, a plan fragment is sent to the remote replicas instead of a SQL query. Experimental.
+    DECLARE(Bool, parallel_replicas_plan_based, true, R"(
+Decide whether and where to use parallel replicas by analyzing the query plan, as opposed to the query-tree-based analysis. As a result, a plan fragment is sent to the remote replicas instead of a SQL query.
 
 Has no effect on a distributed `INSERT SELECT` ([parallel_distributed_insert_select](#parallel_distributed_insert_select) = 2), which ships the whole `INSERT` as a query to every replica: a replica executing that query reads with the query-tree-based implementation, so the initiator, taking part as one more replica, uses it too.
-)", EXPERIMENTAL, \
+)", BETA, \
+        {"26.12", false, true, "Enable plan-based parallel replicas by default, and move the setting to Beta."}, \
         {"26.7", false, false, "New setting"}) \
     DECLARE(Bool, parallel_replicas_allow_merge_tables, false, R"(
 Allow reading from a `Merge` table with parallel replicas. Effective only together with [parallel_replicas_plan_based](#parallel_replicas_plan_based): the read from the `Merge` table is expanded into a union of the reads from the underlying `MergeTree` tables, which is then distributed like any other union. A `Merge` table is left to a single replica when any of its underlying tables cannot be read that way (a non-`MergeTree` table, a `FINAL` read). Set it to `false` to read every `Merge` table on a single replica, as before the support was added. Experimental.
