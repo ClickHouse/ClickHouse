@@ -1,0 +1,282 @@
+#!/usr/bin/env python3
+
+# Checks which packets the server sends for an INSERT over the native protocol
+# depending on the `send_header_and_column_defaults_for_insert` setting.
+# With the setting disabled, the server must not send `TableColumns` and the header
+# block before receiving the INSERT data, and the client can pipeline the data
+# right after the query without waiting for the server.
+
+import os
+import socket
+import struct
+import sys
+import uuid
+
+CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
+CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "900000"))
+CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
+CLIENT_NAME = "simple native protocol"
+CLIENT_TCP_PROTOCOL_VERSION = 54449
+
+
+def writeVarUInt(x, ba):
+    for _ in range(0, 9):
+        byte = x & 0x7F
+        if x > 0x7F:
+            byte |= 0x80
+
+        ba.append(byte)
+
+        x >>= 7
+        if x == 0:
+            return
+
+
+def writeStringBinary(s, ba):
+    b = bytes(s, "utf-8")
+    writeVarUInt(len(s), ba)
+    ba.extend(b)
+
+
+def readStrict(s, size=1):
+    res = bytearray()
+    while size:
+        cur = s.recv(size)
+        if not cur:
+            raise RuntimeError("Socket is closed")
+        size -= len(cur)
+        res.extend(cur)
+
+    return res
+
+
+def readUInt(s, size=1):
+    res = readStrict(s, size)
+    val = 0
+    for i in range(len(res)):
+        val += res[i] << (i * 8)
+    return val
+
+
+def readUInt8(s):
+    return readUInt(s)
+
+
+def readUInt32(s):
+    return readUInt(s, 4)
+
+
+def readVarUInt(s):
+    x = 0
+    for i in range(9):
+        byte = readStrict(s)[0]
+        x |= (byte & 0x7F) << (7 * i)
+
+        if not byte & 0x80:
+            return x
+
+    return x
+
+
+def readStringBinary(s):
+    size = readVarUInt(s)
+    s = readStrict(s, size)
+    return s.decode("utf-8")
+
+
+def sendHello(s):
+    ba = bytearray()
+    writeVarUInt(0, ba)  # Hello
+    writeStringBinary(CLIENT_NAME, ba)
+    writeVarUInt(21, ba)
+    writeVarUInt(9, ba)
+    writeVarUInt(CLIENT_TCP_PROTOCOL_VERSION, ba)
+    writeStringBinary(CLICKHOUSE_DATABASE, ba)  # database
+    writeStringBinary("default", ba)  # user
+    writeStringBinary("", ba)  # pwd
+    s.sendall(ba)
+
+
+def receiveHello(s):
+    p_type = readVarUInt(s)
+    assert p_type == 0  # Hello
+    readStringBinary(s)  # server name
+    readVarUInt(s)  # major
+    readVarUInt(s)  # minor
+    readVarUInt(s)  # revision
+    readStringBinary(s)  # timezone
+    readStringBinary(s)  # display name
+    readVarUInt(s)  # version patch
+
+
+def serializeClientInfo(ba, query_id):
+    writeStringBinary("default", ba)  # initial_user
+    writeStringBinary(query_id, ba)  # initial_query_id
+    writeStringBinary("127.0.0.1:9000", ba)  # initial_address
+    ba.extend([0] * 8)  # initial_query_start_time_microseconds
+    ba.append(1)  # TCP
+    writeStringBinary("os_user", ba)  # os_user
+    writeStringBinary("client_hostname", ba)  # client_hostname
+    writeStringBinary(CLIENT_NAME, ba)  # client_name
+    writeVarUInt(21, ba)
+    writeVarUInt(9, ba)
+    writeVarUInt(CLIENT_TCP_PROTOCOL_VERSION, ba)
+    writeStringBinary("", ba)  # quota_key
+    writeVarUInt(0, ba)  # distributed_depth
+    writeVarUInt(1, ba)  # client_version_patch
+    ba.append(0)  # No telemetry
+
+
+def sendQuery(s, query, settings):
+    ba = bytearray()
+    query_id = uuid.uuid4().hex
+    writeVarUInt(1, ba)  # query
+    writeStringBinary(query_id, ba)
+
+    ba.append(1)  # INITIAL_QUERY
+
+    # client info
+    serializeClientInfo(ba, query_id)
+
+    # settings serialized as strings with flags
+    for name, value in settings.items():
+        writeStringBinary(name, ba)
+        writeVarUInt(0, ba)  # flags
+        writeStringBinary(value, ba)
+    writeStringBinary("", ba)  # end of settings
+
+    writeStringBinary("", ba)  # No interserver secret
+    writeVarUInt(2, ba)  # Stage - Complete
+    ba.append(0)  # No compression
+    writeStringBinary(query, ba)  # query, finally
+    s.sendall(ba)
+
+
+def serializeBlockInfo(ba):
+    writeVarUInt(1, ba)  # field 1
+    ba.append(0)  # is_overflows
+    writeVarUInt(2, ba)  # field 2
+    ba.extend(struct.pack("<i", -1))  # bucket_num
+    writeVarUInt(0, ba)  # end of fields
+
+
+def sendEmptyBlock(s):
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("", ba)
+    serializeBlockInfo(ba)
+    writeVarUInt(0, ba)  # columns
+    writeVarUInt(0, ba)  # rows
+    s.sendall(ba)
+
+
+def sendOneRowBlock(s, value):
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("", ba)
+    serializeBlockInfo(ba)
+    writeVarUInt(1, ba)  # columns
+    writeVarUInt(1, ba)  # rows
+    writeStringBinary("x", ba)
+    writeStringBinary("UInt64", ba)
+    ba.extend(struct.pack("<Q", value))
+    s.sendall(ba)
+
+
+def readBlockInfo(s):
+    while True:
+        field_num = readVarUInt(s)
+        if field_num == 0:
+            break
+        if field_num == 1:
+            readUInt8(s)  # is_overflows
+        elif field_num == 2:
+            readStrict(s, 4)  # bucket_num
+        else:
+            raise RuntimeError("Unknown block info field {}".format(field_num))
+
+
+def readHeaderBlock(s):
+    readStringBinary(s)  # external table name
+    readBlockInfo(s)
+    num_columns = readVarUInt(s)
+    num_rows = readVarUInt(s)
+    assert num_rows == 0, num_rows
+    columns = []
+    for _ in range(num_columns):
+        name = readStringBinary(s)
+        type_name = readStringBinary(s)
+        columns.append("{} {}".format(name, type_name))
+    return columns
+
+
+def readException(s):
+    code = readUInt32(s)
+    readStringBinary(s)  # name
+    text = readStringBinary(s)
+    readStringBinary(s)  # trace
+    assert readUInt8(s) == 0  # has_nested
+    return "code {}: {}".format(code, text.replace("DB::Exception:", ""))
+
+
+def main():
+    send_header = sys.argv[1]
+    value = int(sys.argv[2])
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(30)
+        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+        sendHello(s)
+        receiveHello(s)
+
+        sendQuery(
+            s,
+            "INSERT INTO {}.test_04512 (x) VALUES".format(CLICKHOUSE_DATABASE),
+            {
+                "send_header_and_column_defaults_for_insert": send_header,
+                "input_format_defaults_for_omitted_fields": "1",
+            },
+        )
+
+        # Pipeline everything without waiting for the server:
+        # end of external tables, then the INSERT data, then end of data.
+        sendEmptyBlock(s)
+        sendOneRowBlock(s, value)
+        sendEmptyBlock(s)
+
+        got_table_columns = False
+        got_header = False
+        while True:
+            packet_type = readVarUInt(s)
+            if packet_type == 1:  # Data
+                got_header = True
+                readHeaderBlock(s)
+            elif packet_type == 2:  # Exception
+                raise RuntimeError(readException(s))
+            elif packet_type == 3:  # Progress
+                for _ in range(5):
+                    readVarUInt(s)
+            elif packet_type == 11:  # TableColumns
+                got_table_columns = True
+                readStringBinary(s)  # external table name
+                readStringBinary(s)  # columns description
+            elif packet_type == 5:  # End of stream
+                break
+            else:
+                raise RuntimeError("Unexpected packet {}".format(packet_type))
+
+        expected = send_header == "1"
+        assert got_table_columns == expected, got_table_columns
+        assert got_header == expected, got_header
+
+        print(
+            "setting={} table_columns={} header={}".format(
+                send_header, int(got_table_columns), int(got_header)
+            )
+        )
+
+        s.close()
+
+
+if __name__ == "__main__":
+    main()
