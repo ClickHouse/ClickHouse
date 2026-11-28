@@ -1818,7 +1818,9 @@ ReturnType readDateTimeTextFallback(
         }
         datetime *= negative_multiplier;
 
-        if (too_short && negative_multiplier != -1)
+        /// A fractional part makes a short number a DT64 timestamp, see above.
+        const bool has_fractional_part = dt64_mode && !buf.eof() && *buf.position() == '.';
+        if (too_short && negative_multiplier != -1 && !has_fractional_part)
         {
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");

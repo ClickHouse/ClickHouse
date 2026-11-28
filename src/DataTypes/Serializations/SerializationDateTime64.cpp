@@ -212,6 +212,13 @@ bool SerializationDateTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuf
 
 void SerializationDateTime64::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    /// A Unix timestamp is a JSON number, which is read back as the same timestamp.
+    if (settings.date_time_output_format == FormatSettings::DateTimeOutputFormat::UnixTimestamp)
+    {
+        serializeText(column, row_num, ostr, settings);
+        return;
+    }
+
     writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);
     writeChar('"', ostr);
