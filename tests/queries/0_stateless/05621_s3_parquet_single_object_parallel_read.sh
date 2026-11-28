@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 # Tag no-fasttest: needs Parquet, MinIO and Azurite
+# Random settings limits: input_format_parquet_preserve_order=(0, 0)
 
 # A single Parquet object read from S3 or Azure is split between several sources, each reading a subset of its
 # row groups, as a single local file is. The results are the same as with a single source.

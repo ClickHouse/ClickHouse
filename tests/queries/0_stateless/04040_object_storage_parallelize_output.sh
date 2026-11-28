@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
+# Random settings limits: input_format_parquet_preserve_order=(0, 0)
 
 # Verify that reading a single file from object storage (ENGINE = S3)
 # parallelizes the pipeline output via Resize, so downstream processors

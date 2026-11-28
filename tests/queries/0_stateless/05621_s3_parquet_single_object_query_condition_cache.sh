@@ -3,6 +3,7 @@
 # Tag no-fasttest: needs Parquet and MinIO
 # Tag no-parallel: asserts `QueryConditionCacheHits` on the instance-wide query condition cache, which a parallel test
 # can wipe at any moment (see 04498_query_condition_cache_local_files).
+# Random settings limits: input_format_parquet_preserve_order=(0, 0); output_format_parquet_max_dictionary_size=(1048576, None)
 
 # The query condition cache for a single Parquet object read from S3 by several sources: the entry is written once for
 # the whole object, a split read uses it, and an object it fully prunes is skipped with one cache hit.
