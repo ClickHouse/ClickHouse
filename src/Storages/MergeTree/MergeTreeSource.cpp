@@ -195,8 +195,9 @@ ISource::Status MergeTreeSource::prepare()
 
 Chunk MergeTreeSource::processReadResult(ChunkAndProgress chunk)
 {
-    if (chunk.num_read_rows || chunk.num_read_bytes)
-        progress(chunk.num_read_rows, chunk.num_read_bytes);
+    const size_t num_read_rows = count_read_rows ? chunk.num_read_rows : 0;
+    if (num_read_rows || chunk.num_read_bytes)
+        progress(num_read_rows, chunk.num_read_bytes);
 
     finished = chunk.is_finished;
 

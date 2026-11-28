@@ -27,6 +27,9 @@ struct ILazyMaterializingRows
     /// Called once, after the main branch is fully read, with the sorted and deduplicated
     /// `__global_row_index` values of the rows that survived the LIMIT.
     virtual void filterRangesAndFillRows(const PaddedPODArray<UInt64> & sorted_indexes) = 0;
+
+    /// Threads of the query pipeline, set when the lazy columns are joined to it (0 if unknown).
+    size_t num_threads = 0;
 };
 
 using ILazyMaterializingRowsPtr = std::shared_ptr<ILazyMaterializingRows>;
