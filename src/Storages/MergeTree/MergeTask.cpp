@@ -9,6 +9,7 @@
 #include <memory>
 #include <fmt/format.h>
 
+#include <Columns/ColumnSparse.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <DataTypes/NestedUtils.h>
@@ -331,6 +332,29 @@ static String getColumnNameInStorage(const String & column_name, const NameSet &
     return String(Nested::getColumnFromSubcolumn(column_name, storage_columns));
 }
 
+/// The storage columns read by the rows, rows WHERE, move and recompression TTL expressions.
+static NameSet getTTLInputColumnsInStorage(const StorageInMemoryMetadata & metadata, const NameSet & storage_columns, const NameSet & virtual_columns)
+{
+    NameSet result;
+    auto add_ttl_columns = [&](const TTLDescription & ttl)
+    {
+        for (const auto & column : ttl.expression_columns)
+            result.insert(getColumnNameInStorage(column.name, storage_columns, virtual_columns));
+        for (const auto & column : ttl.where_expression_columns)
+            result.insert(getColumnNameInStorage(column.name, storage_columns, virtual_columns));
+    };
+
+    if (metadata.hasRowsTTL())
+        add_ttl_columns(metadata.getRowsTTL());
+    for (const auto & ttl : metadata.getRowsWhereTTLs())
+        add_ttl_columns(ttl);
+    for (const auto & ttl : metadata.getMoveTTLs())
+        add_ttl_columns(ttl);
+    for (const auto & ttl : metadata.getRecompressionTTLs())
+        add_ttl_columns(ttl);
+    return result;
+}
+
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
 void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const
 {
@@ -448,27 +472,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     /// from a merged column - a gathered one is missing from the block and the expression throws.
     /// Place the inputs of every TTL the step builds an algorithm for, not just the deleting ones.
     if (ctx->need_remove_expired_values && canVerticalTTLDelete(*global_ctx))
-    {
-        auto add_ttl_expression_columns = [&](const TTLDescription & ttl_descr)
-        {
-            for (const auto & col : ttl_descr.expression_columns)
-                key_columns.insert(getColumnNameInStorage(col.name, storage_columns, virtual_columns));
-            for (const auto & col : ttl_descr.where_expression_columns)
-                key_columns.insert(getColumnNameInStorage(col.name, storage_columns, virtual_columns));
-        };
-
-        if (global_ctx->metadata_snapshot->hasRowsTTL())
-            add_ttl_expression_columns(global_ctx->metadata_snapshot->getRowsTTL());
-
-        for (const auto & where_ttl : global_ctx->metadata_snapshot->getRowsWhereTTLs())
-            add_ttl_expression_columns(where_ttl);
-
-        for (const auto & move_ttl : global_ctx->metadata_snapshot->getMoveTTLs())
-            add_ttl_expression_columns(move_ttl);
-
-        for (const auto & recompression_ttl : global_ctx->metadata_snapshot->getRecompressionTTLs())
-            add_ttl_expression_columns(recompression_ttl);
-    }
+        key_columns.insert_range(getTTLInputColumnsInStorage(*global_ctx->metadata_snapshot, storage_columns, virtual_columns));
 
     for (auto it = global_ctx->skip_indexes_by_column.begin(); it != global_ctx->skip_indexes_by_column.end();)
     {
@@ -1207,6 +1211,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         case MergeAlgorithm::Horizontal:
         {
+            ctx->columns_of_defaults = getColumnsOfDefaultsInAllParts();
+            if (!ctx->columns_of_defaults.empty())
+                LOG_DEBUG(ctx->log, "Writing {} columns that have only default values in all parts without merging them",
+                    ctx->columns_of_defaults.size());
+
             global_ctx->merging_columns = global_ctx->storage_columns;
             global_ctx->merging_columns_expired_by_ttl = global_ctx->storage_columns_expired_by_ttl;
 
@@ -2242,6 +2251,101 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     }
 
     return false;
+}
+
+namespace
+{
+
+/// Whether the exact count of defaults in the serialization info of the part covers all rows of the column.
+bool partHasOnlyDefaultsInColumn(const MergeTreeData::DataPartPtr & part, const NameAndTypePair & column)
+{
+    if (part->info.isPatch())
+        return false;
+
+    const auto column_in_part = part->tryGetColumn(column.name);
+    if (!column_in_part || !column_in_part->type->equals(*column.type))
+        return false;
+
+    const auto info = part->getSerializationInfos().tryGet(column.name);
+    if (!info)
+        return false;
+
+    const auto & data = info->getData();
+    return data.exact_num_defaults && data.num_rows == part->rows_count && data.num_defaults == data.num_rows;
+}
+
+}
+
+NamesAndTypesList MergeTask::ExecuteAndFinalizeHorizontalPart::getColumnsOfDefaultsInAllParts() const
+{
+    /// The rows of these modes are a subset of the source rows; the others compute values from several rows.
+    switch (global_ctx->merging_params.mode)
+    {
+        case MergeTreeData::MergingParams::Ordinary:
+        case MergeTreeData::MergingParams::Replacing:
+        case MergeTreeData::MergingParams::Collapsing:
+        case MergeTreeData::MergingParams::VersionedCollapsing:
+            break;
+        default:
+            return {};
+    }
+
+    /// DEDUPLICATE compares all columns, and the reader of a projection part rewrites its parent part offsets.
+    if (global_ctx->deduplicate || global_ctx->parent_part || global_ctx->new_data_part->info.isPatch())
+        return {};
+
+    const auto & metadata = *global_ctx->metadata_snapshot;
+    if (metadata.hasAnyGroupByTTL() || metadata.hasAnyColumnTTL())
+        return {};
+
+    /// A merge that applies TTL recomputes the `MATERIALIZED` columns that read an expired column from the read data.
+    if (ctx->need_remove_expired_values && !global_ctx->new_data_part->expired_columns.empty())
+        return {};
+
+    /// The TTL step and the text index builds evaluate these columns over the read data. Unlike
+    /// `global_ctx->storage_columns`, the name set includes the expired columns that a TTL expression may read.
+    const auto storage_columns = metadata.getColumns().getAllPhysical().getNameSet();
+    const auto virtual_columns = global_ctx->virtual_columns.getNameSet();
+    NameSet columns_to_read = getTTLInputColumnsInStorage(metadata, storage_columns, virtual_columns);
+    for (const auto & index : global_ctx->text_indexes_to_merge)
+        for (const auto & column : index.expression->getRequiredColumns())
+            columns_to_read.insert(getColumnNameInStorage(column, storage_columns, virtual_columns));
+
+    const auto & parts = global_ctx->future_part->parts;
+    NamesAndTypesList result;
+    for (const auto & column : global_ctx->gathering_columns)
+    {
+        if (columns_to_read.contains(column.name) || global_ctx->new_data_part->expired_columns.contains(column.name)
+            || !metadata.getColumns().has(column.name))
+            continue;
+
+        if (!ISerialization::hasKind(global_ctx->new_data_part->getSerialization(column.name)->getKindStack(), ISerialization::Kind::SPARSE))
+            continue;
+
+        /// A merge that keeps all rows builds the statistics that a part lacks from the data read from it.
+        if (!global_ctx->merge_may_reduce_rows
+            && std::ranges::any_of(global_ctx->statistics_to_build_by_part, [&](const auto & elem) { return elem.second.contains(column.name); }))
+            continue;
+
+        bool only_defaults = true;
+        for (size_t part_num = 0; only_defaults && part_num < parts.size(); ++part_num)
+        {
+            if (parts[part_num]->rows_count == 0)
+                continue;
+
+            /// Mutations, patches, renames and drops applied on reading may change the values of the column.
+            const auto & alter_conversions = global_ctx->alter_conversions[part_num];
+            only_defaults = !alter_conversions->hasMutations() && !alter_conversions->hasPatches()
+                && !alter_conversions->columnHasNewName(column.name) && !alter_conversions->isColumnRenamed(column.name)
+                && !alter_conversions->isColumnDropped(column.name)
+                && partHasOnlyDefaultsInColumn(parts[part_num], column);
+        }
+
+        if (only_defaults)
+            result.push_back(column);
+    }
+
+    return result;
 }
 
 /// Gathers values from all parts for one column using rows sources temporary file
@@ -3438,6 +3542,90 @@ private:
     std::shared_ptr<TTLTransform> transform;
 };
 
+/// Appends to every chunk the columns of the output header that the input lacks, as sparse columns of defaults.
+class AppendColumnsOfDefaultsTransform final : public ISimpleTransform
+{
+public:
+    AppendColumnsOfDefaultsTransform(SharedHeader input_header_, SharedHeader output_header_)
+        : ISimpleTransform(std::move(input_header_), std::move(output_header_), /*skip_empty_chunks=*/ false)
+    {
+    }
+
+    String getName() const override { return "AppendColumnsOfDefaultsTransform"; }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        const size_t rows = chunk.getNumRows();
+        const auto & output_header = getOutputPort().getHeader();
+
+        auto columns = chunk.detachColumns();
+        for (size_t i = getInputPort().getHeader().columns(); i < output_header.columns(); ++i)
+        {
+            auto column = ColumnSparse::create(output_header.getByPosition(i).type->createColumn());
+            column->insertManyDefaults(rows);
+            columns.emplace_back(std::move(column));
+        }
+
+        chunk.setColumns(std::move(columns), rows);
+    }
+};
+
+class AppendColumnsOfDefaultsStep : public ITransformingStep
+{
+public:
+    AppendColumnsOfDefaultsStep(const SharedHeader & input_header_, const NamesAndTypesList & columns_)
+        : ITransformingStep(input_header_, makeOutputHeader(*input_header_, columns_), getTraits())
+        , columns(columns_)
+    {
+    }
+
+    [[nodiscard]] String getName() const override { return "AppendColumnsOfDefaults"; }
+
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
+    {
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
+        {
+            return std::make_shared<AppendColumnsOfDefaultsTransform>(header, getOutputHeader());
+        });
+    }
+
+    void updateOutputHeader() override
+    {
+        output_header = makeOutputHeader(*input_headers.front(), columns);
+    }
+
+private:
+    static SharedHeader makeOutputHeader(const Block & input_header, const NamesAndTypesList & columns_to_append)
+    {
+        Block output_header = input_header;
+        for (const auto & column : columns_to_append)
+        {
+            if (output_header.has(column.name))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of defaults is already in the merged block", column.name);
+            output_header.insert(ColumnWithTypeAndName(column.type->createColumn(), column.type, column.name));
+        }
+        return std::make_shared<const Block>(std::move(output_header));
+    }
+
+    static Traits getTraits()
+    {
+        return ITransformingStep::Traits
+        {
+            {
+                .returns_single_stream = false,
+                .preserves_number_of_streams = true,
+                .preserves_sorting = true,
+            },
+            {
+                .preserves_number_of_rows = true,
+            }
+        };
+    }
+
+    const NamesAndTypesList columns;
+};
+
 class BuildTextIndexStep : public ITransformingStep, private WithContext
 {
 public:
@@ -3668,7 +3856,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     global_ctx->horizontal_stage_progress = std::make_unique<MergeStageProgress>(
         ctx->column_sizes ? ctx->column_sizes->keyColumnsWeight() : 1.0);
 
-    Names merging_column_names = global_ctx->merging_columns.getNames();
+    Names merging_column_names = global_ctx->merging_columns.eraseNames(ctx->columns_of_defaults.getNameSet()).getNames();
     merging_column_names.append_range(global_ctx->merging_subcolumns);
     for (const auto * projection : global_ctx->projections_to_merge)
     {
@@ -3873,6 +4061,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
+    }
+
+    /// The columns of defaults were not read; the steps below and the writer get them from here.
+    if (!ctx->columns_of_defaults.empty())
+    {
+        auto append_step = std::make_unique<AppendColumnsOfDefaultsStep>(merge_parts_query_plan.getCurrentHeader(), ctx->columns_of_defaults);
+        append_step->setStepDescription("Append columns of defaults");
+        merge_parts_query_plan.addStep(std::move(append_step));
     }
 
     /// Secondary indices expressions

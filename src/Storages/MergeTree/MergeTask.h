@@ -339,6 +339,8 @@ private:
         /// For a vertical merge with TTL: which of the rows the merging algorithm emits `TTLTransform` drops.
         std::shared_ptr<TemporaryDataBuffer> ttl_skip_flags;
         std::optional<ColumnSizeEstimator> column_sizes{};
+        /// Columns of a horizontal merge with only defaults in every source part: not read, appended to the merged blocks.
+        NamesAndTypesList columns_of_defaults{};
 
         /// For projections to rebuild
         using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
@@ -430,6 +432,8 @@ private:
 
         void createMergedStream() const;
         void extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const;
+        /// The gathering columns that hold only defaults in every source part, for a horizontal merge to write without reading them.
+        [[nodiscard]] NamesAndTypesList getColumnsOfDefaultsInAllParts() const;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
