@@ -1,0 +1,5 @@
+<test>
+    <create_query>CREATE TABLE small_strings (s String) ENGINE = Log</create_query>
+    <query>INSERT INTO small_strings SELECT 'abc' FROM zeros(50000000)</query>
+    <drop_query>DROP TABLE IF EXISTS small_strings</drop_query>
+</test>
