@@ -349,27 +349,39 @@ size_t NO_INLINE Set::insertFromBlockImpl(
     ColumnUInt64::Container * out_new_rows,
     size_t max_keys)
 {
-    auto insert = [&]<bool has_null_map>() -> size_t
+    auto insert = [&]<bool has_null_map, bool build_filter, bool collect_new_rows>() ALWAYS_INLINE -> size_t
+    {
+        size_t processed_rows = 0;
+        ColumnsHashing::withStateForAskedRows<typename Method::State>(
+            rows,
+            has_null_map,
+            [&] { return rows - countBytesInFilter(null_map->data(), 0, rows); },
+            [&]<typename State>() ALWAYS_INLINE
+            {
+                processed_rows = insertFromBlockImplCase<Method, State, has_null_map, build_filter, collect_new_rows>(
+                    method, key_columns, rows, variants, null_map, out_filter, out_new_rows, max_keys);
+            });
+        return processed_rows;
+    };
+
+    auto insert_with_null_map = [&]<bool has_null_map>() ALWAYS_INLINE -> size_t
     {
         if (out_filter)
-            return insertFromBlockImplCase<Method, has_null_map, true, false>(
-                method, key_columns, rows, variants, null_map, out_filter, out_new_rows, max_keys);
+            return insert.template operator()<has_null_map, true, false>();
         else if (out_new_rows)
-            return insertFromBlockImplCase<Method, has_null_map, false, true>(
-                method, key_columns, rows, variants, null_map, out_filter, out_new_rows, max_keys);
+            return insert.template operator()<has_null_map, false, true>();
         else
-            return insertFromBlockImplCase<Method, has_null_map, false, false>(
-                method, key_columns, rows, variants, null_map, out_filter, out_new_rows, max_keys);
+            return insert.template operator()<has_null_map, false, false>();
     };
 
     if (null_map)
-        return insert.template operator()<true>();
+        return insert_with_null_map.template operator()<true>();
     else
-        return insert.template operator()<false>();
+        return insert_with_null_map.template operator()<false>();
 }
 
 
-template <typename Method, bool has_null_map, bool build_filter, bool collect_new_rows>
+template <typename Method, typename State, bool has_null_map, bool build_filter, bool collect_new_rows>
 size_t NO_INLINE Set::insertFromBlockImplCase(
     Method & method,
     const ColumnRawPtrs & key_columns,
@@ -382,7 +394,7 @@ size_t NO_INLINE Set::insertFromBlockImplCase(
 {
     static_assert(!(build_filter && collect_new_rows));
 
-    typename Method::State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
+    State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
@@ -920,15 +932,25 @@ void NO_INLINE Set::executeImpl(
     size_t rows,
     ConstNullMapPtr null_map) const
 {
+    auto execute = [&]<bool has_null_map>() ALWAYS_INLINE
+    {
+        ColumnsHashing::withStateForAskedRows<typename Method::State>(
+            rows,
+            has_null_map,
+            [&] { return rows - countBytesInFilter(null_map->data(), 0, rows); },
+            [&]<typename State>() ALWAYS_INLINE
+            { executeImplCase<Method, State, has_null_map>(method, key_columns, vec_res, negative, rows, null_map); });
+    };
+
     /// `execute` casts most keys with `castColumnAccurateOrNull`, so a probe without NULLs has an all-zero null map.
     if (null_map && !memoryIsZero(null_map->data(), 0, rows))
-        executeImplCase<Method, true>(method, key_columns, vec_res, negative, rows, null_map);
+        execute.template operator()<true>();
     else
-        executeImplCase<Method, false>(method, key_columns, vec_res, negative, rows, null_map);
+        execute.template operator()<false>();
 }
 
 
-template <typename Method, bool has_null_map>
+template <typename Method, typename State, bool has_null_map>
 void NO_INLINE Set::executeImplCase(
     Method & method,
     const ColumnRawPtrs & key_columns,
@@ -938,7 +960,7 @@ void NO_INLINE Set::executeImplCase(
     ConstNullMapPtr null_map) const
 {
     Arena pool;
-    typename Method::State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
+    State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
 
     /// Clustered key columns (e.g. a primary key prefix) arrive in runs of equal consecutive
     /// rows. The consecutive-keys optimization in ColumnsHashing handles them inside `findKey`:
