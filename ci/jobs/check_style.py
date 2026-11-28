@@ -1725,11 +1725,15 @@ if __name__ == "__main__":
     web_files = [f for f in web_files if f.startswith("./docs/") or not f.endswith((".md", ".mdx"))]
 
     # Third-party code keeps its upstream form.
-    commented_code_files = [f for f in cpp_files if not f.startswith("./base/poco/")] + Utils.traverse_paths(
-        include_paths=["./src", "./base", "./programs", "./utils", "./ci", "./tests", "./docker", "./.claude"],
-        exclude_paths=["./base/poco", "./ci/docker/integration/hive_server", "./**/vendor/**"],
-        file_suffixes=[".py", ".sh", ".js", ".mjs"],
-    )
+    commented_code_files = [f for f in cpp_files if not f.startswith("./base/poco/")] + [
+        f
+        for f in Utils.traverse_paths(
+            include_paths=["./src", "./base", "./programs", "./utils", "./ci", "./tests", "./docker", "./.claude"],
+            exclude_paths=["./base/poco", "./ci/docker/integration/hive_server"],
+            file_suffixes=[".py", ".sh", ".js", ".mjs"],
+        )
+        if "/vendor/" not in f
+    ]
     testname = "whitespace_check"
     if testpattern.lower() in testname.lower():
         results.append(
