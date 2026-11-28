@@ -16,6 +16,7 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/MergeTreeLowCardinalityDictionariesFilter.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/GenericExclusionSearch.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -1209,6 +1210,57 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
             .num_granules_after = total_granules_after});
 
         LOG_DEBUG(log, "Statistics pruning: {} parts -> {} parts", total_parts_before, res_parts.size());
+    }
+
+    return res_parts;
+}
+
+
+RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByLowCardinalityDictionaries(
+    const RangesInDataParts & parts,
+    const MergeTreeLowCardinalityDictionariesFilter & filter,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context,
+    LoggerPtr log,
+    ReadFromMergeTree::IndexStats & index_stats)
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// The parts are already filtered by the primary key and skip indexes, so the marks to read are known.
+    const size_t num_wide_parts = std::ranges::count_if(parts, [](const auto & part) { return isWidePart(part.data_part); });
+    if (num_wide_parts == 0
+        || hasFewerMarksToReadThan(parts, metadata_snapshot, /*key_condition=*/ nullptr,
+            getMinMarksToLoadStatistics(filter.getMinMarksPerPart(), num_wide_parts), settings, log))
+        return parts;
+
+    std::vector<char> can_match(parts.size(), true);
+    MergeTreeData::loadStatisticsOfPartsInParallel(
+        parts.size(),
+        settings[Setting::max_threads],
+        [](size_t) { return false; },
+        [&](size_t part_index) { can_match[part_index] = filter.canMatch(parts[part_index].data_part); },
+        [](size_t) {});
+
+    RangesInDataParts res_parts;
+    size_t total_granules_after = 0;
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        if (can_match[i])
+        {
+            res_parts.push_back(parts[i]);
+            total_granules_after += parts[i].getMarksCount();
+        }
+    }
+
+    if (res_parts.size() < parts.size())
+    {
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::LowCardinalityDictionary,
+            .used_keys = filter.getColumnNames(),
+            .num_parts_after = res_parts.size(),
+            .num_granules_after = total_granules_after});
+
+        LOG_DEBUG(log, "Pruning by LowCardinality dictionaries: {} parts -> {} parts", parts.size(), res_parts.size());
     }
 
     return res_parts;
@@ -2562,6 +2614,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         use_query_condition_cache,
         allow_top_k_prewhere_query_condition_cache,
         /*supports_skip_indexes_on_data_read*/false,
+        /*supports_low_cardinality_dictionaries_on_data_read*/false,
         /*check_row_limits=*/true,
         /*skip_ranges_analysis=*/false,
         /*report_index_usage=*/true,

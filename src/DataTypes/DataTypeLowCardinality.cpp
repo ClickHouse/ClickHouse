@@ -199,6 +199,8 @@ The efficiency of using `LowCardinality` data type depends on data diversity. If
 
 Consider using `LowCardinality` instead of [Enum](/reference/data-types/enum) when working with strings. `LowCardinality` provides more flexibility in use and often reveals the same or higher efficiency.
 
+In `Wide` parts of `MergeTree` tables, the dictionaries of a `LowCardinality` column also work like a skip index of type `set` for the whole part: a query does not read the parts where no value of the dictionaries satisfies its filter. See the setting `use_low_cardinality_dictionaries_for_part_pruning`.
+
 ## Example {#example}
 
 Create a table with a `LowCardinality`-column:

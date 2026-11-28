@@ -9,6 +9,7 @@
 #include <Common/NamePrompter.h>
 
 constexpr auto IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX = "auto_minmax_index_";
+constexpr auto IMPLICIT_LOW_CARDINALITY_DICTIONARY_INDEX_PREFIX = "low_cardinality_dictionary_";
 constexpr auto TEXT_INDEX_NAME = "text";
 
 namespace DB
@@ -138,4 +139,8 @@ FieldVector getFieldsFromIndexArgumentsAST(const ASTPtr & arguments);
 ASTPtr createImplicitMinMaxIndexAST(const String & column_name);
 IndexDescription createImplicitMinMaxIndexDescription(
     const String & column_name, const ColumnsDescription & columns, bool escape_index_filenames, ContextPtr context);
+
+/// A skip index of type `set` on a column, which is not stored anywhere.
+/// It describes the dictionaries of a `LowCardinality` column in a part, see `filterPartsByLowCardinalityDictionaries`.
+IndexDescription createImplicitSetIndexDescription(const String & column_name, const ColumnsDescription & columns, ContextPtr context);
 }

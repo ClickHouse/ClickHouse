@@ -68,6 +68,7 @@
 #include <Processors/Transforms/VirtualRowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeLowCardinalityDictionariesFilter.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
@@ -3298,6 +3299,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         allow_query_condition_cache,
         allow_top_k_prewhere_query_condition_cache,
         supportsSkipIndexesOnDataRead(),
+        supportsFilteringOnDataRead(),
         /*check_row_limits=*/true,
         skip_ranges_analysis,
         /*report_index_usage=*/true,
@@ -3334,6 +3336,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEst
         allow_query_condition_cache && allow_query_condition_cache_,
         allow_top_k_prewhere_query_condition_cache && allow_query_condition_cache_,
         supportsSkipIndexesOnDataRead(),
+        supportsFilteringOnDataRead(),
         /*check_row_limits=*/false,
         /*skip_ranges_analysis=*/false,
         /*report_index_usage=*/false,
@@ -4110,6 +4113,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool allow_query_condition_cache_,
     bool allow_top_k_prewhere_query_condition_cache_,
     bool supports_skip_indexes_on_data_read,
+    bool supports_low_cardinality_dictionaries_on_data_read,
     bool check_row_limits,
     bool skip_ranges_analysis,
     bool report_index_usage,
@@ -4505,6 +4509,17 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             result.parts_with_ranges = std::move(result_parts_ranges);
         }
 
+        /// After the query condition cache, the primary key and skip indexes, so the dictionaries are not read for the
+        /// parts they exclude. A read that supports it prunes by the dictionaries right before reading each part instead,
+        /// so it does not read them for the parts that it does not reach either.
+        if (!supports_low_cardinality_dictionaries_on_data_read)
+        {
+            if (auto dictionaries_filter = MergeTreeLowCardinalityDictionariesFilter::create(
+                    data, metadata_snapshot, query_info_, mutations_snapshot, context_))
+                result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByLowCardinalityDictionaries(
+                    result.parts_with_ranges, *dictionaries_filter, metadata_snapshot, context_, log, result.index_stats);
+        }
+
         std::optional<size_t> condition_hash;
         if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal()
                 && !vector_search_parameters.has_value() /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
@@ -4551,6 +4566,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 }
             }
         }
+
+        /// These exclusions come from skip-index (and primary-key) analysis, which can diverge
+        /// from the row-level predicate (e.g. a text index with a preprocessor). Store them
+        /// under a key salted with the effective skip-index profile so that only a query that
+        /// ran the same set of indexes consults them; a query that disabled skip indexes (or
+        /// ignored an index) reads its own profile's key and is not poisoned. See issue #108519.
+        if (condition_hash)
+            result.query_condition_cache_index_exclusions_hash = MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(
+                *condition_hash, *indexes, settings[Setting::distributed_index_analysis]);
 
         /// Fill query condition cache with ranges excluded by index analysis.
         if (condition_hash)
@@ -4629,13 +4653,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
             const auto * output = query_info_.filter_actions_dag->getOutputs().front();
-            /// These exclusions come from skip-index (and primary-key) analysis, which can diverge
-            /// from the row-level predicate (e.g. a text index with a preprocessor). Store them
-            /// under a key salted with the effective skip-index profile so that only a query that
-            /// ran the same set of indexes consults them; a query that disabled skip indexes (or
-            /// ignored an index) reads its own profile's key and is not poisoned. See issue #108519.
-            const UInt64 profiled_condition_hash = MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(
-                *condition_hash, *indexes, settings[Setting::distributed_index_analysis]);
+            const UInt64 profiled_condition_hash = *result.query_condition_cache_index_exclusions_hash;
             for (const auto & remaining_ranges : remaining)
             {
                 const auto & data_part = remaining_ranges.data_part;
@@ -5744,6 +5762,11 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (has_vector_similarity_index)
         return false;
 
+    return supportsFilteringOnDataRead();
+}
+
+bool ReadFromMergeTree::supportsFilteringOnDataRead() const
+{
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_skip_indexes_on_data_read])
         return false;
@@ -6564,6 +6587,37 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             context,
             getLogger("MergeTreeSkipIndexReader"));
     }
+
+    /// Pruning by `LowCardinality` dictionaries right before a part is read, see `MergeTreeLowCardinalityDictionariesFilter`.
+    /// Otherwise index analysis has done it.
+    MergeTreeLowCardinalityDictionariesFilterPtr low_cardinality_dictionaries_filter;
+    if (supportsFilteringOnDataRead())
+        low_cardinality_dictionaries_filter = MergeTreeLowCardinalityDictionariesFilter::create(
+            data, storage_snapshot->metadata, query_info, mutations_snapshot, context);
+
+    if (!skip_index_reader && low_cardinality_dictionaries_filter)
+    {
+        skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
+            UsefulSkipIndexes{},
+            indexes->key_condition_rpn_template,
+            /*use_for_disjunctions=*/false,
+            context->getIndexMarkCache(),
+            context->getIndexUncompressedCache(),
+            context->getVectorSimilarityIndexCache(),
+            reader_settings,
+            MergeTreeSkipIndexReader::DynamicPredicateBuilder{},
+            /*prune_primary_key=*/false,
+            MergeTreeIndices{},
+            MergeTreeSkipIndexReader::DynamicSkipIndexFilter{},
+            context,
+            getLogger("MergeTreeSkipIndexReader"));
+    }
+
+    if (skip_index_reader && low_cardinality_dictionaries_filter)
+        skip_index_reader->setLowCardinalityDictionariesFilter(
+            std::move(low_cardinality_dictionaries_filter),
+            result.query_condition_cache_index_exclusions_hash,
+            query_info.filter_actions_dag->getOutputs().front()->result_name);
 
     if (skip_index_reader && runtime_prune_global_row_index && global_row_index_predicate_builder)
         skip_index_reader->setGlobalRowIndexPruning(std::move(global_row_index_predicate_builder));

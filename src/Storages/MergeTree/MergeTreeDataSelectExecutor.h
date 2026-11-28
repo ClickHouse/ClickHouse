@@ -23,6 +23,7 @@ namespace DB
 
 class KeyCondition;
 class VectorSimilarityIndexCache;
+class MergeTreeLowCardinalityDictionariesFilter;
 struct ProjectionDescription;
 using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 
@@ -312,6 +313,18 @@ public:
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats,
         RangesInDataParts * deferred_parts = nullptr);
+
+    /// Filter parts using the dictionaries of their `LowCardinality` columns, see `MergeTreeLowCardinalityDictionariesFilter`.
+    /// Used by index analysis after the primary key and skip indexes, if the read does not use the filter itself right
+    /// before reading a part. Like statistics, the dictionaries are not read if the parts have fewer than
+    /// `min_marks_per_part_to_load_statistics` marks to read per part.
+    static RangesInDataParts filterPartsByLowCardinalityDictionaries(
+        const RangesInDataParts & parts,
+        const MergeTreeLowCardinalityDictionariesFilter & filter,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & context,
+        LoggerPtr log,
+        ReadFromMergeTree::IndexStats & index_stats);
 
     struct IndexAnalysisContext
     {

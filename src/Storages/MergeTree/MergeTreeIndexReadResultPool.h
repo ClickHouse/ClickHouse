@@ -19,6 +19,7 @@ class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
 struct SkipIndexReadInput;
+class MergeTreeLowCardinalityDictionariesFilter;
 
 struct SkipIndexReadResult
 {
@@ -87,9 +88,20 @@ public:
     /// Prunes by the global row index `_part_starting_offset + _part_offset` with the predicate the builder makes on it.
     void setGlobalRowIndexPruning(DynamicPredicateBuilder predicate_builder);
 
+    /// Skips a whole part if the dictionaries of its `LowCardinality` columns show that no row of the part matches the
+    /// filter. Such a part is recorded in the query condition cache under `query_condition_cache_hash` for `condition`,
+    /// if it is set, so that a later query does not read the dictionaries again.
+    void setLowCardinalityDictionariesFilter(
+        std::shared_ptr<const MergeTreeLowCardinalityDictionariesFilter> filter,
+        std::optional<UInt64> query_condition_cache_hash,
+        String condition);
+
     void cancel() noexcept { is_cancelled = true; }
 
 private:
+    /// Whether the dictionaries of the part show that no row of it matches the filter.
+    bool isPrunedByLowCardinalityDictionaries(const MergeTreeDataPartInfoForReaderPtr & part_info, const MarkRanges & ranges) const;
+
     UsefulSkipIndexes skip_indexes;
     ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template;
     bool use_for_disjunctions;
@@ -110,6 +122,11 @@ private:
 
     std::optional<size_t> top_k_primary_key_column_position;
     TopKThresholdTrackerPtr top_k_threshold_tracker;
+
+    std::shared_ptr<const MergeTreeLowCardinalityDictionariesFilter> low_cardinality_dictionaries_filter;
+    std::optional<UInt64> low_cardinality_dictionaries_query_condition_cache_hash;
+    String low_cardinality_dictionaries_condition;
+
     ContextPtr context;
     LoggerPtr log;
 

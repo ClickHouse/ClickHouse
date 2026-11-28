@@ -1,0 +1,15 @@
+parts	8
+on read	100
+limit	1
+cache	100
+cache	100
+analysis	100
+analysis cache	100
+analysis cache	100
+lc_on_read_on_read	1	1	1	-1
+lc_on_read_limit	-1	-1	-1	1
+lc_on_read_cache_1	1	1	1	-1
+lc_on_read_cache_2	1	1	0	-1
+lc_on_read_analysis	1	-1	1	-1
+lc_on_read_analysis_cache_1	1	-1	1	-1
+lc_on_read_analysis_cache_2	1	-1	0	-1

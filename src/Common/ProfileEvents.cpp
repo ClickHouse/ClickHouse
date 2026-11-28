@@ -1999,6 +1999,8 @@ The server successfully detected this situation and will download merged part fr
     M(RuntimeFilterIndexAnalysisReads, "Number of reads set up to prune granules with a JOIN runtime filter at read time. Counted when the read reaches its pipeline carrying the descriptors and has a primary key or skip index to prune them with, whether or not a granule is later examined, so it shows that the descriptors survived every rebuild of the read step.", ValueType::Number) \
     M(RuntimeFilterGranulesConsidered, "Number of granules examined for read time pruning by JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterGranulesDropped, "Number of granules pruned at read time by JOIN Runtime Filters", ValueType::Number) \
+    M(LowCardinalityDictionariesCheckedParts, "Number of parts whose `LowCardinality` dictionaries were checked against the filter of a query.", ValueType::Number) \
+    M(LowCardinalityDictionariesPrunedParts, "Number of parts skipped because no value in the dictionaries of one of their `LowCardinality` columns satisfies the filter of a query.", ValueType::Number) \
     M(RuntimeFilterLookupsBeforeBuildFinished, "Number of blocks looked up in a JOIN Runtime Filter whose build side had not finished yet, which pass through unfiltered", ValueType::Number) \
     \
     M(JoinBuildPostProcessingMicroseconds, "Elapsed time of post-processing steps after building the right JOIN side.", ValueType::Microseconds) \

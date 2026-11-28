@@ -29,6 +29,7 @@ enum class PlanIndexType : uint8_t
     PrimaryKeyExpand,
     Statistics,
     NonIntersectingSplit,
+    LowCardinalityDictionary,
 };
 
 /// What one replica contributed, when the analysis was distributed.

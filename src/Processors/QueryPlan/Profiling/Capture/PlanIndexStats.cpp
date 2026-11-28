@@ -26,6 +26,8 @@ const char * toString(PlanIndexType type)
             return "PrimaryKeyExpand";
         case PlanIndexType::NonIntersectingSplit:
             return "NonIntersectingSplit";
+        case PlanIndexType::LowCardinalityDictionary:
+            return "LowCardinalityDictionary";
     }
 }
 

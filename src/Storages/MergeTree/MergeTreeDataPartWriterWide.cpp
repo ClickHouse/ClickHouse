@@ -613,6 +613,7 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterWide::getSeri
     serialize_settings.map_buckets_min_avg_size = settings.map_buckets_min_avg_size;
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part;
+    serialize_settings.low_cardinality_write_complete_dictionaries_marker = settings.low_cardinality_write_complete_dictionaries_marker;
     serialize_settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::SUFFIX;
     serialize_settings.min_compress_block_size = settings.min_compress_block_size;
     return serialize_settings;

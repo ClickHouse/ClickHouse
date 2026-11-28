@@ -2417,10 +2417,38 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"26.4", false, true, "New setting to use statistics for part pruning during query execution."}) \
+    DECLARE(Bool, use_low_cardinality_dictionaries_for_part_pruning, true, R"(
+Use the dictionaries of `LowCardinality` columns to filter out parts during query execution.
+
+When enabled, the filter of a `SELECT` query is evaluated on the dictionaries of the `LowCardinality` columns it uses,
+and the parts of `MergeTree` tables where no value of a dictionary can satisfy the filter are not read, like with a skip
+index of type `set`. Only `Wide` parts written with the MergeTree setting `write_low_cardinality_complete_dictionaries_marker`
+are filtered, and only if the dictionaries contain all values of the column in the part.
+The dictionaries are read after the query condition cache, the primary key and skip indexes, so not for the parts they exclude.
+Like skip indexes with `use_skip_indexes_on_data_read`, a part is checked right before it is read, so the dictionaries
+are not read for the parts that a query does not reach, e.g. because of `LIMIT`. A part skipped this way is recorded in
+the query condition cache, so a repeated query does not read the dictionaries again.
+The parts on remote disks are not filtered: the dictionaries are read synchronously, and the latency of remote reads
+can cost more than the pruning saves.
+The size of the dictionaries to read is limited by `max_low_cardinality_dictionaries_bytes_for_part_pruning`.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, \
+        {"26.12", false, true, "New setting to use the dictionaries of LowCardinality columns for part pruning."}) \
+    DECLARE(UInt64, max_low_cardinality_dictionaries_bytes_for_part_pruning, 1_MiB, R"(
+The maximum compressed size of the dictionaries of a `LowCardinality` column in a part to read them
+for `use_low_cardinality_dictionaries_for_part_pruning`. The parts with larger dictionaries are not filtered by them.
+)", 0, \
+        {"26.12", 0, 1_MiB, "New setting to use the dictionaries of LowCardinality columns for part pruning."}) \
     DECLARE(UInt64, min_marks_per_part_to_load_statistics, 64, R"(
 The minimum number of marks left to read after the primary key analysis, per data part whose statistics are not in memory yet, for column statistics to be loaded for pruning parts and for ordering the conditions of `PREWHERE`.
 
 Loading statistics costs a few reads per data part, and on a cold start it can take longer than reading the data itself when the primary key already narrows the read to a small number of granules. If fewer marks than this setting multiplied by the number of parts whose statistics would be loaded are left to read, statistics are not loaded for these optimizations: parts are not pruned by statistics, and `PREWHERE` conditions are ordered by the sizes of their columns, as for tables without statistics. Statistics that are already in memory are used regardless of the size of the read.
+
+The dictionaries of `LowCardinality` columns are read for pruning a part (see `use_low_cardinality_dictionaries_for_part_pruning`) only if at least this number of marks is left to read in the part after the skip indexes (on average over the `Wide` parts, if the dictionaries are not read right before reading the part, as with `use_skip_indexes_on_data_read = 0`).
 
 Answering `min`, `max` and `count` from statistics (see `use_statistics_for_min_max_aggregation`) replaces the read and is not affected by this setting.
 
