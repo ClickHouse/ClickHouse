@@ -2017,6 +2017,8 @@ The server successfully detected this situation and will download merged part fr
     M(AIRetryBackoffMicroseconds, "Total time spent waiting before retries of failed AI provider requests. Summed across threads.", ValueType::Microseconds) \
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
+    M(AIFunctionResultCacheHits, "Number of AI function requests answered from the AI function result cache.", ValueType::Number) \
+    M(AIFunctionResultCacheMisses, "Number of AI function requests not found in the AI function result cache.", ValueType::Number) \
     \
     M(YTsaurusLookupThrottled, "Number of lookup requests to YTsaurus that were throttled", ValueType::Number) \
     \

@@ -1,13 +1,16 @@
 #include <Functions/FunctionBaseAI.h>
+#include <Functions/AI/AIFunctionResultCache.h>
 
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/Exception.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/ProfileEvents.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
@@ -34,6 +37,8 @@ namespace ProfileEvents
 {
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
+    extern const Event AIFunctionResultCacheHits;
+    extern const Event AIFunctionResultCacheMisses;
 }
 
 namespace DB
@@ -49,6 +54,7 @@ namespace Setting
     extern const SettingsBool ai_function_throw_on_error;
     extern const SettingsString ai_function_text_default_credentials;
     extern const SettingsBool ai_function_allow_insecure_endpoint;
+    extern const SettingsBool ai_function_enable_result_cache;
 }
 
 namespace ServerSetting
@@ -421,7 +427,57 @@ AIParamSpecs FunctionBaseAI::embeddingParams()
     };
 }
 
-void FunctionBaseAI::embedTexts(
+AIFunctionResultCachePtr FunctionBaseAI::getResultCache(const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::ai_function_enable_result_cache])
+        return nullptr;
+    auto cache = context->getAIFunctionResultCache();
+    if (!cache || cache->maxSizeInBytes() == 0)
+        return nullptr;
+    return cache;
+}
+
+namespace
+{
+
+/// A string is hashed with its size, so that the boundaries between the parts of a cache key are unambiguous.
+void hashString(SipHash & hash, std::string_view str)
+{
+    hash.update(str.size());
+    hash.update(str);
+}
+
+/// Hash of the parts of a request that are the same for every input of one AI function call. The user is part of
+/// it, so that a user never receives a response cached for a request of another user, and cannot tell from the
+/// cache counters or from the latency which requests other users sent.
+SipHash hashRequestPrefix(
+    const String & function_name,
+    const FunctionBaseAI::AINamedCollectionConfig & collection,
+    const String & model,
+    const std::optional<UUID> & user_id)
+{
+    SipHash hash;
+    hash.update(user_id.has_value());
+    if (user_id)
+        hash.update(user_id->toUnderType());
+    hashString(hash, function_name);
+    hashString(hash, collection.collection_name);
+    hashString(hash, collection.provider);
+    hashString(hash, collection.endpoint);
+    hashString(hash, collection.api_version);
+    hashString(hash, model);
+    return hash;
+}
+
+/// Key of the request for `input` in the `AIFunctionResultCache`.
+UInt128 resultCacheKey(const SipHash & request_prefix, std::string_view input)
+{
+    SipHash hash = request_prefix;
+    hashString(hash, input);
+    return hash.get128();
+}
+
+void embedTextsWithoutCache(
     const std::shared_ptr<IAIProvider> & provider,
     const String & model,
     UInt64 dimensions,
@@ -433,7 +489,7 @@ void FunctionBaseAI::embedTexts(
     size_t max_concurrent_requests,
     const AIRequestPolicy & policy,
     const AIQuotaTrackerPtr & quota,
-    EmbeddingResult & result)
+    FunctionBaseAI::EmbeddingResult & result)
 {
     result.embeddings.resize(inputs.size());
 
@@ -511,6 +567,133 @@ void FunctionBaseAI::embedTexts(
         }
     }
 }
+}
+
+void FunctionBaseAI::embedTexts(
+    const std::shared_ptr<IAIProvider> & provider,
+    const String & model,
+    UInt64 dimensions,
+    const String & function_name,
+    const String & query_id,
+    const String & initial_query_id,
+    const VectorWithMemoryTracking<std::string_view> & inputs,
+    size_t max_batch_size,
+    size_t max_concurrent_requests,
+    const AIRequestPolicy & policy,
+    const AIQuotaTrackerPtr & quota,
+    EmbeddingResult & result,
+    const AIFunctionResultCachePtr & result_cache,
+    const AINamedCollectionConfig & collection,
+    const std::optional<UUID> & user_id)
+{
+    if (!result_cache)
+    {
+        embedTextsWithoutCache(
+            provider, model, dimensions, function_name, query_id, initial_query_id, inputs, max_batch_size, max_concurrent_requests,
+            policy, quota, result);
+        return;
+    }
+
+    UInt64 cache_hits = 0;
+    UInt64 cache_misses = 0;
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::AIFunctionResultCacheHits, cache_hits);
+        ProfileEvents::increment(ProfileEvents::AIFunctionResultCacheMisses, cache_misses);
+    });
+
+    /// `aiEmbed` and `aiSimilarity` send the same request for a text, so they share its cached embedding.
+    SipHash request_prefix = hashRequestPrefix("embedding", collection, model, user_id);
+    request_prefix.update(dimensions);
+
+    result.embeddings.resize(inputs.size());
+
+    /// Only the distinct texts that are not in the cache are sent. `miss_of_input` maps an input to its
+    /// position in `misses`, or `no_miss` when the cache already had it.
+    static constexpr size_t no_miss = std::numeric_limits<size_t>::max();
+    VectorWithMemoryTracking<size_t> miss_of_input(inputs.size(), no_miss);
+    VectorWithMemoryTracking<std::string_view> misses;
+    VectorWithMemoryTracking<UInt128> miss_keys;
+    HashMap<UInt128, size_t, UInt128TrivialHash> miss_by_key;
+
+    for (size_t i = 0; i < inputs.size(); ++i)
+    {
+        const UInt128 key = resultCacheKey(request_prefix, inputs[i]);
+        if (auto cached = result_cache->get(key))
+        {
+            result.embeddings[i] = cached->embedding;
+            ++result.texts_embedded;
+            ++cache_hits;
+            continue;
+        }
+
+        HashMap<UInt128, size_t, UInt128TrivialHash>::LookupResult it;
+        bool inserted = false;
+        miss_by_key.emplace(key, it, inserted);
+        if (inserted)
+        {
+            it->getMapped() = misses.size();
+            misses.push_back(inputs[i]);
+            miss_keys.push_back(key);
+            ++cache_misses;
+        }
+        miss_of_input[i] = it->getMapped();
+    }
+
+    if (misses.empty())
+        return;
+
+    EmbeddingResult miss_result;
+    /// On a throw, keep the counts of the requests that completed visible to the caller, as without the cache.
+    bool counted = false;
+    SCOPE_EXIT({
+        if (!counted)
+        {
+            result.texts_embedded += miss_result.texts_embedded;
+            result.texts_skipped += miss_result.texts_skipped;
+        }
+    });
+
+    embedTextsWithoutCache(
+        provider, model, dimensions, function_name, query_id, initial_query_id, misses, max_batch_size, max_concurrent_requests,
+        policy, quota, miss_result);
+
+    counted = true;
+    /// The first input of each miss was counted as a miss above. A repeat of it in `inputs` is a hit when the
+    /// text was embedded, and a miss otherwise, since it got no embedding.
+    VectorWithMemoryTracking<UInt8> miss_seen(misses.size(), 0);
+    for (size_t i = 0; i < inputs.size(); ++i)
+    {
+        if (miss_of_input[i] == no_miss)
+            continue;
+
+        const size_t miss = miss_of_input[i];
+        const bool repeat = miss_seen[miss];
+        miss_seen[miss] = 1;
+
+        /// An empty embedding was not embedded (quota exhausted, or a failed request), and is not cached.
+        const auto & embedding = miss_result.embeddings[miss];
+        if (embedding.empty())
+        {
+            ++result.texts_skipped;
+            if (repeat)
+                ++cache_misses;
+            continue;
+        }
+        result.embeddings[i] = embedding;
+        ++result.texts_embedded;
+        if (repeat)
+            ++cache_hits;
+    }
+
+    for (size_t k = 0; k < misses.size(); ++k)
+    {
+        if (miss_result.embeddings[k].empty())
+            continue;
+        auto cached = std::make_shared<AIFunctionResult>();
+        cached->embedding = std::move(miss_result.embeddings[k]);
+        result_cache->set(miss_keys[k], cached);
+    }
+}
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
@@ -556,11 +739,35 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     const String query_id = getContext()->getCurrentQueryId();
     const String & initial_query_id = getContext()->getClientInfo().initial_query_id;
 
+    /// A non-zero `temperature` asks the model for a new sample with every request, so such requests are neither
+    /// answered from the cache nor stored in it.
+    auto result_cache = temperature > 0 ? nullptr : getResultCache(getContext());
+
+    /// The other arguments are constant, so the requests of this call differ only in the user message.
+    SipHash request_prefix;
+    if (result_cache)
+    {
+        request_prefix = hashRequestPrefix(getName(), params.collection, model, getContext()->getUserID());
+        request_prefix.update(temperature);
+        request_prefix.update(max_tokens);
+        hashString(request_prefix, system_prompt);
+        const bool has_response_format = static_cast<bool>(response_format);
+        request_prefix.update(has_response_format);
+        if (has_response_format)
+        {
+            std::ostringstream format_stream; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            response_format->stringify(format_stream);
+            hashString(request_prefix, format_stream.str());
+        }
+    }
+
     auto result_col = removeNullable(result_type)->createColumn();
     auto null_map_col = prompt_nullable ? ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0)) : nullptr;
 
     UInt64 rows_processed = 0;
     UInt64 rows_skipped = 0;
+    UInt64 cache_hits = 0;
+    UInt64 cache_misses = 0;
 
     /// Increment ProfileEvents counters upon destruction, to avoid underreporting on error.
     /// The per-request counters (`AIAPICalls`, `AIInputTokens`, `AIOutputTokens`) are incremented by
@@ -568,6 +775,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     SCOPE_EXIT({
         ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
         ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
+        ProfileEvents::increment(ProfileEvents::AIFunctionResultCacheHits, cache_hits);
+        ProfileEvents::increment(ProfileEvents::AIFunctionResultCacheMisses, cache_misses);
     });
 
     const size_t concurrency = std::min<UInt64>(settings[Setting::ai_function_max_concurrent_requests_per_thread].value, input_rows_count);
@@ -579,6 +788,14 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     VectorWithMemoryTracking<std::future<std::optional<AIResponse>>> wave;
     wave.reserve(concurrency);
 
+    /// Used only with `result_cache`, per row of the current wave: the key of its request, its response (found in
+    /// the cache, or received in this wave), and the row of this wave that sent the same request.
+    static constexpr size_t no_row = std::numeric_limits<size_t>::max();
+    VectorWithMemoryTracking<UInt128> wave_keys;
+    VectorWithMemoryTracking<std::shared_ptr<AIFunctionResult>> wave_results;
+    VectorWithMemoryTracking<size_t> wave_same_as;
+    HashMap<UInt128, size_t, UInt128TrivialHash> wave_sent_keys;
+
     /// Wait for all waves to complete on error, so that API-call and request counts are recorded
     /// They were already dispatched and billed either way. A cancelled query does not wait.
     SCOPE_EXIT_SAFE({ drainRequests(wave, *quota_tracker); });
@@ -588,19 +805,64 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         const size_t wave_end = std::min(wave_begin + concurrency, input_rows_count);
 
         wave.clear();
+        if (result_cache)
+        {
+            wave_keys.assign(wave_end - wave_begin, UInt128{});
+            wave_results.assign(wave_end - wave_begin, nullptr);
+            wave_same_as.assign(wave_end - wave_begin, no_row);
+            wave_sent_keys.clear();
+        }
+
         for (size_t row = wave_begin; row < wave_end; ++row)
         {
-            /// A NULL prompt produces NULL, and once the quota is exhausted a row keeps its default
-            /// value. Neither issues a request, so the row's slot stays an empty future.
-            if ((prompt_nullable && prompt_nullable->getNullMapData()[row]) || quota_tracker->checkQuotas())
+            const size_t slot = row - wave_begin;
+
+            /// A NULL prompt produces NULL without a request, so the row's slot stays an empty future.
+            if (prompt_nullable && prompt_nullable->getNullMapData()[row])
             {
                 wave.emplace_back();
                 continue;
             }
 
+            String user_message = sanitizeForModel(buildUserMessage(arguments, row));
+
+            /// A repeated request is not sent again: it takes the cached response, or the response of the row
+            /// of this wave that sent it. This does not count against the quota.
+            if (result_cache)
+            {
+                wave_keys[slot] = resultCacheKey(request_prefix, user_message);
+                wave_results[slot] = result_cache->get(wave_keys[slot]);
+                if (wave_results[slot])
+                {
+                    ++cache_hits;
+                    wave.emplace_back();
+                    continue;
+                }
+
+                /// Counted when the output of that row is known.
+                if (const auto * sent = wave_sent_keys.find(wave_keys[slot]))
+                {
+                    wave_same_as[slot] = sent->getMapped();
+                    wave.emplace_back();
+                    continue;
+                }
+
+                ++cache_misses;
+            }
+
+            /// Once the quota is exhausted a row keeps its default value without a request.
+            if (quota_tracker->checkQuotas())
+            {
+                wave.emplace_back();
+                continue;
+            }
+
+            if (result_cache)
+                wave_sent_keys[wave_keys[slot]] = slot;
+
             AIChatRequest ai_request;
             ai_request.system_prompt = system_prompt;
-            ai_request.user_message = sanitizeForModel(buildUserMessage(arguments, row));
+            ai_request.user_message = std::move(user_message);
             ai_request.response_format = response_format;
             ai_request.model = model;
             ai_request.temperature = temperature;
@@ -624,6 +886,28 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 continue;
             }
 
+            /// A repeated request, see above. When the row that sent it got no response, neither does this one,
+            /// and it counts as a miss.
+            if (result_cache && (wave_results[k] || wave_same_as[k] != no_row))
+            {
+                const bool repeat_in_wave = wave_same_as[k] != no_row;
+                const auto & cached = repeat_in_wave ? wave_results[wave_same_as[k]] : wave_results[k];
+                if (cached)
+                {
+                    insertProcessedResult(*result_col, postProcessResponse(arguments, cached->text));
+                    ++rows_processed;
+                    if (repeat_in_wave)
+                        ++cache_hits;
+                }
+                else
+                {
+                    result_col->insertDefault();
+                    ++rows_skipped;
+                    ++cache_misses;
+                }
+                continue;
+            }
+
             /// Nothing when no request was issued because the API-call quota was exhausted, or when
             /// the request failed and `ai_function_throw_on_error` is disabled; either way the row
             /// keeps its default value.
@@ -641,8 +925,18 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             String & response = ai_response->result;
             if (response_format) /// Some models output whitespace around a structured reply
                 response = String(trimWhitespace(response));
-            insertProcessedResult(*result_col, postProcessResponse(arguments, response));
+            String processed = postProcessResponse(arguments, response);
+            insertProcessedResult(*result_col, processed);
             ++rows_processed;
+
+            if (result_cache)
+            {
+                /// The response is stored after the whitespace trimming above but before post-processing, which a cache
+                /// hit applies again.
+                wave_results[k] = std::make_shared<AIFunctionResult>();
+                wave_results[k]->text = std::move(response);
+                result_cache->set(wave_keys[k], wave_results[k]);
+            }
         }
     }
 

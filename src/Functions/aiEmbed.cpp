@@ -166,7 +166,8 @@ public:
 
         FunctionBaseAI::embedTexts(
             provider, model, dimensions, getName(), getContext()->getCurrentQueryId(), getContext()->getClientInfo().initial_query_id,
-            inputs, max_batch_size, max_concurrent_requests, policy, quota_tracker, embedding_result);
+            inputs, max_batch_size, max_concurrent_requests, policy, quota_tracker, embedding_result,
+            FunctionBaseAI::getResultCache(getContext()), params.collection, getContext()->getUserID());
 
         auto data_col = ColumnVector<Float32>::create(); /// float32 is standard embedding API output
         auto offsets_col = ColumnArray::ColumnOffsets::create();

@@ -19,7 +19,11 @@ MOCK_PORT = 18123
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("node", stay_alive=True)
+instance = cluster.add_instance(
+    "node",
+    stay_alive=True,
+    user_configs=["configs/users.d/disable_ai_function_result_cache.xml"],
+)
 
 
 def run_mock_server():
@@ -75,6 +79,8 @@ def get_profile_events(query_id, query_type="QueryFinish"):
             ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens,
             ProfileEvents['AIRequestMicroseconds'] AS request_us,
             ProfileEvents['AIRetryBackoffMicroseconds'] AS retry_backoff_us,
+            ProfileEvents['AIFunctionResultCacheHits'] AS cache_hits,
+            ProfileEvents['AIFunctionResultCacheMisses'] AS cache_misses,
             peak_threads_usage AS peak_threads
         FROM system.query_log
         WHERE query_id = '{query_id}' AND type = '{query_type}'
@@ -2570,8 +2576,8 @@ def run_and_count_calls(sql, prefix, extra_settings=None):
 
 
 # `expected` is what the implementation does today; `ideal` is what a maximally lazy
-# implementation would do. They differ only for dedup, which does not exist: identical
-# inputs are embedded once per row (`aiEmbed.cpp`, the live-row collection loop).
+# implementation would do. They differ only for dedup: the AI function result cache is disabled
+# for these tests, so identical inputs are embedded once per row.
 @pytest.mark.parametrize(
     "case, sql, expected, ideal, settings",
     [
@@ -3156,3 +3162,265 @@ def test_shutdown_after_cancelling_query_with_request_in_flight(started_cluster)
 
     instance.restart_clickhouse()
     assert instance.query("SELECT aiGenerate('x', map('credentials', 'ai_slow'))").strip() != ""
+
+
+# ---------------------------------------------------------------------------
+# AI function result cache (`ai_function_enable_result_cache`), shared by all queries of the server.
+# It is disabled for the other tests by `configs/users.d/disable_ai_function_result_cache.xml`. The model
+# is part of the cache key, so each test sends its requests with its own model name and does not see the
+# responses that other tests left in the cache. The mock server ignores the model name.
+# ---------------------------------------------------------------------------
+
+CACHE_ON = {
+    "ai_function_enable_result_cache": 1,
+    "max_threads": 1,
+    "max_block_size": 8,
+    "preferred_block_size_bytes": 0,
+}
+
+
+def unique_model():
+    return f"result-cache-{uuid.uuid4().hex[:8]}"
+
+
+def same_text_classify(rows, model, credentials="ai_mock"):
+    return (
+        "SELECT aiClassify(materialize('same'), ['positive', 'negative'], "
+        f"map('credentials', '{credentials}', 'model', '{model}')) FROM numbers({rows})"
+    )
+
+
+def test_result_cache_chat_across_blocks(started_cluster):
+    """Copies of one text in several blocks cost one request. The mock bills 10 input and 5 output tokens per call."""
+    qid = unique_query_id("result_cache_blocks")
+    result = instance.query(
+        same_text_classify(8, unique_model()),
+        settings={**CACHE_ON, "max_block_size": 2},
+        query_id=qid,
+    )
+    assert result.splitlines() == ["positive"] * 8
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1
+    assert int(events["cache_hits"]) == 7
+    assert int(events["cache_misses"]) == 1
+    assert int(events["input_tokens"]) == 10
+    assert int(events["output_tokens"]) == 5
+    assert int(events["rows_processed"]) == 8
+
+
+def test_result_cache_is_shared_between_queries(started_cluster):
+    """A later query reuses the responses of an earlier one and sends no request."""
+    sql = same_text_classify(4, unique_model())
+    qid_first = unique_query_id("result_cache_first")
+    instance.query(sql, settings=CACHE_ON, query_id=qid_first)
+    assert int(get_profile_events(qid_first)["api_calls"]) == 1
+
+    qid_second = unique_query_id("result_cache_second")
+    result = instance.query(sql, settings=CACHE_ON, query_id=qid_second)
+    assert result.splitlines() == ["positive"] * 4
+    events = get_profile_events(qid_second)
+    assert int(events["api_calls"]) == 0
+    assert int(events["cache_hits"]) == 4
+    assert int(events["cache_misses"]) == 0
+    assert int(events["rows_processed"]) == 4
+
+
+def test_result_cache_key_covers_the_request(started_cluster):
+    """Requests with different categories or models do not share responses."""
+    model = unique_model()
+    for prefix, sql in (
+        (
+            "result_cache_categories",
+            f"SELECT aiClassify('same', ['positive', 'negative'], map('credentials', 'ai_mock', 'model', '{model}')), "
+            f"aiClassify('same', ['yes', 'no'], map('credentials', 'ai_mock', 'model', '{model}'))",
+        ),
+        (
+            "result_cache_models",
+            f"SELECT aiClassify('same', ['positive', 'negative'], map('credentials', 'ai_mock', 'model', '{unique_model()}')), "
+            f"aiClassify('same', ['positive', 'negative'], map('credentials', 'ai_mock', 'model', '{unique_model()}'))",
+        ),
+    ):
+        qid = unique_query_id(prefix)
+        instance.query(sql, settings=CACHE_ON, query_id=qid)
+        events = get_profile_events(qid)
+        assert int(events["api_calls"]) == 2
+        assert int(events["cache_hits"]) == 0
+
+
+def test_result_cache_does_not_use_api_call_quota(started_cluster):
+    """A cached response does not spend an API call, so a cap of one call accepts the query.
+    The same rows without the cache hit the cap."""
+    sql = same_text_classify(5, unique_model())
+    qid = unique_query_id("result_cache_quota")
+    instance.query(sql, settings={**CACHE_ON, "ai_function_max_api_calls_per_query": 1}, query_id=qid)
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1
+    assert int(events["cache_hits"]) == 4
+    assert int(events["rows_processed"]) == 5
+
+    error = instance.query_and_get_error(
+        sql,
+        settings={**CACHE_ON, "ai_function_enable_result_cache": 0, "ai_function_max_api_calls_per_query": 1},
+    )
+    assert "LIMIT_EXCEEDED" in error
+
+
+def test_result_cache_does_not_store_failures(started_cluster):
+    """A failed request is not cached, so the same input in a later block is sent again.
+    HTTP 500 is retried once, so each request spends two API calls."""
+    qid = unique_query_id("result_cache_error")
+    result = instance.query(
+        same_text_classify(3, unique_model(), credentials="ai_error"),
+        settings={
+            **CACHE_ON,
+            "max_block_size": 1,
+            "ai_function_throw_on_error": 0,
+            "ai_function_max_retries": 1,
+            "ai_function_retry_initial_delay_ms": 1,
+        },
+        query_id=qid,
+    )
+    assert result.splitlines() == ["", "", ""]
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 6
+    assert int(events["cache_hits"]) == 0
+    assert int(events["cache_misses"]) == 3
+    assert int(events["rows_skipped"]) == 3
+
+
+def test_result_cache_shares_failure_within_wave(started_cluster):
+    """Rows of one wave with the same input share its one request. When it fails, they all get the
+    default value and count as misses, not hits. HTTP 500 is retried once: two API calls."""
+    qid = unique_query_id("result_cache_wave_error")
+    result = instance.query(
+        same_text_classify(3, unique_model(), credentials="ai_error"),
+        settings={
+            **CACHE_ON,
+            "ai_function_throw_on_error": 0,
+            "ai_function_max_retries": 1,
+            "ai_function_retry_initial_delay_ms": 1,
+            "ai_function_max_concurrent_requests_per_thread": 8,
+        },
+        query_id=qid,
+    )
+    assert result.splitlines() == ["", "", ""]
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 2
+    assert int(events["cache_hits"]) == 0
+    assert int(events["cache_misses"]) == 3
+    assert int(events["rows_skipped"]) == 3
+
+
+def test_result_cache_embed_preserves_order(started_cluster):
+    """Repeated texts are embedded once. The mock bills one token per input character, so the
+    total is the sum of the distinct strings. Row order still matches the input."""
+    sql = (
+        "SELECT number + 1 AS id, "
+        "aiEmbed(transform(number, [0, 1, 2, 3, 4], ['alpha', 'beta', 'alpha', 'beta', 'gamma'], ''), "
+        f"'{unique_model()}', map('credentials', 'ai_embed')) "
+        "FROM numbers(5) ORDER BY id"
+    )
+    qid_off = unique_query_id("result_cache_embed_off")
+    off_result = instance.query(sql, settings={**CACHE_ON, "ai_function_enable_result_cache": 0}, query_id=qid_off)
+    qid_on = unique_query_id("result_cache_embed_on")
+    on_result = instance.query(sql, settings=CACHE_ON, query_id=qid_on)
+
+    def rows(raw):
+        parsed = []
+        for line in raw.splitlines():
+            row_id, vec = line.split("\t")
+            parsed.append((int(row_id), parse_embedding(vec)))
+        return parsed
+
+    on_rows = rows(on_result)
+    assert [row_id for row_id, _ in on_rows] == [1, 2, 3, 4, 5]
+    assert on_rows == rows(off_result)
+
+    # 'alpha' + 'beta' + 'alpha' + 'beta' + 'gamma' = 5+4+5+4+5. Distinct is 5+4+5.
+    assert int(get_profile_events(qid_off)["input_tokens"]) == 23
+    on_events = get_profile_events(qid_on)
+    assert int(on_events["api_calls"]) == 1
+    assert int(on_events["input_tokens"]) == 14
+    assert int(on_events["cache_hits"]) == 2
+    assert int(on_events["cache_misses"]) == 3
+    assert int(on_events["rows_processed"]) == 5
+
+
+def test_result_cache_embed_shares_failure_within_block(started_cluster):
+    """Copies of one text in a block are embedded once. When that fails, every copy gets NULL and
+    counts as a miss."""
+    qid = unique_query_id("result_cache_embed_error")
+    result = instance.query(
+        "SELECT aiSimilarity(materialize('a'), materialize('b'), "
+        f"'{unique_model()}', map('credentials', 'ai_embed_error')) FROM numbers(3)",
+        settings={**CACHE_ON, "ai_function_throw_on_error": 0, "ai_function_max_retries": 0},
+        query_id=qid,
+    )
+    assert [parse_nullable_float(line) for line in result.splitlines()] == [None] * 3
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1
+    assert int(events["cache_hits"]) == 0
+    assert int(events["cache_misses"]) == 6
+    assert int(events["rows_skipped"]) == 3
+
+
+def test_result_cache_constant_operand(started_cluster):
+    """https://github.com/ClickHouse/ClickHouse/issues/130734: a constant operand is embedded once,
+    not once per row. The mock bills one token per input character."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('a'), ('b'), ('c')")
+    sql = (
+        f"SELECT aiSimilarity(x, 'q', '{unique_model()}', map('credentials', 'ai_embed')) "
+        "FROM test_input ORDER BY x"
+    )
+
+    qid_off = unique_query_id("result_cache_const_off")
+    instance.query(sql, settings={**CACHE_ON, "ai_function_enable_result_cache": 0}, query_id=qid_off)
+    assert int(get_profile_events(qid_off)["input_tokens"]) == 6  # a, q, b, q, c, q
+
+    qid_on = unique_query_id("result_cache_const_on")
+    result = instance.query(sql, settings=CACHE_ON, query_id=qid_on)
+    scores = [parse_nullable_float(line) for line in result.splitlines()]
+    assert scores == [pytest.approx(expected_similarity(x, "q"), abs=1e-4) for x in ("a", "b", "c")]
+    events = get_profile_events(qid_on)
+    assert int(events["api_calls"]) == 1
+    assert int(events["input_tokens"]) == 4  # a, q, b, c
+    assert int(events["cache_hits"]) == 2
+    assert int(events["cache_misses"]) == 4
+    assert int(events["rows_processed"]) == 3
+
+
+def test_result_cache_skips_non_zero_temperature(started_cluster):
+    """A non-zero `temperature` asks the model for a new sample with every request, so such requests bypass
+    the cache. `aiGenerate` uses 0.7 by default."""
+    model = unique_model()
+    for params, api_calls, cache_hits in (
+        (f"'credentials', 'ai_mock', 'model', '{model}'", 3, 0),
+        (f"'credentials', 'ai_mock', 'model', '{model}', 'temperature', '0'", 1, 2),
+    ):
+        qid = unique_query_id("result_cache_temperature")
+        instance.query(f"SELECT aiGenerate(materialize('same'), map({params})) FROM numbers(3)", settings=CACHE_ON, query_id=qid)
+        events = get_profile_events(qid)
+        assert int(events["api_calls"]) == api_calls
+        assert int(events["cache_hits"]) == cache_hits
+
+
+def test_result_cache_is_per_user(started_cluster):
+    """A user is never answered from the responses cached for the requests of another user."""
+    user = f"result_cache_user_{uuid.uuid4().hex[:8]}"
+    instance.query(f"CREATE USER {user} IDENTIFIED WITH plaintext_password BY 'password'")
+    try:
+        instance.query(f"GRANT AI FUNCTIONS ON *.* TO {user}")
+        instance.query(f"GRANT NAMED COLLECTION ON ai_mock TO {user}")
+        sql = f"SELECT aiClassify('same', ['positive', 'negative'], map('credentials', 'ai_mock', 'model', '{unique_model()}'))"
+        other_user = {"user": user, "password": "password"}
+        for prefix, credentials, api_calls in (
+            ("result_cache_default_user", {}, 1),
+            ("result_cache_other_user", other_user, 1),
+            ("result_cache_other_user_again", other_user, 0),
+        ):
+            qid = unique_query_id(prefix)
+            instance.query(sql, settings=CACHE_ON, query_id=qid, **credentials)
+            assert int(get_profile_events(qid)["api_calls"]) == api_calls
+    finally:
+        instance.query(f"DROP USER IF EXISTS {user}")

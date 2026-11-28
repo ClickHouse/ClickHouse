@@ -5,6 +5,7 @@
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/AIQuotaTracker.h>
 #include <Functions/AI/AIRequestExecutor.h>
+#include <Functions/AI/AIFunctionResultCache.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Core/Field.h>
@@ -161,6 +162,8 @@ public:
     /// and quota logic. Inputs are grouped into batches of up to `max_batch_size` per HTTP call, and
     /// up to `max_concurrent_requests` of those calls are in flight at once.
     /// Accumulates into `result`, so the waves completed before a throw stay visible to the caller.
+    /// When `result_cache` is set, a text found in it, or repeated in `inputs`, is not sent again. `collection`
+    /// and `user_id` are part of the cache key.
     static void embedTexts(
         const std::shared_ptr<IAIProvider> & provider,
         const String & model,
@@ -173,7 +176,14 @@ public:
         size_t max_concurrent_requests,
         const AIRequestPolicy & policy,
         const AIQuotaTrackerPtr & quota,
-        EmbeddingResult & result);
+        EmbeddingResult & result,
+        const AIFunctionResultCachePtr & result_cache,
+        const AINamedCollectionConfig & collection,
+        const std::optional<UUID> & user_id);
+
+    /// The server's `AIFunctionResultCache`, or null when `ai_function_enable_result_cache` is disabled or the
+    /// cache has size 0.
+    static AIFunctionResultCachePtr getResultCache(const ContextPtr & context);
 
 protected:
     ContextPtr context;
