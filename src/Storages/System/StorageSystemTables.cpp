@@ -341,7 +341,7 @@ public:
         /// Table sizes are reported approximately, so there is no need to pay for a Keeper round trip
         /// or a data lake metadata read per table.
         Settings settings = context_->getSettingsCopy();
-        settings[Setting::select_sequential_consistency] = 0;
+        settings.set(Setting::select_sequential_consistency, 0);
         totals_context->setSettings(settings);
         totals_context->setTotalsWithoutStorageAccess(true);
 

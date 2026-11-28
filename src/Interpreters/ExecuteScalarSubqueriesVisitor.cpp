@@ -105,13 +105,13 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
 {
     auto subquery_context = Context::createCopy(data.getContext());
     Settings subquery_settings = data.getContext()->getSettingsCopy();
-    subquery_settings[Setting::max_result_rows] = 1;
-    subquery_settings[Setting::extremes] = false;
-    subquery_settings[Setting::implicit_table_at_top_level] = "";
+    subquery_settings.set(Setting::max_result_rows, 1);
+    subquery_settings.set(Setting::extremes, false);
+    subquery_settings.set(Setting::implicit_table_at_top_level, "");
     /// `QueryAnalyzer` reads this one from the scope context, which the query context below does not reach.
-    subquery_settings[Setting::use_structure_from_insertion_table_in_table_functions] = false;
+    subquery_settings.set(Setting::use_structure_from_insertion_table_in_table_functions, false);
     /// `Planner`'s constructor inspects the subquery tree for parallel replica candidates.
-    subquery_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+    subquery_settings.set(Setting::allow_experimental_parallel_reading_from_replicas, 0);
     subquery_context->setSettings(subquery_settings);
 
     /// A standalone expression - a `CHECK` constraint, a `TTL` expression - is analysed with the global

@@ -1290,7 +1290,7 @@ void Planner::buildPlanForQueryNode()
             /// value is not applied there, so an explicit `group_by_overflow_mode` is not marked as changed.
             Settings query_settings = settings;
             if (query_node.getSettingsChanges().tryGet("group_by_overflow_mode"))
-                query_settings[Setting::group_by_overflow_mode].setChanged(true);
+                query_settings.setChanged(Setting::group_by_overflow_mode, true);
 
             const bool has_aggregates = !aggregation_analysis_result.aggregate_descriptions.empty();
             const bool can_cap_aggregation

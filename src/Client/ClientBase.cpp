@@ -1409,15 +1409,15 @@ void ClientBase::adjustSettings(ContextMutablePtr context)
     if (!context->getSettingsRef()[Setting::output_format_pretty_max_rows].changed)
     {
         const UInt64 default_value = defaults[Setting::output_format_pretty_max_rows];
-        settings[Setting::output_format_pretty_max_rows] = raise ? std::numeric_limits<UInt64>::max() : default_value;
-        settings[Setting::output_format_pretty_max_rows].changed = false;
+        settings.set(Setting::output_format_pretty_max_rows, raise ? std::numeric_limits<UInt64>::max() : default_value);
+        settings.setChanged(Setting::output_format_pretty_max_rows, false);
     }
 
     if (!context->getSettingsRef()[Setting::output_format_pretty_max_value_width].changed)
     {
         const UInt64 default_value = defaults[Setting::output_format_pretty_max_value_width];
-        settings[Setting::output_format_pretty_max_value_width] = raise ? std::numeric_limits<UInt64>::max() : default_value;
-        settings[Setting::output_format_pretty_max_value_width].changed = false;
+        settings.set(Setting::output_format_pretty_max_value_width, raise ? std::numeric_limits<UInt64>::max() : default_value);
+        settings.setChanged(Setting::output_format_pretty_max_value_width, false);
     }
 
     context->setSettings(settings);
@@ -2868,6 +2868,9 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading from INFILE is disabled when you are running client embedded into server.");
 
+        /// File readers run while the client can receive timezone updates for INSERT RETURNING.
+        const auto input_context = Context::createCopy(client_context);
+
         /// Get name of this file (path to file)
         const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
         const auto in_file = in_file_node.value.safeGet<std::string>();
@@ -2885,7 +2888,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             current_format = FormatFactory::instance().getFormatFromFileName(in_file);
         /// `input_format` / `format` settings override the FORMAT for input (mirrors
         /// `getSourceFromASTInsertQuery`).
-        if (const auto & s = client_context->getSettingsRef(); !s[Setting::input_format].value.empty())
+        if (const auto & s = input_context->getSettingsRef(); !s[Setting::input_format].value.empty())
             current_format = s[Setting::input_format];
         else if (!s[Setting::format].value.empty())
             current_format = s[Setting::format];
@@ -2903,7 +2906,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
         if (parsed_insert_query->columns)
         {
-            auto columns = processColumnTransformers(client_context->getCurrentDatabase(), client_context->getInsertionTable(), columns_for_storage_file, parsed_insert_query->columns);
+            auto columns = processColumnTransformers(input_context->getCurrentDatabase(), input_context->getInsertionTable(), columns_for_storage_file, parsed_insert_query->columns);
             ColumnsDescription reordered_description{};
             for (const auto & col_name : columns->children)
             {
@@ -2915,35 +2918,35 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         }
 
         StorageFile::CommonArguments args{
-            WithContext(client_context),
+            WithContext(input_context),
             parsed_insert_query->table_id,
             current_format,
-            getFormatSettings(client_context),
+            getFormatSettings(input_context),
             compression_method,
             columns_for_storage_file,
             ConstraintsDescription{},
             String{},
             {},
         };
-        StoragePtr storage = std::make_shared<StorageFile>(StorageFile::FileSource::parse(in_file, client_context), args);
+        StoragePtr storage = std::make_shared<StorageFile>(StorageFile::FileSource::parse(in_file, input_context), args);
         storage->startup();
         SelectQueryInfo query_info;
 
         try
         {
-            auto metadata = storage->getInMemoryMetadataPtr(client_context, false);
+            auto metadata = storage->getInMemoryMetadataPtr(input_context, false);
             QueryPlan plan;
             storage->read(
                 plan,
                 sample.getNames(),
-                storage->getStorageSnapshot(metadata, client_context),
+                storage->getStorageSnapshot(metadata, input_context),
                 query_info,
-                client_context,
+                input_context,
                 {},
-                client_context->getSettingsRef()[Setting::max_block_size],
+                input_context->getSettingsRef()[Setting::max_block_size],
                 getNumberOfCPUCoresToUse());
 
-            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(client_context), BuildQueryPipelineSettings(client_context));
+            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(input_context), BuildQueryPipelineSettings(input_context));
 
             QueryPlanResourceHolder resources;
             auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
@@ -2992,6 +2995,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
 void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data)
 {
+    /// Parsing and default expressions must not observe concurrent session timezone updates.
+    const auto input_context = Context::createCopy(client_context);
     String current_format = "Values";
 
     /// Data format can be specified in the INSERT query.
@@ -3001,7 +3006,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             current_format = insert->format;
     }
 
-    const Settings & settings = client_context->getSettingsRef();
+    const Settings & settings = input_context->getSettingsRef();
 
     /// `input_format` / `format` settings override the FORMAT for input (mirrors
     /// `getSourceFromASTInsertQuery` on the server), so `--input-format` / an in-query
@@ -3028,7 +3033,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         ? settings[Setting::min_insert_block_size_bytes]
         : insert_format_min_block_size_bytes_from_config.value_or(settings[Setting::min_insert_block_size_bytes]);
 
-    auto source = client_context->getInputFormat(
+    auto source = input_context->getInputFormat(
         current_format,
         buf,
         sample,
@@ -3043,7 +3048,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     {
         pipe.addSimpleTransform([&](const SharedHeader & header)
         {
-            return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, client_context);
+            return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, input_context);
         });
     }
 

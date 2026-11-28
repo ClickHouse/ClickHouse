@@ -32,13 +32,13 @@ std::array<SettingsBool, 2> aggregationMethodSettings()
 void prepareSecondaryQuerySettings(Settings & settings)
 {
     settings.markSettingsChangedByCompatibilityAsUnchanged();
-    settings[Setting::dialect] = Dialect::clickhouse;
+    settings.set(Setting::dialect, Dialect::clickhouse);
 }
 
 void markAggregationMethodSettingsChanged(Settings & settings)
 {
     for (const auto setting : aggregationMethodSettings())
-        settings[setting] = static_cast<bool>(settings[setting]);
+        settings.set(setting, static_cast<bool>(settings[setting]));
 }
 
 bool aggregationMethodSettingsDifferFromInitiator(const Settings & initiator_settings, const Settings & settings)
