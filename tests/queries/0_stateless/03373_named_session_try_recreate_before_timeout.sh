@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-encrypted-storage
+# Tags: no-encrypted-storage, no-parallel-replicas
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

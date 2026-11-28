@@ -7,6 +7,9 @@ INSERT INTO test_parallel_replicas_unavailable_shards SELECT * FROM numbers(10);
 
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas=2, max_parallel_replicas=11, cluster_for_parallel_replicas='parallel_replicas', parallel_replicas_for_non_replicated_merge_tree=1;
+-- A positive `parallel_replicas_min_number_of_rows_per_replica` lowers the number of replicas for this small table,
+-- so the unavailable replica may not be picked at all and `ParallelReplicasUnavailableCount` stays 0.
+SET parallel_replicas_min_number_of_rows_per_replica=0;
 SET send_logs_level='error';
 
 -- with local plan for initiator, the query can be executed fast on initator, we can simply not come to the point where unavailable replica can be detected

@@ -50,6 +50,10 @@ $CLICKHOUSE_CLIENT --query_id $query_id -q "
     SET cluster_for_parallel_replicas = 'test_cluster_one_shard_two_replicas';
     SET send_logs_level = 'error';
     SET use_statistics_for_part_pruning = 0;
+    -- The query counts below assume a single index analysis per read. A positive
+    -- \`parallel_replicas_min_number_of_rows_per_replica\` makes the planner estimate the rows to read first,
+    -- and that estimate issues more \`mergeTreeAnalyzeIndexes\` queries.
+    SET parallel_replicas_min_number_of_rows_per_replica = 0;
 
     SELECT sum(key)
     FROM test_in_dia

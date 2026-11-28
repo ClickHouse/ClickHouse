@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-settings, no-ordinary-database, no-fasttest, no-azure-blob-storage, kills-processes-by-cmdline
+# Tags: long, no-random-settings, no-ordinary-database, no-fasttest, no-azure-blob-storage, kills-processes-by-cmdline, no-parallel-replicas
 # long: The test inserts 4M+ rows across the initial setup, 20s parallel insert/select/cancel phase,
 #     and final verification. On the encrypted-S3 + ASan+UBSan + meta-in-keeper flaky-check variant
 #     it consistently exceeds the 180s default budget, so we use the 600s budget instead.
