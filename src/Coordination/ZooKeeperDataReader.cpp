@@ -188,6 +188,9 @@ static int64_t deserializeStorageData(KeeperMemoryStorage & storage, ReadBuffer 
         }
     }
 
+    for (const auto & itr : storage.nodes.container)
+        addToDigest(storage.nodes_digest, itr.value.getDigest(itr.key));
+
     return max_zxid;
 }
 
