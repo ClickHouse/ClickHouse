@@ -26,6 +26,8 @@ std::unique_ptr<QueryPlan> createLocalPlan(
 
     auto query_plan = std::make_unique<QueryPlan>();
     auto new_context = Context::createCopy(context);
+    /// Table names in the query are printed from the initiator's resolved query tree: read them as written.
+    new_context->setAllowCompoundTableIdentifierQualification(false);
 
     /// The local shard reads the table itself, like the remote shards do: the inserted block
     /// of a materialized view (whose query contains this `remote` or `Distributed` read) must not

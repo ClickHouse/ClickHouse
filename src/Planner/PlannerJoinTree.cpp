@@ -972,8 +972,17 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
         used_row_policies.emplace(std::move(name));
     }
 
-    return buildFilterInfo(
+    /// A row policy is a stored definition: read table names in it as written.
+    auto filter_query_tree = buildFilterQueryTree(
         row_policy_filter->expression,
+        table_expression_query_info.table_expression,
+        query_context,
+        planner_context->isViewSourceInSubqueries(),
+        /*check_access_rights=*/ false,
+        /*allow_compound_table_identifier_qualification=*/ false);
+
+    return buildFilterInfo(
+        std::move(filter_query_tree),
         table_expression_query_info.table_expression,
         planner_context,
         std::move(required_names_without_filter));
@@ -1329,14 +1338,15 @@ void pushOrderByIntoView(
     if (!storage->isView() || !select_query_info.has_order_by || !is_single_table_expression)
         return;
 
+    const auto * view = typeid_cast<const StorageView *>(storage.get());
+
     /// Skip inline view() table functions - they're handled by remote()/Distributed
-    if (storage->getStorageID().database_name == "_table_function")
+    if (view && view->isQueryTableFunctionArgument())
         return;
 
     /// A sealed view not read by its definer hides rows from the outer query. The pushed-down `ORDER BY ... LIMIT` would run
     /// below that boundary, so the amount of data read would depend on the rows the view hides.
-    if (const auto * view = typeid_cast<const StorageView *>(storage.get());
-        view && view->isSealed(*storage_snapshot->metadata, query_context)
+    if (view && view->isSealed(*storage_snapshot->metadata, query_context)
         && !view->isReadByDefiner(*storage_snapshot->metadata, query_context))
         return;
 
@@ -1584,6 +1594,8 @@ void pushOrderByIntoView(
     try
     {
         auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
+        /// As in `getViewContext`: only the query of a table function such as `view` is not a stored definition.
+        view_context->setAllowCompoundTableIdentifierQualification(view && view->isQueryTableFunctionArgument());
 
         /// The injected inner `ORDER BY`/`LIMIT` is analyzed and executed under the
         /// view's effective context (`getSQLSecurityOverriddenContext`), not the outer
@@ -2499,7 +2511,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// StorageView::readImpl path enforces them in the correct namespace.
                         const auto & inner_query_ast = storage_snapshot->metadata->getSelectQuery().inner_query;
 
+                        /// A stored view body is read as written, the query of a table function such as `view` is not.
                         auto options = SelectQueryOptions(QueryProcessingStage::FetchColumns).subquery();
+                        options.allowCompoundTableIdentifierQualification(view->isQueryTableFunctionArgument());
                         InterpreterSelectQueryAnalyzer inner_interp(inner_query_ast, inner_context, options);
                         const auto & inner_query_tree = inner_interp.getQueryTree();
                         /// Mark as subquery so it serializes as (SELECT ...) in the FROM clause.

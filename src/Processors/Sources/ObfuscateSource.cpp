@@ -54,6 +54,8 @@ ContextPtr ObfuscateSource::makeInnerContext(const ContextPtr & context_)
 
     /// The inner query is analyzed from scratch, like the body of a view.
     inner_context->setIsViewInnerQuery(true);
+    /// The inner query is a table function argument, not a stored definition.
+    inner_context->setAllowCompoundTableIdentifierQualification(true);
 
     return inner_context;
 }

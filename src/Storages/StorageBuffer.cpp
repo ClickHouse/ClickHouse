@@ -640,6 +640,8 @@ void StorageBuffer::read(
         buffers_select_query_options.is_local_plan_for_distributed_query = true;
         buffers_select_query_options.view_source_in_subqueries
             = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
+        /// The query is printed from the resolved query tree: read its table names as written.
+        buffers_select_query_options.allowCompoundTableIdentifierQualification(false);
 
         /// Column kinds must match this table, so the query below requests only the columns the buffers provide.
         auto storage = std::make_shared<StorageValues>(

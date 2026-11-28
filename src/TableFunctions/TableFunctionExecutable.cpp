@@ -201,7 +201,8 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
         input_queries,
         getActualTableStructure(context, is_insert_query),
         ConstraintsDescription{},
-        /* comment = */ "");
+        /* comment = */ "",
+        /* query_is_table_function_argument_ = */ !creates_table);
     storage->startup();
     return storage;
 }

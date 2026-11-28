@@ -19,12 +19,15 @@ public:
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
         const String & comment,
-        bool is_parameterized_view_ = false);
+        bool is_parameterized_view_ = false,
+        bool query_is_table_function_argument_ = false);
 
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
     bool supportsTruncate() const override { return false; }
     bool isParameterizedView() const { return is_parameterized_view; }
+    /// The query is a part of the calling query (a table function such as `view`), not a stored definition.
+    bool isQueryTableFunctionArgument() const { return query_is_table_function_argument; }
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
@@ -82,6 +85,7 @@ public:
 
 protected:
     bool is_parameterized_view;
+    const bool query_is_table_function_argument;
 };
 
 }

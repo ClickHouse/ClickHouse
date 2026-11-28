@@ -75,7 +75,9 @@ Identifier parseTableIdentifier(const std::string & str, const ContextPtr & cont
 
 std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context)
 {
-    auto resolve_result = IdentifierResolver::tryResolveTableIdentifier(identifier, context);
+    /// The plan names a resolved table: `db`.`table` is read as written, not as a table path in the current database.
+    auto resolve_result = IdentifierResolver::tryResolveTableIdentifier(
+        identifier, context, /*allow_compound_table_identifier_qualification=*/ false);
     if (!resolve_result)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Unknown table {}", identifier.getFullName());
 
@@ -137,6 +139,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     StorageSnapshotPtr snapshot;
     SelectQueryInfo select_query_info;
     ASTPtr table_function_ast;
+    /// Set for the reads the planner checks `SELECT` for.
+    std::optional<StorageID> storage_id_to_check;
 
     if (reading_from_table)
     {
@@ -145,6 +149,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
         storage = table_node->getStorage();
         snapshot = table_node->getStorageSnapshot();
+        storage_id_to_check = table_node->getStorageID();
         select_query_info.table_expression_modifiers = reading_from_table->getTableExpressionModifiers();
     }
     else
@@ -175,6 +180,9 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         {
             storage = table_function_node->getStorage();
             snapshot = table_function_node->getStorageSnapshot();
+            /// Regular table functions are checked in `ITableFunction::execute`.
+            if (table_function_node->isParameterizedView())
+                storage_id_to_check = table_function_node->getStorageID();
             /// Carry the resolved table-function subtree so that the aggregation hash-table-stats
             /// cache key (see calculateHashTableCacheKeys) can tell different arguments apart. A
             /// table-function storage has no UUID and its StorageID does not depend on the arguments
@@ -193,6 +201,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         {
             storage = table_node->getStorage();
             snapshot = table_node->getStorageSnapshot();
+            storage_id_to_check = table_node->getStorageID();
         }
         else
             throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -260,9 +269,20 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     {
         SelectQueryOptions options(QueryProcessingStage::FetchColumns);
         options.ignore_rename_columns = true;
-        InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), context, options);
+        /// The synthesized query names a resolved table: it is read as written, like in `resolveTable`. A table function is user-written.
+        ContextPtr analysis_context = context;
+        if (reading_from_table)
+        {
+            auto as_written_context = Context::createCopy(context);
+            as_written_context->setAllowCompoundTableIdentifierQualification(false);
+            analysis_context = std::move(as_written_context);
+        }
+
+        InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), analysis_context, options);
         reading_plan = std::move(interpreter).extractQueryPlan();
         reading_plan.addInterpreterContext(context);
+        if (analysis_context != context)
+            reading_plan.addInterpreterContext(analysis_context);
     }
     else
     {
@@ -278,6 +298,10 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
         auto mutable_context = Context::createCopy(context);
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", use_parallel_replicas);
+
+        /// A direct read bypasses the planner, which checks `SELECT` on the columns.
+        if (storage_id_to_check)
+            checkAccessRights(storage, *storage_id_to_check, snapshot, column_names, context);
 
         storage->read(
             reading_plan,

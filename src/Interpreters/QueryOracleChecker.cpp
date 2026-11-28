@@ -1113,7 +1113,7 @@ bool referencesDistributedTableAnywhere(const ASTPtr & ast, const ContextPtr & c
             database = context->getCurrentDatabase();
         try
         {
-            auto storage = DatabaseCatalog::instance().tryGetTable({database, table_id->shortName()}, context);
+            auto storage = DatabaseCatalog::instance().tryGetTable({database, table_id->getTableName()}, context);
             if (storage && storage->getName() == "Distributed")
                 return true;
         }
@@ -1150,7 +1150,7 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
             /// Resolve the name as a read resolves it: a temporary view lives in the session
             /// namespace, not a database, and a `{name:Identifier}` placeholder has no name
             /// until substitution. A name that does not resolve cannot be proven safe.
-            const StorageID resolved = context->tryResolveStorageID(StorageID{table_id->getDatabaseName(), table_id->shortName()});
+            const StorageID resolved = context->tryResolveStorageID(StorageID{table_id->getDatabaseName(), table_id->getTableName()});
             if (!resolved)
                 return true;
 
@@ -1306,7 +1306,7 @@ void collectReadParts(const ASTPtr & ast, const ContextPtr & context, Strings & 
     if (const auto * table_id = ast->as<ASTTableIdentifier>();
         table_id && (table_id->compound() || !from_aliases.contains(table_id->shortName())))
     {
-        const StorageID resolved = context->tryResolveStorageID(StorageID{table_id->getDatabaseName(), table_id->shortName()});
+        const StorageID resolved = context->tryResolveStorageID(StorageID{table_id->getDatabaseName(), table_id->getTableName()});
         if (auto storage = resolved ? DatabaseCatalog::instance().tryGetTable(resolved, context) : nullptr)
         {
             if (const auto merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load))

@@ -11,6 +11,7 @@
 #include <Parsers/ParserWithElement.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
 
@@ -47,7 +48,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_compression(Keyword::COMPRESSION);
     ParserKeyword s_table(Keyword::TABLE);
     ParserKeyword s_function(Keyword::FUNCTION);
-    ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_values(Keyword::VALUES);
     ParserKeyword s_format(Keyword::FORMAT);
     ParserKeyword s_settings(Keyword::SETTINGS);
@@ -116,18 +116,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        /// Read one word. It can be table or database name.
-        if (!name_p.parse(pos, table, expected))
+        if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
             return false;
-
-        /// If there is a dot, previous name was database name,
-        /// so read table name after dot.
-        if (s_dot.ignore(pos, expected))
-        {
-            database = table;
-            if (!name_p.parse(pos, table, expected))
-                return false;
-        }
     }
 
     Pos before_lparen = pos;

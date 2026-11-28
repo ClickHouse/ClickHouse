@@ -881,6 +881,8 @@ void StorageTimeSeries::readImpl(
     /// Run the generated read query on a child context with a few settings pinned so its results
     /// don't depend on the caller's session/profile (see getSettingsForSelectFromTimeSeries).
     auto read_context = Context::createCopy(local_context);
+    /// The generated query names resolved tables: they are read as written.
+    read_context->setAllowCompoundTableIdentifierQualification(false);
     read_context->applySettingsChanges(getSettingsForSelectFromTimeSeries(*getStorageSettings(), query_info.isFinal()));
 
     NameSet requested_columns{column_names.begin(), column_names.end()};

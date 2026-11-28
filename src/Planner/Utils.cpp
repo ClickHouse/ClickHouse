@@ -742,7 +742,8 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
         const TableExpressionNodePtr & table_expression,
         const ContextPtr & query_context,
         bool view_source_in_subqueries,
-        bool check_access_rights)
+        bool check_access_rights,
+        bool allow_compound_table_identifier_qualification)
 {
     /// If the filter expression is a standalone subquery (e.g. ROW POLICY
     /// USING (SELECT 1)), wrap it with notEquals(<subquery>, 0) so that
@@ -779,7 +780,8 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
 
     /// The filter reads the source table only in its subqueries, which read the view source iff `view_source_in_subqueries`.
     auto view_source = getViewSourceIfRead(query_context, view_source_in_subqueries);
-    QueryAnalysisPass query_analysis_pass(table_expression, /*only_analyze_=*/ false, view_source, view_source_in_subqueries);
+    QueryAnalysisPass query_analysis_pass(
+        table_expression, /*only_analyze_=*/ false, view_source, view_source_in_subqueries, allow_compound_table_identifier_qualification);
     query_analysis_pass.run(filter_query_tree, query_context);
 
     if (check_access_rights)

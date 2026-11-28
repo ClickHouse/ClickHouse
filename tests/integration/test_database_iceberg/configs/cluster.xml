@@ -12,6 +12,24 @@
                 </replica>
             </shard>
         </cluster_simple>
+        <cluster_demo_default_database>
+            <shard>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                    <default_database>demo</default_database>
+                </replica>
+            </shard>
+        </cluster_demo_default_database>
+        <cluster_worker_default_database_demo>
+            <shard>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                    <user>worker_default_database_demo</user>
+                </replica>
+            </shard>
+        </cluster_worker_default_database_demo>
     </remote_servers>
     <query_log>
         <database>system</database>

@@ -196,7 +196,9 @@ ColumnsDescription TableFunctionEval::getActualTableStructure(ContextPtr context
     chassert(create.children.size() == 1);
     chassert(create.children[0]->as<ASTSelectWithUnionQuery>());
 
-    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
+    /// The query argument is a part of the calling query, not a stored definition.
+    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(
+        create.children[0], context, SelectQueryOptions().allowCompoundTableIdentifierQualification());
     return ColumnsDescription(sample_block->getNamesAndTypesList());
 }
 
@@ -208,7 +210,9 @@ StoragePtr TableFunctionEval::executeImpl(
     bool is_insert_query) const
 {
     auto columns = getActualTableStructure(context, is_insert_query);
-    auto res = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "");
+    auto res = std::make_shared<StorageView>(
+        StorageID(getDatabaseName(), table_name), create, columns, "", /* is_parameterized_view_ = */ false,
+        /* query_is_table_function_argument_ = */ true);
     res->startup();
     return res;
 }

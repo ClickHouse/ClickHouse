@@ -1423,6 +1423,8 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
     const auto & metadata = metadata_snapshots.at(current);
     auto parent_select_context = select_contexts.at(path.parent(2));
     auto select_context = metadata->getSQLSecurityOverriddenContext(parent_select_context);
+    /// The view query is stored SQL: read table names in it as written.
+    select_context->setAllowCompoundTableIdentifierQualification(false);
     if (metadata->sql_security_type != SQLSecurityType::DEFINER && metadata->sql_security_type != SQLSecurityType::NONE)
         select_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
     // Processing of blocks for MVs is done block by block, and there will

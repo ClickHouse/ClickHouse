@@ -24,7 +24,8 @@ public:
         const VectorWithMemoryTracking<ASTPtr> & input_queries,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
-        const String & comment);
+        const String & comment,
+        bool query_is_table_function_argument_ = false);
 
     ~StorageExecutable() override;
 
@@ -47,6 +48,8 @@ public:
 private:
     std::unique_ptr<ExecutableSettings> settings;
     VectorWithMemoryTracking<ASTPtr> input_queries;
+    /// The input queries are a part of the calling query (the `executable` table function), not a stored definition.
+    const bool query_is_table_function_argument;
     LoggerPtr log;
     std::unique_ptr<ShellCommandSourceCoordinator> coordinator;
 };

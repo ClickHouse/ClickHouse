@@ -105,10 +105,12 @@ StorageExecutable::StorageExecutable(
     const VectorWithMemoryTracking<ASTPtr> & input_queries_,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
-    const String & comment)
+    const String & comment,
+    bool query_is_table_function_argument_)
     : StorageWithCommonVirtualColumns(table_id_)
     , settings(std::make_unique<ExecutableSettings>(settings_))
     , input_queries(input_queries_)
+    , query_is_table_function_argument(query_is_table_function_argument_)
     , log(settings->is_executable_pool ? getLogger("StorageExecutablePool") : getLogger("StorageExecutable"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -198,11 +200,15 @@ void StorageExecutable::readImpl(
     QueryPlanResourceHolder resources;
     inputs.reserve(input_queries.size());
 
+    /// Input queries of a stored table read table names as written; those of the `executable` table function do not.
+    SelectQueryOptions input_query_options;
+    input_query_options.allowCompoundTableIdentifierQualification(query_is_table_function_argument);
+
     /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
     for (auto & input_query : input_queries)
     {
         QueryPipelineBuilder builder = InterpreterSelectQueryAnalyzer(
-            input_query, context, {}, context->isViewInnerQuery() ? nullptr : context->getViewSource()).buildQueryPipeline();
+            input_query, context, input_query_options, context->isViewInnerQuery() ? nullptr : context->getViewSource()).buildQueryPipeline();
         inputs.emplace_back(QueryPipelineBuilder::getPipe(std::move(builder), resources));
     }
 

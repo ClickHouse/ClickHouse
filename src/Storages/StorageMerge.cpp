@@ -1369,6 +1369,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         try
         {
             auto modified_context = Context::createCopy(context);
+            /// A child is read by its bound identity: names generated for it and its stored definitions are read as written.
+            modified_context->setAllowCompoundTableIdentifierQualification(false);
             /// See `getChildPlanOptimizationSettings`: a child plan must never use parallel
             /// replicas. The setting is cleared in the context as well, because the
             /// parallel-replicas conversion re-checks `canUseParallelReplicasOnInitiator` against
@@ -2836,7 +2838,13 @@ void ReadFromMerge::convertAndFilterSourceStream(
             QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
             query_tree->setAlias(alias.name);
 
-            QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
+            /// `ALIAS` expressions are stored SQL: read table names in them as written.
+            QueryAnalysisPass query_analysis_pass(
+                modified_query_info.table_expression,
+                /*only_analyze_=*/ false,
+                /*replaced_storage_=*/ nullptr,
+                /*view_source_in_subqueries_=*/ false,
+                /*allow_compound_table_identifier_qualification_=*/ false);
             query_analysis_pass.run(query_tree, local_context);
 
             /// On the query info cache path nothing registered this expression's sets.

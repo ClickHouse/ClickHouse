@@ -616,6 +616,8 @@ void PrometheusHTTPProtocolAPI::getSeries(
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
     auto query_context = Context::createCopy(getContext());
+    /// The generated query names resolved tables: they are read as written.
+    query_context->setAllowCompoundTableIdentifierQualification(false);
     StorageTimeSeriesSelector::applySettingsForSelectIDsQuery(*query_context);
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
 
@@ -935,6 +937,8 @@ void PrometheusHTTPProtocolAPI::getLabelsOrLabelValues(
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
     auto query_context = Context::createCopy(getContext());
+    /// The generated query names resolved tables: they are read as written.
+    query_context->setAllowCompoundTableIdentifierQualification(false);
     StorageTimeSeriesSelector::applySettingsForSelectIDsQuery(*query_context);
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
 

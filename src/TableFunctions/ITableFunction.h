@@ -71,6 +71,9 @@ public:
     /// Such a definition has to load even if a newer version validates the arguments more strictly.
     void setReplayedDefinition(bool value) { arguments_from_stored_definition = value; }
 
+    /// Set when the call builds a table (`CREATE TABLE ... AS f(...)`, also loaded back): its query argument is a stored definition.
+    void setCreatesTable(bool value) { creates_table = value; }
+
     /** The identity of the source this call reads, if a parallel-replicas read can be coordinated over it.
       * Each replica resolves the call itself, so the call must denote the same logical source on every
       * replica, and evaluating it must have no effect beyond looking that source up. The identity names the
@@ -235,6 +238,7 @@ private:
 
 protected:
     bool arguments_from_stored_definition = false;
+    bool creates_table = false;
 };
 
 /// Properties of table function that are independent of argument types and parameters.

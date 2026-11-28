@@ -251,9 +251,17 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
     QueryTreeData data;
     std::vector<Analyzer::CNFAtomicFormula> atomic_constraints_data;
 
-    QueryAnalysisPass pass(table_node);
+    /// Constraints are stored SQL: read table names in them as written.
+    QueryAnalysisPass pass(
+        table_node,
+        /*only_analyze_=*/ false,
+        /*replaced_storage_=*/ nullptr,
+        /*view_source_in_subqueries_=*/ false,
+        /*allow_compound_table_identifier_qualification_=*/ false);
 
-    for (const auto & constraint : filterConstraintsForOptimization())
+    const auto constraints_for_optimization = filterConstraintsForOptimization();
+
+    for (const auto & constraint : constraints_for_optimization)
     {
         auto expr = constraint->as<ASTConstraintDeclaration>()->expr->ptr();
         // Wrap the scalar expression with a function call "equals(SELECT..., 1)".

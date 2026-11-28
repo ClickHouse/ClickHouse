@@ -10411,6 +10411,63 @@ Cloud default value: `1`.
 )", BETA, allow_experimental_database_iceberg, \
         {"25.8", false, false, "Added an alias for setting `allow_experimental_database_iceberg`"}, \
         {"24.12", false, false, "New setting. At the time the setting was named `allow_experimental_database_iceberg`, which is now an alias of it."}) \
+    DECLARE(Bool, enable_table_namespaces, false, R"(
+Allow namespace-aware resolution of dotted table identifiers.
+
+When the setting is enabled, a dotted table path such as `db.ns.table` in a table expression names table `ns.table`
+of database `db`, the same as the quoted name ``db.`ns.table` ``. Without the setting a query that reads from such
+a table expression is rejected with `INVALID_IDENTIFIER` and the quoted name has to be used. The check is made by
+the analyzer on the table expression as written. Statements that name their target table directly (`INSERT`,
+`CREATE`, `DROP`, `ALTER`, `DESCRIBE` and similar) accept the path regardless of the setting. Statements that
+the server rewrites before analysis, such as `SHOW ... WHERE` or a mutation, may accept the path as well.
+A definition that is stored (the query of a view or a materialized view, a constraint, a SQL function) is checked
+like a query, each time it is analysed and with the settings in effect there: those of the user who reads the view,
+inserts into the table or calls the function. A table `TTL` is analysed with the server settings, and a refreshable
+materialized view is not refreshed with the settings of the session that created it, so a session setting does not
+apply to them. To make a definition independent of these settings, use the quoted name or add
+`SETTINGS enable_table_namespaces = 1` to the query inside it; the clause is ignored for a user
+with `readonly = 1`, the quoted name works for everyone. A definition is stored with the quoted name, so once it
+is loaded from the stored text (after a restart or `ATTACH`) a path in a table expression of it no longer needs
+the setting.
+When the setting is enabled, the analyzer additionally:
+- resolves a two-part name `a.b` in a table expression as table `b` of database `a`, and also as table `a.b`
+  of the current database if that database supports table namespaces (a data lake catalog) and `a` is not
+  `system`. It fails with `AMBIGUOUS_IDENTIFIER` when both exist and the user can access both;
+  if the user can access only one of them, that one is used. Database `a` must exist;
+  when it does not, the query fails with `UNKNOWN_DATABASE` even if the table `a.b` exists.
+  The current-database reading is not applied to SQL stored in definitions (view and materialized view
+  bodies, row policy conditions, mutations, column `DEFAULT` / `MATERIALIZED` / `ALIAS` expressions,
+  `ClickHouse` dictionary source queries executed on the same server, SQL function bodies, the input
+  queries of an `Executable` or `ExecutablePool` table, the query argument of the table function when
+  a table is created with `CREATE TABLE ... AS f(...)` and when it is read), where `a.b` is always
+  table `b` of database `a`,
+  except in the query argument of table functions `view`, `viewIfPermitted`, `eval`, `obfuscate`,
+  `explain` and `executable` that such SQL calls. Nor is it applied to a table that an engine reads
+  by its stored name: a table of a `Merge` table or of the `merge` table function, the table that
+  the `loop` table function reads by its name, and the table that
+  a `Distributed` table or the `remote` / `cluster` table functions read from a shard that the initiator
+  plans itself (its local replica with `prefer_localhost_replica`, or a shard that gets a serialized
+  query plan). A shard that receives the query as text reads it with its own current database. A filter
+  from `additional_table_filters` applied to such a table is read as written too. For `loop`, so is
+  a filter from `additional_result_filter`. A `Buffer` table over
+  such a table (for example, over a `Distributed` table) reads the rows it still holds through a query
+  generated from the calling one, and table names in that query are read as written too.
+  A cluster table function (`s3Cluster`, `fileCluster`, `urlCluster` and the like) computes its header
+  from a query generated from the calling one, and table names in that query are read as written too.
+  The temporary table of a `GLOBAL IN` subquery sent to the shards with a pushed-down filter takes its structure
+  from a query generated from the calling one, and table names in that query are read as written too.
+  When `parallel_distributed_insert_select` runs an `INSERT ... SELECT` from a `Distributed` table (or from
+  `remote` / `cluster` naming a table) into a `Distributed` table on the shards, the table of the shard is read
+  through a rewritten query. On the local replica (with `prefer_localhost_replica`) the table names of that
+  query, including those in its subqueries, are read as written too.
+  Parts of the calling query that are resolved inside
+  a SQL function body are read as written too: a lambda passed as an argument, a `WITH` lambda that the body
+  calls, and a CTE that the body or such a lambda refers to. Such a CTE stays read as written for its later
+  uses in the same query;
+- lets a column qualifier span the parts of such a table name, so `ns.table.column` and
+  `db.ns.table.column` refer to a column of table `ns.table`.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New experimental setting for namespace-aware resolution of dotted table identifiers."}) \
     DECLARE_WITH_ALIAS(Bool, allow_database_unity_catalog, false, R"(
 Allow database engine `DataLakeCatalog` with `catalog_type = 'unity'`
 

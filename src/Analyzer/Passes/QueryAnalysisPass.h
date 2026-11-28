@@ -77,7 +77,8 @@ public:
         bool only_analyze_ = false,
         bool positional_arguments_already_resolved_ = false,
         StoragePtr replaced_storage_ = nullptr,
-        bool view_source_in_subqueries_ = false);
+        bool view_source_in_subqueries_ = false,
+        bool allow_compound_table_identifier_qualification_ = true);
 
     /** Construct query analysis pass for expression or list of expressions analysis.
       * Available expression columns are extracted from table expression.
@@ -87,7 +88,8 @@ public:
         TableExpressionNodePtr table_expression_,
         bool only_analyze_ = false,
         StoragePtr replaced_storage_ = nullptr,
-        bool view_source_in_subqueries_ = false);
+        bool view_source_in_subqueries_ = false,
+        bool allow_compound_table_identifier_qualification_ = true);
 
     String getName() override
     {
@@ -107,6 +109,7 @@ private:
     const bool positional_arguments_already_resolved = false;
     const StoragePtr replaced_storage;
     const bool view_source_in_subqueries = false;
+    const bool allow_compound_table_identifier_qualification = true;
 };
 
 }

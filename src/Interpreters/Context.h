@@ -680,6 +680,11 @@ protected:
     bool skip_forced_projection_check = false;
     /// True when this context belongs to the inner query of an expanded view.
     bool is_view_inner_query = false;
+
+    /// Whether a compound table identifier `a.b` may also be read as table `a.b` of the current database.
+    /// False in contexts of stored definitions such as view bodies and mutations: table names in them are read as written.
+    /// The analyzer can also take the restriction as an argument (`QueryAnalysisPass`); then only nested query contexts get it.
+    bool allow_compound_table_identifier_qualification = true;
     /// Set for the query of a `SQL SECURITY DEFINER` / `NONE` view or materialized view. It must not hand its reads to parallel
     /// replicas (including the replicas of a `Distributed` shard) or a `-Cluster` storage: a replica cannot run them with its
     /// privileges. Plan-based local reads stay allowed.
@@ -2118,6 +2123,9 @@ public:
 
     bool isAnalyzingBackgroundExpressions() const { return is_analyzing_background_expressions; }
     void setAnalyzingBackgroundExpressions(bool value) { is_analyzing_background_expressions = value; }
+
+    bool isCompoundTableIdentifierQualificationAllowed() const { return allow_compound_table_identifier_qualification; }
+    void setAllowCompoundTableIdentifierQualification(bool value) { allow_compound_table_identifier_qualification = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }

@@ -38,6 +38,7 @@ public:
         bool is_create_parameterized_view;
         bool replace_only_to_literals;
         std::optional<size_t> max_literal_size;
+        bool allow_compound_table_identifier_qualification = true;
     };
 
     static bool needChildVisit(ASTPtr & node, const ASTPtr &);

@@ -396,19 +396,38 @@ void hideLambdaArgumentsShadowingAliasExpression(
 }
 
 QueryAnalyzer::QueryAnalyzer(
-    bool only_analyze_, bool positional_arguments_already_resolved_, StoragePtr replaced_storage_, bool view_source_in_subqueries_)
+    bool only_analyze_,
+    bool positional_arguments_already_resolved_,
+    StoragePtr replaced_storage_,
+    bool view_source_in_subqueries_,
+    bool allow_compound_table_identifier_qualification_)
     : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
     , positional_arguments_already_resolved(positional_arguments_already_resolved_)
     , replaced_storage(std::move(replaced_storage_))
     , view_source_in_subqueries(view_source_in_subqueries_)
+    , allow_compound_table_identifier_qualification(allow_compound_table_identifier_qualification_)
 {}
 
 QueryAnalyzer::~QueryAnalyzer() = default;
 
+void QueryAnalyzer::applyRootScopeRestrictions(const QueryTreeNodePtr & node, IdentifierResolveScope & scope) const
+{
+    if (allow_compound_table_identifier_qualification)
+        return;
+
+    scope.allow_compound_table_identifier_qualification = false;
+    if (auto * query_node = node->as<QueryNode>())
+        query_node->getMutableContext()->setAllowCompoundTableIdentifierQualification(false);
+    else if (auto * union_node = node->as<UnionNode>())
+        union_node->getMutableContext()->setAllowCompoundTableIdentifierQualification(false);
+}
+
 void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context)
 {
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
+
+    applyRootScopeRestrictions(node, scope);
 
     if (!scope.context)
         scope.context = context;
@@ -500,6 +519,9 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context)
 {
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
+
+    applyRootScopeRestrictions(node, scope);
+
     if (!scope.context)
         scope.context = context;
 
@@ -1956,7 +1978,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve table identifier from database catalog
     if (!resolve_result.resolved_identifier && identifier_resolve_context.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
-        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context, replaced_storage);
+        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+            identifier_lookup.identifier, scope.context, scope.allow_compound_table_identifier_qualification, replaced_storage);
     }
 
     /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)
@@ -5499,7 +5522,8 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
                 scope_it->second = IdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
             IdentifierResolveScope & alias_column_resolve_scope = scope_it->second;
             alias_column_resolve_scope.table_expression_data_for_alias_resolution = &data;
-            alias_column_resolve_scope.context = scope.context;
+            /// `ALIAS` expressions are stored SQL: read table names in them as written.
+            alias_column_resolve_scope.allow_compound_table_identifier_qualification = false;
 
             /// Initialize aliases in alias column scope
             QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases, alias_column_resolve_scope.context);
@@ -7043,9 +7067,14 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
         }
 
         /// Resolve the row policy filter expression against result_node's columns.
+        /// A row policy is a stored definition: read table names in it as written.
         auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), scope.context);
         QueryAnalyzer filter_analyzer(
-            this->only_analyze, /*positional_arguments_already_resolved_=*/ false, replaced_storage, view_source_in_subqueries);
+            this->only_analyze,
+            /*positional_arguments_already_resolved_=*/ false,
+            replaced_storage,
+            view_source_in_subqueries,
+            /*allow_compound_table_identifier_qualification_=*/ false);
         filter_analyzer.resolve(filter_node, result_node, scope.context);
 
         /// Build wrapper: SELECT <cols> FROM (result_node) WHERE <resolved_filter>

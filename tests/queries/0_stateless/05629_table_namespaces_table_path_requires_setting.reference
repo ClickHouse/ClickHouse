@@ -1,0 +1,47 @@
+-- A: a table path in a table expression needs the setting
+A1: Code: 703
+A2: Code: 703
+A3: Code: 703
+-- T: statements that name their target accept the path
+T1: ok
+T2: 1
+-- S: SELECT scoping
+S1: 1
+S2: 1
+S3: ok
+S4: Code: 703
+S5a: 1
+S5b: Code: 703
+S6a: Code: 703
+S6b: 1 1
+S7a: Code: 703
+S7b: Code: 703
+S7c: Code: 703
+S7d: 1
+S8a: Code: 703
+S8b: Code: 703
+S8c: Code: 703
+S9: Code: 703
+S10: 1
+-- V: stored definitions
+CREATE VIEW db.v\n(\n    `x` UInt64\n)\nAS SELECT x\nFROM db.`ns.t`
+V2a: ok
+V2b: 1
+D1: Code: 630
+-- C: a definition with the SETTINGS clause does not depend on the setting of its user
+C1a: ok
+C1b: 1
+C1c: ok
+C1d: ok
+C1e: 1
+C2a: ok
+C2b: ok
+C2c: 1
+C3a: ok
+C3b: 2
+C4a: ok
+C4b: ok
+-- F: formatting is not checked
+F1a: CREATE TABLE a.`b.c` (`x` UInt64) ENGINE = Memory
+F1b: SELECT * FROM a.`b.c`
+F1c: INSERT INTO a.`b.c` FORMAT Values

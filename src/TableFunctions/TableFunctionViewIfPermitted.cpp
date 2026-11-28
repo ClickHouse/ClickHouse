@@ -121,7 +121,9 @@ StoragePtr TableFunctionViewIfPermitted::executeImpl(
 
     if (isPermitted(context, columns))
     {
-        storage = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "");
+        storage = std::make_shared<StorageView>(
+            StorageID(getDatabaseName(), table_name), create, columns, "", /* is_parameterized_view_ = */ false,
+            /* query_is_table_function_argument_ = */ true);
     }
     else
     {
@@ -150,7 +152,9 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
     try
     {
         /// Will throw ACCESS_DENIED if the current user is not allowed to execute the SELECT query.
-        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
+        /// The query argument is a part of the calling query, not a stored definition.
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(
+            create.children[0], context, SelectQueryOptions().allowCompoundTableIdentifierQualification());
     }
     catch (Exception & e)
     {

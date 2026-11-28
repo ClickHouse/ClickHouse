@@ -362,6 +362,8 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     view_settings[Setting::extremes] = false;
     view_context->setSettings(view_settings);
     view_context->setIsViewInnerQuery(true);
+    /// The query of a table function such as `view` is a part of the query that calls it, not a stored definition.
+    view_context->setAllowCompoundTableIdentifierQualification(view->isQueryTableFunctionArgument());
     return view_context;
 }
 
@@ -523,8 +525,10 @@ StorageView::StorageView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     const String & comment,
-    bool is_parameterized_view_)
+    bool is_parameterized_view_,
+    bool query_is_table_function_argument_)
     : StorageWithCommonVirtualColumns(table_id_)
+    , query_is_table_function_argument(query_is_table_function_argument_)
 {
     StorageInMemoryMetadata storage_metadata;
     if (!is_parameterized_view_)
@@ -585,7 +589,14 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
     {
         inner_query_tree = buildQueryTree(inner_query_ast->clone(), context);
         QueryTreePassManager pass_manager(context);
-        addQueryTreePasses(pass_manager);
+        /// A stored view body reads table names as written; the query of a table function such as `view` does not.
+        addQueryTreePasses(
+            pass_manager,
+            /*only_analyze=*/ false,
+            /*positional_arguments_already_resolved=*/ false,
+            /*replaced_storage=*/ nullptr,
+            /*view_source_in_subqueries=*/ false,
+            /*allow_compound_table_identifier_qualification=*/ query_is_table_function_argument);
         pass_manager.runOnlyResolve(inner_query_tree);
         /// Each replica would expand the body itself, and a decorrelated subquery reads the table again.
         if (containsCorrelatedSubquery(inner_query_tree))
@@ -1006,6 +1017,8 @@ ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const Storage
     /// The inlined view body is the inner query of the view, just like in `getViewContext`:
     /// e.g. it must read the table itself, not the inserted block of a materialized view.
     view_context->setIsViewInnerQuery(true);
+    /// The view body is stored SQL: read table names in it as written.
+    view_context->setAllowCompoundTableIdentifierQualification(false);
     return view_context;
 }
 

@@ -1,0 +1,24 @@
+-- setting off
+Code: 703
+Code: 703
+-- setting on
+1
+1
+1
+x	Int32
+x	Int32
+ns.t
+show create: same
+explain syntax: same
+SELECT * FROM a.`b.c`
+-- DDL
+ns.t
+ns.t2
+0
+-- errors, setting off
+Code: 81
+Code: 703
+Code: 62
+Code: 703
+-- HTTP
+1

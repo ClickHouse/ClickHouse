@@ -118,7 +118,10 @@ public:
 
         if (DatabaseCatalog::instance().isTableExist(inner_storage->getStorageID(), context))
         {
-            inner_context = Context::createCopy(context);
+            auto modified_context = Context::createCopy(context);
+            /// The table is read by its bound identity: its generated name is read as written.
+            modified_context->setAllowCompoundTableIdentifierQualification(false);
+            inner_context = modified_context;
             const auto & storage_id = inner_storage->getStorageID();
             buildSelectQueryPlan(
                 plan, column_names, query_info, inner_context,

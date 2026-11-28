@@ -59,6 +59,7 @@ void addQueryTreePasses(
     bool only_analyze = false,
     bool positional_arguments_already_resolved = false,
     StoragePtr replaced_storage = nullptr,
-    bool view_source_in_subqueries = false);
+    bool view_source_in_subqueries = false,
+    bool allow_compound_table_identifier_qualification = true);
 
 }

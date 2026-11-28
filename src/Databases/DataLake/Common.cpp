@@ -207,15 +207,23 @@ String icebergTypeToGlueType(const Poco::Dynamic::Var & type)
     throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Unknown Iceberg complex type: {}", type_name);
 }
 
-std::pair<std::string, std::string> parseTableName(const std::string & name)
+std::optional<std::pair<std::string, std::string>> tryParseTableName(const std::string & name)
 {
     auto pos = name.rfind('.');
     if (pos == std::string::npos)
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table cannot have empty namespace: {}", name);
+        return std::nullopt;
 
     auto table_name = name.substr(pos + 1);
-    auto namespace_name = name.substr(0, name.size() - table_name.size() - 1);
-    return {namespace_name, table_name};
+    auto namespace_name = name.substr(0, pos);
+    return std::make_pair(namespace_name, table_name);
+}
+
+std::pair<std::string, std::string> parseTableName(const std::string & name)
+{
+    auto result = tryParseTableName(name);
+    if (!result)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table cannot have empty namespace: {}", name);
+    return *result;
 }
 
 }

@@ -115,9 +115,12 @@ public:
         const IdentifierResolveScope & scope);
 
     /// `replaced_storage` is the view source that the caller swaps into the query tree after the analysis.
+    /// Checks access to the table metadata.
+    /// `allow_compound_table_identifier_qualification` is the scope's value; the context can forbid it as well.
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
         const ContextPtr & context,
+        bool allow_compound_table_identifier_qualification,
         const StoragePtr & replaced_storage = nullptr);
 
     /// Build a `nested(...)` FunctionNode for the given identifier prefix by combining
@@ -131,7 +134,15 @@ public:
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,
         const ContextPtr & context,
+        bool allow_compound_table_identifier_qualification,
         const StoragePtr & replaced_storage = nullptr);
+
+    /// True if the user may see at least one column of the table.
+    static bool hasAccessToTableMetadata(
+        const StoragePtr & storage,
+        const StorageID & storage_id,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & context);
 
     /// Throw `ACCESS_DENIED` unless the user may see at least one column of the table.
     static void checkAccessToTableMetadata(
@@ -158,8 +169,10 @@ public:
         const AnalysisTableExpressionData * data = nullptr;
     };
 
-    /// The table expression of `scope` or its parent scopes that the qualifier of `identifier` names.
-    /// A database and table match is preferred over an alias, table name or materialized CTE name match.
+    /// The table expression of `scope` or its parent scopes whose alias, table path, materialized CTE name,
+    /// or database and table path is a proper prefix of `identifier`.
+    /// A database and table match is preferred over an alias, table path or materialized CTE name match.
+    /// Returns an empty `node` when there is none.
     static QualifyingTableExpression tryFindTableExpressionByQualifier(
         const Identifier & identifier,
         const IdentifierResolveScope & scope);
@@ -192,6 +205,12 @@ public:
 
 private:
     QueryTreeNodePtr tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
+
+    static std::shared_ptr<TableNode> tryResolveTableIdentifier(
+        const std::string & database_name,
+        const std::string & table_name,
+        const ContextPtr & context,
+        const StoragePtr & replaced_storage);
 
     /// Returns an empty result when the table expression has no such column, subcolumn or Nested prefix.
     IdentifierResolveResult tryResolveIdentifierFromStorage(

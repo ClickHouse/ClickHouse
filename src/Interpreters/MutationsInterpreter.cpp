@@ -140,7 +140,9 @@ void checkNoRowPolicyForSetOperands(
             if (const auto * table_identifier = right_operand->as<ASTTableIdentifier>())
             {
                 auto resolved = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-                    Identifier(table_identifier->name_parts), context);
+                    Identifier(table_identifier->name_parts),
+                    context,
+                    /*allow_compound_table_identifier_qualification=*/ false); /// Read as the mutation will read them.
                 if (!resolved.resolved_identifier && throw_if_unresolved)
                     throw Exception(
                         ErrorCodes::UNKNOWN_TABLE,
@@ -227,7 +229,14 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     query_node.getJoinTreeNode() = std::make_shared<TableNode>(storage, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(query_tree_pass_manager);
+    /// Mutation commands are stored SQL: read table names in them as written.
+    addQueryTreePasses(
+        query_tree_pass_manager,
+        /*only_analyze=*/ false,
+        /*positional_arguments_already_resolved=*/ false,
+        /*replaced_storage=*/ nullptr,
+        /*view_source_in_subqueries=*/ false,
+        /*allow_compound_table_identifier_qualification=*/ false);
     query_tree_pass_manager.run(query_tree);
 
     return query_tree;
@@ -370,7 +379,8 @@ IsStorageTouched isStorageTouchedByMutations(
         return no_rows;
 
     auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context);
-    InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
+    InterpreterSelectQueryAnalyzer interpreter(
+        select_query_tree, context, SelectQueryOptions().ignoreLimits().allowCompoundTableIdentifierQualification(false));
     BlockIO io = interpreter.execute();
 
     PullingAsyncPipelineExecutor executor(io.pipeline);
@@ -717,6 +727,8 @@ MutationsInterpreter::MutationsInterpreter(
     /// Mutation source reads build a synthetic `SELECT` without a table expression,
     /// so parallel replicas must not be used for them.
     new_context->setSetting("enable_parallel_replicas", Field(0));
+    /// Mutation commands are stored SQL: read table names in them as written.
+    new_context->setAllowCompoundTableIdentifierQualification(false);
     /// A mutation runs locally, its set subqueries too.
     new_context->setSetting("make_distributed_plan", Field(0));
     /// `JOIN` -> `IN` in a set subquery would make the right side of the join the source of a new set,
@@ -2802,6 +2814,8 @@ std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
             for (const auto & name_resolution_settings : name_resolution_settings_variants)
             {
                 auto analysis_context = Context::createCopy(context);
+                /// Read table names in the mutation as written, like its execution does.
+                analysis_context->setAllowCompoundTableIdentifierQualification(false);
                 analysis_context->setSetting("analyzer_compatibility_prefer_alias_over_subcolumn", name_resolution_settings.prefer_alias_over_subcolumn);
                 analysis_context->setSetting("prefer_column_name_to_alias", name_resolution_settings.prefer_column_name_to_alias);
 
