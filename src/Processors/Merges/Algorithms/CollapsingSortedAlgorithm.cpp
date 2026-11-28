@@ -201,13 +201,10 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
 
         Int8 sign = assert_cast<const ColumnInt8 &>(*current->all_columns[sign_column_number]).getData()[current->getRow()];
 
-        RowRef current_row;
-        setRowRef(current_row, current);
-
         if (last_row.empty())
             setRowRef(last_row, current);
 
-        bool key_differs = rowsHaveDifferentSortColumns(last_row, current_row);
+        bool key_differs = rowsHaveDifferentSortColumns(last_row, current);
         if (key_differs)
         {
             /// if there are enough rows and the last one is calculated completely
@@ -217,8 +214,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             /// We write data for the previous primary key.
             auto res = insertRows();
 
-            /// Copy, do not swap: the invalid-sign branch below reads `current_row` this iteration.
-            last_row = current_row;
+            setRowRef(last_row, current);
 
             count_negative = 0;
             count_positive = 0;
@@ -265,6 +261,9 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             /// Do not return it for SELECT ... FINAL.
             if (!only_positive_sign)
             {
+                RowRef current_row;
+                setRowRef(current_row, current);
+
                 ++count_invalid;
 
                 /// Buffer only what a vertical merge could have to reorder: its gather stage
