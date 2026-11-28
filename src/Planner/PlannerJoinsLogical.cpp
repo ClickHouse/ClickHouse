@@ -11,6 +11,7 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/StorageProxy.h>
@@ -254,7 +255,7 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             const bool keep_original_type = preserved_side == inner_column_side;
 
             auto & arg = args.emplace_back(builder_context.addExpression(inner_column));
-            if (!arg.getType()->equals(*result_type) && !keep_original_type)
+            if (!equalsIncludingBool(*arg.getType(), *result_type) && !keep_original_type)
             {
                 arg = JoinActionRef::transform({arg}, cast_to_super);
             }

@@ -35,8 +35,8 @@ natural	2
 using full	3	0
 using full reversed	3	0
 using left	3	0
-using types	Nullable(Bool)	Nullable(Bool)
-using types	Nullable(Bool)	Nullable(Bool)
+using types	Nullable(UInt8)	Nullable(UInt8)
+using types	Nullable(UInt8)	Nullable(UInt8)
 plain anti rf	2
 plain anti rf built	1	1
 nullable anti rf	2

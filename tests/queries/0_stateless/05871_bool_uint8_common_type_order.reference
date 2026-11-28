@@ -1,0 +1,89 @@
+UInt8	1	1
+UInt8	2	0
+UInt8	1	1
+UInt8	2	0
+Bool	false
+Bool	true
+Array(UInt8)	[1]
+Array(UInt8)	[2]
+Nullable(UInt8)	1
+Nullable(UInt8)	2
+Tuple(UInt8)	(1)
+Tuple(UInt8)	(2)
+Map(String, UInt8)	{'a':1}
+Map(String, UInt8)	{'a':2}
+LowCardinality(UInt8)	1
+LowCardinality(UInt8)	2
+UInt8	1
+UInt8	1
+UInt8	2
+UInt8	1
+UInt8	2
+Bool	UInt8	UInt8
+[1,2]	Array(UInt8)	[2,1]	Array(UInt8)	[true,false]	Array(Bool)
+UInt8	1
+UInt8	2
+UInt8	1
+UInt8	2
+UInt8	UInt8	UInt8
+UInt8	1
+UInt8	2
+JSON(a UInt8)	{"a":1}
+JSON(a UInt8)	{"a":2}
+JSON(a UInt8)	{"a":1}
+JSON(a UInt8)	{"a":2}
+UInt8	1
+UInt8	2
+UInt8	1
+UInt8	2
+SimpleAggregateFunction(any, Bool)
+SimpleAggregateFunction(any, Bool)
+1	UInt8
+UInt8	1
+UInt8	2
+AggregateFunction(any, UInt8)	1	1
+AggregateFunction(any, UInt8)	2	0
+AggregateFunction(any, UInt8)	1	1
+AggregateFunction(any, UInt8)	2	0
+AggregateFunction(any, Bool)
+AggregateFunction(any, Bool)
+Array(AggregateFunction(any, UInt8))	Array(AggregateFunction(any, UInt8))
+Array(AggregateFunction(argMax, UInt8, UInt8))	Array(AggregateFunction(argMax, UInt8, UInt8))
+AggregateFunction(anyTuple, Tuple(UInt8))	(1)
+AggregateFunction(anyTuple, Tuple(UInt8))	(2)
+AggregateFunction(anyTuple, Tuple(UInt8))	(1)
+AggregateFunction(anyTuple, Tuple(UInt8))	(2)
+Array(AggregateFunction(anyTuple, Tuple(UInt8)))	Array(AggregateFunction(anyTuple, Tuple(UInt8)))
+1
+1
+1
+1
+0	1
+1	0
+0	1
+1	0
+0	1
+1	0
+0	1
+1	0
+0	1
+1	0
+0	1
+1	0
+UInt8	1
+UInt8	2
+UInt8	1
+UInt8	2
+0	1
+1	0
+0	1
+1	0
+1
+1
+1
+0	UInt16
+2	UInt16
+0	UInt16
+2	UInt16
+UInt8	2	0
+UInt8	1	1

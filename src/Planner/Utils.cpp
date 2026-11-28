@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/getLeastSuperColumn.h>
 #include <Columns/ColumnConst.h>
@@ -160,8 +161,15 @@ void addConvertingToCommonHeaderActionsIfNeeded(
     for (size_t i = 0; i < queries_size; ++i)
     {
         auto & query_node_plan = query_plans[i];
-        if (blocksHaveEqualStructure(*query_node_plan->getCurrentHeader(), union_common_header))
-            continue;
+        const auto & header = *query_node_plan->getCurrentHeader();
+        if (blocksHaveEqualStructure(header, union_common_header))
+        {
+            bool same_bool_labels = true;
+            for (size_t column = 0; column < header.columns() && same_bool_labels; ++column)
+                same_bool_labels = equalsIncludingBool(*header.getByPosition(column).type, *union_common_header.getByPosition(column).type);
+            if (same_bool_labels)
+                continue;
+        }
 
         auto actions_dag = ActionsDAG::makeConvertingActions(
             query_node_plan->getCurrentHeader()->getColumnsWithTypeAndName(),
@@ -171,6 +179,16 @@ void addConvertingToCommonHeaderActionsIfNeeded(
             false /*ignore_constant_values*/,
             false /*add_cast_columns*/,
             nullptr /*new_names*/);
+
+        /// `makeConvertingActions` keeps a `Bool` label where the common type has `UInt8`.
+        auto & outputs = actions_dag.getOutputs();
+        for (size_t column = 0; column < outputs.size(); ++column)
+        {
+            const auto & common_column = union_common_header.getByPosition(column);
+            if (!equalsIncludingBool(*outputs[column]->result_type, *common_column.type))
+                outputs[column] = &actions_dag.addAlias(actions_dag.addCast(*outputs[column], common_column.type, {}, context), common_column.name);
+        }
+
         auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
         converting_step->setStepDescription("Conversion before UNION");
         query_node_plan->addStep(std::move(converting_step));

@@ -9,7 +9,10 @@
 
 #include <DataTypes/getLeastSupertype.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -26,6 +29,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/TypeTree.h>
 
 
 namespace DB
@@ -241,6 +245,61 @@ void convertUInt64toInt64IfPossible(const DataTypes & types, TypeIndexSet & type
     }
 }
 
+bool hasBoolLabel(const IDataType & type)
+{
+    return (type.hasCustomName() && type.getName() == "Bool") || isSimpleAggregateFunctionOfBool(type);
+}
+
+/// `equals` of aggregate states compares the argument types of the normalized state types.
+DataTypes getStateArgumentTypes(const IDataType & type)
+{
+    const auto state_type = typeid_cast<const DataTypeAggregateFunction &>(type).getFunction()->getNormalizedStateType();
+    return typeid_cast<const DataTypeAggregateFunction &>(*state_type).getArgumentsDataTypes();
+}
+
+bool hasBoolInside(const IDataType & type)
+{
+    checkStackSize();
+    return anyInTypeTree(type, [](const IDataType & node)
+    {
+        return hasBoolLabel(node)
+            || (WhichDataType(node).isAggregateFunction()
+                && std::ranges::any_of(getStateArgumentTypes(node), [](const DataTypePtr & argument) { return hasBoolInside(*argument); }));
+    });
+}
+
+/// Descends only into aggregate states and the types whose common type is built from their children.
+bool haveBoolInSamePlaces(const IDataType & lhs, const IDataType & rhs)
+{
+    checkStackSize();
+    if (hasBoolLabel(lhs) != hasBoolLabel(rhs))
+        return false;
+    const WhichDataType which(lhs);
+    if (which.isAggregateFunction())
+    {
+        const auto lhs_arguments = getStateArgumentTypes(lhs);
+        const auto rhs_arguments = getStateArgumentTypes(rhs);
+        for (size_t i = 0; i < lhs_arguments.size(); ++i)
+            if (!haveBoolInSamePlaces(*lhs_arguments[i], *rhs_arguments[i]))
+                return false;
+        return true;
+    }
+    if (!which.isArray() && !which.isTuple() && !which.isMap() && !which.isNullable() && !which.isLowCardinality()
+        && !which.isObject())
+        return true;
+    for (size_t i = 0; i < lhs.getNumberOfChildren(); ++i)
+        if (!haveBoolInSamePlaces(*lhs.getChild(i), *rhs.getChild(i)))
+            return false;
+    return true;
+}
+
+bool isCompositeSimpleAggregateFunction(const IDataType & type)
+{
+    const auto * nullable = typeid_cast<const DataTypeNullable *>(&type);
+    const IDataType & nested = nullable ? *nullable->getNestedType() : type;
+    return typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(nested.getCustomName()) && nested.getNumberOfChildren() > 0;
+}
+
 DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &types_set)
 {
     auto min_interval = IntervalKind::Kind::Year;
@@ -274,6 +333,15 @@ DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &
 
     return smallest_type;
 }
+}
+
+bool equalsIncludingBool(const IDataType & lhs, const IDataType & rhs)
+{
+    if (!lhs.equals(rhs))
+        return false;
+    if (isCompositeSimpleAggregateFunction(lhs) || isCompositeSimpleAggregateFunction(rhs))
+        return true;
+    return haveBoolInSamePlaces(lhs, rhs);
 }
 
 template <LeastSupertypeOnError on_error>
@@ -380,7 +448,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         bool all_equal = true;
         for (size_t i = 1, size = types.size(); i < size; ++i)
         {
-            if (!types[i]->equals(*types[0]))
+            if (!equalsIncludingBool(*types[i], *types[0]))
             {
                 all_equal = false;
                 break;
@@ -389,6 +457,16 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
         if (all_equal)
             return types[0];
+    }
+
+    /// There is no rule for aggregate states below: of `equals` states, take one without `Bool` arguments.
+    if (WhichDataType(types[0]).isAggregateFunction()
+        && std::ranges::all_of(types, [&](const DataTypePtr & type) { return type->equals(*types[0]); }))
+    {
+        for (const auto & type : types)
+            if (!hasBoolInside(*type))
+                return type;
+        return types[0];
     }
 
     /// If one of the types is Dynamic, the supertype is Dynamic
