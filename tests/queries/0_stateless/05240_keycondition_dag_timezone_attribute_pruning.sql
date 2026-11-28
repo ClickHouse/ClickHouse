@@ -421,8 +421,9 @@ SET allow_suspicious_low_cardinality_types = 0;
 -- custom-name refusal; the reverse order declines the transform for these two rows and loses pruning.
 CREATE TABLE oracle_saf (ts DateTime('UTC')) ENGINE = Memory;
 INSERT INTO oracle_saf SELECT toDateTime(1675195200, 'UTC');
+-- The key is computed from a `SimpleAggregateFunction` column, which `AggregatingMergeTree` rejects by default; here it holds one row.
 CREATE TABLE k_saf (ts SimpleAggregateFunction(max, DateTime('UTC'))) ENGINE = AggregatingMergeTree
-    PARTITION BY toYYYYMM(ts) ORDER BY tuple();
+    PARTITION BY toYYYYMM(ts) ORDER BY tuple() SETTINGS allow_aggregating_columns_in_partition_or_order_key = 1;
 INSERT INTO k_saf SELECT toDateTime(1675195200, 'UTC');
 SELECT 'oracle_simpleaggregatefunction', count() FROM (SELECT ts FROM oracle_saf WHERE ts IN (SELECT toDateTime(1675195200)));
 SELECT 'partition_simpleaggregatefunction', count() FROM (SELECT ts FROM k_saf WHERE ts IN (SELECT toDateTime(1675195200)));
