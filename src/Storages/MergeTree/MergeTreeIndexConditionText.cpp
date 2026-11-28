@@ -1650,6 +1650,17 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// so a phrase matched by positions lies within one element, as the function requires.
         const bool use_positions = has_positions;
 
+        /// Without positions, the index answers "all tokens exist" and the row-level `hasPhrase` checks adjacency.
+        /// A phrase of exactly one token has no adjacency to check, so it is the same as `hasAllTokens`, which is exact.
+        /// The count is taken before dedup: 'a a' is two tokens and still needs the row-level check.
+        /// Not for a nullable column: the `UInt8` virtual column cannot carry the NULL the predicate returns, which NOT flips to true.
+        const bool column_is_nullable = !index_column_type || isNullableOrLowCardinalityNullable(index_column_type);
+        auto exact_if_single_token = [&](const VectorWithMemoryTracking<String> & phrase_tokens)
+        {
+            if (!use_positions && candidate_for_exact_mode && !column_is_nullable && phrase_tokens.size() == 1)
+                direct_read_mode = TextIndexDirectReadMode::Exact;
+        };
+
         /// An Array phrase carries the tokens verbatim: neither the tokenizer nor the preprocessor applies.
         if (value_field.getType() == Field::Types::Array)
         {
@@ -1666,6 +1677,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
             if (has_postprocessor)
                 phrase_tokens = postprocessor->processTokens(std::move(phrase_tokens));
+
+            exact_if_single_token(phrase_tokens);
 
             std::set<String> dedup(phrase_tokens.begin(), phrase_tokens.end());
             VectorWithMemoryTracking<String> unique_tokens(dedup.begin(), dedup.end());
@@ -1734,6 +1747,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// in Hint mode any false positives are resolved by the row-level filter.
         /// An all-dropped phrase yields empty tokens, i.e. a query that matches nothing (consistent with hasAllTokens).
         auto tokens = stringToTokens(value_field, /*compact=*/ true);
+
+        VectorWithMemoryTracking<String> phrase_tokens;
+        tokenizer->stringToTokens(value.data(), value.size(), phrase_tokens);
+        if (has_postprocessor)
+            phrase_tokens = postprocessor->processTokens(std::move(phrase_tokens));
+        exact_if_single_token(phrase_tokens);
 
         out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
