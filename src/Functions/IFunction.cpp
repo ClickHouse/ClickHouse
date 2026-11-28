@@ -948,14 +948,14 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
     if (useDefaultImplementationForDynamic())
     {
         checkNumberOfArguments(arguments.size());
-        for (const auto & arg : arguments)
+        for (size_t i = 0; i != arguments.size(); ++i)
         {
-            if (isDynamic(arg.type))
+            if (isDynamic(arguments[i].type) && useDefaultImplementationForDynamicOrVariantArgument(arguments, i))
             {
                 DataTypes data_types(arguments.size());
-                for (size_t i = 0; i < arguments.size(); ++i)
-                    data_types[i] = arguments[i].type;
-                base = std::make_shared<FunctionBaseDynamicAdaptor>(shared_from_this(), std::move(data_types));
+                for (size_t j = 0; j < arguments.size(); ++j)
+                    data_types[j] = arguments[j].type;
+                base = std::make_shared<FunctionBaseDynamicAdaptor>(shared_from_this(), std::move(data_types), i);
                 break;
             }
         }
@@ -975,6 +975,8 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
                 /// handles it directly and keeps the custom name, while ordinary `Variant` inputs still go
                 /// through the adaptor. Keep scanning: another argument may still need the adaptor.
                 if (type->hasCustomName() && !useDefaultImplementationForVariantWithCustomName(type))
+                    continue;
+                if (!useDefaultImplementationForDynamicOrVariantArgument(arguments, i))
                     continue;
 
                 ColumnsWithTypeAndName args_copy = arguments;

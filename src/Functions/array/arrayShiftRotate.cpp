@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <limits>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -5,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -48,6 +50,43 @@ public:
     [[nodiscard]] bool isVariadic() const override { return strategy == ShiftRotateStrategy::Shift; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return strategy == ShiftRotateStrategy::Rotate ? 2 : 0; }
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return strategy == ShiftRotateStrategy::Rotate; }
+    [[nodiscard]] bool useDefaultImplementationForDynamic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return true; }
+
+    /// A `Dynamic` or `Variant` default that the array elements already accept, as a `Dynamic` default of an `Array(Dynamic)`,
+    /// is handled here: the adaptor would apply its NULL handling to it and change the result type from `Array`.
+    [[nodiscard]] bool useDefaultImplementationForDynamicOrVariantArgument(const ColumnsWithTypeAndName & arguments, size_t argument_index) const override
+    {
+        if constexpr (strategy == ShiftRotateStrategy::Shift)
+        {
+            if (argument_index != 2 || arguments.size() != 3)
+                return true;
+
+            const auto & array_argument_type = arguments[0].type;
+            const auto & default_type = arguments[2].type;
+            if (const auto * array_type = typeid_cast<const DataTypeArray *>(array_argument_type.get()))
+                return !defaultFitsElementType(array_type->getNestedType(), default_type);
+
+            /// A `Variant` array goes through its adaptor first, which builds the function for each alternative and merges
+            /// the result types. A `Dynamic` default can be left to the alternatives only if every array alternative accepts
+            /// it: the `Dynamic` adaptor would give a `Dynamic` result for the others, which cannot be merged with an `Array`.
+            if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(array_argument_type.get()); variant_type && isDynamic(default_type))
+            {
+                return !std::ranges::all_of(variant_type->getVariants(), [&](const DataTypePtr & alternative)
+                {
+                    const auto * alternative_array_type = typeid_cast<const DataTypeArray *>(alternative.get());
+                    return !alternative_array_type || defaultFitsElementType(alternative_array_type->getNestedType(), default_type);
+                });
+            }
+
+            /// A `Dynamic` or `Variant` array goes through its adaptor first, and the default is decided for each of its types.
+            /// Any other first argument is rejected by `getReturnTypeImpl` whatever the default is, so an alternative of a
+            /// `Variant` array that is not an array is skipped.
+            return false;
+        }
+        return true;
+    }
+
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Declarative signature for `Rotate` (preserves the element type);
@@ -60,6 +99,17 @@ public:
             return "(Array(T : Any), NativeInteger) -> Array(T)";
         else
             return "(Array(T : Any), NativeInteger, [Any]) -> Array(T)";
+    }
+
+    /// Whether the default of a shift needs no conversion of the array: its type, without `Nullable` for a non-nullable
+    /// element type, must not widen past the element type.
+    static bool defaultFitsElementType(const DataTypePtr & elem_type, DataTypePtr default_type)
+    {
+        if (!elem_type->isNullable())
+            default_type = removeNullable(default_type);
+
+        auto ret = tryGetLeastSupertype(DataTypes{elem_type, default_type});
+        return ret && ret->equals(*elem_type);
     }
 
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -106,23 +156,15 @@ public:
                 getName());
 
         const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*first_arg).getNestedType();
-        if (arguments.size() == 3)
-        {
-            auto default_type = arguments[2];
-            if (!elem_type->isNullable())
-                default_type = removeNullable(default_type);
-
-            auto ret = tryGetLeastSupertype(DataTypes{elem_type, default_type});
-            // Note that this will fail if the default value does not fit into the array element type (e.g. UInt64 and Array(UInt8)).
-            // In this case array should be converted to Array(UInt64) explicitly.
-            if (!ret || !ret->equals(*elem_type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}, expected {}",
-                    arguments[2]->getName(),
-                    getName(),
-                    elem_type->getName());
-        }
+        // Note that this will fail if the default value does not fit into the array element type (e.g. UInt64 and Array(UInt8)).
+        // In this case array should be converted to Array(UInt64) explicitly.
+        if (arguments.size() == 3 && !defaultFitsElementType(elem_type, arguments[2]))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}, expected {}",
+                arguments[2]->getName(),
+                getName(),
+                elem_type->getName());
 
         return std::make_shared<DataTypeArray>(elem_type);
     }

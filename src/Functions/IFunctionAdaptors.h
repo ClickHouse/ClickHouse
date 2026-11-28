@@ -212,6 +212,10 @@ public:
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic(const DataTypes & arguments) const override { return function->getReturnTypeForDefaultImplementationForDynamic(arguments); }
     bool useDefaultImplementationForVariant() const override { return function->useDefaultImplementationForVariant(); }
     bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & type) const override { return function->useDefaultImplementationForVariantWithCustomName(type); }
+    bool useDefaultImplementationForDynamicOrVariantArgument(const ColumnsWithTypeAndName & arguments, size_t argument_index) const override
+    {
+        return function->useDefaultImplementationForDynamicOrVariantArgument(arguments, argument_index);
+    }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
