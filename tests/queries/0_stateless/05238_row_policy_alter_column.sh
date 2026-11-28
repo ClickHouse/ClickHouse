@@ -98,6 +98,16 @@ CREATE ROW POLICY pf ON $DB.tf FOR SELECT USING arrayExists($UDF, [1]) TO CURREN
 refused "ALTER TABLE tf DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
 refused "ALTER TABLE tf RENAME COLUMN tenant TO tenant_id" ALTER_OF_COLUMN_IS_FORBIDDEN
 
+echo "-- a column with the name of a called SQL function is not read"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tun (id UInt32, tenant UInt32, $UDF UInt8) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tun VALUES (1, 1, 0), (2, 2, 0);
+CREATE ROW POLICY pun ON $DB.tun FOR SELECT USING $UDF(1) TO CURRENT_USER;
+"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tun DROP COLUMN $UDF"
+$CLICKHOUSE_CLIENT -q "SELECT 'function name policy after drop', arraySort(groupArray(id)) FROM tun"
+refused "ALTER TABLE tun DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
+
 echo "-- a lambda parameter is not a column, the body is still read"
 $CLICKHOUSE_CLIENT --multiquery -q "
 CREATE TABLE tlam (id UInt32, x UInt8, tenant UInt32, arr Array(UInt8)) ENGINE = MergeTree ORDER BY id;
@@ -370,6 +380,7 @@ DROP ROW POLICY pu ON $DB.tu;
 DROP ROW POLICY pa ON $DB.ta;
 DROP ROW POLICY pac ON $DB.tac;
 DROP ROW POLICY pf ON $DB.tf;
+DROP ROW POLICY pun ON $DB.tun;
 DROP ROW POLICY plam ON $DB.tlam;
 DROP ROW POLICY ptt ON $DB.tt;
 DROP ROW POLICY ptl ON $DB.tl;
@@ -404,6 +415,7 @@ DROP TABLE tu;
 DROP TABLE ta;
 DROP TABLE tac;
 DROP TABLE tf;
+DROP TABLE tun;
 DROP TABLE tlam;
 DROP TABLE tt;
 DROP TABLE tl;

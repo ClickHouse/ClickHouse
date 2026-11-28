@@ -29,6 +29,9 @@ ALTER_OF_COLUMN_IS_FORBIDDEN
 -- so is a SQL function passed by name as a lambda
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
+-- a column with the name of a called SQL function is not read
+function name policy after drop	[1]
+ALTER_OF_COLUMN_IS_FORBIDDEN
 -- a lambda parameter is not a column, the body is still read
 lambda policy after drop	[1]
 ALTER_OF_COLUMN_IS_FORBIDDEN
