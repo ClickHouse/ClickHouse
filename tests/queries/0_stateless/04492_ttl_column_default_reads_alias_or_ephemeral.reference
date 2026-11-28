@@ -1,0 +1,20 @@
+wide base	100	100
+wide proj	100	100
+compact	100	100
+partial	0	0	0	0	0	0	0	50	50	50
+partial	1	50	50	50	50	50	50	50	0	50
+recompute	0	0	50	50
+recompute	1	50	0	50
+result alias	0	0	0	50	50
+result alias	1	50	50	0	50
+recompute capture	0	0	50	50
+recompute capture	1	50	50	50
+capture	10	10	10	10	10
+lambda	0	0	0	50	50
+lambda	1	50	50	0	50
+lambda wide base	75	25
+lambda wide proj	75	25
+local alias	0	0	0	50	50	50
+local alias	1	50	50	50	0	50
+update	50	50
+materialize ttl	50	50

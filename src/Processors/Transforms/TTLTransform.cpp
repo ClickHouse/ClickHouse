@@ -2,9 +2,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -13,7 +11,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/quoteString.h>
 #include <DataTypes/NestedUtils.h>
-#include <Interpreters/addTypeConversionToAST.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/Context.h>
 
@@ -54,6 +52,39 @@ static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedS
     }
 
     return {expr.expression, where_expr.expression};
+}
+
+/// What a read of a part without `column_name` computes for it, named so that no column of the block it runs on shadows it.
+static std::pair<ExpressionActionsPtr, String> buildDefaultExpression(
+    const String & column_name, const ColumnsDescription & columns, const ContextPtr & storage_context)
+{
+    auto name_outside_columns = [&](String name)
+    {
+        while (columns.has(name))
+            name = "_" + name;
+        return name;
+    };
+
+    Block header;
+    for (const auto & column : columns.getAllPhysical())
+        if (column.name != column_name)
+            header.insert({column.type->createColumn(), column.type, column.name});
+
+    /// The analyzer resolves the expression against a table of the header's columns, which cannot be empty.
+    if (header.columns() == 0)
+        header.insert({ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), name_outside_columns("_dummy")});
+
+    auto context = Context::createCopy(storage_context);
+    enableAllExperimentalSettings(context);
+
+    auto dag = evaluateMissingDefaults(header, {{column_name, columns.get(column_name).type}}, columns, context);
+    if (!dag)
+        return {};
+
+    String result_name = name_outside_columns("_ttl_default_" + column_name);
+    dag->getOutputs() = {&dag->addAlias(dag->findInOutputs(column_name), result_name)};
+    dag->removeUnusedActions();
+    return {std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context)), result_name};
 }
 
 /// Returns a stored `Nested` sibling of `name`, whose array sizes a read uses to fill `name`.
@@ -130,18 +161,14 @@ VectorWithMemoryTracking<VectorWithMemoryTracking<TTLTransform::DependentMateria
         if (!dependents.contains(column.name) || unrecomputable_columns.contains(column.name))
             continue;
 
-        /// The graph keeps its expression pristine for every caller, and `analyze` rewrites in place.
-        auto expression_ast
-            = addTypeConversionToAST(materialized_dependencies.findNode(column.name)->expression->clone(), column.type->getName());
-        auto syntax_result = TreeRewriter(context).analyze(expression_ast, storage_columns.getAllPhysical());
-        auto expression = ExpressionAnalyzer{expression_ast, syntax_result, context}.getActions(true);
+        auto [expression, result_column_name] = buildDefaultExpression(column.name, storage_columns, context);
 
         /// A non-deterministic expression would also change the rows the TTL did not touch.
-        if (expression->getActionsDAG().hasNonDeterministic())
+        if (!expression || expression->getActionsDAG().hasNonDeterministic())
             continue;
 
         levels[level_of[column.name]].push_back(
-            {column.name, expression, expression_ast->getColumnName(), expression->getRequiredColumns()});
+            {column.name, expression, std::move(result_column_name), expression->getRequiredColumns()});
     }
 
     return levels;
@@ -195,16 +222,9 @@ TTLTransform::TTLTransform(
 
     auto build_default_expr = [&](const String & name)
     {
-        using Result = std::pair<ExpressionActionsPtr, String>;
-        auto it = column_defaults.find(name);
-        if (it == column_defaults.end())
-            return Result{};
-        const auto & column = storage_columns.get(name);
-        auto default_ast = it->second.expression->clone();
-        default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
-        auto syntax_result = TreeRewriter(storage_.getContext()).analyze(default_ast, storage_columns.getAll());
-        auto actions = ExpressionAnalyzer{default_ast, syntax_result, storage_.getContext()}.getActions(true);
-        return Result{actions, default_ast->getColumnName()};
+        if (!column_defaults.contains(name))
+            return std::pair<ExpressionActionsPtr, String>{};
+        return buildDefaultExpression(name, storage_columns, storage_.getContext());
     };
 
     bool share_nested = (*storage_.getSettings())[MergeTreeSetting::share_nested_offsets];
@@ -364,7 +384,7 @@ void TTLTransform::recomputeDependentColumns(Block & block, const VectorWithMemo
         if (std::any_of(
                 dependent.required_columns.begin(),
                 dependent.required_columns.end(),
-                [&](const auto & required) { return !block.has(required); }))
+                [&](const auto & required) { return !block.findColumnOrSubcolumnByName(required); }))
             continue;
 
         auto recomputed = ITTLAlgorithm::executeExpressionAndGetColumn(dependent.expression, block, dependent.result_column_name);
