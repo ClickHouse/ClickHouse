@@ -44,6 +44,7 @@ ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
+exact qualified column policy after alters	[1]
 -- a column cannot get a name that a policy reads as another column, the table name included
 ALTER_OF_COLUMN_IS_FORBIDDEN
 qualifier policy after rename	[1]

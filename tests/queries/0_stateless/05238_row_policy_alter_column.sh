@@ -126,7 +126,8 @@ INSERT INTO tt VALUES (1, 1, (0)), (2, 0, (1));
 CREATE ROW POLICY ptt ON $DB.tt FOR SELECT USING tt.x = 1 TO CURRENT_USER;
 CREATE TABLE tl (id UInt32, x UInt8, \`tl.x\` UInt8, \`$DB.tl.x\` UInt8) ENGINE = MergeTree ORDER BY id;
 CREATE ROW POLICY ptl ON $DB.tl FOR SELECT USING tl.x = 1 AND $DB.tl.x = 1 TO CURRENT_USER;
-CREATE TABLE tl2 (id UInt32, x UInt8, \`$DB.tl2.x\` UInt8) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tl2 (id UInt32, x UInt8, m UInt8, \`$DB.tl2.x\` UInt8) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tl2 VALUES (1, 0, 0, 1), (2, 0, 0, 2);
 CREATE ROW POLICY ptl2 ON $DB.tl2 FOR SELECT USING $DB.tl2.x = 1 TO CURRENT_USER;
 "
 $CLICKHOUSE_CLIENT -q "SELECT 'subcolumn first', arraySort(groupArray(id)) FROM tt"
@@ -137,6 +138,8 @@ refused "ALTER TABLE tl RENAME COLUMN \`tl.x\` TO \`tl.y\`" ALTER_OF_COLUMN_IS_F
 refused "ALTER TABLE tl DROP COLUMN \`$DB.tl.x\`" ALTER_OF_COLUMN_IS_FORBIDDEN
 refused "ALTER TABLE tl DROP COLUMN x" ALTER_OF_COLUMN_IS_FORBIDDEN
 $CLICKHOUSE_CLIENT -q "ALTER TABLE tl2 DROP COLUMN x"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tl2 RENAME COLUMN m TO $DB"
+$CLICKHOUSE_CLIENT -q "SELECT 'exact qualified column policy after alters', arraySort(groupArray(id)) FROM tl2"
 
 echo "-- a column cannot get a name that a policy reads as another column, the table name included"
 $CLICKHOUSE_CLIENT --multiquery -q "
@@ -151,12 +154,13 @@ $CLICKHOUSE_CLIENT -q "SELECT 'qualifier policy after rename', arraySort(groupAr
 
 echo "-- a column of its own with a dot in the name is not a subcolumn of the shorter name"
 $CLICKHOUSE_CLIENT --multiquery -q "
-CREATE TABLE td (id UInt32, a UInt32, \`a.b\` UInt32) ENGINE = MergeTree ORDER BY id;
-INSERT INTO td VALUES (1, 0, 1), (2, 0, 2);
+CREATE TABLE td (id UInt32, a UInt32, \`a.b\` UInt32, m UInt8) ENGINE = MergeTree ORDER BY id;
+INSERT INTO td VALUES (1, 0, 1, 0), (2, 0, 2, 0);
 CREATE ROW POLICY pd ON $DB.td FOR SELECT USING \`a.b\` = 1 TO CURRENT_USER;
 "
 $CLICKHOUSE_CLIENT -q "ALTER TABLE td RENAME COLUMN a TO a2"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE td DROP COLUMN a2"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE td RENAME COLUMN m TO a"
 $CLICKHOUSE_CLIENT -q "SELECT 'dotted column policy after alters', arraySort(groupArray(id)) FROM td"
 refused "ALTER TABLE td DROP COLUMN \`a.b\`" ALTER_OF_COLUMN_IS_FORBIDDEN
 
