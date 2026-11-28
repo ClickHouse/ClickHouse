@@ -2852,7 +2852,6 @@ static bool expandSkipIndexGranulesWithinPartition(const MergeTreeData & data, c
         case MergeTreeData::MergingParams::Replacing:
         case MergeTreeData::MergingParams::Collapsing:
         case MergeTreeData::MergingParams::VersionedCollapsing:
-            /// Not the settings-based rule: lazy `FINAL` deduplicates across partitions even with `do_not_merge_across_partitions_select_final`.
             return isPartitionKeyDeterminedByPrimaryKey(data, metadata);
         case MergeTreeData::MergingParams::Ordinary:
         case MergeTreeData::MergingParams::Summing:
