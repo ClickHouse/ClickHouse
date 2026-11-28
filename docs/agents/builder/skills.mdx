@@ -7,10 +7,6 @@ keywords: ['AI', 'ClickHouse Cloud', 'agents', 'skills', 'SKILL.md']
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge/>
-
 A skill is a reusable instruction pack an agent can apply on demand. Use skills for procedures that recur across agents — a brand-style guide, a code-review checklist, a runbook for a specific workflow — instead of duplicating the instructions into each agent's system prompt.
 
 ## Anatomy of a skill {#anatomy-of-a-skill}
@@ -59,6 +55,12 @@ Three ways an agent reaches for a skill in a conversation:
 The Skills panel in the Cloud console lets you create skills inline, upload `.md` or `.zip` files, and manage which skills are active for your user. Owned skills default to active; deactivate one to remove it from the popover and the model's catalog without deleting it.
 
 Skills can be shared with other users (see [sharing and access](/agents/sharing-and-access)).
+
+## Create a skill during a run {#create-a-skill-during-a-run}
+
+An agent can create a reusable skill while working on a task, then use that skill during the same run. This is useful when a repeated procedure emerges from the conversation — for example, a review checklist or a report format with stable rules.
+
+Review agent-created skills in the Skills panel before relying on them for later work. You can edit, deactivate, share, or delete them using the same controls as manually created skills.
 
 ## Skills vs. instructions {#skills-vs-instructions}
 

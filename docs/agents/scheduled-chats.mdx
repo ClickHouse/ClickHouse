@@ -1,0 +1,24 @@
+---
+sidebarTitle: 'Scheduled chats'
+slug: /agents/scheduled-chats
+title: 'Scheduled chats'
+description: 'Run ClickHouse Agent conversations on a recurring schedule'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'scheduled chats', 'schedules', 'cron']
+doc_type: 'reference'
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge/>
+
+Scheduled chats run an agent conversation on a recurring schedule. You can set a schedule hourly, daily, on weekdays, weekly, or with a custom cron expression.
+
+## Create a schedule {#create-a-schedule}
+
+Open the scheduled-chat controls from the ClickHouse Agents sidebar. Choose the agent and conversation to run, then select a preset schedule or enter a custom cron expression. Set the time zone and, where applicable, the days of the week.
+
+You can optionally organize runs in a [Project](/agents/chat#projects).
+
+<Note>
+Scheduled chats are in beta. Their availability and behavior can change before general availability.
+</Note>
