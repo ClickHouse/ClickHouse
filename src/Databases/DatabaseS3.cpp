@@ -116,15 +116,7 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
         function->arguments->children.push_back(make_intrusive<ASTLiteral>(config.access_key_id.value()));
         function->arguments->children.push_back(make_intrusive<ASTLiteral>(String(*config.secret_access_key)));
     }
-    else if (config.use_environment_credentials)
-    {
-        /// Carry the opt-in as an explicit key-value arg; the positional `s3(url)` form would lose it. The
-        /// table function then applies the user-query credential restriction like any other query.
-        function->arguments->children.push_back(
-            makeASTFunction("equals",
-                make_intrusive<ASTIdentifier>("use_environment_credentials"),
-                make_intrusive<ASTLiteral>(static_cast<UInt64>(1))));
-    }
+    /// With `use_environment_credentials`, the positional `s3(url)` form uses the environment credentials by default.
 
     auto table_function = TableFunctionFactory::instance().get(function, context_);
     if (!table_function)
