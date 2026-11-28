@@ -1025,6 +1025,10 @@ void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, Quer
         return;
     QueryPlan::Node * source = node.children[0];
 
+    /// A window by such keys stays above the gather (`tryPushWindowBelowSortedGather`), whose merge cannot consume a scatter's outputs.
+    if (sorting_step->isWindowSorting() && sorting_step->partitionKeysNeedOwnScatter())
+        sorting_step->removePartitions();
+
     const size_t bucket_count = getKeylessScatterBucketCount(source, optimization_settings);
     auto sort_description = sorting_step->getSortDescription();
 

@@ -17,7 +17,16 @@ struct ScatterByPartitionTransform : IProcessor
 {
     /// `hash_cast_types` (one entry per key, optional) selects a type to cast each key to
     /// before hashing. Casting is internal to routing; output rows are unchanged.
-    ScatterByPartitionTransform(SharedHeader header, size_t output_size_, ColumnNumbers key_columns_, DataTypes hash_cast_types_ = {});
+    /// `canonicalize_float_keys` hashes `-0.` as `0.` and every NaN as one NaN for the keys of `canonicalizesKeyType`.
+    ScatterByPartitionTransform(
+        SharedHeader header,
+        size_t output_size_,
+        ColumnNumbers key_columns_,
+        DataTypes hash_cast_types_ = {},
+        bool canonicalize_float_keys = false);
+
+    /// `Float32` or `Float64`, also inside `Nullable`.
+    static bool canonicalizesKeyType(const IDataType & type);
 
     /// Round-robin mode: each input chunk goes whole to the next output in turn, starting
     /// at `start_bucket`. For distribution without a placement requirement.
@@ -43,6 +52,8 @@ private:
     ColumnNumbers key_columns;
     DataTypes hash_input_types;
     DataTypes hash_cast_types;
+    /// One flag per key: hash its canonical floats. Empty without `canonicalize_float_keys`.
+    VectorWithMemoryTracking<char> canonical_float_keys;
     /// When set, chunks are routed round-robin starting from this output instead of by key hash.
     std::optional<size_t> round_robin_bucket;
     /// When set, every row goes to a random output.

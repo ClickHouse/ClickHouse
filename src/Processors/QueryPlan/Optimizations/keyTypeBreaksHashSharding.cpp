@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/TypeTree.h>
+#include <Processors/Transforms/ScatterByPartitionTransform.h>
 
 namespace DB
 {
@@ -17,6 +18,11 @@ bool keyTypeBreaksHashSharding(const IDataType & type)
     };
 
     return anyInTypeTree(type, breaks_sharding);
+}
+
+bool keyTypeBreaksWindowScatter(const IDataType & type)
+{
+    return !ScatterByPartitionTransform::canonicalizesKeyType(type) && keyTypeBreaksHashSharding(type);
 }
 
 }

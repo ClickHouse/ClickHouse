@@ -1,11 +1,13 @@
 #include <Core/Settings.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/SettingsQuirks.h>
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/TypeTree.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/BufferChunksTransform.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -324,6 +326,13 @@ Names SortingStep::getPartitionByColumnNames() const
     return names;
 }
 
+bool SortingStep::partitionKeysNeedOwnScatter() const
+{
+    const auto & header = *getInputHeaders().front();
+    return std::ranges::any_of(partition_by_description, [&](const auto & column)
+        { return QueryPlanOptimizations::keyTypeBreaksHashSharding(*header.getByName(column.column_name).type); });
+}
+
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
 {
     /// The input streams already carry disjoint sets of the partition key values (each stream holds whole
@@ -353,7 +362,9 @@ void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
             key_columns.push_back(stream_header->getPositionByName(col.column_name));
         }
 
-        scatterByPartition(pipeline, threads, key_columns);
+        scatterByPartition(
+            pipeline, threads, key_columns, /*hash_cast_types=*/{}, /*scattered_stream_transform=*/{},
+            /*canonicalize_float_keys=*/is_window_sorting);
     }
 }
 
@@ -814,7 +825,11 @@ void SortingStep::serialize(Serialization & ctx) const
 
     serializeSortDescription(result_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 
-    serializeSortDescription(partition_by_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+    if (is_window_sorting && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FLOAT_KEY_SCATTER
+        && partitionKeysNeedOwnScatter())
+        serializeSortDescription(SortDescription{}, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+    else
+        serializeSortDescription(partition_by_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 
     /// `FinishSorting` arises in distributed plans when `applyOrder` sees the step's input is already
     /// sorted by a prefix (e.g. the output of a pushed-down window, or a ReadInOrder distributed read).

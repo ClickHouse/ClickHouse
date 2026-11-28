@@ -1,7 +1,7 @@
 -- The sort that feeds a window function scatters rows across threads by the hash of the
 -- PARTITION BY columns, but the window finds partition boundaries with `compareAt`. For Float64
--- the two disagree on -0. and 0. (equal by `compareAt`, different hashes), so the scatter would
--- split one logical partition across threads. Such windows must sort in one stream.
+-- -0. and 0. compare as equal but have different bits, so the scatter hashes one representation
+-- of them to keep one logical partition in one thread.
 
 DROP TABLE IF EXISTS t_window_scatter_float;
 
@@ -23,23 +23,23 @@ SETTINGS max_threads = 8;
 SELECT DISTINCT c FROM (SELECT count() OVER (PARTITION BY k) AS c FROM t_window_scatter_float) ORDER BY c
 SETTINGS max_threads = 1;
 
--- The float partition key gets a single-stream sort: no scatter in the pipeline.
-SELECT count() FROM (EXPLAIN PIPELINE SELECT count() OVER (PARTITION BY k) FROM t_window_scatter_float SETTINGS max_threads = 8)
+-- The float partition key keeps the parallel scattered sort.
+SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT count() OVER (PARTITION BY k) FROM t_window_scatter_float SETTINGS max_threads = 8)
 WHERE explain ILIKE '%ScatterByPartition%';
 
 -- A safe partition key type keeps the parallel scattered sort.
 SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT count() OVER (PARTITION BY u) FROM t_window_scatter_float SETTINGS max_threads = 8)
 WHERE explain ILIKE '%ScatterByPartition%';
 
--- A float nested inside Nullable must not scatter either.
+-- The same for a float inside Nullable.
 SELECT DISTINCT c FROM (SELECT count() OVER (PARTITION BY nk) AS c FROM t_window_scatter_float) ORDER BY c
 SETTINGS max_threads = 8;
 
-SELECT count() FROM (EXPLAIN PIPELINE SELECT count() OVER (PARTITION BY nk) FROM t_window_scatter_float SETTINGS max_threads = 8)
+SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT count() OVER (PARTITION BY nk) FROM t_window_scatter_float SETTINGS max_threads = 8)
 WHERE explain ILIKE '%ScatterByPartition%';
 
 -- Dynamic hashes by the physical layout of the value, which can differ between blocks for
--- values that compare as equal, so it must not scatter either. Here every value is a Float64
+-- values that compare as equal, so it must not scatter. Here every value is a Float64
 -- inside Dynamic, and -0. and 0. still compare as equal.
 DROP TABLE IF EXISTS t_window_scatter_dynamic;
 

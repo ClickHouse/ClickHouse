@@ -1777,7 +1777,7 @@ void addWindowSteps(QueryPlan & query_plan,
             const auto & sort_input_header = query_plan.getCurrentHeader();
             for (const auto & partition_column : window_description.partition_by)
             {
-                if (QueryPlanOptimizations::keyTypeBreaksHashSharding(
+                if (QueryPlanOptimizations::keyTypeBreaksWindowScatter(
                         *sort_input_header->getByName(partition_column.column_name).type))
                 {
                     scatter_partition_by.clear();

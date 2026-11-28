@@ -115,6 +115,9 @@ public:
     [[nodiscard]] bool hasPartitions() const { return !partition_by_description.empty(); }
     [[nodiscard]] const SortDescription & getPartitionByDescription() const { return partition_by_description; }
     [[nodiscard]] Names getPartitionByColumnNames() const;
+    /// Whether equal values of a partition key can lie in different streams of another partitioning (`keyTypeBreaksHashSharding`).
+    [[nodiscard]] bool partitionKeysNeedOwnScatter() const;
+    void removePartitions() { partition_by_description.clear(); }
 
     [[nodiscard]] size_t getScatterPartitions() const { return scatter_partitions; }
 
