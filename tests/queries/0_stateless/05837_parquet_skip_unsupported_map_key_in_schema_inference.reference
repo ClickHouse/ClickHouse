@@ -1,0 +1,7 @@
+x	UInt64					
+100
+101
+t	Tuple(\n    y UInt64)					
+x	UInt64					
+(20)	100
+(21)	101
