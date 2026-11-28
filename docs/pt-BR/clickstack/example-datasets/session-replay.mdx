@@ -9,13 +9,13 @@ keywords: ['clickstack', 'replay de sessão', 'SDK do navegador', 'demo', 'obser
 <Info>
   **Em resumo**
 
-  Este guia mostra como instrumentar uma aplicação web para replay de sessão usando o SDK do navegador do ClickStack. Ao contrário de outros exemplos que carregam dados pré-gerados, esta demonstração oferece uma aplicação interativa em que você gera dados de sessão por meio das próprias interações.
+  Este guia mostra como instrumentar uma aplicação web para replay de sessão usando o SDK do navegador do ClickStack. Ao contrário de outros conjuntos de dados de exemplo que carregam dados pré-gerados, esta demonstração oferece uma aplicação interativa em que você gera dados de sessão por meio das próprias interações.
 
   Tempo necessário: 10-15 minutos
 </Info>
 
 <div id="overview">
-  ## Visão geral
+  ## Visão geral {#overview}
 </div>
 
 O [aplicativo de demonstração de replay de sessão](https://github.com/ClickHouse/clickstack-session-replay-demo) é um explorador de documentação desenvolvido com JavaScript puro. Ele demonstra como a instrumentação mínima de replay de sessão pode ser enxuta — uma tag de script e uma chamada de inicialização capturam automaticamente todas as interações do usuário.
@@ -30,15 +30,13 @@ Este guia usa primeiro a branch `main` para mostrar o replay de sessão em açã
 Para saber mais sobre o que é replay de sessão e como ele se encaixa no ClickStack, consulte a página do recurso [replay de sessão](/pt-BR/clickstack/features/session-replay).
 
 <div id="prerequisites">
-  ## Pré-requisitos
+  ## Pré-requisitos {#prerequisites}
 </div>
 
 * Docker e Docker Compose instalados
 * Portas 3000, 4317, 4318 e 8080 disponíveis
 
-<div id="running-the-demo">
-  ## Executando a demo
-</div>
+## Executando a demo {#running-the-demo}
 
 <Steps>
   <Step title="Clone o repositório" id="clone-repository">
@@ -55,19 +53,15 @@ Para saber mais sobre o que é replay de sessão e como ele se encaixa no ClickS
   </Step>
 
   <Step title="Obtenha sua API key" id="get-api-key">
-    1. Abra o HyperDX em [http://localhost:8080](http://localhost:8080)
+    1. Abra a Interface do ClickStack em [http://localhost:8080](http://localhost:8080)
     2. Crie uma conta ou faça login, se necessário
     3. Acesse **Team Settings → API Keys**
-    4. Copie sua **API key de ingestão**
+    4. Copie sua **chave de API de ingestão**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![API key do ClickStack](/images/clickstack/api-key.webp)
-
-    </Frame>
-
+      <Frame>
+        ![chave de API do ClickStack](/images/clickstack/api-key.webp)
+      </Frame>
     </div>
 
     5. Defina-a como uma variável de ambiente:
@@ -89,57 +83,43 @@ Para saber mais sobre o que é replay de sessão e como ele se encaixa no ClickS
     Abra [http://localhost:3000](http://localhost:3000) no navegador e interaja com o app — pesquise tópicos, filtre por categoria, veja exemplos de código e favorite itens.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Aplicativo de demonstração de replay de sessão](/images/clickstack/session-replay/demo-app.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Aplicativo de demonstração de replay de sessão](/images/clickstack/session-replay/demo-app.webp)
+      </Frame>
     </div>
 
     Todas as interações são capturadas automaticamente pelo SDK do navegador do ClickStack.
   </Step>
 
   <Step title="Veja o replay da sua sessão" id="view-session-replay">
-    Volte ao HyperDX em [http://localhost:8080](http://localhost:8080) e acesse **Client Sessions** na barra lateral esquerda.
+    Volte à Interface do ClickStack em [http://localhost:8080](http://localhost:8080) e acesse **Client Sessions** na barra lateral esquerda.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Busca de replay de sessão](/images/clickstack/session-replay/replay-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Busca de replay de sessão](/images/clickstack/session-replay/replay-search-view.webp)
+      </Frame>
     </div>
 
     Você deverá ver sua sessão listada com a duração e a contagem de eventos. Clique no botão ▶️ para reproduzi-la.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Replay de sessão](/images/clickstack/session-replay/session-replay.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Replay de sessão](/images/clickstack/session-replay/session-replay.webp)
+      </Frame>
     </div>
 
     Alterne entre os modos **Highlighted** e **All Events** para ajustar o nível de detalhe na linha do tempo.
   </Step>
 </Steps>
 
-<div id="instrumentation">
-  ## Instrumentação
-</div>
+## Instrumentação {#instrumentation}
 
 O aplicativo de demonstração mostra como é possível habilitar o replay de sessão com pouquíssimo código. Bastam duas adições ao aplicativo:
 
 **1. Inclua o SDK (`app/public/index.html`):**
 
 ```html
-<script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+<script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js" integrity="sha384-qwXeKpfQhV/97qMbKb9cscCuDW2XD5LgagHyvVlEHHYcem1wqmiey1JnHGTfggTv" crossorigin="anonymous"></script>
 ```
 
 **2. Inicialize o ClickStack (`app/public/js/app.js`):**
@@ -157,7 +137,7 @@ window.HyperDX.init({
 Todo o restante é código padrão da aplicação. O SDK captura automaticamente todas as interações do usuário, os logs do console, as requisições de rede e os erros — nenhuma instrumentação adicional é necessária.
 
 <div id="try-it-yourself">
-  ### Experimente você mesmo
+  ### Experimente você mesmo {#try-it-yourself}
 </div>
 
 Para instrumentar o app do zero, mude para a branch `pre-instrumented`:
@@ -169,31 +149,29 @@ git checkout pre-instrumented
 Esta branch contém a mesma aplicação, sem nenhuma instrumentação do ClickStack. Os comentários no código em `app/public/index.html` e `app/public/js/app.js` indicam exatamente onde adicionar os dois trechos de código acima. Depois de adicioná-los, reinicie a aplicação de demonstração, e suas interações começarão a aparecer no ClickStack.
 
 <div id="troubleshooting">
-  ## Solução de problemas
+  ## Solução de problemas {#troubleshooting}
 </div>
 
-<div id="sessions-not-appearing">
-  ### Sessões que não aparecem no HyperDX
-</div>
+### Sessões que não aparecem na Interface do ClickStack {#sessions-not-appearing}
 
 1. Verifique se há erros no console do navegador
 2. Verifique se o ClickStack está em execução: `docker-compose ps`
-3. Confirme se a API key está definida: `echo $CLICKSTACK_API_KEY`
+3. Confirme se a chave de API está definida: `echo $CLICKSTACK_API_KEY`
 4. Ajuste o intervalo de tempo na visualização Client Sessions (tente **Últimos 15 minutos**)
 5. Faça uma recarga forçada do navegador: `Cmd+Shift+R` (Mac) ou `Ctrl+Shift+R` (Windows/Linux)
 
 <div id="401-errors">
-  ### Erros 401 Unauthorized
+  ### Erros 401 Unauthorized {#401-errors}
 </div>
 
 A chave de API não foi definida corretamente. Certifique-se de que você:
 
 1. A exportou no terminal: `export CLICKSTACK_API_KEY='your-key'`
 2. Iniciou o aplicativo de demonstração no **mesmo terminal** em que a exportou
-3. Obteve a chave na UI do HyperDX (e não uma string gerada aleatoriamente)
+3. Obteve a chave na interface do ClickStack (e não uma string gerada aleatoriamente)
 
 <div id="cleanup">
-  ## Limpeza
+  ## Limpeza {#cleanup}
 </div>
 
 Pare os serviços:
@@ -209,10 +187,10 @@ docker-compose down -v
 ```
 
 <div id="learn-more">
-  ## Saiba mais
+  ## Saiba mais {#learn-more}
 </div>
 
-* [replay de sessão](/pt-BR/clickstack/features/session-replay) — visão geral da funcionalidade, opções de SDK e controles de privacidade
+* [replay de sessão](/pt-BR/clickstack/features/session-replay) — visão geral do recurso, opções de SDK e controles de privacidade
 * [Referência do SDK do navegador](/pt-BR/clickstack/ingesting-data/sdks/browser) — todas as opções do SDK e configuração avançada
-* [Primeiros passos do ClickStack](/pt-BR/clickstack/getting-started/index) — implante o ClickStack e faça a ingestão dos seus primeiros dados
-* [Todos os datasets de exemplo](/pt-BR/clickstack/example-datasets/index) — outros datasets de exemplo e guias
+* [Primeiros passos do ClickStack](/pt-BR/clickstack/getting-started/oss) — implante o ClickStack e faça a ingestão dos seus primeiros dados
+* [Todos os conjuntos de dados de exemplo](/pt-BR/clickstack/example-datasets/index) — outros conjuntos de dados de exemplo e guias

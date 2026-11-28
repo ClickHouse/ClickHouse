@@ -73,6 +73,7 @@ namespace DB
 {
 
 struct FormatSettings;
+struct CollectedStatistics;
 class ASTSelectQuery;
 
 class SystemLogs;
@@ -975,7 +976,8 @@ public:
     void setUserScriptsPath(const String & path);
     void setDynamicUserDefinedExecutableFunctionsPath(const String & path);
 
-    void enablePlanLogCapture();
+    /// Captures the plan of this query for `system.query_log`, collecting what `collected` asks for.
+    void enablePlanLogCapture(const CollectedStatistics & collected);
     QueryPlanLogCapturePtr getPlanLogCapture() const;
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
@@ -1833,7 +1835,7 @@ public:
     void setVectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
     void updateVectorSimilarityIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<VectorSimilarityIndexCache> getVectorSimilarityIndexCache() const;
-    void clearVectorSimilarityIndexCache() const;
+    void clearVectorSimilarityIndexCache(const StorageID & table_id = StorageID::createEmpty()) const;
 
     void setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
     void updateTextIndexTokensCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);

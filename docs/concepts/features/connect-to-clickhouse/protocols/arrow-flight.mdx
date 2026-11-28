@@ -72,6 +72,14 @@ Clients authenticate with a username and password via the standard HTTP `Authori
 
 Subsequent requests can use the Bearer token returned from Basic authentication via the `Authorization: Bearer <token>` header. The token is automatically refreshed on each use and expires based on the `default_session_timeout` server setting (default: 60 seconds).
 
+### Calls without a user name {#auth-without-user-name}
+
+A call without an `authorization` header, or with Basic credentials that have an empty user name, is authenticated as the user named by the [`default_session_user`](/reference/settings/server-settings/settings/default#default_session_user) server setting (`default` unless configured otherwise), with the supplied (possibly empty) password. This works exactly like an HTTP request without the `user` parameter.
+
+The empty user name is only an alias for that user. Its password, `networks`, and other access checks apply as usual, so the configuration of that user decides whether a call without credentials is accepted.
+
+If `default_session_user` is set to an empty string, such calls are rejected with `Unauthenticated`. When the `session_log` section is enabled in the server configuration, the rejection is recorded in [`system.session_log`](/reference/system-tables/session_log) as a `LoginFailure` event with an empty `user`.
+
 ### Python Example {#auth-python-example}
 
 ```python

@@ -4,6 +4,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -297,10 +298,85 @@ public:
     }
 };
 
-void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+namespace
+{
+
+/// Writes the same text as FieldVisitorToString. If an array, tuple or map followed by `suffix` does not fit
+/// on the current line, its elements start on new lines (see ASTFormatting.h).
+void formatWrappedField(
+    const Field & value, WriteBuffer & ostr, IAST::FormatState & state, IAST::FormatStateStacked frame, std::string_view suffix = {})
+{
+    const FieldVector * elements = nullptr;
+    std::string_view open = "[";
+    char close = ']';
+    switch (value.getType())
+    {
+        case Field::Types::Array:
+            elements = &value.safeGet<Array>();
+            break;
+        case Field::Types::Map:
+            elements = &value.safeGet<Map>();
+            break;
+        case Field::Types::Tuple:
+            elements = &value.safeGet<Tuple>();
+            /// A tuple of one element needs the explicit function, otherwise it is parsed back as a plain value.
+            open = elements->size() > 1 ? "(" : "tuple(";
+            close = ')';
+            break;
+        default:
+            break;
+    }
+
+    String text = applyVisitor(FieldVisitorToString(), value);
+    if (!elements || elements->empty() || !shouldWrapAST(ostr, state, frame, [&] { return text + String(suffix); }))
+    {
+        ostr << text;
+        return;
+    }
+
+    checkStackSize();
+    const bool pack = std::ranges::none_of(*elements, [](const Field & element)
+    {
+        const auto type = element.getType();
+        return type == Field::Types::Array || type == Field::Types::Tuple || type == Field::Types::Map;
+    });
+    ++frame.indent;
+    ostr << open;
+    writeASTNewLine(ostr, frame.indent);
+    for (size_t i = 0; i < elements->size(); ++i)
+    {
+        if (i != 0)
+        {
+            ostr << ',';
+            String next_item = pack ? applyVisitor(FieldVisitorToString(), (*elements)[i]) : "";
+            if (pack && i + 1 < elements->size())
+                next_item += ',';
+            writeASTListSpace(ostr, state, frame.indent, /*wrap=*/ true, next_item);
+        }
+        formatWrappedField((*elements)[i], ostr, state, frame);
+    }
+    writeASTNewLine(ostr, frame.indent - 1);
+    ostr << close;
+}
+
+}
+
+void ASTLiteral::formatImplWithoutAlias(
+    WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
     if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
-        ostr << applyVisitor(FieldVisitorToString(), value);
+    {
+        /// The alias is written right after the literal, so it has to fit on the line too.
+        String alias_text;
+        if (state.formatting && !alias.empty())
+        {
+            WriteBufferFromOwnString out;
+            out << " AS ";
+            settings.writeIdentifier(out, alias, /*ambiguous=*/false);
+            alias_text = std::move(out.str());
+        }
+        formatWrappedField(value, ostr, state, frame, alias_text);
+    }
     else if (settings.literal_escaping_style == LiteralEscapingStyle::PostgreSQL)
         ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
     else

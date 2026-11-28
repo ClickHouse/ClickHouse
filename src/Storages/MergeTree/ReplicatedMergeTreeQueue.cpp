@@ -25,6 +25,7 @@
 #include <ranges>
 #include <shared_mutex>
 #include <Poco/Timestamp.h>
+#include <Databases/IDatabase.h>
 
 namespace ProfileEvents
 {
@@ -90,8 +91,11 @@ void ReplicatedMergeTreeQueue::clear()
     inserts_by_time.clear();
     mutations_by_znode.clear();
     mutations_by_partition.clear();
+    /// The queue is reinitialized when the replica is restarted, which interrupts the queries waiting for mutations.
+    killed_mutations.clear();
     mutation_pointer.clear();
     mutation_pointer_mtime = 0;
+    mutation_pointer_being_written.clear();
     mutation_counters = {};
     num_metadata_mutations_in_map.store(0, std::memory_order_release);
 }
@@ -1190,6 +1194,8 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 {
                     LOG_DEBUG(log, "Removing killed mutation {} from local state.", entry.znode_name);
                     some_active_mutations_were_killed = true;
+                    if (isRemovedMutationKilled(it->second))
+                        rememberKilledMutation(entry.znode_name);
                     if (entry.isAlterMutation())
                     {
                         LOG_DEBUG(log, "Removed alter {} because mutation {} were killed.", entry.alter_version, entry.znode_name);
@@ -1245,7 +1251,9 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
 
         auto entries = zookeeper->tryGet(entry_paths);
 
-        std::vector<ReplicatedMergeTreeMutationEntryPtr> new_mutations;
+        /// Not `ReplicatedMergeTreeMutationEntryPtr`: the partitions of the scoped commands are
+        /// resolved on the entries below, before they are published to the queue's state.
+        std::vector<std::shared_ptr<ReplicatedMergeTreeMutationEntry>> new_mutations;
         for (size_t i = 0; i < entries_to_load.size(); ++i)
         {
             const auto & maybe_response = entries[i];
@@ -1261,11 +1269,25 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 ReplicatedMergeTreeMutationEntry::parse(maybe_response.data, entries_to_load[i])));
         }
 
+        /** Resolve the partitions of the commands that name some, so that the per-part selection of the
+          * on-the-fly commands can keep such a command out of the partitions it does not name. Done here,
+          * once per entry, and not while a storage snapshot is built: a partition expression is arbitrary
+          * user SQL and must not be evaluated on the read path.
+          *
+          * The submitting replica already replaced every partition expression of an entry with the
+          * `ID '...'` it resolved to (`StorageReplicatedMergeTree::mutate`), so for such an entry this
+          * evaluates nothing - no user SQL runs under `update_mutations_mutex` - and every replica gets
+          * the same partitions. Only an entry created by an older version may still carry an expression;
+          * it is left unresolved and not evaluated here.
+          */
+        for (const auto & entry : new_mutations)
+            storage.resolvePartitionIdsOfScopedCommands(entry->commands, storage.getContext(), /* only_pinned = */ true);
+
         bool some_mutations_are_probably_done = false;
         {
             std::lock_guard state_lock(state_mutex);
 
-            for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
+            for (const std::shared_ptr<ReplicatedMergeTreeMutationEntry> & entry : new_mutations)
             {
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version)).first->second;
                 incrementMutationsCounters(mutation_counters, entry->commands);
@@ -1347,6 +1369,8 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
         if (mutation_was_active)
         {
             decrementMutationsCounters(mutation_counters, entry->commands);
+            if (isRemovedMutationKilled(it->second))
+                rememberKilledMutation(entry->znode_name);
         }
 
         if (hasSupportedMetadataMutation(entry->commands))
@@ -1677,6 +1701,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     MergeTreeDataMergerMutator & merger_mutator,
     MergeTreeData & data,
     const CommittingBlocks & committing_blocks,
+    bool merges_delayed_after_startup,
     std::unique_lock<SharedMutex> & state_lock) const
 {
     if (auto postpone_time = getPostponeTimeMsForEntry(entry, data))
@@ -1779,6 +1804,13 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         {
             constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} because merges and mutations are cancelled now.";
             LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name);
+            return false;
+        }
+
+        if (entry.type == LogEntry::MERGE_PARTS && merges_delayed_after_startup)
+        {
+            constexpr auto fmt_string = "Not executing log entry {} for part {} because merges are delayed after the table startup (delay_merges_after_startup_seconds).";
+            LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name);
             return false;
         }
 
@@ -2197,6 +2229,8 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
         committing_blocks = getCommittingBlocks(zookeeper, zookeeper_path, partition_ids_hint, /*with_data=*/ true);
     }
 
+    const bool merges_delayed_after_startup = data.areMergesDelayedAfterStartup();
+
     std::unique_lock lock(state_mutex);
 
     for (auto it = queue.begin(); it != queue.end(); ++it)
@@ -2204,7 +2238,7 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
         if ((*it)->currently_executing)
             continue;
 
-        if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger_mutator, data, committing_blocks, lock))
+        if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger_mutator, data, committing_blocks, merges_delayed_after_startup, lock))
         {
             entry = *it;
             /// We gave a chance for the entry, move it to the tail of the queue, after that
@@ -2439,6 +2473,13 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
                 seen_all_data_mutations = true;
         }
     }
+
+    /** A command that names a partition applies to that partition alone, but the queue keys a mutation
+      * entry by the partitions of *all* of its commands: `ALTER TABLE ... CLEAR COLUMN c IN PARTITION
+      * '1', CLEAR COLUMN d` is a single entry, and the unscoped `CLEAR COLUMN d` puts it in every
+      * partition, which used to hand the scoped `CLEAR COLUMN c` to their parts as well.
+      */
+    filterCommandsOutsidePartition(result, partition_id);
 
     std::reverse(result.begin(), result.end());
     return result;
@@ -2683,6 +2724,13 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 
     if (!finished.empty())
     {
+        {
+            /// As soon as the pointer is written, the cleanup thread of another replica can remove the entries
+            /// of the finalized mutations, so `updateMutations` has to know about them before the write.
+            std::lock_guard lock(state_mutex);
+            mutation_pointer_being_written = std::max(mutation_pointer_being_written, finished.back()->znode_name);
+        }
+
         Coordination::Stat mutation_pointer_stat;
         zookeeper->set(fs::path(replica_path) / "mutation_pointer", finished.back()->znode_name, -1, &mutation_pointer_stat);
 
@@ -2808,6 +2856,30 @@ void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_inser
 }
 
 
+Strings ReplicatedMergeTreeQueue::getUnfinishedClearsOfBlockColumns(const PartitionIdToMaxBlock & partitions, const StorageInMemoryMetadata & metadata) const
+{
+    std::set<String> result;
+    std::shared_lock lock(state_mutex);
+
+    for (const auto & [partition_id, max_block] : partitions)
+    {
+        auto in_partition = mutations_by_partition.find(partition_id);
+        if (in_partition == mutations_by_partition.end())
+            continue;
+
+        for (const auto & [block_number, status] : in_partition->second)
+        {
+            if (block_number >= max_block)
+                break;
+
+            if (!status->is_done && std::ranges::any_of(status->entry->commands, [&](const MutationCommand & command) { return command.isClearOfBlockColumns(metadata); }))
+                result.insert(status->entry->znode_name);
+        }
+    }
+
+    return Strings(result.begin(), result.end());
+}
+
 std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMutationsStatus(const String & znode_name, std::set<String> * mutation_ids) const
 {
 
@@ -2844,6 +2916,25 @@ std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMu
         }
     }
     return result;
+}
+
+bool ReplicatedMergeTreeQueue::isMutationKilled(const String & znode_name) const
+{
+    std::shared_lock lock(state_mutex);
+    return killed_mutations.contains(znode_name);
+}
+
+void ReplicatedMergeTreeQueue::rememberKilledMutation(const String & znode_name)
+{
+    killed_mutations.insert(znode_name);
+    if (killed_mutations.size() > max_remembered_killed_mutations)
+        killed_mutations.erase(killed_mutations.begin());
+}
+
+bool ReplicatedMergeTreeQueue::isRemovedMutationKilled(const MutationStatus & status) const
+{
+    const String & znode_name = status.entry->znode_name;
+    return !status.is_done && znode_name > mutation_pointer && znode_name > mutation_pointer_being_written;
 }
 
 std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatus() const

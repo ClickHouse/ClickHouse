@@ -5,6 +5,7 @@
 
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/iota.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <Processors/TopKThresholdTracker.h>
@@ -17,8 +18,8 @@ size_t TopKAggregationHeapBase::initBase(
     size_t heap_key_count,
     size_t total_group_by_keys,
     size_t query_k,
-    const std::vector<int> & dirs,
-    const std::vector<int> & null_dirs,
+    const VectorWithMemoryTracking<int> & dirs,
+    const VectorWithMemoryTracking<int> & null_dirs,
     UInt64 observation_rows)
 {
     is_prefix_mode = heap_key_count < total_group_by_keys;
@@ -80,8 +81,8 @@ void TopKAggregationHeapBase::init(
 void TopKAggregationHeapBase::init(
     const ColumnRawPtrs & source_columns,
     size_t query_k,
-    const std::vector<int> & dirs,
-    const std::vector<int> & null_dirs)
+    const VectorWithMemoryTracking<int> & dirs,
+    const VectorWithMemoryTracking<int> & null_dirs)
 {
     const size_t n = source_columns.size();
     is_composite = true;
@@ -138,32 +139,64 @@ void TopKAggregationHeapBase::freezeBase()
     publish_pending = false;
     key_arena.reset();
     skip_bitmap = {};
+    skip_compare_rows = {};
+    skip_compare_results = {};
+    batch_columns = {};
+    batch_typed_data = nullptr;
     evicted_rows = {};
     trim_filter = {};
     trim_old_to_new = {};
 }
 
-const UInt8 * TopKAggregationHeapBase::fillSkipBitmap(const void * source_typed_data, size_t begin, size_t end)
+const UInt8 * TopKAggregationHeapBase::startBatch(const ColumnRawPtrs & key_columns, size_t begin, size_t end)
 {
     chassert(!frozen);
-    if (!source_typed_data)
-        return nullptr;
-    const UInt8 * result = nullptr;
+    batch_columns.assign(key_columns.begin(), key_columns.begin() + directions.size());
+    batch_typed_data = nullptr;
     dispatchNumericKeyType(typed_key_type, [&]<typename T>()
     {
-        chassert(hasBoundary());
-        skip_bitmap.resize(end);
-        const auto * src = reinterpret_cast<const T *>(source_typed_data);
-        const auto & boundary_data = assert_cast<const ColumnVector<T> &>(boundaryColumn()).getData();
-        const T boundary = boundary_data[boundaryRow()];
-        const int direction = directions[0];
+        batch_typed_data = assert_cast<const ColumnVector<T> &>(*batch_columns[0]).getData().data();
+    });
+    batch_end = end;
+    /// Sized to the whole batch once, so that a later `fillSkipBitmap` keeps the pointer valid.
+    skip_bitmap.resize(end);
+
+    skip_bitmap_filled = hasBoundary();
+    skip_bitmap_stale = !skip_bitmap_filled;
+    if (skip_bitmap_filled)
+        fillSkipBitmap(begin, end);
+    else
+        std::fill(skip_bitmap.data() + begin, skip_bitmap.data() + end, 0);
+    return skip_bitmap.data();
+}
+
+bool TopKAggregationHeapBase::recheckRow(size_t row)
+{
+    if (!skip_bitmap_filled)
+    {
+        fillSkipBitmap(row, batch_end);
+        skip_bitmap_filled = true;
+        skip_bitmap_stale = false;
+        return skip_bitmap[row];
+    }
+    return aboveBoundary(row);
+}
+
+void TopKAggregationHeapBase::fillSkipBitmap(size_t begin, size_t end)
+{
+    chassert(hasBoundary());
+    UInt8 * bitmap = skip_bitmap.data();
+
+    const bool typed = dispatchNumericKeyType(typed_key_type, [&]<typename T>()
+    {
+        const T * src = static_cast<const T *>(batch_typed_data);
+        const T boundary = assert_cast<const ColumnVector<T> &>(boundaryColumn()).getData()[boundaryRow()];
         const int nulls_direction = nulls_directions[0];
         /// A row is skipped when `direction * compare(row, boundary) > 0`. The direction is 1 or -1, so this is
         /// `greater` or `less`, chosen once outside of the loop. clang 23 turns the three-way compare into a
         /// `ucmp`/`scmp` intrinsic, which the x86 backend expands to a scalar `cmp`/`sbb` per row instead of
         /// a vector compare (see `compareColumnImpl` in `ColumnVector.cpp`).
-        UInt8 * bitmap = skip_bitmap.data();
-        if (direction > 0)
+        if (directions[0] > 0)
         {
             for (size_t i = begin; i < end; ++i)
                 bitmap[i] = CompareHelper<T>::greater(src[i], boundary, nulls_direction);
@@ -173,9 +206,57 @@ const UInt8 * TopKAggregationHeapBase::fillSkipBitmap(const void * source_typed_
             for (size_t i = begin; i < end; ++i)
                 bitmap[i] = CompareHelper<T>::less(src[i], boundary, nulls_direction);
         }
-        result = bitmap;
     });
-    return result;
+    if (typed)
+        return;
+
+    /// One virtual `compareColumn` per key column for the whole range. Each column compares only the rows tied with
+    /// the boundary on the previous ones; the rows tied on all of them are left at 0, so they are kept.
+    skip_compare_rows.resize(end - begin);
+    iota(skip_compare_rows.data(), skip_compare_rows.size(), UInt64(begin));
+    skip_compare_results.resize(batch_columns[0]->size());
+    const IColumn & boundary = boundaryColumn();
+    for (size_t i = 0; i < batch_columns.size() && !skip_compare_rows.empty(); ++i)
+    {
+        const IColumn & boundary_column = is_composite ? assert_cast<const ColumnTuple &>(boundary).getColumn(i) : boundary;
+        batch_columns[i]->compareColumn(
+            boundary_column, boundaryRow(), &skip_compare_rows, skip_compare_results, directions[i], nulls_directions[i]);
+    }
+    for (size_t i = begin; i < end; ++i)
+        bitmap[i] = skip_compare_results[i] > 0;
+}
+
+bool TopKAggregationHeapBase::aboveBoundary(size_t row) const
+{
+    /// A numeric key is compared directly, without the virtual `compareAt`.
+    bool above = false;
+    const bool typed = dispatchNumericKeyType(typed_key_type, [&]<typename T>()
+    {
+        const T value = static_cast<const T *>(batch_typed_data)[row];
+        const T boundary_value = assert_cast<const ColumnVector<T> &>(boundaryColumn()).getData()[boundaryRow()];
+        above = directions[0] * CompareHelper<T>::compare(value, boundary_value, nulls_directions[0]) > 0;
+    });
+    if (typed)
+        return above;
+    return aboveBoundaryGeneric(row);
+}
+
+bool TopKAggregationHeapBase::aboveBoundaryGeneric(size_t row) const
+{
+    const IColumn & boundary = boundaryColumn();
+    const size_t boundary_row_index = boundaryRow();
+
+    if (!is_composite)
+        return directions[0] * compareColumns(*batch_columns[0], row, boundary, boundary_row_index, 0) > 0;
+
+    const auto & tuple = assert_cast<const ColumnTuple &>(boundary);
+    for (size_t i = 0; i < batch_columns.size(); ++i)
+    {
+        const int cmp = compareColumns(*batch_columns[i], row, tuple.getColumn(i), boundary_row_index, i);
+        if (cmp != 0)
+            return directions[i] * cmp > 0;
+    }
+    return false;
 }
 
 void TopKAggregationHeapBase::initBoundary()
@@ -219,6 +300,9 @@ void TopKAggregationHeapBase::exchangeSharedBoundary()
         {
             auto key = heap_column->cloneEmpty();
             key->insertFrom(*heap_column, boundary_row);
+            /// An aggregate state column copies a row by referencing the source column. The heap appends to its column in
+            /// place, which needs it unshared, so the key takes its own copy of the row.
+            key->ensureOwnership();
             shared_boundary->key = std::move(key);
             shared_boundary->version.fetch_add(1, std::memory_order_release);
         }
@@ -249,6 +333,8 @@ void TopKAggregationHeapBase::exchangeSharedBoundary()
 
 void TopKAggregationHeapBase::updateBoundaryChoice()
 {
+    skip_bitmap_stale = true;
+
     if (!shared_cache_column)
     {
         boundary_is_shared = false;

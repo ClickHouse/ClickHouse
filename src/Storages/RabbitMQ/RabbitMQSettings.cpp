@@ -23,7 +23,7 @@ namespace ErrorCodes
     DECLARE(String, rabbitmq_exchange_type, "default", "The exchange type.", 0) \
     DECLARE(String, rabbitmq_routing_key_list, "5672", "A string of routing keys, separated by dots.", 0) \
     DECLARE(String, rabbitmq_schema, "", "Schema identifier (used by schema-based formats) for RabbitMQ engine", 0) \
-    DECLARE(UInt64, rabbitmq_num_consumers, 1, "The number of consumer channels per table.", 0) \
+    DECLARE(NonZeroUInt64, rabbitmq_num_consumers, 1, "The number of consumer channels per table.", 0) \
     DECLARE(UInt64, rabbitmq_num_queues, 1, "The number of queues per consumer.", 0) \
     DECLARE(String, rabbitmq_queue_base, "", "Base for queue names to be able to reopen non-empty queues in case of failure.", 0) \
     DECLARE(Bool, rabbitmq_persistent, false, "For insert query messages will be made 'persistent', durable.", 0) \

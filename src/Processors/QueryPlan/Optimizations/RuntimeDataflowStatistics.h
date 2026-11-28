@@ -9,11 +9,10 @@
 #include <Core/NamesAndTypes.h>
 #include <Processors/Chunk.h>
 #include <Processors/ISimpleTransform.h>
-#include <Compression/ICompressionCodec.h>
-#include <Storages/ColumnSize.h>
 #include <Common/CacheBase.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ProfileEvents.h>
 
+#include <atomic>
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -30,6 +29,8 @@ extern const int BAD_ARGUMENTS;
 
 class Aggregator;
 struct AggregatedDataVariants;
+class ReadRangesRegistry;
+using ReadRangesRegistryPtr = std::shared_ptr<ReadRangesRegistry>;
 
 struct RuntimeDataflowStatistics
 {
@@ -65,6 +66,7 @@ public:
     RuntimeDataflowStatisticsCache()
         : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
         , boundary_cache(std::make_shared<BoundaryCache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
+        , undecided_query_cache(std::make_shared<UndecidedQueryCache>(CurrentMetrics::end(), CurrentMetrics::end(), 64_MiB, 100'000))
     {
     }
 
@@ -87,38 +89,43 @@ public:
 
     void setBoundary(UInt64 root_key, Boundary boundary);
 
+    /// The last build of the plan with parallel replicas for a plan ended without a decision, so that the next
+    /// executions can skip building it. It is not a verdict: nothing proves the outcome permanent, so a number of
+    /// executions skip, and the one after them builds again.
+    struct UndecidedQuery
+    {
+        /// The event the outcome was counted in, which a skipped execution counts again: the plans could not be
+        /// compared, the planner used no parallel replicas in the plan built with them, or a step could not collect
+        /// statistics (`RuntimeDataflowStatisticsCacheUpdater::markUnsupportedCase`).
+        ProfileEvents::Event outcome_event{};
+        /// The executions since, counted on the shared entry so that concurrent ones take turns: every one in
+        /// `automatic_parallel_replicas_undecided_retry_after_executions + 1` builds the plan, the others skip.
+        mutable std::atomic<UInt64> executions{0};
+        /// No earlier entry was replaced: this is the first time building the plan for this key ended without a
+        /// decision. Then the turn of the first execution after it comes at once. The first execution of a join is
+        /// what measures its hash table, and join reordering takes row counts from that, so the build after it often
+        /// orders both plans alike.
+        bool first = false;
+    };
+
+    /// Under the same key as the boundary.
+    [[nodiscard]] std::shared_ptr<const UndecidedQuery> getUndecided(UInt64 root_key) const;
+
+    void setUndecided(UInt64 root_key, ProfileEvents::Event outcome_event);
+
+    void forgetUndecided(UInt64 root_key);
+
 private:
     using BoundaryCache = DB::CacheBase<UInt64, Boundary>;
 
+    using UndecidedQueryCache = DB::CacheBase<UInt64, UndecidedQuery>;
+
     CachePtr stats_cache;
     std::shared_ptr<BoundaryCache> boundary_cache;
+    std::shared_ptr<UndecidedQueryCache> undecided_query_cache;
 };
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
-
-/// The codecs a column's `CODEC` resolves to, for the two shapes its serialized sample can have.
-///
-/// The writer resolves a `CODEC` per substream: a type-specific codec (`ALP`, `T64`, `Delta`, ...) is
-/// applied only to a substream that carries the column type itself, and structural substreams (`Array`
-/// offsets, null map, sparse offsets, ...) keep only the generic codecs. The estimate serializes a whole
-/// column into a single buffer, so `type_specific` describes that buffer only when it holds exactly one
-/// stream of `type_specific_for`. Neither is a property of the table metadata alone: the serialization is
-/// chosen per block from the column at hand, and an unfinished `ALTER MODIFY COLUMN` leaves the part
-/// holding the old type while the metadata already reports the new one.
-struct ColumnCodecs
-{
-    /// Null when the column's `CODEC` has no resolution against a type - then only `generic` applies.
-    CompressionCodecPtr type_specific = nullptr;
-    DataTypePtr type_specific_for = nullptr;
-    CompressionCodecPtr generic = nullptr;
-};
-
-/// Only columns whose `CODEC` overrides the part's default; resolved once per read task.
-using ColumnCodecByName = UnorderedMapWithMemoryTracking<String, ColumnCodecs>;
-
-/// Whether `serialization` writes the column as a single stream carrying `type` itself, the only layout
-/// a type-specific codec may be applied to.
-bool isSerializedAsSingleStreamOfColumnType(const ISerialization & serialization, const DataTypePtr & type);
 
 /// One execution's dataflow statistics, the single cache entry its updaters fill. Every updater of the
 /// execution shares it, and it writes the entry when the last of them is gone.
@@ -135,13 +142,6 @@ struct RuntimeDataflowStatisticsBlock
         size_t elapsed_microseconds TSA_GUARDED_BY(mutex) = 0;
     };
 
-    enum InputStatisticsType
-    {
-        WithByteHint = 0,
-        WithoutByteHint = 1,
-        MaxInputType = 2,
-    };
-
     enum OutputStatisticsType
     {
         AggregationState = 0,
@@ -150,9 +150,12 @@ struct RuntimeDataflowStatisticsBlock
         MaxOutputType = 3,
     };
 
-    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_)
+    /// `undecided_query_key`, when not zero, is the key `RuntimeDataflowStatisticsCache::setUndecided` records under when a
+    /// step cannot collect, or when the collection measures nothing.
+    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_, UInt64 undecided_query_key_ = 0)
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
+        , undecided_query_key(undecided_query_key_)
     {
         if (cache_key == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache key for RuntimeDataflowStatisticsBlock cannot be zero");
@@ -165,29 +168,25 @@ struct RuntimeDataflowStatisticsBlock
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
+    const UInt64 undecided_query_key = 0;
 
     std::atomic_bool unsupported_case{false};
 
-    std::array<Statistics, MaxInputType> input_bytes_statistics;
-    std::array<Statistics, MaxInputType> duplicated_bytes_statistics;
+    /// The compressed bytes the readers loaded, see `ReadRangesRegistry`.
+    std::atomic_size_t input_bytes_read{0};
+    std::atomic_size_t duplicated_bytes_read{0};
     std::array<Statistics, MaxOutputType> output_bytes_statistics;
 };
 
 class RuntimeDataflowStatisticsCacheUpdater
 {
-    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- mirrors `IMergeTreeDataPart::ColumnSizeByName`, which the callers pass directly
     using Statistics = RuntimeDataflowStatisticsBlock::Statistics;
-    using InputStatisticsType = RuntimeDataflowStatisticsBlock::InputStatisticsType;
     using OutputStatisticsType = RuntimeDataflowStatisticsBlock::OutputStatisticsType;
 
 public:
     /// `duplicated` is set on the updater given to the reads parallel replicas would not split: each replica
     /// performs them in full, so their bytes go to `duplicated_bytes` rather than to `input_bytes`.
-    explicit RuntimeDataflowStatisticsCacheUpdater(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_ = false)
-        : block(std::move(block_))
-        , duplicated(duplicated_)
-    {
-    }
+    explicit RuntimeDataflowStatisticsCacheUpdater(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_ = false);
 
     /// A permutation putting the sample into the order the replicas send it in. Evaluated only for a
     /// block that is actually sampled, since building it costs a sort of the block's key columns.
@@ -226,19 +225,8 @@ public:
     /// rather than a hash table. Used by in-order aggregation where states are already materialized into columns (single-stream case).
     void recordAggregationStateColumnSizes(const Chunk & chunk, const ColumnNumbers & keys_positions, const Block & header);
 
-    /// Updates should_continue_sampling to true if the current read block is chosen for sampling.
-    /// It is needed because in general we read each block in multiple steps because of prewhere.
-    /// If the first part of the block was chosen for sampling, we want to record statistics for the whole block in later steps,
-    /// so should_continue_sampling remains true for subsequent calls for the same logical block.
-    void recordInputColumns(
-        const ColumnsWithTypeAndName & input_columns,
-        const NameSet & partially_read_columns,
-        const NamesAndTypesList & part_columns,
-        const ColumnSizeByName & column_sizes,
-        const ColumnCodecByName & column_codecs,
-        const CompressionCodecPtr & default_codec,
-        size_t read_bytes,
-        std::optional<bool> & should_continue_sampling);
+    /// See `IMergeTreeReader::setReadRangesRegistry`.
+    [[nodiscard]] const ReadRangesRegistryPtr & getReadRangesRegistry() const { return read_ranges_registry; }
 
     /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be
     /// measured there must not drop the statistics that decide whether parallel replicas are considered at all.
@@ -268,6 +256,7 @@ private:
 
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
     const bool duplicated;
+    const ReadRangesRegistryPtr read_ranges_registry;
 };
 
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;

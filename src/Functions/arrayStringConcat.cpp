@@ -76,7 +76,7 @@ private:
                 }
                 first_non_null = false;
 
-                const auto current_src_string_offset = current_src_array_offset ? src_string_offsets[current_src_array_offset - 1] : 0;
+                const auto current_src_string_offset = current_src_array_offset ? src_string_offsets[static_cast<ssize_t>(current_src_array_offset) - 1] : 0;
                 size_t bytes_to_copy = src_string_offsets[current_src_array_offset] - current_src_string_offset;
 
                 memcpySmallAllowReadWriteOverflow15(

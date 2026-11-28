@@ -40,13 +40,9 @@ ClickHouse ofrece tres formas de leer formatos de tabla abiertos: table function
     ```
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Consulta de Iceberg](/images/datalake/iceberg-query-direct.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Consulta de Iceberg](/images/datalake/iceberg-query-direct.webp)
+      </Frame>
     </div>
 
     ClickHouse lee los metadatos de Iceberg directamente desde S3 e infiere el esquema automáticamente. El mismo enfoque también funciona con [`deltaLake()`](/es/reference/functions/table-functions/deltalake), [`hudi()`](/es/reference/functions/table-functions/hudi) y [`paimon()`](/es/reference/functions/table-functions/paimon).
@@ -75,13 +71,9 @@ ClickHouse ofrece tres formas de leer formatos de tabla abiertos: table function
     ```
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Consulta de Iceberg](/images/datalake/iceberg-query-engine.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Consulta de Iceberg](/images/datalake/iceberg-query-engine.webp)
+      </Frame>
     </div>
 
     El motor de tabla admite caché de datos, caché de metadatos, evolución del esquema y viaje en el tiempo. Consulta la guía [Consulta directa](/es/guides/use-cases/data-warehousing/getting-started/querying-directly) para obtener más información sobre las características del motor de tabla y la [matriz de compatibilidad](/es/guides/use-cases/data-warehousing/support-matrix) para ver una comparación completa de características.
@@ -175,13 +167,9 @@ ClickHouse ofrece tres formas de leer formatos de tabla abiertos: table function
     Esta consulta recorre el conjunto de datos completo en S3, ya que Iceberg no tiene en cuenta el filtro `counterid`; es de esperar que tarde varios segundos.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Consulta de Iceberg](/images/datalake/iceberg-query.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Consulta de Iceberg](/images/datalake/iceberg-query.webp)
+      </Frame>
     </div>
 
     Ahora crea una tabla MergeTree y carga los datos:
@@ -217,13 +205,9 @@ ClickHouse ofrece tres formas de leer formatos de tabla abiertos: table function
     ```
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Consulta de ClickHouse](/images/datalake/clickhouse-query.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Consulta de ClickHouse](/images/datalake/clickhouse-query.webp)
+      </Frame>
     </div>
 
     Como `counterid` es la primera columna de la clave `ORDER BY`, el índice primario disperso de ClickHouse salta directamente a los gránulos relevantes y solo lee las filas de `counterid = 38`, en lugar de escanear los 100 millones de filas. El resultado es un aumento drástico de la velocidad.

@@ -1,3 +1,4 @@
+#include <base/sanitizer_defs.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnArray.h>
@@ -589,7 +590,7 @@ using TaskList = VectorWithMemoryTracking<TrainTask>;
 /// splitmix64. Each node derives its seed from its parent's seed and its child index, so a node's RNG stream
 /// depends only on its position in the tree - never on the order nodes happen to be visited. That is what
 /// makes the parallel tree walk produce the same centroids as a serial one.
-UInt64 mixSeed(UInt64 seed, size_t child)
+UInt64 NO_SANITIZE_UNSIGNED_OVERFLOW mixSeed(UInt64 seed, size_t child)
 {
     UInt64 z = seed + 0x9E3779B97F4A7C15ULL * (static_cast<UInt64>(child) + 1);
     z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
@@ -1005,13 +1006,14 @@ public:
                 "hierarchicalKMeans: sample_cap ({}) must be at least k ({}), otherwise the reservoir cannot "
                 "hold enough points to train k centroids", sample_cap, k);
 
-        /// Any float width is accepted and converted to the Float32 the kernels use, so a plain array
-        /// literal - which is Array(Float64) - works without an explicit CAST.
+        /// Any float width, Int8 and UInt8 are accepted and converted to the Float32 the kernels use, so a plain
+        /// array literal - Array(Float64) or Array(UInt8) - works without an explicit CAST.
         const auto * array_type = typeid_cast<const DataTypeArray *>(args[0].get());
-        if (!array_type || !isFloat(array_type->getNestedType()))
+        const DataTypePtr nested = array_type ? array_type->getNestedType() : nullptr;
+        if (!nested || !(isFloat(nested) || isInt8(nested) || isUInt8(nested)))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Aggregate function hierarchicalKMeans requires an array of floats");
-        nested_type = WhichDataType(array_type->getNestedType()).idx;
+                "Aggregate function hierarchicalKMeans requires an array of Float32, Float64, BFloat16, Int8 or UInt8");
+        nested_type = WhichDataType(nested).idx;
     }
 
     String getName() const override { return "hierarchicalKMeans"; }
@@ -1037,7 +1039,7 @@ public:
     {
         const auto & array = assert_cast<const ColumnArray &>(*columns[0]);
         const auto & offsets = array.getOffsets();
-        size_t start = row_num ? offsets[row_num - 1] : 0;
+        size_t start = row_num ? offsets[static_cast<ssize_t>(row_num) - 1] : 0;
         size_t length = offsets[row_num] - start;
 
         /// Read one coordinate as Float32, whatever width the column actually holds.
@@ -1048,6 +1050,8 @@ public:
             {
                 case TypeIndex::Float32: return assert_cast<const ColumnFloat32 &>(nested_col).getData()[start + coord];
                 case TypeIndex::Float64: return static_cast<Float>(assert_cast<const ColumnFloat64 &>(nested_col).getData()[start + coord]);
+                case TypeIndex::Int8:    return static_cast<Float>(assert_cast<const ColumnInt8 &>(nested_col).getData()[start + coord]);
+                case TypeIndex::UInt8:   return static_cast<Float>(assert_cast<const ColumnUInt8 &>(nested_col).getData()[start + coord]);
                 default:                 return static_cast<Float>(assert_cast<const ColumnBFloat16 &>(nested_col).getData()[start + coord]);
             }
         };
@@ -1214,8 +1218,8 @@ void registerAggregateFunctionHierarchicalKMeans(AggregateFunctionFactory & fact
     FunctionDocumentation::Syntax syntax = "hierarchicalKMeans(k[, branching[, max_iter[, sample_cap[, seed[, cosine_distance]]]]])(vec)";
     FunctionDocumentation::Arguments arguments = {
         {"vec", "Vectors to cluster. Every row must have the same dimension, and every coordinate must be finite. "
-                "Widths other than `Float32` are converted to `Float32`, which is what the training kernels use.",
-         {"Array(Float32)", "Array(Float64)", "Array(BFloat16)"}}
+                "Element types other than `Float32` are converted to `Float32`, which is what the training kernels use.",
+         {"Array(Float32)", "Array(Float64)", "Array(BFloat16)", "Array(Int8)", "Array(UInt8)"}}
     };
     FunctionDocumentation::Parameters parameters = {
         {"k", "Number of centroids to train. Must be greater than 0 and must not exceed `sample_cap`.", {"UInt*"}},

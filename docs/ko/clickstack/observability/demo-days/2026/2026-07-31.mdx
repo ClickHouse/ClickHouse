@@ -1,0 +1,130 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-07-31
+title: '데모 데이 - 2026-07-31'
+sidebarTitle: '2026-07-31'
+description: '2026-07-31 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+## 지수 히스토그램 메트릭 {#exponential-histogram-metrics}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/w45v3IMcXTY" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+OpenTelemetry 지수 히스토그램 메트릭에 대한 초기 쿼리 지원이 추가되었습니다. 이전에도 이러한 메트릭을 소스에 등록할 수는 있었지만 쿼리할 방법은 없었습니다. 이제 쿼리 빌더(query builder)에서 발생 횟수와 분위수를 조회할 수 있습니다.
+
+지수 히스토그램은 명시적 버킷 히스토그램과 유사하지만, 버킷 경계를 버킷마다 저장하지 않고 2의 거듭제곱으로 계산한다는 점이 다릅니다. 스케일(scale)은 어떤 2의 거듭제곱을 사용할지 결정합니다. 스케일 값이 클수록 버킷이 더 작아지며, 오프셋(offset)은 경계를 더 높거나 낮은 배수 쪽으로 이동시킵니다. 각 버킷의 카운트는 해당 범위에 속하는 관측값의 개수를 기록합니다.
+
+max, min, sum, avg는 기존 명시적 히스토그램 구현과 마찬가지로 여전히 지원되지 않습니다. 이러한 필드는 OpenTelemetry 데이터 모델에서 선택 사항이므로, 해당 필드가 항상 존재한다고 가정하지 않습니다.
+
+데모에서 볼 수 있듯이 생성된 SQL은 길고 그다지 깔끔하지 않습니다. 성능은 무난한 수준이며 메모리 부족도 발생하지 않지만, 이는 초기 기능 지원일 뿐입니다. 다음 과제는 성능 개선이며, 이러한 쿼리를 훨씬 빠르게 만들어 줄 개선된 스키마(schema) 작업이 이미 진행 중입니다.
+
+현재는 시계열 표시 유형만 올바르게 렌더링됩니다. 이는 기존 히스토그램 메트릭 유형과 동일한 동작입니다.
+
+**관련 풀 리퀘스트:** [#2687](https://github.com/hyperdxio/hyperdx/pull/2687) feat: Show exponential histogram metrics in the metric name drop-down, [#2697](https://github.com/hyperdxio/hyperdx/pull/2697) feat: Implement quantile+sum for exponential histogram metrics, [#2705](https://github.com/hyperdxio/hyperdx/pull/2705) feat: Support exponential histograms in MCP, [#2707](https://github.com/hyperdxio/hyperdx/pull/2707) fix: Support grouping histogram quantile aggregations over non-Attribute columns
+
+## 원시 SQL 차트 유효성 검사 {#validation-for-raw-sql-charts}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/zfZsehTqeCQ" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 원시 SQL 차트에서 필요한 매크로가 누락되면 경고가 표시됩니다. 이 기능은 원시 SQL 차트를 대량으로 작성하던 사용자가 계속해서 이해하기 어려운 결과를 얻었던 지원 요청에서 출발했습니다.
+
+대시보드 쿼리에는 필터 매크로와 원본 테이블 매크로가 포함되어야 합니다. 시계열 차트에는 시간 범위 매크로와 인터벌 매크로도 포함되어야 합니다. 이전에는 타일에 알림이 연결된 후에만 이러한 검사가 실행되었습니다. 이제는 모든 원시 SQL 차트에서 검사가 실행되므로, 매크로를 제거하면 나중에 엉뚱한 차트가 만들어지는 대신 편집기에 바로 경고가 표시됩니다.
+
+유효성 검사에서는 각 매크로의 의존성도 함께 고려합니다. 원시 SQL 차트 자체는 소스를 선택하지 않아도 되지만, 원본 테이블 매크로와 필터 매크로는 소스가 선택되어 있어야 동작합니다. 따라서 소스를 선택하지 않은 상태에서 이 두 매크로 중 하나를 사용하면 경고가 아닌 오류가 발생합니다.
+
+작은 변경이지만, 지원팀에 문의하지 않고도 원시 SQL 문제를 더 쉽게 찾을 수 있습니다.
+
+**관련 풀 리퀘스트:** [#2742](https://github.com/hyperdxio/hyperdx/pull/2742) feat: Warn on missing params/macros in SQL Editor
+
+## ID 대신 이름으로 소스 연결 {#link-to-sources-by-name-not-id}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/r2uNmcJXGSM" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+LogHouse 팀은 소스에 링크하는 더 안정적인 방법을 요청했습니다. 이 팀은 ClickHouse Cloud의 로깅 환경을 운영하며, infrastructure-as-code를 사용해 소스를 프로그래밍 방식으로 프로비저닝합니다. 소스 ID는 소스를 재생성하면 바뀌고 개발, 스테이징, 운영 환경마다 다르기 때문에 ID 기반 링크는 쉽게 깨집니다. 이 팀은 알림 시스템과 Grafana에서 ClickStack으로 링크를 걸기 때문에, 환경마다 별도의 소스 ID 세트를 관리하는 것은 현실적이지 않았습니다.
+
+이제 `source` URL 매개변수에 ID뿐 아니라 소스 이름도 지정할 수 있습니다. 이름은 소스를 프로비저닝할 때 직접 정하므로 동일한 링크를 모든 환경에서 사용할 수 있습니다. 처음에는 검색 페이지에만 지원이 추가되었으며, 이후 후속 풀 리퀘스트를 통해 차트 탐색기, 서비스 맵, 세션(Sessions), 서비스 대시보드, Kubernetes 대시보드를 비롯해 소스 매개변수가 있는 모든 페이지로 확대되었습니다.
+
+후속 논의는 주로 기능을 어떻게 알릴 것인가에 집중되었습니다. 이 기능은 사실상 URL API이므로 사용자가 우연히 발견하기는 어렵습니다. 기본적으로 ID 대신 이름을 사용하는 방안도 있지만, 이름이 충돌할 수 있어 안전하지 않습니다. 그 밖에 공유 버튼으로 링크를 제공하는 방안, 에이전트가 MCP를 통해 링크를 생성하도록 하는 방안, URL API를 제대로 문서화하는 방안 등이 제안되었습니다. 상대 시간 범위도 같은 방식으로 문서화하면 도움이 될 것입니다.
+
+이름 기반 참조를 대시보드로 확장하는 것도 가능합니다. 그러면 infrastructure-as-code 워크플로에서 소스를 프로비저닝하고, 대시보드를 가져오고, 모든 요소를 자동으로 연결할 수 있습니다. UI를 통한 대시보드 가져오기는 이미 이름으로 소스를 매칭하므로, 남은 과제는 주로 프로그래밍 방식의 워크플로입니다.
+
+**관련 풀 리퀘스트:** [#2746](https://github.com/hyperdxio/hyperdx/pull/2746) feat: Accept source names in addition to IDs in URL Params, [#2758](https://github.com/hyperdxio/hyperdx/pull/2758) feat: Support source name deeplinks on additional pages
+
+## 차트 표시 설정 재설계 {#chart-display-settings-redesign}
+
+*데모 진행자: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tO5yFKR-MLQ" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+차트 표시 설정의 위치를 정하는 작업이 진행 중입니다. 처음 변경에서는 표시 설정을 별도의 드로어로 여는 대신 타일 편집기 오른쪽에 인라인으로 배치했습니다. 이전에는 타일 편집기가 모달 대화 상자였고, 표시 설정은 그 위에 드로어로 열렸습니다. 이 때문에 Escape 키를 한 번만 눌러도 둘 다 닫혔고, 모달 대화 상자 위에 드로어가 겹쳐 열리는 구조 자체도 늘 어색했습니다.
+
+시계열 설정까지 그 위에 겹쳐 띄워야 하는 상황이 되면서 PR이 더 복잡해졌고, 그래서 한발 물러나 페이지 전체를 더 폭넓게 검토하기 시작했습니다. 이 작업은 아직 와이어프레임 단계입니다. 현재 디자인에서는 설정을 고정 패널에 배치하고 변경 사항을 자동으로 적용하므로, 적용 버튼을 누르지 않아도 결과를 실시간으로 확인할 수 있습니다.
+
+재설계를 마무리한 뒤 기존 PR에 다시 반영할 계획입니다. 특히 새 디자인에서는 대시보드 페이지의 일부도 바뀌기 때문에, 현재 구현은 프로토타입으로 간주하고 있습니다.
+
+**관련 풀 리퀘스트:** [#2721](https://github.com/hyperdxio/hyperdx/pull/2721) feat(dashboards): move tile editor to a drawer with docked settings panel
+
+## 새로운 탐색 페이지 {#new-explore-page}
+
+*데모 진행자: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/E1vEjJBw1gs" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+통합 탐색 페이지에 대한 초기 실험입니다. 이 페이지는 향후 검색, 저장된 검색, 차트 탐색기를 하나의 진입점으로 대체할 수 있습니다.
+
+롤아웃 방식에는 트레이스 뷰어 재설계에서 얻은 교훈을 반영했습니다. 모든 사용자의 경험을 한 번에 바꾸는 대신, 새 페이지는 기능 플래그(feature flag)를 통해 소수의 사용자 그룹에게 먼저 공개됩니다. 이 기간 동안 문제를 찾아 수정한 뒤 더 넓은 범위로 롤아웃할 예정입니다. 아이디어가 효과적이지 않다면 실험으로 남고 출시되지 않습니다. 이 역시 충분히 좋은 결과입니다.
+
+페이지는 신호 유형 선택에서 시작합니다. trace, 로그, 메트릭 중 하나를 선택하면 나머지 화면이 그에 맞게 바뀝니다. 예를 들어 로그를 선택하면 목록 보기, 이벤트 패턴, 시계열을 비롯해 현재 차트 탐색기에서 제공하는 다른 시각화를 사용할 수 있습니다.
+
+조사는 페이지를 전환하지 않고 계속 진행할 수 있어야 합니다. 목록에서 시작해 숫자 또는 그룹화된 테이블로 이동하고, 결과를 대시보드에 추가한 다음, 더 세밀한 제어가 필요하면 사용자 정의 쿼리를 작성할 수 있습니다.
+
+작은 아이디어도 여러 가지 포함되어 있으며, 대부분 사용자 피드백에서 나왔습니다. 쿼리 편집기는 SQL Editor처럼 동작하도록 개선되어 현재의 자동 완성 동작 차이가 사라집니다. 오류와 경고는 쿼리를 실행할 때까지 기다리지 않고 편집하는 동안 바로 표시됩니다.
+
+컬럼에는 전용 선택기가 제공됩니다. 실제로 `SELECT` 절을 변경하면 테이블에 표시되는 컬럼이 바뀐다는 사실을 알지 못한 사용자도 있었습니다. 선택기에서 필드를 클릭하면 SQL이 갱신되고 해당 필드를 기준으로 정렬할 수 있습니다. 고급 사용자는 계속 `SELECT` 절을 사용할 수 있습니다.
+
+저장된 뷰(view)도 이 페이지에서 함께 관리되므로, 저장하지 않고 탐색하다가 현재 뷰를 그 자리에서 저장할 수 있습니다. 생성된 SQL은 인라인으로 표시됩니다.
+
+현재 차트 탐색기에서 제공하는 일부 시각화를 포함해 아직 빠진 부분이 적지 않습니다. 이러한 요소가 추가되면서 디자인은 계속 바뀔 예정입니다.
+
+**관련 풀 리퀘스트:** 아직 없음. 출시된 기능이 아닌 실험 단계입니다.
+
+## 대시보드 필터 연결 {#dashboard-filter-linking}
+
+*데모 진행자: [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/IQ4WtnNYS5s" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+대시보드 필터 연결 기능이 머지되었습니다. 몇 달 전 초안 상태로 처음 데모를 선보였으나, 성능에 미치는 영향을 검토하느라 작업을 잠시 중단했습니다. 연결 기능은 대시보드 쿼리의 구조적 형태(Shape)를 바꾸고 materialized view를 항상 최적으로 활용하지는 못하므로, 기본 동작이 아닌 선택적으로 켜는 토글 형태로 제공될 예정입니다.
+
+연결을 활성화하면 한 필터에서 값을 선택할 때 다른 필터에서 선택 가능한 값의 범위가 좁혀집니다. 서비스를 선택하면 해당 서비스에서 확인된 심각도 값만 남습니다. 트레이스 ID를 선택하면 관련된 상위 트레이스 ID만 남습니다. 따라서 사용자가 데이터가 반환되지 않는 조합을 선택하는 일을 방지할 수 있습니다.
+
+후속 풀 리퀘스트에서는 연결 기능이 소스를 인식하도록 개선되었습니다. 필터는 소스별로 그룹화되며, 서로 값을 좁힐 수 있는 인접 필터 사이에는 연쇄 아이콘이 표시됩니다. 로그 필터 2개와 트레이스 필터 2개가 있는 대시보드에서도 어떤 필터끼리 서로 영향을 주는지 명확히 알 수 있어야 합니다.
+
+처음 염두에 둔 활용 사례는 Kubernetes 대시보드였습니다. 파드를 선택하면 해당 파드를 포함하는 배포와 노드만 남아야 합니다. 좁혀진 값은 드롭다운을 열 때 지연 방식으로 가져오므로 추가 조회에 드는 비용이 제한됩니다.
+
+논의 후 두 가지 미결 사항이 남았습니다. 첫째, 현재 이 설정은 사용자별로 브라우저 저장소에 저장됩니다. 회의에서는 사용자들이 결국 이 설정을 대시보드 수준에서 저장하기를 원할 것으로 예상했습니다. 그렇다면 사용자 수준의 설정은 나중에 대시보드 수준의 동작과 충돌하지 않도록 임시로만 유지하는 편이 나을 수 있습니다.
+
+둘째, 종속 필터의 값을 로딩하는 동안 필터가 어떻게 동작해야 하는지입니다. 현재는 값을 선택하면 종속 드롭다운을 막는 대신 드롭다운 안에 로딩 상태를 표시하지만, 두 번째 종속 필터가 있을 때의 동작은 아직 검증이 필요합니다. 값을 좁히는 동안에도 필터를 계속 사용할 수 있게 하고, 목록 업데이트가 아직 끝나지 않았음을 표시하는 방향이 선호되었습니다. 원하는 값을 이미 알고 있는 사용자가 메타데이터를 기다릴 필요가 없어야 하기 때문입니다.
+
+**관련 풀 리퀘스트:** [#2423](https://github.com/hyperdxio/hyperdx/pull/2423) feat(dashboards): cascading (faceted) filter values, [#2760](https://github.com/hyperdxio/hyperdx/pull/2760) feat(dashboards): persist filter link toggle and clarify within-source linking
+
+## 마지막으로 사용한 사이드 패널 탭 기억 {#remember-the-last-side-panel-tab}
+
+*데모 진행자: [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/FlDWN7sGHMo" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이번 주 가장 작은 풀 리퀘스트지만, 사소한 불편함도 고칠 가치가 있다는 것을 잘 보여 주는 사례입니다.
+
+지금까지 행 사이드 패널은 항상 개요(Overview) 탭으로 열렸는데, 이 탭은 OpenTelemetry 로그 필드를 중심으로 설계되어 있습니다. 따라서 OTel 형태가 아닌 로그에서는 유용한 정보가 거의 표시되지 않아, 행을 열 때마다 열 값(Column Values) 탭으로 전환해야 했습니다.
+
+이제 패널은 마지막으로 사용한 탭을 기억했다가 다음에 열 때 그 탭을 다시 표시합니다. 별도로 구성할 필요는 없습니다. OTel을 사용하지 않는 사용자가 열 값(Column Values) 탭으로 전환하면 그 탭이 계속 유지되고, 개요 탭을 사용하는 사용자는 기존과 동일하게 동작합니다.
+
+**관련 풀 리퀘스트:** [#2752](https://github.com/hyperdxio/hyperdx/pull/2752) feat(app): remember last-used side panel tab across opens

@@ -33,6 +33,10 @@ struct GenericExclusionSearchSettings
     /// Accepted ranges separated by a gap of at most this many marks are merged, because reading the
     /// gap sequentially is cheaper than seeking past it. Exact ranges are never merged across a gap.
     size_t min_marks_for_seek = 0;
+
+    /// Set when the caller only needs to know whether some mark can match. Once a range is accepted, no
+    /// range is split anymore: each remaining one receives its one check and is dropped or accepted whole.
+    bool stop_at_first_match = false;
 };
 
 struct GenericExclusionSearchResult

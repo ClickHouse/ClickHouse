@@ -25,7 +25,7 @@ namespace ErrorCodes
     DECLARE(String, nats_subjects, "", "List of subject for NATS table to subscribe/publish to.", 0) \
     DECLARE(String, nats_format, "", "The message format.", 0) \
     DECLARE(String, nats_schema, "", "Schema identifier (used by schema-based formats) for NATS engine", 0) \
-    DECLARE(UInt64, nats_num_consumers, 1, "The number of consumer channels per table.", 0) \
+    DECLARE(NonZeroUInt64, nats_num_consumers, 1, "The number of consumer channels per table.", 0) \
     DECLARE(String, nats_queue_group, "", "Name for queue group of NATS subscribers.", 0) \
     DECLARE(Bool, nats_secure, false, "Use SSL connection", 0) \
     DECLARE(UInt64, nats_reconnect_wait, 2000, "Amount of time in milliseconds to sleep between each reconnect attempt.", 0) \

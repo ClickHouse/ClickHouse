@@ -87,9 +87,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int NO_ZOOKEEPER;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
+
+static constexpr int MAX_TRIES_TO_EXECUTE = 3;
 
 
 DDLWorker::DDLWorker(
@@ -269,6 +272,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         return nullptr;
     };
 
+    std::optional<ExecutionStatus> parse_error;
     try
     {
         /// Stage 1: parse entry
@@ -277,11 +281,30 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     }
     catch (...)
     {
+        parse_error = ExecutionStatus::fromCurrentException();
+    }
+
+    if (parse_error)
+    {
+        out_reason = "Incorrect task format";
+
+        /// An entry of an unsupported version still has its hosts parsed, so report the error under the one of this host.
+        if (parse_error->code == ErrorCodes::UNKNOWN_FORMAT_VERSION && !task->entry.hosts.empty())
+        {
+            updateHostIDs(task->entry.hosts);
+            if (!task->findCurrentHostID(context, log, zookeeper, config_host_name))
+            {
+                out_reason = "There is no a local address in host list";
+                return add_to_skip_set();
+            }
+            write_error_status(task->host_id_str, *parse_error, out_reason);
+            return add_to_skip_set();
+        }
+
         /// What should we do if we even cannot parse host name and therefore cannot properly submit execution status?
         /// We can try to create fail node using FQDN if it equal to host name in cluster config attempt will be successful.
         /// Otherwise, that node will be ignored by DDLQueryStatusSource.
-        out_reason = "Incorrect task format";
-        write_error_status(host_fqdn_id, ExecutionStatus::fromCurrentException(), out_reason);
+        write_error_status(host_fqdn_id, *parse_error, out_reason);
         return add_to_skip_set();
     }
 
@@ -413,6 +436,14 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         Coordination::WatchCallbackPtrOrEventPtr{queue_updated_event, ProfileEvents::ZooKeeperWatchTriggeredDistributedDDL});
     size_t size_before_filtering = queue_nodes.size();
     filterAndSortQueueNodes(queue_nodes);
+
+    {
+        std::lock_guard lock(failed_attempts_mutex);
+        std::erase_if(failed_attempts, [&](const auto & attempts)
+        {
+            return !std::binary_search(queue_nodes.begin(), queue_nodes.end(), attempts.first);
+        });
+    }
     /// The following message is too verbose, but it can be useful to debug mysterious test failures in CI
     LOG_TRACE(log, "scheduleTasks: initialized={}, size_before_filtering={}, queue_size={}, "
                    "entries={}..{}, "
@@ -796,6 +827,15 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, 
         {
             bool status_written_by_table_or_db = task.ops.empty();
             bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task);
+            /// The single-replica path and Replicated databases bound their retries themselves.
+            if (retriable && !is_replicated_database_task && !task.execute_on_single_replica)
+            {
+                std::lock_guard lock(failed_attempts_mutex);
+                retriable = ++failed_attempts[task.entry_name] <= MAX_TRIES_TO_EXECUTE;
+                if (!retriable)
+                    LOG_WARNING(log, "Maximum retries count for task {} exceeded, finishing it with the last error", task.entry_name);
+            }
+
             if (status_written_by_table_or_db || is_replicated_database_task || retriable)
             {
                 throw Exception(ErrorCodes::UNFINISHED, "Unexpected error: {}", task.execution_status.message);
@@ -804,6 +844,11 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, 
             /// task.ops where not executed by table or database engine, so DDLWorker is responsible for
             /// writing query execution status into ZooKeeper.
             task.ops.emplace_back(zkutil::makeSetRequest(finished_node_path, task.execution_status.serializeText(), -1));
+        }
+
+        {
+            std::lock_guard lock(failed_attempts_mutex);
+            failed_attempts.erase(task.entry_name);
         }
 
         /// We need to distinguish ZK errors occurred before and after query executing
@@ -891,7 +936,6 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
     /// Node exists, or we will create or we will get an exception
     zookeeper->tryCreate(tries_to_execute_path, "0", zkutil::CreateMode::Persistent);
 
-    static constexpr int MAX_TRIES_TO_EXECUTE = 3;
     static constexpr int MAX_EXECUTION_TIMEOUT_SEC = 3600;
 
     String executed_by;
@@ -1129,7 +1173,9 @@ bool DDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordinatio
 
     /// If too many nodes in task queue (> max_tasks_in_queue), delete oldest one
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
-    bool node_is_outside_max_window = entry_number + max_tasks_in_queue < max_id.load(std::memory_order_relaxed);
+    /// Subtract rather than add, so that a huge `max_tasks_in_queue` does not wrap around.
+    const UInt32 current_max_id = max_id.load(std::memory_order_relaxed);
+    bool node_is_outside_max_window = entry_number < current_max_id && current_max_id - entry_number > max_tasks_in_queue;
 
     return node_lifetime_is_expired || node_is_outside_max_window;
 }

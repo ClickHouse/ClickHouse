@@ -123,6 +123,7 @@ public:
     /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
     /// `t.x` on its own and prune on it.
     bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
+    bool supportsOptimizationToMapKeysAndValuesSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
@@ -270,7 +271,7 @@ protected:
 
     VirtualColumnsDescription createVirtualColumns(ColumnsDescription & columns, const std::string & sample_path, const ContextPtr & context) const;
 
-    bool readsIgnoreColumnDefaults(const ContextPtr & context) const;
+    [[nodiscard]] bool readsIgnoreColumnDefaults(const ContextPtr & context) const;
 
     /// Creates ReadBufferIterator for schema inference implementation.
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(

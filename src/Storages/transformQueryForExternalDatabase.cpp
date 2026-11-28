@@ -31,6 +31,7 @@
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
 
 #include <cmath>
+#include <limits>
 #include <queue>
 
 
@@ -977,7 +978,8 @@ bool isLimitPushDownSafe(const ASTSelectQuery & query)
         || query.limit_with_ties || query.limit_by_all || query.shuffle)
         return false;
 
-    if (query.hasJoin() || query.final() || query.sampleSize() || query.arrayJoinExpressionList().first)
+    /// Every JOIN and ARRAY JOIN is a separate element of the TABLES list.
+    if ((query.tables() && query.tables()->children.size() > 1) || query.final() || query.sampleSize())
         return false;
 
     for (const auto & child : query.children)
@@ -1188,7 +1190,11 @@ String transformQueryForExternalDatabaseImpl(
         }
     }
 
-    if (limit)
+    /// A `LIMIT` in ClickHouse is any `UInt64` (for example MySQL's "all rows" idiom,
+    /// `LIMIT 18446744073709551615`), while PostgreSQL and SQLite accept only a signed 64-bit value and
+    /// fail on a larger one (`bigint out of range`, `datatype mismatch`). A limit that large does not
+    /// cut off the rows of any table, so it is not sent to the external database at all.
+    if (limit && *limit <= static_cast<UInt64>(std::numeric_limits<Int64>::max()))
         select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(*limit));
 
     ASTPtr select_ptr = select;

@@ -170,7 +170,7 @@ void NpyOutputFormat::checkShape(ColumnPtr & column)
         const auto & array_offset = array_column->getOffsets();
 
         for (size_t i = 0; i < array_offset.size(); ++i)
-            if (array_offset[i] - array_offset[i - 1] != numpy_shape[dim])
+            if (array_offset[i] - array_offset[static_cast<ssize_t>(i) - 1] != numpy_shape[dim])
             {
                 invalid_shape = true;
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ClickHouse doesn't support object types, cannot format ragged nested sequences (which is a list of arrays with different shapes)");
@@ -188,7 +188,7 @@ void NpyOutputFormat::updateSizeIfTypeString(const ColumnPtr & column)
         const auto & string_offsets = assert_cast<const ColumnString *>(column.get())->getOffsets();
         for (size_t i = 0; i < string_offsets.size(); ++i)
         {
-            size_t string_length = static_cast<size_t>(string_offsets[i] - string_offsets[i - 1]);
+            size_t string_length = static_cast<size_t>(string_offsets[i] - string_offsets[static_cast<ssize_t>(i) - 1]);
             if (numpy_data_type->getSize() < string_length)
                 numpy_data_type->setSize(string_length);
         }

@@ -3,7 +3,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -13,7 +13,7 @@ bool hasUnboundedSource(const QueryPlan & query_plan)
     if (!query_plan.isInitialized())
         return false;
 
-    std::vector<const QueryPlan::Node *> nodes{query_plan.getRootNode()};
+    VectorWithMemoryTracking<const QueryPlan::Node *> nodes{query_plan.getRootNode()};
     while (!nodes.empty())
     {
         const auto * node = nodes.back();

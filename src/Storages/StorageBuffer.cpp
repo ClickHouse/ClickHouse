@@ -54,7 +54,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MemoryTracker.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -793,7 +793,7 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
     size_t mutated_columns = 0;
     try
     {
-        MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+        ServerOwnedMemoryScope temporarily_disable_memory_tracker;
 
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
@@ -1003,7 +1003,12 @@ private:
         appendBlock(storage.log, sorted_block, buffer.data);
 
         storage.total_writes.rows += (buffer.data.rows() - old_rows);
-        storage.total_writes.bytes += (buffer.data.allocatedBytes() - old_bytes);
+        /// The allocation can shrink after sorting.
+        size_t new_bytes = buffer.data.allocatedBytes();
+        if (new_bytes >= old_bytes)
+            storage.total_writes.bytes += new_bytes - old_bytes;
+        else
+            storage.total_writes.bytes -= old_bytes - new_bytes;
     }
 };
 
@@ -1351,7 +1356,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     }
     auto destination_metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
 
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+    ServerOwnedMemoryScope temporarily_disable_memory_tracker;
 
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = destination_id;
