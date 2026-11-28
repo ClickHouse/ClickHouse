@@ -1041,6 +1041,10 @@ void optimizeTreeSecondPass(
     /// Propagate stream disjointness so that DISTINCT / LIMIT BY / GROUP BY can skip merging streams.
     applyStreamDisjointness(optimization_settings, root);
 
+    /// Before the sharding, which splits all inputs of the multiway join by the same ranges.
+    if (optimization_settings.query_plan_join_multiway_merge && !optimization_settings.make_distributed_plan)
+        optimizeMultiwayMergeJoin(root);
+
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
 
@@ -1096,6 +1100,9 @@ void optimizeTreeSecondPass(
     /// Keep `SortingStep` while building distributed fragments; replace it only when optimizing a local executable plan.
     if (optimization_settings.use_shuffle_for_order_by_rand && !optimization_settings.make_distributed_plan)
         traverseQueryPlan(stack, root, [&](auto & frame_node) { useShuffleForOrderByRand(frame_node); });
+
+    /// After every pass that merges, splits or moves expression steps.
+    traverseQueryPlan(stack, root, [&](auto & frame_node) { disableCompilationOverAtMostOneRow(frame_node); });
 
     /// Last: it reads the final consumers of every remote read.
     allowReadingShardsFromSeveralReplicas(root);

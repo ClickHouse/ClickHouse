@@ -1,6 +1,7 @@
 #include <Common/Exception.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/logger_useful.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <Interpreters/ClientInfo.h>
@@ -172,6 +173,18 @@ void QueryPlanLogCapture::declineCapture(const ContextPtr & context, const char 
         reason);
 }
 
+QueryPlanLogCapture::~QueryPlanLogCapture()
+{
+    dropCapturedPlan();
+}
+
+void QueryPlanLogCapture::dropCapturedPlan()
+{
+    /// Captured as the server's, in `QueryPlan::buildQueryPipeline`, so that it does not take from the memory of the query.
+    ServerOwnedMemoryScope server_owned;
+    captured.reset();
+}
+
 void QueryPlanLogCapture::capturePlanStructure(const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, size_t max_description_length)
 {
     /// One plan per query, and nothing is asked of this before it.
@@ -192,7 +205,7 @@ void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)
     /// Runs on the query-finish path after the client has already received the result. An exception
     /// here would fail a query that had already succeeded, so diagnostics must not propagate.
     ///
-    /// The memory is tracked: with work intervals collected, the analysis allocates in proportion to
+    /// The memory of the analysis is tracked: with work intervals collected, it allocates in proportion to
     /// the number of tasks the query ran, so it must stay within the query and user limits. Running
     /// out of them fails only the statistics, never the query.
     try
@@ -205,6 +218,8 @@ void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)
             profiler->getExecutionStartNs(),
             profiler->getExecutionTimeNs());
 
+        /// The captured plan is the server's, see `dropCapturedPlan`.
+        ServerOwnedMemoryScope server_owned;
         const auto masker = SensitiveDataMasker::getInstance();
         for (auto & node : captured->nodes)
         {

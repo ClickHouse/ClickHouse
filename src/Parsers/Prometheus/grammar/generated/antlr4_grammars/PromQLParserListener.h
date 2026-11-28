@@ -124,6 +124,9 @@ public:
   virtual void enterMetricName(PromQLParser::MetricNameContext *ctx) = 0;
   virtual void exitMetricName(PromQLParser::MetricNameContext *ctx) = 0;
 
+  virtual void enterMetricNameKeyword(PromQLParser::MetricNameKeywordContext *ctx) = 0;
+  virtual void exitMetricNameKeyword(PromQLParser::MetricNameKeywordContext *ctx) = 0;
+
   virtual void enterKeyword(PromQLParser::KeywordContext *ctx) = 0;
   virtual void exitKeyword(PromQLParser::KeywordContext *ctx) = 0;
 

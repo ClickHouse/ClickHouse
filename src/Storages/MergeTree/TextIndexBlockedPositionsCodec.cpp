@@ -109,7 +109,7 @@ void TextIndexBlockedPositionsCodec::Encoder::finishDocument(bool sorted)
     ++num_docs;
     open_document_begin = values.size();
 
-    if (docs_in_block == BLOCK_DOCS)
+    if (docs_in_block == BLOCK_SIZE)
         block_bytes.push_back(encodeBlock(staged));
 }
 
@@ -135,7 +135,7 @@ size_t TextIndexBlockedPositionsCodec::Encoder::encodeBlock(PaddedPODArray<UInt8
     }
     else
     {
-        std::array<UInt32, BLOCK_DOCS> frequencies_minus_one{};
+        std::array<UInt32, BLOCK_SIZE> frequencies_minus_one{};
         for (size_t i = 0; i < frequency_exceptions.size(); i += 2)
             frequencies_minus_one[frequency_exceptions[i]] = frequency_exceptions[i + 1];
         offset = PFor::encodeBlocks<UInt32>(std::span<const UInt32>(frequencies_minus_one.data(), docs_in_block), PFor::Delta::none, block_begin);
@@ -182,7 +182,7 @@ TextIndexBlockedPositionsCodec::Directory TextIndexBlockedPositionsCodec::readDi
 
     UInt64 num_blocks = 0;
     readVarUInt(num_blocks, in);
-    if (num_blocks != (dir.num_docs + BLOCK_DOCS - 1) / BLOCK_DOCS)
+    if (num_blocks != (dir.num_docs + BLOCK_SIZE - 1) / BLOCK_SIZE)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupt text index positions: {} blocks for {} documents", num_blocks, dir.num_docs);
     if (dir.num_docs == 0)
@@ -292,7 +292,7 @@ void TextIndexBlockedPositionsCodec::decodeAll(
     positions.clear();
     doc_offsets.push_back(0);
 
-    std::vector<UInt32> all_ranks(BLOCK_DOCS);
+    std::vector<UInt32> all_ranks(BLOCK_SIZE);
     for (size_t b = 0; b < dir.numBlocks(); ++b)
     {
         const size_t docs_in_block = dir.docsInBlock(b);

@@ -68,7 +68,8 @@ macro(clickhouse_split_debug_symbols)
        set(MINI_DEBUGINFO_PATH "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.mini_debuginfo")
        list(APPEND SYMBOL_SECTIONS_COMMANDS
            COMMAND "${OBJCOPY_PATH}" --strip-debug "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug" "${MINI_DEBUGINFO_PATH}"
-           COMMAND "${XZ_PATH}" -9 -T1 -f "${MINI_DEBUGINFO_PATH}"
+           # Compress 16 MiB blocks in parallel; the output depends on the block size, not on the number of threads.
+           COMMAND "${XZ_PATH}" -9 -T0 --block-size=16MiB -f "${MINI_DEBUGINFO_PATH}"
        )
        list(APPEND SYMBOL_SECTIONS_OBJCOPY_ARGS "--add-section=.gnu_debugdata=${MINI_DEBUGINFO_PATH}.xz")
        list(APPEND SYMBOL_SECTIONS_TEMPORARY_FILES "${MINI_DEBUGINFO_PATH}" "${MINI_DEBUGINFO_PATH}.xz")

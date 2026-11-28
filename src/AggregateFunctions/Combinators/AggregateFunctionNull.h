@@ -111,31 +111,6 @@ public:
         return nested_function->getName();
     }
 
-    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        if constexpr (result_is_nullable)
-            if (getFlag(rhs_place))
-                setFlag(place);
-
-        const size_t rhs_prefix_size = result_is_nullable ? rhs_nested->alignOfData() : 0;
-        nested_function->mergeStateFromDifferentVariant(nestedPlace(place), *rhs_nested, rhs_place + rhs_prefix_size, arena);
-    }
-
     static DataTypePtr createResultType(const AggregateFunctionPtr & nested_function_)
     {
         if constexpr (result_is_nullable)
@@ -544,6 +519,30 @@ public:
         if constexpr (result_is_nullable)
             if (!memoryIsByte(null_map, row_begin, row_end, 1))
                 this->setFlag(place);
+    }
+
+    void addBatchConsecutivePlaces(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        size_t place_stride,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        const IColumn * nested_column = &column->getNestedColumn();
+        const UInt8 * null_map = column->getNullMapData().data();
+
+        /// One call for all rows, the nested function skips the NULL ones itself, instead of a virtual call per row.
+        this->nested_function->addBatchConsecutivePlacesNotNull(
+            row_begin, row_end, this->nestedPlace(place), place_stride, &nested_column, null_map, arena);
+
+        if constexpr (result_is_nullable)
+        {
+            for (size_t i = row_begin; i < row_end; ++i, place += place_stride)
+                if (!null_map[i])
+                    this->setFlag(place);
+        }
     }
 
     void addManyDefaults(
