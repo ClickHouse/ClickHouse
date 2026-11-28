@@ -265,6 +265,9 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         /// Deserialize task fields from the request body
         DistributedQueryTaskDescription task_description;
         deserializeTask(task_description, *body);
+        /// Absent in a request from an older initiator.
+        if (params.has("statement_id"))
+            task_description.statement_id = parse<UUID>(params.get("statement_id"));
         /// Read the rest of the body, otherwise the keep-alive connection is closed.
         body->ignoreAll();
         body.reset();

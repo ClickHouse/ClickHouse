@@ -1163,6 +1163,7 @@ public:
     void setInitialAddress(const Poco::Net::SocketAddress & initial_address);
     void setInitialQueryId(const String & initial_query_id);
     void setInitialQueryStartTime(std::chrono::time_point<std::chrono::system_clock> initial_query_start_time);
+    void setStatementId(const UUID & statement_id);
     void setQuotaClientKey(const String & quota_key);
     void setConnectionClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
     void increaseDistributedDepth();

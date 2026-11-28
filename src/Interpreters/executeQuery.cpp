@@ -2698,6 +2698,9 @@ static BlockIO executeQueryImpl(
         context->setInitialQueryStartTime(query_start_time);
     }
 
+    if (client_info.statement_id == UUIDHelpers::Nil)
+        context->setStatementId(UUIDHelpers::generateV4());
+
     chassert(internal || CurrentThread::get().tryGetQueryContext());
     chassert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 

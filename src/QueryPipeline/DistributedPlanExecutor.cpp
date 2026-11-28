@@ -2062,6 +2062,7 @@ protected:
     {
         DistributedQueryTaskDescription task_description;
         task_description.initial_query_id = logicalQueryId(context->getClientInfo());
+        task_description.statement_id = context->getClientInfo().statement_id;
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = getTaskSettingsChanges(context);
