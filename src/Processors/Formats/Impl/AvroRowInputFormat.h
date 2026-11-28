@@ -162,6 +162,8 @@ private:
     /// By column position.
     VectorWithMemoryTracking<std::optional<Field>> absent_column_defaults;
     DataTypes column_types;
+    /// Bitmap of columns that already have a deserialization action
+    VectorWithMemoryTracking<bool> column_bound;
     /// Deserialize/Skip actions for a row
     Action row_action;
     /// Map from name of named Avro type (record, enum, fixed) to SkipFn.
