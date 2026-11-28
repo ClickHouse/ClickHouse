@@ -175,8 +175,24 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
         /// Apply the filter before `fetchTable`: it queries the remote structure of one table, so
         /// a query that names the tables it wants must not pay for the whole schema.
         for (const auto & table_name : table_names)
-            if (!detached_or_dropped.contains(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
+        {
+            if (detached_or_dropped.contains(table_name) || (filter_by_table_name && !filter_by_table_name(table_name)))
+                continue;
+
+            /// A table whose structure cannot be fetched is skipped, but a connection failure stops the
+            /// enumeration, so an unreachable server does not cost one connection attempt per table.
+            try
+            {
                 tables[table_name] = fetchTable(table_name, local_context, true);
+            }
+            catch (...)
+            {
+                if (toleratedConnectionFailureLogLevel() == LogsLevel::warning)
+                    throw;
+                tryLogCurrentException(
+                    __PRETTY_FUNCTION__, fmt::format("Cannot fetch structure of table {}", getTableNameForLogs(table_name)));
+            }
+        }
     }
     catch (...)
     {
