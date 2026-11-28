@@ -1,0 +1,31 @@
+Wide
+1
+String	LowCardinality(String)
+1	1
+2	2
+3
+1
+1	1	a
+2	2	bb
+Compact
+1	1
+2	2
+t_arr_compact	Compact
+t_arr_wide	Wide
+t_nested_compact	Compact
+t_nested_wide	Wide
+t_arr_compact	Array(LowCardinality(String))
+t_arr_wide	Array(LowCardinality(String))
+t_nested_compact	Array(LowCardinality(String))
+t_nested_wide	Array(LowCardinality(String))
+1	[1,2]	['a','bb']
+2	[3]	['ccc']
+1	[1,2]	['a','bb']
+2	[3]	['ccc']
+1	[1,2]	['a','bb']
+2	[3]	['ccc']
+1	[1,2]	['a','bb']
+2	[3]	['ccc']
+6000000
+1
+1

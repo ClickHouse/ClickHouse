@@ -91,9 +91,13 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         column_kinds.resize(columns_to_read.size());
         for (size_t i = 0; i < columns_to_read.size(); ++i)
         {
-            /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
+            /// Column was dropped by a pending mutation or invalidated, or it is a subcolumn that the part's
+            /// type of the column does not have. Don't read stale data.
+            /// Must be decided before the stream names of the column are resolved: for a subcolumn absent
+            /// from the part's type, `getStreamNameForColumn` resolves an existing stream of the parent,
+            /// so a check made after resolution cannot tell the two apart.
             auto & kind = column_kinds[i];
-            kind.skipped = isColumnDroppedByPendingMutation(i) || isSystemColumnInvalidated(i);
+            kind.skipped = isColumnDroppedByPendingMutation(i) || isSystemColumnInvalidated(i) || isSubcolumnMissingInPart(i);
             if (!kind.skipped)
                 addStreams(columns_to_read[i], serializations[i], kind);
             has_columns_read_only_from_part = has_columns_read_only_from_part || kind.read_only_from_part;
@@ -1465,7 +1469,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
         DeserializeBinaryBulkStateMap deserialize_state_map;
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+            if (column_kinds[pos].skipped)
                 continue;
 
             try
@@ -1707,6 +1711,9 @@ std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeReaderWide:
     std::unordered_map<String, std::vector<StreamWithSizeHint>> column_to_streams;
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
+        if (column_kinds[i].skipped)
+            continue;
+
         const auto & name_and_type = columns_to_read[i];
         const auto & serialization = serializations[i];
         /// Under the requested name: the part may read the column under another one, as the `size0` of a Nested

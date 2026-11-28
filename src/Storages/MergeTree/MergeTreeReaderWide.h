@@ -276,8 +276,10 @@ private:
     /// and both paths leave it null for `fillMissingColumns`.
     bool isColumnAbsentFromPart(size_t pos) const;
 
-    /// The column at `pos` is not read at all: dropped by a pending mutation, or an invalidated
-    /// system column. Both paths leave it null.
+    /// The column at `pos` is not read at all: dropped by a pending mutation, an invalidated
+    /// system column, or a subcolumn that the part's type of the column does not have. All paths leave it null.
+    /// Decided before any stream of the column is created, so that no loop opens, prefixes or enumerates
+    /// a stream that the read loop then skips.
     bool isColumnSkipped(size_t pos) const;
 
     /// The answers of the predicates above per result column, computed once by the constructor:
