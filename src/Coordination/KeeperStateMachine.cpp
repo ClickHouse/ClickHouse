@@ -82,6 +82,7 @@ namespace FailPoints
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsBool compress_snapshots_with_zstd_format;
+    extern const CoordinationSettingsBool require_super_auth_for_reconfiguration;
     extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
     extern const CoordinationSettingsUInt64 min_request_size_for_cache;
     extern const CoordinationSettingsInt64 snapshot_zstd_compression_level;
@@ -1376,12 +1377,20 @@ KeeperResponseForSession KeeperStateMachine::processReconfiguration(
         return { session_id, std::move(res) };
     };
 
-    if (!storage->checkCommittedACL(keeper_config_path, Coordination::ACL::Write, session_id))
-        return bad_request(ZNOAUTH);
-
+    /// `keeper_config_path` (`/keeper/config`) is a virtual path with no stored node, so a node-ACL check on
+    /// it finds no ACL and authorizes everyone. Reconfiguration is administrative: require a `super` identity.
+    /// The old (unauthenticated) behaviour is available behind a setting for migration.
     KeeperDispatcher & dispatcher = *keeper_context->getDispatcher();
     if (!dispatcher.reconfigEnabled())
         return bad_request(ZUNIMPLEMENTED);
+
+    if (keeper_context->getCoordinationSettings()[CoordinationSetting::require_super_auth_for_reconfiguration])
+    {
+        if (!storage->hasSuperAuth(session_id))
+            return bad_request(ZNOAUTH);
+    }
+    else if (!storage->checkCommittedACL(keeper_config_path, Coordination::ACL::Write, session_id))
+        return bad_request(ZNOAUTH);
     if (request.version != -1)
         return bad_request(ZBADVERSION);
 

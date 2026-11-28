@@ -284,6 +284,10 @@ public:
     /// Used externally. Locks storage mutex and looks up the node.
     bool checkCommittedACL(std::string_view path, int32_t permissions, int64_t session_id);
 
+    /// Authorizes administrative operations on virtual paths that have no stored ACL (and thus no ACL to
+    /// check): true only if the session is authenticated with a `super` identity.
+    bool hasSuperAuth(int64_t session_id) const;
+
     /// If initialize_system_nodes is false, container starts with no nodes at all, not even "/".
     static std::shared_ptr<KeeperStorage> create(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
 
