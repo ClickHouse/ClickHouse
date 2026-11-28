@@ -58,7 +58,8 @@ public:
         CurrentMetrics::Metric bytes_metric,
         ProfileEvents::Event hits_event_,
         ProfileEvents::Event misses_event_,
-        Clock clock_ = {});
+        Clock clock_ = {},
+        bool key_identifies_row_ = false);
 
     /// Returns `block` without the rows already written by earlier inserts (found in the cache) and without the rows pending
     /// in the same insert (found in `pending_rows`). A row is identified by the column `key_column_index` and counts as the same
@@ -109,7 +110,7 @@ private:
         const Block & block, size_t key_column_index, PaddedPODArray<UInt8> & filter, PendingRows & pending_rows);
 
     /// Calculates the hashes of the rows of `block` passing `filter`.
-    static HashedRows hashRows(const Block & block, size_t key_column_index, const PaddedPODArray<UInt8> & filter);
+    HashedRows hashRows(const Block & block, size_t key_column_index, const PaddedPODArray<UInt8> & filter) const;
 
     /// Resets `filter` for the duplicate rows and returns the number of such duplicate rows.
     /// A row is considered a duplicate in one of the following cases:
@@ -145,6 +146,7 @@ private:
     const ProfileEvents::Event hits_event;
     const ProfileEvents::Event misses_event;
     const Clock clock;
+    const bool key_identifies_row;
 };
 
 using TimeSeriesDeduplicationCachePtr = std::shared_ptr<TimeSeriesDeduplicationCache>;

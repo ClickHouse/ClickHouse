@@ -159,6 +159,8 @@ private:
     /// Implementation for getTargetTable() and tryGetTargetTable().
     StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
 
+    bool hasDefaultTagsIDGenerator(const TimeSeriesSettings & settings) const;
+
     /// Creates a cache from the current settings, replacing the old one, or drops it when the settings disable it.
     /// The running inserts continue with the old cache.
     void createOrDropTagsDeduplicationCache();
@@ -168,6 +170,9 @@ private:
 
     std::vector<Target> targets;
     bool has_inner_tables = false;
+    DataTypePtr tags_id_type;
+    ASTPtr tags_id_default_expression;
+    bool has_tags_inner_id_column = false;
 
     mutable std::mutex caches_mutex;
     TimeSeriesDeduplicationCachePtr tags_deduplication_cache TSA_GUARDED_BY(caches_mutex);

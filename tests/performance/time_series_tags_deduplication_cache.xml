@@ -1,0 +1,94 @@
+<test>
+    <settings>
+        <enable_time_series_table>1</enable_time_series_table>
+    </settings>
+
+    <create_query>
+        CREATE TABLE ts_tags_cache_src
+        (
+            metric_name String,
+            unique_metric_name String,
+            tags Map(String, String),
+            empty_samples Array(Tuple(DateTime64(3), Float64))
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <create_query>
+        CREATE TABLE ts_tags_cache_default
+        ENGINE = TimeSeries
+        SETTINGS tags_deduplication_cache_size_bytes = 268435456, recent_samples_ttl_seconds = 0, store_time_ranges = 0
+    </create_query>
+
+    <create_query>
+        CREATE TABLE ts_tags_cache_with_columns
+        ENGINE = TimeSeries
+        SETTINGS
+            tags_deduplication_cache_size_bytes = 268435456,
+            tags_to_columns = {{'job': 'job', 'instance': 'instance', 'namespace': 'namespace'}},
+            recent_samples_ttl_seconds = 0,
+            store_time_ranges = 0
+    </create_query>
+
+    <create_query>
+        CREATE TABLE ts_tags_cache_custom_id
+        ENGINE = TimeSeries
+        SETTINGS tags_deduplication_cache_size_bytes = 268435456, recent_samples_ttl_seconds = 0, store_time_ranges = 0
+        TAGS INNER COLUMNS (
+            id Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(metric_name))))
+        )
+    </create_query>
+
+    <fill_query>
+        INSERT INTO ts_tags_cache_src
+        SELECT
+            concat('kube_pod_container_resource_', toString(number % 100)),
+            concat('kube_pod_container_resource_', toString(number)),
+            map(
+                'instance', concat('node-', toString(intDiv(number, 200)), '.prod.cluster:9100'),
+                'job', concat('kubelet-', toString(number % 8)),
+                'namespace', concat('ns-workload-', toString(number % 64)),
+                'pod', concat('service-deployment-', toString(intDiv(number, 4)), '-', toString(number % 1000)),
+                'container', concat('app-container-', toString(number % 4)),
+                'node', concat('ip-10-42-', toString(intDiv(number, 1000)), '-', toString(number % 250)),
+                'cluster', concat('prod-region-', toString(number % 4)),
+                'region', concat('region-', toString(number % 4)),
+                'env', 'production',
+                'service', concat('checkout-api-', toString(number % 32))
+            ),
+            []
+        FROM numbers(200000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO ts_tags_cache_default (metric_name, tags, samples)
+        SELECT metric_name, tags, empty_samples FROM ts_tags_cache_src
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO ts_tags_cache_with_columns (metric_name, tags, samples)
+        SELECT metric_name, tags, empty_samples FROM ts_tags_cache_src
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO ts_tags_cache_custom_id (metric_name, tags, samples)
+        SELECT unique_metric_name, tags, empty_samples FROM ts_tags_cache_src
+    </fill_query>
+
+    <query>
+        INSERT INTO ts_tags_cache_default (metric_name, tags, samples)
+        SELECT metric_name, tags, empty_samples FROM ts_tags_cache_src
+    </query>
+
+    <query>
+        INSERT INTO ts_tags_cache_with_columns (metric_name, tags, samples)
+        SELECT metric_name, tags, empty_samples FROM ts_tags_cache_src
+    </query>
+
+    <query>
+        INSERT INTO ts_tags_cache_custom_id (metric_name, tags, samples)
+        SELECT unique_metric_name, tags, empty_samples FROM ts_tags_cache_src
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS ts_tags_cache_default, ts_tags_cache_with_columns, ts_tags_cache_custom_id, ts_tags_cache_src</drop_query>
+</test>
