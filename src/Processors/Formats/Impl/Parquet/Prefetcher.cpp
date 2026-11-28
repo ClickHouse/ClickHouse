@@ -3,6 +3,7 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/copyData.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 #include <IO/WriteBufferFromVector.h>
@@ -80,6 +81,7 @@ void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOp
             {
                 reader = seekable;
                 read_mode = ReadMode::RandomRead;
+                fd_reader = dynamic_cast<const ReadBufferFromFileDescriptor *>(seekable);
             }
             else if (seekable->checkIfActuallySeekable())
             {
@@ -147,6 +149,8 @@ void Prefetcher::readImpl(char * to, size_t n, size_t offset)
     switch (read_mode)
     {
         case ReadMode::RandomRead:
+            if (fd_reader)
+                fd_reader->adviseWillNeedIfNotCached(offset, n);
             nread = reader->readBigAt(to, n, offset, /*progress_callback*/ nullptr);
             ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadRandomRead);
             ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadBytes, nread);
