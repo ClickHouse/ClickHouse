@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="diff-review-nonce" content="__DIFF_REVIEW_NONCE__">
 <title>diff review</title>
 <script>
   // Surface init failures (including module-load failures) in the page body.
@@ -24,7 +25,16 @@
   }
 </script>
 <style>
-  :root { color-scheme: light dark; }
+  :root {
+    color-scheme: light dark;
+    /* No font is shipped: the named families are used only where the machine
+       showing the page already has them, and `monospace` — which every browser
+       resolves to something — is the floor. */
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+            "Liberation Mono", monospace;
+    /* Read by the viewer's shadow-root CSS: custom properties cross the boundary. */
+    --diffs-font-family: var(--mono);
+  }
   * { box-sizing: border-box; }
   body {
     margin: 0;
@@ -34,15 +44,33 @@
     display: flex; flex-direction: column; height: 100vh;
   }
   header {
-    display: flex; align-items: center; gap: 12px;
-    padding: 10px 16px;
-    border-bottom: 1px solid light-dark(#e2e2e2, #262626);
+    display: flex; align-items: center; gap: 4px;
+    padding: 9px 14px;
+    background: light-dark(#fdfdfd, #0a0a0a);
+    border-bottom: 1px solid light-dark(#ececec, #1c1c1c);
     flex: 0 0 auto;
   }
-  header .meta { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  header .meta .repo { font-weight: 700; }
-  header .meta .base { color: light-dark(#666, #999); font-size: 12px; margin-left: 8px; }
-  select, button, textarea {
+  header .meta {
+    flex: 1 1 auto; min-width: 0; margin-right: 6px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  header .meta .repo { font-weight: 650; }
+  header .meta .base { color: light-dark(#8c8c8c, #8a8a8a); font-size: 12px; margin-left: 8px; }
+  /* The pull request this branch is already open as, when there is one. */
+  header .meta .pr {
+    color: light-dark(#0757ba, #4493f8); font-size: 12px; margin-left: 8px;
+    text-decoration: none;
+  }
+  header .meta .pr:hover { text-decoration: underline; }
+  /* …and the state of its checks, as one glyph. Dimmed when they belong to a
+     commit other than the one under review, which is what unpushed work looks
+     like: the badge is then about code that is not on screen. */
+  header .meta .ci { font-size: 12px; margin-left: 5px; font-weight: 700; cursor: default; }
+  header .meta .ci.pass { color: light-dark(#1a7f37, #3fb950); }
+  header .meta .ci.fail { color: light-dark(#a40e26, #f85149); }
+  header .meta .ci.run { color: light-dark(#9a6700, #d29922); }
+  header .meta .ci.elsewhere { opacity: .5; }
+  button, textarea, input {
     font: inherit;
     color: inherit;
     background: light-dark(#f6f6f6, #161616);
@@ -52,6 +80,77 @@
   }
   button { cursor: pointer; }
   button:hover { background: light-dark(#ececec, #222); }
+  button:disabled { opacity: .45; cursor: default; }
+  button:disabled:hover { background: light-dark(#f6f6f6, #161616); }
+  /* One shape for every control up here: quiet until it is pointed at, so the
+     header reads as a line of labels with a single button on the end of it. */
+  header button {
+    height: 28px; padding: 0 10px;
+    display: inline-flex; align-items: center;
+    border: none; border-radius: 7px;
+    background: transparent;
+    color: light-dark(#3c3c3c, #cdcdcd);
+    font-size: 13px; line-height: 1; white-space: nowrap;
+  }
+  header button:hover { background: light-dark(#f0f0f0, #1b1b1b); }
+  header button:disabled { opacity: .4; }
+  header button:disabled:hover { background: transparent; }
+  /* Icon buttons: the glyph carries the meaning, the tooltip carries the key.
+     Strokes follow the text colour, so both themes get it for free. */
+  header button.icon { gap: 6px; padding: 0 8px; }
+  header button.icon:not(:has(span)) { width: 28px; padding: 0; justify-content: center; }
+  header button.icon svg {
+    width: 15px; height: 15px; flex: 0 0 auto;
+    fill: none; stroke: currentColor; stroke-width: 1.5;
+    stroke-linecap: round; stroke-linejoin: round;
+  }
+  header .seg button.icon { width: 22px; }
+  /* Each toggle shows the state it is in; the tooltip says what a click does. */
+  #styleToggle .i-unified, #styleToggle.unified .i-split { display: none; }
+  #styleToggle.unified .i-unified { display: block; }
+  #foldToggle .i-unfold, #foldToggle.on .i-fold { display: none; }
+  #foldToggle.on .i-unfold { display: block; }
+  #bgToggle .i-plain, #bgToggle.plain .i-tint { display: none; }
+  #bgToggle.plain .i-plain { display: block; }
+  #themeToggle svg { display: none; }
+  #themeToggle.theme-system .i-system,
+  #themeToggle.theme-light .i-light,
+  #themeToggle.theme-dark .i-dark { display: block; }
+  .modal table.keys { border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+  .modal table.keys th {
+    text-align: left; padding: 2px 14px 2px 0; vertical-align: top;
+    font-weight: 600; white-space: nowrap;
+    font-family: var(--mono);
+    color: light-dark(#0969da, #2f81f7);
+  }
+  .modal table.keys td { padding: 2px 0; color: light-dark(#444, #bbb); }
+  .modal code {
+    font-family: var(--mono); font-size: 12px;
+    padding: 1px 4px; border-radius: 4px; overflow-wrap: anywhere;
+    background: light-dark(#f0f0f0, #1a1a1a);
+  }
+  .modal .row { align-items: center; }
+  .modal .row #end { margin-right: auto; }
+  /* Paired controls — previous/next over files and over hunks — read as one
+     control with the thing they step over named between them. */
+  header .seg {
+    flex: 0 0 auto;
+    display: flex; align-items: center;
+    padding: 2px; border-radius: 8px;
+    background: light-dark(#f1f1f1, #141414);
+  }
+  header .seg button {
+    height: 24px; padding: 0 7px;
+    font-family: var(--mono); font-size: 12px;
+  }
+  header .seg button:hover { background: light-dark(#e2e2e2, #242424); }
+  header .seg .cap {
+    padding: 0 3px; font-size: 11px;
+    color: light-dark(#8a8a8a, #7d7d7d);
+    user-select: none;
+  }
+  /* Dimmed only when neither end of the pair can go anywhere. */
+  header .seg:not(:has(button:enabled)) .cap { opacity: .45; }
   button.primary {
     background: light-dark(#0969da, #2f81f7);
     border-color: transparent;
@@ -59,7 +158,43 @@
     font-weight: 600;
   }
   button.primary:hover { filter: brightness(1.1); }
-  #ccount { font-size: 13px; color: light-dark(#666, #999); white-space: nowrap; }
+  header button.primary { height: 30px; padding: 0 14px; color: #fff; }
+  header button.primary:hover { background: light-dark(#0969da, #2f81f7); filter: brightness(1.1); }
+  /* Between what looks at the review and what ends it. */
+  header .sep {
+    flex: 0 0 auto; width: 1px; height: 20px; margin: 0 5px;
+    background: light-dark(#e6e6e6, #232323);
+  }
+  /* In the header beside the range and the counts, because that is what it is
+     about: what this page is showing, and that the diff may have moved on. It
+     stands out once the files on screen are not the files on disk. */
+  header button#reload {
+    width: 22px; height: 22px; padding: 0; margin-left: 8px;
+    /* It carries a label once it goes stale, so it has a `span` at all times and
+       the `:not(:has(span))` rule above — which is what centres a bare glyph —
+       never applies to it. */
+    justify-content: center;
+    /* Centred against the text beside it: the button is an inline-flex box, so it
+       would otherwise sit on the baseline and hang below it. A zero line-height
+       keeps its own line box from adding leading on top of that. */
+    vertical-align: middle; line-height: 0;
+  }
+  header button#reload svg { width: 13px; height: 13px; }
+  /* The button's own `line-height: 0` is for the glyph alone; the label needs one. */
+  header button#reload span { line-height: 1; }
+  /* Amber, the colour this page already gives to something waiting to be dealt
+     with, and named rather than left as a glyph: once there is a reason to press
+     it, it is worth the width. No tile behind it — the header keeps one button
+     shape, and colour alone carries this. */
+  header button#reload.stale {
+    width: auto; padding: 0 7px; gap: 5px;
+    color: light-dark(#8a6100, #c98a12);
+    font-weight: 600;
+  }
+  #ccount { font-size: 12px; color: light-dark(#7a7a7a, #8f8f8f); }
+  #ccount:disabled { opacity: .5; }
+  #autosave { font-size: 11px; color: light-dark(#a0a0a0, #6d6d6d); white-space: nowrap; padding: 0 4px; }
+  #autosave.bad { color: light-dark(#a40e26, #f85149); font-weight: 600; }
   #skipped {
     flex: 0 0 auto;
     padding: 6px 16px;
@@ -68,15 +203,223 @@
     color: light-dark(#7a5d00, #d4b64d);
     border-bottom: 1px solid light-dark(#eee2b0, #3a3218);
   }
-  #hint {
-    flex: 0 0 auto;
-    padding: 5px 16px;
-    font-size: 12px;
-    color: light-dark(#666, #999);
-    border-bottom: 1px solid light-dark(#efefef, #1c1c1c);
+  #main { flex: 1 1 auto; display: flex; min-height: 0; }
+  #sidebar {
+    flex: 0 0 var(--sidebar-w, 300px);
+    min-width: 0;
+    display: flex; flex-direction: column;
+    border-right: 1px solid light-dark(#e2e2e2, #262626);
+    background: light-dark(#fafafa, #0b0b0b);
+    overflow: hidden;
   }
-  #review-root { flex: 1 1 auto; overflow: auto; }
-  #loading { padding: 40px; text-align: center; color: light-dark(#666, #999); }
+  #sidebar[hidden] { display: none; }
+  #resizer { flex: 0 0 5px; cursor: col-resize; background: transparent; }
+  #resizer:hover, #resizer.dragging { background: light-dark(#cfe3ff, #1e3a5f); }
+  #sidebar .side-tabs { display: flex; flex: 0 0 auto; border-bottom: 1px solid light-dark(#ececec, #1c1c1c); }
+  #sidebar .side-tabs button {
+    flex: 1 1 0; padding: 6px 8px; font: inherit; font-size: 12px; cursor: pointer;
+    background: transparent; color: light-dark(#666, #999); border: 0;
+    border-radius: 0;
+    border-bottom: 2px solid transparent;
+  }
+  #sidebar .side-tabs button:hover { background: light-dark(#f0f0f0, #161616); }
+  #sidebar .side-tabs button.active {
+    color: inherit; font-weight: 600;
+    border-bottom-color: light-dark(#0969da, #2f81f7);
+  }
+  #side-files { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  #side-files[hidden], #side-comments[hidden] { display: none; }
+  #side-comments {
+    flex: 1 1 auto;
+    overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
+    padding: 4px 0 24px;
+  }
+  #side-comments::-webkit-scrollbar { display: none; }
+  #side-comments .empty { padding: 12px; font-size: 12px; color: light-dark(#888, #777); }
+  header button.icon span:empty { display: none; }
+  #side-comments .crow {
+    padding: 6px 10px; cursor: pointer;
+    border-left: 3px solid transparent;
+    border-bottom: 1px solid light-dark(#f0f0f0, #151515);
+  }
+  #side-comments .crow:hover { background: light-dark(#ececec, #1a1a1a); }
+  #side-comments .crow.active { background: light-dark(#dbeafe, #1c3557); }
+  #side-comments .crow.open { border-left-color: light-dark(#bf8700, #d29922); }
+  #side-comments .crow.done { border-left-color: light-dark(#1a7f37, #3fb950); }
+  /* Its file is no longer part of the review, so there is nowhere to jump to and
+     this row is the only place the comment can be read. */
+  #side-comments .crow.gone .at { text-decoration: line-through; opacity: .7; }
+  #side-comments .crow.shown .txt, #side-comments .crow.shown .res {
+    display: block; -webkit-line-clamp: none;
+  }
+  #side-comments .where {
+    display: flex; justify-content: space-between; gap: 6px;
+    font-size: 12px; color: light-dark(#666, #999);
+  }
+  #side-comments .where .at { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #side-comments .where .round { flex: 0 0 auto; }
+  /* Three lines of each, so a long comment does not push the next row off
+     screen. This is reading text, not a label: it gets the body size. */
+  #side-comments .txt, #side-comments .res {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+    overflow: hidden; overflow-wrap: anywhere;
+    font-size: 13px; line-height: 1.45; margin-top: 3px;
+  }
+  #side-comments .res { color: light-dark(#1a7f37, #3fb950); }
+  #side-comments .acts { display: flex; gap: 6px; margin-top: 4px; }
+  #side-comments .acts button {
+    font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 5px; cursor: pointer;
+    background: transparent; color: inherit;
+    border: 1px solid light-dark(#ccc, #444);
+  }
+  #side-comments .acts button:hover { background: light-dark(#fff, #222); }
+  #sidebar .side-head { padding: 8px; border-bottom: 1px solid light-dark(#ececec, #1c1c1c); }
+  #sidebar .side-find { display: flex; align-items: center; gap: 4px; }
+  #filter { flex: 1 1 auto; min-width: 0; padding: 5px 8px; font-size: 13px; }
+  /* Same square as the header's icon buttons, which are scoped to the header. */
+  #foldAll {
+    flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; padding: 0;
+    border: none; border-radius: 6px; cursor: pointer;
+    background: transparent; color: inherit;
+  }
+  #foldAll:hover { background: light-dark(#f0f0f0, #1b1b1b); }
+  #foldAll:disabled { opacity: .4; cursor: default; background: transparent; }
+  #foldAll svg {
+    display: none; width: 15px; height: 15px;
+    fill: none; stroke: currentColor; stroke-width: 1.5;
+    stroke-linecap: round; stroke-linejoin: round;
+  }
+  /* Shows the tree as it stands — indented while folders are open, flat once they
+     are all folded — the way the header's toggles show their own state. */
+  #foldAll .i-expanded, #foldAll.folded .i-collapsed { display: block; }
+  #foldAll.folded .i-expanded { display: none; }
+  #paneinfo { margin-top: 6px; font-size: 11px; color: light-dark(#666, #999); }
+  #paneinfo[hidden] { display: none; }
+  /* Scrolls without a bar, so the line counts and badges at the right edge get
+     the full width instead of ending up under one; rows never scroll sideways. */
+  #tree {
+    flex: 1 1 auto;
+    overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
+    padding: 4px 0 24px;
+  }
+  #tree::-webkit-scrollbar { display: none; }
+  #tree[hidden] { display: none; }
+  .trow {
+    display: flex; align-items: center; gap: 6px;
+    width: 100%; text-align: left;
+    border: none; border-radius: 0; background: transparent;
+    padding: 3px 8px; font-size: 13px; line-height: 1.35;
+    white-space: nowrap;
+  }
+  .trow[hidden] { display: none; }
+  .trow:hover { background: light-dark(#ececec, #1a1a1a); }
+  .trow.active { background: light-dark(#dbeafe, #1c3557); font-weight: 600; }
+  .trow .name { overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; min-width: 0; }
+  /* Drawn, not a text glyph: it turns rather than being swapped, so open and
+     closed are the same mark at the same weight. */
+  .trow .chev {
+    width: 14px; height: 14px; flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: light-dark(#8a8a8a, #7d7d7d);
+  }
+  .trow .chev svg {
+    width: 13px; height: 13px;
+    fill: none; stroke: currentColor; stroke-width: 1.9;
+    stroke-linecap: round; stroke-linejoin: round;
+    transform: rotate(90deg);
+    transition: transform .12s ease;
+  }
+  .trow .chev.closed svg { transform: rotate(0deg); }
+  .trow:hover .chev { color: light-dark(#555, #aaa); }
+  .trow .st {
+    flex: 0 0 auto; width: 13px; text-align: center;
+    font-size: 11px; font-weight: 700; border-radius: 3px;
+  }
+  .trow .st.A { color: light-dark(#116329, #3fb950); }
+  .trow .st.M { color: light-dark(#9a6700, #d29922); }
+  .trow .st.D { color: light-dark(#a40e26, #f85149); }
+  .trow .st.R, .trow .st.C { color: light-dark(#0550ae, #58a6ff); }
+  .num { font-variant-numeric: tabular-nums; }
+  .num .a { color: light-dark(#116329, #3fb950); }
+  .num .d { color: light-dark(#a40e26, #f85149); }
+  .trow .num { flex: 0 0 auto; font-size: 11px; }
+  .trow .badge {
+    flex: 0 0 auto; font-size: 11px; font-weight: 700;
+    padding: 0 5px; border-radius: 9px;
+    background: light-dark(#0969da, #2f81f7); color: #fff;
+  }
+  .trow .badge:empty { display: none; }
+  .trow.dir { color: light-dark(#444, #bbb); }
+  #tree .empty { padding: 12px; font-size: 12px; color: light-dark(#888, #777); }
+  #pane { flex: 1 1 auto; position: relative; min-width: 0; display: flex; }
+  #review-root { flex: 1 1 auto; position: relative; min-width: 0; }
+  /* One scroll container per file. Switching files hides one and shows another,
+     so a file that has been rendered once is never tokenized again. */
+  #review-root .filepane { position: absolute; inset: 0; overflow: auto; }
+  #review-root .filepane[hidden] { display: none; }
+  #loading, #panemsg { padding: 40px; text-align: center; color: light-dark(#666, #999); }
+  /* Above the file panes, which are appended after it, but below the spinner. */
+  #panemsg { position: absolute; inset: 0; z-index: 6; background: light-dark(#fff, #000); }
+  #panemsg[hidden] { display: none; }
+  /* The handle is centred on the column boundary, not placed to one side of it:
+     `left` is the boundary itself, so the box is pulled back by half its width
+     and the 2px it paints straddles the two pixels either side. Every offset
+     here is a whole pixel — a half-pixel one (an odd width, or `translateX`)
+     paints the line blurred and half a pixel to the right. */
+  #splitter {
+    position: absolute; top: 0; bottom: 0;
+    width: 12px; margin-left: -6px;
+    cursor: col-resize; z-index: 5;
+  }
+  #splitter[hidden] { display: none; }
+  #splitter::after {
+    content: ''; position: absolute; top: 0; bottom: 0;
+    left: 50%; width: 2px; margin-left: -1px;
+    background: light-dark(#ededed, #1e1e1e);
+  }
+  #splitter:hover::after, #splitter.dragging::after { background: light-dark(#93c5fd, #26456e); }
+  /* Over the diff, out of the way of the first lines of it: the browser's own
+     find bar cannot see into the viewer's shadow root, so this one stands in. */
+  #findbar {
+    position: absolute; top: 10px; right: 18px; z-index: 8;
+    display: flex; align-items: center; gap: 4px;
+    padding: 5px 6px; border-radius: 8px;
+    background: light-dark(#fff, #101010);
+    border: 1px solid light-dark(#d8d8d8, #2a2a2a);
+    box-shadow: 0 6px 18px light-dark(rgb(0 0 0 / .12), rgb(0 0 0 / .5));
+  }
+  #findbar[hidden] { display: none; }
+  #findInput { width: 220px; padding: 4px 8px; font-size: 13px; }
+  #findCount {
+    min-width: 74px; text-align: right; padding-right: 4px;
+    font-size: 12px; font-variant-numeric: tabular-nums; color: light-dark(#666, #999);
+  }
+  #findCount.none { color: light-dark(#a40e26, #f85149); }
+  #findbar button {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; padding: 0;
+  }
+  #findbar button svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  #busy {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    font-size: 13px; color: light-dark(#555, #aaa);
+    background: light-dark(rgb(255 255 255 / .75), rgb(0 0 0 / .75));
+    z-index: 10;
+  }
+  #busy[hidden] { display: none; }
+  #busy::before {
+    content: '';
+    width: 15px; height: 15px;
+    border: 2px solid light-dark(#c9c9c9, #3a3a3a);
+    border-top-color: light-dark(#0969da, #2f81f7);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { #busy::before { animation: none; } }
   .backdrop[hidden] { display: none; }
   .backdrop {
     position: fixed; inset: 0;
@@ -101,19 +444,140 @@
 </head>
 <body>
 <header>
-  <div class="meta"><span class="repo" id="repo"></span><span class="base" id="base"></span></div>
-  <select id="jump" title="Jump to file"></select>
-  <button id="styleToggle" title="Toggle split / unified diff view">Unified view</button>
-  <span id="ccount">0 comments</span>
-  <button id="finish" class="primary">Finish review</button>
+  <button id="sideToggle" class="icon" title="Show / hide the sidebar &nbsp;\">
+    <svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6 2.5v11"/></svg>
+  </button>
+  <div class="meta"><span class="repo" id="repo"></span><a class="pr" id="pr" hidden target="_blank" rel="noopener noreferrer"></a><span class="ci" id="ci" hidden></span><span class="base" id="base"></span><button id="reload" class="icon" title="Read the diff again &nbsp;r">
+    <svg viewBox="0 0 16 16"><path d="M13.5 8a5.5 5.5 0 1 1-1.7-3.9"/><path d="M13.9 2.3v3.2h-3.2"/></svg>
+    <span id="reloadLabel"></span>
+  </button></div>
+  <div class="seg">
+    <button id="prevFile" class="icon" title="Previous file &nbsp;, &nbsp;or&nbsp; k">
+      <svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg>
+    </button>
+    <span class="cap">file</span>
+    <button id="nextFile" class="icon" title="Next file &nbsp;. &nbsp;or&nbsp; j">
+      <svg viewBox="0 0 16 16"><path d="m6 3 5 5-5 5"/></svg>
+    </button>
+  </div>
+  <div class="seg">
+    <button id="prevHunk" class="icon" title="Previous hunk &nbsp;[">
+      <svg viewBox="0 0 16 16"><path d="m3 10 5-5 5 5"/></svg>
+    </button>
+    <span class="cap">hunk</span>
+    <button id="nextHunk" class="icon" title="Next hunk &nbsp;]">
+      <svg viewBox="0 0 16 16"><path d="m3 6 5 5 5-5"/></svg>
+    </button>
+  </div>
+  <button id="styleToggle" class="icon" title="Split view — click for unified">
+    <svg class="i-split" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M8 2.5v11"/></svg>
+    <svg class="i-unified" viewBox="0 0 16 16"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h7"/></svg>
+  </button>
+  <button id="bgToggle" class="icon" title="Changed lines are tinted — click for plain &nbsp;b">
+    <svg class="i-tint" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1.5" fill="currentColor" fill-opacity=".28"/><path d="M2 6.5h12M2 9.5h12"/></svg>
+    <svg class="i-plain" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2 6.5h12M2 9.5h12"/></svg>
+  </button>
+  <button id="foldToggle" class="icon" title="Whole file, not just the hunks &nbsp;e">
+    <svg class="i-fold" viewBox="0 0 16 16"><path d="M5 6 8 3l3 3M5 10l3 3 3-3"/></svg>
+    <svg class="i-unfold" viewBox="0 0 16 16"><path d="M5 3.5 8 6.5l3-3M5 12.5l3-3 3 3"/></svg>
+  </button>
+  <button id="themeToggle" class="icon theme-system" title="Theme: follows the system &nbsp;t">
+    <svg class="i-system" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11Z" fill="currentColor" stroke="none"/></svg>
+    <svg class="i-light" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3.2"/><path d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1M12.9 12.9l-1.1-1.1M4.2 4.2 3.1 3.1"/></svg>
+    <svg class="i-dark" viewBox="0 0 16 16"><path d="M13.5 9.6A6 6 0 0 1 6.4 2.5a6 6 0 1 0 7.1 7.1Z"/></svg>
+  </button>
+  <button id="ccount" class="icon" title="Every comment of this review &nbsp;c" disabled>
+    <svg viewBox="0 0 16 16"><path d="M14 10a1.5 1.5 0 0 1-1.5 1.5H5L2 14V3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5Z"/></svg>
+    <span id="ccountLabel"></span>
+  </button>
+  <span id="autosave"></span>
+  <span class="sep"></span>
+  <button id="help" class="icon" title="Keys, and how a round works &nbsp;?">
+    <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M6.2 6.1a1.9 1.9 0 1 1 2.3 2.2v1.1"/><path d="M8.5 11.7h.01"/></svg>
+  </button>
+  <button id="finish" class="primary icon">
+    <svg viewBox="0 0 16 16"><path d="M14 2 7.2 8.8M14 2l-4.3 12-2.5-5.2L2 6.3 14 2Z"/></svg>
+    <span>Send</span>
+  </button>
 </header>
 <div id="skipped" hidden></div>
-<div id="hint">Click the <b>+</b> that appears over a line number (or drag across several line numbers) to leave a comment. When you're done, hit <b>Finish review</b> — your comments go back to the Claude session.</div>
-<div id="review-root"><div id="loading">Loading review UI…</div></div>
+<div id="main">
+  <aside id="sidebar">
+    <div class="side-tabs">
+      <button id="tabFiles" class="active" title="The files of this review (\)">Files</button>
+      <button id="tabComments" title="Every comment of this review (c)">Comments</button>
+    </div>
+    <div id="side-files">
+      <div class="side-head">
+        <div class="side-find">
+          <input id="filter" type="search" placeholder="Filter files by path… (/)" autocomplete="off">
+          <button id="foldAll" type="button" title="Fold every folder">
+            <svg class="i-expanded" viewBox="0 0 16 16"><path d="M3 4h10M8 8h5M3 12h10"/></svg>
+            <svg class="i-collapsed" viewBox="0 0 16 16"><path d="M3 4h10M3 8h10M3 12h10"/></svg>
+          </button>
+        </div>
+        <div id="paneinfo" hidden></div>
+      </div>
+      <div id="tree"></div>
+    </div>
+    <div id="side-comments" hidden></div>
+  </aside>
+  <div id="resizer" title="Drag to resize"></div>
+  <div id="pane">
+    <div id="review-root">
+      <div id="loading">Loading review UI…</div>
+      <div id="panemsg" hidden></div>
+    </div>
+    <div id="splitter" title="Drag to resize the split · double-click to even it out" hidden></div>
+    <div id="findbar" hidden>
+      <input id="findInput" type="text" placeholder="Find on this page…" autocomplete="off" spellcheck="false">
+      <span id="findCount"></span>
+      <button id="findPrev" type="button" title="Previous match &nbsp;shift+enter &nbsp;or&nbsp; shift+cmd+G">
+        <svg viewBox="0 0 16 16"><path d="m3 10 5-5 5 5"/></svg>
+      </button>
+      <button id="findNext" type="button" title="Next match &nbsp;enter &nbsp;or&nbsp; cmd+G">
+        <svg viewBox="0 0 16 16"><path d="m3 6 5 5 5-5"/></svg>
+      </button>
+      <button id="findClose" type="button" title="Close &nbsp;esc">
+        <svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+      </button>
+    </div>
+    <div id="busy" hidden></div>
+  </div>
+</div>
+
+<div class="backdrop" id="help-overlay" hidden>
+  <div class="modal">
+    <h2>Reviewing</h2>
+    <p class="sub">Click the <b>+</b> over a line number, or drag across several, to comment. Every keystroke is written to <code id="help-out"></code>, so nothing is lost to a closed tab or a killed server — the bar only speaks up when a write <em>fails</em>. <b>Send round N</b> hands the open comments over and leaves the review up, so you can keep reading while they are worked on.</p>
+    <p class="sub">The sidebar's <b>Comments</b> tab lists every comment — amber with Claude, green addressed, with the answer under it. On an addressed one, <b>reply</b> asks a follow-up on the same lines and <b>hide</b> takes it off the page for good; both are on the comment in the diff too. Any saved comment folds away to its first line — click its header, or <b>fold</b> at the end of it.</p>
+    <table class="keys">
+      <tr><th>, .</th><td>previous / next file (also <b>k j</b>)</td></tr>
+      <tr><th>[ ]</th><td>previous / next hunk</td></tr>
+      <tr><th>c</th><td>the Comments pane</td></tr>
+      <tr><th>shift+C</th><td>go to the next comment</td></tr>
+      <tr><th>e</th><td>whole file, not just the hunks</td></tr>
+      <tr><th>b</th><td>tint behind changed lines, on / off</td></tr>
+      <tr><th>t</th><td>theme: system → light → dark</td></tr>
+      <tr><th>y</th><td>copy the file name and the selected range</td></tr>
+      <tr><th>r</th><td>read the diff again, as it is on disk now — comments follow their lines</td></tr>
+      <tr><th>/</th><td>filter files by path</td></tr>
+      <tr><th>cmd+F</th><td>find text on this page — matches are marked where they are on screen</td></tr>
+      <tr><th>cmd+G</th><td>next match (shift+cmd+G for the previous one; enter does the same in the bar)</td></tr>
+      <tr><th>\</th><td>show / hide the sidebar</td></tr>
+      <tr><th>?</th><td>this</td></tr>
+    </table>
+    <p class="sub" style="margin-top:14px">Ending the review stops the server. Asking Claude to close it does the same, so this is only here for when you would rather not.</p>
+    <div class="row">
+      <button id="end" title="Stop the server; asking Claude to close the review does the same">End review</button>
+      <button id="help-close" class="primary">Got it</button>
+    </div>
+  </div>
+</div>
 
 <div class="backdrop" id="finish-overlay" hidden>
   <div class="modal">
-    <h2>Submit review</h2>
+    <h2 id="finish-title">Send this round</h2>
     <p class="sub" id="finish-summary"></p>
     <textarea id="overall" placeholder="Overall comment (optional)"></textarea>
     <div class="row">
@@ -124,299 +588,27 @@
   </div>
 </div>
 
-<div class="backdrop" id="done-overlay" hidden>
+<div class="backdrop" id="sent-overlay" hidden>
   <div class="modal">
-    <h2>Review submitted ✓</h2>
-    <p class="sub">Your comments were handed back to the Claude session. You can close this tab.</p>
+    <h2 id="sent-title">Round sent ✓</h2>
+    <p class="sub" id="sent-sub"></p>
+    <p class="sub">The diff on screen stays as it was when the review opened, so the lines you
+      comment on do not move under you. Reopen the review to read Claude's edits.</p>
+    <div class="row">
+      <button id="sent-close">End review</button>
+      <button id="sent-keep" class="primary">Keep commenting</button>
+    </div>
   </div>
 </div>
 
-<script type="module">
-import { CodeView, parseDiffFromFile } from '/vendor/pierre-diffs.mjs';
+<div class="backdrop" id="done-overlay" hidden>
+  <div class="modal">
+    <h2>Review closed ✓</h2>
+    <p class="sub">Everything you said is with the Claude session. You can close this tab.</p>
+  </div>
+</div>
 
-const $ = (id) => document.getElementById(id);
-const root = $('review-root');
+<script type="module" src="/ui/main.mjs"></script>
 
-const NONCE = '__DIFF_REVIEW_NONCE__'; // injected by server.mjs when serving this page
-const data = await (await fetch('/data')).json();
-$('repo').textContent = data.repo.split('/').pop();
-$('base').textContent = `vs ${data.base} · ${data.files.length} file(s)`;
-document.title = `review: ${data.repo.split('/').pop()}`;
-if (data.skipped.length > 0) {
-  $('skipped').hidden = false;
-  $('skipped').textContent =
-    'Not shown: ' + data.skipped.map((s) => `${s.path} (${s.reason})`).join(', ');
-}
-
-// ── State ────────────────────────────────────────────────────────────────────
-// comment: { id, file, side, start, end, text, saved }
-const comments = new Map();
-let nextCommentId = 1;
-let diffStyle = 'split';
-let viewer = null;
-const versions = new Map();
-const fileDiffs = new Map();
-
-function fileDiffFor(f) {
-  if (!fileDiffs.has(f.path)) {
-    fileDiffs.set(
-      f.path,
-      parseDiffFromFile(
-        { name: f.oldPath ?? f.path, contents: f.old },
-        { name: f.path, contents: f.new },
-      ),
-    );
-  }
-  return fileDiffs.get(f.path);
-}
-
-function annotationsFor(path) {
-  return [...comments.values()]
-    .filter((c) => c.file === path)
-    .sort((a, b) => a.end - b.end)
-    .map((c) => ({ side: c.side, lineNumber: c.end, metadata: { commentId: c.id } }));
-}
-
-function buildItems() {
-  return data.files.map((f) => ({
-    id: f.path,
-    type: 'diff',
-    fileDiff: fileDiffFor(f),
-    annotations: annotationsFor(f.path),
-    version: versions.get(f.path) ?? 0,
-  }));
-}
-
-function refreshItem(path) {
-  const item = viewer.getItem(path);
-  if (item == null) return;
-  const v = (versions.get(path) ?? 0) + 1;
-  versions.set(path, v);
-  viewer.updateItem({ ...item, annotations: annotationsFor(path), version: v });
-  updateCount();
-}
-
-function updateCount() {
-  const saved = [...comments.values()].filter((c) => c.saved).length;
-  $('ccount').textContent = `${saved} comment${saved === 1 ? '' : 's'}`;
-}
-
-// ── Comment creation ─────────────────────────────────────────────────────────
-function resolveItemId(ctx) {
-  if (ctx == null) return null;
-  if (typeof ctx === 'string') return ctx;
-  if (typeof ctx.item?.id === 'string') return ctx.item.id;
-  if (typeof ctx.id === 'string') return ctx.id;
-  return null;
-}
-
-function startDraft(range, ctx) {
-  const itemId = resolveItemId(ctx) ?? viewer.getSelectedLines?.()?.id ?? null;
-  if (itemId == null || range == null) return;
-  const start = Math.min(range.start, range.end ?? range.start);
-  const end = Math.max(range.start, range.end ?? range.start);
-  const id = nextCommentId++;
-  comments.set(id, {
-    id,
-    file: itemId,
-    side: range.endSide ?? range.side ?? 'additions',
-    start,
-    end,
-    text: '',
-    saved: false,
-  });
-  refreshItem(itemId);
-}
-
-// Rendered inside the component's shadow DOM, so styling must be inline.
-function renderComment(annotation) {
-  const c = comments.get(annotation?.metadata?.commentId);
-  const box = document.createElement('div');
-  if (c == null) return box;
-  box.style.cssText =
-    'margin:6px 12px;padding:10px 12px;border-radius:8px;' +
-    'font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:13px;line-height:1.45;' +
-    'background:light-dark(#f3f7ff,#10161f);border:1px solid light-dark(#c9dcf5,#23334a);' +
-    'border-left:3px solid light-dark(#0969da,#2f81f7);';
-
-  const lines = c.start === c.end ? `line ${c.end}` : `lines ${c.start}–${c.end}`;
-  const sideLabel = c.side === 'deletions' ? 'old' : 'new';
-
-  const header = document.createElement('div');
-  header.style.cssText =
-    'font-weight:600;font-size:12px;margin-bottom:6px;color:light-dark(#555,#aaa);';
-  header.textContent = `Your comment · ${lines} (${sideLabel})`;
-  box.appendChild(header);
-
-  const btn = (label, primary) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = label;
-    b.style.cssText =
-      'font:inherit;font-size:12px;padding:4px 10px;border-radius:6px;cursor:pointer;' +
-      (primary
-        ? 'background:light-dark(#0969da,#2f81f7);color:#fff;border:none;font-weight:600;'
-        : 'background:transparent;color:inherit;border:1px solid light-dark(#ccc,#444);');
-    return b;
-  };
-
-  if (!c.saved) {
-    const ta = document.createElement('textarea');
-    ta.value = c.text;
-    ta.placeholder = 'Leave a comment… (Ctrl+Enter to save, Esc to discard)';
-    ta.style.cssText =
-      'width:100%;min-height:64px;resize:vertical;font:inherit;padding:6px 8px;' +
-      'border-radius:6px;border:1px solid light-dark(#ccc,#444);' +
-      'background:light-dark(#fff,#0a0a0a);color:inherit;';
-    ta.addEventListener('input', () => (c.text = ta.value));
-    ta.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save();
-      if (e.key === 'Escape') discard();
-      e.stopPropagation();
-    });
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;gap:6px;justify-content:flex-end;margin-top:6px;';
-    const saveBtn = btn('Add comment', true);
-    const cancelBtn = btn('Cancel', false);
-    const save = () => {
-      if (c.text.trim() === '') return;
-      c.text = c.text.trim();
-      c.saved = true;
-      refreshItem(c.file);
-    };
-    const discard = () => {
-      comments.delete(c.id);
-      refreshItem(c.file);
-    };
-    saveBtn.addEventListener('click', save);
-    cancelBtn.addEventListener('click', discard);
-    row.append(cancelBtn, saveBtn);
-    box.append(ta, row);
-    setTimeout(() => ta.focus(), 50);
-  } else {
-    const body = document.createElement('div');
-    body.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;';
-    body.textContent = c.text;
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;gap:6px;justify-content:flex-end;margin-top:8px;';
-    const editBtn = btn('Edit', false);
-    const delBtn = btn('Delete', false);
-    editBtn.addEventListener('click', () => {
-      c.saved = false;
-      refreshItem(c.file);
-    });
-    delBtn.addEventListener('click', () => {
-      comments.delete(c.id);
-      refreshItem(c.file);
-    });
-    row.append(delBtn, editBtn);
-    box.append(body, row);
-  }
-  return box;
-}
-
-// ── Viewer ───────────────────────────────────────────────────────────────────
-function createViewer() {
-  if (viewer != null) {
-    viewer.cleanUp();
-    root.innerHTML = '';
-  }
-  viewer = new CodeView({
-    theme: { dark: 'pierre-dark', light: 'pierre-light' },
-    stickyHeaders: true,
-    diffStyle,
-    layout: { paddingTop: 12, paddingBottom: 160, gap: 10 },
-    lineHoverHighlight: 'both',
-    enableLineSelection: true,
-    enableGutterUtility: true,
-    onGutterUtilityClick(range, ctx) {
-      startDraft(range, ctx);
-    },
-    renderAnnotation(annotation) {
-      return renderComment(annotation);
-    },
-  });
-  viewer.setup(root);
-  viewer.setItems(buildItems());
-}
-
-$('loading').remove();
-createViewer();
-
-// Test hook: ?testannotation seeds one saved and one draft comment so headless
-// screenshots can verify annotation rendering.
-if (new URLSearchParams(location.search).has('testannotation') && data.files.length > 0) {
-  const f = data.files[0].path;
-  const a = nextCommentId++;
-  const b = nextCommentId++;
-  comments.set(a, { id: a, file: f, side: 'additions', start: 1, end: 2, text: 'Saved test comment: please rename this.', saved: true });
-  comments.set(b, { id: b, file: f, side: 'additions', start: 5, end: 5, text: '', saved: false });
-  refreshItem(f);
-}
-
-// ── Toolbar ──────────────────────────────────────────────────────────────────
-const jump = $('jump');
-for (const f of data.files) {
-  const opt = document.createElement('option');
-  opt.value = f.path;
-  opt.textContent = f.path;
-  jump.appendChild(opt);
-}
-jump.addEventListener('change', () => {
-  viewer.scrollTo({ type: 'item', id: jump.value, align: 'start' });
-});
-
-$('styleToggle').addEventListener('click', () => {
-  diffStyle = diffStyle === 'split' ? 'unified' : 'split';
-  $('styleToggle').textContent = diffStyle === 'split' ? 'Unified view' : 'Split view';
-  createViewer();
-});
-
-// ── Submit ───────────────────────────────────────────────────────────────────
-$('finish').addEventListener('click', () => {
-  const drafts = [...comments.values()].filter((c) => !c.saved);
-  if (drafts.length > 0 && !confirm(`${drafts.length} unsaved draft comment(s) will be discarded. Continue?`)) {
-    return;
-  }
-  const saved = [...comments.values()].filter((c) => c.saved);
-  $('finish-summary').textContent =
-    saved.length === 0
-      ? 'No line comments. You can still leave an overall comment below.'
-      : `${saved.length} line comment(s) will be sent back to the session.`;
-  $('finish-overlay').hidden = false;
-  $('overall').focus();
-});
-$('finish-cancel').addEventListener('click', () => ($('finish-overlay').hidden = true));
-
-async function submit(verdict) {
-  const saved = [...comments.values()]
-    .filter((c) => c.saved)
-    .sort((a, b) => (a.file === b.file ? a.end - b.end : a.file < b.file ? -1 : 1));
-  const payload = {
-    verdict,
-    overall: $('overall').value.trim(),
-    comments: saved.map((c) => ({
-      file: c.file,
-      side: c.side === 'deletions' ? 'old' : 'new',
-      startLine: c.start,
-      endLine: c.end,
-      comment: c.text,
-    })),
-  };
-  const res = await fetch('/submit', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-diff-review-nonce': NONCE },
-    body: JSON.stringify(payload),
-  });
-  if (res.ok) {
-    $('finish-overlay').hidden = true;
-    $('done-overlay').hidden = false;
-  } else {
-    alert('Submitting the review failed — is the server still running?');
-  }
-}
-$('finish-approve').addEventListener('click', () => submit('approve'));
-$('finish-request').addEventListener('click', () => submit('request_changes'));
-</script>
 </body>
 </html>
