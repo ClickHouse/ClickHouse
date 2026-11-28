@@ -1868,7 +1868,7 @@ void DatabaseDataLake::checkDatabase() const
     LOG_TEST(log, "Database '{}' is OK", getDatabaseName());
 }
 
-void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr /*query_context*/)
+void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)
 {
     const auto current_settings = database_settings.get();
 
@@ -1944,7 +1944,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
         new_create_query->set(new_create_query->comment, make_intrusive<ASTLiteral>(database_comment));
     auto new_engine_definition_text = new_engine_definition->formatWithSecretsOneLine<SecretString>();
-    DatabaseCatalog::instance().updateMetadataFile(getDatabaseName(), new_create_query);
+    DatabaseCatalog::instance().updateMetadataFile(getDatabaseName(), new_create_query, query_context);
 
     /// Publish. Nothing below throws.
     if (alter_catalog)
