@@ -1,0 +1,17 @@
+in the positional argument
+1
+x=1	1
+elsewhere in the query
+1	[2]
+in an ALIAS column
+1
+in an inlined view
+0
+in a row policy of an inlined view
+0
+grouping
+	1
+a=0	0
+a=1	0
+a=1	0
+{"a":1}	0

@@ -1,0 +1,49 @@
+subqueries
+-3
+-2
+-3
+-2
+-4
+-3
+-3
+-2
+-1
+-2
+-1
+2
+3
+Distributed over Distributed
+-3	2
+-2	2
+-1	2
+parallel replicas
+-3	1
+-2	1
+the remote server folds the expression and its aliases
+5
+5
+0	4
+0	0
+0	2
+1	1
+0	0
+0	1
+0	2
+2	0
+2	1
+2	2
+1	0
+1	1
+2	0
+2	1
+-2
+-1
+0
+0	0
+0	2
+1	1
+INSERT SELECT
+0	1
+0	11
+1	2
+1	12
