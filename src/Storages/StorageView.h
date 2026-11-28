@@ -26,6 +26,11 @@ public:
     bool supportsTruncate() const override { return false; }
     bool isParameterizedView() const { return is_parameterized_view; }
 
+    /** The columns are not the ones of the query but chosen for it, e.g. by a table created from the `view` table function,
+      * and the result of the query is converted to them. So a `Nullable` column of a join is converted rather than refused.
+      */
+    void setConvertsQueryResultToColumns() { converts_query_result_to_columns = true; }
+
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
@@ -82,6 +87,7 @@ public:
 
 protected:
     bool is_parameterized_view;
+    bool converts_query_result_to_columns = false;
 };
 
 }

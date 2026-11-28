@@ -1,0 +1,19 @@
+-- dictGet directly
+ACCESS_DENIED
+-- view with columns
+ACCESS_DENIED
+ACCESS_DENIED
+-- view with columns converted from the query
+0	String
+1	String
+2	String
+-- view with a Nullable result of a join converted to the declared column, also after the table is loaded again
+0
+0
+-- viewExplain
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+1
+-- the secret in the output:
+0

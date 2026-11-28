@@ -44,6 +44,15 @@ public:
 
     std::string getName() const override { return name; }
 
+    /// The `EXPLAIN` is executed when the storage is created. For a persisted table it happens on the first access,
+    /// with the global context (see `ITableFunction::execute`), so it would explain, and evaluate constant expressions
+    /// of, a query with the global access rights, which discloses what the user may have no access to.
+    bool canBeUsedToCreateTable() const override { return false; }
+
+    /// For the same reason the function cannot be persisted nested in another table function either,
+    /// e.g. `CREATE TABLE ... AS remote(..., viewExplain(...))`.
+    bool dependsOnCurrentUserGrants() const override { return true; }
+
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
@@ -187,8 +196,14 @@ Block executeMonoBlock(QueryPipeline & pipeline)
 }
 
 StoragePtr TableFunctionExplain::executeImpl(
-    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
+    /// Only a persisted table passes its columns: it was created before such tables were refused (see above).
+    if (!cached_columns.empty())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' cannot be used to create a table", getName());
+    }
+
     /// To support settings inside explain subquery.
     auto mutable_context = Context::createCopy(context);
     InterpreterSetQuery::applySettingsFromQuery(query, mutable_context);
