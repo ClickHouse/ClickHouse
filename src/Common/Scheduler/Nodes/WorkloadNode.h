@@ -129,7 +129,6 @@ struct WorkloadNodeTraits<ITimeSharedNode>
     static void updateSemaphore(const NodePtr & node, const WorkloadSettings & settings_, CostUnit unit)
     {
         static_cast<SemaphoreConstraint &>(*node).updateConstraints(
-            node,
             settings_.getSemaphoreMaxRequests(unit),
             settings_.getSemaphoreMaxCost(unit));
     }
@@ -829,8 +828,8 @@ private:
     {
         if (child.get() == child_)
         {
-            child_active = false; // deactivate
-            flushThroughputOnDeactivation();
+            // Keep `child_active`: the parent still counts this node active until it dequeues from it.
+            // Resetting it would make the next activation reach the parent twice.
             child->setParentNode(nullptr); // detach
             child.reset();
         }

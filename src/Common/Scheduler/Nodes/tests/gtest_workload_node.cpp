@@ -810,3 +810,52 @@ TEST(SchedulerTimeSharedWorkloadNode, UpdateSemaphoreCancelsStaleActivation)
     delete r1;
     delete r2;
 }
+
+/// Checks that the `fair` node of `parent` counts exactly its active `children`
+static void expectFairActiveChildren(const TimeSharedWorkloadNodePtr & parent, const std::vector<TimeSharedWorkloadNodePtr> & children)
+{
+    size_t active = 0;
+    for (const auto & child : children)
+        active += static_cast<ITimeSharedNode &>(*child).isActive();
+
+    FairPolicy * fair = nullptr;
+    parent->forEachSchedulerNode([&](ISchedulerNode * node)
+    {
+        if (auto * fair_node = dynamic_cast<FairPolicy *>(node))
+            fair = fair_node;
+    });
+    ASSERT_NE(fair, nullptr);
+    EXPECT_EQ(fair->activeChildren(), active);
+}
+
+TEST(SchedulerTimeSharedWorkloadNode, UpdateSemaphoreOfChildOfFairPolicy)
+{
+    ResourceTest t;
+
+    auto all = t.createUnifiedNode("all");
+    auto a = t.createUnifiedNode("A", all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 100});
+    auto b = t.createUnifiedNode("B", all);
+    auto c = t.createUnifiedNode("C", all);
+
+    t.enqueue(a, {10, 10, 10, 10});
+    t.enqueue(b, {10, 10, 10, 10});
+    t.dequeue(2);
+    t.consumed("A", 10);
+    t.consumed("B", 10);
+
+    // Lower the limit below the in-flight amount and raise it back with no dequeue in between
+    t.updateUnifiedNode(a, all, all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 5});
+    t.updateUnifiedNode(a, all, all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 100});
+    expectFairActiveChildren(all, {a, b, c});
+
+    // Requests are never finished in this test, so `A` must not dequeue anything under the lowered limit
+    t.updateUnifiedNode(a, all, all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 5});
+    t.dequeue();
+    t.consumed("A", 0);
+    t.consumed("B", 30);
+    expectFairActiveChildren(all, {a, b, c});
+
+    t.updateUnifiedNode(a, all, all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 100});
+    t.dequeue();
+    t.consumed("A", 30);
+}
