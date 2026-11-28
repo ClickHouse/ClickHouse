@@ -17,6 +17,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <atomic>
+#include <charconv>
 #include <unordered_set>
 
 #if defined(OS_LINUX)
@@ -50,7 +51,10 @@ struct State
     RemoteHostFilter allowed_hosts;
 
     SharedMutex internal_hosts_mutex;
+    /// Exempt in the resolver of the server itself.
     std::unordered_set<std::string> internal_hosts TSA_GUARDED_BY(internal_hosts_mutex);
+    /// Exempt everywhere, as `host:port`.
+    std::unordered_set<std::string> internal_endpoints TSA_GUARDED_BY(internal_hosts_mutex);
 };
 
 State & state()
@@ -81,7 +85,25 @@ std::string normalizeHost(std::string_view host)
     return result;
 }
 
-bool isAllowedImpl(std::string_view host)
+std::string endpointKey(std::string_view normalized_host, std::string_view service)
+{
+    std::string key;
+    key.reserve(normalized_host.size() + 1 + service.size());
+    key += normalized_host;
+    key += ':';
+    key += service;
+    return key;
+}
+
+enum class Caller : uint8_t
+{
+    /// `DNSResolver` and the HTTP connection pool: the host comes from the code of the server.
+    Server,
+    /// `getaddrinfo` called by a library: the host may have been discovered by the library.
+    Library,
+};
+
+bool isAllowedImpl(std::string_view host, std::string_view service, Caller caller)
 {
     auto & s = state();
     if (!s.enabled.load(std::memory_order_relaxed) || internal_scope_depth || inside_filter)
@@ -97,7 +119,9 @@ bool isAllowedImpl(std::string_view host)
 
     {
         SharedLockGuard lock(s.internal_hosts_mutex);
-        if (s.internal_hosts.contains(normalized))
+        if (caller == Caller::Server && s.internal_hosts.contains(normalized))
+            return true;
+        if (!service.empty() && s.internal_endpoints.contains(endpointKey(normalized, service)))
             return true;
     }
 
@@ -115,6 +139,7 @@ void NameResolutionFilter::setValuesFromConfig(const Poco::Util::AbstractConfigu
     if (enable)
     {
         /// The server resolves its own name, e.g. for `getFQDNOrHostName`, which is computed once, here if not before.
+        InternalScope internal_scope;
         addInternalHost(Poco::Net::DNS::hostName());
         addInternalHost(getFQDNOrHostName());
     }
@@ -145,9 +170,45 @@ void NameResolutionFilter::addInternalHost(std::string_view host)
     s.internal_hosts.insert(std::move(normalized));
 }
 
-bool NameResolutionFilter::isAllowed(std::string_view host)
+void NameResolutionFilter::addInternalEndpoint(std::string_view host, UInt16 port)
 {
-    if (isAllowedImpl(host))
+    if (host.empty())
+        return;
+
+    addInternalHost(host);
+
+    auto key = endpointKey(normalizeHost(host), std::to_string(port));
+    auto & s = state();
+
+    {
+        SharedLockGuard lock(s.internal_hosts_mutex);
+        if (s.internal_endpoints.contains(key))
+            return;
+    }
+
+    std::lock_guard lock(s.internal_hosts_mutex);
+    s.internal_endpoints.insert(std::move(key));
+}
+
+void NameResolutionFilter::addInternalEndpoint(std::string_view host_and_port)
+{
+    /// An endpoint without a numeric port cannot be registered: it stays subject to `remote_url_allow_hosts`.
+    const auto colon = host_and_port.rfind(':');
+    if (colon == std::string_view::npos)
+        return;
+
+    UInt16 port = 0;
+    const auto port_string = host_and_port.substr(colon + 1);
+    const auto [end, error] = std::from_chars(port_string.data(), port_string.data() + port_string.size(), port);
+    if (error != std::errc() || end != port_string.data() + port_string.size())
+        return;
+
+    addInternalEndpoint(host_and_port.substr(0, colon), port);
+}
+
+bool NameResolutionFilter::isAllowed(std::string_view host, std::string_view service)
+{
+    if (isAllowedImpl(host, service, Caller::Library))
         return true;
 
     ProfileEvents::increment(ProfileEvents::DNSRequestNotAllowed);
@@ -162,7 +223,7 @@ bool NameResolutionFilter::isAllowed(std::string_view host)
 
 void NameResolutionFilter::check(std::string_view host)
 {
-    if (isAllowedImpl(host))
+    if (isAllowedImpl(host, {}, Caller::Server))
         return;
 
     ProfileEvents::increment(ProfileEvents::DNSRequestNotAllowed);
@@ -188,8 +249,9 @@ NameResolutionFilter::InternalScope::~InternalScope()
 /// Interposes `getaddrinfo` of the C library, which is the forward name resolution of every library linked into
 /// the server: the definition in the executable takes precedence over the one in `libc.so`, and the original is
 /// reached through `dlsym(RTLD_NEXT)`. A sanitizer runtime intercepts `getaddrinfo` in the same way; it is reached
-/// through its interceptor, which keeps the interception in place. With musl, the C library is linked statically
-/// and its `getaddrinfo` is compiled as `__musl_getaddrinfo` (see `contrib/musl-cmake`).
+/// through its interceptor, which keeps the interception in place, with glibc and with musl. With musl and no
+/// sanitizer, the C library is linked statically and its `getaddrinfo` is compiled as `__musl_getaddrinfo`
+/// (see `contrib/musl-cmake`).
 ///
 /// The other forward resolution functions are not used: `gethostbyname` and the like are trapped in `base/harmful`.
 /// `c-ares` sends DNS queries by itself, so gRPC is built with its native resolver, which uses `getaddrinfo`.
@@ -204,10 +266,10 @@ using GetAddrInfo = int (*)(const char *, const char *, const struct addrinfo *,
 /// The names are reserved identifiers, but they are the names that musl and the sanitizer runtime define.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
-#if defined(USE_MUSL)
-extern "C" int __musl_getaddrinfo(const char * node, const char * service, const struct addrinfo * hints, struct addrinfo ** res); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
-#elif defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
 extern "C" int __interceptor_getaddrinfo(const char * node, const char * service, const struct addrinfo * hints, struct addrinfo ** res); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
+#elif defined(USE_MUSL)
+extern "C" int __musl_getaddrinfo(const char * node, const char * service, const struct addrinfo * hints, struct addrinfo ** res); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #endif
 #pragma clang diagnostic pop
 
@@ -216,10 +278,13 @@ namespace
 
 GetAddrInfo originalGetAddrInfo()
 {
-#if defined(USE_MUSL)
-    return &__musl_getaddrinfo;
-#elif defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
+    /// With musl too: the build renames the `getaddrinfo` of musl to `__real_getaddrinfo`, which is what the
+    /// interceptor calls (see `contrib/compiler-rt-cmake`). Calling musl directly would skip the interceptor,
+    /// and MSan would see the result as uninitialized.
     return &__interceptor_getaddrinfo;
+#elif defined(USE_MUSL)
+    return &__musl_getaddrinfo;
 #else
     static const GetAddrInfo original = []
     {
@@ -241,7 +306,7 @@ extern "C" int getaddrinfo(const char * node, const char * service, const struct
         /// An exception must not leave through the frames of a C library; failing the resolution is the safe side.
         try
         {
-            if (!DB::NameResolutionFilter::isAllowed(node))
+            if (!DB::NameResolutionFilter::isAllowed(node, service ? std::string_view(service) : std::string_view()))
                 return EAI_NONAME;
         }
         catch (...) // Ok: the exception is turned into a failed resolution, it cannot propagate through C frames.

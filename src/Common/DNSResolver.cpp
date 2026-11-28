@@ -126,9 +126,15 @@ DNSResolver::IPAddresses hostByName(const std::string & host)
         ProfileEvents::increment(ProfileEvents::DNSRequests);
         ProfileEventTimeIncrement<Microseconds> request_time(ProfileEvents::DNSRequestMicroseconds);
 
+        /// Checked here as well, so that no path of `DNSResolver` reaches `getaddrinfo` unchecked. The host has
+        /// passed the check of the server's own resolver, which lets the internal hosts through, unlike
+        /// the check of `getaddrinfo`, which is for the libraries: hence the scope.
+        NameResolutionFilter::check(host);
+
         try
         {
             Silk::ThreadModeScope thread_mode;
+            NameResolutionFilter::InternalScope internal_scope;
             addresses = Poco::Net::DNS::hostByName(host, flags).addresses();
         }
         catch (const Poco::Net::DNSException & e)

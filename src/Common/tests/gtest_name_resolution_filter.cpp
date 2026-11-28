@@ -132,14 +132,48 @@ TEST_F(NameResolutionFilterTest, InternalScope)
 #endif
 }
 
+/// A host registered as internal is exempt in the resolver of the server only. A library that is pointed at it,
+/// such as a NATS client whose allowed bootstrap server advertises the host, does not get it resolved.
 TEST_F(NameResolutionFilterTest, InternalHost)
 {
     configure(true);
-    EXPECT_FALSE(DB::NameResolutionFilter::isAllowed("127.0.0.3"));
+    EXPECT_THROW(DB::NameResolutionFilter::check("127.0.0.3"), DB::Exception);
     DB::NameResolutionFilter::addInternalHost("127.0.0.3");
-    EXPECT_TRUE(DB::NameResolutionFilter::isAllowed("127.0.0.3"));
-    EXPECT_TRUE(DB::NameResolutionFilter::isAllowed("[127.0.0.3]"));
+
+    EXPECT_NO_THROW(DB::NameResolutionFilter::check("127.0.0.3"));
+    EXPECT_NO_THROW(DB::NameResolutionFilter::check("[127.0.0.3]"));
+    EXPECT_NO_THROW(DB::DNSResolver::instance().resolveHost("127.0.0.3"));
+
+    EXPECT_FALSE(DB::NameResolutionFilter::isAllowed("127.0.0.3"));
+    EXPECT_FALSE(DB::NameResolutionFilter::isAllowed("127.0.0.3", "9000"));
 #if defined(OS_LINUX)
-    EXPECT_EQ(resolveWithCLibrary("127.0.0.3"), 0);
+    EXPECT_EQ(resolveWithCLibrary("127.0.0.3"), EAI_NONAME);
+#endif
+}
+
+/// An internal endpoint is for a host that a library resolves in a thread of its own, such as a raft peer:
+/// it is exempt in `getaddrinfo` too, but only with its port.
+TEST_F(NameResolutionFilterTest, InternalEndpoint)
+{
+    configure(true);
+    DB::NameResolutionFilter::addInternalEndpoint("127.0.0.4:9000");
+    DB::NameResolutionFilter::addInternalEndpoint("[::ffff:127.0.0.5]:9000");
+    /// Not an endpoint: nothing is registered.
+    DB::NameResolutionFilter::addInternalEndpoint("127.0.0.6");
+    DB::NameResolutionFilter::addInternalEndpoint("127.0.0.6:port");
+
+    EXPECT_TRUE(DB::NameResolutionFilter::isAllowed("127.0.0.4", "9000"));
+    EXPECT_TRUE(DB::NameResolutionFilter::isAllowed("::ffff:127.0.0.5", "9000"));
+    EXPECT_FALSE(DB::NameResolutionFilter::isAllowed("127.0.0.4", "9001"));
+    EXPECT_FALSE(DB::NameResolutionFilter::isAllowed("127.0.0.4"));
+    EXPECT_FALSE(DB::NameResolutionFilter::isAllowed("127.0.0.6", "port"));
+    EXPECT_THROW(DB::NameResolutionFilter::check("127.0.0.6"), DB::Exception);
+
+    /// The server resolves the host as well, e.g. to find out whether a raft peer is the server itself.
+    EXPECT_NO_THROW(DB::NameResolutionFilter::check("127.0.0.4"));
+    EXPECT_NO_THROW(DB::DNSResolver::instance().resolveHost("127.0.0.4"));
+#if defined(OS_LINUX)
+    /// `resolveWithCLibrary` asks for the port 9000.
+    EXPECT_EQ(resolveWithCLibrary("127.0.0.4"), 0);
 #endif
 }

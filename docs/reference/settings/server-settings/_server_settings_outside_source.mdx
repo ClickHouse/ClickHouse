@@ -1746,7 +1746,9 @@ The list is checked by every storage engine, table function, dictionary source, 
 
 - only the host is checked when a name is resolved, because the port is not known yet: a `\<host\>` entry with a port allows its host, a `\<host_regexp\>` is matched against the host alone, and an `\<s3_bucket\>` entry `host/bucket` allows `host` and `bucket.host`. The ports are still checked as before, by the storage engines and table functions.
 - IP addresses are checked as written, like host names.
-- the server's own connections are not checked: the hosts of ZooKeeper and Keeper, the clusters in `remote_servers` and the clusters of `Replicated` databases, other replicas when fetching parts, the ODBC bridge, LDAP servers, HTTP proxies, the endpoint of `send_crash_reports`, Graphite, and the AWS and Azure credential providers whose endpoints come from the environment (the instance metadata service, the container credentials, the web identity and SSO providers).
+- the server's own connections are not checked: the hosts of ZooKeeper and Keeper, the clusters in `remote_servers` and the clusters of `Replicated` databases, other replicas when fetching parts, the endpoints of the object storage disks from the server configuration (but not of the disks created in SQL), the ODBC bridge, LDAP and HTTP authentication servers, HTTP proxies, the endpoint of `send_crash_reports`, Graphite, and the AWS and Azure credential providers whose endpoints come from the environment (the instance metadata service, the container credentials, the web identity and SSO providers).
+- the exemption belongs to the connection, not to the host: a client library is not allowed to resolve the host of a cluster replica or of a disk unless the list allows it. The exception is a Keeper raft peer, which is allowed together with its raft port.
+- the hosts that a storage of a disk sends the server to are checked: a redirect to another endpoint, or the data nodes of an HDFS disk.
 - a rejected resolution is logged and counted in the `DNSRequestNotAllowed` profile event.
 
 For example:

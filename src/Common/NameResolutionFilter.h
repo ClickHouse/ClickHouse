@@ -3,6 +3,7 @@
 #include <string>
 #include <string_view>
 
+#include <base/types.h>
 #include <boost/noncopyable.hpp>
 
 
@@ -25,11 +26,18 @@ namespace DB
 /// The check knows only the host, not the port: see `RemoteHostFilter::checkHostName`. Literal IP addresses
 /// are checked as host names, as in `RemoteHostFilter`.
 ///
-/// The server's own connections are not subject to `remote_url_allow_hosts`. They are exempted in two ways:
-/// - hosts that come from the server configuration or from the cluster metadata are registered with
-///   `addInternalHost`: ZooKeeper and Keeper nodes, cluster replicas, the ODBC and library bridges;
-/// - a resolution made by a thread inside an `InternalScope` is not checked: the server's own host name,
-///   cloud credential providers, fetches of parts from other replicas.
+/// The server's own connections are not subject to `remote_url_allow_hosts`. They are exempted by the code path
+/// that makes them, never by the host alone, so that a client library cannot be pointed at an internal host
+/// (a NATS server advertising a replica of a cluster in `connect_urls`):
+/// - a resolution made by a thread inside an `InternalScope` is not checked: ZooKeeper nodes, cloud credential
+///   providers, fetches of parts from other replicas;
+/// - hosts registered with `addInternalHost` (cluster replicas, the ODBC and library bridges, the endpoints of
+///   the disks from the server configuration) are exempt only in the resolver of the server itself, `DNSResolver`
+///   and the HTTP connection pool, which is what `check` is for. A `getaddrinfo` call of a library does not
+///   consult them;
+/// - endpoints registered with `addInternalEndpoint` are exempt in `getaddrinfo` as well, but only together with
+///   their port. This is for the hosts that a library resolves in a thread which no `InternalScope` reaches:
+///   the raft peers, resolved by a thread of `asio` inside NuRaft.
 class NameResolutionFilter : private boost::noncopyable
 {
 public:
@@ -38,14 +46,24 @@ public:
 
     static bool isEnabled();
 
-    /// Allows resolving `host` regardless of `remote_url_allow_hosts`, for hosts that the server connects to on its own.
-    /// The registration lasts until the server stops.
+    /// Allows the resolver of the server itself (see `check`) to resolve `host` regardless of
+    /// `remote_url_allow_hosts`, for hosts that the server connects to on its own. Does not affect `getaddrinfo`
+    /// calls of libraries. The registration lasts until the server stops.
     static void addInternalHost(std::string_view host);
 
-    /// Whether `host` may be resolved. Logs a rejection. Called from `getaddrinfo`, so from any thread.
-    static bool isAllowed(std::string_view host);
+    /// Allows resolving `host` together with `port` regardless of `remote_url_allow_hosts`, in `getaddrinfo` too,
+    /// for an endpoint that a library resolves in a thread of its own. Also registers `host` as `addInternalHost`.
+    static void addInternalEndpoint(std::string_view host, UInt16 port);
 
-    /// Throws `UNACCEPTABLE_URL` if `host` may not be resolved.
+    /// The same for an endpoint written as `host:port` or `[ipv6]:port`.
+    static void addInternalEndpoint(std::string_view host_and_port);
+
+    /// Whether a library may resolve `host` for the port or service name `service`. Logs a rejection.
+    /// Called from `getaddrinfo`, so from any thread.
+    static bool isAllowed(std::string_view host, std::string_view service = {});
+
+    /// The check of the resolver of the server itself: throws `UNACCEPTABLE_URL` if `host` may not be resolved.
+    /// Unlike `isAllowed`, it lets the hosts of `addInternalHost` through.
     static void check(std::string_view host);
 
     /// Exempts the name resolutions made by the current thread while the scope exists.

@@ -1,5 +1,6 @@
 #include <Access/LDAPClient.h>
 #include <Common/Exception.h>
+#include <Common/NameResolutionFilter.h>
 #include <base/scope_guard.h>
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
@@ -608,6 +609,10 @@ bool LDAPSimpleAuthClient::authenticate(const RoleSearchParamsList * role_search
     // Silently reject authentication attempt if the password is empty as if it didn't match.
     if (params.password.empty())
         return false;
+
+    /// An LDAP server from the server configuration is not subject to `remote_url_allow_hosts`. `libldap` resolves
+    /// it in this thread, when it connects and when it reconnects.
+    NameResolutionFilter::InternalScope internal_scope;
 
     SCOPE_EXIT({ closeConnection(); });
 
