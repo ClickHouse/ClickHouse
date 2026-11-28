@@ -70,6 +70,20 @@ static constexpr size_t MAX_COMPACTION_RETRIES = 100;
 
 using namespace DB;
 
+/// PartitionSpecsEntry has only a file-local operator<=> elsewhere; compare fields explicitly here.
+static bool partitionSpecsEqual(const PartitionSpecification & lhs, const PartitionSpecification & rhs)
+{
+    if (lhs.size() != rhs.size())
+        return false;
+    for (size_t i = 0; i < lhs.size(); ++i)
+    {
+        if (lhs[i].source_id != rhs[i].source_id || lhs[i].transform_name != rhs[i].transform_name
+            || lhs[i].partition_name != rhs[i].partition_name)
+            return false;
+    }
+    return true;
+}
+
 struct ManifestFilePlan
 {
     explicit ManifestFilePlan(Poco::JSON::Array::Ptr schema_)
@@ -100,6 +114,7 @@ struct DataFilePlan
 struct Plan
 {
     bool need_optimize = false;
+    bool has_equality_deletes = false;
     using PartitionPlan = std::vector<std::shared_ptr<DataFilePlan>>;
     std::vector<PartitionPlan> partitions;
     IcebergHistory history;
@@ -117,7 +132,18 @@ struct Plan
     std::unordered_map<Iceberg::IcebergPathFromMetadata, ManifestFileLineage> manifest_file_lineage;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::vector<Iceberg::IcebergPathFromMetadata>> manifest_list_to_manifest_files;
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
+    /// Keyed per data file (file_path_key). One manifest can hold several DATA entries (MultipleFileWriter
+    /// splits a partition into several files), so keying per manifest would collapse them into one plan.
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
+    /// Per DATA entry validation info: read schema id and originating partition spec. Used to reject
+    /// files written under a different schema id or partition spec than the current default before rewriting.
+    struct DataFileValidationInfo
+    {
+        String path;
+        Int32 read_schema_id;
+        std::shared_ptr<const PartitionSpecification> partition_spec;
+    };
+    std::vector<DataFileValidationInfo> data_file_validation_infos;
     FileNamesGenerator generator;
     Poco::JSON::Object::Ptr initial_metadata_object;
     Poco::JSON::Array::Ptr current_schema_fields;
@@ -243,6 +269,13 @@ static Plan getPlan(
             break;
         }
     }
+    /// DataFileStatistics (built below via ManifestFilePlan) dereferences the schema, and the sink's
+    /// validate helper runs only after getPlan; reject a malformed table here.
+    if (!current_schema)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg table metadata has no schema matching current-schema-id {}",
+            current_schema_id);
     plan.initial_metadata_object = initial_metadata_object;
     plan.current_schema_fields = current_schema;
 
@@ -274,6 +307,8 @@ static Plan getPlan(
                         .insert(persistent_table_components.path_resolver.storageIdentity(pos_delete_file->parsed_entry->file_path_key))
                         .second)
                     all_positional_delete_files.push_back(pos_delete_file);
+            if (!files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
+                plan.has_equality_deletes = true;
 
             for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
             {
@@ -286,6 +321,10 @@ static Plan getPlan(
                     persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key),
                     0,
                     Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.schema_processor));
+                plan.data_file_validation_infos.push_back(
+                    {data_object_info->getPath(),
+                     data_object_info->info.underlying_format_read_schema_id,
+                     data_file->common_partition_specification});
                 /// One DataFilePlan per source *data file*, keyed by the data file's own path.
                 /// Keying by the manifest path made every data file after the first in a
                 /// manifest reuse the first file's plan, so writeDataFiles rewrote only one
@@ -464,9 +503,10 @@ static void writeDataFiles(
             /// The bounds must describe the stored values.
             if (write_orc)
                 ORC::replaceTimestampsStoredAsEpoch(chunk);
-            data_file->manifest_list->statistics.update(chunk);
+            /// Statistics describe the rows actually written, so collect them after the deleted rows are removed.
             if (delete_file_transform)
                 delete_file_transform->transform(chunk);
+            data_file->manifest_list->statistics.update(chunk);
             if (column_sketches)
                 column_sketches->update(chunk.getColumns());
             data_file->new_records_count += chunk.getNumRows();
@@ -1161,13 +1201,14 @@ static bool writeMetadataFiles(
 
     ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block_->getNamesAndTypes());
     auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(table_path, columns_description, nullptr, nullptr, context);
-    /// The rewritten data files, manifests and manifest list use the source table's field ids and partition specs, so the new metadata must define them.
-    /// The table properties, such as `write.metadata.previous-versions-max`, are carried over as well.
-    for (const auto * key : {Iceberg::f_schemas, Iceberg::f_current_schema_id, Iceberg::f_last_column_id,
-                             Iceberg::f_partition_specs, Iceberg::f_default_spec_id, Iceberg::f_last_partition_id,
-                             Iceberg::f_properties})
-        if (plan.initial_metadata_object->has(key))
-            metadata_object->set(key, plan.initial_metadata_object->get(key));
+    /// Keep the table-level metadata; only the snapshot state is rebuilt below. The rewritten data files, manifests
+    /// and manifest list use the source table's field ids and partition specs, so the new metadata must define them.
+    static const std::unordered_set<std::string_view> snapshot_state_keys{
+        Iceberg::f_snapshots, Iceberg::f_current_snapshot_id, Iceberg::f_refs, Iceberg::f_snapshot_log, Iceberg::f_metadata_log,
+        Iceberg::f_last_sequence_number, Iceberg::f_last_updated_ms, Iceberg::f_statistics, Iceberg::f_partition_statistics};
+    for (const auto & [key, value] : *plan.initial_metadata_object)
+        if (!snapshot_state_keys.contains(key))
+            metadata_object->set(key, value);
     metadata_object->set(Iceberg::f_last_column_id, getLastAssignedFieldId(metadata_object));
 
     auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
@@ -1194,12 +1235,19 @@ static bool writeMetadataFiles(
         Int64 files_size = 0;
     };
     std::unordered_map<Int64, LiveTotals> snapshot_id_to_live_totals;
+    /// Delete-only snapshots are not rebuilt, so their children are re-parented onto the nearest rebuilt ancestor.
+    std::unordered_map<Int64, Int64> skipped_snapshot_to_parent;
 
     for (const auto & history_record : plan.history)
     {
+        Int64 parent_id = history_record.parent_id;
+        if (auto it = skipped_snapshot_to_parent.find(parent_id); it != skipped_snapshot_to_parent.end())
+            parent_id = it->second;
+
         auto append = tryGetAppendUpdate(history_record);
         if (!append)
         {
+            skipped_snapshot_to_parent[history_record.snapshot_id] = parent_id;
             new_snapshots.push_back(MetadataGenerator::NextMetadataResult{});
             continue;
         }
@@ -1213,14 +1261,14 @@ static bool writeMetadataFiles(
         }
         /// The `total-*` counters add the `added_*` values to the parent's totals only when the parent is rewritten too.
         LiveTotals parent;
-        if (auto it = snapshot_id_to_live_totals.find(history_record.parent_id); it != snapshot_id_to_live_totals.end())
+        if (auto it = snapshot_id_to_live_totals.find(parent_id); it != snapshot_id_to_live_totals.end())
             parent = it->second;
         snapshot_id_to_live_totals[history_record.snapshot_id] = live;
 
         auto new_snapshot = metadata_generator.generateNextMetadata(
             plan.generator,
             generated_metadata_info.path,
-            history_record.parent_id,
+            parent_id,
             live.data_files - parent.data_files,
             live.records - parent.records,
             live.files_size - parent.files_size,
@@ -1230,9 +1278,21 @@ static bool writeMetadataFiles(
             history_record.snapshot_id,
             history_record.made_current_at.value);
 
+        /// Writers read their own summary properties back through the ancestry, e.g. the refresh cursor
+        /// of an incremental refreshable materialized view or the commit markers of a streaming writer.
+        for (const auto & [key, value] : history_record.snapshot_summary->getExtraFields())
+            new_snapshot.snapshot->getObject(Iceberg::f_summary)->set(key, value);
+
         new_snapshots.push_back(new_snapshot);
         snapshot_id_to_snapshot[history_record.snapshot_id] = new_snapshot.snapshot;
     }
+
+    /// `main` keeps its retention policy, only its snapshot id is rebuilt.
+    if (const auto refs = plan.initial_metadata_object->getObject(Iceberg::f_refs); refs && refs->has(Iceberg::f_main))
+        if (const auto new_refs = metadata_object->getObject(Iceberg::f_refs); new_refs && new_refs->has(Iceberg::f_main))
+            for (const auto & [key, value] : *refs->getObject(Iceberg::f_main))
+                if (key != Iceberg::f_metadata_snapshot_id)
+                    new_refs->getObject(Iceberg::f_main)->set(key, value);
 
     Poco::JSON::Object::Ptr initial_metadata_object = plan.initial_metadata_object;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Iceberg::IcebergPathFromMetadata> manifest_file_renamings;
@@ -1272,6 +1332,12 @@ static bool writeMetadataFiles(
                 break;
             }
         }
+
+        if (!partititon_spec)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg table metadata has no partition spec matching default-spec-id {}",
+                partition_spec_id);
 
         std::vector<String> partition_columns;
         auto fields_from_partition_spec = partititon_spec->getArray(f_fields);
@@ -1688,6 +1754,58 @@ void compactIcebergTable(
         persistent_table_components.metadata_compression_method);
     if (plan.need_optimize)
     {
+        /// The rewrite applies only position deletes and replays, in array order, only the history of the current snapshot under `main`.
+        if (plan.has_equality_deletes)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Compaction of Iceberg tables with equality deletes is not supported. The table is left unchanged.");
+        if (const auto refs = plan.initial_metadata_object->getObject(Iceberg::f_refs))
+            for (const auto & ref_name : refs->getNames())
+                if (ref_name != Iceberg::f_main)
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Compaction of Iceberg tables with snapshot references other than `main` is not supported, found `{}`. "
+                        "The table is left unchanged.",
+                        ref_name);
+        for (size_t i = 0; i < plan.history.size(); ++i)
+        {
+            const auto & history_record = plan.history[i];
+            if (!history_record.is_current_ancestor)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Compaction of Iceberg tables with snapshots outside the history of the current snapshot is not supported, "
+                    "found snapshot {}. The table is left unchanged.",
+                    history_record.snapshot_id);
+            if (i > 0 && history_record.parent_id != plan.history[i - 1].snapshot_id)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Compaction of Iceberg tables whose snapshots are not listed in commit order is not supported, "
+                    "found snapshot {} after snapshot {}. The table is left unchanged.",
+                    history_record.snapshot_id,
+                    plan.history[i - 1].snapshot_id);
+        }
+
+        /// Compaction rewrites files through the same positional mapping as the sink/UPDATE while
+        /// the file is shaped by the possibly-stale `sample_block_`; guard against schema drift.
+        auto current_schema_id = plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
+        Poco::JSON::Object::Ptr current_schema;
+        auto schemas = plan.initial_metadata_object->getArray(Iceberg::f_schemas);
+        for (size_t i = 0; i < schemas->size(); ++i)
+        {
+            if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+            {
+                current_schema = schemas->getObject(static_cast<UInt32>(i));
+                break;
+            }
+        }
+        /// The helper rejects a null current_schema, so no explicit check is needed here.
+        validateInputSchemaMatchesCurrentIcebergSchema(
+            persistent_table_components.schema_processor,
+            current_schema,
+            static_cast<Int32>(current_schema_id),
+            sample_block_->getNamesAndTypesList(),
+            /*allow_missing_fields=*/false);
+
         /// Every data file is rewritten under the default partition spec, so its partition tuple must have that spec's arity.
         const auto default_spec_id = plan.initial_metadata_object->getValue<Int32>(Iceberg::f_default_spec_id);
         Poco::JSON::Array::Ptr default_spec_fields;
@@ -1712,6 +1830,43 @@ void compactIcebergTable(
                     default_spec_id,
                     tuple_size,
                     default_spec_fields->size());
+        }
+
+        /// writeMetadataFiles re-tags every rewritten file with the current schema and default spec, so reject
+        /// files written under others. Check before writeDataFiles, which leaves no cleanup behind.
+        PartitionSpecification default_partition_spec;
+        for (UInt32 i = 0; i < default_spec_fields->size(); ++i)
+        {
+            auto field = default_spec_fields->getObject(i);
+            default_partition_spec.emplace_back(
+                field->getValue<Int32>(f_source_id),
+                field->getValue<String>(f_partition_transform),
+                field->getValue<String>(f_partition_name));
+        }
+
+        for (const auto & info : plan.data_file_validation_infos)
+        {
+            if (info.read_schema_id != static_cast<Int32>(current_schema_id))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot compact Iceberg table: data file '{}' was written under schema-id {} but the current "
+                    "schema-id is {}. Compaction rewrites files under the current schema without applying per-file "
+                    "schema evolution, so this would commit the file's values under the wrong field ids. Rewrite or "
+                    "re-insert the affected data before compacting across a schema evolution.",
+                    info.path,
+                    info.read_schema_id,
+                    current_schema_id);
+
+            if (info.partition_spec && !partitionSpecsEqual(*info.partition_spec, default_partition_spec))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot compact Iceberg table: data file '{}' was written under a partition spec that differs "
+                    "from the current default-spec-id {}. Compaction re-serializes every rewritten file under the "
+                    "current default partition spec only, so the file's partition values would be reinterpreted "
+                    "under the wrong partition columns/transforms. Rewrite or re-insert the affected data before "
+                    "compacting across a partition-spec evolution.",
+                    info.path,
+                    default_spec_id);
         }
 
         std::optional<IcebergColumnSketches> column_sketches;
