@@ -1641,10 +1641,11 @@ void Planner::buildPlanForQueryNode()
                 "Project names",
                 useful_sets);
         }
-
-        // For additional_result_filter setting
-        addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context, useful_sets);
     }
+
+    /// Also when the storage has processed the whole query: its header already has the projection names.
+    if (query_processing_info.isFinalizingStage())
+        addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context, useful_sets);
 
     /// A header carrying nothing but row-count-only columns cannot express "N rows" across a
     /// mergeable-stage boundary, and both sides must derive the same header.

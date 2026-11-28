@@ -90,6 +90,8 @@
 
 #include <Common/Exception.h>
 #include <Common/FieldVisitors.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
@@ -166,7 +168,7 @@ namespace
   * 4. Extract filters from ReadFromDummy query plan steps from query plan leaf nodes.
   */
 
-FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const TableExpressionNodes & table_nodes, const ContextPtr & query_context, const ActionsDAG * post_filter)
+FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const TableExpressionNodes & table_nodes, const ContextPtr & query_context, const ActionsDAG * post_filter, size_t subquery_depth)
 {
     bool collect_filters = false;
 
@@ -271,7 +273,8 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         dummy_storage_to_table.emplace(dummy_storage, from_table_expression);
     }
 
-    SelectQueryOptions select_query_options;
+    /// At the caller's depth, so the analysis of a subquery does not apply `additional_result_filter` either.
+    SelectQueryOptions select_query_options(QueryProcessingStage::Complete, subquery_depth);
     Planner planner(updated_query_tree, select_query_options);
     planner.buildQueryPlanIfNeeded();
 
@@ -706,7 +709,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     auto table_expressions_nodes
         = extractTableExpressions(static_pointer_cast<ITableExpressionNode>(query_tree_node), false /* add_array_join */, true /* recursive */);
 
-    return collectFiltersForAnalysis(query_tree_node, table_expressions_nodes, context, post_filter);
+    return collectFiltersForAnalysis(query_tree_node, table_expressions_nodes, context, post_filter, select_query_options.subquery_depth);
 }
 
 void addExpressionStep(
@@ -2065,7 +2068,10 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     UsefulSets & useful_sets
 )
 {
-    if (select_query_options.subquery_depth != 0)
+    /// A plan united into a parent plan (a local shard, a `Merge` or `Buffer` child) leaves the filter to the parent,
+    /// and a header-only plan (`only_analyze`) has no rows to filter.
+    if (select_query_options.subquery_depth != 0 || select_query_options.is_local_plan_for_distributed_query
+        || select_query_options.only_analyze)
         return;
 
     const auto & query_context = planner_context->getQueryContext();
@@ -2077,8 +2083,17 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
 
     ColumnsDescription fake_column_descriptions;
     NameSet fake_name_set;
-    for (const auto & column : query_node.getProjectionColumns())
+    const auto & projection_nodes = query_node.getProjection().getNodes();
+    const auto & projection_columns = query_node.getProjectionColumns();
+    UnorderedMapWithMemoryTracking<std::string_view, size_t> first_position_of_name;
+    for (size_t i = 0; i < projection_columns.size(); ++i)
     {
+        const auto & column = projection_columns[i];
+        /// A repeated column (`SELECT x, x`) is one input of the filter; a name shared by different expressions stays ambiguous.
+        auto [it, inserted] = first_position_of_name.emplace(column.name, i);
+        if (!inserted && projection_nodes[it->second]->isEqual(*projection_nodes[i]))
+            continue;
+
         fake_column_descriptions.add(ColumnDescription(column.name, column.type));
         fake_name_set.emplace(column.name);
     }
@@ -2114,6 +2129,28 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     auto filter_info = buildFilterInfo(additional_result_filter_ast, fake_table_expression, planner_context, std::move(fake_name_set));
     if (!query_plan.isInitialized())
         return;
+
+    /// List every result column in its place: `FilterStep` would put the columns the filter reads first.
+    auto & filter_dag = filter_info.actions;
+    UnorderedMapWithMemoryTracking<std::string_view, ListWithMemoryTracking<const ActionsDAG::Node *>> unbound_inputs;
+    for (const auto * input : filter_dag.getInputs())
+        unbound_inputs[input->result_name].push_back(input);
+
+    ActionsDAG::NodeRawConstPtrs outputs{filter_dag.getOutputs().front()};
+    for (const auto & column : *query_plan.getCurrentHeader())
+    {
+        auto & inputs = unbound_inputs[column.name];
+        if (inputs.empty())
+        {
+            outputs.push_back(&filter_dag.addInput(column));
+        }
+        else
+        {
+            outputs.push_back(inputs.front());
+            inputs.pop_front();
+        }
+    }
+    filter_dag.getOutputs() = std::move(outputs);
 
     auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentHeader(),
         std::move(filter_info.actions),

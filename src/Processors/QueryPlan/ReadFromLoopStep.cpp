@@ -27,6 +27,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsString additional_result_filter;
 }
 
 namespace ErrorCodes
@@ -69,9 +70,15 @@ namespace
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false);
 
+        /// The caller's result filter applies to the result of the outer query, not to each pass over the table.
+        auto inner_context = Context::createCopy(context);
+        Settings inner_settings = inner_context->getSettingsCopy();
+        inner_settings[Setting::additional_result_filter] = "";
+        inner_context->setSettings(inner_settings);
+
         /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
         InterpreterSelectQueryAnalyzer interpreter(
-            select_ast, context, options, context->isViewInnerQuery() ? nullptr : context->getViewSource(), column_names);
+            select_ast, inner_context, options, context->isViewInnerQuery() ? nullptr : context->getViewSource(), column_names);
         if (query_info.storage_limits)
             interpreter.addStorageLimits(*query_info.storage_limits);
         plan = std::move(interpreter).extractQueryPlan();
