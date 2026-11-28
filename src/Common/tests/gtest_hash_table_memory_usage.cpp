@@ -46,11 +46,13 @@ TYPED_TEST(HashTableMemoryUsage, MoveTransfersBuffer)
 
     TypeParam destination(std::move(source));
     EXPECT_EQ(destination.getBufferSizeInBytes(), bytes);
+    // NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved,clang-analyzer-cplusplus.Move)
     EXPECT_EQ(source.getBufferSizeInBytes(), 0);
 
     TypeParam assigned;
     assigned = std::move(destination);
     EXPECT_EQ(assigned.getBufferSizeInBytes(), bytes);
+    // NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved,clang-analyzer-cplusplus.Move)
     EXPECT_EQ(destination.getBufferSizeInBytes(), 0);
 }
 
