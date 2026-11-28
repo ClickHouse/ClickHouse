@@ -1,5 +1,5 @@
--- A normal projection rejected after the table read was narrowed to the parts the projection does not cover
--- must leave the table read with all its parts.
+-- A normal projection present in only some parts: the projection read and the table read narrowed to the parts the
+-- projection does not cover must return every row together.
 
 DROP TABLE IF EXISTS t_commit_order;
 CREATE TABLE t_commit_order
