@@ -1,0 +1,37 @@
+Wide parts, lightweight delete, then a lightweight update
+8910	13362030	0	0	0	0	0	1	7	1	1
+7
+8910
+0
+e_f	Sparse
+e_i	Sparse
+e_n	Sparse
+e_p	Sparse
+e_s	Sparse
+e_u	Sparse
+e_x	Sparse
+k	Default
+v	Default
+Compact parts with duplicate keys merged into a Wide part
+Compact	3
+Wide	1
+2000	749000	4500	0	0	0
+A text index on one of two columns that hold only defaults
+6000	8997000	0	0
+0
+6000
+Parent part offsets in a projection of one-row parts
+10	0
+20	1
+10	0
+20	1
+Block offsets of attached parts
+1	0
+2	0
+3	0
+1	0
+1	0
+2	1
+2	1
+3	2
+3	2

@@ -527,6 +527,9 @@ private:
 
         [[nodiscard]] VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
 
+        /// The column, if every source part has only defaults in it: it is then written without reading or gathering.
+        [[nodiscard]] std::optional<NameAndTypePair> tryGetColumnOfDefaultsInAllParts(const String & column_name) const;
+
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
     };

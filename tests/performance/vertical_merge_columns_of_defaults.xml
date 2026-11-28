@@ -1,0 +1,85 @@
+<test iceberg="0">
+    <!-- Not on Iceberg tables: it times a MergeTree vertical merge. -->
+    <!--
+        Times a vertical merge of ten parts with interleaving keys and 40 columns that are never inserted,
+        so every source part has only defaults in them. The fixture is re-attached for every run, and
+        `max_bytes_to_merge_at_*_space_in_pool = 1` keeps background merges away from it.
+    -->
+    <create_query>
+        CREATE TABLE vmcd_src
+        (
+            k UInt64,
+            v1 UInt64,
+            v2 UInt64,
+            v3 UInt64,
+            v4 UInt64,
+            s1 String,
+            e_u64_1 UInt64,
+            e_u64_2 UInt64,
+            e_u64_3 UInt64,
+            e_u64_4 UInt64,
+            e_u64_5 UInt64,
+            e_u64_6 UInt64,
+            e_u64_7 UInt64,
+            e_u64_8 UInt64,
+            e_u64_9 UInt64,
+            e_u64_10 UInt64,
+            e_u64_11 UInt64,
+            e_u64_12 UInt64,
+            e_u32_1 UInt32,
+            e_u32_2 UInt32,
+            e_u32_3 UInt32,
+            e_u32_4 UInt32,
+            e_u32_5 UInt32,
+            e_u32_6 UInt32,
+            e_u32_7 UInt32,
+            e_u32_8 UInt32,
+            e_u32_9 UInt32,
+            e_u32_10 UInt32,
+            e_f64_1 Float64,
+            e_f64_2 Float64,
+            e_f64_3 Float64,
+            e_f64_4 Float64,
+            e_f64_5 Float64,
+            e_f64_6 Float64,
+            e_f64_7 Float64,
+            e_f64_8 Float64,
+            e_f64_9 Float64,
+            e_f64_10 Float64,
+            e_s_1 String,
+            e_s_2 String,
+            e_s_3 String,
+            e_s_4 String,
+            e_s_5 String,
+            e_s_6 String,
+            e_s_7 String,
+            e_s_8 String
+        )
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1
+    </create_query>
+    <create_query>
+        CREATE TABLE vmcd AS vmcd_src
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1,
+            vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1
+    </create_query>
+
+    <fill_query>
+        INSERT INTO vmcd_src (k, v1, v2, v3, v4, s1)
+        SELECT cityHash64(number), number, number * 3, cityHash64(number, 1), cityHash64(number, 2), toString(number % 1000)
+        FROM numbers(1000000)
+        SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CLIENT} --query "
+            TRUNCATE TABLE vmcd;
+            ALTER TABLE vmcd ATTACH PARTITION tuple() FROM vmcd_src;
+            OPTIMIZE TABLE vmcd FINAL;
+        "
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS vmcd</drop_query>
+    <drop_query>DROP TABLE IF EXISTS vmcd_src</drop_query>
+</test>
