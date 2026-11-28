@@ -183,6 +183,7 @@ public:
     virtual std::shared_ptr<IDataLakeMetadata> getExternalMetadata() { return {}; }
 
     virtual void setExplicitMetadataFilePath(const String & /*path*/) {}
+    virtual bool isMetadataFileOfThisTable(const String & /*path*/, ContextPtr) const { return false; }
 
     [[nodiscard]] virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
 
