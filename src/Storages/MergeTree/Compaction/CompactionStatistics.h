@@ -41,6 +41,11 @@ UInt64 getMaxSourcePartsBytesForMerge(
     size_t size_limit_at_min_pool_space,
     size_t size_limit_at_max_pool_space);
 
+/** Estimate approximate amount of disk space needed to mutate a part. With a surplus.
+  * A mutation may write back the rows of a part whose TTL has expired, so such a part counts like any other.
+  */
+UInt64 estimateNeededDiskSpaceForMutation(const MergeTreeDataPartPtr & source_part);
+
 /** Get maximum total size of parts to do mutation, at current moment of time.
   * It depends only on amount of free space in disk.
   */
