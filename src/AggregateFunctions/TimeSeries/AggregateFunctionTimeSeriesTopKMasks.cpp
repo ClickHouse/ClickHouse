@@ -54,9 +54,12 @@ namespace
                             "expected an unsigned integer or an array of unsigned integers",
                             argument_types[0]->getName(), name);
 
-        if (!isUInt64(argument_types[1]))
+        /// UInt64 keys (the group numbers of PromQL queries) are handled by a fast path, keys of any other comparable type (e.g. an array of tags) are stored serialized.
+        /// The other integer types are still rejected as before: they are not what a series key is expected to be.
+        const bool generic_key = !isUInt64(argument_types[1]);
+        if (generic_key && (isInteger(argument_types[1]) || !argument_types[1]->isComparable()))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Illegal type {} of 2nd argument (key) for aggregate function {}, expected UInt64",
+                            "Illegal type {} of 2nd argument (key) for aggregate function {}, expected UInt64 or a comparable type other than an integer",
                             argument_types[1]->getName(), name);
 
         if constexpr (kind == TimeSeriesTopKMasksKind::LimitK)
@@ -77,18 +80,24 @@ namespace
                             argument_types[values_argument_index]->getName(),
                             (kind == TimeSeriesTopKMasksKind::LimitK) ? "4th" : "3rd", name);
 
-        if (value_type->getTypeId() == TypeIndex::Float64)
-            return std::make_shared<AggregateFunctionTimeSeriesTopKMasks<kind, Float64>>(argument_types);
-        else
-            return std::make_shared<AggregateFunctionTimeSeriesTopKMasks<kind, Float32>>(argument_types);
+        const bool is_float64 = value_type->getTypeId() == TypeIndex::Float64;
+        if (generic_key)
+        {
+            if (is_float64)
+                return std::make_shared<AggregateFunctionTimeSeriesTopKMasks<kind, Float64, true>>(argument_types);
+            return std::make_shared<AggregateFunctionTimeSeriesTopKMasks<kind, Float32, true>>(argument_types);
+        }
+        if (is_float64)
+            return std::make_shared<AggregateFunctionTimeSeriesTopKMasks<kind, Float64, false>>(argument_types);
+        return std::make_shared<AggregateFunctionTimeSeriesTopKMasks<kind, Float32, false>>(argument_types);
     }
 
     FunctionDocumentation::ReturnedValue getReturnedValueDocumentation()
     {
         return {"Returns the selected series in the order of ascending `key`, each together with its per-step mask: "
                 "`steps_mask[t] = 1` if the series is selected at time step `t`. "
-                "Series which are selected at no time step are not returned.",
-                {"Array(Tuple(key UInt64, steps_mask Array(UInt8)))"}};
+                "Series which are selected at no time step are not returned. `T` is the type of the `key` argument.",
+                {"Array(Tuple(key T, steps_mask Array(UInt8)))"}};
     }
 }
 
@@ -101,7 +110,7 @@ Selects the time series with the k greatest values at each time step of a time g
 Each input row is one time series: `key` identifies the series and `values` contains its values aligned to a common
 time grid, so the `values` arrays of all rows must have the same size. At each time step, the series with the k greatest
 non-NULL values at that step are selected (NaN is considered smaller than any other value). Value ties are broken by
-preferring the series with the smaller `key`.
+preferring the series with the smaller `key` (for keys other than UInt64, the one with the smaller serialized representation).
 
 This function implements the `topk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
@@ -115,7 +124,7 @@ timeSeriesTopKMasks(k, key, values)
     )";
     FunctionDocumentation::Arguments arguments_topk = {
         {"k", "How many series to select at each time step, either one value for all time steps or an array with one value per time step. Must be the same for all rows.", {"UInt*", "Array(UInt*)"}},
-        {"key", "Identifier of the time series.", {"UInt64"}},
+        {"key", "Identifier of the time series: a UInt64 or a value of any other comparable type, e.g. an array of tags. Keys of other types are compared by their serialized representation.", {"UInt64", "Any"}},
         {"values", "Values of the time series aligned to the time grid, one element per time step.", {"Array(Nullable(Float32))", "Array(Nullable(Float64))", "Array(Float32)", "Array(Float64)"}},
     };
     FunctionDocumentation::Parameters parameters = {};
@@ -147,7 +156,7 @@ Selects the time series with the k smallest values at each time step of a time g
 Each input row is one time series: `key` identifies the series and `values` contains its values aligned to a common
 time grid, so the `values` arrays of all rows must have the same size. At each time step, the series with the k smallest
 non-NULL values at that step are selected (NaN is considered greater than any other value). Value ties are broken by
-preferring the series with the smaller `key`.
+preferring the series with the smaller `key` (for keys other than UInt64, the one with the smaller serialized representation).
 
 This function implements the `bottomk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
@@ -184,7 +193,7 @@ Selects up to k time series at each time step of a time grid, in a deterministic
 Each input row is one time series: `key` identifies the series, `sampling_key` is a per-series hash used as the
 selection order, and `values` contains the values of the series aligned to a common time grid (so the `values` arrays
 of all rows must have the same size). At each time step, the series with the k smallest sampling keys among the series
-with non-NULL values at that step are selected. Sampling key ties are broken by preferring the series with the smaller `key`.
+with non-NULL values at that step are selected. Sampling key ties are broken by preferring the series with the smaller `key` (for keys other than UInt64, the one with the smaller serialized representation).
 
 This function implements the `limitk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
@@ -198,7 +207,7 @@ timeSeriesLimitKMasks(k, key, sampling_key, values)
     )";
     FunctionDocumentation::Arguments arguments_limitk = {
         {"k", "How many series to select at each time step, either one value for all time steps or an array with one value per time step. Must be the same for all rows.", {"UInt*", "Array(UInt*)"}},
-        {"key", "Identifier of the time series.", {"UInt64"}},
+        {"key", "Identifier of the time series: a UInt64 or a value of any other comparable type, e.g. an array of tags. Keys of other types are compared by their serialized representation.", {"UInt64", "Any"}},
         {"sampling_key", "A per-series hash defining the selection order, e.g. `timeSeriesGroupToSamplingKey(key)`.", {"UInt64"}},
         {"values", "Values of the time series aligned to the time grid, one element per time step.", {"Array(Nullable(Float32))", "Array(Nullable(Float64))", "Array(Float32)", "Array(Float64)"}},
     };
