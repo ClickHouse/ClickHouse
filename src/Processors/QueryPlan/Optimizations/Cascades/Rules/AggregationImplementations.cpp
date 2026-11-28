@@ -133,10 +133,13 @@ static bool isGroupCountUnknown(const Names & keys, const Group & input_group)
     for (const auto & key : keys)
     {
         auto key_statistics = column_statistics.find(key);
-        if (key_statistics == column_statistics.end() || key_statistics->second.num_distinct_values == 0)
+        /// A count estimated from metadata is not the number of groups, see `ColumnStats::numberOfValues`.
+        const auto number_of_values
+            = key_statistics == column_statistics.end() ? std::nullopt : key_statistics->second.numberOfValues();
+        if (!number_of_values)
             has_key_without_distinct_count = true;
         else
-            largest_distinct_count = std::max(largest_distinct_count, key_statistics->second.num_distinct_values);
+            largest_distinct_count = std::max(largest_distinct_count, *number_of_values);
     }
     /// There are at least as many groups as values of one key. The count is compared with the largest
     /// possible number of input rows, because the estimate of the rows after a filter or a join can be

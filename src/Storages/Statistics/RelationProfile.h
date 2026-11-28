@@ -42,6 +42,12 @@ struct ColumnStats
 
     /// `num_distinct_values` if it gives `guarantee`.
     [[nodiscard]] std::optional<UInt64> distinctCount(DistinctCountGuarantee guarantee) const;
+    /// `num_distinct_values` as an estimate of how many different values the column has: of the number of groups of
+    /// a `GROUP BY` or `DISTINCT` on it, or of the keys of a set built from it. It gives no guarantee, unlike
+    /// `distinctCount`. Unset when the count is unknown (0) or is an effective one, for the selectivity of an
+    /// equality only, which can be far below the number of values (`ColumnStatsOrigin::EstimatedFromMetadata`).
+    /// Every consumer other than the estimate of an equality reads the count through it.
+    [[nodiscard]] std::optional<UInt64> numberOfValues() const;
     /// The value range and NULL fraction if they give `guarantee`.
     [[nodiscard]] std::optional<ColumnValueRange> valueRange(ValueRangeGuarantee guarantee) const;
 };

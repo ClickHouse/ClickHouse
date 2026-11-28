@@ -25,6 +25,13 @@ std::optional<UInt64> ColumnStats::distinctCount(DistinctCountGuarantee guarante
     return num_distinct_values;
 }
 
+std::optional<UInt64> ColumnStats::numberOfValues() const
+{
+    if (num_distinct_values == 0 || ndv_provenance.origin == ColumnStatsOrigin::EstimatedFromMetadata)
+        return {};
+    return num_distinct_values;
+}
+
 std::optional<ColumnValueRange> ColumnStats::valueRange(ValueRangeGuarantee guarantee) const
 {
     if (!min_value || !max_value || range_provenance.origin != ColumnStatsOrigin::MeasuredStatistics)

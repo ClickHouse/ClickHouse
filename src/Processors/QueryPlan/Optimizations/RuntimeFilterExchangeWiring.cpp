@@ -246,8 +246,11 @@ bool siteAdmitsRuntimeFilterTransport(
             *site_stats.estimated_rows);
         return false;
     }
-    if (auto it = site_stats.column_stats.find(site.key_column); !site.key_column.empty() && it != site_stats.column_stats.end()
-        && it->second.num_distinct_values > 0 && estimated_keys >= it->second.num_distinct_values)
+    /// Not a number of distinct values estimated from metadata: it is an effective one, about 1 for a column with one
+    /// frequent value and many rare ones, which every filter would be refused by, see `ColumnStats::numberOfValues`.
+    const auto site_key_stats = site.key_column.empty() ? site_stats.column_stats.end() : site_stats.column_stats.find(site.key_column);
+    const auto site_key_values = site_key_stats == site_stats.column_stats.end() ? std::nullopt : site_key_stats->second.numberOfValues();
+    if (site_key_values && estimated_keys >= *site_key_values)
     {
         LOG_TRACE(
             getLogger("joinRuntimeFilter"),
@@ -255,7 +258,7 @@ bool siteAdmitsRuntimeFilterTransport(
             producer.getFilterName(),
             site.node->step->getName(),
             estimated_keys,
-            it->second.num_distinct_values,
+            *site_key_values,
             site.key_column);
         return false;
     }

@@ -507,13 +507,14 @@ GroupExpressionPtr registerPushdownAlternative(
 /// a reasonable guess for pricing the ORIGINAL aggregation, but the pushdown widens the key set
 /// to `(G ∩ S) ∪ J_S`, and the fallback would then price the widened set the same as `G` alone,
 /// hiding the extra aggregation stage as if it cost nothing. Require a real NDV for every pushed
-/// key instead.
+/// key instead: not one estimated from metadata either, which is not the number of groups, see
+/// `ColumnStats::numberOfValues`.
 bool pushedKeysHaveReliableCardinality(const ExpressionStatistics & input_statistics, const Names & pushed_keys)
 {
     for (const auto & key : pushed_keys)
     {
         auto it = input_statistics.column_statistics.find(key);
-        if (it == input_statistics.column_statistics.end() || it->second.num_distinct_values == 0)
+        if (it == input_statistics.column_statistics.end() || !it->second.numberOfValues())
             return false;
     }
     return true;
