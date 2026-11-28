@@ -1,0 +1,10 @@
+NOT (t.x > 0.5)	0	1
+NOT (t.x > 0.5)	1	1
+NOT (t.x IN (1, 2))	0	1
+NOT (t.x IN (1, 2))	1	1
+t.x NOT IN (1, 2)	0	1
+t.x NOT IN (1, 2)	1	1
+NOT (t.x NOT IN (1, 2))	0	3
+NOT (t.x NOT IN (1, 2))	1	3
+t.x IN (1, 2)	0	3
+t.x IN (1, 2)	1	3
