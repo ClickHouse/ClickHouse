@@ -392,11 +392,11 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
 
 /// The column `name`, or the Nested group `name`: the first run of `name.*` columns and the arrays `name.*` declared
 /// after it, which share the group's offsets wherever they are (a non-array column outside the run is not a member).
-static std::vector<ColumnsDescription::ColumnsContainer::const_iterator> getColumnOrNestedGroup(
+static VectorWithMemoryTracking<ColumnsDescription::ColumnsContainer::const_iterator> getColumnOrNestedGroup(
     const ColumnsDescription::ColumnsContainer & columns, const String & name)
 {
     auto [begin, end] = getNameRange(columns, name);
-    std::vector<ColumnsDescription::ColumnsContainer::const_iterator> group;
+    VectorWithMemoryTracking<ColumnsDescription::ColumnsContainer::const_iterator> group;
     for (auto it = begin; it != end; ++it)
         group.push_back(it);
 
