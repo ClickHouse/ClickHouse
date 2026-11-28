@@ -188,14 +188,18 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
     return {beg_it, end_it};
 }
 
-PositionDeletesByDataFile groupPositionDeletesByDataFile(const std::vector<ProcessedManifestFileEntryPtr> & position_deletes)
+PositionDeletesByDataFile groupPositionDeletesByDataFile(
+    const std::vector<ProcessedManifestFileEntryPtr> & position_deletes, const IcebergPathResolver & path_resolver)
 {
     PositionDeletesByDataFile result;
     for (const auto & position_delete : position_deletes)
     {
         const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
+        std::optional<String> data_file_identity;
         if (lower.has_value() && lower == position_delete->parsed_entry->upper_reference_data_file_path)
-            result.single_data_file[*lower].push_back(position_delete);
+            data_file_identity = path_resolver.tryStorageIdentity(*lower);
+        if (data_file_identity)
+            result.single_data_file[*data_file_identity].push_back(position_delete);
         else
             result.other.push_back(position_delete);
     }

@@ -7,10 +7,6 @@ keywords: ['managed postgres', 'go', 'golang', 'pgx', 'pgxpool', 'golang-migrate
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-go-beta" />
-
 [pgx](https://github.com/jackc/pgx) 是 Go 生态中使用最广泛的 PostgreSQL 驱动程序，`pgxpool` 则是它提供的连接池。在本指南中，您将通过经过证书验证的 TLS 连接，将 Go 服务接入 ClickHouse Managed Postgres，借助 [golang-migrate](https://github.com/golang-migrate/migrate) 迁移创建 `todos` 表，并由 `net/http` 服务器处理增删改查 (创建、读取、更新和删除) 请求。
 
 ## 前置条件 {#prerequisites}

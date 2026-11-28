@@ -831,9 +831,9 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 도입 버전: v21.2.0
 
 주어진 맵의 키를 반환합니다.
-이 함수는 설정 [`optimize_functions_to_subcolumns`](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns)을 활성화하면 최적화됩니다.
-이 설정이 활성화되면 전체 맵 대신 `keys` 서브컬럼만 읽습니다.
+쿼리의 다른 부분에서 맵을 사용하지 않으면, 이 함수는 전체 맵 대신 `keys` 서브컬럼만 읽을 수 있습니다.
 쿼리 `SELECT mapKeys(m) FROM table`는 `SELECT m.keys FROM table`로 변환됩니다.
+이 최적화는 [`optimize_functions_to_subcolumns`](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 설정으로 제어하며, 이 설정은 기본적으로 활성화되어 있습니다.
 
 **구문**
 
@@ -1165,9 +1165,9 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 도입 버전: v21.2.0
 
 주어진 맵의 값을 반환합니다.
-이 함수는 [`optimize_functions_to_subcolumns`](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 설정을 활성화하면 최적화할 수 있습니다.
-이 설정을 활성화하면 함수는 전체 맵 대신 `values` 서브컬럼만 읽습니다.
+쿼리의 다른 곳에서 해당 맵을 사용하지 않으면, 함수는 전체 맵 대신 `values` 서브컬럼만 읽을 수 있습니다.
 쿼리 `SELECT mapValues(m) FROM table`는 `SELECT m.values FROM table`로 변환됩니다.
+이 최적화는 [`optimize_functions_to_subcolumns`](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 설정으로 제어되며, 이 설정은 기본적으로 활성화되어 있습니다.
 
 **구문**
 

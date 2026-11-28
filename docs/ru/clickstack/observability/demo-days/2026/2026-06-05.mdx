@@ -1,0 +1,124 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-06-05
+title: 'Демо-дни — 2026-06-05'
+sidebarTitle: '2026-06-05'
+description: 'Дни демонстраций ClickStack от 2026-06-05'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Разделённый и расширенный режимы просмотра трассы {#split-trace-view-and-extended-trace-view}
+
+*Демо от [@karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/L4sduqf3CR8" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+В панели трассы появился разделённый режим просмотра: при переходе между спанами на временной шкале панель подробной информации обновляется справа, а не открывается под выбранным спаном, как раньше. Благодаря этому вся временная шкала остаётся на виду, пока вы изучаете отдельные спаны.
+
+Кроме того, можно перейти в расширенный режим просмотра трассы с временной шкалой на всю ширину экрана и поддержкой прокрутки и масштабирования. Обе панели открываются и закрываются независимо друг от друга, поэтому переключаться между общим обзором и детальной инспекцией спанов можно, не теряя текущую позицию.
+
+**Связанные запросы на слияние:** [#2402](https://github.com/hyperdxio/hyperdx/pull/2402) feat: trace panel inline split detail
+
+## Обязательные фильтры на уровне источника {#source-level-required-filters}
+
+*Демо от [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/RcAl8Sl5GFM" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Теперь в источниках можно объявлять обязательные фильтры, которые автоматически появляются на любой панели мониторинга, использующей эти источники. Больше не нужно вручную добавлять один и тот же фильтр на каждую панель мониторинга, которая ссылается на источник: ClickStack сам обнаруживает это требование и выносит фильтр на уровень панели мониторинга, причём он применяется только к тем плиткам, которые действительно используют этот источник.
+
+Отдельные плитки могут переопределять значение, заданное на уровне панели мониторинга, если им нужны другие значения фильтра. Обязательные фильтры также передаются в предварительный просмотр редактора чартов, поэтому вы можете проверять корректность запросов, не удаляя эти фильтры. Кроме того, обязательные фильтры на уровне источника интегрируются с макросом SQL-фильтров для чартов на основе SQL, а при настройке связей между панелями мониторинга ClickStack автоматически включает их в число кандидатов для параметров связи.
+
+## Подгонка оси Y под данные {#fit-y-axis-to-data}
+
+*Демо от [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/cNiGHy1OqhU" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+У линейных графиков появилась новая настройка отображения «Подгонка оси Y под данные». По умолчанию ось Y начинается с нуля, поэтому при больших, но слабо меняющихся значениях видимый диапазон сжимается и тренды с первого взгляда не заметны.
+
+Если включить этот параметр, диапазон оси Y будет динамически вычисляться по фактическому диапазону данных. Благодаря этому колебания в сериях с большими значениями становятся видны без ручной настройки границ оси.
+
+**Связанные запросы на слияние:** [#2417](https://github.com/hyperdxio/hyperdx/pull/2417) feat(charts): add &#39;Подгонка оси Y под данные&#39; display setting for line charts
+
+## Оповещения об аномалиях {#anomaly-alerts}
+
+*Демо от [@fleon](https://github.com/fleon)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aAgN3ZlQz8M" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Himanshu рассказал о том, как мы работаем над оповещениями об аномалиях на основе z-score. Вместо фиксированного порога вы задаёте, на сколько стандартных отклонений значение должно отклониться от ожидаемого среднего, чтобы сработало оповещение. Окно сезонности (почасовое или суточное) определяет, как вычисляется базовое значение, а редактор оповещений подсвечивает окна, в которых оповещение сработало бы, — это позволяет настроить чувствительность ещё до сохранения.
+
+Так решается распространённая проблема пороговых оповещений: пользователи часто не знают, какое числовое значение задать. Поскольку потенциальные окна срабатывания обновляются в реальном времени по мере изменения z-score, на практике несложно подобрать порог, который улавливает настоящие всплески и не создаёт лишнего шума. Оповещения можно настроить так, чтобы они срабатывали только при выходе значений за верхнюю границу ожидаемого диапазона (но не при падении ниже него), а настройка числа вхождений позволяет требовать, чтобы условие выполнялось для нескольких последовательных точек данных подряд, прежде чем оповещение сработает. Функция пока в разработке: сейчас базовое значение вычисляется как скользящее среднее, а в планах — поддержка экспоненциального скользящего среднего.
+
+## Более понятная настройка API и ИИ-агентов {#clearer-configuration-for-api-and-ai-agents}
+
+*Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/gpQA-Vso1XI" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+В настройках ClickStack появилась отдельная вкладка API and Agents, где собраны ключи API и настройка MCP-соединения. Кнопки быстрого подключения для Claude, Cursor и OpenCode избавляют от необходимости вручную составлять команды подключения: например, кнопка Cursor открывает терминал с уже подставленной командой установки. Для OpenCode предусмотрен готовый фрагмент системного промпта, который достаточно скопировать и вставить. Для других MCP-клиентов есть универсальный вариант конфигурации в формате JSON.
+
+**Связанные запросы на слияние:** [#2407](https://github.com/hyperdxio/hyperdx/pull/2407) feat(team-settings): connect your AI assistant
+
+## Выбор цвета для числовых индикаторов {#color-selection-for-number-charts}
+
+*Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qsZ-I6FEsNw" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Для плиток Number теперь доступны как статический выбор цвета, так и условные правила окрашивания. В палитре чартов появились человекочитаемые названия цветов — «blue» и «gray» вместо «color-1» и «color-10», — поэтому теперь гораздо проще понять, что именно вы выбираете.
+
+Условное окрашивание позволяет задать упорядоченные правила с пороговыми значениями: например, зелёный цвет ниже целевого значения, янтарный — в диапазоне предупреждения и красный — выше критического порога. Благодаря этому плитки Number становятся по-настоящему полезными индикаторами состояния на панелях мониторинга, особенно для таких метрик, как частота ошибок или задержка P99, где важно мгновенно оценить ситуацию визуально, не вчитываясь в само число.
+
+**Связанные запросы на слияние:** [#2386](https://github.com/hyperdxio/hyperdx/pull/2386) Условные правила окрашивания числовой плитки (упорядоченные пороговые значения), [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): статический выбор цвета для числовой плитки
+
+## Миграции схемы {#schema-migrations}
+
+*Демо от [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qVV8vQqctfM" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+В настройках ClickStack появилась вкладка Schema Migrations (Enterprise), позволяющая вносить контролируемые версионируемые DDL-изменения в схемы данных. Вы пишете миграцию и присваиваете ей номер версии, после чего фоновая задача подхватывает её и выполняет с повторными попытками и в строгом порядке: если миграция завершилась ошибкой, последующие зависящие от неё миграции не запустятся, пока она не будет исправлена или удалена.
+
+Благодаря версионируемой модели ClickHouse также может передавать управляемые оптимизации схемы командам ClickStack Cloud, избавляя их от необходимости вручную выполнять ALTER TABLE. Команды могут просматривать ожидающие миграции и разблокировать их в удобном для себя темпе. Первый этап охватывает только аддитивные изменения; изменение первичного ключа запланировано на второй этап.
+
+## Готовые панели мониторинга RUM для браузера {#out-of-the-box-browser-rum-dashboards}
+
+*Демо от [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Kmq9qwTnObw" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Теперь ClickStack поставляется с готовой панелью мониторинга Browser RUM, которая охватывает весь набор метрик веб-производительности. Панель включает обзор производительности с числом просмотров страниц и 90-м процентилем (P90) времени загрузки, а также показатели Web Vitals — LCP, INP и CLS — с многоуровневыми пороговыми значениями: по ним сразу видно, в норме ли каждая метрика, требует ли она улучшения или её значение неудовлетворительно.
+
+В дополнительных разделах отображаются динамика просмотров страниц, длительные задачи, разбивка по устройствам, самые медленные страницы, сеансы с наибольшим числом ошибок, частота ошибок JavaScript и сбои API. Пользовательские действия для строк позволяют щёлкнуть по любой строке таблицы и перейти к соответствующему сеансу или данным трассировки. С помощью фильтров в верхней части страницы данные можно срезать по сервису, окружению, версии сервиса и странице. Фильтрация по стране находится в разработке: для неё требуется доработка Браузерного SDK, чтобы он передавал географические данные.
+
+**Связанные запросы на слияние:** [#2413](https://github.com/hyperdxio/hyperdx/pull/2413) feat: add Browser RUM dashboard template
+
+## Зависимые фильтры панели мониторинга {#dependent-dashboard-filters}
+
+*Демо от [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/nTnBmZ-MvFg" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Фильтры панели мониторинга теперь можно сделать зависимыми друг от друга: значение, выбранное в одном фильтре, автоматически ограничивает доступные варианты в последующих. Первой эту возможность получила панель мониторинга Kubernetes: при выборе пода в раскрывающихся списках развертываний и узлов остаются только значения, относящиеся к этому поду, а не все варианты по всему кластеру.
+
+Таким образом, вам больше не будут предлагаться комбинации фильтров, возвращающие пустой результат. Возможность уже доступна в шаблоне дашборда Kubernetes.

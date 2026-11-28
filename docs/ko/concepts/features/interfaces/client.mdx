@@ -1,16 +1,16 @@
 ---
-description: 'ClickHouse command-line client 인터페이스에 대한 문서'
+description: 'ClickHouse command-line Client 인터페이스에 대한 문서'
 sidebarTitle: 'ClickHouse Client'
 slug: /interfaces/client
 title: 'ClickHouse Client'
 doc_type: 'reference'
 ---
 
-ClickHouse는 ClickHouse 서버에 직접 SQL 쿼리를 실행할 수 있는 네이티브 command-line client를 제공합니다.
-이 client는 대화형 모드(interactive mode)와 배치 모드(배치 모드)를 모두 지원하며, 각각 실시간 쿼리 실행과 스크립팅 및 자동화에 사용할 수 있습니다.
+ClickHouse는 ClickHouse 서버에 직접 SQL 쿼리를 실행할 수 있는 네이티브 command-line Client를 제공합니다.
+이 Client는 대화형 모드(interactive mode)와 배치 모드(배치 모드)를 모두 지원하며, 각각 실시간 쿼리 실행과 스크립팅 및 자동화에 사용할 수 있습니다.
 쿼리 결과는 터미널에 표시하거나 파일로 내보낼 수 있으며, Pretty, CSV, JSON 등을 포함한 모든 ClickHouse 출력 [포맷](/ko/reference/formats/index)을 지원합니다.
 
-이 client는 진행률 표시줄과 읽은 행 수, 처리된 바이트 수, 쿼리 실행 시간 등을 통해 쿼리 실행 상태를 실시간으로 보여줍니다.
+이 Client는 진행률 표시줄과 읽은 행 수, 처리된 바이트 수, 쿼리 실행 시간 등을 통해 쿼리 실행 상태를 실시간으로 보여줍니다.
 또한 [명령줄 옵션](#command-line-options)과 [설정 파일](#configuration_files)을 모두 지원합니다.
 
 ## 설치 {#install}
@@ -67,36 +67,28 @@ Connected to ClickHouse server version 24.12.2.
 ClickHouse Cloud 서비스의 연결 정보는 ClickHouse Cloud 콘솔에서 확인할 수 있습니다. 연결할 서비스를 선택한 다음 **Connect**를 클릭하십시오:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ClickHouse Cloud 서비스 연결 버튼](/images/_snippets/cloud-connect-button.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud 서비스 연결 버튼](/images/_snippets/cloud-connect-button.webp)
+  </Frame>
 </div>
 
 <br />
 
 <br />
 
-**Native**를 선택하면 예시 `clickhouse-client` 명령과 함께 연결 세부 정보가 표시됩니다:
+**Native**를 선택하면 예시 `clickhouse-client` 명령과 함께 연결 정보가 표시됩니다:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ClickHouse Cloud 네이티브 TCP 연결 세부 정보](/images/_snippets/connection-details-native.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud 네이티브 TCP 연결 정보](/images/_snippets/connection-details-native.webp)
+  </Frame>
 </div>
 
 ### 설정 파일에 연결 정보 저장하기 {#connection-credentials}
 
 하나 이상의 ClickHouse 서버에 대한 연결 정보를 [설정 파일](#configuration_files)에 저장할 수 있습니다.
 
-형식은 다음과 같습니다:
+포맷은 다음과 같습니다:
 
 ```xml
 <config>
@@ -120,7 +112,7 @@ ClickHouse Cloud 서비스의 연결 정보는 ClickHouse Cloud 콘솔에서 확
 자세한 내용은 [설정 파일 섹션](#configuration_files)을 참조하십시오.
 
 <Note>
-  쿼리 구문에 집중하기 위해 나머지 예시에서는 접속 정보(`--host`, `--port` 등)를 생략합니다. 명령을 사용할 때는 이를 추가하십시오.
+  쿼리 구문(query syntax)에 집중할 수 있도록 이후 예시에서는 연결 정보(`--host`, `--port` 등)를 생략합니다. 실제로 명령어를 실행할 때는 연결 정보를 반드시 추가하십시오.
 </Note>
 
 ## 대화형 모드 {#interactive-mode}
@@ -268,6 +260,14 @@ REPL 내에서 다음 별칭을 사용할 수 있습니다:
 
   iTerm2: Preferences -&gt; Profile -&gt; Keys -&gt; Left Option key로 이동한 다음 Esc+를 클릭하십시오
 </Tip>
+
+### Vim 모드 {#vim-mode}
+
+`--vim` 매개변수를 지정하여 클라이언트를 시작하면 `vim` 방식의 키로 쿼리를 편집할 수 있습니다.
+입력은 삽입 모드에서 시작하며, `Esc`를 누르면 일반 모드로 전환됩니다. 일반 모드에서는 이동 명령(`h`, `j`, `k`, `l`, `w`, `b`, `e`, `0`, `$`, `f`, `t`, `%`, `gg`, `G`, ...), 반복 횟수를 지정할 수 있는 연산자(operators)(`d`, `c`)와 텍스트 객체(`iw`, `aw`, `i(`, `a(`, ...), 그리고 `x`, `r`, `s`, `o`, `A`, `I`, `D`, `C` 등의 명령어를 사용할 수 있습니다.
+vim 모드에서 `Enter`를 누르면 삽입 모드에서는 새 줄이 삽입되고 일반 모드에서는 다음 줄로 이동합니다. 쿼리를 제출하려면 `Ctrl + j`를 누르십시오.
+일반 모드에서 `v`를 누르면 현재 쿼리가 편집기에서 열립니다(내장 클라이언트에서는 사용할 수 없습니다).
+이력 검색 단축키(`Ctrl + r`, `Ctrl + s`, `Ctrl + t`, `Alt + r`)와 `Alt + #`도 일반 모드에서 동일하게 동작합니다.
 
 ## 배치 모드 {#batch-mode}
 
@@ -883,6 +883,7 @@ ClickHouse Client는 다음 경로 중 먼저 존재하는 파일을 사용합�
 | `--history_max_entries`                             | 이력 파일에 저장할 수 있는 최대 항목 수입니다.                                                                 | `1000000` (100만)   |
 | `--prompt <prompt>`                                 | 사용자 지정 프롬프트를 설정합니다.                                                                         | 서버의 `display_name` |
 | `--verbose`                                         | 출력 상세 수준을 높입니다.                                                                             | -                  |
+| `--vim`                                             | interactive mode에서 `vim` 편집 모드를 에뮬레이션합니다. [Vim 모드](#vim-mode)를 참조하십시오.                      | -                  |
 | `-V [ --version ]`                                  | 버전을 출력한 후 종료합니다.                                                                            | -                  |
 
 ### 연결 옵션 {#command-line-options-connection}

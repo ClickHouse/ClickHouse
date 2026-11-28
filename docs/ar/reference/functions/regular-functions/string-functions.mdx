@@ -1094,6 +1094,82 @@ SELECT editDistance('clickhouse', 'mouse')
 └─────────────────────────────────────┘
 ```
 
+## editDistanceRatio {#editDistanceRatio}
+
+أُضيف في: v26.11.0
+
+تحسب درجة التشابه الموحَّدة القائمة على [مسافة التحرير](https://en.wikipedia.org/wiki/Edit_distance) بين سلسلتين من سلاسل البايتات:
+`1 - editDistance(s1, s2) / max(length(s1), length(s2))`.
+تُعيد قيمة بين `0` (عندما تساوي مسافة التحرير طول السلسلة الأطول، كما في `'ab'` و`'ba'`) و`1` (عندما تكون السلسلتان متطابقتين). وتُعدّ السلسلتان الفارغتان متطابقتين.
+
+**الصيغة**
+
+```sql
+editDistanceRatio(s1, s2)
+```
+
+**الأسماء البديلة**: `levenshteinRatio`
+
+**الوسيطات**
+
+* `s1` — سلسلة الإدخال الأولى. [`String`](/ar/reference/data-types/string)
+* `s2` — سلسلة الإدخال الثانية. [`String`](/ar/reference/data-types/string)
+
+**القيمة المُعادة**
+
+تُعيد نسبة التشابه بين السلسلتين النصيتين استنادًا إلى مسافة التحرير الموحَّدة الصيغة. [`Float64`](/ar/reference/data-types/float)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT editDistanceRatio('kitten', 'sitting')
+```
+
+```response title=Response
+┌─editDistanceRatio('kitten', 'sitting')─┐
+│                     0.5714285714285714 │
+└────────────────────────────────────────┘
+```
+
+## editDistanceRatioUTF8 {#editDistanceRatioUTF8}
+
+أُضيف في: v26.11.0
+
+مماثلة للدالة [`editDistanceRatio`](#editDistanceRatio)، لكنها مخصّصة للسلاسل النصية المرمّزة بترميز UTF8، إذ تُحسب مسافة التحرير والأطوال بعدد نقاط الترميز.
+
+**الصيغة**
+
+```sql
+editDistanceRatioUTF8(s1, s2)
+```
+
+**الأسماء البديلة**: `levenshteinRatioUTF8`
+
+**الوسيطات**
+
+* `s1` — السلسلة النصية الأولى المُدخلة بترميز UTF8. [`String`](/ar/reference/data-types/string)
+* `s2` — السلسلة النصية الثانية المُدخلة بترميز UTF8. [`String`](/ar/reference/data-types/string)
+
+**القيمة المُعادة**
+
+تُعيد درجة التشابه بين السلسلتين النصيتين بترميز UTF8 استنادًا إلى مسافة التحرير الموحَّدة الصيغة. [`Float64`](/ar/reference/data-types/float)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT editDistanceRatioUTF8('我是谁', '我是我') AS ratio
+```
+
+```response title=Response
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
+```
+
 ## editDistanceUTF8 {#editDistanceUTF8}
 
 أُضيفت في: v24.6.0
@@ -1315,14 +1391,14 @@ SELECT endsWithUTF8('данных', 'ых');
 
 ## extractTextFromHTML {#extractTextFromHTML}
 
-قُدِّمت في: v21.3.0
+أُضيف في: v21.3.0
 
 تستخرج المحتوى النصي من HTML أو XHTML.
 
 تزيل هذه الدالة وسوم HTML والتعليقات وعناصر script/style، ولا تُبقي إلا المحتوى النصي. وهي تتعامل مع:
 
 * إزالة جميع وسوم HTML/XML
-* إزالة التعليقات (`{/* */}`)
+* إزالة التعليقات (`<!-- -->`)
 * إزالة عناصر script وstyle مع محتواها
 * معالجة مقاطع CDATA (تُنسخ حرفيًا كما هي)
 * التعامل الصحيح مع المسافات البيضاء وتوحيدها
@@ -1335,7 +1411,7 @@ SELECT endsWithUTF8('данных', 'ых');
 extractTextFromHTML(html)
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `html` — `String` يحتوي على محتوى HTML لاستخراج النص منه. [`String`](/ar/reference/data-types/string)
 
@@ -2696,13 +2772,13 @@ SELECT soundex('aksel')
 
 يكرّر مسافة (` `) بعدد المرات المحدد.
 
-**البنية**
+**الصيغة**
 
 ```sql
 space(n)
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `n` — عدد مرات تكرار المسافة. [`(U)Int*`](/ar/reference/data-types/int-uint)
 
@@ -3164,6 +3240,92 @@ SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ┌─jaccard_index─┐
 │          0.75 │
 └───────────────┘
+```
+
+## stringSimilarityRatio {#stringSimilarityRatio}
+
+أُضيف في: v26.11.0
+
+تحسب الدالة نسبة تشابه indel الموحَّد الصيغة بين سلسلتين من سلاسل البايتات، وهي القيمة نفسها التي تُرجعها الدالة `Levenshtein.ratio` في بايثون:
+`2 * LCS / (length(s1) + length(s2))`، حيث `LCS` هو طول [أطول تسلسل فرعي مشترك](https://en.wikipedia.org/wiki/Longest_common_subsequence).
+وبصيغة مكافئة: `1 - (insertions + deletions) / (length(s1) + length(s2))`.
+تُرجع قيمة بين `0` (لا تشابه إطلاقًا) و`1` (سلاسل نصية متطابقة). وتُعَدّ السلسلتان الفارغتان متطابقتين.
+
+**الصيغة**
+
+```sql
+stringSimilarityRatio(s1, s2)
+```
+
+**الوسيطات**
+
+* `s1` — سلسلة الإدخال الأولى. [`String`](/ar/reference/data-types/string)
+* `s2` — سلسلة الإدخال الثانية. [`String`](/ar/reference/data-types/string)
+
+**القيمة المُعادة**
+
+تُعيد قيمة تشابه indel الموحَّد الصيغة بين السلسلتين النصيتين. [`Float64`](/ar/reference/data-types/float)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT stringSimilarityRatio('kitten', 'sitting')
+```
+
+```response title=Response
+┌─stringSimilarityRatio('kitten', 'sitting')─┐
+│                         0.6153846153846154 │
+└────────────────────────────────────────────┘
+```
+
+**المطابقة التقريبية للأسماء**
+
+```sql title=Query
+SELECT name FROM (SELECT arrayJoin(['Equinix', 'Equinix Inc.', 'Digital Realty']) AS name) WHERE stringSimilarityRatio(lower(name), 'equinix inc') > 0.7
+```
+
+```response title=Response
+┌─name─────────┐
+│ Equinix      │
+│ Equinix Inc. │
+└──────────────┘
+```
+
+## stringSimilarityRatioUTF8 {#stringSimilarityRatioUTF8}
+
+أُضيف في: v26.11.0
+
+مثل [`stringSimilarityRatio`](#stringSimilarityRatio)، ولكنها مخصّصة للسلاسل النصية المرمّزة بترميز UTF8، إذ تُحسب الأطوال بعدد نقاط الترميز.
+
+**الصيغة**
+
+```sql
+stringSimilarityRatioUTF8(s1, s2)
+```
+
+**الوسيطات**
+
+* `s1` — أول string مُدخَلة بترميز UTF8. [`String`](/ar/reference/data-types/string)
+* `s2` — ثاني string مُدخَلة بترميز UTF8. [`String`](/ar/reference/data-types/string)
+
+**القيمة المعادة**
+
+تُعيد قيمة تشابه indel الموحَّد الصيغة بين السلسلتين النصيتين بترميز UTF8. [`Float64`](/ar/reference/data-types/float)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT stringSimilarityRatioUTF8('我是谁', '我是我') AS ratio
+```
+
+```response title=Response
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
 ```
 
 ## السلسلة الفرعية {#substring}

@@ -31,16 +31,14 @@ SELECT v, sum(v) OVER () AS s FROM t_window_dist ORDER BY v SETTINGS distributed
 
 DROP TABLE t_window_dist;
 
--- Sanity check that deserializing a WindowStep picks the `window_creator` state variant for
--- CrossTab-family aggregates (cramersV, cramersVBiasCorrected, contingency, theilsU) rather than
--- falling back to the ordinary aggregation state variant. The non-window variant re-scans the whole
--- frame on every row, so it would not finish in reasonable time for this input size. The data comes
--- from a MergeTree table because ReadFromSystemNumbers is not serializable for remote execution.
+-- `theilsU` over a frame that starts at the partition start must stay fast under a distributed plan:
+-- recalculating the whole frame on every row would not finish in reasonable time for this input size.
+-- The data comes from a MergeTree table because ReadFromSystemNumbers is not serializable for remote execution.
 DROP TABLE IF EXISTS t_window_crosstab;
 CREATE TABLE t_window_crosstab (n UInt32) ENGINE = MergeTree ORDER BY n;
 INSERT INTO t_window_crosstab SELECT number FROM numbers(100000);
 
-SELECT '-- theilsU window variant under make_distributed_plan';
+SELECT '-- theilsU window function under make_distributed_plan';
 SELECT n, round(tu, 2)
 FROM
 (

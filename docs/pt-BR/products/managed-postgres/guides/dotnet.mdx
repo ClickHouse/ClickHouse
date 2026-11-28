@@ -2,14 +2,10 @@
 slug: /cloud/managed-postgres/guides/dotnet
 sidebarTitle: '.NET (EF Core)'
 title: 'Use .NET e Entity Framework Core com o ClickHouse Managed Postgres'
-description: 'Conecte uma minimal API do ASP.NET Core ao ClickHouse Managed Postgres com Entity Framework Core e Npgsql, execute migrations do EF Core e faça consultas com TLS verificado'
+description: 'Conecte uma minimal API do ASP.NET Core ao ClickHouse Managed Postgres com Entity Framework Core e Npgsql, execute migrações do EF Core e faça consultas com TLS verificado'
 keywords: ['managed postgres', '.net', 'dotnet', 'c#', 'asp.net core', 'entity framework core', 'ef core', 'npgsql', 'migrations', 'pgbouncer', 'tls']
 doc_type: 'guide'
 ---
-
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-dotnet-beta" />
 
 O [Entity Framework Core](https://learn.microsoft.com/ef/core/) (EF Core) é o ORM do .NET, e o [Npgsql](https://www.npgsql.org/efcore/) é o seu provedor para PostgreSQL. Neste guia, você vai desenvolver uma minimal API em ASP.NET Core, criar a tabela dela com uma migração do EF Core e expor endpoints de criação, leitura, atualização e exclusão. Todas as conexões usam TLS com verificação de certificados completa.
 

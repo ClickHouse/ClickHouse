@@ -23,12 +23,12 @@
 
 #include <filesystem>
 
-#include <boost/container/flat_set.hpp>
 #include <boost/range/algorithm/copy.hpp>
 
 #include <mutex>
 #include <queue>
 #include <unordered_set>
+#include <variant>
 
 namespace DB
 {
@@ -72,6 +72,12 @@ WorkloadEntityKey getEntityKey(const ASTPtr & ptr)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid workload entity query: {}", ptr->getID());
 }
 
+/// Returns `workload` or `resource` for messages
+std::string_view getKindName(WorkloadEntityType type)
+{
+    return type == WorkloadEntityType::Workload ? "workload" : "resource";
+}
+
 bool entityEquals(const ASTPtr & lhs, const ASTPtr & rhs)
 {
     if (auto * a = typeid_cast<ASTCreateWorkloadQuery *>(lhs.get()))
@@ -91,9 +97,79 @@ bool entityEquals(const ASTPtr & lhs, const ASTPtr & rhs)
     return false;
 }
 
+/// True if both entities are resources with different cost units
+bool resourceUnitChanged(const ASTPtr & before, const ASTPtr & after)
+{
+    auto * before_resource = typeid_cast<ASTCreateResourceQuery *>(before.get());
+    auto * after_resource = typeid_cast<ASTCreateResourceQuery *>(after.get());
+    return before_resource && after_resource && before_resource->unit != after_resource->unit;
+}
+
+/// Throws if `entity_name` cannot be used for a user entity (SQL, configuration, Keeper or disk).
+/// The empty name denotes the root workload; the names of implicit resources are reserved.
+void checkUserEntityName(const String & entity_name)
+{
+    if (entity_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity name should not be empty.");
+    if (entity_name == IMPLICIT_CPU_RESOURCE_NAME || entity_name == IMPLICIT_MEMORY_RESOURCE_NAME)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Workload entity name '{}' is reserved for an implicit resource and cannot be used", entity_name);
+}
+
+/// A claim key (see IWorkloadEntityStorage.h): an entity or an access-mode role of a resource
+using ClaimKey = std::variant<WorkloadEntityKey, ResourceAccessMode>;
+
+String roleToString(ResourceAccessMode mode)
+{
+    switch (mode)
+    {
+        case ResourceAccessMode::DiskRead: return "READ DISK";
+        case ResourceAccessMode::DiskWrite: return "WRITE DISK";
+        case ResourceAccessMode::MasterThread: return "MASTER THREAD";
+        case ResourceAccessMode::WorkerThread: return "WORKER THREAD";
+        case ResourceAccessMode::Query: return "QUERY";
+        case ResourceAccessMode::MemoryReservation: return "MEMORY RESERVATION";
+    }
+}
+
+/// Returns all claim keys of an entity
+std::vector<ClaimKey> getClaimKeys(const WorkloadEntityKey & key, const ASTPtr & entity)
+{
+    std::vector<ClaimKey> keys{ClaimKey{key}};
+    if (auto * resource = typeid_cast<ASTCreateResourceQuery *>(entity.get()))
+    {
+        for (const auto & operation : resource->operations)
+        {
+            switch (operation.mode)
+            {
+                case ResourceAccessMode::MasterThread:
+                case ResourceAccessMode::WorkerThread:
+                case ResourceAccessMode::Query:
+                case ResourceAccessMode::MemoryReservation:
+                {
+                    ClaimKey claim{operation.mode};
+                    if (std::find(keys.begin(), keys.end(), claim) == keys.end())
+                        keys.push_back(std::move(claim));
+                    break;
+                }
+                case ResourceAccessMode::DiskRead:
+                case ResourceAccessMode::DiskWrite:
+                    break; // Several resources may serve one disk
+            }
+        }
+    }
+    return keys;
+}
+
+[[noreturn]] void throwClaimConflict(const ClaimKey & claim, const String & holder)
+{
+    if (const auto * mode = std::get_if<ResourceAccessMode>(&claim))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second resource for {} is not allowed. Current resource name: '{}'.", roleToString(*mode), holder);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists", holder);
+}
+
 /// Runs a `func` callback for every reference of a workload `source_entity`: to its parent workload and to the
-/// resources in its `SETTINGS x = y FOR resource` clauses. A resource has no references: we allow mentioned disks
-/// to be created later.
+/// resources in its `SETTINGS x = y FOR resource` clauses. A resource has no references.
 /// This function is the source of truth defining what references are stored in a workload.
 void forEachReference(
     const ASTPtr & source_entity,
@@ -113,6 +189,44 @@ void forEachReference(
         }
         for (const String & resource : resources)
             func({WorkloadEntityType::Resource, resource}, res->getWorkloadName());
+    }
+}
+
+/// Throws if workloads of `entities` form a parent cycle. Every workload has at most one parent, so a walk up from a
+/// workload ends outside `entities`, at a parentless workload, at a workload checked by an earlier walk, or on its own
+/// path, which is a cycle. Every workload is walked over once.
+void checkParentCycles(const WorkloadEntities & entities)
+{
+    enum class State : uint8_t { OnPath, Checked };
+    std::unordered_map<std::string_view, State> states;
+    std::vector<std::string_view> path;
+    for (const auto & [key, entity] : entities)
+    {
+        if (key.type != WorkloadEntityType::Workload)
+            continue;
+        path.clear();
+        String current = key.name;
+        while (true)
+        {
+            if (auto state = states.find(current); state != states.end())
+            {
+                if (state->second == State::OnPath)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity cycles are not allowed: workload '{}' is on a parent cycle", current);
+                break;
+            }
+            auto it = entities.find({WorkloadEntityType::Workload, current});
+            if (it == entities.end())
+                break;
+            // Views point to the names of keys in `entities`, which outlive `states` and `path`
+            states.emplace(it->first.name, State::OnPath);
+            path.push_back(it->first.name);
+            auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(it->second.get());
+            if (!workload->hasParent())
+                break;
+            current = workload->getWorkloadParent();
+        }
+        for (std::string_view name : path)
+            states[name] = State::Checked;
     }
 }
 
@@ -186,8 +300,18 @@ struct EntityChange
     ASTPtr before; /// Entity before change (CREATE if not set)
     ASTPtr after; /// Entity after change (DROP if not set)
 
+    /// True if the change drops the entity and creates a new one (the cost unit changes)
+    [[nodiscard]] bool recreates() const
+    {
+        return before && after && resourceUnitChanged(before, after);
+    }
+
     [[nodiscard]] std::vector<IWorkloadEntityStorage::Event> toEvents() const
     {
+        if (!after)
+            return {{key.type, key.name, {}}};
+        if (recreates())
+            return {{key.type, key.name, {}}, {key.type, key.name, after}};
         return {{key.type, key.name, after}};
     }
 };
@@ -263,7 +387,11 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
         {
             if (!event.entity) // DROP
             {
-                // Rule 1: Entity can only be removed after all existing references to it are removed as well
+                // Rule 1: Entity can only be removed after all existing references to it are removed as well. A recreated
+                // resource (cost unit change) is exempt: its create event follows the drop immediately, so its references
+                // stay valid between changes, while waiting for them would make a cycle with rule 2.
+                if (change.recreates())
+                    continue;
                 for (const auto & source : old_sources[change.key])
                 {
                     if (change_by_key.contains(source))
@@ -273,7 +401,8 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
             else // CREATE || CREATE OR REPLACE
             {
                 // Rule 2: Entity can only be created or updated after all changed entities it references. A dropped target
-                // is not waited for: its drop waits for its old children (rule 1), so the rules form no cycle.
+                // (a `FOR` clause may name a hidden resource) is not waited for, so nothing waits for a dropped entity and
+                // the rules form no cycle.
                 for (const auto & target : new_targets[change.key])
                 {
                     if (auto it = change_by_key.find(target); it != change_by_key.end() && it->second->after)
@@ -288,7 +417,6 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
         }
     }
 
-    // Topological sort of changes to respect consistency rules
     std::vector<EntityChange> result;
     for (const auto & key : topologicallySortedDependencies(dependencies))
         result.push_back(*change_by_key[key]);
@@ -306,52 +434,21 @@ WorkloadEntityStorageBase::WorkloadEntityStorageBase(ContextPtr global_context_,
     if (next_storage)
     {
         subscription = next_storage->getAllEntitiesAndSubscribe(
-            [this] (const std::vector<Event> & other_tx)
+            [this] (const std::vector<Event> & inner_tx)
             {
                 std::unique_lock lock(mutex);
 
-                // Transaction over the next storage (other_tx) will be transformed into a transaction over this storage (local_tx)
-                std::vector<Event> local_tx;
-
-                for (const auto & other_event : other_tx)
+                // Sync `inherited_entities` with the next storage
+                for (const auto & event : inner_tx)
                 {
-                    EntityChange change;
-
-                    // Entity to be changed
-                    change.key = {other_event.type, other_event.name};
-                    if (auto it = entities.find(change.key); it != entities.end())
-                        change.before = it->second; // it may be either local entity or overridden entity from the next storage
-
-                    // Entity to change to
-                    if (other_event.entity)
-                        change.after = other_event.entity;
+                    if (event.entity)
+                        inherited_entities[{event.type, event.name}] = event.entity;
                     else
-                    {
-                        // If entity is removed in the next storage, we need to check if it was an overridden entity
-                        if (auto it = local_entities.find(change.key); it != local_entities.end())
-                            change.after = it->second;
-                    }
-
-                    // Sync `other_entities` with the next storage
-                    if (other_event.entity)
-                        other_entities[change.key] = other_event.entity;
-                    else
-                        other_entities.erase(change.key);
-
-                    // Apply changes to the merged state in memory and prepare local_tx
-                    if (!(change.before && change.after && entityEquals(change.before, change.after)))
-                    {
-                        for (const auto & local_event : change.toEvents())
-                        {
-                            // TODO(serxa): do validation and throw LOGICAL_ERROR if failed
-                            applyEvent(lock, local_event);
-                            local_tx.push_back(local_event);
-                        }
-                    }
+                        inherited_entities.erase({event.type, event.name});
                 }
 
-                // Notify subscribers
-                unlockAndNotify(lock, local_tx);
+                // Transaction over the next storage is transformed into one transaction over this storage
+                updateVisibleEntities(lock);
             });
     }
 }
@@ -376,8 +473,8 @@ ASTPtr WorkloadEntityStorageBase::tryGet(WorkloadEntityType entity_type, const S
 {
     std::lock_guard lock(mutex);
 
-    auto it = entities.find({entity_type, entity_name});
-    if (it == entities.end())
+    auto it = visible_entities.find({entity_type, entity_name});
+    if (it == visible_entities.end())
         return nullptr;
 
     return it->second;
@@ -388,10 +485,23 @@ bool WorkloadEntityStorageBase::has(WorkloadEntityType entity_type, const String
     return tryGet(entity_type, entity_name) != nullptr;
 }
 
+String WorkloadEntityStorageBase::getEntitySource(WorkloadEntityType entity_type, const String & entity_name) const
+{
+    {
+        std::lock_guard lock(mutex);
+        if (!visible_entities.contains({entity_type, entity_name}))
+            return "";
+        if (!inherited_entities.contains({entity_type, entity_name}))
+            return String(getName());
+    }
+    // Not under the lock: the next storage may notify this one while holding its own lock
+    return next_storage->getEntitySource(entity_type, entity_name);
+}
+
 bool WorkloadEntityStorageBase::empty() const
 {
     std::lock_guard lock(mutex);
-    return entities.empty();
+    return visible_entities.empty();
 }
 
 void WorkloadEntityStorageBase::loadEntities(const Poco::Util::AbstractConfiguration & config)
@@ -409,86 +519,49 @@ bool WorkloadEntityStorageBase::storeEntity(
     bool replace_if_exists,
     const Settings & settings)
 {
-    if (entity_name.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity name should not be empty.");
+    checkUserEntityName(entity_name);
 
     create_entity_query = normalizeCreateWorkloadEntityQuery(*create_entity_query);
-    auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(create_entity_query.get());
-    auto * resource = typeid_cast<ASTCreateResourceQuery *>(create_entity_query.get());
     const WorkloadEntityKey key{entity_type, entity_name};
+    auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(create_entity_query.get());
 
     while (true)
     {
         std::unique_lock lock{mutex};
 
-        ASTPtr old_entity; // entity to be REPLACED
-        if (auto it = entities.find(key); it != entities.end())
+        // An entity of this kind and name may be stored in this layer (possibly shadowed) or in an inner one
+        ASTPtr old_entity = findKnownEntity(key, own_entities); // entity to be REPLACED
+        if (old_entity)
         {
             if (throw_if_exists)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists", entity_name);
-            else if (!replace_if_exists)
+            if (!replace_if_exists)
                 return false;
-            else
-                old_entity = it->second;
+            if (inherited_entities.contains(key))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to replace workload entity '{}' that is stored in read-only {} storage", entity_name, next_storage->getName());
         }
 
-        // Validate CREATE OR REPLACE
-        if (old_entity && other_entities.contains(key))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to replace workload entity '{}' that is stored in read-only {} storage", entity_name, next_storage->getName());
-
-        // Validate workload
+        // Check the settings values and throw if something is wrong
         if (workload)
         {
-            // Check the settings values and throw if something is wrong
             WorkloadSettings validator;
             validator.initFromChanges(workload->changes);
         }
 
-        // Validate resource: cost unit cannot change via CREATE OR REPLACE — the scheduler
-        // hierarchy is built with unit-specific node types and would silently end up with the
-        // wrong scheduler/link type in release builds.
-        if (resource && old_entity)
-        {
-            auto * old_resource = typeid_cast<ASTCreateResourceQuery *>(old_entity.get());
-            if (old_resource && old_resource->unit != resource->unit)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Cost unit of resource '{}' cannot be changed via CREATE OR REPLACE; drop and recreate the resource instead.",
-                    entity_name);
-        }
+        // The scheduler hierarchy is built with unit-specific node types
+        if (old_entity && resourceUnitChanged(old_entity, create_entity_query))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cost unit of resource '{}' cannot be changed via CREATE OR REPLACE; drop and recreate the resource instead.",
+                entity_name);
 
-        // Validate resource
-        if (resource)
-        {
-            for (const auto & operation : resource->operations)
-            {
-                if (operation.mode == ResourceAccessMode::MasterThread)
-                {
-                    if (!master_thread_resource.empty() && master_thread_resource != resource->getResourceName())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second resource for MASTER THREAD is not allowed. Current resource name: '{}'.", master_thread_resource);
-                }
-                if (operation.mode == ResourceAccessMode::WorkerThread)
-                {
-                    if (!worker_thread_resource.empty() && worker_thread_resource != resource->getResourceName())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second resource for WORKER THREAD is not allowed. Current resource name: '{}'.", worker_thread_resource);
-                }
-                if (operation.mode == ResourceAccessMode::Query)
-                {
-                    if (!query_resource.empty() && query_resource != resource->getResourceName())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second resource for QUERY is not allowed. Current resource name: '{}'.", query_resource);
-                }
-                if (operation.mode == ResourceAccessMode::MemoryReservation)
-                {
-                    if (!memory_reservation_resource.empty() && memory_reservation_resource != resource->getResourceName())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second resource for MEMORY RESERVATION is not allowed. Current resource name: '{}'.", memory_reservation_resource);
-                }
-            }
-        }
+        checkClaimConflicts(key, create_entity_query);
 
+        // Targets are looked up in own and inherited entities only, so entities of outer layers cannot be referenced
         forEachReference(create_entity_query,
-            [this, workload, &key] (const WorkloadEntityKey & target, const String & source)
+            [&] (const WorkloadEntityKey & target, const String & source)
             {
-                if (!entities.contains(target))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' references another workload entity '{}' that doesn't exist", source, target.name);
+                if (!findKnownEntity(target, own_entities))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload '{}' references {} '{}' that doesn't exist", source, getKindName(target.type), target.name);
 
                 // Validate that we could parse the settings for specific resource
                 if (target.type == WorkloadEntityType::Resource)
@@ -504,25 +577,15 @@ bool WorkloadEntityStorageBase::storeEntity(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity cycles are not allowed");
             });
 
-        auto result = storeEntityImpl(
-            current_context,
-            entity_type,
-            entity_name,
-            create_entity_query,
-            throw_if_exists,
-            replace_if_exists,
-            settings);
+        auto result = storeEntityImpl(current_context, entity_type, entity_name, create_entity_query, throw_if_exists, replace_if_exists, settings);
+        if (result == OperationResult::Ok)
+            own_entities[key] = create_entity_query;
 
         if (result == OperationResult::Retry)
             continue; // Entities were updated, we need to rerun all the validations
 
         if (result == OperationResult::Ok)
-        {
-            Event event{entity_type, entity_name, create_entity_query};
-            local_entities[key] = create_entity_query;
-            applyEvent(lock, event);
-            unlockAndNotify(lock, {std::move(event)});
-        }
+            updateVisibleEntities(lock);
 
         return result == OperationResult::Ok;
     }
@@ -538,41 +601,39 @@ bool WorkloadEntityStorageBase::removeEntity(
     while (true)
     {
         std::unique_lock lock(mutex);
-        if (!entities.contains(key))
+
+        // Only own entities can be removed; an entity stored only in an inner layer is read-only here
+        if (!own_entities.contains(key))
         {
+            if (inherited_entities.contains(key))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to remove workload entity '{}' that is stored in read-only {} storage", entity_name, next_storage->getName());
             if (throw_if_not_exists)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' doesn't exist", entity_name);
-            else
-                return false;
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' doesn't exist", entity_type == WorkloadEntityType::Resource ? "Resource" : "Workload", entity_name);
+            return false;
         }
 
-        if (auto reference_it = references.find(key); reference_it != references.end())
+        // Entities of inner layers cannot reference own entities, so only own entities are checked
+        String names;
+        for (const auto & [source_key, source_entity] : own_entities)
         {
-            String names;
-            for (const auto & source : reference_it->second)
-                names += " " + source.name;
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' cannot be dropped. It is referenced by:{}", entity_name, names);
+            forEachReference(source_entity, [&](const WorkloadEntityKey & target, const String & source)
+            {
+                if (target == key)
+                    names += " " + source;
+            });
         }
+        if (!names.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' cannot be dropped. It is referenced by:{}", entity_name, names);
 
-        if (other_entities.contains(key))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to remove workload entity '{}' that is stored in read-only {} storage", entity_name, next_storage->getName());
-
-        auto result = removeEntityImpl(
-            current_context,
-            entity_type,
-            entity_name,
-            throw_if_not_exists);
+        auto result = removeEntityImpl(current_context, entity_type, entity_name, throw_if_not_exists);
+        if (result == OperationResult::Ok)
+            own_entities.erase(key);
 
         if (result == OperationResult::Retry)
             continue; // Entities were updated, we need to rerun all the validations
 
         if (result == OperationResult::Ok)
-        {
-            Event event{entity_type, entity_name, {}};
-            local_entities.erase(key);
-            applyEvent(lock, event);
-            unlockAndNotify(lock, {std::move(event)});
-        }
+            updateVisibleEntities(lock);
 
         return result == OperationResult::Ok;
     }
@@ -583,9 +644,12 @@ scope_guard WorkloadEntityStorageBase::getAllEntitiesAndSubscribe(const OnChange
     scope_guard result;
 
     std::vector<Event> current_state;
+    std::unique_lock notify_lock{notify_mutex, std::defer_lock};
     {
         std::lock_guard lock{mutex};
-        current_state = orderEntities(entities);
+        current_state = orderEntities(visible_entities);
+        // Taken before releasing `mutex`, so the snapshot is delivered before any later transaction
+        notify_lock.lock();
 
         std::lock_guard lock2{handlers->mutex};
         handlers->list.push_back(std::make_shared<HandlerEntry>(handler));
@@ -632,6 +696,140 @@ String WorkloadEntityStorageBase::getMemoryReservationResourceName()
     return memory_reservation_resource;
 }
 
+void WorkloadEntityStorageBase::updateRoleResources()
+{
+    master_thread_resource.clear();
+    worker_thread_resource.clear();
+    query_resource.clear();
+    memory_reservation_resource.clear();
+
+    // Visible entities never conflict, so every role is served by at most one visible resource
+    for (const auto & [key, entity] : visible_entities)
+    {
+        auto * resource = typeid_cast<ASTCreateResourceQuery *>(entity.get());
+        if (!resource)
+            continue;
+        for (const auto & operation : resource->operations)
+        {
+            switch (operation.mode)
+            {
+                case ResourceAccessMode::MasterThread: master_thread_resource = key.name; break;
+                case ResourceAccessMode::WorkerThread: worker_thread_resource = key.name; break;
+                case ResourceAccessMode::Query: query_resource = key.name; break;
+                case ResourceAccessMode::MemoryReservation: memory_reservation_resource = key.name; break;
+                case ResourceAccessMode::DiskRead:
+                case ResourceAccessMode::DiskWrite:
+                    break;
+            }
+        }
+    }
+}
+
+ASTPtr WorkloadEntityStorageBase::findKnownEntity(const WorkloadEntityKey & key, const WorkloadEntities & own) const
+{
+    if (auto it = inherited_entities.find(key); it != inherited_entities.end())
+        return it->second;
+    if (auto it = own.find(key); it != own.end())
+        return it->second;
+    return nullptr;
+}
+
+void WorkloadEntityStorageBase::checkClaimConflicts(const WorkloadEntityKey & key, const ASTPtr & entity) const
+{
+    for (const auto & claim : getClaimKeys(key, entity))
+    {
+        if (!std::holds_alternative<ResourceAccessMode>(claim))
+            continue; // An entity with the same key is either replaced or reported by the caller
+        for (const auto * layer_entities : {&own_entities, &inherited_entities})
+        {
+            for (const auto & [other_key, other_entity] : *layer_entities)
+            {
+                auto other_claims = getClaimKeys(other_key, other_entity);
+                if (other_key != key && std::find(other_claims.begin(), other_claims.end(), claim) != other_claims.end())
+                    throwClaimConflict(claim, other_key.name);
+            }
+        }
+    }
+}
+
+void WorkloadEntityStorageBase::checkLoadedReferences(const WorkloadEntities & new_own_entities) const
+{
+    for (const auto & [key, entity] : new_own_entities)
+    {
+        forEachReference(entity, [&](const WorkloadEntityKey & target, const String & source)
+        {
+            if (!findKnownEntity(target, new_own_entities))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload '{}' references {} '{}' that doesn't exist", source, getKindName(target.type), target.name);
+        });
+    }
+
+    // Inherited entities cannot reference own entities, so a cycle consists of own entities only
+    checkParentCycles(new_own_entities);
+}
+
+WorkloadEntities WorkloadEntityStorageBase::computeVisibleEntities(const WorkloadEntities & own) const
+{
+    std::set<ClaimKey> inherited_claims;
+    for (const auto & [key, entity] : inherited_entities)
+    {
+        for (auto & claim : getClaimKeys(key, entity))
+            inherited_claims.insert(std::move(claim));
+    }
+
+    // An own entity is shadowed if an inherited entity claims any of its keys
+    WorkloadEntities result = inherited_entities;
+    for (const auto & [key, entity] : own)
+    {
+        auto claims = getClaimKeys(key, entity);
+        if (std::none_of(claims.begin(), claims.end(), [&](const ClaimKey & claim) { return inherited_claims.contains(claim); }))
+            result.emplace(key, entity);
+    }
+
+    return result;
+}
+
+void WorkloadEntityStorageBase::updateVisibleEntities(std::unique_lock<std::recursive_mutex> & lock)
+{
+    WorkloadEntities new_visible_entities = computeVisibleEntities(own_entities);
+
+    // Fill vector of `changes` based on difference between current and new visible entities
+    std::vector<EntityChange> changes;
+    for (const auto & [key, entity] : visible_entities)
+    {
+        if (auto it = new_visible_entities.find(key); it != new_visible_entities.end())
+        {
+            if (!entityEquals(entity, it->second))
+                changes.emplace_back(key, entity, it->second);
+        }
+        else
+            changes.emplace_back(key, entity, ASTPtr{});
+    }
+    for (const auto & [key, entity] : new_visible_entities)
+    {
+        if (!visible_entities.contains(key))
+            changes.emplace_back(key, ASTPtr{}, entity);
+    }
+
+    // Sort `changes` to respect consistency of references
+    std::vector<Event> tx;
+    for (const auto & change : topologicallySortedChanges(changes, new_visible_entities))
+    {
+        for (auto & event : change.toEvents())
+        {
+            if (event.entity)
+                LOG_DEBUG(log, "Create or replace workload entity: {}", event.entity->formatForLogging());
+            else
+                LOG_DEBUG(log, "Drop {}: {}", getKindName(event.type), event.name);
+            tx.push_back(std::move(event));
+        }
+    }
+    visible_entities = std::move(new_visible_entities);
+
+    updateRoleResources();
+
+    unlockAndNotify(lock, tx);
+}
+
 void WorkloadEntityStorageBase::unlockAndNotify(
     std::unique_lock<std::recursive_mutex> & lock,
     const std::vector<Event> & tx)
@@ -645,6 +843,8 @@ void WorkloadEntityStorageBase::unlockAndNotify(
         boost::range::copy(handlers->list, std::back_inserter(current_handlers));
     }
 
+    // Taken before releasing `lock`, so transactions are delivered one at a time in the order they were computed
+    std::lock_guard notify_lock{notify_mutex};
     lock.unlock();
 
     for (const auto & entry : current_handlers)
@@ -668,280 +868,116 @@ std::unique_lock<std::recursive_mutex> WorkloadEntityStorageBase::getLock() cons
     return std::unique_lock{mutex};
 }
 
-void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<String, ASTPtr>> & raw_new_entities)
+void WorkloadEntityStorageBase::setOwnEntities(const ASTs & queries)
 {
-    WorkloadEntities local_new_entities;
-    for (const auto & [_, create_query] : raw_new_entities)
-        local_new_entities[getEntityKey(create_query)] = normalizeCreateWorkloadEntityQuery(*create_query);
+    WorkloadEntities new_own_entities;
+    std::map<ClaimKey, String> claims;
+    for (const auto & query : queries)
+    {
+        ASTPtr entity = normalizeCreateWorkloadEntityQuery(*query);
+        WorkloadEntityKey key = getEntityKey(entity);
+        checkUserEntityName(key.name);
+        if (!new_own_entities.emplace(key, entity).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The {} '{}' is defined more than once", getKindName(key.type), key.name);
+        for (auto & claim : getClaimKeys(key, entity))
+        {
+            if (auto [it, inserted] = claims.emplace(claim, key.name); !inserted)
+                throwClaimConflict(claim, it->second);
+        }
+    }
 
     std::unique_lock lock(mutex);
 
-    // Merge `local_new_entities` with existing `other_entities`
-    WorkloadEntities merged_new_entities = local_new_entities;
-    for (const auto & [key, entity] : other_entities)
-        merged_new_entities[key] = entity; // override local entity if exists
-
-    // Fill vector of `changes` based on difference between current `entities` and `merged_new_entities`
-    std::vector<EntityChange> changes;
-    for (const auto & [key, entity] : entities)
+    for (const auto & [key, entity] : new_own_entities)
     {
-        if (auto it = merged_new_entities.find(key); it != merged_new_entities.end())
-        {
-            if (!entityEquals(entity, it->second))
-            {
-                changes.emplace_back(key, entity, it->second); // Update entities that are present in both `merged_new_entities` and `entities`
-                LOG_TRACE(log, "Workload entity {} was updated", key.name);
-            }
-            else
-                LOG_TRACE(log, "Workload entity {} is the same", key.name);
-        }
-        else
-        {
-            changes.emplace_back(key, entity, ASTPtr{}); // Remove entities that are not present in `merged_new_entities`
-            LOG_TRACE(log, "Workload entity {} was dropped", key.name);
-        }
-    }
-    for (const auto & [key, entity] : merged_new_entities)
-    {
-        if (!entities.contains(key))
-        {
-            changes.emplace_back(key, ASTPtr{}, entity); // Create entities that are only present in `merged_new_entities`
-            LOG_TRACE(log, "Workload entity {} was created", key.name);
-        }
-    }
-
-    // Reject cost-unit changes from config/Keeper refresh just like the SQL path does. The
-    // scheduler hierarchy is built per unit, so silently swapping units would leave classifiers
-    // handing back `ResourceLink`s for the wrong pointer field.
-    for (const auto & change : changes)
-    {
-        if (!change.before || !change.after)
-            continue;
-        auto * before_resource = typeid_cast<ASTCreateResourceQuery *>(change.before.get());
-        auto * after_resource = typeid_cast<ASTCreateResourceQuery *>(change.after.get());
-        if (before_resource && after_resource && before_resource->unit != after_resource->unit)
+        auto old_it = own_entities.find(key);
+        if (old_it != own_entities.end() && resourceUnitChanged(old_it->second, entity))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Cost unit of resource '{}' cannot be changed; drop and recreate the resource instead.",
-                change.key.name);
-    }
+                key.name);
 
-    // Validate new/changed workloads' setting VALUES on the config/Keeper/disk load path (which
-    // bypasses storeEntity) — otherwise a bad value (e.g. scheduler = 'bogus', a negative weight, or
-    // such a value inside a `... FOR <resource>` clause) is accepted here and only surfaces later,
-    // when the scheduler node is built. Pass `throw_on_unknown_setting = false` so this LOAD path
-    // stays forward-compatible and no stricter than the runtime parser in
-    // `WorkloadResourceManager::NodeInfo` (which also uses `false`): an unknown setting NAME written
-    // by a newer node must not make an older node reject the whole entity. Value checks (scheduler
-    // algorithm, non-negative numerics) fire regardless of that flag, so a genuinely bad value is
-    // still rejected. Both the base group and each per-resource group are checked. Only new/changed
-    // entities are checked (like the cost-unit check above), so a pre-existing entity is not
-    // re-validated on every refresh.
-    for (const auto & change : changes)
-    {
-        if (!change.after)
+        // Validate setting values of new and changed workloads. Unknown setting names are allowed, like in
+        // `WorkloadResourceManager`, so that entities written by a newer version can be loaded.
+        auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(entity.get());
+        if (!workload || (old_it != own_entities.end() && entityEquals(old_it->second, entity)))
             continue;
-        if (auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(change.after.get()))
+        WorkloadSettings validator;
+        validator.initFromChanges(workload->changes, /*resource_name=*/{}, /*throw_on_unknown_setting=*/false);
+        forEachReference(entity, [&](const WorkloadEntityKey & target, const String &)
         {
-            WorkloadSettings validator;
-            validator.initFromChanges(workload->changes, /*resource_name=*/{}, /*throw_on_unknown_setting=*/false);
-            std::unordered_set<String> validated_resources;
-            for (const auto & setting_change : workload->changes)
+            if (target.type == WorkloadEntityType::Resource)
             {
-                if (!setting_change.resource.empty() && validated_resources.insert(setting_change.resource).second)
-                {
-                    // A `... FOR <resource>` clause must reference an existing resource — the same
-                    // contract storeEntity enforces via forEachReference.
-                    if (!merged_new_entities.contains({WorkloadEntityType::Resource, setting_change.resource}))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Workload entity '{}' references another workload entity '{}' that doesn't exist",
-                            workload->getWorkloadName(), setting_change.resource);
-                    WorkloadSettings resource_validator;
-                    resource_validator.initFromChanges(workload->changes, setting_change.resource, /*throw_on_unknown_setting=*/false);
-                }
+                WorkloadSettings resource_validator;
+                resource_validator.initFromChanges(workload->changes, target.name, /*throw_on_unknown_setting=*/false);
             }
-        }
+        });
     }
 
-    // Update local entities
-    local_entities = std::move(local_new_entities);
+    checkLoadedReferences(new_own_entities);
 
-    // Sort `changes` to respect consistency of references and apply them one by one.
-    std::vector<Event> tx;
-    for (const auto & change : topologicallySortedChanges(changes, merged_new_entities))
-    {
-        for (const auto & event : change.toEvents())
-        {
-            // TODO(serxa): do validation and throw LOGICAL_ERROR if failed
-            applyEvent(lock, event);
-            tx.push_back(event);
-        }
-    }
-
-    // Notify subscribers
-    unlockAndNotify(lock, tx);
+    own_entities = std::move(new_own_entities);
+    updateVisibleEntities(lock);
 }
 
-void WorkloadEntityStorageBase::applyEvent(
-    std::unique_lock<std::recursive_mutex> &,
-    const Event & event)
+void WorkloadEntityStorageBase::replaceOwnEntities(std::unique_lock<std::recursive_mutex> & lock, WorkloadEntities new_own_entities)
 {
-    if (event.entity) // CREATE || CREATE OR REPLACE
-    {
-        LOG_DEBUG(log, "Create or replace workload entity: {}", event.entity->formatForLogging());
-
-        auto * resource = typeid_cast<ASTCreateResourceQuery *>(event.entity.get());
-
-        // Update resource names. First clear any role-name field that currently points to this
-        // resource: `CREATE OR REPLACE RESOURCE r (...)` may change `r`'s operation set, e.g.
-        // drop QUERY and add MEMORY RESERVATION. Without clearing, `query_resource` would still
-        // be "r" while `memory_reservation_resource` would also be "r" — leading to a
-        // `QuerySlot` or `MemoryReservation` receiving a `ResourceLink` for the wrong unit.
-        if (resource)
-        {
-            const String & name = resource->getResourceName();
-            if (master_thread_resource == name)
-                master_thread_resource.clear();
-            if (worker_thread_resource == name)
-                worker_thread_resource.clear();
-            if (query_resource == name)
-                query_resource.clear();
-            if (memory_reservation_resource == name)
-                memory_reservation_resource.clear();
-
-            for (const auto & operation : resource->operations)
-            {
-                if (operation.mode == ResourceAccessMode::MasterThread)
-                    master_thread_resource = name;
-                if (operation.mode == ResourceAccessMode::WorkerThread)
-                    worker_thread_resource = name;
-                if (operation.mode == ResourceAccessMode::Query)
-                    query_resource = name;
-                if (operation.mode == ResourceAccessMode::MemoryReservation)
-                    memory_reservation_resource = name;
-            }
-        }
-
-        // Remove references of a replaced entity (only for CREATE OR REPLACE)
-        const WorkloadEntityKey key{event.type, event.name};
-        if (auto it = entities.find(key); it != entities.end())
-            removeReferences(it->second);
-
-        // Insert references of created entity
-        insertReferences(event.entity);
-
-        // Store in memory
-        entities[key] = event.entity;
-    }
-    else // DROP
-    {
-        auto it = entities.find({event.type, event.name});
-        chassert(it != entities.end());
-
-        LOG_DEBUG(log, "Drop workload entity: {}", event.name);
-
-        if (event.type == WorkloadEntityType::Resource)
-        {
-            if (event.name == master_thread_resource)
-                master_thread_resource.clear();
-
-            if (event.name == worker_thread_resource)
-                worker_thread_resource.clear();
-
-            if (event.name == query_resource)
-                query_resource.clear();
-
-            if (event.name == memory_reservation_resource)
-                memory_reservation_resource.clear();
-        }
-
-        // Clean up references
-        removeReferences(it->second);
-
-        // Remove from memory
-        entities.erase(it);
-    }
+    own_entities = std::move(new_own_entities);
+    updateVisibleEntities(lock);
 }
 
 WorkloadEntities WorkloadEntityStorageBase::getAllEntities() const
 {
     std::lock_guard lock{mutex};
-    return entities;
+    return visible_entities;
 }
 
-bool WorkloadEntityStorageBase::isIndirectlyReferenced(const WorkloadEntityKey & target, const WorkloadEntityKey & source)
+bool WorkloadEntityStorageBase::isIndirectlyReferenced(const WorkloadEntityKey & target, const WorkloadEntityKey & source) const
 {
+    // Shadowed own entities are walked too: they may become visible again, together with their references
     std::queue<WorkloadEntityKey> bfs;
     std::set<WorkloadEntityKey> visited;
-    visited.insert(target);
-    bfs.push(target);
+    visited.insert(source);
+    bfs.push(source);
     while (!bfs.empty())
     {
         WorkloadEntityKey current = bfs.front();
         bfs.pop();
-        if (current == source)
+        if (current == target)
             return true;
-        if (auto it = references.find(current); it != references.end())
+        for (const auto * layer_entities : {&own_entities, &inherited_entities})
         {
-            for (const auto & node : it->second)
+            auto it = layer_entities->find(current);
+            if (it == layer_entities->end())
+                continue;
+            forEachReference(it->second, [&](const WorkloadEntityKey & next, const String &)
             {
-                if (visited.contains(node))
-                    continue;
-                visited.insert(node);
-                bfs.push(node);
-            }
+                if (visited.insert(next).second)
+                    bfs.push(next);
+            });
         }
     }
     return false;
 }
 
-void WorkloadEntityStorageBase::insertReferences(const ASTPtr & entity)
-{
-    if (!entity)
-        return;
-    forEachReference(entity,
-        [this] (const WorkloadEntityKey & target, const String & source)
-        {
-            references[target].insert({WorkloadEntityType::Workload, source});
-        });
-}
-
-void WorkloadEntityStorageBase::removeReferences(const ASTPtr & entity)
-{
-    if (!entity)
-        return;
-    forEachReference(entity,
-        [this] (const WorkloadEntityKey & target, const String & source)
-        {
-            references[target].erase({WorkloadEntityType::Workload, source});
-            if (references[target].empty())
-                references.erase(target);
-        });
-}
-
 std::vector<WorkloadEntityStorageBase::Event> WorkloadEntityStorageBase::orderEntities(
-    const WorkloadEntities & all_entities,
-    std::optional<Event> change)
+    const WorkloadEntities & entities,
+    const std::optional<Event> & change)
 {
-    std::vector<Event> result;
+    WorkloadEntities all_entities = entities;
+    if (change && change->entity)
+        all_entities[{change->type, change->name}] = change->entity;
+    else if (change)
+        all_entities.erase({change->type, change->name});
 
+    // Resources should go first because workloads could reference them
+    std::vector<Event> result;
     std::unordered_map<String, ASTPtr> workloads;
     for (const auto & [key, ast] : all_entities)
     {
-        if (change && change->type == key.type && change->name == key.name)
-            continue; // Skip this entity if it is removed or updated
-        if (key.type == WorkloadEntityType::Workload)
+        if (key.type == WorkloadEntityType::Resource)
+            result.emplace_back(key.type, key.name, ast);
+        else
             workloads.emplace(key.name, ast);
-        else // Resources should go first because workloads could reference them
-            result.emplace_back(WorkloadEntityType::Resource, key.name, ast);
-    }
-
-    // Introduce new entity described by `change`
-    if (change && change->entity)
-    {
-        if (change->type == WorkloadEntityType::Workload)
-            workloads.emplace(change->name, change->entity);
-        else if (change->type == WorkloadEntityType::Resource)
-            result.emplace_back(WorkloadEntityType::Resource, change->name, change->entity);
     }
 
     // Workloads should go in an order such that children are enlisted only after its parent
@@ -951,10 +987,9 @@ std::vector<WorkloadEntityStorageBase::Event> WorkloadEntityStorageBase::orderEn
     return result;
 }
 
-String WorkloadEntityStorageBase::serializeLocalEntities(std::optional<Event> change)
+String WorkloadEntityStorageBase::serializeOwnEntities(std::optional<Event> change)
 {
-    std::unique_lock<std::recursive_mutex> lock;
-    auto ordered_entities = orderEntities(local_entities, change);
+    auto ordered_entities = orderEntities(own_entities, change);
     WriteBufferFromOwnString buf;
     IAST::FormatSettings settings(/*one_line=*/true);
     for (const auto & event : ordered_entities)
@@ -965,11 +1000,8 @@ String WorkloadEntityStorageBase::serializeLocalEntities(std::optional<Event> ch
     return buf.str();
 }
 
-std::vector<std::pair<String, ASTPtr>> WorkloadEntityStorageBase::parseEntitiesFromString(const String & data, LoggerPtr log)
+ASTs WorkloadEntityStorageBase::parseEntitiesFromString(const String & data, LoggerPtr log)
 {
-    std::vector<std::pair<String, ASTPtr>> result;
-
-    // Parse multiple SQL statements from data
     ASTs queries;
     ParserCreateWorkloadEntity parser;
     const char * begin = data.data(); /// begin of current query
@@ -978,26 +1010,12 @@ std::vector<std::pair<String, ASTPtr>> WorkloadEntityStorageBase::parseEntitiesF
     while (pos < end)
     {
         queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
+        LOG_TRACE(log, "Parsed entity definition: {}", queries.back()->formatForLogging());
+        getEntityKey(queries.back()); // Throws if it is neither a workload nor a resource
         while (isWhitespaceASCII(*pos) || *pos == ';')
             ++pos;
     }
-
-    /// Parse each query and extract entity name
-    for (const auto & query : queries)
-    {
-        LOG_TRACE(log, "Parsed entity definition: {}", query->formatForLogging());
-        String entity_name;
-        if (auto * create_workload_query = query->as<ASTCreateWorkloadQuery>())
-            entity_name = create_workload_query->getWorkloadName();
-        else if (auto * create_resource_query = query->as<ASTCreateResourceQuery>())
-            entity_name = create_resource_query->getResourceName();
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid workload entity query: {}", query->getID());
-
-        result.emplace_back(entity_name, query);
-    }
-
-    return result;
+    return queries;
 }
 
 void WorkloadEntityStorageBase::backup(
@@ -1006,7 +1024,7 @@ void WorkloadEntityStorageBase::backup(
     WorkloadEntityType entity_type) const
 {
     /// system.workloads and system.resources are backed up via two separate backup() calls on this shared storage.
-    /// Take a single consistent snapshot of all local entities for the whole backup operation (keyed by the backup
+    /// Take a single consistent snapshot of all own entities for the whole backup operation (keyed by the backup
     /// UUID) and serve both calls from it, so that a DDL committing between the two calls cannot split an
     /// interdependent pair across the snapshot. Otherwise "CREATE RESOURCE r; CREATE WORKLOAD w SETTINGS ... FOR r"
     /// committing between a resources snapshot and a workloads snapshot could put w.sql in the backup without r.sql,
@@ -1018,7 +1036,7 @@ void WorkloadEntityStorageBase::backup(
     {
         std::lock_guard lock{mutex};
 
-        /// Back up only entities defined via SQL and stored in this storage (`local_entities`).
+        /// Back up only entities defined via SQL and stored in this storage (`own_entities`).
         /// Entities provided through the server configuration are kept in the next storage in the
         /// chain (WorkloadEntityConfigStorage) and must NOT be backed up: the configuration is
         /// assumed to be backed up and restored separately together with all its entities.
@@ -1028,12 +1046,12 @@ void WorkloadEntityStorageBase::backup(
         auto [it, inserted] = entities_to_backup.try_emplace(backup_id);
         if (inserted)
         {
-            it->second = local_entities;
+            it->second = own_entities;
             /// Drop the snapshot when the backup operation ends, whether it succeeds or fails. The cleanup runs
             /// from the scope_guard's destructor, held alive by a post task, so it fires even if a later table's
             /// backupData() throws before post tasks run (post tasks run only after all backupData() calls
             /// succeed). Otherwise the snapshot would stay pinned on this shared storage, and a retry reusing the
-            /// same backup_uuid would serve this stale snapshot instead of the current local_entities.
+            /// same backup_uuid would serve this stale snapshot instead of the current own_entities.
             auto cleanup = std::make_shared<scope_guard>([this, backup_id]
             {
                 std::lock_guard cleanup_lock{mutex};
@@ -1050,10 +1068,10 @@ void WorkloadEntityStorageBase::backup(
             /// config-defined entities are not part of the backup (they belong to the server config), so a
             /// restore on a server that lacks them in its config will fail. Evaluated only over the entities
             /// selected for this call (past the entity_type filter above), so a resources-only backup does not
-            /// warn about workloads and vice versa. `other_entities` holds the config-defined entities.
+            /// warn about workloads and vice versa. `inherited_entities` holds the config-defined entities.
             forEachReference(ast, [&](const WorkloadEntityKey & target, const String & source)
             {
-                if (!it->second.contains(target) && other_entities.contains(target))
+                if (!it->second.contains(target) && inherited_entities.contains(target))
                     LOG_WARNING(log, "Backed up workload entity '{}' references {} '{}' defined in the server "
                         "configuration, which is not included in the backup; restoring it requires '{}' to "
                         "already exist on the destination server.",
@@ -1079,7 +1097,7 @@ void WorkloadEntityStorageBase::backup(
 
     /// On the stage of running post tasks, all directories will already be added to the backup coordination object.
     /// They will only be returned for one of the hosts below, for the rest an empty list.
-    /// See also BackupCoordinationReplicatedWorkloadEntities class.
+    /// See also `BackupCoordinationReplicatedDirectories` class.
     backup_entries_collector.addPostTask(
         [my_backup_entries = std::move(backup_entries),
          my_replication_id = std::move(replication_id),
@@ -1123,7 +1141,7 @@ void WorkloadEntityStorageBase::restore(
                 String{data_path_in_backup_fs / filename});
     }
 
-    std::vector<std::pair<String, ASTPtr>> parsed_entities;
+    ASTs parsed_entities;
     for (const auto & filename : filenames)
     {
         String filepath = data_path_in_backup_fs / filename;
@@ -1131,20 +1149,20 @@ void WorkloadEntityStorageBase::restore(
         String statement_def;
         readStringUntilEOF(statement_def, *in);
 
-        for (auto & name_and_ast : parseEntitiesFromString(statement_def, log))
+        for (auto & ast : parseEntitiesFromString(statement_def, log))
         {
             /// Reject a definition whose kind does not match the system table being restored. The two system
             /// tables carry independent access checks (system.workloads requires CREATE_WORKLOAD, system.resources
             /// requires CREATE_RESOURCE; see RestorerFromBackup::checkAccessForObjectsFoundInBackup), so accepting
             /// a WORKLOAD from the resources directory (or vice versa) would bypass the access gate of the other
             /// kind and violate the system-table backup contract.
-            if (getEntityKey(name_and_ast.second).type != entity_type)
+            if (getEntityKey(ast).type != entity_type)
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_TABLE,
                     "Cannot restore workload entities: file {} defines an entity of a kind that does not match the "
                     "system table being restored",
                     String{data_path_in_backup_fs / filename});
-            parsed_entities.push_back(std::move(name_and_ast));
+            parsed_entities.push_back(std::move(ast));
         }
     }
 
@@ -1165,7 +1183,7 @@ void WorkloadEntityStorageBase::restore(
     {
         std::lock_guard lock{mutex};
         auto & accumulated = entities_to_restore[restore_id];
-        for (auto & [_, ast] : parsed_entities)
+        for (auto & ast : parsed_entities)
             accumulated.emplace(getEntityKey(ast), ast);
     }
 
@@ -1223,7 +1241,7 @@ void WorkloadEntityStorageBase::restoreEntitiesAccumulatedFromBackup(
         {
             forEachReference(entry.second, [&](const WorkloadEntityKey & target, const String & source)
             {
-                if (to_restore.contains(target) || entities.contains(target))
+                if (to_restore.contains(target) || visible_entities.contains(target))
                     return;
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_TABLE,

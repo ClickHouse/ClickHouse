@@ -12,9 +12,9 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 <ExperimentalBadge />
 
-Миграция платформы обсервабилити обычно означает нечто большее, чем просто смену места хранения данных. Агенты Datadog и SDKs уже могут быть развернуты в тысячах приложений, на хостах, виртуальных машинах и в подах Kubernetes. Если, чтобы просто оценить другой backend, нужно заново инструментировать всё это, миграция превращается в большой проект ещё до того, как начнёт приносить какую-либо пользу.
+Миграция платформы обсервабилити обычно означает нечто большее, чем просто смену места хранения данных. Агенты Datadog и SDKs уже могут быть развернуты в тысячах приложений, на хостах, виртуальных машинах и в подах Kubernetes. Если, чтобы просто оценить другое backend-соединение, нужно заново инструментировать всё это, миграция превращается в большой проект ещё до того, как начнёт приносить какую-либо пользу.
 
-Встроенный в дистрибутив ClickStack **приёмник Datadog** для OpenTelemetry Collector (OTel) снимает эти первоначальные затраты. Ваши существующие агенты Datadog и SDKs продолжают работать без изменений. Вместо того чтобы отправлять телеметрию в Datadog, вы направляете её в приёмник, который преобразует нативные полезные нагрузки Datadog для логов, трассировок и метрик в модель данных OpenTelemetry и передаёт их через стандартный конвейер коллектора в ClickStack.
+Встроенный в дистрибутив ClickStack **приёмник Datadog** для OpenTelemetry Collector (OTel) снимает эти первоначальные затраты. Ваши существующие агенты Datadog и SDKs продолжают работать без изменений. Вместо того чтобы отправлять телеметрию в Datadog, вы направляете её в приёмник, который преобразует нативные полезные нагрузки Datadog для журналов, трассировок и метрик в модель данных OpenTelemetry и передаёт их через стандартный конвейер коллектора в ClickStack.
 
 Поскольку приёмник работает внутри обычного конвейера коллектора, его можно использовать, чтобы:
 
@@ -23,45 +23,33 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * **Использовать оба стека параллельно** в долгосрочной перспективе, применяя каждую платформу там, где она подходит лучше всего.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Миграция агентов Datadog](/images/use-cases/observability/migrating_datadog_agents.png)
-
-</Frame>
-
+  <Frame>
+    ![Миграция агентов Datadog](/images/use-cases/observability/migrating_datadog_agents.png)
+  </Frame>
 </div>
 
-<div id="why-run-clickstack-alongside-datadog">
-  ## Почему стоит запускать ClickStack вместе с Datadog
-</div>
+## Зачем использовать ClickStack вместе с Datadog {#why-run-clickstack-alongside-datadog}
 
-Для большинства команд главная причина вынести данные обсервабилити из Datadog — это стоимость. По мере масштабирования приложений и подключения инструментации к новым сервисам объёмы журналов и трассировок растут, и в какой-то момент приходится выбирать: либо больше тратить, либо хранить меньше телеметрии. В результате такие меры по контролю затрат ограничивают то, что вы можете увидеть во время расследования: сэмплированные трассировки, неиндексированные журналы, агрегированные метрики и короткие сроки хранения уменьшают объём доступного контекста именно тогда, когда он нужнее всего.
+Для большинства команд главная причина переноса данных обсервабилити из Datadog — стоимость. Объёмы журналов и трассировки растут по мере масштабирования приложений и инструментирования новых сервисов, и приходится выбирать между ростом расходов и сокращением объёма сохраняемой телеметрии. Такая экономия, в свою очередь, ограничивает то, что вы можете увидеть в ходе расследования: выборочные трассы, неиндексированные журналы, агрегированные метрики и короткие периоды хранения сокращают доступный контекст именно тогда, когда он нужнее всего.
 
-[ClickStack](/ru/clickstack/overview) построен на ClickHouse, который для крупных нагрузок, связанных с журналами и трассировкой, может быть более чем в 100 раз экономичнее Datadog. Именно эта разница в экономике хранилища делает использование ClickStack вместе с Datadog оправданным:
+[ClickStack](/ru/clickstack/overview) построен на ClickHouse, который при больших рабочих нагрузках журналирования и трассировки может быть более чем в 100 раз экономичнее Datadog. Именно эта разница в стоимости хранения и делает использование ClickStack вместе с Datadog оправданным:
 
-* **Более длительное хранение.** Настраивайте сроки хранения в соответствии с эксплуатационными потребностями, а не бюджетом, и сохраняйте события, которые могут понадобиться спустя недели или месяцы.
-* **Данные полной точности.** Храните каждый журнал и каждую трассировку без сэмплирования, чтобы расследования проводились по полным данным, а не по их подмножеству.
-* **Без ограничений скорости API.** Выполняйте запросы к своей телеметрии как к базе данных, а не через тарифицируемый API, без throttling для отдельных запросов и конечных точек.
-* **Полный доступ к SQL.** Анализируйте журналы, метрики и трассировки с помощью SQL и объединяйте их через JOIN с бизнес-данными или данными инфраструктуры, уже хранящимися в ClickHouse.
-* **Агентные сценарии.** Сделайте свою телеметрию доступной для ИИ-агентов через [сервер ClickStack MCP](/ru/clickstack/mcp) и выполняйте неограниченное количество аналитических запросов напрямую к ClickHouse.
+* **Более длительное хранение.** Задавайте срок хранения исходя из операционных потребностей, а не бюджета, и сохраняйте события, которые могут понадобиться спустя недели или месяцы.
+* **Данные без потерь.** Храните каждую запись журнала и каждую трассу без сэмплирования, чтобы расследования велись на полных данных, а не на их подмножестве.
+* **Без ограничений частоты запросов к API.** Обращайтесь к телеметрии как к базе данных, а не через тарифицируемый API, без ограничений на отдельные запросы или конечные точки.
+* **Полный доступ через SQL.** Анализируйте журналы, метрики и трассировку с помощью SQL и объединяйте их с бизнес-данными или данными об инфраструктуре, уже хранящимися в ClickHouse.
+* **Агентные рабочие нагрузки.** Предоставляйте ИИ-агентам доступ к телеметрии через [MCP-сервер ClickStack](/ru/clickstack/mcp) и выполняйте неограниченное количество аналитических запросов напрямую к ClickHouse.
 
-Телеметрия полной точности особенно ценна для агентных расследований. Агент не может рассуждать о событии, которое было отброшено ещё до начала расследования, и ему нужна достаточная история, чтобы сопоставить текущий инцидент с прежними сбоями, изменениями в поведении и более долгосрочными закономерностями.
+Телеметрия без потерь особенно ценна для агентных расследований. Агент не может анализировать событие, отброшенное ещё до начала расследования, а для сравнения текущего инцидента с прошлыми сбоями, изменениями в поведении и долгосрочными закономерностями ему нужна достаточно глубокая история.
 
-<div id="how-the-datadog-receiver-works">
-  ## Как работает приёмник Datadog
-</div>
+## Как работает приёмник Datadog {#how-the-datadog-receiver-works}
 
-В типичном развертывании OpenTelemetry телеметрия сначала отправляется в OpenTelemetry Collector, а уже затем попадает в бэкенд. Коллектор получает данные от коллекторов, работающих в режиме агента, и от [OpenTelemetry SDKs](/ru/clickstack/ingesting-data/sdks/index), которыми инструментированы приложения, применяет фильтрацию и преобразования, объединяет события в батчи и экспортирует их в целевой пункт назначения.
+В типичном развертывании OpenTelemetry телеметрия сначала отправляется в OpenTelemetry Collector, а уже затем попадает в backend-соединение. Коллектор получает данные от коллекторов, работающих в режиме агента, и от [OpenTelemetry SDKs](/ru/clickstack/ingesting-data/sdks/index), которыми инструментированы приложения, применяет фильтрацию и преобразования, объединяет события в батчи и экспортирует их в целевой пункт назначения.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Простой конвейер OTel](/images/use-cases/observability/simple_otel_pipeline.png)
-
-</Frame>
-
+  <Frame>
+    ![Простой конвейер OTel](/images/use-cases/observability/simple_otel_pipeline.png)
+  </Frame>
 </div>
 
 [Приёмник Datadog](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver) добавляет в эту архитектуру ещё один источник входящих данных. Он предоставляет конечную точку, которая понимает протоколы, используемые агентами и SDK Datadog, и преобразует входящие полезные нагрузки Datadog в модель данных OpenTelemetry. После этого они проходят через стандартный конвейер коллектора, как и любая другая телеметрия.
@@ -69,236 +57,128 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 Существующие агенты Datadog достаточно просто перенастроить так, чтобы они отправляли журналы и трассировки в приёмник, работающий на коллекторе ClickStack. Приложения продолжают использовать существующие SDK Datadog, а агенты, уже развернутые в вашей инфраструктуре, остаются на месте.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Datadog в OpenTelemetry](/images/use-cases/observability/datadog_to_otel.png)
-
-</Frame>
-
+  <Frame>
+    ![Datadog в OpenTelemetry](/images/use-cases/observability/datadog_to_otel.png)
+  </Frame>
 </div>
 
 Поскольку конвейер коллектора может использовать несколько exporter, одну и ту же телеметрию можно одновременно отправлять и в Datadog, и в ClickStack. Именно это делает возможными параллельную оценку и длительную параллельную эксплуатацию: вы сравниваете обе платформы на идентичных данных, а затем отдельно принимаете решение о миграции.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Миграция агентов Datadog](/images/use-cases/observability/migrating_datadog_agents.png)
-
-</Frame>
-
+  <Frame>
+    ![Миграция агентов Datadog](/images/use-cases/observability/migrating_datadog_agents.png)
+  </Frame>
 </div>
 
-<div id="what-the-receiver-handles">
-  ## Что обрабатывает приёмник
-</div>
+## Что обрабатывает приёмник {#what-the-receiver-handles}
 
-Приёмник преобразует полезные нагрузки Datadog в корректное представление OpenTelemetry, чтобы ClickStack мог интерпретировать данные, коррелировать их и выполнять по ним запросы без какой-либо специфичной для Datadog логики:
+Приёмник преобразует полезные нагрузки Datadog в корректное представление OpenTelemetry, чтобы ClickStack мог интерпретировать и коррелировать данные, а также выполнять к ним запросы без какой-либо логики, специфичной для Datadog:
 
-* **Записи журнала.** Временные метки Datadog в миллисекундах преобразуются в наносекунды и используются для заполнения полей OpenTelemetry `timestamp`, `observed timestamp`, `body` и `severity`, поэтому записи больше не отображаются с временной меткой Unix epoch.
-* **Атрибуты ресурса и severity.** Статусы Datadog, такие как `info`, `warn` и `error`, сопоставляются с соответствующими значениями OpenTelemetry `SeverityNumber` и `SeverityText`. Имена хостов, имена сервисов, окружения, а также известные теги контейнеров, Cloud и Kubernetes преобразуются в стандартные атрибуты ресурса.
-* **Корреляция трассировок и журналов.** Поля `dd.trace_id` и `dd.span_id` заполняют идентификаторы trace и span в OpenTelemetry, а приёмник восстанавливает полные 128-битные trace ID из разделённого представления Datadog. Эта возможность включена по умолчанию и позволяет коррелировать журналы и spans из Datadog с сервисами, инструментированными с помощью OpenTelemetry.
-* **Структурированные JSON-журналы.** Параметр `decode_json_message`, включенный по умолчанию, выполняет обработку JSON, которая обычно происходит в backend Datadog: извлекает `body`, временную метку, `severity`, идентификаторы трассировки, поля ресурса и оставшиеся атрибуты.
-* **Совместимость с текущими agents.** Datadog Agent 7.59 и более поздние версии по умолчанию сжимают HTTP-полезные нагрузки с помощью Zstandard. Приёмник поддерживает Zstandard наряду с gzip, поэтому текущие agents подключаются без отклонения их полезных нагрузок.
+* **Записи журнала.** Временные метки Datadog в миллисекундах преобразуются в наносекунды и используются для заполнения полей OpenTelemetry timestamp, observed timestamp, body и severity, поэтому записи больше не отображаются с датой эпохи Unix.
+* **Атрибуты ресурса и уровень важности.** Статусы Datadog, такие как `info`, `warn` и `error`, сопоставляются с соответствующими значениями OpenTelemetry `SeverityNumber` и `SeverityText`. Имена хостов, имена сервисов, окружения, а также известные теги контейнеров, облаков и Kubernetes преобразуются в стандартные атрибуты ресурса.
+* **Корреляция трасс и журналов.** Поля `dd.trace_id` и `dd.span_id` используются для заполнения идентификаторов трассы и спана OpenTelemetry, а приёмник восстанавливает полные 128-битные идентификаторы трасс из разделённого представления Datadog. Эта функция включена по умолчанию и позволяет коррелировать журналы и спаны из Datadog с сервисами, инструментированными с помощью OpenTelemetry.
+* **Структурированные журналы в формате JSON.** Параметр `decode_json_message`, включённый по умолчанию, выполняет обработку JSON, которая обычно происходит на бэкенде Datadog: извлекает тело, временную метку, уровень важности, идентификаторы трассировки, поля ресурса и остальные атрибуты.
+* **Совместимость с актуальными агентами.** Datadog Agent 7.59 и более поздних версий по умолчанию сжимает полезные нагрузки HTTP с помощью Zstandard. Приёмник поддерживает Zstandard наряду с gzip, поэтому актуальные агенты подключаются, и их полезные нагрузки не отклоняются.
 
-Эти изменения входят в дистрибутив коллектора ClickStack и настраиваются автоматически, но также доступны в проекте [OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib).
+Эти изменения включены в дистрибутив коллектора ClickStack и настраиваются автоматически, но также доступны в проекте [OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib).
 
-<div id="enabling-the-datadog-receiver">
-  ## Включение приёмника Datadog
-</div>
+## Включение приёмника Datadog {#enabling-the-datadog-receiver}
 
-Приёмник Datadog входит в состав дистрибутива ClickStack для OpenTelemetry Collector и прослушивает порт `8126`. По умолчанию он отключен и включается с помощью переменной окружения `ENABLE_DATADOG_RECEIVER`.
+Приёмник Datadog входит в дистрибутив коллектора ClickStack OpenTelemetry и прослушивает порт `8126`. По умолчанию он отключён и включается с помощью переменной окружения `ENABLE_DATADOG_RECEIVER`.
 
-После включения настройте агент Datadog на отправку данных в этот приёмник и аутентифицируйте его с помощью ключа ингестии ClickStack. Откуда берётся этот ключ, зависит от вашего развертывания: в **Управляемом ClickStack** вы запускаете автономный коллектор и сами задаёте ключ при запуске, а в **Open Source ClickStack** ключ создаётся автоматически, и его нужно скопировать из интерфейса ClickStack (HyperDX). Ниже выберите своё развертывание.
+После включения направьте агент Datadog на приёмник и аутентифицируйте его с помощью ключа приёма данных, созданного в интерфейсе ClickStack (интерфейс ClickStack).
 
-<Tabs>
-  <Tab title="Управляемый ClickStack">
-    С Управляемым ClickStack вы разворачиваете автономный коллектор ClickStack, который выполняет ингестию в ваш сервис ClickHouse Cloud. При запуске вы защищаете коллектор с помощью выбранного вами токена аутентификации и затем используете этот же токен как ключ API агента Datadog.
+В Open Source ClickStack коллектор защищает свои конечные точки с помощью ключа приёма данных, который создаётся при развертывании стека. Включите приёмник, скопируйте этот ключ из интерфейса ClickStack (интерфейс ClickStack) и используйте его как ключ API агента Datadog.
 
-    <Steps>
-      <Step title="Разверните коллектор с включенным приёмником" id="deploy-collector-managed">
-        <Note>
-          **Коллектор ClickStack OpenTelemetry и стандартный OpenTelemetry Collector**
+<Steps>
+  <Step title="Запустите коллектор с включённым приёмником" id="start-collector-oss">
+    В примере ниже используется [образ «Всё в одном»](/ru/clickstack/deployment/all-in-one). Если вы используете другую модель дистрибуции, убедитесь, что тот же флаг применён к контейнеру, в котором запущен коллектор.
 
-          Приёмник Datadog встроен в дистрибутив коллектора ClickStack OpenTelemetry и уже предварительно настроен. Если вы предпочитаете использовать стандартный дистрибутив [OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib), вам потребуется настроить приёмник самостоятельно. Все наши изменения и улучшения для этого приёмника отправляются в upstream, поэтому там они тоже доступны. Параметры конфигурации см. в [README приёмника Datadog](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/datadogreceiver/README.md).
-        </Note>
+    Установите `ENABLE_DATADOG_RECEIVER=true` и откройте порт `8126`:
 
-        Запустите [автономный коллектор ClickStack](/ru/clickstack/ingesting-data/collector), указав в качестве пункта назначения ваш сервис ClickHouse Cloud. Включите приёмник Datadog с помощью `ENABLE_DATADOG_RECEIVER=true`, откройте порт `8126` и защитите ингестию, задав собственный `OTLP_AUTH_TOKEN`:
+    ```shell
+    docker run --name clickstack \
+      -p 8080:8080 \
+      -p 4317:4317 \
+      -p 4318:4318 \
+      -p 8126:8126 \
+      -e ENABLE_DATADOG_RECEIVER=true \
+      clickhouse/clickstack-all-in-one:latest
+    ```
 
-        ```shell
-        export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
-        export CLICKHOUSE_USER=<CLICKHOUSE_USER>
-        export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
-        export OTLP_AUTH_TOKEN="a_very_secure_string"
+    Теперь приёмник доступен по адресу `http://localhost:8126`.
 
-        docker run --name clickstack-collector \
-          -e ENABLE_DATADOG_RECEIVER=true \
-          -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
-          -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
-          -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
-          -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
-          -p 4317:4317 \
-          -p 4318:4318 \
-          -p 8126:8126 \
-          clickhouse/clickstack-otel-collector:latest
-        ```
+    <Note>
+      **Запуск локального агента Datadog**
 
-        Теперь приёмник доступен по адресу `http://localhost:8126`, а токен из `OTLP_AUTH_TOKEN` — это ключ, который нужно передать агенту Datadog. Подробнее о защите коллектора, включая эквивалент для Helm, см. в разделе [&quot;Защита коллектора&quot;](/ru/clickstack/ingesting-data/collector#securing-the-collector).
-      </Step>
+      Агент Datadog также использует порт `8126`. Если агент работает на том же хосте, что и коллектор, сопоставьте коллектор с другим портом хоста, чтобы избежать конфликта, например `-p 18126:8126`, и настройте агент на использование этого порта.
+    </Note>
 
-      <Step title="Настройте агент Datadog" id="configure-datadog-agent-managed">
-        Обновите файл конфигурации агента `/opt/datadog-agent/etc/datadog.yaml`, чтобы отправлять журналы, трассировки и метрики в приёмник. Используйте значение `OTLP_AUTH_TOKEN` как ключ API и укажите конечную точку приёмника для каждого пункта назначения:
+    Завершите оставшуюся часть настройки, как описано в [руководстве «Начало работы» для версии с открытым исходным кодом](/ru/clickstack/getting-started/oss#navigate-to-hyperdx-ui).
+  </Step>
 
-        ```yaml
-        api_key: "<YOUR_OTLP_AUTH_TOKEN>"
+  <Step title="Скопируйте свой ключ API для приёма данных" id="copy-ingestion-key-oss">
+    В интерфейсе ClickStack (интерфейс ClickStack) выберите своего пользователя в левом нижнем углу, перейдите в **Team Settings &gt; API Keys** и скопируйте **Ingestion API Key**.
 
-        # Пункт назначения метрик
-        dd_url: "http://localhost:8126"
-
-        # ClickStack currently supports the Datadog v2 metrics intake.
-        use_v3_api:
-          series:
-            enabled: false
-
-        # Пункт назначения трассировок
-        apm_config:
-          enabled: true
-          apm_dd_url: "http://localhost:8126"
-
-        # Пункт назначения журналов
-        logs_enabled: true
-
-        logs_config:
-          logs_dd_url: "http://localhost:8126"
-          force_use_http: true
-
-        # Для них требуется backend Datadog, который мы не используем, поэтому отключаем их.
-        remote_updates: false
-
-        remote_configuration:
-          enabled: false
-        ```
-
-        Эта конфигурация:
-
-        * Отправляет метрики, трассировки и журналы в приёмник, а не в Datadog.
-        * Отключает приём метрик v3, поскольку ClickStack поддерживает конечную точку метрик Datadog v2.
-        * Отключает удалённые обновления и удалённую конфигурацию, которые зависят от backend Datadog.
-      </Step>
-
-      <Step title="Перезапустите агент" id="restart-agent-managed">
-        Перезапустите агент Datadog, чтобы он подхватил новую конфигурацию. В macOS:
-
-        ```shell
-        sudo launchctl kickstart -k system/com.datadoghq.agent
-        ```
-
-        Теперь телеметрия от агента поступает в ClickStack, где её можно изучать в HyperDX.
-      </Step>
-    </Steps>
-  </Tab>
-
-  <Tab title="ClickStack с открытым исходным кодом">
-    В Open Source ClickStack коллектор защищает свои конечные точки с помощью ключа приёма данных, который создаётся при развертывании стека. Включите приёмник, скопируйте этот ключ из интерфейса ClickStack (HyperDX) и используйте его как ключ API агента Datadog.
-
-    <Steps>
-      <Step title="Запустите коллектор с включённым приёмником" id="start-collector-oss">
-        В примере ниже используется [образ «Всё в одном»](/ru/clickstack/deployment/all-in-one). Если вы используете другую модель дистрибуции, убедитесь, что тот же флаг применён к контейнеру, в котором запущен коллектор.
-
-        Установите `ENABLE_DATADOG_RECEIVER=true` и откройте порт `8126`:
-
-        ```shell
-        docker run --name clickstack \
-          -p 8080:8080 \
-          -p 4317:4317 \
-          -p 4318:4318 \
-          -p 8126:8126 \
-          -e ENABLE_DATADOG_RECEIVER=true \
-          clickhouse/clickstack-all-in-one:latest
-        ```
-
-        Теперь приёмник доступен по адресу `http://localhost:8126`.
-
-        <Note>
-          **Запуск локального агента Datadog**
-
-          Агент Datadog также использует порт `8126`. Если агент работает на том же хосте, что и коллектор, сопоставьте коллектор с другим портом хоста, чтобы избежать конфликта, например `-p 18126:8126`, и настройте агент на использование этого порта.
-        </Note>
-
-        Завершите оставшуюся часть настройки, как описано в [руководстве «Начало работы» для версии с открытым исходным кодом](/ru/clickstack/getting-started/oss#navigate-to-hyperdx-ui).
-      </Step>
-
-      <Step title="Скопируйте свой ключ API для приёма данных" id="copy-ingestion-key-oss">
-        В интерфейсе ClickStack (HyperDX) выберите своего пользователя в левом нижнем углу, перейдите в **Team Settings &gt; API Keys** и скопируйте **Ingestion API Key**.
-
-        <div className="ch-image-lg">
-
-        <Frame>
-
+    <div className="ch-image-lg">
+      <Frame>
         ![Ключ приёма данных ClickStack](/images/use-cases/observability/hyperdx_ingestion_key.png)
+      </Frame>
+    </div>
+  </Step>
 
-        </Frame>
+  <Step title="Настройте агент Datadog" id="configure-datadog-agent-oss">
+    Обновите файл конфигурации агента `/opt/datadog-agent/etc/datadog.yaml`, чтобы отправлять журналы, трассировки и метрики в приёмник. Используйте ключ приёма данных ClickStack как ключ API и укажите конечную точку приёмника для каждого пункта назначения:
 
-        </div>
-      </Step>
+    ```yaml
+    api_key: "<YOUR_CLICKSTACK_INGESTION_KEY>"
 
-      <Step title="Настройте агент Datadog" id="configure-datadog-agent-oss">
-        Обновите файл конфигурации агента `/opt/datadog-agent/etc/datadog.yaml`, чтобы отправлять журналы, трассировки и метрики в приёмник. Используйте ключ приёма данных ClickStack как ключ API и укажите конечную точку приёмника для каждого пункта назначения:
+    # Пункт назначения для метрик
+    dd_url: "http://localhost:8126"
 
-        ```yaml
-        api_key: "<YOUR_CLICKSTACK_INGESTION_KEY>"
+    # В настоящее время ClickStack поддерживает приём метрик Datadog v2.
+    use_v3_api:
+      series:
+        enabled: false
 
-        # Пункт назначения для метрик
-        dd_url: "http://localhost:8126"
+    # Пункт назначения для трассировок
+    apm_config:
+      enabled: true
+      apm_dd_url: "http://localhost:8126"
 
-        # В настоящее время ClickStack поддерживает приём метрик Datadog v2.
-        use_v3_api:
-          series:
-            enabled: false
+    # Пункт назначения для журналов
+    logs_enabled: true
 
-        # Пункт назначения для трассировок
-        apm_config:
-          enabled: true
-          apm_dd_url: "http://localhost:8126"
+    logs_config:
+      logs_dd_url: "http://localhost:8126"
+      force_use_http: true
 
-        # Пункт назначения для журналов
-        logs_enabled: true
+    # Для этого требуется backend Datadog, который мы не используем, поэтому отключаем эти параметры.
+    remote_updates: false
 
-        logs_config:
-          logs_dd_url: "http://localhost:8126"
-          force_use_http: true
+    remote_configuration:
+      enabled: false
+    ```
 
-        # Для этого требуется backend Datadog, который мы не используем, поэтому отключаем эти параметры.
-        remote_updates: false
+    Эта конфигурация:
 
-        remote_configuration:
-          enabled: false
-        ```
+    * Отправляет метрики, трассировки и журналы в приёмник, а не в Datadog.
+    * Отключает приём метрик v3, поскольку приёмник поддерживает конечную точку метрик Datadog v2.
+    * Отключает удалённые обновления и удалённую конфигурацию, которые зависят от backend-соединения Datadog.
+  </Step>
 
-        Эта конфигурация:
+  <Step title="Перезапустите агент" id="restart-agent-oss">
+    Перезапустите агент Datadog, чтобы он применил новую конфигурацию. В macOS:
 
-        * Отправляет метрики, трассировки и журналы в приёмник, а не в Datadog.
-        * Отключает приём метрик v3, поскольку приёмник поддерживает конечную точку метрик Datadog v2.
-        * Отключает удалённые обновления и удалённую конфигурацию, которые зависят от backend Datadog.
-      </Step>
+    ```shell
+    sudo launchctl kickstart -k system/com.datadoghq.agent
+    ```
 
-      <Step title="Перезапустите агент" id="restart-agent-oss">
-        Перезапустите агент Datadog, чтобы он применил новую конфигурацию. В macOS:
+    Теперь телеметрия от агента поступает в ClickStack, где вы можете изучать её в интерфейсе ClickStack.
+  </Step>
+</Steps>
 
-        ```shell
-        sudo launchctl kickstart -k system/com.datadoghq.agent
-        ```
-
-        Теперь телеметрия от агента поступает в ClickStack, где вы можете изучать её в HyperDX.
-      </Step>
-    </Steps>
-  </Tab>
-</Tabs>
-
-<div id="worked-example">
-  ## Пошаговый пример
-</div>
+## Пошаговый пример {#worked-example}
 
 В следующем примере используется демо-приложение, чтобы показать весь путь данных: от инструментированного приложения через агент Datadog в ClickStack.
 
@@ -315,13 +195,9 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
     Чтобы запустить приложение, следуйте [инструкциям в README](https://github.com/ClickHouse/hn-news-analyzer/tree/datadog-instrumentation).
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Приложение HackerNews Analyzer, запущенное локально](/images/clickstack/getting-started/hackernews_main.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Приложение HackerNews Analyzer, запущенное локально](/images/clickstack/getting-started/hackernews_main.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -349,52 +225,40 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
     DD_SITE="datadoghq.com" bash -c "$(curl -L https://install.datadoghq.com/scripts/install_mac_os.sh)"
     ```
 
-    Обновите `/opt/datadog-agent/etc/datadog.yaml`, чтобы агент использовал приёмник на порту `18126`, а в качестве API key — ваш ключ ингестии ClickStack. Затем перезапустите агент:
+    Обновите `/opt/datadog-agent/etc/datadog.yaml`, чтобы агент использовал приёмник на порту `18126`, а в качестве ключа API — ваш ключ приёма данных ClickStack. Затем перезапустите агент:
 
     ```shell
     sudo launchctl kickstart -k system/com.datadoghq.agent
     ```
 
-    Полную конфигурацию агента и информацию о том, где найти ключ ингестии, см. в разделе [Включение приёмника Datadog](#enabling-the-datadog-receiver).
+    Полную конфигурацию агента и информацию о том, где найти ключ приёма данных, см. в разделе [Включение приёмника Datadog](#enabling-the-datadog-receiver).
   </Step>
 
   <Step title="Изучите телеметрию в ClickStack" id="explore-telemetry">
-    Откройте интерфейс HyperDX по адресу [http://localhost:8080](http://localhost:8080) и изучите трассировки, журналы и метрики, собранные агентом Datadog.
+    Откройте интерфейс ClickStack по адресу [http://localhost:8080](http://localhost:8080) и изучите трассировки, журналы и метрики, собранные агентом Datadog.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Datadog в ClickStack, трассировки 2](/images/use-cases/observability/datadog_clickstack_demo_2.png)
-
-    </Frame>
-
+      <Frame>
+        ![Datadog в ClickStack, трассировки 2](/images/use-cases/observability/datadog_clickstack_demo_2.png)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Datadog в ClickStack, трассировки 1](/images/use-cases/observability/datadog_clickstack_demo_1.png)
-
-    </Frame>
-
+      <Frame>
+        ![Datadog в ClickStack, трассировки 1](/images/use-cases/observability/datadog_clickstack_demo_1.png)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Datadog в ClickStack, трассировки 3](/images/use-cases/observability/datadog_clickstack_demo_3.png)
-
-    </Frame>
-
+      <Frame>
+        ![Datadog в ClickStack, трассировки 3](/images/use-cases/observability/datadog_clickstack_demo_3.png)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="what-you-can-migrate-today">
-  ## Что можно мигрировать уже сегодня
+  ## Что можно мигрировать уже сегодня {#what-you-can-migrate-today}
 </div>
 
 Приёмник Datadog — это альфа-компонент OpenTelemetry Collector Contrib, а в дистрибутиве коллектора ClickStack он помечен как экспериментальный, поэтому для его включения требуется feature flag.

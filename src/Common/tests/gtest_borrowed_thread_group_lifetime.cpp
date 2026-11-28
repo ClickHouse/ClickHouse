@@ -178,6 +178,158 @@ TEST(ThreadPoolCallbackRunner, UnsafeRunnerDroppedTaskReleasesGroupBeforeFutureI
     t.join();
 }
 
+/// The runner's own state is allocated on the scheduling thread and usually freed by a detached pool thread, so it must
+/// not be charged to the query, or every task leaves its size charged to the query until the query ends.
+TEST(ThreadPoolCallbackRunner, UnsafeRunnerStateIsNotChargedToQuery)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto pool = makeSingleThreadPool();
+
+        auto group = std::make_shared<ThreadGroup>(context, 0);
+        constexpr size_t num_tasks = 100000;
+
+        CurrentThread::attachToGroupIfDetached(group);
+        auto runner = threadPoolCallbackRunnerUnsafe<void>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        for (size_t i = 0; i < num_tasks; ++i)
+            runner([] {}, Priority{}).get();
+        pool->wait();
+        /// Detaching flushes the untracked memory of this thread to the group.
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        const Int64 charged = group->memory_tracker.get();
+        EXPECT_LT(std::abs(charged), 1 << 17) << "the query is left charged " << charged << " bytes after " << num_tasks << " tasks";
+    });
+    t.join();
+}
+
+TEST(ThreadPoolCallbackRunner, LocalRunnerStateIsNotChargedToQuery)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto pool = makeSingleThreadPool();
+
+        auto group = std::make_shared<ThreadGroup>(context, 0);
+        constexpr size_t num_tasks = 100000;
+
+        CurrentThread::attachToGroupIfDetached(group);
+        {
+            ThreadPoolCallbackRunnerLocal<void> runner(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+            for (size_t i = 0; i < num_tasks; ++i)
+            {
+                runner.enqueueAndKeepTrack([] {});
+                runner.waitForAllToFinishAndRethrowFirstError();
+            }
+        }
+        pool->wait();
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        const Int64 charged = group->memory_tracker.get();
+        EXPECT_LT(std::abs(charged), 1 << 17) << "the query is left charged " << charged << " bytes after " << num_tasks << " tasks";
+    });
+    t.join();
+}
+
+/// What a throwing callback captured is the query's, so it must be released before the pool thread detaches.
+TEST(ThreadPoolCallbackRunner, LocalRunnerReleasesThrowingCallbackInQuery)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto pool = makeSingleThreadPool();
+
+        auto group = std::make_shared<ThreadGroup>(context, 0);
+
+        CurrentThread::attachToGroupIfDetached(group);
+        {
+            ThreadPoolCallbackRunnerLocal<void> runner(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+            runner.enqueueAndKeepTrack([buffer = std::vector<char>(8 << 20, 'x')] { throw std::runtime_error("callback failed"); });
+            EXPECT_THROW(runner.waitForAllToFinishAndRethrowFirstError(), std::runtime_error);
+        }
+        pool->wait();
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        const Int64 charged = group->memory_tracker.get();
+        EXPECT_LT(std::abs(charged), 1 << 20) << "the query is left charged " << charged << " bytes";
+    });
+    t.join();
+}
+
+/// A cancelled task never runs, but what its callback captured is still the query's.
+TEST(ThreadPoolCallbackRunner, LocalRunnerReleasesCancelledCallbackInQuery)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto pool = makeSingleThreadPool();
+        auto group = std::make_shared<ThreadGroup>(context, 0);
+
+        std::promise<void> started;
+        std::promise<void> unblock;
+        auto unblock_future = unblock.get_future().share();
+
+        CurrentThread::attachToGroupIfDetached(group);
+        {
+            ThreadPoolCallbackRunnerLocal<void> runner(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+            runner.enqueueAndKeepTrack([&started, unblock_future]
+            {
+                started.set_value();
+                unblock_future.wait();
+            });
+            started.get_future().wait();
+            auto task = runner.enqueueAndGiveOwnership([buffer = std::vector<char>(8 << 20, 'x')] {});
+
+            /// Cancel it while the worker is busy, like `cancelScheduledTasks` does (`SCHEDULED` is 0, `CANCELLED` is 3).
+            using TaskState = decltype(task->state.load());
+            auto expected = static_cast<TaskState>(0);
+            EXPECT_TRUE(task->state.compare_exchange_strong(expected, static_cast<TaskState>(3)));
+
+            unblock.set_value();
+            pool->wait();
+        }
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        const Int64 charged = group->memory_tracker.get();
+        EXPECT_LT(std::abs(charged), 1 << 20) << "the query is left charged " << charged << " bytes";
+    });
+    t.join();
+}
+
+/// A task the pool drops on shutdown reports an ordinary error, not a broken promise.
+TEST(ThreadPoolCallbackRunner, LocalRunnerDroppedTaskReportsCannotSchedule)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto pool = makeSingleThreadPool();
+
+        std::promise<void> started;
+        std::promise<void> unblock;
+        auto unblock_future = unblock.get_future().share();
+        pool->scheduleOrThrowOnError([&started, unblock_future]
+        {
+            started.set_value();
+            unblock_future.wait();
+            throw std::runtime_error("shut the pool down");
+        });
+        started.get_future().wait();
+
+        ThreadPoolCallbackRunnerLocal<void> runner(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto task = runner.enqueueAndGiveOwnership([] {});
+
+        unblock.set_value();
+        EXPECT_THROW(pool->wait(), std::runtime_error);
+        EXPECT_THROW(task->future.get(), Exception);
+    });
+    t.join();
+}
+
 /// The use-after-free regression: async work enqueued from a borrowed `ThreadGroup` scope
 /// (materialized views, async-insert flushes, `EXPLAIN ANALYZE`) may outlive the parent query.
 /// The capture must keep the accounting chain alive, allocations must still charge the owning
