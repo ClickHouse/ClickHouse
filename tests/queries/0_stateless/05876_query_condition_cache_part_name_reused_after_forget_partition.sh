@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-replicated-database, no-shared-merge-tree, no-fasttest
-# no-replicated-database: the table has explicit ReplicatedMergeTree arguments.
-# no-shared-merge-tree: the test relies on FORGET PARTITION removing the block numbers of a ReplicatedMergeTree partition.
+# no-replicated-database: the table has explicit `ReplicatedMergeTree` arguments.
+# no-shared-merge-tree: the test relies on `FORGET PARTITION` removing the block numbers of a `ReplicatedMergeTree` partition.
 # no-fasttest: waits for the cleanup thread.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# FORGET PARTITION restarts the block numbers of a partition, so the next INSERT writes a part with the name of a
+# `FORGET PARTITION` restarts the block numbers of a partition, so the next `INSERT` writes a part with the name of a
 # dropped one. The query condition cache entries of the dropped part must not be used.
 
 # The uncompressed cache is keyed by file path, so it can serve the dropped part's data here too.
@@ -16,7 +16,7 @@ SETTINGS="SET use_query_condition_cache = 1, use_uncompressed_cache = 0, insert_
 
 function check()
 {
-    local table=$1 rows_before=$2 rows_after=$3
+    local table=$1 rows_before=$2 rows_after=$3 lost_reply=${4:-}
 
     $CLICKHOUSE_CLIENT -m -q "
         $SETTINGS
@@ -30,14 +30,26 @@ function check()
         ALTER TABLE $table DROP PARTITION 1;
     "
 
-    # DROP PARTITION does not wait until the dropped parts are removed, and FORGET PARTITION needs it.
+    # `DROP PARTITION` does not wait until the dropped parts are removed, and `FORGET PARTITION` needs it.
     while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = '$table'") != 0 ]]; do
         sleep 0.5
     done
 
+    local forget="ALTER TABLE $table FORGET PARTITION 1;"
+    if [[ -n $lost_reply ]]; then
+        # The Keeper removal of `FORGET PARTITION` took effect, but its reply was lost, so the query failed.
+        # `SYSTEM RESTART REPLICA` drops the cached existence of the removed node, which the next `INSERT` would rely on.
+        $CLICKHOUSE_KEEPER_CLIENT -q "rm '/clickhouse/tables/$CLICKHOUSE_DATABASE/$table/block_numbers/1'"
+        $CLICKHOUSE_CLIENT -m -q "
+            ALTER TABLE $table FORGET PARTITION 1; -- { serverError CANNOT_FORGET_PARTITION }
+            SYSTEM RESTART REPLICA $table;
+        "
+        forget=""
+    fi
+
     $CLICKHOUSE_CLIENT -m -q "
         $SETTINGS
-        ALTER TABLE $table FORGET PARTITION 1;
+        $forget
         INSERT INTO $table SELECT 1, number, 'apple' FROM numbers($rows_after);
         SELECT name, marks FROM system.parts WHERE database = currentDatabase() AND table = '$table' AND active;
         SELECT sum(k) FROM $table WHERE length(s) = 5;
@@ -52,3 +64,5 @@ check t_fewer 1000 16
 check t_more 16 1000
 # The new part has as many marks as the dropped one.
 check t_same 16 16
+# The same, but `FORGET PARTITION` failed after its Keeper removal took effect.
+check t_lost_reply 16 16 lost_reply
