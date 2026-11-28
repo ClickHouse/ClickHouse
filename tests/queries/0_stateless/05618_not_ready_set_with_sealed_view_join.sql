@@ -21,9 +21,9 @@ DROP TABLE IF EXISTS t_big_sv;
 CREATE TABLE t_outer_sv (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
 INSERT INTO t_outer_sv SELECT number FROM numbers(1000);
 
-CREATE TABLE t_small_sv (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192;
+CREATE TABLE t_small_sv (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 INSERT INTO t_small_sv SELECT number FROM numbers(20);
-CREATE TABLE t_big_sv (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192;
+CREATE TABLE t_big_sv (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 INSERT INTO t_big_sv SELECT number FROM numbers(1000);
 
 -- The `WHERE` makes the view sealed, so it is read through `ReadFromSealedView`. It keeps [0, 10).

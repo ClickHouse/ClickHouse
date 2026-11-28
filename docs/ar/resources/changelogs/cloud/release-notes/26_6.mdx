@@ -9,6 +9,10 @@ doc_type: 'changelog'
 
 ## تغييرات غير متوافقة مع الإصدارات السابقة {#backward-incompatible-changes}
 
+### بيانات اعتماد مصدر القاموس {#dictionary-source-credentials}
+
+* بدءًا من الإصدار 26.6.1.240 من ClickHouse Cloud، لم يعد بإمكان المستخدمين الآخرين غير `default` إنشاء قاموس يكون فيه `default` هو مستخدم مصدر `CLICKHOUSE`، بصرف النظر عن كلمة المرور المقدَّمة. وينطبق ذلك أيضًا عندما تُستمد بيانات اعتماد المصدر من مجموعة مسمّاة. كان تحديد كلٍّ من `user` و`password` إلزاميًا من قبل؛ أما الآن فيُرفض تحديد `default` صراحةً مع ظهور الخطأ `BAD_ARGUMENTS` (الرمز 36): ``A non-default user cannot create a dictionary that connects as passwordless dictionary source user `default`.`` لذا حدِّث عبارات DDL الخاصة بإنشاء القواميس وترحيلها بحيث تستخدم مستخدم مصدر مخصصًا يملك صلاحية `SELECT` على الجدول المصدر. راجع [مثال مصدر القاموس ClickHouse](/ar/reference/statements/create/dictionary/sources/clickhouse).
+
 ### تغييرات الاستعلامات وبناء الجملة {#query-and-syntax-changes}
 
 * أصبحت دالتا النافذة `RANK` و`DENSE_RANK` ترفضان الوسائط وتُطلقان الخطأ `NUMBER_OF_ARGUMENTS_DOESNT_MATCH`، تماشيًا مع معيار SQL. في السابق، كانت استعلامات مثل `RANK(x) OVER (ORDER BY id)` تُقبل دون تنبيه مع تجاهل الوسيط، وهو ما شكّل مصدرًا متكررًا لالتباس المستخدمين. ولاستعادة السلوك المتساهل السابق، اضبط `allow_rank_dense_rank_arguments = 1`. [#104324](https://github.com/ClickHouse/ClickHouse/pull/104324) ([groeneai](https://github.com/groeneai)).
@@ -611,7 +615,7 @@ doc_type: 'changelog'
 ### إصلاحات ClickHouse Keeper {#clickhouse-keeper-fixes}
 
 * إصلاح تنظيف اللقطات في `Keeper` بعد فشل عمليات الكتابة، بحيث تُنظَّف اللقطات الجزئية بأمان ويمكن إعادة محاولة الكتابة دون تقديم `latest_snapshot_meta`. [#105779](https://github.com/ClickHouse/ClickHouse/pull/105779) ([antonio2368](https://github.com/antonio2368)).
-* إصلاح حالات فشل `Keeper` أثناء لحاق العقدة التابعة، إذ كان يمكن أن تمتلئ قائمة انتظار استجابات موزّع الطلبات الجديد قبل بدء خيط الاستجابة. [#106049](https://github.com/antonio2368](https://github.com/antonio2368)).
+* إصلاح حالات فشل `Keeper` أثناء لحاق العقدة التابعة، إذ كان يمكن أن تمتلئ قائمة انتظار استجابات موزّع الطلبات الجديد قبل بدء خيط الاستجابة. [#106049](https://github.com/antonio2368]\(https://github.com/antonio2368\)).
 * إصلاح تعلّق Keeper أحيانًا عند بدء التشغيل عند ضبط الإعداد `nuraft_max_log_gap_in_stream` على قيمة غير افتراضية (القيمة الافتراضية هي 0، أي تعطيل تمرير طلبات `append_entries` عبر خط الأنابيب). [#106220](https://github.com/ClickHouse/ClickHouse/pull/106220) ([al13n321](https://github.com/al13n321)).
 * أصبح TLS الداخلي لـ Keeper Raft يراعي الآن الإعداد `openSSL.client.verificationMode`. سابقًا، كان التحقق من شهادة النظير مفعّلًا دائمًا لاتصالات Raft بين عقد Keeper بغض النظر عن هذا الإعداد، لذا كان يتم تجاهل `none` بصمت. الآن، يعطّل `none` صراحةً التحقق من شهادات نظراء Raft، بينما يحافظ غياب الإعداد على السلوك السابق الآمن افتراضيًا. ستتوقف التهيئات التي تضبط `none` صراحةً عن التحقق من شهادات نظراء Raft بعد الترقية، بما يتوافق مع الإعداد المقصود. [#106726](https://github.com/ClickHouse/ClickHouse/pull/106726) ([antonio2368](https://github.com/antonio2368)).
 * إصلاح إعادة إنشاء جلسة ZooKeeper دون داعٍ عند إعادة تحميل التهيئة. [#107096](https://github.com/ClickHouse/ClickHouse/pull/107096) ([azat](https://github.com/azat)).

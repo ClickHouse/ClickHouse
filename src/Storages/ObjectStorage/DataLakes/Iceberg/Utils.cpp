@@ -23,6 +23,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
@@ -126,6 +127,7 @@ namespace DB::Setting
 {
     extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
     extern const SettingsUInt64 iceberg_metadata_staleness_ms;
+    extern const SettingsUInt64 max_generic_compression_threads;
     extern const SettingsUInt64 output_format_compression_level;
 }
 
@@ -375,7 +377,8 @@ void writeMessageToFile(
             static_cast<int>(settings[Setting::output_format_compression_level]),
             /*zstd_window_log=*/ 0,
             SnappyMode::Basic,
-            buf_size);
+            buf_size, /* existing_memory */ nullptr, /* alignment */ 0, /* compress_empty */ true,
+            settings[Setting::max_generic_compression_threads]);
         compressed_buffer_metadata->write(data.data(), data.size());
         compressed_buffer_metadata->finalize();
     }
@@ -2821,6 +2824,12 @@ Field normalizePartitionValue(const Field & value, const DataTypePtr & type)
 
     if (value.getType() == Field::Types::String && WhichDataType(value_type).isDecimal())
         return decodePartitionDecimalByType(value.safeGet<String>(), *value_type);
+
+    if (value.getType() == Field::Types::String && WhichDataType(value_type).isUUID())
+    {
+        if (auto uuid = deserializeUUIDFromBinaryRepr(value.safeGet<String>()))
+            return *uuid;
+    }
 
     /// A decimal that a manifest already carried in a decoded form: bring it to the canonical carrier
     /// too, so that it matches the value decoded from the raw `fixed` of another manifest.

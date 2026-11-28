@@ -34,9 +34,38 @@ def max_load_alignment(executable):
     return alignment
 
 
+def host_pid(status_path, pid):
+    """The PID here of the server that has `status_path` open and wrote `pid` into it. With `filesystem_isolation`
+    and `CAP_SYS_ADMIN`, the server runs in a new PID namespace and writes its PID there, the last one of `NSpid`."""
+    status = os.stat(status_path)
+    found = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/status", encoding="utf-8") as proc_status:
+                nspid = [line.split() for line in proc_status if line.startswith("NSpid:")][0]
+            if int(nspid[-1]) != pid:
+                continue
+            fds = os.listdir(f"/proc/{entry}/fd")
+        except (OSError, IndexError):
+            continue  # exited meanwhile
+        for fd in fds:
+            try:
+                if os.path.samestat(os.stat(f"/proc/{entry}/fd/{fd}"), status):
+                    found.append(int(entry))
+                    break
+            except OSError:
+                continue
+    if len(found) != 1:
+        raise RuntimeError(f"Expected one process with PID {pid} that has {status_path} open, found {found}")
+    return found[0]
+
+
 def executable_base(data_path):
     with open(f"{data_path}/status", encoding="utf-8") as status:
-        pid = re.search(r"^PID: (\d+)$", status.read(), re.MULTILINE)[1]
+        pid = int(re.search(r"^PID: (\d+)$", status.read(), re.MULTILINE)[1])
+    pid = host_pid(f"{data_path}/status", pid)
     executable = os.readlink(f"/proc/{pid}/exe")
     with open(f"/proc/{pid}/maps", encoding="utf-8") as maps:
         for line in maps:

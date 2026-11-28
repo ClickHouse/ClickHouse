@@ -1,5 +1,6 @@
 #pragma once
 
+#include <GPU/GPUExpression.cuh>
 #include <GPU/GPUResources.cuh>
 #include <GPU/GPUTypes.cuh>
 
@@ -59,6 +60,12 @@ __host__ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUEle
 
 /// cuDF sums unsigned integers into signed ones.
 __host__ DeviceFixedColumn deviceViewByBits(const cudf::column_view & column, GPUElementType type);
+
+__host__ DeviceBitmask evaluateMask(
+    const GPUExpression & filter, const GPUExpressionInputs & inputs, size_t rows, rmm::device_buffer & mask, cuda::stream_ref stream);
+
+/// Waits for the stream.
+__host__ cudf::size_type leftOutBy(DeviceBitmask kept, cuda::stream_ref stream);
 
 __host__ std::unique_ptr<cudf::table> keptRows(
     const cudf::table_view & table, DeviceBitmask kept, cudf::size_type left_out, rmm::device_buffer & all_true, cuda::stream_ref stream);

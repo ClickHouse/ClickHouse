@@ -104,6 +104,8 @@ enum class GPUCodec : int
 {
     LZ4 = 0,
     ZSTD = 1,
+    /// Expanded by chunks, each a call of nvcomp, see `CompressedHostColumn::append`.
+    GDEFLATE = 2,
 };
 
 enum class GPUColumnKind : int
