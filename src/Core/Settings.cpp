@@ -6277,10 +6277,10 @@ Enables filtering out rows deleted with lightweight DELETE. If disabled, a query
 Rewrite aggregate functions that semantically equals to count() as count().
 )", 0, \
         {"21.3", false, true, "Rewrite aggregate functions that semantically equals to count() as count() by default"}) \
-    DECLARE(Bool, optimize_min_max_distinct, true, R"(
-Rewrite `minDistinct` and `maxDistinct` as `min` and `max`, because duplicates do not change their result.
+    DECLARE(Bool, optimize_redundant_distinct_in_aggregate_functions, true, R"(
+Remove `DISTINCT` from aggregate functions whose result does not depend on duplicates, for example `min(DISTINCT x)` is rewritten as `min(x)`. Applies to `min`, `max`, `any`, `anyLast`, the `uniq` family, `groupUniqArray`, `groupBitOr`, `groupBitAnd`, `groupBitmap` and `singleValueOrNull`.
 )", 0, \
-        {"26.12", false, true, "New setting to rewrite minDistinct and maxDistinct as min and max without building a set of distinct values."}) \
+        {"26.12", false, true, "New setting to remove DISTINCT from aggregate functions that ignore identical values, without building a set of distinct values."}) \
     DECLARE(Bool, optimize_injective_functions_inside_uniq, true, R"(
 Delete injective functions of one argument inside uniq*() functions.
 )", 0) \

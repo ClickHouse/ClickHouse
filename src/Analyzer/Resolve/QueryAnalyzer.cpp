@@ -117,7 +117,7 @@ namespace Setting
     extern const SettingsBool joined_subquery_requires_alias;
     extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsUInt64 max_subquery_depth;
-    extern const SettingsBool optimize_min_max_distinct;
+    extern const SettingsBool optimize_redundant_distinct_in_aggregate_functions;
     extern const SettingsUInt64 recursive_cte_max_steps_in_type_inference;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsBool rewrite_count_distinct_if_with_count_distinct_implementation;
@@ -1351,10 +1351,22 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
         result_aggregate_function_name = result_aggregate_function_name.substr(0, prefix_length) + "DistinctIf";
     }
 
-    /// Duplicates do not change the result of min and max, so there is no need to build a set of distinct values
-    static constexpr std::array<std::string_view, 4> min_max_distinct = {"mindistinct", "maxdistinct", "mindistinctif", "maxdistinctif"};
-    if (settings[Setting::optimize_min_max_distinct] && std::ranges::contains(min_max_distinct, Poco::toLower(result_aggregate_function_name)))
-        result_aggregate_function_name.erase(3, strlen("Distinct"));
+    /// Drop -Distinct when duplicates do not change the result, so there is no need to build a set of distinct values.
+    /// Only -Distinct and -DistinctIf at the end are dropped: `minDistinctState` keeps its state format.
+    if (settings[Setting::optimize_redundant_distinct_in_aggregate_functions])
+    {
+        for (std::string_view suffix : {"DistinctIf", "Distinct"})
+        {
+            if (!result_aggregate_function_name.ends_with(suffix))
+                continue;
+
+            size_t nested_name_size = result_aggregate_function_name.size() - suffix.size();
+            auto properties = AggregateFunctionFactory::instance().tryGetProperties(result_aggregate_function_name.substr(0, nested_name_size), action);
+            if (properties && properties->ignores_identical_values)
+                result_aggregate_function_name.erase(nested_name_size, strlen("Distinct"));
+            break;
+        }
+    }
 
     static constexpr std::array<std::string_view, 4> suffixes_to_replace = {"MergeState", "Merge", "State", "If"};
 

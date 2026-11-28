@@ -401,7 +401,7 @@ SELECT groupBitOr(num) FROM t;
     FunctionDocumentation::Category category_or = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_or = {description_or, syntax_or, arguments_or, parameters_or, returned_value_or, examples_or, introduced_in_or, category_or};
 
-    factory.registerFunction("groupBitOr", {createAggregateFunctionBitwise<AggregateFunctionGroupBitOrData>, documentation_or, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("groupBitOr", {createAggregateFunctionBitwise<AggregateFunctionGroupBitOrData>, documentation_or, {.variant_arguments_conversion = VariantArgumentsConversion::All, .ignores_identical_values = true}});
 
     FunctionDocumentation::Description description = R"(
 Applies bitwise AND for series of numbers.
@@ -439,7 +439,7 @@ SELECT groupBitAnd(num) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("groupBitAnd", {createAggregateFunctionBitwise<AggregateFunctionGroupBitAndData>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("groupBitAnd", {createAggregateFunctionBitwise<AggregateFunctionGroupBitAndData>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All, .ignores_identical_values = true}});
 
     FunctionDocumentation::Description description_xor = R"(
 Applies bitwise XOR for series of numbers.
