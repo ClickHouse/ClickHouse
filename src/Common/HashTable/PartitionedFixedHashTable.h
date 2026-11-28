@@ -126,6 +126,8 @@ public:
     [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const key_type & key, size_t hash_value) const { return flat.find(key, hash_value); }
     [[nodiscard]] bool ALWAYS_INLINE has(const key_type & key) const { return flat.has(key); }
 
+    void ALWAYS_INLINE prefetchCell(size_t index) const { __builtin_prefetch(flat.data() + index); }
+
     [[nodiscard]] size_t size() const { return flat.size(); }
     [[nodiscard]] bool empty() const { return flat.empty(); }
     [[nodiscard]] size_t getBufferSizeInBytes() const { return flat.getBufferSizeInBytes(); }

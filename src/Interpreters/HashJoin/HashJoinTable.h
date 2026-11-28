@@ -8,6 +8,7 @@
 #include <Interpreters/JoinUtils.h>
 #include <Columns/IColumn.h>
 #include <Common/Arena.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/HashTable/Prefetching.h>
 #include <Common/ProfileEvents.h>
 #include <base/scope_guard.h>
@@ -141,6 +142,73 @@ ALWAYS_INLINE size_t selectorIndexAt(const Selector & selector, size_t k)
         return selector.getData()[k];
     else
         return selector.first + k;
+}
+
+/// The number of cells from the smallest to the largest sampled key, or 0 if more than 1 of 16 sampled rows looks up no key in the
+/// range, at most 1 step in 8 between the sampled keys goes against the others, or a key repeats: the CPU prefetches a table that
+/// the probe walks in order, and the cells of a few repeated keys stay cached. A pseudo-random row per stratum, so periodic keys do
+/// not bias it.
+template <typename KeyGetter>
+size_t sampledKeySpan(
+    const KeyGetter & key_getter, const JoinOnKeyColumns & keys, const ScatteredBlock::Selector::Range & selector, Arena & pool)
+{
+    /// 64 rows did not see a repeat among 2048 to 8192 keys spread over the range.
+    static constexpr size_t max_samples = 128;
+    /// A row that reads no cell gains nothing from its prefetch. With 120 of 128, 0.2% of the blocks with 85% of the keys in range
+    /// prefetch, 81% with 95%.
+    static constexpr size_t min_in_range_per_16 = 15;
+    /// Keys in order step back about once per wrap-around, random keys about every second step.
+    static constexpr size_t max_steps_per_step_against = 8;
+    const size_t rows = ScatteredBlock::Selector::size(selector);
+    if (rows == 0)
+        return 0;
+    const size_t samples = std::min(rows, max_samples);
+    size_t in_range = 0;
+    size_t ascending = 0;
+    size_t descending = 0;
+    UInt64 previous_key = 0;
+    UInt64 min_key = std::numeric_limits<UInt64>::max();
+    UInt64 max_key = 0;
+    HashSetWithStackMemory<UInt64, HashCRC32<UInt64>, 8> sampled_keys;
+    for (size_t sample = 0; sample < samples; ++sample)
+    {
+        const size_t begin = sample * rows / samples;
+        const size_t end = (sample + 1) * rows / samples;
+        const size_t row = selectorIndexAt(selector, begin + intHash64(sample) % (end - begin));
+        if ((keys.null_map && (*keys.null_map)[row]) || keys.isRowFiltered(row))
+            continue;
+        const auto [key, key_in_range] = key_getter.getKeyHolderInRange(row, pool);
+        if (!key_in_range)
+            continue;
+        if (!sampled_keys.insert(key).second)
+            return 0;
+        if (in_range)
+        {
+            ascending += key > previous_key;
+            descending += key < previous_key;
+        }
+        previous_key = key;
+        min_key = std::min<UInt64>(min_key, key);
+        max_key = std::max<UInt64>(max_key, key);
+        ++in_range;
+    }
+    if (16 * in_range < min_in_range_per_16 * samples
+        || max_steps_per_step_against * std::min(ascending, descending) <= ascending + descending)
+        return 0;
+    return max_key - min_key + 1;
+}
+
+/// A range lookup rejects a key outside the range without reading the table. Such a key prefetches cell 0, which stays cached.
+template <typename KeyGetter, typename Map>
+ALWAYS_INLINE void prefetchJoinKey(const Map & map, KeyGetter & key_getter, size_t row, Arena & pool)
+{
+    if constexpr (ColumnsHashing::IsHashMethodInRange<KeyGetter>::value)
+    {
+        const auto [key, in_range] = key_getter.getKeyHolderInRange(row, pool);
+        map.prefetchCell(in_range ? key : 0);
+    }
+    else
+        map.prefetch(key_getter.getKeyHolder(row, pool));
 }
 
 /// Drives the adaptive software prefetch logic in the hash join probe loop.
@@ -628,10 +696,36 @@ public:
     /// Frees the maps. The table stays, so that a concurrent `keys` stays valid.
     void releaseMaps();
 
+    /// A range table with mapped values. An `ASOF` table is never a range table, a `range8` table of at most 256 cells always fits
+    /// in the cache, and a range set has 1-byte cells, so it is at most 256 KiB.
+    template <Type TYPE, typename Maps>
+    static constexpr bool range_prefetch_supported = !std::is_same_v<Maps, HashJoin::MapsAsof> && TYPE != Type::range8_key32
+        && TYPE != Type::range8_key64
+        && ColumnsHashing::IsHashMethodInRange<typename KeyGetterForType<TYPE, const JoinMapOf<TYPE, Maps>>::Type>::value
+        && !std::is_void_v<typename JoinMappedType<const JoinMapOf<TYPE, Maps>>::Type>;
+
+    /// Once per block: whether a hash table holding every value of the range, and one holding every value from the smallest to the
+    /// largest sampled key, would prefetch (they have at least 2 cells per key), and nearly all rows look up a key in the range, in no
+    /// order and with no key repeated.
+    template <Type TYPE, typename Maps>
+    NO_INLINE bool rangeProbePrefetches(
+        const JoinOnKeyColumns & keys, const ScatteredBlock::Selector::Range & selector, bool enable_prefetch) const
+    {
+        using Map = const JoinMapOf<TYPE, Maps>;
+        using KeyGetter = typename KeyGetterForType<TYPE, Map>::Type;
+        static constexpr size_t cell_size = sizeof(typename std::remove_const_t<Map>::cell_type);
+
+        if (!enable_prefetch || 2 * key_range.size * cell_size <= getMinBytesForPrefetchInJoin())
+            return false;
+        Arena pool;
+        const KeyGetter key_getter = createJoinKeyGetter<KeyGetter, /*is_asof_join=*/false>(keys.key_columns, key_sizes, key_range);
+        return 2 * sampledKeySpan(key_getter, keys, selector, pool) * cell_size > getMinBytesForPrefetchInJoin();
+    }
+
     /// Looks up the key of every row of `selector`. For each row, calls `on_row(i, ind, find_result, offset)` with the position `i`,
     /// the row `ind`, and the output offset. The loop keeps the offset so that it stays in a register. A row with a `NULL` key
     /// or one the `ON`-section mask filters out gets a result that is not found; `fast_path` assumes there is none. `TYPE` is `type()`.
-    template <Type TYPE, typename Maps, bool fast_path, typename OnRow>
+    template <Type TYPE, typename Maps, bool fast_path, bool prefetch_range, typename OnRow>
     ALWAYS_INLINE void probe(
         const JoinOnKeyColumns & keys,
         const ScatteredBlock::Selector::Range & selector,
@@ -660,11 +754,11 @@ public:
         Arena pool;
 
         /// Software prefetch during the probe phase.
-        constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, Map>;
+        constexpr bool can_prefetch = prefetch_range || join_prefetch_supported<KeyGetter, Map>;
 
         bool use_prefetch = false;
         if constexpr (can_prefetch)
-            use_prefetch = shouldUseJoinPrefetch(enable_prefetch, &map);
+            use_prefetch = prefetch_range || shouldUseJoinPrefetch(enable_prefetch, &map);
 
         constexpr bool prepared = PreparedKeyGetter<KeyGetter>;
         /// Before the prefetcher is created, see `PreparedJoinKeys::prepareRows`.
@@ -682,7 +776,7 @@ public:
                     const size_t row = selectorIndexAt(selector, k);
                     if (prepared && !fast_path && skip_data[row])
                         return;
-                    map.prefetch(key_getter.getKeyHolder(row, pool));
+                    prefetchJoinKey(map, key_getter, row, pool);
                 }
             });
 
