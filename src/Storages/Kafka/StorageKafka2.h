@@ -187,6 +187,8 @@ private:
     std::mutex consumers_mutex;
     std::condition_variable cv;
     std::vector<KeeperHandlingConsumerPtr> consumers TSA_GUARDED_BY(consumers_mutex);
+    /// Set once the shutdown has stopped waiting: the drain task closes consumers released after that.
+    bool retire_released_consumers TSA_GUARDED_BY(consumers_mutex) = false;
 
     std::vector<std::shared_ptr<TaskContext>> tasks;
     bool thread_per_consumer = false;
@@ -231,6 +233,11 @@ private:
 
     void threadFunc(size_t idx);
 
+    void pollConsumerEvents(size_t idx);
+
+    BackgroundSchedulePoolTaskHolder drain_task;
+    void drainEventsTask();
+
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
@@ -249,6 +256,7 @@ private:
     KeeperHandlingConsumerPtr acquireConsumer(size_t idx);
     void releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr);
     void cleanConsumers();
+    void closeRemainingConsumers();
 
     std::optional<size_t> streamFromConsumer(KeeperHandlingConsumer & consumer_info, const Stopwatch & watch, UInt64 cycle_epoch);
 

@@ -130,6 +130,7 @@ namespace fs = std::filesystem;
 
 namespace FailPoints
 {
+extern const char kafka2_drain_task_keeps_released_consumers[];
 extern const char kafka2_remove_zk_before_get_children[];
 extern const char kafka2_remove_zk_before_final_multi[];
 }
@@ -222,7 +223,9 @@ StorageKafka2::StorageKafka2(
     }
 
     activating_task = getContext()->getSchedulePool()->createTask(getStorageID(), log->name() + " (activating task)", [this]() { activateAndReschedule(); });
+    drain_task = getContext()->getSchedulePool()->createTask(getStorageID(), log->name() + " (drain events)", [this]() { drainEventsTask(); });
     activating_task->deactivate();
+    drain_task->deactivate();
 }
 
 StorageKafka2::~StorageKafka2()
@@ -231,7 +234,24 @@ StorageKafka2::~StorageKafka2()
     /// The `librdkafka` callbacks dereference `this`, so the consumers must go first. Same as `StorageKafka`.
     if (!shutdown_called)
         shutdown(false);
+    else
+        closeRemainingConsumers();
     replica_is_active_node.reset();
+}
+
+void StorageKafka2::closeRemainingConsumers()
+{
+    /// A consumer released after the shutdown may still wait for the drain task: close it here, while
+    /// `thread_statuses` used by the librdkafka threads is alive.
+    drain_task->deactivate();
+    std::vector<CppKafkaConsumerPtr> cpp_consumers_to_close;
+    {
+        std::lock_guard lock(consumers_mutex);
+        for (const auto & consumer : consumers)
+            if (consumer && consumer->hasConsumer() && !consumer->isInUse())
+                cpp_consumers_to_close.push_back(consumer->moveConsumer());
+    }
+    cpp_consumers_to_close.clear();
 }
 
 void StorageKafka2::partialShutdown()
@@ -611,6 +631,7 @@ void StorageKafka2::startup()
         }
     }
     activating_task->activateAndSchedule();
+    drain_task->activateAndSchedule();
 }
 
 void StorageKafka2::scheduleStreamingTasksImpl()
@@ -628,6 +649,7 @@ void StorageKafka2::shutdown(bool)
     cv.notify_all();
     activating_task->deactivate();
     partialShutdown();
+    /// The drain task is stopped in `cleanConsumers()`.
     LOG_TRACE(log, "Closing consumers");
     cleanConsumers();
     LOG_TRACE(log, "Consumers closed");
@@ -699,10 +721,9 @@ cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_
         num_consumers > 1,
         consumer_number,
         client_id,
-        getMaxBlockSize()};
+        getMaxBlockSize(),
+        /*enable_statistics_by_default=*/true};
     auto kafka_config = KafkaConfigLoader::getConsumerConfiguration(*this, params, std::move(exception_sink));
-    // It is disabled, because in case of no materialized views are attached, it can cause live memory leak. To enable it, a similar cleanup mechanism must be introduced as for StorageKafka.
-    kafka_config.set("statistics.interval.ms", "0");
     // Making more frequent updates, now 1 min
     kafka_config.set("topic.metadata.refresh.interval.ms", "60000");
     return kafka_config;
@@ -1510,6 +1531,67 @@ void StorageKafka2::releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr)
     CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse);
 }
 
+void StorageKafka2::pollConsumerEvents(size_t idx)
+{
+    try
+    {
+        KeeperHandlingConsumerPtr consumer;
+        {
+            std::lock_guard lock(consumers_mutex);
+            if (idx >= consumers.size() || !consumers[idx])
+                return;
+            if (!consumers[idx]->hasConsumer())
+                return;
+            consumer = consumers[idx];
+        }
+
+        consumer->pollEventsNonOwning();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format("Failed to poll events of consumer #{}", idx));
+    }
+}
+
+void StorageKafka2::drainEventsTask()
+{
+    for (size_t idx = 0; idx < tasks.size(); ++idx)
+        pollConsumerEvents(idx);
+
+    std::vector<CppKafkaConsumerPtr> cpp_consumers_to_close;
+    {
+        std::lock_guard lock(consumers_mutex);
+        /// After the shutdown nothing takes a released consumer again: close its handle here, for the
+        /// reason given in `cleanConsumers()`.
+        if (retire_released_consumers)
+        {
+            /// Lets a test hand a released consumer over to the storage destructor.
+            fiu_do_on(FailPoints::kafka2_drain_task_keeps_released_consumers, { return; });
+            for (const auto & consumer : consumers)
+                if (consumer && consumer->hasConsumer() && !consumer->isInUse())
+                    cpp_consumers_to_close.push_back(consumer->moveConsumer());
+        }
+    }
+
+    cpp_consumers_to_close.clear();
+
+    {
+        std::lock_guard lock(consumers_mutex);
+        /// After the shutdown the task stops by itself once no consumer is left to serve.
+        bool has_consumers = false;
+        for (auto & consumer : consumers)
+        {
+            if (retire_released_consumers && consumer && !consumer->hasConsumer())
+                consumer = nullptr;
+            has_consumers = has_consumers || static_cast<bool>(consumer);
+        }
+        if (shutdown_called && !has_consumers)
+            return;
+    }
+
+    drain_task->scheduleAfter(500);
+}
+
 void StorageKafka2::cleanConsumers()
 {
     /// We need to clear the cppkafka::Consumer separately from KafkaConsumer2, since cppkafka::Consumer holds a
@@ -1535,6 +1617,11 @@ void StorageKafka2::cleanConsumers()
             LOG_WARNING(log, "Timed out waiting for consumer(s) to be released, proceeding with shutdown");
         }
 
+        /// Stop the drain task before taking handles away: it waits for its round, and the round takes this mutex.
+        lock.unlock();
+        drain_task->deactivate();
+        lock.lock();
+
         size_t skipped = 0;
         for (const auto & consumer : consumers)
         {
@@ -1549,12 +1636,24 @@ void StorageKafka2::cleanConsumers()
         }
         if (skipped)
             LOG_WARNING(log, "Skipped closing {} consumer(s) that are still in use", skipped);
+        retire_released_consumers = true;
     }
 
     cpp_consumers_to_close.clear();
 
-    std::lock_guard lock(consumers_mutex);
-    consumers.clear();
+    bool has_held_consumers = false;
+    {
+        std::lock_guard lock(consumers_mutex);
+        /// Consumers still in use stay in their slots for the drain task.
+        for (auto & consumer : consumers)
+        {
+            if (consumer && !consumer->hasConsumer())
+                consumer = nullptr;
+            has_held_consumers = has_held_consumers || static_cast<bool>(consumer);
+        }
+    }
+    if (has_held_consumers)
+        drain_task->activateAndSchedule();
 }
 
 std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch, UInt64 cycle_epoch)
