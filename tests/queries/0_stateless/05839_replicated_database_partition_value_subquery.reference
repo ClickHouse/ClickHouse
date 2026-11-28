@@ -1,0 +1,14 @@
+-- without SELECT on the table of the subquery
+ACCESS_DENIED
+ACCESS_DENIED
+[1,2,3]
+[]
+-- with SELECT on the table of the subquery
+OK
+[1,3]
+[2]
+-- an ALTER of the structure
+OK
+p
+v
+c

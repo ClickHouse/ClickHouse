@@ -1,0 +1,17 @@
+-- a partition value that is not a literal
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+[1,2,3,4]
+['a','b','c','d']
+-- a literal partition value
+OK
+OK
+OK
+OK
+[]
+OK
+['2020-01-02']
