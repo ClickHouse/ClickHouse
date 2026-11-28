@@ -1,0 +1,3 @@
+native client_key snapshot OK
+missing client_key remains rejected OK
+native client_key or user_name snapshots OK

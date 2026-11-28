@@ -1,0 +1,12 @@
+--- role grant after login invalidates the memoised quota
+first query checks the newly enabled role quota
+--- without SHOW CONNECTIONS: only the sessions of this user
+0
+1
+--- with SHOW CONNECTIONS: sessions of all users
+alice_default
+--- after renaming the other user
+alice_default
+1
+--- after revoking SHOW CONNECTIONS
+0

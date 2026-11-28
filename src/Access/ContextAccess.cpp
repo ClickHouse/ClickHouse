@@ -494,6 +494,8 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
     chassert(roles_info_);
     roles_info = roles_info_;
 
+    /// Quota selection also depends on roles inherited by an already enabled role.
+    enabled_quota.reset();
     enabled_row_policies = access_control->getEnabledRowPolicies(*params.user_id, roles_info->enabled_roles);
 #if CLICKHOUSE_CLOUD
     enabled_masking_policies = access_control->getEnabledMaskingPolicies(*params.user_id, roles_info->enabled_roles);
@@ -691,44 +693,50 @@ RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, co
     return filter;
 }
 
-std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
+std::shared_ptr<const EnabledQuota> ContextAccess::getQuota(bool check_client_key) const
 {
-    std::lock_guard lock{mutex};
-
-    if (initialized && !user && !user_was_dropped)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
-
-    if (!enabled_quota)
+    std::shared_ptr<const EnabledQuota> quota;
     {
-        if (roles_info)
+        std::lock_guard lock{mutex};
+
+        if (initialized && !user && !user_was_dropped)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
+
+        if (!enabled_quota)
         {
-            enabled_quota = access_control->getEnabledQuota(*params.user_id,
-                                                            user_name,
-                                                            roles_info->enabled_roles,
-                                                            params.address,
-                                                            params.forwarded_address,
-                                                            params.quota_key);
+            if (roles_info)
+            {
+                enabled_quota = access_control->getEnabledQuota(*params.user_id,
+                                                                user_name,
+                                                                roles_info->enabled_roles,
+                                                                params.address,
+                                                                params.forwarded_address,
+                                                                params.quota_key);
+            }
+            else
+            {
+                return nullptr;
+            }
         }
-        else
-        {
-            return nullptr;
-        }
+
+        quota = enabled_quota;
     }
 
     /// Outside the branch above on purpose: `QuotaCache` refreshes the quota set in place, so an already
     /// memoised object has to be re-checked on every call.
-    enabled_quota->checkClientKeySupplied();
+    if (check_client_key && quota)
+        quota->checkClientKeySupplied();
 
-    return enabled_quota;
+    return quota;
 }
 
 
-std::vector<QuotaUsage> ContextAccess::getQuotaUsages() const
+std::vector<QuotaUsage> ContextAccess::getQuotaUsages(bool check_client_key) const
 {
-    auto quota = getQuota();
+    auto quota = getQuota(check_client_key);
     if (!quota)
         return {};
-    return quota->getAllUsage();
+    return quota->getAllUsage(/* skip_unresolved_client_key = */ !check_client_key);
 }
 
 SettingsChanges ContextAccess::getDefaultSettings() const

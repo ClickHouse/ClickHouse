@@ -335,6 +335,7 @@ class ContextTimeSeriesTagsCollector;
 using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
+class SessionRegistry;
 class SessionTracker;
 
 struct ServerSettings;
@@ -1682,6 +1683,7 @@ public:
 
     OvercommitTracker * getGlobalOvercommitTracker() const;
 
+    SessionRegistry & getSessionRegistry() const;
     SessionTracker & getSessionTracker();
 
     MergeList & getMergeList();
