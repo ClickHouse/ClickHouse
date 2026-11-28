@@ -1,0 +1,14 @@
+order by key limit
+1	2
+order by key desc limit
+1	3
+order by key limit with offset
+10	3
+many groups one cluster
+1	100
+2d
+(0,0)	2
+string
+abc	2
+no top-k in plan
+0

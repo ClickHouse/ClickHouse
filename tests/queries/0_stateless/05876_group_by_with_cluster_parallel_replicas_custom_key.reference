@@ -1,0 +1,22 @@
+-- sampling, 1D
+0	2	3	3
+10	11	2	21
+20	20	1	20
+-- range, 1D
+0	2	3	3
+10	11	2	21
+20	20	1	20
+-- sampling, 1D, HAVING, ORDER BY, LIMIT
+0	3
+-- sampling, strings
+aaaa	aabb	3
+qqqqqqqq	qqqqqqqq	1
+zzzy	zzzz	2
+-- sampling, 2D
+0	2	3
+10	11	2
+20	20	1
+-- without parallel replicas
+0	2	3	3
+10	11	2	21
+20	20	1	20

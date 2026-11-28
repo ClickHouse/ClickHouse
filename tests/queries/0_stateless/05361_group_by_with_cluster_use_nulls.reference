@@ -1,0 +1,6 @@
+a	String	2
+zzzz	String	1
+a	LowCardinality(String)	2
+zzzz	LowCardinality(String)	1
+1	UInt64	2
+10	UInt64	1
