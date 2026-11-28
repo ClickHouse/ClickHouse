@@ -65,20 +65,33 @@ std::optional<PollingQueue::Key> PollingQueue::Deadlines::popExpired()
     return key;
 }
 
-PollingQueue::PollingQueue()
+PollingQueue::PollingQueue() = default;
+
+void PollingQueue::ensureInitialized()
 {
-    epoll.add(notification_signal.fd(), &notification_signal);
-    epoll.add(timer_signal.getDescriptor(), &timer_signal);
+    if (!initialized.load(std::memory_order_relaxed))
+    {
+        epoll.emplace(EpollNesting::PipelinePoller);
+        notification_signal.emplace();
+        timer_signal.emplace();
+
+        epoll->add(notification_signal->fd(), &*notification_signal);
+        epoll->add(timer_signal->getDescriptor(), &*timer_signal);
+
+        initialized.store(true, std::memory_order_release);
+    }
 }
 
 void PollingQueue::addTask(size_t thread_number, void * data, int fd, uint32_t events, Int64 timeout_ms)
 {
+    ensureInitialized();
+
     Key key = reinterpret_cast<Key>(data);
     if (tasks.contains(key))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Task of thread {} with fd {} was already added to task queue", thread_number, fd);
 
     tasks[key] = TaskData{thread_number, data, fd};
-    epoll.add(fd, data, events);
+    epoll->add(fd, data, events);
 
     if (timeout_ms >= 0)
     {
@@ -99,22 +112,26 @@ PollingQueue::TaskData PollingQueue::popExpiredDeadlineTask()
 
     auto res = task_it->second;
     tasks.erase(task_it);
-    epoll.remove(res.fd);
+    if (epoll)
+        epoll->remove(res.fd);
     updateTimer();
     return res;
 }
 
 void PollingQueue::updateTimer()
 {
+    if (!timer_signal)
+        return;
+
     auto next = deadlines.nextDeadline();
     if (!next)
     {
-        timer_signal.reset();
+        timer_signal->reset();
         return;
     }
 
     auto us_until_deadline = std::chrono::duration_cast<std::chrono::microseconds>(*next - Clock::now()).count();
-    timer_signal.setRelative(std::max<int64_t>(1, us_until_deadline));
+    timer_signal->setRelative(std::max<int64_t>(1, us_until_deadline));
 }
 
 std::string PollingQueue::dumpTasks() const
@@ -142,6 +159,16 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
         if (auto expired_task = popExpiredDeadlineTask())
             return expired_task;
 
+        if (!initialized.load(std::memory_order_relaxed))
+        {
+            /// If uninitialized and timeout is non-blocking (0), return immediately without syscalls
+            if (timeout == 0)
+                return {};
+
+            /// If blocking wait (-1), initialize descriptors now so epoll can wait
+            ensureInitialized();
+        }
+
         lock.unlock();
 
         epoll_event event{};
@@ -154,13 +181,13 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
             {
                 FailPointInjection::notifyPauseAndWaitForResume(FailPoints::polling_queue_before_try_poll);
             });
-            num_events = epoll.getManyReady(1, &event, timeout);
+            num_events = epoll->getManyReady(1, &event, timeout);
         }
         else
         {
             /// Non-CPU wait: park the CPU lease while blocked
             CPULeaseParkGuard cpu_park;
-            num_events = epoll.getManyReady(1, &event, timeout);
+            num_events = epoll->getManyReady(1, &event, timeout);
         }
 
         lock.lock();
@@ -168,10 +195,10 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
         if (num_events == 0)
             return {};
 
-        if (event.data.ptr == &notification_signal)
+        if (notification_signal && event.data.ptr == &*notification_signal)
         {
             /// Drain before consuming bits so a concurrent notification is either returned now or leaves a readable pipe.
-            notification_signal.drain();
+            notification_signal->drain();
             /// Keep Finish flag only (Spill is not permanent)
             auto notifications = pending_notifications.fetch_and(finish_mask, std::memory_order_acq_rel);
             if (notifications)
@@ -180,9 +207,9 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
             continue;
         }
 
-        if (event.data.ptr == &timer_signal)
+        if (timer_signal && event.data.ptr == &*timer_signal)
         {
-            timer_signal.drain();
+            timer_signal->drain();
             updateTimer();
             continue;
         }
@@ -195,7 +222,8 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
         auto res = it->second;
         tasks.erase(it);
         deadlines.cancel(key);
-        epoll.remove(res.fd);
+        if (epoll)
+            epoll->remove(res.fd);
 
         return res;
     }
@@ -209,7 +237,8 @@ void PollingQueue::finish()
 void PollingQueue::notify(Notification notification)
 {
     pending_notifications.fetch_or(static_cast<uint8_t>(notification), std::memory_order_release);
-    notification_signal.notify();
+    if (initialized.load(std::memory_order_acquire) && notification_signal)
+        notification_signal->notify();
 }
 
 }
