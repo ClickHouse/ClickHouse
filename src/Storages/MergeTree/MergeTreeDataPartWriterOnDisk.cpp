@@ -794,7 +794,9 @@ CompressionCodecPtr MergeTreeDataPartWriterOnDisk::getSubstreamCodec(
     const bool use_default_codec = CompressionCodecFactory::isDefaultCodec(declared_codec_desc);
     /// `default_codec` comes from `MergeTreeData::getCompressionCodecForPart` and already accounts for
     /// the `default_compression_codec` setting and `TTL ... RECOMPRESS`, so it is not re-read from the settings here.
-    const ASTPtr & effective_codec_desc = declared_codec_desc ? declared_codec_desc : default_codec->getFullCodecDescription();
+    if (!declared_codec_desc && !default_codec_description)
+        default_codec_description = default_codec->getFullCodecDescription();
+    const ASTPtr & effective_codec_desc = declared_codec_desc ? declared_codec_desc : default_codec_description;
 
     const auto & substream_type = substream_path.back().data.type;
     /// The declared codec is meant for the values. Structural substreams keep only its generic codecs (`only_generic`).
