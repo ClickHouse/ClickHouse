@@ -652,6 +652,9 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     # ThinLTO instead of being optimized in one serial regular LTO module. The name must be unique in a link.
     string (APPEND CMAKE_CXX_COMPILE_OBJECT " -funique-source-file-names -funique-source-file-identifier=<OBJECT>")
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
+    # For sources that many modules import from and that change often (see src/CMakeLists.txt): the key of a module
+    # in the ThinLTO cache includes the hash of every module it imports from, and native objects are not imported.
+    set (NO_LTO_COMPILE_OPTIONS -fno-lto -fno-whole-program-vtables)
 
     if(LINKER_NAME MATCHES "lld")
         # Do not verify every module with debug info again on each load and import; the LTO pipeline still verifies each module.
@@ -690,6 +693,9 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=default")
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=hidden")
         set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=hidden")
+        # NO_LTO_COMPILE_OPTIONS is only for sources that define data and no functions or classes: CFI has nothing to
+        # check in them, and they have no vtable that whole-program devirtualization would miss.
+        list (APPEND NO_LTO_COMPILE_OPTIONS -fno-sanitize=cfi)
         if (GLIBC_COMPATIBILITY)
             # Rust std finds `__pthread_get_minstack` with `dlsym` (see base/glibc-compatibility/pthread_get_minstack.c).
             set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--export-dynamic-symbol=__pthread_get_minstack")

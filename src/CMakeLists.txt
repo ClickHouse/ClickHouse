@@ -292,6 +292,8 @@ else()
 endif ()
 
 list(APPEND clickhouse_common_io_sources ${CONFIG_INCLUDE_PATH}/config_version.cpp)
+# Changes with every commit, see NO_LTO_COMPILE_OPTIONS.
+set_source_files_properties(${CONFIG_INCLUDE_PATH}/config_version.cpp PROPERTIES COMPILE_OPTIONS "${NO_LTO_COMPILE_OPTIONS}")
 
 if (NOT ENABLE_SSL)
     list (REMOVE_ITEM clickhouse_common_io_sources Common/OpenSSLHelpers.cpp)
