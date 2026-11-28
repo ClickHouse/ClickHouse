@@ -95,6 +95,9 @@ struct IndexReadTask
 /// which leads to mismatched prewhere readers and actions.
 using IndexReadTasks = std::map<String, IndexReadTask>;
 
+/// Returns the read task of the index, or nullptr if there is none.
+const IndexReadTask * tryGetIndexReadTask(const IndexReadTasks & index_read_tasks, const String & index_name);
+
 struct MergeTreeReadTaskColumns
 {
     /// Column names to read during WHERE

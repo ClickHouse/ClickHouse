@@ -815,6 +815,7 @@ UseProjectionsResult optimizeUseNormalProjections(
                 .query_info = query_info,
                 .context = context,
                 .indexes = indexes_for_skip_pass,
+                .index_read_tasks = {},
                 .top_k_filter_info = no_top_k,
                 .reader_settings = reader_settings,
                 .log = logger,

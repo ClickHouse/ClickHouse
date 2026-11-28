@@ -111,6 +111,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         .index = *index_read_task.index.index,
         .readable_ranges = nullptr,
         .text_index_read_postings = true,
+        .index_read_task = &index_read_task,
         .reader_settings = settings,
     };
 
