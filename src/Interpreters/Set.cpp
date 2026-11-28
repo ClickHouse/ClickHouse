@@ -535,7 +535,9 @@ bool Set::insertFromColumns(const Columns & columns, size_t max_keys, size_t & r
     }
 
     bool inserted = insertFromColumnsImpl(columns, holder, max_keys, rows_taken);
-    if (inserted && fill_set_elements)
+    /// The block is inserted into the hash table before the size limits are checked, so even when the set
+    /// reaches a limit with `set_overflow_mode = 'break'`, the rows of this block must be added to the set elements.
+    if (fill_set_elements)
     {
         if (max_elements_to_fill && max_elements_to_fill < data->getTotalRowCount())
         {
