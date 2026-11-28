@@ -95,6 +95,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
 
+    if (resolved_scalar_subqueries)
+        resolved_scalar_subqueries->push_back(node);
+
     bool is_correlated_subquery = (query_node != nullptr && query_node->isCorrelated())
                                 || (union_node != nullptr && union_node->isCorrelated());
     if (is_correlated_subquery)
