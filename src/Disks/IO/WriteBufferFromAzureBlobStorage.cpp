@@ -12,6 +12,7 @@
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/HTTPConnectionInfo.h>
 #include <base/sleep.h>
+#include <limits>
 
 
 namespace ProfileEvents
@@ -77,7 +78,10 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     , buffer_allocation_policy(createBufferAllocationPolicy(*settings_))
     , settings(settings_)
     , max_single_part_upload_size(settings_->max_single_part_upload_size)
-    , max_unexpected_write_error_retries(write_settings_.is_initial_access_check ? settings_->max_unexpected_write_error_retries * 3 : settings_->max_unexpected_write_error_retries)
+    , max_unexpected_write_error_retries(
+          write_settings_.is_initial_access_check
+              ? std::min(settings_->max_unexpected_write_error_retries, std::numeric_limits<size_t>::max() / 3) * 3
+              : settings_->max_unexpected_write_error_retries)
     , blob_path(blob_path_)
     , write_settings(write_settings_)
     , blob_container_client(blob_container_client_)
