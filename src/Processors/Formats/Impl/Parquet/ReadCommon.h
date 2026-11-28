@@ -83,6 +83,9 @@ struct ReadOptions
 
     NameSet map_columns_read_by_keys;
     NameSet map_columns_read_by_values;
+
+    /// See `IInputFormat::setBytesPerRowAddedAfterReading`.
+    size_t bytes_per_row_added_after_reading = 0;
 };
 
 struct SharedResourcesExt
