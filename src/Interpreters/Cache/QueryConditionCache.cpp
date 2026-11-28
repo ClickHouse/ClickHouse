@@ -90,6 +90,7 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     /// `ActionsDAG::Node::updateHash` (which sees only the function name, the result type name, the children and
     /// the constant values). A setting that changes the result *type* is already covered by the type name in the
     /// hash and does not need an entry.
+    /// Strings are hashed with their length first, so two adjacent ones cannot trade characters.
     SipHash hash;
     /// `formatDateTime` / `parseDateTime`.
     hash.update(settings[Setting::formatdatetime_f_prints_single_zero].value);
@@ -164,13 +165,16 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     hash.update(static_cast<UInt64>(settings[Setting::date_time_output_format].value));
     hash.update(settings[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands].value);
     hash.update(static_cast<UInt64>(settings[Setting::interval_output_format].value));
+    hash.update(settings[Setting::bool_true_representation].value.size());
     hash.update(settings[Setting::bool_true_representation].value);
+    hash.update(settings[Setting::bool_false_representation].value.size());
     hash.update(settings[Setting::bool_false_representation].value);
     hash.update(settings[Setting::allow_special_bool_values_inside_variant].value);
     hash.update(settings[Setting::output_format_decimal_trailing_zeros].value);
     hash.update(settings[Setting::output_format_always_write_decimal_point_in_float_and_decimal].value);
     hash.update(settings[Setting::output_format_float_precision].value);
     hash.update(settings[Setting::output_format_trim_fixed_string].value);
+    hash.update(settings[Setting::output_format_pretty_grid_charset].value.size());
     hash.update(settings[Setting::output_format_pretty_grid_charset].value);
     hash.update(settings[Setting::output_format_values_escape_quote_with_quote].value);
     hash.update(settings[Setting::input_format_null_as_default].value);
@@ -234,6 +238,7 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     /// (`KeyCondition` refuses to analyze exactly these for the same reason). The result type is the plain
     /// `DateTime` without a time zone in its name, so the same `s` parses to a different Unix timestamp in two
     /// sessions with an identical DAG hash.
+    hash.update(settings[Setting::session_timezone].value.size());
     hash.update(settings[Setting::session_timezone].value);
     return hash.get64();
 }

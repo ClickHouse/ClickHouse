@@ -515,6 +515,21 @@ FormatSettings getNativeWireFormatSettings(const ContextPtr & context)
     return format_settings;
 }
 
+namespace
+{
+
+/// A name and a value are each hashed with their length first, so a value cannot absorb the setting after it.
+/// Not inlined: `getFormatSettingsHash` calls it once per format setting.
+NO_INLINE void hashFormatSetting(SipHash & hash, std::string_view name, std::string_view value)
+{
+    hash.update(name.size());
+    hash.update(name);
+    hash.update(value.size());
+    hash.update(value);
+}
+
+}
+
 UInt64 getFormatSettingsHash(const Settings & settings)
 {
     /// The settings `getFormatSettings` reads: every one of `FORMAT_FACTORY_SETTINGS`, so that a setting
@@ -532,10 +547,7 @@ UInt64 getFormatSettingsHash(const Settings & settings)
     { \
         String value = field.toString(); \
         if (value != SettingField##TYPE{DEFAULT}.toString()) \
-        { \
-            hash.update(std::string_view(#NAME)); \
-            hash.update(value); \
-        } \
+            hashFormatSetting(hash, #NAME, value); \
     }
     /// No format setting has an alias, so the alias macro is never expanded (an alias names the same
     /// field as its setting anyway).
