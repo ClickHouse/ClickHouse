@@ -4,6 +4,7 @@
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 #include <QueryPipeline/UnavailableShardTracker.h>
 
+#include <Analyzer/TableQualifiers.h>
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
@@ -436,20 +437,65 @@ static Block adaptBlockStructure(Block block, const Block & header)
     source_positions.reserve(header.columns());
     /// A column may be moved out of `block` only on its last use.
     VectorWithMemoryTracking<size_t> remaining_uses(block.columns());
+    UnorderedMapWithMemoryTracking<std::string_view, size_t> occurrences;
+    for (const auto & elem : header)
     {
-        UnorderedMapWithMemoryTracking<std::string_view, size_t> occurrences;
-        for (const auto & elem : header)
+        const size_t occurrence = occurrences[elem.name]++;
+        auto it = block_positions_by_name.find(elem.name);
+        if (it == block_positions_by_name.end())
         {
-            const size_t occurrence = occurrences[elem.name]++;
-            auto it = block_positions_by_name.find(elem.name);
-            if (it == block_positions_by_name.end())
+            source_positions.emplace_back();
+            continue;
+        }
+        const size_t position = it->second[std::min(occurrence, it->second.size() - 1)];
+        source_positions.emplace_back(position);
+        ++remaining_uses[position];
+    }
+
+    /// A shard may name an `IN` set differently: a missing column reads the one at its position if the shard returned as
+    /// many columns (in the same order) and that one differs from it just in set hashes. A shard also merges expressions
+    /// equal on it, so it may read the only such column, unless the block is a two-level bucket of the shard's own keys.
+    VectorWithMemoryTracking<String> normalized_block_names;
+    for (size_t position = 0; position < header.columns(); ++position)
+    {
+        const auto & elem = header.getByPosition(position);
+        if (source_positions[position] || (elem.column && isColumnConst(*elem.column)))
+            continue;
+
+        if (normalized_block_names.empty())
+            for (const auto & column : block)
+                normalized_block_names.push_back(normalizeGeneratedSetKeys(column.name));
+
+        const String normalized_name = normalizeGeneratedSetKeys(elem.name);
+        auto matches = [&](size_t i)
+        {
+            return block.getByPosition(i).type->equals(*elem.type) && normalized_block_names[i] == normalized_name;
+        };
+
+        std::optional<size_t> source;
+        if (block.columns() == header.columns() && !occurrences.contains(block.getByPosition(position).name) && matches(position))
+        {
+            source = position;
+        }
+        else if (block.info.bucket_num < 0)
+        {
+            size_t num_matches = 0;
+            for (size_t i = 0; i < block.columns(); ++i)
             {
-                source_positions.emplace_back();
-                continue;
+                if (matches(i))
+                {
+                    ++num_matches;
+                    source = i;
+                }
             }
-            const size_t position = it->second[std::min(occurrence, it->second.size() - 1)];
-            source_positions.emplace_back(position);
-            ++remaining_uses[position];
+            if (num_matches != 1)
+                source.reset();
+        }
+
+        if (source)
+        {
+            source_positions[position] = *source;
+            ++remaining_uses[*source];
         }
     }
 

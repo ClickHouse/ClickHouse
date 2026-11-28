@@ -27,6 +27,10 @@ namespace DB
 /// mixes in each node's type and each constant's value, which keep two such names apart regardless.
 String normalizeGeneratedTableQualifiers(const String & name, const std::unordered_set<String> * genuine_tails = nullptr);
 
+/// Erase the tree hash of every set key that is the second argument of an `IN` function in a rendered column name.
+/// A shard names a set after its own query tree, so the hash may differ from the initiator's for the same `IN`.
+String normalizeGeneratedSetKeys(const String & name);
+
 /// Write a column name that a query plan step carries into a build-independent cache key.
 ///
 /// A name alone is both too weak and too strong. `normalizeGeneratedTableQualifiers` erases the qualifier
