@@ -277,6 +277,11 @@ columns = {
         [struct([("Ab", pa.int32(), pa.array([1, 2], type=pa.int32())),
                  ("aB", pa.int32(), pa.array([3, 4], type=pa.int32()))], nullable=False),
          fsb], ["t", "f"]),
+    # Empty field names, so the struct decodes as an unnamed tuple.
+    "struct_positional": dense(
+        [struct([("", pa.int32(), pa.array([1, 2], type=pa.int32())),
+                 ("", pa.int32(), pa.array([3, 4], type=pa.int32()))]),
+         pa.array(["x", "y"])], ["t", "s"]),
     # Children of the Arrow `null` type, which hold only NULLs, as a struct field, a list item and a map value.
     "struct_null": dense(
         [struct([("a", pa.null(), pa.nulls(2)),
@@ -438,6 +443,8 @@ echo "--- a target tuple may name a subset of the struct's fields, and the rest 
 read_column struct_fields 'Variant(Tuple(a Int32), String)'
 echo "--- an unnamed target tuple expresses no name expectation, so its fields are paired positionally ---"
 read_column struct_fields 'Variant(Tuple(Int32, Int32, Date32), String)'
+echo "--- as are the fields of an unnamed struct requested as a named tuple, as in a plain column ---"
+read_column struct_positional 'Variant(Tuple(a Int32, b Int32), String)'
 echo "--- a Variant nested inside a composite inside a Variant is repaired by the same walk ---"
 read_column struct_nested_union 'Variant(Tuple(v Variant(IPv6, String)), String)'
 echo "--- a branch already under the requested name keeps fields the request distinguishes by case ---"

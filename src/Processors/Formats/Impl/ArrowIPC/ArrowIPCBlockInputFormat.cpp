@@ -387,7 +387,7 @@ std::optional<DataTypes> variantElementTargets(const DataTypeVariant & from, con
 bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative, bool case_insensitive);
 
 /// The tuple cast defaults a target field the source lacks, so each field of a named target tuple must be
-/// found in the decoded struct the way the cast matches it.
+/// found in a named decoded struct the way the cast matches it.
 bool variantElementCompositeMatchesType(const DataTypePtr & decoded, const DataTypePtr & to, bool case_insensitive)
 {
     const auto child_matches = [&](const DataTypePtr & from_child, const DataTypePtr & to_child)
@@ -420,9 +420,9 @@ bool variantElementCompositeMatchesType(const DataTypePtr & decoded, const DataT
         return false;
     const DataTypes & from_elements = from_tup->getElements();
     const DataTypes & to_elements = to_tup->getElements();
-    if (to_tup->hasExplicitNames())
+    if (to_tup->hasExplicitNames() && from_tup->hasExplicitNames())
     {
-        if (!from_tup->hasExplicitNames() || to_elements.empty())
+        if (to_elements.empty())
             return false;
         bool ambiguous = false;
         const auto positions = DataTypeTuple::matchElementsByName(
