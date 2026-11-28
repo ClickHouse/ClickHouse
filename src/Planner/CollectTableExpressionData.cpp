@@ -5,6 +5,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/StorageView.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -331,7 +332,8 @@ public:
         if (!table_expression)
         {
             const auto & storage = table_column_source ? table_column_source->getStorage() : table_function_column_source->getStorage();
-            if (!storage->supportsPrewhere())
+            /// A view does not execute `PREWHERE` itself. The planner moves it into the read of the table of the view.
+            if (!storage->supportsPrewhere() && !typeid_cast<const StorageView *>(storage.get()))
                 throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                     "Storage {} (table {}) does not support PREWHERE",
                     storage->getName(),
@@ -379,7 +381,7 @@ void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
     if (auto * table_node = table_expression->as<TableNode>())
     {
         auto storage = table_node->getStorage();
-        if (!storage->supportsPrewhere())
+        if (!storage->supportsPrewhere() && !typeid_cast<const StorageView *>(storage.get()))
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Storage {} (table {}) does not support PREWHERE",
                 storage->getName(),
@@ -388,7 +390,7 @@ void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
     else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
     {
         auto storage = table_function_node->getStorage();
-        if (!storage->supportsPrewhere())
+        if (!storage->supportsPrewhere() && !typeid_cast<const StorageView *>(storage.get()))
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Table function storage {} (table {}) does not support PREWHERE",
                 storage->getName(),

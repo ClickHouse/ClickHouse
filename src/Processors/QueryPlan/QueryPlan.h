@@ -182,6 +182,9 @@ public:
     /// `Delayed*` placeholder steps and fails with a logical error when the pipeline is built.
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 
+    /// Makes the filter at the root of the plan the `PREWHERE` of the table that the plan reads, if that table can execute it.
+    bool tryMoveRootFilterToPrewhere();
+
     /// Converts the original plan to distributed plan and replaces the original plan with a plan that
     /// contains a step that executes the distributed plan and a step that receives the result.
     void convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings);

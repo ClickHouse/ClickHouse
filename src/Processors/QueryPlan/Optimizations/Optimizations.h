@@ -368,6 +368,10 @@ void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node);
 /// Compiling the expressions of a step cannot pay off when its input has at most one row.
 void disableCompilationOverAtMostOneRow(QueryPlan::Node & node);
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
+
+/// Makes the filter of the node the `PREWHERE` of the table read below it, merging it with the expressions and filters in between.
+/// Returns false if the read cannot execute the whole filter as `PREWHERE`, and the plan is not usable then.
+bool tryMoveFilterToPrewhere(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &, bool before_projections);
 /// Splits the read of a single `uniqExact` in order (see `optimizeAggregationInOrder`) into layers by its key, or gives up
