@@ -10,6 +10,7 @@ class PlannerQueryProcessingInfo;
 class QueryNode;
 class QueryPlan;
 struct QueryAnalysisResult;
+struct SelectQueryInfo;
 struct Settings;
 
 using UsefulSets = std::unordered_set<FutureSetPtr>;
@@ -38,6 +39,7 @@ void addAggregationStep(QueryPlan & query_plan,
     PlannerExpressionsAnalysisResult & expression_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info,
     const Settings & settings,
     std::optional<UInt64> trivial_group_by_limit);
 
@@ -59,6 +61,7 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info,
     const QueryNode & query_node);
 
 void addDistinctStep(QueryPlan & query_plan,

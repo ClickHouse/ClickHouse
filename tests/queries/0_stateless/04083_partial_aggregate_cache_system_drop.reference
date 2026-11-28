@@ -1,0 +1,15 @@
+--- SYSTEM DROP: warm cache then clear
+1	49995000	10000
+2	49995000	10000
+0	2
+1	49995000	10000
+2	49995000	10000
+2	0
+--- SYSTEM DROP: first query after drop (all miss)
+1	49995000	10000
+2	49995000	10000
+0	2
+--- SYSTEM DROP: second query (hits again)
+1	49995000	10000
+2	49995000	10000
+2	0

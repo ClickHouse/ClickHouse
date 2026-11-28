@@ -1,0 +1,30 @@
+--- string boundaries in the query hash
+1	10	1
+1	99
+--- settings affecting expressions
+1	0
+1	9
+--- metadata-only change of a default
+1	2
+2	1
+1	4
+2	2
+--- switch to in-order aggregation
+0	20
+1	20
+2	20
+0	20
+1	20
+2	20
+--- read stopped early with read_overflow_mode = break
+0	50000
+1	50000
+--- nondeterministic virtual column
+0	1
+1	2
+0	2
+--- external aggregation of a part
+100000
+100000
+--- absolute SAMPLE
+1

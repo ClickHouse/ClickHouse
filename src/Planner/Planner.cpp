@@ -1316,7 +1316,15 @@ void Planner::buildPlanForQueryNode()
                     trivial_group_by_limit.reset();
             }
 
-            addAggregationStep(query_plan, query_node, expression_analysis_result, query_analysis_result, planner_context, query_settings, trivial_group_by_limit);
+            addAggregationStep(
+                query_plan,
+                query_node,
+                expression_analysis_result,
+                query_analysis_result,
+                planner_context,
+                select_query_info,
+                query_settings,
+                trivial_group_by_limit);
         }
 
         /** If we have aggregation, we can't execute any later-stage
@@ -1418,7 +1426,7 @@ void Planner::buildPlanForQueryNode()
                 having_executed = true;
             }
 
-            addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, query_node);
+            addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
 
             if (!having_executed && expression_analysis_result.hasHaving())
                 addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);
