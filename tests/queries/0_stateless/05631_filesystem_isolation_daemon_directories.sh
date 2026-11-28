@@ -27,7 +27,7 @@ fi
 
 DIR="${CLICKHOUSE_TMP}/filesystem_isolation_daemon_directories"
 rm -rf "$DIR"
-mkdir -p "$DIR/bin" "$DIR/conf" "$DIR/data" "$DIR/launch" "$DIR/runtime/auth"
+mkdir -p "$DIR/bin" "$DIR/conf" "$DIR/data" "$DIR/launch" "$DIR/run" "$DIR/runtime/auth"
 # Absolute and without links, as the paths seen through `/proc/<pid>/root`.
 DIR=$(cd "$DIR" && pwd -P)
 # The daemon changes to the directory of the executable as it is named in `argv[0]`, without resolving the link.
@@ -68,26 +68,30 @@ function finish()
 }
 trap finish EXIT
 
-# Without the watchdog, the process in the pid file is the isolated one.
+# The pid file of the supervisor outside of the isolation is not in a path writable inside, such as `path`.
 (cd "$DIR/launch" && CLICKHOUSE_WATCHDOG_ENABLE=0 exec "$DIR/bin/clickhouse-server" --daemon \
-    --config-file "$DIR/conf/config.xml" --pid-file "$DIR/data/server.pid") > "$DIR/server.out" 2>&1
+    --config-file "$DIR/conf/config.xml" --pid-file "$DIR/run/server.pid") > "$DIR/server.out" 2>&1
 
 for _ in {1..600}; do
     grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null && break
     sleep 0.1
 done
-PID=$(cat "$DIR/data/server.pid" 2>/dev/null)
+PID=$(cat "$DIR/run/server.pid" 2>/dev/null)
 
 if ! grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null || ! grep -q 'Isolated the filesystem' "$DIR/log/server.log"; then
     echo "The server did not start with an isolated filesystem"
     cat "$DIR/server.out" "$DIR/log/server.err.log" "$DIR/log/stderr.log" >&2
     exit 1
 fi
+# With `CAP_SYS_ADMIN`, the supervisor stays outside of the namespaces, and its child, the init of the PID
+# namespace, is inside. Otherwise that process is inside.
+INSIDE=$PID
+[ "$(cat "/proc/$PID/comm")" = clickhouse-isol ] && INSIDE=$(cut -d' ' -f1 "/proc/$PID/task/$PID/children")
 
 echo "log: $([ -s "$DIR/log/server.log" ] && echo written || echo missing)"
-echo "directory of the core dumps: $([ -d "/proc/$PID/root$DIR/runtime/cores" ] && echo visible || echo invisible)"
-echo "named collections: $([ -d "/proc/$PID/root$DIR/runtime/collections" ] && echo visible || echo invisible)"
-echo "substitutions of the users configuration: $([ -f "/proc/$PID/root$DIR/runtime/auth/substitutions.xml" ] && echo visible || echo invisible)"
+echo "directory of the core dumps: $([ -d "/proc/$INSIDE/root$DIR/runtime/cores" ] && echo visible || echo invisible)"
+echo "named collections: $([ -d "/proc/$INSIDE/root$DIR/runtime/collections" ] && echo visible || echo invisible)"
+echo "substitutions of the users configuration: $([ -f "/proc/$INSIDE/root$DIR/runtime/auth/substitutions.xml" ] && echo visible || echo invisible)"
 
 kill "$PID"
 for _ in {1..600}; do

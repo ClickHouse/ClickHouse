@@ -17,6 +17,8 @@
 
 #include <fmt/format.h>
 
+#include <ranges>
+
 namespace DB
 {
 
@@ -105,12 +107,17 @@ IcebergRESTCatalogWarehouse::IcebergRESTCatalogWarehouse(
     : name(std::move(name_)), base_location(std::move(base_location_)), object_storage(std::move(object_storage_)), store(std::move(store_))
 {
     /// The warehouse has one S3 client, bound to one bucket. Every location must be in that bucket.
-    validateLocation(base_location);
+    validateLocation(parseS3Location(base_location));
 }
 
 void IcebergRESTCatalogWarehouse::validateLocation(const String & location) const
 {
     validateLocation(parseS3Location(location));
+
+    /// Base locations of warehouses are disjoint, so tables of two warehouses never overlap.
+    if (!stripTrailingSlashes(location).starts_with(base_location + "/"))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Location {} is outside base location {} of warehouse {}", location, base_location, name);
 }
 
 void IcebergRESTCatalogWarehouse::validateLocation(const S3Location & location) const
@@ -126,6 +133,20 @@ void IcebergRESTCatalogWarehouse::validateLocation(const S3Location & location) 
     /// `S3ObjectStorage` re-parses a key of the form `<scheme>://<bucket>/...` and writes to the embedded bucket.
     if (location.key.contains("://"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Location s3://{}/{} contains an embedded URI", location.bucket, location.key);
+
+    /// Some clients normalize paths, so `a//b`, `a/./b` and `a/x/../b` would all name `a/b` for them.
+    /// The overlap check compares strings, so only one spelling of a location is allowed.
+    const String key = stripTrailingSlashes(location.key);
+    for (const auto part : std::views::split(key, '/'))
+    {
+        const std::string_view segment(part.begin(), part.end());
+        if (segment.empty() || segment == "." || segment == "..")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Location s3://{}/{} contains an empty, '.' or '..' path segment",
+                location.bucket,
+                location.key);
+    }
 }
 
 String IcebergRESTCatalogWarehouse::objectKey(const String & location) const
@@ -161,10 +182,18 @@ std::vector<IcebergNamespaceName> IcebergRESTCatalogWarehouse::listNamespaces(co
     return store->listNamespaces(parent);
 }
 
-IcebergRESTCatalogWarehouse::CreateTableResult
-IcebergRESTCatalogWarehouse::createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer) const
+IcebergRESTCatalogWarehouse::CreateTableOutcome IcebergRESTCatalogWarehouse::createTable(
+    const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer, const String & table_root) const
 {
-    return store->createTable(ns, table, pointer);
+    validateLocation(table_root);
+    return store->createTable(ns, table, pointer, table_root);
+}
+
+std::optional<IcebergRESTCatalogWarehouse::CreateTableOutcome> IcebergRESTCatalogWarehouse::checkForLocationConflict(
+    const IcebergNamespaceName & ns, const String & table, const String & table_root) const
+{
+    validateLocation(table_root);
+    return store->checkForLocationConflict(ns, table, table_root);
 }
 
 std::optional<IcebergTablePointer> IcebergRESTCatalogWarehouse::getTable(const IcebergNamespaceName & ns, const String & table) const

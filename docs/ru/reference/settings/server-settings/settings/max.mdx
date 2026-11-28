@@ -69,17 +69,11 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 ## max_iceberg_manifest_decode_thread_pool_free_size {#max_iceberg_manifest_decode_thread_pool_free_size}
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
-
-Максимальное количество бездействующих резервных потоков, сохраняемых в пуле потоков для декодирования файлов манифестов данных Iceberg.
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />Максимальное количество бездействующих резервных потоков, сохраняемых в пуле потоков для декодирования файлов манифестов данных Iceberg. Эта настройка устарела и ни на что не влияет: файлы манифестов Iceberg читаются в пуле потоков IO.
 
 ## max_iceberg_manifest_decode_thread_pool_size {#max_iceberg_manifest_decode_thread_pool_size}
 
-<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="Yes" />
-
-Максимальное общее количество потоков, используемых для декодирования файлов манифестов данных Iceberg.
-
-Этот пул намеренно отделён от IO-пула: задача декодирования может блокироваться до тех пор, пока запрос не обработает созданные ею записи, тогда как декодирование манифеста удалений ожидает завершения своих задач в IO-пуле ещё до того, как будет обработана хотя бы одна запись, — использование общего пула могло бы привести к взаимной блокировке.
+<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />Максимальное общее количество потоков, используемых для декодирования файлов манифестов данных Iceberg. Эта настройка устарела и ни на что не влияет: файлы манифестов Iceberg читаются в пуле потоков IO.
 
 ## max_keep_alive_requests {#max_keep_alive_requests}
 

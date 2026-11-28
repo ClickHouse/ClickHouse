@@ -6,9 +6,7 @@ keywords: ['配额', '查询复杂度']
 description: '配额和查询复杂度是限制用户在 ClickHouse 中操作权限的有效方式。本文通过示例介绍如何应用这两种不同的方法。'
 ---
 
-<div id="about-quotas-and-query-complexity">
-  ## 关于配额和查询复杂度
-</div>
+## 关于配额和查询复杂度 {#about-quotas-and-query-complexity}
 
 [配额](/zh/concepts/features/configuration/server-config/quotas)和[查询复杂度](/zh/concepts/features/configuration/settings/query-complexity)都是在 ClickHouse 中限制用户可执行操作的有效方式。
 
@@ -16,9 +14,7 @@ description: '配额和查询复杂度是限制用户在 ClickHouse 中操作权
 
 本文通过示例说明如何应用这两种不同的方法。
 
-<div id="the-sample-data">
-  ## 示例数据
-</div>
+## 示例数据 {#the-sample-data}
 
 为便于说明，以下示例均以这张简单的示例表为基础：
 
@@ -70,9 +66,7 @@ clickhouse-cloud :) SELECT * FROM default.test_table_00006488 LIMIT 5
 -- 5 rows in set. Elapsed: 0.003 sec.
 ```
 
-<div id="using-quotas">
-  ## 使用配额
-</div>
+## 使用配额 {#using-quotas}
 
 在此示例中，我们将创建一个角色，并为其应用一个配额，限制其在每个 10 秒时间间隔内最多只能检索 10 行结果：
 
@@ -136,7 +130,7 @@ clickhouse-cloud :) CREATE QUOTA quota_max_10_result_rows_per_10_seconds FOR INT
 现在以用户 `user_with_quota` 的身份登录
 
 ```sql
--- 以通过角色应用了配额的用户身份登录
+-- login as the user where quota is applied through the role
 clickhouse-cloud :) SELECT user()
 
 -- SELECT user()
@@ -149,7 +143,7 @@ clickhouse-cloud :) SELECT user()
 
 -- 1 row in set. Elapsed: 0.002 sec.
 
--- 列出授权
+-- list grants
 clickhouse-cloud :) SHOW GRANTS
 
 -- SHOW GRANTS
@@ -162,7 +156,7 @@ clickhouse-cloud :) SHOW GRANTS
 
 -- 1 row in set. Elapsed: 0.001 sec.
 
--- 检查当前时间
+-- check the time
 clickhouse-cloud :) select now()
 
 -- SELECT now()
@@ -175,7 +169,7 @@ clickhouse-cloud :) select now()
 
 -- 1 row in set. Elapsed: 0.001 sec.
 
--- 查询十行
+-- query ten rows
 clickhouse-cloud :) SELECT * FROM test_table LIMIT 10
 
 -- SELECT *
@@ -199,7 +193,7 @@ clickhouse-cloud :) SELECT * FROM test_table LIMIT 10
 
 -- 10 rows in set. Elapsed: 0.002 sec.
 
--- 尝试在上次查询后 10 秒的时间间隔内再获取一行
+-- attempt to get another row within the 10 seconds interval since the last query
 clickhouse-cloud :) SELECT * FROM test_table LIMIT 1
 
 -- SELECT *
@@ -214,7 +208,7 @@ clickhouse-cloud :) SELECT * FROM test_table LIMIT 1
 -- Code: 201. DB::Exception: Received from dxqjx1s5lt.eu-west-1.aws.clickhouse.cloud:9440. DB::Exception: Quota for user `user_with_quota` for 10s has been exceeded: result_rows = 11/10. 
 -- Interval will end at 2023-10-25 14:37:50. Name of quota template: `quota_max_10_result_rows_per_10_seconds`. (QUOTA_EXCEEDED)
 
--- 检查当前时间
+-- check the time
 clickhouse-cloud :) select now()
 
 -- SELECT now()
@@ -228,11 +222,9 @@ clickhouse-cloud :) select now()
 -- 1 row in set. Elapsed: 0.001 sec.
 ```
 
-请注意，用户还需再等待 5 秒，才能获得新的 10 行结果集“配额”。
+请注意，用户还需再等待 5 秒，才能获得新的 10 行结果集“QUOTA”。
 
-<div id="using-query-complexity">
-  ## 使用查询复杂度
-</div>
+## 使用查询复杂度 {#using-query-complexity}
 
 在此示例中，我们将创建一个角色，并对其应用一个查询复杂度 `SETTING`，使每个查询最多只返回 1 行。
 

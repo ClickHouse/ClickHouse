@@ -248,12 +248,17 @@ JOB_END_RESERVE_SEC = 300
 # The uploads, and the dashboard gate after them, get at least this long, however late the job is.
 DASHBOARD_MIN_UPLOAD_SEC = 60
 # compare.sh's confirmation reruns end this long before `job_end`: after them, the rest of the report,
-# the uploads and the dashboard gate take about two minutes.
-CONFIRM_END_RESERVE_SEC = 180
+# the uploads and the dashboard gate take up to about ten minutes.
+CONFIRM_END_RESERVE_SEC = 600
+# The tests and the log export of a `master_head` run that is not nightly end this long before `job_end`,
+# so that the report fits into the job timeout.
+TESTS_END_RESERVE_SEC = 600
 # Longest pause between the attempts of an upload in `DASHBOARD_INPUT_TABLES` that CIDB failed.
 CIDB_UPLOAD_RETRY_INTERVAL_SEC = 60
 # Pause between the log export flushes of a nightly run.
 NIGHTLY_FLUSH_INTERVAL_SEC = 900
+# Total time of the profile runs of the changed queries in one shard (like `profile_seconds_left` in compare.sh).
+PROFILE_BUDGET_SEC = 600
 
 ch_uploads_dir = f"{perf_wd}/analyze/ch-uploads"
 flamegraph_upload_path = f"{ch_uploads_dir}/flamegraph-stacks.tsv"
@@ -1202,7 +1207,7 @@ def flush_log_export(servers):
             traceback.print_exc()
 
 
-def export_system_logs(servers):
+def export_system_logs(servers, deadline=None):
     """Send what the servers accumulated while the tests were running to the
     CI Logs cluster, and drop the export views.
 
@@ -1211,12 +1216,18 @@ def export_system_logs(servers):
     The `SYSTEM FLUSH DISTRIBUTED` of `log_export.stop` sends the accumulated
     files whatever came of the `START` above (`processFiles(force = true)` does
     not consult the send lock), so the rows are not lost if it did not take.
+    With a `deadline`, the servers still to export share the time left, and the
+    sends are not started.
     """
-    for node_name, server in servers:
+    for i, (node_name, server) in enumerate(servers):
         print(f"Export the system logs of the [{node_name}] server")
         try:
-            log_export.start_distributed_sends(server.port)
-            log_export.stop(server.port)
+            if deadline is None:
+                log_export.start_distributed_sends(server.port)
+                log_export.stop(server.port)
+            else:
+                now = time.monotonic()
+                log_export.stop(server.port, deadline=now + (deadline - now) / (len(servers) - i))
         except Exception:
             traceback.print_exc()
     return True
@@ -1577,14 +1588,17 @@ class CHServer:
     @classmethod
     def run_test(
         cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/", long=False,
-        table_engine=None,
+        table_engine=None, time_limit=None, profile_seconds=10,
     ):
+        """Run one test XML with perf.py. Returns whether the test tore down cleanly, and the seconds
+        perf.py spent in the profile runs of the queries whose time changed (its `profile-total` line)."""
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
         # --runs ("at least N runs per query") is passed only when explicitly
         # requested; by default the adaptive run policy decides the counts.
         runs_arg = f"--runs {runs}" if runs is not None else ""
-        timeout_prefix = f"timeout -k 60 {cls.NIGHTLY_TEST_TIMEOUT_SEC} " if long else ""
+        budget = cls.NIGHTLY_TEST_TIMEOUT_SEC if long else time_limit
+        timeout_prefix = f"timeout -k 60 {math.ceil(budget)} " if budget is not None else ""
         if long:
             print(f"test-start {format_utc_date_time(utc_now())}")
         res, out, err = Shell.get_res_stdout_stderr(
@@ -1593,7 +1607,7 @@ class CHServer:
                 --binary {perf_left}/clickhouse {perf_right}/clickhouse \
                 --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
                 {runs_arg} --max-queries {max_queries} --soft-max-queries \
-                --profile-seconds 10 \
+                --profile-seconds {profile_seconds} \
                 --pr-number {pr_number} \
                 --stop-merges \
                 {f'--table-engine {table_engine} ' if table_engine else ''}{test_file}{' --long' if long else ''}",
@@ -1601,13 +1615,20 @@ class CHServer:
             strip=False,
         )
         duration = sw.duration
+        if budget is not None and res != 0:
+            # A kill can tear the last line of the block-buffered output.
+            out = out[: out.rfind("\n") + 1]
+            expired = (
+                f"wall-clock budget {cls.NIGHTLY_TEST_TIMEOUT_SEC}s"
+                if long
+                else f"the {math.ceil(budget)}s left before the job timeout"
+            )
+            err += f"{test_name}: perf.py exited with status {res} (124 = {expired} expired, 137 = killed)\n"
         lines = out.splitlines()
         # A skipped test exits before it connects, so it created nothing.
         clean = "teardown-complete" in lines or any(line.startswith("skipped\t") for line in lines)
         if long:
             print(f"test-end {format_utc_date_time(utc_now())}")
-            if res != 0:
-                err += f"{test_name}: perf.py exited with status {res} (124 = wall-clock budget {cls.NIGHTLY_TEST_TIMEOUT_SEC}s expired, 137 = killed)\n"
         if not clean:
             err += f"{test_name}: teardown incomplete, stopping the batch\n"
         if res != 0 or not clean:
@@ -1619,7 +1640,8 @@ class CHServer:
             f.write(out)
         with open(f"{results_path}/wall-clock-times.tsv", "a") as f:
             f.write(f"{test_name}\t{duration}\n")
-        return clean
+        profile_total = sum(float(line.split("\t")[1]) for line in lines if line.startswith("profile-total\t"))
+        return clean, profile_total
 
     def terminate(self):
         print("Terminate ClickHouse process")
@@ -2144,9 +2166,10 @@ def dashboard_has_shard(run_id, arch, test, deadline):
 
 
 def dashboard_query_link(run_id, test, query_index):
+    """The dashboard page of a test, with one of its queries selected."""
     return (
         f"{PERF_DASHBOARD_URL}/runs/{urllib.parse.quote(run_id)}"
-        f"/tests/{urllib.parse.quote(test)}/queries/{query_index}"
+        f"/tests/{urllib.parse.quote(test)}?query_index={query_index}"
     )
 
 
@@ -3110,6 +3133,19 @@ def rebuild_table(port, source, destination):
         Shell.check(f'{client} --query "DROP TABLE {source} SYNC"', strict=True, verbose=True)
 
 
+def rebuild_database(port, database):
+    # Rebuild every table of the database in place. Each table ends as one part.
+    client = _perf_client(port)
+    tables = Shell.get_output(f'{client} --query "SHOW TABLES FROM {database}"', strict=True).split()
+    if not tables:
+        raise RuntimeError(f"rebuild_database: no tables in {database}")
+    # An interrupted rebuild_table leaves <table>_rebuild and <table>_old behind.
+    # Rebuilding <table> drops them, and fails if <table> itself is missing.
+    names = sorted({table.removesuffix("_rebuild").removesuffix("_old") for table in tables})
+    for table in names:
+        rebuild_table(port, f"{database}.{table}", f"{database}.{table}")
+
+
 POPULATE_DONE_MARKER = "test._populate_done"
 
 # The MergeTree datasets are attached to `Atomic` databases (the default engine), so that their
@@ -3202,10 +3238,10 @@ def attach_datasets(port, server_db):
 
 
 def populate_data(port):
-    # Rebuild the hits datasets on one server, sequentially. The three inserts
+    # Rebuild the datasets on one server, sequentially. The three hits inserts
     # share the per-user memory limit (~28GiB) and hits_100m_single alone uses
     # ~21GiB, so running them in parallel is killed by the OvercommitTracker.
-    # A dedicated marker table is created only after all three tables are
+    # A dedicated marker table is created only after all tables are
     # rebuilt: it is the "done" signal for the re-entrant restart() skip. Table
     # existence cannot serve as the marker, because the in-place *_single tables
     # already exist (attached from the tarball) before they are rebuilt.
@@ -3214,13 +3250,13 @@ def populate_data(port):
         print(f"populate_data: server {port} already populated, skipping")
         return
     Shell.check(f'{client} --query "CREATE DATABASE IF NOT EXISTS test"', strict=True, verbose=True)
-    # Scope: only the hits datasets are rebuilt (they back the bulk of the
-    # suite, including clickbench). The other attached datasets (tpch, tpcds,
-    # values) still read their frozen tarball parts, so write-time defaults are
-    # not yet exercised on those workloads.
+    # The hits, tpch and tpcds datasets are rebuilt.
+    # The values dataset keeps its tarball parts.
     rebuild_table(port, "default.hits_10m_single", "default.hits_10m_single")
     rebuild_table(port, "default.hits_100m_single", "default.hits_100m_single")
     rebuild_table(port, "datasets.hits_v1", "test.hits")
+    rebuild_database(port, "tpch10")
+    rebuild_database(port, "tpcds")
     Shell.check(f'{client} --query "CREATE TABLE {POPULATE_DONE_MARKER} (done UInt8) ENGINE = Log"', strict=True, verbose=True)
 
 
@@ -3280,6 +3316,7 @@ def main():
     info = Info()
     # Before any stage: a job without a usable timeout fails now, not after the benchmarks.
     end = job_end(info) if compare_against_master and not info.is_local_run else None
+    tests_end = None if nightly or end is None else end - TESTS_END_RESERVE_SEC
     reference_chain = []
     same_build = False
 
@@ -3894,17 +3931,32 @@ def main():
 
         def run_tests():
             last_flush = time.monotonic()
-            for test in test_files:
+            # Every query whose time changed gets about 10 seconds of profile runs. A change that moves
+            # most queries (e.g. a new cache) would otherwise spend about an hour of the shard on profiles,
+            # and the tests that do not fit before the job timeout would not run: profile only until the
+            # budget is spent.
+            profile_seconds_left = PROFILE_BUDGET_SEC
+            for i, test in enumerate(test_files):
+                time_limit = None if tests_end is None else tests_end - time.monotonic()
+                if time_limit is not None and time_limit <= 0:
+                    for not_run in test_files[i:]:
+                        name = not_run.split("/")[-1].removesuffix(".xml")
+                        with open(f"{perf_wd}/{name}-err.log", "w") as f:
+                            f.write(f"{name}: not run, no time left before the job timeout\n")
+                    break
                 # Both servers store their data under perf_wd.
                 print(f"Free disk space before {test}: {shutil.disk_usage(perf_wd).free / 2**30:.1f} GiB")
-                clean = CHServer.run_test(
+                clean, profile_total = CHServer.run_test(
                     "./tests/performance/" + test,
                     max_queries=0 if nightly or test in all_query_tests else 10,
                     pr_number=info.pr_number,
                     results_path=perf_wd,
                     long=nightly,
                     table_engine=TABLE_ENGINE,
+                    time_limit=time_limit,
+                    profile_seconds=10 if profile_seconds_left > 0 else 0,
                 )
+                profile_seconds_left -= profile_total
                 cleanup_user_files()
                 writes_s3 = TABLE_ENGINE == "iceberg_s3" or (nightly and f"./tests/performance/{test}" in s3_paths)
                 # After a complete teardown; a failed S3 cleanup is an error record and ends the batch, the report still runs.
@@ -3939,7 +3991,7 @@ def main():
             Result.from_commands_run(
                 name="Export system logs",
                 command=export_system_logs,
-                command_args=[log_export_servers],
+                command_args=[log_export_servers, tests_end],
                 with_info=True,
             )
         )

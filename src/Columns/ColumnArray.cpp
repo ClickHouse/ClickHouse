@@ -834,6 +834,96 @@ MutableColumnPtr ColumnArray::getDataInRange(size_t start, size_t length) const
 }
 
 
+void ColumnArray::insertFromEither(
+    const IColumn & src_true_, bool src_true_is_const, const IColumn & src_false_, bool src_false_is_const, const IColumn::Filter & condition)
+{
+    /// Above this average number of bytes per row, the elements are copied with one `insertRangeFrom` per row:
+    /// its virtual call is cheap compared with the copy, and the gather below would copy every element three times.
+    static constexpr size_t max_average_bytes_to_gather = 128;
+
+    const ColumnArray & src_true = assert_cast<const ColumnArray &>(src_true_);
+    const ColumnArray & src_false = assert_cast<const ColumnArray &>(src_false_);
+    const Offsets & true_offsets = src_true.getOffsets();
+    const Offsets & false_offsets = src_false.getOffsets();
+
+    const size_t rows = condition.size();
+    const UInt8 * condition_data = condition.data();
+
+    auto true_row = [&](size_t i) -> ssize_t { return src_true_is_const ? 0 : i; };
+    auto false_row = [&](size_t i) -> ssize_t { return src_false_is_const ? 0 : i; };
+
+    Offsets & res_offsets = getOffsets();
+    const size_t old_rows = res_offsets.size();
+    const Offset old_elements = res_offsets[static_cast<ssize_t>(old_rows) - 1];
+    res_offsets.resize(old_rows + rows);
+
+    Offset offset = old_elements;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const size_t size_true = true_offsets[true_row(i)] - true_offsets[true_row(i) - 1];
+        const size_t size_false = false_offsets[false_row(i)] - false_offsets[false_row(i) - 1];
+        offset += condition_data[i] ? size_true : size_false;
+        res_offsets[old_rows + i] = offset;
+    }
+
+    const size_t elements = offset - old_elements;
+    if (elements == 0)
+        return;
+
+    /// The gather below copies all elements of both sources, a constant source contributes the elements of its row.
+    const size_t true_begin = src_true_is_const ? true_offsets[-1] : 0;
+    const size_t true_end = src_true_is_const ? true_offsets[0] : true_offsets.back();
+    const size_t false_begin = src_false_is_const ? false_offsets[-1] : 0;
+    const size_t false_end = src_false_is_const ? false_offsets[0] : false_offsets.back();
+    const size_t source_elements = true_end - true_begin + false_end - false_begin;
+
+    /// Discarded rows count too: in a `LEFT JOIN` with few matches, the unmatched arrays would be copied only to be dropped.
+    /// The size of a value that is not fixed (`String`, `Array`) is unbounded, so such values are not gathered.
+    if (!getData().valuesHaveFixedSize()
+        || std::max(elements, source_elements) * getData().sizeOfValueIfFixed() > rows * max_average_bytes_to_gather)
+    {
+        for (size_t i = 0; i < rows; ++i)
+        {
+            const ColumnArray & src = condition_data[i] ? src_true : src_false;
+            const ssize_t row = condition_data[i] ? true_row(i) : false_row(i);
+            getData().insertRangeFrom(src.getData(), src.offsetAt(row), src.sizeAt(row));
+        }
+        return;
+    }
+
+    /// The elements of the two sources do not line up with the rows, so the nested column cannot use `insertFromEither`.
+    /// Instead, the elements of both sources are concatenated and the result is gathered from them with `index`: a
+    /// constant number of virtual calls instead of one per row.
+    MutableColumnPtr concatenated = getData().cloneEmpty();
+    concatenated->reserve(source_elements);
+    concatenated->insertRangeFrom(src_true.getData(), true_begin, true_end - true_begin);
+    concatenated->insertRangeFrom(src_false.getData(), false_begin, false_end - false_begin);
+
+    /// Position in `concatenated` of the first element of a row: elements of `src_false` follow those of `src_true`.
+    auto true_start = [&](size_t i) { return true_offsets[true_row(i) - 1] - true_begin; };
+    auto false_start = [&](size_t i) { return false_offsets[false_row(i) - 1] - false_begin + (true_end - true_begin); };
+
+    auto indexes = ColumnUInt64::create(elements);
+    UInt64 * out = indexes->getData().data();
+    for (size_t i = 0; i < rows; ++i)
+    {
+        /// Both are computed so that the select is a `cmov`: a branch on a random condition is mispredicted.
+        const size_t start_if_true = true_start(i);
+        const size_t start_if_false = false_start(i);
+        const size_t start = condition_data[i] ? start_if_true : start_if_false;
+        const size_t size = res_offsets[old_rows + i] - res_offsets[static_cast<ssize_t>(old_rows + i) - 1];
+        for (size_t k = 0; k < size; ++k)
+            out[k] = start + k;
+        out += size;
+    }
+
+    ColumnPtr gathered = concatenated->index(*indexes, 0);
+    if (getData().empty())
+        data = std::move(gathered);
+    else
+        getData().insertRangeFrom(*gathered, 0, elements);
+}
+
 ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (typeid_cast<const ColumnUInt8 *>(data.get()))
@@ -1475,6 +1565,9 @@ ColumnPtr ColumnArray::index(const IColumn & indexes, size_t limit) const
     return selectIndexImpl(*this, indexes, limit);
 }
 
+/// From about this many elements per range, one `insertRangeFrom` per range of consecutive rows is cheaper than gathering the elements.
+static constexpr size_t RANGE_COPY_MIN_ELEMENTS_PER_RANGE = 8;
+
 template <typename T>
 ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit) const
 {
@@ -1482,29 +1575,59 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     if (limit == 0)
         return ColumnArray::create(data->cloneEmpty());
 
-    /// Convert indexes to UInt64 in case of overflow.
-    auto nested_indexes_column = ColumnUInt64::create();
-    PaddedPODArray<UInt64> & nested_indexes = nested_indexes_column->getData();
-    size_t nested_size = 0;
-    for (size_t i = 0; i < limit; ++i)
-        nested_size += sizeAt(indexes[i]);
-    nested_indexes.reserve_exact(nested_size);
-
     auto res_offsets_column = ColumnOffsets::create(limit);
     Offsets & res_offsets = res_offsets_column->getData();
     size_t current_offset = 0;
 
     for (size_t i = 0; i < limit; ++i)
     {
-        for (size_t j = 0; j < sizeAt(indexes[i]); ++j)
-            nested_indexes.push_back(offsetAt(indexes[i]) + j);
-        current_offset += sizeAt(indexes[i]);
+        const size_t row_size = sizeAt(indexes[i]);
+        if (row_size > std::numeric_limits<Offset>::max() - current_offset)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many elements in array column: {} + {}", current_offset, row_size);
+        current_offset += row_size;
         res_offsets[i] = current_offset;
     }
 
+    if (current_offset == 0)
+        return ColumnArray::create(data->cloneEmpty(), std::move(res_offsets_column));
+
+    if (data->isFixedAndContiguous())
+    {
+        auto continues_range = [&](size_t i) { return static_cast<UInt64>(indexes[i]) == static_cast<UInt64>(indexes[i - 1]) + 1; };
+
+        size_t num_ranges = 1;
+        for (size_t i = 1; i < limit; ++i)
+            num_ranges += !continues_range(i);
+
+        if (current_offset / num_ranges >= RANGE_COPY_MIN_ELEMENTS_PER_RANGE)
+        {
+            auto res_data = data->cloneEmpty();
+            res_data->reserve(current_offset);
+            const Offsets & src_offsets = getOffsets();
+            for (size_t i = 0; i < limit;)
+            {
+                size_t j = i + 1;
+                while (j < limit && continues_range(j))
+                    ++j;
+                const size_t begin = offsetAt(indexes[i]);
+                res_data->insertRangeFrom(*data, begin, src_offsets[indexes[j - 1]] - begin);
+                i = j;
+            }
+            return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
+        }
+    }
+
+    /// Convert indexes to UInt64 in case of overflow.
+    auto nested_indexes_column = ColumnUInt64::create();
+    PaddedPODArray<UInt64> & nested_indexes = nested_indexes_column->getData();
+    nested_indexes.reserve_exact(current_offset);
+    for (size_t i = 0; i < limit; ++i)
+        for (size_t j = 0; j < sizeAt(indexes[i]); ++j)
+            nested_indexes.push_back(offsetAt(indexes[i]) + j);
+
     /// Build the nested result first: an empty clone of `data` copies its whole nested structure, which for
     /// `Dynamic` is as deep as the data, and every level of this recursion would hold one.
-    ColumnPtr res_data = current_offset != 0 ? data->index(*nested_indexes_column, current_offset) : data->cloneEmpty();
+    ColumnPtr res_data = data->index(*nested_indexes_column, current_offset);
     return ColumnArray::create(res_data, std::move(res_offsets_column));
 }
 

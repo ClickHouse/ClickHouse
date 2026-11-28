@@ -19,6 +19,12 @@ ${CLICKHOUSE_CURL} -sS --globoff -v "http://localhost:8123/?http_response_header
 echo "It does not allow bad characters:"
 ${CLICKHOUSE_CURL} -sS --globoff -v "http://localhost:8123/" -d "SELECT 1 SETTINGS http_response_headers = \$\${'My-New-Header':'Hello,\n\nworld.'}\$\$" 2>&1 | grep -o -F 'BAD_ARGUMENTS'
 ${CLICKHOUSE_CURL} -sS --globoff -v "http://localhost:8123/" -d "SELECT 1 SETTINGS http_response_headers = \$\${'My\rNew-Header':'Hello, world.'}\$\$" 2>&1 | grep -o -F 'BAD_ARGUMENTS'
+${CLICKHOUSE_CURL} -sS --globoff -v "http://localhost:8123/" -d "SELECT 1 SETTINGS http_response_headers = \$\${'My-New-Header':'Hello,\x7Fworld.'}\$\$" 2>&1 | grep -o -F 'BAD_ARGUMENTS'
+${CLICKHOUSE_CURL} -sS --globoff -v "http://localhost:8123/" -d "SELECT 1 SETTINGS http_response_headers = \$\${'My\x7FNew-Header':'Hello, world.'}\$\$" 2>&1 | grep -o -F 'BAD_ARGUMENTS'
+${CLICKHOUSE_CURL} -sS --globoff -v "http://localhost:8123/?http_response_headers={'My-New-Header':'Hello,%7Fworld.'}" -d "SELECT 1" 2>&1 | grep -o -F 'BAD_ARGUMENTS'
+${CLICKHOUSE_CURL} -sS --globoff -v "http://localhost:8123/" -d "SELECT 1 SETTINGS http_response_headers = \$\${'X-A: B':'Hello, world.'}\$\$" 2>&1 | grep -o -F 'BAD_ARGUMENTS'
+${CLICKHOUSE_CURL} -sS --globoff -v "http://localhost:8123/" -d "SELECT 1 SETTINGS http_response_headers = \$\${'My New-Header':'Hello, world.'}\$\$" 2>&1 | grep -o -F 'BAD_ARGUMENTS'
+${CLICKHOUSE_CURL} -sS --globoff -v "http://localhost:8123/" -d "SELECT 1 SETTINGS http_response_headers = \$\${'':'Hello, world.'}\$\$" 2>&1 | grep -o -F 'BAD_ARGUMENTS'
 
 echo "It does not let duplicate entries:"
 ${CLICKHOUSE_CURL} -sS --globoff -v "http://localhost:8123/" -d "SELECT 1 SETTINGS http_response_headers = \$\${'a':'b','a':'c'}\$\$" 2>&1 | grep -o -F 'BAD_ARGUMENTS'

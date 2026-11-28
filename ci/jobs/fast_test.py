@@ -269,12 +269,17 @@ def main():
     # builds (pr_number == 0) are allowed to write entries.
     if info.pr_number > 0:
         os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
+        # Read-only builds in the main repo use the bucket anonymously; writers and other repos keep credentials.
+        if info.repo_name == "ClickHouse/ClickHouse":
+            os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     if info.is_local_run:
         print("NOTE: It's a local run")
         if os.environ.get("SCCACHE_ENDPOINT"):
             print(f"NOTE: Using custom sccache endpoint: {os.environ['SCCACHE_ENDPOINT']}")
         if os.environ.get("AWS_ACCESS_KEY_ID"):
             print("NOTE: Using custom AWS credentials for sccache")
+            # Explicit credentials and anonymous access are mutually exclusive.
+            os.environ.pop("SCCACHE_S3_NO_CREDENTIALS", None)
         else:
             os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
 
