@@ -5,8 +5,10 @@
 # A server with `filesystem_isolation` refuses to create an executable user defined function with a driver, rather
 # than to create a function that cannot run: the program that the driver generates is in
 # `dynamic_user_defined_executable_functions_path`, which is writable and therefore not executable in the isolated
-# filesystem. The refusal comes before the driver runs, for `CREATE` and for an `ATTACH` without the configuration that
-# the driver would generate. The queries run as startup scripts of the server.
+# filesystem, unless it is declared as `read_write_executable` in `filesystem_isolation_paths` (see
+# `05898_filesystem_isolation_udf_drivers_executable_path`). The refusal comes before the driver runs, for `CREATE` and
+# for an `ATTACH` without the configuration that the driver would generate. The queries run as startup scripts of the
+# server.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -1010,6 +1010,9 @@
          line) turns it off.
          Executable user defined functions and dictionaries that run scripts need their interpreters and libraries:
          list them in "filesystem_isolation_paths", or disable the isolation.
+         Writable paths are not executable. Drivers of executable user defined functions need
+         "dynamic_user_defined_executable_functions_path" declared as "read_write_executable", which lets the server
+         run the programs it writes there.
          Without CAP_SYS_ADMIN the server has to create a user namespace as well, and loses its other capabilities,
          such as CAP_NET_BIND_SERVICE (ports below 1024) and CAP_IPC_LOCK.
     -->
@@ -1022,6 +1025,7 @@
         <read_only>/lib64</read_only>
         <read_only>/usr/lib</read_only>
         <read_write>/mnt/exchange</read_write>
+        <read_write_executable>/var/lib/clickhouse/dynamic_user_defined_executable_functions</read_write_executable>
     </filesystem_isolation_paths>
     -->
 

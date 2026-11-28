@@ -1071,6 +1071,11 @@ private:
             addKey(key, Access::ReadOnly, runtime_directory);
         for (const auto & key : getMultipleKeys("filesystem_isolation_paths", "read_write"))
             addKey(key, Access::ReadWrite, runtime_directory);
+        /// Writable, and executable: what the server writes there can be run, which the isolation otherwise prevents.
+        /// For a path that the server also writes to on its own, such as `dynamic_user_defined_executable_functions_path`
+        /// for the programs that drivers generate, this one wins (see `planMounts`).
+        for (const auto & key : getMultipleKeys("filesystem_isolation_paths", "read_write_executable"))
+            addKey(key, Access::ReadWriteExecutable, runtime_directory);
     }
 };
 
