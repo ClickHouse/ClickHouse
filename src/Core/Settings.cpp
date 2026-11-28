@@ -5905,6 +5905,15 @@ Close connection before returning connection to the pool.
 Approximate probability of failing internal (for replication) PostgreSQL queries. Valid value is in interval [0.0f, 1.0f]
 )", 0, \
         {"25.2", 0., 0., "New setting"}) \
+    DECLARE(Bool, allow_experimental_postgresql_mutations, false, R"(
+Allow `DELETE` (and, once supported, `UPDATE`) on a table that uses the `PostgreSQL` table engine.
+
+Such a mutation is pushed down to the remote PostgreSQL server and committed there; unlike a `SELECT`,
+its predicate cannot be re-checked locally, and its outcome is not guaranteed under every connection
+failure (a lost commit is reported, not retried). It is therefore off by default while the feature
+stabilises. Reading from and inserting into `PostgreSQL` tables are unaffected by this setting.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting: opt-in for DELETE/UPDATE pushdown on the PostgreSQL table engine."}) \
     DECLARE(UInt64, glob_expansion_max_elements, 1000, R"(
 Maximum number of allowed addresses (For external storages, table functions, etc).
 

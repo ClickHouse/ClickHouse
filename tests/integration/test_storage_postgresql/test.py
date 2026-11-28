@@ -14,12 +14,16 @@ node1 = cluster.add_instance(
     main_configs=["configs/named_collections.xml"],
     user_configs=["configs/users.xml"],
     with_postgres=True,
+    with_zookeeper=True,
+    macros={"shard": 1, "replica": 1},
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/named_collections.xml"],
     user_configs=["configs/settings.xml", "configs/users.xml"],
     with_postgres_cluster=True,
+    with_zookeeper=True,
+    macros={"shard": 1, "replica": 2},
 )
 
 
@@ -1931,6 +1935,493 @@ def test_postgres_strict_query_local_only_column(started_cluster):
     node1.query("DROP TABLE pg_strict_local_only")
     cursor.execute(f"DROP TABLE {table_name}")
     started_cluster.postgres_conn.commit()
+
+
+def test_postgres_delete(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    host = f"{started_cluster.postgres_ip}:{started_cluster.postgres_port}"
+    table_name = "test_delete"
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+    cursor.execute(f"CREATE TABLE {table_name} (id integer, value text)")
+
+    node1.query(
+        f"CREATE TABLE test.pg_delete (id Int32, value String) "
+        f"ENGINE = PostgreSQL('{host}', 'postgres', '{table_name}', 'postgres', '{pg_pass}')"
+    )
+    node1.query(
+        "INSERT INTO test.pg_delete SELECT number, concat('name_', toString(number)) FROM numbers(100)"
+    )
+
+    # The lightweight syntax. The result is verified on the PostgreSQL side, and the pushed-down
+    # statement is a single DELETE with the translated predicate.
+    node1.query("DELETE FROM test.pg_delete WHERE id < 10")
+    cursor.execute(f"SELECT count(*), min(id) FROM {table_name}")
+    assert cursor.fetchall() == [(90, 10)]
+    # `contains_in_log` wraps the pattern in a double-quoted shell string, so the double quotes
+    # PostgreSQL uses to quote identifiers must be backslash-escaped to survive to `zgrep`.
+    assert node1.contains_in_log('Query: DELETE FROM \\"test_delete\\" WHERE \\"id\\" < 10')
+
+    # The ALTER syntax, with a predicate over both columns.
+    node1.query("ALTER TABLE test.pg_delete DELETE WHERE value = 'name_10' OR id = 11")
+    cursor.execute(f"SELECT count(*) FROM {table_name}")
+    assert cursor.fetchall() == [(88,)]
+
+    # A constant expression is folded into a literal before the push-down.
+    node1.query("ALTER TABLE test.pg_delete DELETE WHERE id = 90 + 9")
+    cursor.execute(f"SELECT count(*) FROM {table_name} WHERE id = 99")
+    assert cursor.fetchall() == [(0,)]
+    assert node1.contains_in_log('Query: DELETE FROM \\"test_delete\\" WHERE \\"id\\" = 99')
+
+    # A predicate matching no rows succeeds as a no-op.
+    node1.query("DELETE FROM test.pg_delete WHERE id = 100500")
+    cursor.execute(f"SELECT count(*) FROM {table_name}")
+    assert cursor.fetchall() == [(87,)]
+
+    # A string literal with quotes is escaped in the PostgreSQL dialect: the statement stays
+    # well-formed (a broken escape would be a PostgreSQL syntax error) and deletes nothing.
+    node1.query("DELETE FROM test.pg_delete WHERE value = 'quo''te; DROP TABLE nope; --'")
+    cursor.execute(f"SELECT count(*) FROM {table_name}")
+    assert cursor.fetchall() == [(87,)]
+
+    node1.query("DROP TABLE test.pg_delete")
+    cursor.execute(f"DROP TABLE {table_name}")
+
+
+def test_postgres_delete_errors(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    host = f"{started_cluster.postgres_ip}:{started_cluster.postgres_port}"
+    table_name = "test_delete_errors"
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+    cursor.execute(f"CREATE TABLE {table_name} (id integer, value text)")
+    cursor.execute(
+        f"INSERT INTO {table_name} SELECT i, 'name_' || i FROM generate_series(0, 9) AS i"
+    )
+
+    node1.query(
+        f"CREATE TABLE test.pg_delete_errors (id Int32, value String) "
+        f"ENGINE = PostgreSQL('{host}', 'postgres', '{table_name}', 'postgres', '{pg_pass}')"
+    )
+
+    def remote_count():
+        cursor.execute(f"SELECT count(*) FROM {table_name}")
+        return cursor.fetchall()[0][0]
+
+    # A predicate with no PostgreSQL form is rejected in full, even when one conjunct could be
+    # pushed down: weakening a DELETE filter would delete rows the query did not ask to delete.
+    error = node1.query_and_get_error(
+        "DELETE FROM test.pg_delete_errors WHERE toString(id) = '1' AND id >= 0"
+    )
+    assert "cannot be pushed down" in error
+    assert remote_count() == 10
+
+    # The UPDATE mutation is not supported yet.
+    error = node1.query_and_get_error(
+        "ALTER TABLE test.pg_delete_errors UPDATE value = 'x' WHERE id = 1"
+    )
+    assert "Only the DELETE mutation is supported" in error
+
+    # Mutations cannot be combined.
+    error = node1.query_and_get_error(
+        "ALTER TABLE test.pg_delete_errors DELETE WHERE id = 1, DELETE WHERE id = 2"
+    )
+    assert "Mutations cannot be combined" in error
+    assert remote_count() == 10
+
+    # A table backed by a query cannot be mutated.
+    node1.query(
+        f"CREATE TABLE test.pg_delete_query_backed "
+        f"ENGINE = PostgreSQL('{host}', 'postgres', query('SELECT id, value FROM {table_name}'), 'postgres', '{pg_pass}')"
+    )
+    error = node1.query_and_get_error(
+        "DELETE FROM test.pg_delete_query_backed WHERE id = 1"
+    )
+    assert "Cannot mutate a PostgreSQL table representing the result of a query" in error
+    assert remote_count() == 10
+
+    # A PostgreSQL error is returned to the caller: a role without the DELETE privilege.
+    cursor.execute("DROP ROLE IF EXISTS delete_norole")
+    cursor.execute("CREATE ROLE delete_norole WITH LOGIN PASSWORD 'norole_pass'")
+    cursor.execute(f"GRANT SELECT ON {table_name} TO delete_norole")
+    node1.query(
+        f"CREATE TABLE test.pg_delete_noperm (id Int32, value String) "
+        f"ENGINE = PostgreSQL('{host}', 'postgres', '{table_name}', 'delete_norole', 'norole_pass')"
+    )
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_noperm WHERE id = 1")
+    assert "permission denied" in error
+    assert remote_count() == 10
+
+    # The remote table disappeared after the ClickHouse table was created: the PostgreSQL error
+    # is returned with its SQLSTATE (42P01, undefined_table).
+    cursor.execute(f"DROP TABLE {table_name}")
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_errors WHERE id = 1")
+    assert "SQLSTATE 42P01" in error
+
+    cursor.execute("DROP ROLE delete_norole")
+
+
+def test_postgres_delete_schema_and_quoted_identifiers(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP SCHEMA IF EXISTS delete_schema CASCADE")
+    cursor.execute("CREATE SCHEMA delete_schema")
+    # Mixed-case table and column names force PostgreSQL identifier quoting in the pushed-down DELETE.
+    cursor.execute('CREATE TABLE delete_schema."MyTable" ("Id" integer, "Value" text)')
+    cursor.execute(
+        "INSERT INTO delete_schema.\"MyTable\" SELECT i, 'name_' || i FROM generate_series(0, 9) AS i"
+    )
+
+    node1.query(
+        f"CREATE TABLE test.pg_delete_schema (`Id` Int32, `Value` String) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'MyTable', 'postgres', '{pg_pass}', 'delete_schema')"
+    )
+
+    node1.query("DELETE FROM test.pg_delete_schema WHERE `Id` < 5")
+    cursor.execute('SELECT count(*), min("Id") FROM delete_schema."MyTable"')
+    assert cursor.fetchall() == [(5, 5)]
+    # The schema, table and column reach PostgreSQL as quoted identifiers; `contains_in_log` wraps
+    # its pattern in double quotes, so each one must be backslash-escaped (see test_postgres_delete).
+    assert node1.contains_in_log(
+        'Query: DELETE FROM \\"delete_schema\\".\\"MyTable\\" WHERE \\"Id\\" < 5'
+    )
+
+    node1.query("DROP TABLE test.pg_delete_schema")
+    cursor.execute("DROP SCHEMA delete_schema CASCADE")
+
+
+def test_postgres_delete_named_collection(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_nc")
+    cursor.execute("CREATE TABLE test_delete_nc (a integer, b integer)")
+    cursor.execute("INSERT INTO test_delete_nc SELECT i, i FROM generate_series(0, 9) AS i")
+
+    # The `postgres1` named collection carries host/user/password/db; the table name is overridden.
+    # DELETE must work the same whether the connection is configured positionally or by collection.
+    node1.query(
+        "CREATE TABLE test.pg_delete_nc (a Int32, b Int32) "
+        "ENGINE = PostgreSQL(postgres1, table='test_delete_nc')"
+    )
+    node1.query("DELETE FROM test.pg_delete_nc WHERE a >= 5")
+    cursor.execute("SELECT count(*) FROM test_delete_nc")
+    assert cursor.fetchall() == [(5,)]
+
+    node1.query("DROP TABLE test.pg_delete_nc")
+    cursor.execute("DROP TABLE test_delete_nc")
+
+
+def test_postgres_delete_in_partition_rejected(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_partition")
+    cursor.execute("CREATE TABLE test_delete_partition (id integer)")
+    cursor.execute("INSERT INTO test_delete_partition SELECT i FROM generate_series(0, 9) AS i")
+
+    node1.query(
+        f"CREATE TABLE test.pg_delete_partition (id Int32) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_partition', 'postgres', '{pg_pass}')"
+    )
+
+    # A PostgreSQL table has no MergeTree partitions; `IN PARTITION` is rejected before any remote
+    # statement is sent, so it can never widen the scope of the delete.
+    error = node1.query_and_get_error(
+        "DELETE FROM test.pg_delete_partition IN PARTITION 1 WHERE id = 1"
+    )
+    assert "IN PARTITION is not supported" in error
+    cursor.execute("SELECT count(*) FROM test_delete_partition")
+    assert cursor.fetchall() == [(10,)]
+
+    node1.query("DROP TABLE test.pg_delete_partition")
+    cursor.execute("DROP TABLE test_delete_partition")
+
+
+def test_postgres_delete_float_predicate_rejected(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_float")
+    cursor.execute("CREATE TABLE test_delete_float (id integer, f double precision)")
+    # PostgreSQL orders NaN above every value, so `f > 0` matches the stored NaN there, while
+    # ClickHouse's comparison does not. A delete commits what PostgreSQL matched and cannot
+    # re-filter locally, so the float predicate is rejected and the NaN row must survive.
+    cursor.execute("INSERT INTO test_delete_float VALUES (1, 1.5), (2, 'NaN'), (3, -4.0)")
+
+    node1.query(
+        f"CREATE TABLE test.pg_delete_float (id Int32, f Float64) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_float', 'postgres', '{pg_pass}')"
+    )
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_float WHERE f > 0")
+    assert "floating-point" in error
+    cursor.execute("SELECT count(*) FROM test_delete_float")
+    assert cursor.fetchall() == [(3,)]
+
+    # A predicate over a non-float column on the same table is still pushed down.
+    node1.query("DELETE FROM test.pg_delete_float WHERE id = 1")
+    cursor.execute("SELECT count(*) FROM test_delete_float")
+    assert cursor.fetchall() == [(2,)]
+
+    node1.query("DROP TABLE test.pg_delete_float")
+    cursor.execute("DROP TABLE test_delete_float")
+
+
+def test_postgres_delete_supported_type_predicates(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_types")
+    cursor.execute(
+        "CREATE TABLE test_delete_types (id integer, d date, u uuid, name text)"
+    )
+    cursor.execute(
+        "INSERT INTO test_delete_types VALUES "
+        "(1, '2019-01-01', '11111111-1111-1111-1111-111111111111', 'alpha'), "
+        "(2, '2020-06-01', '22222222-2222-2222-2222-222222222222', 'beta'), "
+        "(3, '2021-06-01', '33333333-3333-3333-3333-333333333333', 'gamma'), "
+        "(4, '2022-06-01', '44444444-4444-4444-4444-444444444444', 'delta')"
+    )
+    node1.query(
+        f"CREATE TABLE test.pg_delete_types (id Int32, d Date, u UUID, name String) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_types', 'postgres', '{pg_pass}')"
+    )
+
+    # Every supported type/operator pair: integer, date (ordering), uuid (equality) and text
+    # (equality / IN under the default, deterministic collation) all have identical comparison
+    # semantics in both engines, so each predicate is pushed down and applied on the remote.
+    node1.query("DELETE FROM test.pg_delete_types WHERE d < '2020-01-01'")  # removes id 1
+    node1.query(
+        "DELETE FROM test.pg_delete_types WHERE u = '22222222-2222-2222-2222-222222222222'"
+    )  # removes id 2
+    node1.query("DELETE FROM test.pg_delete_types WHERE name IN ('gamma', 'zeta')")  # removes id 3
+    cursor.execute("SELECT id FROM test_delete_types ORDER BY id")
+    assert cursor.fetchall() == [(4,)]
+
+    # The ALTER form takes the same validated pushdown path.
+    node1.query("ALTER TABLE test.pg_delete_types DELETE WHERE id = 4")
+    cursor.execute("SELECT count(*) FROM test_delete_types")
+    assert cursor.fetchall() == [(0,)]
+
+    node1.query("DROP TABLE test.pg_delete_types")
+    cursor.execute("DROP TABLE test_delete_types")
+
+
+def test_postgres_delete_type_mismatch_rejected(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_mismatch")
+    # `id` is really an integer and `price` a numeric; `name` is text.
+    cursor.execute("CREATE TABLE test_delete_mismatch (id integer, price numeric(10,2), name text)")
+    cursor.execute(
+        "INSERT INTO test_delete_mismatch VALUES (1, 9.99, 'a'), (10, 1.50, 'b'), (11, 2.50, 'c')"
+    )
+    # The ClickHouse column `id` is declared String over a remote integer: ClickHouse compares
+    # `id = '01'` as a string (no match), PostgreSQL as an integer (`01` = 1). A pushed-down delete
+    # would commit PostgreSQL's match, so the type divergence is rejected rather than trusted.
+    node1.query(
+        f"CREATE TABLE test.pg_delete_mismatch (id String, price Decimal(10,2), name String) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_mismatch', 'postgres', '{pg_pass}')"
+    )
+
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_mismatch WHERE id = '01'")
+    assert "cannot be pushed down" in error and "not an integer in ClickHouse" in error
+
+    # An unsupported remote type (numeric/Decimal) is rejected rather than pushed down.
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_mismatch WHERE price < 2")
+    assert "cannot be pushed down" in error
+
+    # Ordering on a text column depends on the remote collation, so it is not pushed down.
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_mismatch WHERE name < 'c'")
+    assert "cannot be pushed down" in error and "ordering operator" in error
+
+    # None of the rejected predicates touched the remote table.
+    cursor.execute("SELECT count(*) FROM test_delete_mismatch")
+    assert cursor.fetchall() == [(3,)]
+
+    node1.query("DROP TABLE test.pg_delete_mismatch")
+    cursor.execute("DROP TABLE test_delete_mismatch")
+
+
+def test_postgres_delete_integer_narrowing_rejected(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_narrow")
+    cursor.execute("CREATE TABLE test_delete_narrow (id integer NOT NULL)")
+    cursor.execute("INSERT INTO test_delete_narrow VALUES (255), (1)")
+
+    # A remote `integer` read into a ClickHouse `Int8` is narrowed by insertPostgreSQLValue (255 -> -1),
+    # so `id > 0` matches different rows in the two engines; a pushed-down delete would remove what
+    # PostgreSQL matched. The narrowing mapping is therefore rejected.
+    node1.query(
+        f"CREATE TABLE test.pg_delete_narrow (id Int8) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_narrow', 'postgres', '{pg_pass}')"
+    )
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_narrow WHERE id > 0")
+    assert "cannot be pushed down" in error
+    node1.query("DROP TABLE test.pg_delete_narrow")
+
+    # An unsigned ClickHouse integer is rejected too: a negative remote value would wrap.
+    node1.query(
+        f"CREATE TABLE test.pg_delete_unsigned (id UInt32) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_narrow', 'postgres', '{pg_pass}')"
+    )
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_unsigned WHERE id > 0")
+    assert "cannot be pushed down" in error
+    node1.query("DROP TABLE test.pg_delete_unsigned")
+
+    # Nothing was deleted by the rejected predicates.
+    cursor.execute("SELECT count(*) FROM test_delete_narrow")
+    assert cursor.fetchall() == [(2,)]
+
+    # A signed ClickHouse integer at least as wide as the remote `integer` represents it losslessly.
+    node1.query(
+        f"CREATE TABLE test.pg_delete_wide (id Int64) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_narrow', 'postgres', '{pg_pass}')"
+    )
+    node1.query("DELETE FROM test.pg_delete_wide WHERE id > 0")
+    cursor.execute("SELECT count(*) FROM test_delete_narrow")
+    assert cursor.fetchall() == [(0,)]
+    node1.query("DROP TABLE test.pg_delete_wide")
+    cursor.execute("DROP TABLE test_delete_narrow")
+
+
+def test_postgres_delete_non_deterministic_collation_rejected(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_ci")
+    cursor.execute("DROP COLLATION IF EXISTS test_delete_ci_coll")
+    # A non-deterministic collation makes PostgreSQL treat strings ClickHouse considers distinct as
+    # equal (here, case-insensitively), so `name = 'ALPHA'` would delete the 'alpha' row on the
+    # remote while ClickHouse's bytewise equality would not. Equality under such a collation is
+    # therefore rejected, and both rows must survive.
+    cursor.execute(
+        "CREATE COLLATION test_delete_ci_coll (provider = icu, locale = 'und-u-ks-level2', deterministic = false)"
+    )
+    cursor.execute("CREATE TABLE test_delete_ci (name text COLLATE test_delete_ci_coll)")
+    cursor.execute("INSERT INTO test_delete_ci VALUES ('alpha'), ('beta')")
+
+    node1.query(
+        f"CREATE TABLE test.pg_delete_ci (name String) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_ci', 'postgres', '{pg_pass}')"
+    )
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_ci WHERE name = 'ALPHA'")
+    assert "cannot be pushed down" in error and "non-deterministic collation" in error
+    cursor.execute("SELECT count(*) FROM test_delete_ci")
+    assert cursor.fetchall() == [(2,)]
+
+    node1.query("DROP TABLE test.pg_delete_ci")
+    cursor.execute("DROP TABLE test_delete_ci")
+    cursor.execute("DROP COLLATION test_delete_ci_coll")
+
+
+def test_postgres_delete_on_cluster_rejected(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_cluster")
+    cursor.execute("CREATE TABLE test_delete_cluster (id integer)")
+    cursor.execute("INSERT INTO test_delete_cluster SELECT i FROM generate_series(0, 4) AS i")
+
+    node1.query(
+        f"CREATE TABLE test.pg_delete_cluster (id Int32) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_cluster', 'postgres', '{pg_pass}')"
+    )
+    # Each host of a cluster can point at a different PostgreSQL destination; the lightweight
+    # DELETE route mutates only the initiator's remote and cannot distribute, so an ON CLUSTER
+    # clause is rejected rather than silently applied to one host (ALTER ... DELETE takes the DDL path).
+    error = node1.query_and_get_error(
+        "DELETE FROM test.pg_delete_cluster ON CLUSTER test_shard_localhost WHERE id = 1"
+    )
+    assert "ON CLUSTER is not supported" in error
+    cursor.execute("SELECT count(*) FROM test_delete_cluster")
+    assert cursor.fetchall() == [(5,)]
+
+    # Same rejection must hold when the engine is reached through a table-function proxy
+    # (CREATE TABLE ... AS postgresql(...)). That proxy is not unwrapped by
+    # resolveStorageProxyLoading, so the guard relies on isExternalDatabase() being forwarded
+    # through StorageProxy; otherwise the ON CLUSTER clause would be silently dropped.
+    node1.query(
+        f"CREATE TABLE test.pg_delete_cluster_tf AS "
+        f"postgresql('postgres1:5432', 'postgres', 'test_delete_cluster', 'postgres', '{pg_pass}')"
+    )
+    error_tf = node1.query_and_get_error(
+        "DELETE FROM test.pg_delete_cluster_tf ON CLUSTER test_shard_localhost WHERE id = 1"
+    )
+    assert "ON CLUSTER is not supported" in error_tf
+    cursor.execute("SELECT count(*) FROM test_delete_cluster")
+    assert cursor.fetchall() == [(5,)]
+
+    node1.query("DROP TABLE test.pg_delete_cluster_tf")
+    node1.query("DROP TABLE test.pg_delete_cluster")
+    cursor.execute("DROP TABLE test_delete_cluster")
+
+
+def test_postgres_delete_experimental_flag(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_flag")
+    cursor.execute("CREATE TABLE test_delete_flag (id integer)")
+    cursor.execute("INSERT INTO test_delete_flag SELECT i FROM generate_series(0, 9) AS i")
+
+    node1.query(
+        f"CREATE TABLE test.pg_delete_flag (id Int32) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_flag', 'postgres', '{pg_pass}')"
+    )
+
+    # Mutations on the PostgreSQL engine are gated behind an experimental opt-in. With it off, both the
+    # lightweight DELETE and the ALTER ... DELETE form are rejected before anything reaches the remote.
+    for query in (
+        "DELETE FROM test.pg_delete_flag WHERE id = 1 SETTINGS allow_experimental_postgresql_mutations = 0",
+        "ALTER TABLE test.pg_delete_flag DELETE WHERE id = 1 SETTINGS allow_experimental_postgresql_mutations = 0",
+    ):
+        error = node1.query_and_get_error(query)
+        assert "allow_experimental_postgresql_mutations" in error
+    cursor.execute("SELECT count(*) FROM test_delete_flag")
+    assert cursor.fetchall() == [(10,)]
+
+    # With the setting enabled the delete is pushed down and applied on the remote.
+    node1.query(
+        "DELETE FROM test.pg_delete_flag WHERE id = 1 SETTINGS allow_experimental_postgresql_mutations = 1"
+    )
+    cursor.execute("SELECT count(*) FROM test_delete_flag")
+    assert cursor.fetchall() == [(9,)]
+
+    node1.query("DROP TABLE test.pg_delete_flag")
+    cursor.execute("DROP TABLE test_delete_flag")
+
+
+def test_postgres_delete_replicated_database_runs_once(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_repl")
+    cursor.execute("CREATE TABLE test_delete_repl (id integer, value text)")
+    cursor.execute(
+        "INSERT INTO test_delete_repl SELECT i, 'name_' || i FROM generate_series(0, 9) AS i"
+    )
+
+    # A Replicated database replicates DDL to every replica through a Keeper log. A PostgreSQL table is
+    # backed by a single shared remote, so a DELETE/UPDATE must execute once on the initiator, not be
+    # replicated and re-run on each replica (redundant, and on a log retry it could re-send a
+    # non-idempotent statement). Both nodes reach the same postgres1, so a regression that replicated
+    # the mutation would run it on node2 and show up in node2's log.
+    node1.query("DROP DATABASE IF EXISTS pg_repl SYNC")
+    node2.query("DROP DATABASE IF EXISTS pg_repl SYNC")
+    node1.query(
+        "CREATE DATABASE pg_repl ENGINE = Replicated('/clickhouse/databases/pg_repl', 'shard1', 'replica1')"
+    )
+    node2.query(
+        "CREATE DATABASE pg_repl ENGINE = Replicated('/clickhouse/databases/pg_repl', 'shard1', 'replica2')"
+    )
+    # Explicit columns so the CREATE does not need to reach PostgreSQL; the definition replicates to node2.
+    node1.query(
+        f"CREATE TABLE pg_repl.pg (id Int32, value String) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_repl', 'postgres', '{pg_pass}')"
+    )
+    node2.query("SYSTEM SYNC DATABASE REPLICA pg_repl")
+    assert "pg" in node2.query("SHOW TABLES FROM pg_repl")
+
+    # Lightweight DELETE and the ALTER mutation form, both issued on node1.
+    node1.query("DELETE FROM pg_repl.pg WHERE id = 1")
+    node1.query("ALTER TABLE pg_repl.pg DELETE WHERE id = 2")
+
+    # Drain node2's DDL log: had either mutation been replicated it would be executed by now (FIFO log).
+    node2.query("SYSTEM SYNC DATABASE REPLICA pg_repl")
+
+    # Each row was deleted exactly once on the shared remote.
+    cursor.execute("SELECT id FROM test_delete_repl ORDER BY id")
+    assert cursor.fetchall() == [(0,), (3,), (4,), (5,), (6,), (7,), (8,), (9,)]
+
+    # node1 executed both remote statements; node2 executed neither (mutation ran once, not replicated).
+    assert node1.contains_in_log('Query: DELETE FROM \\"test_delete_repl\\" WHERE \\"id\\" = 1')
+    assert node1.contains_in_log('Query: DELETE FROM \\"test_delete_repl\\" WHERE \\"id\\" = 2')
+    assert not node2.contains_in_log('Query: DELETE FROM \\"test_delete_repl\\"')
+
+    node1.query("DROP DATABASE pg_repl SYNC")
+    node2.query("DROP DATABASE pg_repl SYNC")
+    cursor.execute("DROP TABLE test_delete_repl")
 
 
 if __name__ == "__main__":

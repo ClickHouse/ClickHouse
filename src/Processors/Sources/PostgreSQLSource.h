@@ -25,6 +25,11 @@ struct PostgreSQLCancelDeleter
     void operator()(pg_cancel * cancel) const noexcept;
 };
 
+/// Builds a libpq cancellation handle for the connection a transaction runs on. The handle is a
+/// snapshot that `PQcancel` may be called on from another thread, so a blocking statement can be
+/// interrupted (used by the read sources and by `StoragePostgreSQL::mutate`).
+std::unique_ptr<pg_cancel, PostgreSQLCancelDeleter> makeCancelHandle(const pqxx::dbtransaction & tx);
+
 template <typename T = pqxx::ReadTransaction>
 class PostgreSQLSource : public ISource
 {

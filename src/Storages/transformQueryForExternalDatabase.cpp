@@ -1607,4 +1607,140 @@ void normalizeSubqueryForExternalDatabase(ASTPtr & node, LiteralEscapingStyle li
     normalizeSubqueryForExternalDatabaseImpl(node, literal_escaping_style, RowValueContext::Disallowed);
 }
 
+String transformMutationPredicateForExternalDatabase(
+    const IAST & predicate,
+    const NamesAndTypesList & available_columns,
+    IdentifierQuotingStyle identifier_quoting_style,
+    LiteralEscapingStyle literal_escaping_style,
+    ContextPtr context,
+    const ExternalDatabaseMutationColumnChecker & column_checker)
+{
+    ASTPtr where = predicate.clone();
+
+    /// Every identifier must be a column of the external table. Unlike the `SELECT` path, no
+    /// subexpression may be removed from the predicate: removing one widens the filter, and a
+    /// widened filter mutates rows the query did not ask to mutate.
+    SourceColumnNames known_columns;
+    for (const auto & column : available_columns)
+        known_columns.emplace(column.name, column.name);
+
+    const auto removal_result = removeUnknownSubexpressionsFromWhere(where, known_columns);
+    if (!removal_result.keep || removal_result.modified)
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "The mutation predicate '{}' contains expressions that cannot be pushed down to the external database",
+            predicate.formatForErrorMessage());
+
+    /// Fold constant expressions (`now()` was already replaced with a literal by the interpreter,
+    /// but e.g. `toDate('2026-01-01')` was not) so that more predicates have an external SQL form.
+    replaceConstantExpressions(where, context, available_columns);
+
+    /// Replace e.g. `x AND 1` with `x AND 1 = 1`: a bare integer is not a boolean for the external database.
+    ReplaceLiteralToExprVisitor::Data replace_literal_to_expr_data;
+    ReplaceLiteralToExprVisitor(replace_literal_to_expr_data).visit(where);
+
+    /// The same for the whole predicate being a bare `0` or `1` (`WHERE 1`).
+    if (const auto * literal = where->as<ASTLiteral>())
+    {
+        UInt64 value = 0;
+        if (literal->value.tryGet<UInt64>(value) && (value == 0 || value == 1))
+            where = makeASTOperator("equals", make_intrusive<ASTLiteral>(UInt64(1)), make_intrusive<ASTLiteral>(value));
+    }
+
+    if (!isCompatible(where, literal_escaping_style, available_columns, RowValueContext::BooleanPredicate,
+                      /*unsupported_functions=*/ {}, /*require_dialect_neutral_literals=*/ false))
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "The mutation predicate '{}' contains expressions that cannot be pushed down to the external database",
+            predicate.formatForErrorMessage());
+
+    /// Reject a predicate over a floating-point column. A SELECT pushdown re-evaluates the WHERE
+    /// locally and discards any extra rows, but a mutation commits what the external database
+    /// matched, and the match can differ: PostgreSQL orders `NaN` above every other value, so a
+    /// stored `NaN` satisfies `f > 0` there while ClickHouse's comparison rejects it. Checking the
+    /// literals for `NaN` is not enough — the exceptional value lives in the column — so any
+    /// floating-point column in the predicate is refused (fail-close), as an untranslatable one is.
+    {
+        std::unordered_map<String, DataTypePtr> column_type_by_name;
+        for (const auto & column : available_columns)
+            column_type_by_name.emplace(column.name, column.type);
+
+        std::vector<const IAST *> stack{where.get()};
+        while (!stack.empty())
+        {
+            const IAST * node = stack.back();
+            stack.pop_back();
+            if (const auto * identifier = node->as<ASTIdentifier>())
+            {
+                const auto it = column_type_by_name.find(identifier->name());
+                if (it != column_type_by_name.end()
+                    && WhichDataType(removeLowCardinalityAndNullable(it->second)).isFloat())
+                    throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "The mutation predicate '{}' references the floating-point column '{}', whose "
+                        "comparison semantics (notably the ordering of NaN) differ between ClickHouse and "
+                        "the external database, so it is not pushed down",
+                        predicate.formatForErrorMessage(), identifier->name());
+            }
+            for (const auto & child : node->children)
+                stack.push_back(child.get());
+        }
+    }
+
+    /// Let the engine prove each column's remote comparison semantics match ClickHouse's. The predicate
+    /// is already fully translatable and un-widened here, so the only remaining way a pushed-down delete
+    /// can diverge is a column whose remote type/collation evaluates a comparison differently (e.g. a
+    /// `String`-declared column that is really a remote `integer`, or a non-deterministic text collation).
+    /// `isCompatible` restricts the operators to the set below, so a comparison's operands are only
+    /// identifiers, literals and tuples of them.
+    if (column_checker)
+    {
+        std::function<void(const IAST *)> visit = [&](const IAST * node)
+        {
+            if (const auto * function = node->as<ASTFunction>())
+            {
+                std::optional<ExternalDatabaseMutationColumnUsage> usage;
+                const String & name = function->name;
+                if (name == "equals" || name == "notEquals" || name == "in" || name == "notIn")
+                    usage = ExternalDatabaseMutationColumnUsage::Equality;
+                else if (name == "less" || name == "greater" || name == "lessOrEquals" || name == "greaterOrEquals")
+                    usage = ExternalDatabaseMutationColumnUsage::Ordering;
+                else if (name == "like" || name == "notLike")
+                    usage = ExternalDatabaseMutationColumnUsage::Pattern;
+
+                if (usage && function->arguments)
+                {
+                    /// Report every column appearing in the comparison (recursing through row-value
+                    /// tuples such as `(a, b) < (1, 2)`); the other operands are literals.
+                    std::function<void(const IAST *)> report_operand = [&](const IAST * operand)
+                    {
+                        if (const auto * identifier = operand->as<ASTIdentifier>())
+                            column_checker(identifier->name(), *usage);
+                        else
+                            for (const auto & child : operand->children)
+                                report_operand(child.get());
+                    };
+                    for (const auto & argument : function->arguments->children)
+                        report_operand(argument.get());
+                    return;
+                }
+                /// `and`/`or`/`not`/`isNull`/`isNotNull`/`tuple`: no type-sensitive comparison here,
+                /// recurse into the children (an `IS NULL` test is type-independent).
+            }
+            for (const auto & child : node->children)
+                visit(child.get());
+        };
+        visit(where.get());
+    }
+
+    dropAliases(where);
+
+    WriteBufferFromOwnString out;
+    IAST::FormatSettings format_settings(
+        /*one_line=*/ true,
+        /*identifier_quoting_rule=*/ IdentifierQuotingRule::Always,
+        /*identifier_quoting_style=*/ identifier_quoting_style,
+        /*show_secrets_=*/ true,
+        /*literal_escaping_style=*/ literal_escaping_style);
+    where->format(out, format_settings);
+    return out.str();
+}
+
 }

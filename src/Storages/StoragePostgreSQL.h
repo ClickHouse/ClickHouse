@@ -60,6 +60,19 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
+    /// `DELETE FROM ... WHERE ...` is routed to `mutate` (see `InterpreterDeleteQuery`).
+    bool supportsDelete() const override { return true; }
+
+    /// Only a single `DELETE` command is supported, and only for a table-backed (not query-backed) storage.
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
+
+    /// Executes the mutation as a `DELETE FROM ... WHERE ...` statement on the PostgreSQL side and
+    /// returns only after PostgreSQL confirms the commit. The predicate is pushed down in full or
+    /// the query fails: it is never weakened to a filter the external database can evaluate. The
+    /// statement is never retried once it has been sent: a retry after a connection failure could
+    /// apply it twice.
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
+
     struct Configuration
     {
         String host;

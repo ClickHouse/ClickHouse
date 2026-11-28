@@ -8,6 +8,8 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/Context_fwd.h>
 
+#include <functional>
+
 
 namespace DB
 {
@@ -95,5 +97,41 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
   *   throw `BAD_ARGUMENTS` instead of being sent to the external database as SQL it cannot parse.
   */
 void normalizeSubqueryForExternalDatabase(ASTPtr & node, LiteralEscapingStyle literal_escaping_style);
+
+/** Render the predicate of a mutation (`ALTER TABLE ... DELETE WHERE ...` / `DELETE FROM ... WHERE ...`)
+  * as a WHERE clause for the external database.
+  *
+  * Unlike `transformQueryForExternalDatabase`, nothing may be dropped from the predicate: a `SELECT`
+  * pushdown that loses a condition reads extra rows and filters them locally, while a mutation
+  * pushdown that loses a condition modifies rows the query did not ask to modify. So any
+  * subexpression that cannot be translated for the external database throws `INCORRECT_QUERY`,
+  * regardless of `external_table_strict_query`.
+  *
+  * Constant expressions are folded into literals first, so a predicate like `d < '2026-01-01'::Date`
+  * is translated even though the external database does not know the ClickHouse functions involved.
+  *
+  * `column_checker`, when set, is invoked once for every occurrence of a column in a comparison, with
+  * how that column is used. A mutation applies whatever match the remote computes and cannot re-filter
+  * it locally (unlike a `SELECT`), so an engine passes a checker that proves each column's remote
+  * comparison semantics equal ClickHouse's for that usage and throws otherwise. It runs after the
+  * predicate is validated as fully translatable, so every column named here is a real table column.
+  */
+enum class ExternalDatabaseMutationColumnUsage
+{
+    Equality,   /// =, !=, IN, NOT IN
+    Ordering,   /// <, >, <=, >=
+    Pattern,    /// LIKE, NOT LIKE
+};
+
+using ExternalDatabaseMutationColumnChecker
+    = std::function<void(const String & column_name, ExternalDatabaseMutationColumnUsage usage)>;
+
+String transformMutationPredicateForExternalDatabase(
+    const IAST & predicate,
+    const NamesAndTypesList & available_columns,
+    IdentifierQuotingStyle identifier_quoting_style,
+    LiteralEscapingStyle literal_escaping_style,
+    ContextPtr context,
+    const ExternalDatabaseMutationColumnChecker & column_checker = {});
 
 }

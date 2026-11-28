@@ -54,14 +54,14 @@ struct LibpqConnection : pqxx::largeobject
     using pqxx::largeobject::raw_connection;
 };
 
+}
+
 std::unique_ptr<pg_cancel, PostgreSQLCancelDeleter> makeCancelHandle(const pqxx::dbtransaction & tx)
 {
     std::unique_ptr<pg_cancel, PostgreSQLCancelDeleter> handle(PQgetCancel(static_cast<PGconn *>(LibpqConnection::raw_connection(tx))));
     if (!handle)
         throw Exception(ErrorCodes::POSTGRESQL_CONNECTION_FAILURE, "Cannot prepare the cancellation of the PostgreSQL query");
     return handle;
-}
-
 }
 
 template<typename T>
