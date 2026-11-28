@@ -513,7 +513,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         {
             if (mutation_commands->hasNonEmptyMutationCommands())
             {
-                auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+                auto share_lock = table->lockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
                 /// Before the snapshot: on a lazily loaded table this loads the nested storage, and only
                 /// then does the snapshot carry the sorting key, partition key and projections that
                 /// `MutationsInterpreter` validates against, instead of the stand-in's columns-only metadata.
@@ -814,7 +814,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     validateReplicatedDatabaseSegments(segments, database);
 
     {
-        auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+        auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
         if (auto lightweight_result = tryRewriteToLightweightUpdate(segments, table, getContext(), query_ptr))
         {
             /// The patch part is committed while the pipeline runs, so the share lock must outlive this

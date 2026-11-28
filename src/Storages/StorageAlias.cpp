@@ -554,7 +554,7 @@ QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands,
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
     auto lock = target_storage->lockForShare(
-        local_context->getCurrentQueryId(),
+        local_context->getInitialQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     auto pipeline = target_storage->updateLightweight(commands, local_context);
@@ -586,9 +586,9 @@ void StorageAlias::deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr local_
 
     /// The caller locks the alias, not the target. A lazy target is locked both as the catalog holds it and as loaded.
     const auto & settings = local_context->getSettingsRef();
-    auto lock = target_storage->lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+    auto lock = target_storage->lockForShare(local_context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
     auto loaded_target = resolveStorageProxyLoading(target_storage);
-    auto loaded_lock = loaded_target->lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+    auto loaded_lock = loaded_target->lockForShare(local_context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
     loaded_target->deleteByUniqueKey(query_ptr, local_context);
 }

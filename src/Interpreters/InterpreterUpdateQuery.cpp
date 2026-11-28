@@ -228,7 +228,7 @@ BlockIO InterpreterUpdateQuery::execute()
     MutationCommands commands;
     commands.emplace_back(createMutationCommand(update_query, settings));
 
-    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+    auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
     BlockIO res;
     res.pipeline = table->updateLightweight(commands, getContext());
