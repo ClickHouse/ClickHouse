@@ -86,6 +86,50 @@
         WHERE database = currentDatabase() AND table = 'ts_group_array_parts' AND active
     </fill_query>
 
+    <!-- Four unmerged parts inserted newest-first so `AggregatingSortedAlgorithm` prepends older ranges ahead of newer ones. -->
+    <create_query>
+        CREATE TABLE ts_group_array_parts_reverse
+        (
+            id UInt64,
+            samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(DateTime64(3, 'UTC'), Float64)))
+        )
+        ENGINE = AggregatingMergeTree
+        ORDER BY id
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES ts_group_array_parts_reverse</fill_query>
+    <fill_query>INSERT INTO ts_group_array_parts_reverse SELECT number % 40000, arrayMap(k -> (toDateTime64(1700000000 + (intDiv(number, 40000) * 60 + k) * 15, 3, 'UTC'), toFloat64(number * 60 + k) / 4), range(60)) FROM numbers(120000, 40000)</fill_query>
+    <fill_query>INSERT INTO ts_group_array_parts_reverse SELECT number % 40000, arrayMap(k -> (toDateTime64(1700000000 + (intDiv(number, 40000) * 60 + k) * 15, 3, 'UTC'), toFloat64(number * 60 + k) / 4), range(60)) FROM numbers(80000, 40000)</fill_query>
+    <fill_query>INSERT INTO ts_group_array_parts_reverse SELECT number % 40000, arrayMap(k -> (toDateTime64(1700000000 + (intDiv(number, 40000) * 60 + k) * 15, 3, 'UTC'), toFloat64(number * 60 + k) / 4), range(60)) FROM numbers(40000, 40000)</fill_query>
+    <fill_query>INSERT INTO ts_group_array_parts_reverse SELECT number % 40000, arrayMap(k -> (toDateTime64(1700000000 + (intDiv(number, 40000) * 60 + k) * 15, 3, 'UTC'), toFloat64(number * 60 + k) / 4), range(60)) FROM numbers(0, 40000)</fill_query>
+    <fill_query>
+        SELECT throwIf(count() != 4, 'timeseries_group_array: expected 4 active parts in ts_group_array_parts_reverse')
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = 'ts_group_array_parts_reverse' AND active
+    </fill_query>
+
+    <!-- Four unmerged parts whose 60-sample windows overlap by 30 timestamps with the adjacent parts, as with re-sent batches. -->
+    <create_query>
+        CREATE TABLE ts_group_array_parts_overlap
+        (
+            id UInt64,
+            samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(DateTime64(3, 'UTC'), Float64)))
+        )
+        ENGINE = AggregatingMergeTree
+        ORDER BY id
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES ts_group_array_parts_overlap</fill_query>
+    <fill_query>INSERT INTO ts_group_array_parts_overlap SELECT number % 40000, arrayMap(k -> (toDateTime64(1700000000 + (intDiv(number, 40000) * 30 + k) * 15, 3, 'UTC'), toFloat64(number * 60 + k) / 4), range(60)) FROM numbers(0, 40000)</fill_query>
+    <fill_query>INSERT INTO ts_group_array_parts_overlap SELECT number % 40000, arrayMap(k -> (toDateTime64(1700000000 + (intDiv(number, 40000) * 30 + k) * 15, 3, 'UTC'), toFloat64(number * 60 + k) / 4), range(60)) FROM numbers(40000, 40000)</fill_query>
+    <fill_query>INSERT INTO ts_group_array_parts_overlap SELECT number % 40000, arrayMap(k -> (toDateTime64(1700000000 + (intDiv(number, 40000) * 30 + k) * 15, 3, 'UTC'), toFloat64(number * 60 + k) / 4), range(60)) FROM numbers(80000, 40000)</fill_query>
+    <fill_query>INSERT INTO ts_group_array_parts_overlap SELECT number % 40000, arrayMap(k -> (toDateTime64(1700000000 + (intDiv(number, 40000) * 30 + k) * 15, 3, 'UTC'), toFloat64(number * 60 + k) / 4), range(60)) FROM numbers(120000, 40000)</fill_query>
+    <fill_query>
+        SELECT throwIf(count() != 4, 'timeseries_group_array: expected 4 active parts in ts_group_array_parts_overlap')
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = 'ts_group_array_parts_overlap' AND active
+    </fill_query>
+
     <!-- The target of the `INSERT` query below. Merges are stopped so that every run measures the insert alone. -->
     <create_query>
         CREATE TABLE ts_group_array_merged
@@ -114,8 +158,13 @@
     <!-- The insert block holds the 4 rows of every series, so the insert merges them as a merge of the table would. -->
     <query>INSERT INTO ts_group_array_merged SELECT id, samples FROM ts_group_array_rows SETTINGS optimize_on_insert = 1, max_insert_threads = 1</query>
 
+    <query>SELECT id, samples FROM ts_group_array_parts_reverse FINAL FORMAT Null</query>
+    <query>SELECT id, samples FROM ts_group_array_parts_overlap FINAL FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS ts_group_array_rows</drop_query>
     <drop_query>DROP TABLE IF EXISTS ts_group_array_samples</drop_query>
     <drop_query>DROP TABLE IF EXISTS ts_group_array_parts</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ts_group_array_parts_reverse</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ts_group_array_parts_overlap</drop_query>
     <drop_query>DROP TABLE IF EXISTS ts_group_array_merged</drop_query>
 </test>
