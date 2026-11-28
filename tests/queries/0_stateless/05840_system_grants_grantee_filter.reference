@@ -1,0 +1,6 @@
+test_grants_filter_user	\N	SELECT
+test_grants_filter_user	\N	SELECT
+\N	test_grants_filter_role	INSERT
+0
+2
+0
