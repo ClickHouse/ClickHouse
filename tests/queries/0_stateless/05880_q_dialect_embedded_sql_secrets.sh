@@ -45,6 +45,9 @@ q ".ch.sql \"SELECT dummy FROM FROM remote('127.0.0.1:1', system.one, '${user}',
 echo "--- the compilation fails: the embedded query in a variable does not parse"
 q "s:\"SELECT dummy FROM FROM remote('127.0.0.1:1', system.one, '${user}', '${password}')\"; .ch.sql s" 'SYNTAX_ERROR'
 
+echo "--- the compilation fails: a credential that is an identifier, in a query in a variable"
+q "s:\"SELECT * FROM s3(collection_05880_${CLICKHOUSE_DATABASE}, secret_access_key=${password})\"; t:.ch.sql s; 1+1" 'NAMED_COLLECTION_DOESNT_EXIST|ACCESS_DENIED'
+
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
 # The programs above are the only queries of the kind `Select` of this test, apart from the query to the log itself.

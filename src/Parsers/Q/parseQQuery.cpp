@@ -241,10 +241,8 @@ String hideSecretsOfEmbeddedQueries(
         const String & embedded_text = literal->atoms.front().value.safeGet<String>();
         bool is_direct = queries.direct.contains(literal);
 
-        /// A credential in a query is a string literal of SQL: in quotes or a heredoc. A text without them has none,
-        /// and is not parsed, unless it is certainly an embedded query.
-        if (!is_direct && embedded_text.find_first_of("'$") == String::npos)
-            continue;
+        /// Every literal is parsed: a credential is not always a string literal of SQL, it can be an identifier,
+        /// like the value of an override of a named collection (`s3(creds, secret_access_key = supersecret)`).
 
         const char * embedded_pos = embedded_text.data();
         const char * embedded_end = embedded_pos + embedded_text.size();
