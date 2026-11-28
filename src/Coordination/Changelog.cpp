@@ -15,6 +15,7 @@
 #include <Disks/DiskLocal.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferDecorator.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
@@ -350,6 +351,16 @@ public:
             chassert(file_description->disk == latest_log_disk);
             file_buf = latest_log_disk->writeFile(file_description->path, DBMS_DEFAULT_BUFFER_SIZE, mode);
             chassert(file_buf);
+
+            /// For a `WriteBufferFromFile` the size is taken from the file descriptor in `tryPreallocateForFile`.
+            /// Other buffers (e.g. `WriteBufferFromEncryptedFile`) count bytes from zero even when an existing
+            /// file is continued, so take the logical file size from the disk. Otherwise, the locations of
+            /// appended entries would be counted from the beginning of the file.
+            initial_file_size = 0;
+            if (mode == WriteMode::Append && !dynamic_cast<const WriteBufferFromFile *>(file_buf.get())
+                && latest_log_disk->existsFile(file_description->path))
+                initial_file_size = latest_log_disk->getFileSize(file_description->path);
+
             last_index_written.reset();
             current_file_description = std::move(file_description);
             directory_sync_pending = log_file_settings.force_sync;
@@ -473,7 +484,18 @@ public:
                 }
             }
             else
-                file_buffer->next();
+            {
+                /// `next` on a decorated buffer (e.g. `WriteBufferFromEncryptedFile`) only moves the data
+                /// into the nested buffer, so flush the whole chain to make sure the data reaches the file.
+                /// Otherwise, entries whose locations are published below could not be read back from disk.
+                WriteBuffer * buffer = file_buffer;
+                while (buffer)
+                {
+                    buffer->next();
+                    auto * decorator = dynamic_cast<WriteBufferDecorator<WriteBufferFromFileBase> *>(buffer);
+                    buffer = decorator ? decorator->getNestedBuffer() : nullptr;
+                }
+            }
         }
         entry_storage.addLogLocations(std::move(unflushed_indices_with_log_location));
         unflushed_indices_with_log_location.clear();
