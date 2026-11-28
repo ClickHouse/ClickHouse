@@ -2473,6 +2473,63 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
         }
 
+        /// A file read under an older schema gets only the columns that the schema transform, pruned to the
+        /// needed outputs, still reads. Equality deletes are applied before the transform by the names of the
+        /// file's columns, so a file with them is read with its whole schema.
+        std::optional<ActionsDAG> iceberg_pruned_transform;
+#if USE_AVRO
+        const auto * iceberg_object_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get());
+        if (schema_changed && iceberg_object_info && iceberg_object_info->info.equality_deletes_objects.empty())
+        {
+            if (auto transform = configuration->getSchemaTransformer(context_, object_info))
+            {
+                NameSet needed_names_set;
+                Names needed_names;
+                auto add_needed = [&](const String & needed_name)
+                {
+                    if (needed_names_set.insert(needed_name).second)
+                        needed_names.push_back(needed_name);
+                };
+                for (const auto & column : read_from_format_info.requested_columns)
+                    add_needed(column.getNameInStorage());
+                if (stripped_row_level_filter)
+                    for (const auto & required : stripped_row_level_filter->actions.getRequiredColumns())
+                        add_needed(required.name);
+                if (stripped_prewhere_info)
+                    for (const auto & required : stripped_prewhere_info->prewhere_actions.getRequiredColumns())
+                        add_needed(required.name);
+
+                NameSet output_names;
+                for (const auto * output : transform->getOutputs())
+                    output_names.insert(output->result_name);
+
+                /// A needed name that is not an output (e.g. a tuple element `t.x`) keeps the whole schema.
+                if (std::ranges::all_of(needed_names, [&](const String & name) { return output_names.contains(name); }))
+                {
+                    ActionsDAG pruned = transform->clone();
+                    pruned.removeUnusedActions(needed_names);
+                    const auto required_columns = pruned.getRequiredColumns();
+
+                    /// Like `format_header`, the header keeps a column of the file: not every format can read none.
+                    if (!required_columns.empty())
+                    {
+                        NameSet columns_to_read(row_lineage_columns.begin(), row_lineage_columns.end());
+                        for (const auto & required : required_columns)
+                            columns_to_read.insert(required.name);
+
+                        Block pruned_header;
+                        for (const auto & column : initial_header)
+                            if (columns_to_read.contains(column.name))
+                                pruned_header.insert(column);
+
+                        initial_header = std::move(pruned_header);
+                        iceberg_pruned_transform = std::move(pruned);
+                    }
+                }
+            }
+        }
+#endif
+
         chassert(object_info->getObjectMetadata().has_value());
 
         LOG_DEBUG(
@@ -2606,9 +2663,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// inputs). For non-stripped (Parquet) reads the filter columns aren't
             /// referenced after the format reader so this is a no-op.
             ///
-            /// FIXME: This is currently not done for the below case (configuration->getSchemaTransformer())
-            /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
-            /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
             /// The columns in storage: the requested subcolumns are extracted from them after the transform.
             Names needed_names;
             for (const auto & column : read_from_format_info.requested_columns)
@@ -2629,8 +2683,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
         if (!schema_transform)
         {
-            auto transform = configuration->getSchemaTransformer(context_, object_info);
-            if (transform)
+            if (iceberg_pruned_transform)
+                schema_transform = std::move(iceberg_pruned_transform);
+            else if (auto transform = configuration->getSchemaTransformer(context_, object_info))
                 schema_transform = transform->clone();
         }
 
