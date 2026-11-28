@@ -106,6 +106,7 @@ namespace ErrorCodes
     extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE;
     extern const int CANNOT_CREATE_RABBITMQ_QUEUE_BINDING;
     extern const int QUERY_NOT_ALLOWED;
+    extern const int ABORTED;
 }
 
 namespace ExchangeType
@@ -943,6 +944,10 @@ void StorageRabbitMQ::read(
 
     std::lock_guard lock(loop_mutex);
 
+    /// After `shutdown` the consumers are destroyed while their callbacks are still registered in the connection.
+    if (shutdown_called)
+        throw Exception(ErrorCodes::ABORTED, "Table is detached");
+
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
     auto modified_context = addSettings(local_context);
 
@@ -1068,9 +1073,13 @@ void StorageRabbitMQ::scheduleStreamingTasksImpl()
 
 void StorageRabbitMQ::shutdown(bool is_drop)
 {
-    /// Needed to make this method idempotent
-    if (shutdown_called.exchange(true))
-        return;
+    {
+        /// Under `loop_mutex`, so that `read` cannot reconnect or start the loop after this point.
+        std::lock_guard lock(loop_mutex);
+        /// Needed to make this method idempotent
+        if (shutdown_called.exchange(true))
+            return;
+    }
 
     LOG_TRACE(log, "Deactivating init task");
     deactivateTask(init_task, true, false);
