@@ -24,7 +24,8 @@
           "group": "Customization",
           "pages": [
             "products/bring-your-own-cloud/onboarding/customization-aws",
-            "products/bring-your-own-cloud/onboarding/customization-gcp"
+            "products/bring-your-own-cloud/onboarding/customization-gcp",
+            "products/bring-your-own-cloud/onboarding/customization-azure"
           ]
         },
         {
