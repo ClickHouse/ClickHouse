@@ -1,9 +1,11 @@
 import base64
 import datetime
+import itertools
 import json
 import uuid
 import urllib
 import bson
+from bson.raw_bson import RawBSONDocument
 import pymongo
 import pytest
 
@@ -990,7 +992,9 @@ def test_where(started_cluster):
     assert node.query("SELECT count() FROM where_table WHERE keyNotExists = 0") == "0\n"
     assert node.query("SELECT count() FROM where_table WHERE keyNotExists != 0") == "0\n"
     assert node.query("SELECT count() FROM where_table WHERE keyBool = true") == "2\n"
-    assert node.query("SELECT count() FROM where_table WHERE keyBool IN (false)") == "2\n"
+    assert (
+        node.query("SELECT count() FROM where_table WHERE keyBool IN (false)") == "2\n"
+    )
 
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT * FROM where_table WHERE keyInt = keyFloat")
@@ -999,6 +1003,459 @@ def test_where(started_cluster):
 
     node.query("DROP TABLE where_table")
     where_mongo_table.drop()
+
+
+@pytest.fixture
+def mongo_reader_table(started_cluster, request):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    collection_name = request.node.originalname
+    drop_mongo_collection_if_exists(db, collection_name)
+    collection = db[collection_name]
+    node = started_cluster.instances["node"]
+    arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
+    reference = f"{collection_name}_reference"
+
+    def create(structure, documents):
+        collection.insert_many(documents)
+        node.query(
+            f"CREATE OR REPLACE TABLE {collection_name} ({structure}) "
+            f"ENGINE = MongoDB({arguments})"
+        )
+        node.query(
+            f"CREATE OR REPLACE TABLE {reference} ENGINE = Memory "
+            f"AS SELECT * FROM {collection_name}"
+        )
+        sources = (collection_name, f"mongodb({arguments}, '{structure}')")
+        return node, sources, reference, collection
+
+    try:
+        yield create
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {reference}")
+        node.query(f"DROP TABLE IF EXISTS {collection_name}")
+        collection.drop()
+
+
+@pytest.mark.parametrize(
+    "column_type",
+    ["Int64", "Nullable(Int128)", "UInt256"],
+)
+def test_where_wide_scalar_bounds(mongo_reader_table, column_type):
+    node, sources, reference, _ = mongo_reader_table(
+        f"id Int32, n {column_type}",
+        [{"id": 1, "n": True}, {"id": 2, "n": 1}, {"id": 3, "n": 2}],
+    )
+    for predicate in (
+        "n = true",
+        "n > false",
+        "n IN (true)",
+        "n NOT IN (true)",
+        "n IN (true, 2)",
+        "n = toInt128(1)",
+        "n != toUInt256(2)",
+        "n > toUInt128(1)",
+        "toInt256(2) >= n",
+    ):
+        query = f"SELECT id FROM {{}} WHERE {predicate} ORDER BY id"
+        expected = node.query(query.format(reference))
+        for source in sources:
+            assert node.query(query.format(source)) == expected, (query, source)
+
+    for source in sources:
+        # A bound that `Int64` cannot hold is evaluated locally.
+        query = f"SELECT id FROM {source} WHERE n != toInt128('100000000000000000000') ORDER BY id"
+        assert (
+            node.query(query, settings={"mongodb_throw_on_unsupported_query": 0})
+            == "1\n2\n3\n"
+        )
+        with pytest.raises(QueryRuntimeException):
+            node.query(query, settings={"mongodb_throw_on_unsupported_query": 1})
+
+
+@pytest.mark.parametrize(
+    "column_type",
+    ["UInt8", "Nullable(Int128)", "Bool"],
+)
+def test_order_by_mixed_numeric_encodings(mongo_reader_table, column_type):
+    node, sources, reference, _ = mongo_reader_table(
+        f"id Int32, n {column_type}",
+        [{"id": 1, "n": True}, {"id": 2, "n": 2}],
+    )
+    bound = "0" if "Bool" in column_type else "false"
+    for predicate, direction in (("", "ASC"), (f"WHERE n > {bound}", "DESC")):
+        query = f"SELECT id, toUInt8(n) FROM {{}} {predicate} ORDER BY n {direction} LIMIT 1"
+        expected = node.query(query.format(reference))
+        for source in sources:
+            assert node.query(query.format(source)) == expected, (query, source)
+
+
+@pytest.mark.parametrize("bool_type", ["Bool", "Nullable(Bool)"])
+def test_where_bool_default_settings(mongo_reader_table, bool_type):
+    # The filter only decides the BSON bools. The other values come first, so a remote limit would drop the matches.
+    node, sources, reference, _ = mongo_reader_table(
+        f"id Int32, flag {bool_type}",
+        [
+            {"id": 1, "flag": 2},
+            {"id": 2, "flag": 256},
+            {"id": 3},
+            {"id": 4, "flag": None},
+            {"id": 5, "flag": "1"},
+            {"id": 6, "flag": 0.5},
+            {"id": 7, "flag": True},
+            {"id": 8, "flag": False},
+            {"id": 9, "flag": 1},
+            {"id": 10, "flag": -1},
+            {"id": 11, "flag": 3},
+        ],
+    )
+    for predicate in (
+        "flag = true",
+        "flag = 0",
+        "flag != true",
+        "flag >= 1",
+        "flag < 1",
+        "flag <= 0.5",
+        "0 < flag",
+        "flag = 2.0",
+        "flag != 256",
+        "flag != -1",
+        "flag > -1",
+        "flag < toFloat32(2)",
+        "flag = toInt128(1)",
+        "flag = toUInt256(1)",
+        "flag != toUInt256('100000000000000000000')",
+        "flag IN (2.0)",
+        "flag IN (false, 2)",
+        "flag IN (1, 2.0)",
+        "flag NOT IN (0, 2)",
+        "flag IN (reinterpret(char(2), 'Bool'))",
+        "flag IN (reinterpret(char(2), 'Bool'), 2)",
+        "flag NOT IN (reinterpret(char(2), 'Bool'))",
+        "flag = true OR id = 8",
+        "flag = true AND id > 7",
+    ):
+        query = f"SELECT id FROM {{}} WHERE {predicate} ORDER BY id"
+        expected = node.query(query.format(reference))
+        for source in sources:
+            assert node.query(query.format(source)) == expected, (query, source)
+
+    for predicate in ("flag = true", "flag NOT IN (1, 2.0)"):
+        query = f"SELECT count() FROM (SELECT id FROM {{}} WHERE {predicate} LIMIT 1)"
+        for source in sources:
+            assert node.query(query.format(source)) == "1\n", (query, source)
+
+
+def test_where_nullable_negative_limit(mongo_reader_table):
+    node, sources, reference, _ = mongo_reader_table(
+        "id Int32, s String, v Nullable(String), w String",
+        [
+            {"id": 1, "s": "a"},
+            {"id": 2, "s": "b", "v": None, "w": 1},
+            {"id": 3, "s": "c", "v": "y", "w": "y"},
+            {"id": 4, "s": "d", "v": "z", "w": "z"},
+            {"id": 5, "s": "e", "v": "x", "w": "x"},
+        ],
+    )
+    for predicate, suffix in (
+        ("v != 'x'", "ORDER BY s LIMIT 1"),
+        ("v NOT IN ('x')", "ORDER BY s LIMIT 1 OFFSET 1"),
+        ("w != ''", "ORDER BY s LIMIT 1"),
+        ("w NOT IN ('', '1')", "LIMIT 1"),
+    ):
+        query = f"SELECT id FROM {{}} WHERE {predicate} {suffix}"
+        expected = node.query(query.format(reference))
+        for source in sources:
+            assert node.query(query.format(source)) == expected, (query, source)
+
+
+@pytest.mark.parametrize(
+    "column_type",
+    ["UInt8", "Nullable(Int32)", "Int128", "Float32"],
+)
+def test_where_numeric_reader_values(mongo_reader_table, column_type):
+    # The reader wraps or truncates numbers, reads bools as 0 and 1, parses strings, and reads a missing field as the
+    # default. The values that MongoDB compares differently come first, so a remote limit would drop the matches.
+    node, sources, reference, _ = mongo_reader_table(
+        f"id Int32, n {column_type}",
+        [
+            {"id": 1, "n": 256},
+            {"id": 2, "n": False},
+            {"id": 3, "n": -1},
+            {"id": 4, "n": True},
+            {"id": 5},
+            {"id": 6, "n": "0"},
+            {"id": 7, "n": 0.5},
+            {"id": 8, "n": None},
+            {"id": 9, "n": 1.9},
+            {"id": 10, "n": -0.5},
+            {"id": 11, "n": 300},
+            {"id": 12, "n": 0.1},
+            {"id": 13, "n": 16777217},
+            {"id": 14, "n": "2"},
+            {"id": 15, "n": 2**40},
+            {"id": 16, "n": 0},
+            {"id": 17, "n": 2},
+            {"id": 18, "n": 1},
+        ],
+    )
+    for predicate in (
+        "n = 0",
+        "n = '0'",
+        "n IN (0, 2)",
+        "n != 0",
+        "n NOT IN (0, 2)",
+        "n <= 1",
+        "n >= 2",
+        "n = true",
+        "n > 1.5",
+        "n < 0.5",
+        "n = -1",
+        "n = toFloat32(0.1)",
+        "n = 16777216",
+        "n = 0 OR id = 3",
+        "n > 0 AND id > 2",
+        "n IN (0, reinterpret(char(2), 'Bool'))",
+        "n NOT IN (0, reinterpret(char(2), 'Bool'))",
+        "n = reinterpret(char(2), 'Bool')",
+    ):
+        query = f"SELECT id FROM {{}} WHERE {predicate} ORDER BY id"
+        expected = node.query(query.format(reference))
+        for source in sources:
+            assert (
+                node.query(
+                    query.format(source),
+                    settings={
+                        "mongodb_throw_on_unsupported_query": (
+                            0 if "reinterpret" in predicate else 1
+                        )
+                    },
+                )
+                == expected
+            ), (query, source)
+    for source in sources:
+        assert (
+            node.query(
+                f"SELECT count() FROM (SELECT id FROM {source} WHERE n = 2 LIMIT 1)"
+            )
+            == "1\n"
+        )
+
+
+@pytest.mark.parametrize("column_type", ["String", "Nullable(String)"])
+def test_where_string_reader_values(mongo_reader_table, column_type):
+    # The reader writes every BSON value as text and reads a missing field as the default. The values that MongoDB
+    # compares differently come first, so a remote limit would drop the matches.
+    node, sources, reference, _ = mongo_reader_table(
+        f"id Int32, s {column_type}",
+        [
+            {"id": 1, "s": 1},
+            {"id": 2, "s": True},
+            {"id": 3, "s": 1.5},
+            {"id": 4, "s": bson.Int64(1)},
+            {"id": 5},
+            {"id": 6, "s": None},
+            {"id": 7, "s": ["a"]},
+            {"id": 8, "s": bson.Binary(b"a")},
+            {"id": 9, "s": {"k": "a"}},
+            {"id": 10, "s": bson.Decimal128("1.5")},
+            {"id": 11, "s": datetime.datetime(2020, 1, 1)},
+            {"id": 12, "s": bson.ObjectId("5f0000000000000000000000")},
+            {"id": 13, "s": "1"},
+            {"id": 14, "s": "a"},
+            {"id": 15, "s": ""},
+            {"id": 16, "s": "b"},
+            {"id": 17, "s": 0},
+            {"id": 18, "s": 2},
+        ],
+    )
+    for predicate in (
+        "s = '1'",
+        "s = 'a'",
+        "s = ''",
+        "s = '[\"a\"]'",
+        "s IN ('1', 'a')",
+        "s IN ('true', '1.5', '5f0000000000000000000000')",
+        "s != 'a'",
+        "s NOT IN ('a', '1')",
+        "s < '['",
+        "s <= '['",
+        "s >= '['",
+        "s > 'z'",
+        "s BETWEEN '[' AND '[z'",
+        "s BETWEEN 'a' AND 'b' AND id > 13",
+        "s IN (0, reinterpret(char(2), 'Bool'))",
+        "s NOT IN (reinterpret(char(2), 'Bool'))",
+    ):
+        query = f"SELECT id FROM {{}} WHERE {predicate} ORDER BY id"
+        expected = node.query(query.format(reference))
+        for source in sources:
+            assert (
+                node.query(
+                    query.format(source),
+                    settings={
+                        "mongodb_throw_on_unsupported_query": (
+                            0 if "reinterpret" in predicate else 1
+                        )
+                    },
+                )
+                == expected
+            ), (query, source)
+    for source in sources:
+        assert (
+            node.query(
+                f"SELECT count() FROM (SELECT id FROM {source} WHERE s = 'a' LIMIT 1)"
+            )
+            == "1\n"
+        )
+
+
+@pytest.mark.parametrize("with_symbol", [False, True])
+def test_where_string_reader_index(mongo_reader_table, with_symbol):
+    node, sources, _, collection = mongo_reader_table(
+        "id Int32, s String",
+        [{"id": i, "s": f"v{i:06d}"} for i in range(200)]
+        + [{"id": 200, "s": ["unrelated"]}],
+    )
+    if with_symbol:
+        # `PyMongo` has no symbol encoder. Append a BSON symbol to a raw document.
+        document = (
+            bson.BSON.encode({"id": 201})[4:-1] + b"\x0es\x00\x02\x00\x00\x00z\x00\x00"
+        )
+        collection.insert_one(
+            RawBSONDocument((len(document) + 4).to_bytes(4, "little") + document)
+        )
+    collection.create_index("s")
+
+    db = collection.database
+    previous_profile = db.command("profile", -1)
+    try:
+        db.command("profile", 2)
+        for source, (predicate, expected) in itertools.product(
+            sources,
+            (
+                ("s = 'v000123'", "123\n"),
+                ("s BETWEEN 'v000010' AND 'v000012'", "10\n11\n12\n"),
+            ),
+        ):
+            assert (
+                node.query(f"SELECT id FROM {source} WHERE {predicate} ORDER BY id")
+                == expected
+            )
+            profile = db["system.profile"].find_one(
+                {
+                    "ns": collection.full_name,
+                    "command.find": collection.name,
+                },
+                sort=[("$natural", -1)],
+            )
+            assert profile is not None
+            assert profile["keysExamined"] < 20, profile
+            assert profile["docsExamined"] < 20, profile
+    finally:
+        db.command(
+            "profile",
+            previous_profile["was"],
+            slowms=previous_profile["slowms"],
+            sampleRate=previous_profile["sampleRate"],
+            filter=previous_profile.get("filter", "unset"),
+        )
+
+
+def test_where_nullable_null_limit(mongo_reader_table):
+    node, sources, _, _ = mongo_reader_table(
+        "n Nullable(Int64), a Array(Nullable(Int32))",
+        [
+            {"n": None, "a": []} if i % 2 == 0 else {"n": 1, "a": [None]}
+            for i in range(10)
+        ],
+    )
+    for source in sources:
+        for predicate, expected in (
+            ("isNull(n)", "\\N\n"),
+            ("isNotNull(n)", "1\n"),
+            ("empty(a)", "\\N\n"),
+            ("notEmpty(a)", "1\n"),
+        ):
+            query_id = str(uuid.uuid4())
+            assert (
+                node.query(
+                    f"SELECT n FROM {source} WHERE {predicate} LIMIT 1",
+                    query_id=query_id,
+                    settings={"log_queries": 1, "max_block_size": 10},
+                )
+                == expected
+            )
+            node.query("SYSTEM FLUSH LOGS")
+            assert (
+                node.query(
+                    "SELECT read_rows FROM system.query_log "
+                    f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+                )
+                == "1\n"
+            )
+
+
+def test_order_by_reader_values_limit(mongo_reader_table):
+    # MongoDB sorts a `null` first and a number before a string, but the reader reads `null` as `NULL` and 10 as '10'.
+    node, sources, reference, _ = mongo_reader_table(
+        "id UInt8, s Nullable(String), t String",
+        [{"id": 1, "s": None, "t": 10}, {"id": 2, "s": "a", "t": "0"}],
+    )
+    for order_by, expected in (
+        ("s", "2\n"),
+        ("s DESC NULLS FIRST", "1\n"),
+        ("t", "2\n"),
+        ("t DESC", "1\n"),
+    ):
+        query = f"SELECT id FROM {{}} ORDER BY {order_by} LIMIT 1"
+        assert node.query(query.format(reference)) == expected
+        for source in sources:
+            assert node.query(query.format(source)) == expected, (query, source)
+
+
+def test_where_unary_predicates(mongo_reader_table):
+    # An empty binary is read as '', the arrays in `v` and `w` as non-empty strings, and `[None]` in `a` as `[0]`.
+    # A BSON `undefined` in `v` and `w` is read as 'undefined', and `$nin: [null]` does not match it.
+    # PyMongo cannot encode `undefined`, so the document is written as raw BSON.
+    elements = bson.encode({"id": 6, "s": "f"})[4:-1] + b"\x06v\x00\x06w\x00"
+    node, sources, reference, _ = mongo_reader_table(
+        "id Int32, s String, v String, w Nullable(String), a Array(Int32)",
+        [
+            {"id": 1, "s": "a", "v": bson.Binary(b""), "w": [None], "a": [None]},
+            {"id": 2, "s": "b", "v": "x", "w": "x", "a": []},
+            {"id": 3, "s": "c", "v": [""], "w": None, "a": [1]},
+            {"id": 4, "s": "d", "v": "", "a": None},
+            {"id": 5, "s": "e", "v": ""},
+            RawBSONDocument(
+                (len(elements) + 5).to_bytes(4, "little") + elements + b"\x00"
+            ),
+        ],
+    )
+    for predicate, expected in (
+        ("empty(v)", "1\n4\n5\n"),
+        ("notEmpty(v)", "2\n3\n6\n"),
+        ("v != ''", "2\n3\n6\n"),
+        ("isNull(w)", "3\n4\n5\n"),
+        ("isNotNull(w)", "1\n2\n6\n"),
+        ("empty(a)", "2\n4\n5\n6\n"),
+        ("notEmpty(a)", "1\n3\n"),
+    ):
+        query = f"SELECT id FROM {{}} WHERE {predicate} ORDER BY id"
+        assert node.query(query.format(reference)) == expected
+        for source in sources:
+            assert node.query(query.format(source)) == expected, (query, source)
+    for predicate, suffix in (
+        ("notEmpty(v)", "ORDER BY s LIMIT 1"),
+        ("isNotNull(w)", "LIMIT 1"),
+    ):
+        query = f"SELECT id FROM {{}} WHERE {predicate} {suffix}"
+        for source in sources:
+            assert node.query(query.format(source)) == node.query(
+                query.format(reference)
+            ), (query, source)
 
 
 def test_defaults(started_cluster):
