@@ -1,0 +1,15 @@
+probe of an allowlisted key without a signature
+denied
+0
+unlisted key, default pool
+denied
+unlisted key, rule on the user name
+denied
+0
+allowlisted key
+1
+1
+untrusted backend host key
+denied
+1
+1

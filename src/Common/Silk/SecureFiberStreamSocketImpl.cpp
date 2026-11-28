@@ -178,6 +178,24 @@ SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(Poco::Net::Context::Ptr
     setMutex(std::make_unique<SilkRecursiveMutex>());
 }
 
+SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(int accepted_fd, Poco::Net::Context::Ptr context)
+    : Poco::Net::SecureStreamSocketImpl(Poco::AutoPtr<Poco::Net::StreamSocketImpl>(new FiberStreamSocketImpl(accepted_fd)), context)
+{
+    setBioMethod(silkBioMethod());
+    setMutex(std::make_unique<SilkRecursiveMutex>());
+    /// Arm the server-side handshake; it runs on the first I/O over the silk fiber BIO.
+    acceptSSL();
+}
+
+SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(
+    Poco::AutoPtr<Poco::Net::StreamSocketImpl> accepted_socket, Poco::Net::Context::Ptr context)
+    : Poco::Net::SecureStreamSocketImpl(accepted_socket, context)
+{
+    setBioMethod(silkBioMethod());
+    setMutex(std::make_unique<SilkRecursiveMutex>());
+    acceptSSL();
+}
+
 bool SecureFiberStreamSocketImpl::pollImpl(Poco::Timespan & timeout, int mode)
 {
     uint32_t events = 0;

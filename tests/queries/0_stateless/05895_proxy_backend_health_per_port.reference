@@ -1,0 +1,8 @@
+only the dead port is marked down: True
+http listener: 503 No backend available: all backends of pool 'p' are unavailable
+stream listener: hello from the backend
+stream listener: hello from the backend
+stream listener: hello from the backend
+stream listener: hello from the backend
+stream listener: hello from the backend
+alive: False only the dead port is marked down: True
