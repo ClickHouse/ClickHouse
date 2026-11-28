@@ -93,6 +93,9 @@ private:
     /// Chunks currently being merged.
     Inputs current_inputs;
 
+    /// Per source, `MergedData::extraBytesPerRow` of its chunk (batch queue only), refreshed whenever a chunk arrives.
+    VectorWithMemoryTracking<std::optional<size_t>> source_extra_bytes_per_row;
+
     SortingQueueStrategy sorting_queue_strategy;
 
     SortCursorImpls cursors;
@@ -105,6 +108,7 @@ private:
     template <typename TSortingQueue>
     Status mergeBatchImpl(TSortingQueue & queue);
 
+    void updateExtraBytesPerRow(size_t source_num);
     /// Issue read-ahead for the next deferred sources up to the window size.
     void topUpPrefetch();
     /// Mark a deferred source as no longer reading ahead (its real data arrived or it

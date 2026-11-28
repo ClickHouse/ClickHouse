@@ -1,10 +1,12 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
@@ -497,4 +499,79 @@ TEST(MergedDataReplicated, MergingSortedAlgorithmRaisesHintOnLateReplicatedChunk
     ASSERT_EQ(keys.size(), 5u);
     EXPECT_EQ(keys, (std::vector<Int64>{5, 10, 20, 50, 60}));
     EXPECT_EQ(values, (std::vector<Int64>{50, 100, 200, 500, 600}));
+}
+
+/// The batch queue sizes a run with the growth bound computed when the run's chunk arrived. A late replicated chunk
+/// of another source wraps the destination in `ColumnReplicated`, which grows by an index more than the inserted rows'
+/// `byteSizeAt`, so the earlier bound must not be used after that.
+TEST(MergedDataReplicated, BatchQueueByteLimitAfterLateReplicatedChunk)
+{
+    auto make_chunk = [](const std::vector<Int64> & keys, bool replicated)
+    {
+        auto key_col = ColumnInt64::create();
+        auto val_col = ColumnString::create();
+        for (const auto key : keys)
+        {
+            key_col->insertValue(key);
+            val_col->insertData("01234567890123456789", 20);
+        }
+        ColumnPtr value = std::move(val_col);
+        if (replicated)
+            value = ColumnReplicated::create(value);
+        return Chunk(Columns{std::move(key_col), std::move(value)}, keys.size());
+    };
+
+    auto get_chunk_sizes = [&](SortingQueueStrategy strategy)
+    {
+        Block header;
+        header.insert(ColumnWithTypeAndName(ColumnInt64::create(), std::make_shared<DataTypeInt64>(), "key"));
+        header.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "value"));
+
+        SortDescription description;
+        description.emplace_back(SortColumnDescription("key", 1, 1));
+
+        MergingSortedAlgorithm algorithm(
+            std::make_shared<const Block>(header),
+            /*num_inputs=*/ 2,
+            description,
+            /*max_block_size_=*/ 1000,
+            /*max_block_size_bytes_=*/ 4096,
+            /*max_dynamic_subcolumns_=*/ {},
+            strategy);
+
+        /// Source 0 continues with a run of 400 rows after the late chunk of source 1. The keys interleave, so that
+        /// neither queue passes a chunk through whole.
+        std::vector<Int64> keys{5, 50, 61};
+        for (Int64 key = 70; key != 470; ++key)
+            keys.push_back(key);
+        IMergingAlgorithm::Inputs inputs(2);
+        inputs[0].chunk = make_chunk(keys, false);
+        inputs[1].chunk = make_chunk({10, 55}, false);
+        algorithm.initialize(std::move(inputs));
+
+        std::optional<Chunk> late_chunk = make_chunk({57, 65}, true);
+        std::vector<size_t> chunk_sizes;
+        for (size_t guard = 0; guard != 1000; ++guard)
+        {
+            auto status = algorithm.merge();
+            if (status.chunk && status.chunk.hasRows())
+                chunk_sizes.push_back(status.chunk.getNumRows());
+            if (status.is_finished)
+                return chunk_sizes;
+
+            if (status.required_source == 1 && late_chunk)
+            {
+                IMergingAlgorithm::Input input;
+                input.chunk = std::move(*late_chunk);
+                late_chunk.reset();
+                algorithm.consume(input, 1);
+            }
+        }
+        ADD_FAILURE() << "The merge did not finish";
+        return chunk_sizes;
+    };
+
+    const auto default_chunk_sizes = get_chunk_sizes(SortingQueueStrategy::Default);
+    EXPECT_EQ(default_chunk_sizes, get_chunk_sizes(SortingQueueStrategy::Batch));
+    EXPECT_GT(default_chunk_sizes.size(), 3uz);
 }
