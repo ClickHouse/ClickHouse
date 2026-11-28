@@ -73,7 +73,7 @@ plan with its `DelayedCreatingSets` placeholder as an ordinary step, and the
 set-building subqueries are planned separately, distributed like any other query.
 
 The feature fails closed. `make_distributed_plan` first rejects plan shapes the
-distributed pipeline cannot execute correctly (`WITH TOTALS`, `ROLLUP`, `CUBE`, extremes,
+distributed pipeline cannot execute correctly (`WITH TOTALS`, extremes,
 `PASTE JOIN`) and distributed reads a worker cannot reproduce (pinned block-number
 boundaries, `_part_index` / `_part_starting_offset`). When Cascades is active, a second
 pre-check rejects reads that cannot be cloned, `LOCAL` joins, non-full sorts, and
@@ -526,18 +526,41 @@ enforces (the keys of an inner join under the filter) are tracked as equivalence
 classes, and an equality inside such a class removes nothing. A read also carries its
 physical scan volume (see the cost model) next to the output estimate.
 
+A step that emits the rows of several inputs or several sets of groups adds them up.
+`UNION ALL` has the rows of all its inputs; the distinct count of a column is the sum over
+the inputs, which is its upper limit, and an input without a count adds its rows. `ROLLUP`,
+`CUBE` and `GROUPING SETS` have one set of groups for each of their key sets: the prefixes
+of the keys for `ROLLUP`, all the subsets for `CUBE`. A key that is absent from a set holds
+a default value or `NULL` in the rows of that set, so it has one more distinct value. A
+step with no estimate of its own (`WindowStep`, `ArrayJoinStep`, ...) takes the rows of its
+first input and keeps the statistics of the columns that it passes with the same name and
+type; a column that it adds or changes has no statistics. An expression or a filter also
+emits the input columns that its actions do not read, and these keep their statistics.
+
 Row widths drive the exchange costs, so they come from measured data, not type sizes.
 A read's per-column average widths come from the parts' column-data sizes (compact parts
 carry only a total, so type-based estimates are scaled to match it; the total deliberately
 excludes non-column files such as statistics sketches, which can dwarf a small table's
-data). A test hint overrides them: per-column `column_bytes` first, else a table-level
-`avg_row_bytes` distributed over the columns by type (a hinted table's physical parts are
-stand-ins and are not trusted). Widths follow columns through renames only while the value
-bytes are unchanged (`Nullable`/`LowCardinality` wrapping is ignored; a value-changing hop
+data). A test hint overrides them: per-column `column_bytes` first, else `avg_row_bytes`,
+the width of the rows that a read of the table emits, divided between the emitted columns
+by type (a hinted table's physical parts are stand-ins and are not trusted). A width that
+the statistics of a column have (the measured average size of a `String`) is used before
+the size from the parts. For a filter directly above a read, the width of the rows of the
+read is the sum of these sizes of all columns of the read, also of the columns that the
+filter does not emit, as for a filter above another step. Widths follow
+columns through renames only while the value bytes are unchanged (`Nullable`/`LowCardinality` wrapping is ignored; a value-changing hop
 such as `toString` drops the width to unknown, falling back to the type default — 64 bytes
-for `String`). Joins and aggregations recompute their width from their actual output
-header using the known column widths. The only floor is 1 byte per row, guarding against
-a zero-width row (a bare `count()`) making exchanges look free.
+for `String`). The row width of every step is the sum of the widths of its output columns:
+the known width of a column, else the default of its type. So a projection that drops a
+column makes the rows narrower for the exchanges above it. An expression, a filter, a
+`ROLLUP` or `CUBE` step, and a step without its own estimate make the row narrower than
+their input row only if the width of each output column is known (a width in the column
+statistics, or a type that gives the size of its values). A computed value of a variable
+size with no known width, such as the result of `concat`, can be as wide as the columns
+that it is computed from, so the row then keeps at least the width of the input row. A
+join, an aggregation and a `UNION ALL` do not have this rule: above them such a value has
+the default of its type. The last floor is 1 byte per row, guarding against a zero-width
+row (a bare `count()`) making exchanges look free.
 
 **Key files**: `Statistics.h/cpp`, `StatisticsDerivation.cpp`
 
@@ -639,10 +662,17 @@ branch-and-bound pruning as the primary bound.
    map to existing groups instead of cloning.
 11. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
    functional dependencies from MergeTree keys.
-12. **Width through same-type value-changing functions**: a deterministic `String` ->
-   `String` function (`substring`, `hex`) keeps the source column's average width even
-   though the bytes change; width preservation needs a value-pass-through rule separate
-   from the NDV rule.
+12. **Width of computed values**: a deterministic `String` -> `String` function
+   (`substring`, `hex`) keeps the source column's average width even though the bytes
+   change; width preservation needs a value-pass-through rule separate from the NDV rule.
+   A computed value with no known width has no estimate of its own: an expression or a
+   filter keeps the width of its input row for it, so a narrow value that is computed from
+   a wide column (`substring(url, 1, 10)`) is priced as wide, and above a join, an
+   aggregation or a `UNION ALL` it has the default of its type. The width that is kept
+   is that of the whole input row, also of input columns that the step does not emit
+   (the key of a sort with a limit). All of these need an estimated width for each
+   computed column that follows the column through all steps. The statistics have the
+   names of the columns, so two output columns with one name share one width.
 13. **Reads from remote shards**: a read from a `Distributed` table (or the `remote`/
    `cluster` table functions) with genuinely remote shards is rejected up front
    (`checkStepSupportedByCascades`); localhost shards are inlined and planned normally.
