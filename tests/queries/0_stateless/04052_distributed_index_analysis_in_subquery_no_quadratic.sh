@@ -45,6 +45,9 @@ $CLICKHOUSE_CLIENT --query_id $query_id -q "
     SET use_query_condition_cache = 0;
     SET distributed_index_analysis_for_non_shared_merge_tree = 1;
     SET enable_parallel_replicas = 1;
+    -- The count below assumes one parallel replicas read. Plan-based parallel replicas also distributes
+    -- the read of the IN subquery, which can add a second worker query.
+    SET parallel_replicas_plan_based = 0;
     SET distributed_index_analysis = 1;
     SET distributed_index_analysis_only_on_coordinator = 1;
     SET cluster_for_parallel_replicas = 'test_cluster_one_shard_two_replicas';
