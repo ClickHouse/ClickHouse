@@ -16,6 +16,7 @@
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromSealedViewStep.h>
 #include <Processors/QueryPlan/ReadFromTimeSeries.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -1103,6 +1104,13 @@ void optimizeTreeSecondPass(
 
     /// After every pass that merges, splits or moves expression steps.
     traverseQueryPlan(stack, root, [&](auto & frame_node) { disableCompilationOverAtMostOneRow(frame_node); });
+
+    /// The plan of a sealed view is optimized after the passes above, so they clone it while it is still clonable.
+    traverseQueryPlan(stack, root, [&](auto & frame_node)
+    {
+        if (auto * read_from_sealed_view = typeid_cast<ReadFromSealedViewStep *>(frame_node.step.get()))
+            read_from_sealed_view->optimize();
+    });
 
     /// Last: it reads the final consumers of every remote read.
     allowReadingShardsFromSeveralReplicas(root);
