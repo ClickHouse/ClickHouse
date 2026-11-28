@@ -469,6 +469,12 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             /// Row numbers not known, _row_number = NULL.
             chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
+        else if (virtual_column.name == "_headers" && virtual_values.http_response_headers)
+        {
+            /// Added here, in its place among the requested virtual columns, and not by the caller after the other ones:
+            /// the columns of the chunk must go in the order of the header of the source, which is the requested order.
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.http_response_headers)->convertToFullColumnIfConst());
+        }
         else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
         {
             chunk.addColumn(
