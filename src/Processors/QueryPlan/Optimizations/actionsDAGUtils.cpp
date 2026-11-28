@@ -198,7 +198,7 @@ static bool constantsMatch(
     if (typeid_cast<const ColumnFunction *>(&inner) || typeid_cast<const ColumnFunction *>(&outer))
         return foldedLambdasMatch(inner, outer, max_set_size);
 
-    return inner[0] == outer[0];
+    return sameConstantValue(inner[0], outer[0]);
 }
 
 MatchedTrees::Matches matchTrees(

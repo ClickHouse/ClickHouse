@@ -6,6 +6,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
@@ -358,12 +359,21 @@ bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*comp
     if (field && rhs_field)
         return field == rhs_field || *field == *rhs_field;
 
-    return getColumn()->compareAt(0, 0, *rhs_typed.getColumn(), 1) == 0;
+    const auto & column = getColumn();
+    const auto & rhs_column = rhs_typed.getColumn();
+    /// `compareAt` returns 0 for any two aggregate function states.
+    if (haveDifferentAggregateFunctionStates(*getResultType(), *column, *rhs_typed.getResultType(), *rhs_column))
+        return false;
+
+    return column->compareAt(0, 0, *rhs_column, 1) == 0;
 }
 
 void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
 {
     const DataTypePtr type = getResultType();
+
+    /// `IDataType::updateHash` skips aggregate function parameter values.
+    updateHashWithAggregateFunctionNames(*type, hash_state);
 
     if (const auto deferred_field = tryGetDeferredField())
     {
