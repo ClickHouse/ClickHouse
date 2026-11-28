@@ -46,6 +46,8 @@ namespace
 constexpr UInt64 BLOOM_BYTES = 4096;
 constexpr UInt64 EXACT_VALUES_LIMIT = 64;
 constexpr UInt64 HASH_FUNCTIONS = 3;
+/// `RUNTIME_FILTER_STATE_VERSION`, the first field of a serialized state.
+constexpr UInt64 STATE_VERSION = 2;
 
 RuntimeFilterGeometry makeGeometry(UInt64 bloom_bytes = BLOOM_BYTES)
 {
@@ -150,7 +152,7 @@ TEST(RuntimeFilterSerialization, GarbageFailsLoudly)
     EXPECT_THROW(deserializeFromString(bad_version.str()), Exception);
 
     WriteBufferFromOwnString bad_phase;
-    writeVarUInt(1, bad_phase);
+    writeVarUInt(STATE_VERSION, bad_phase);
     writeBinary(UInt8(0), bad_phase); /// no key range
     writeBinary(UInt8(7), bad_phase);
     EXPECT_THROW(deserializeFromString(bad_phase.str()), Exception);
@@ -162,7 +164,7 @@ TEST(RuntimeFilterSerialization, GarbageFailsLoudly)
     const String tracked_state = serializeToString(*tracked);
     EXPECT_NO_THROW(deserializeFromString(tracked_state));
     WriteBufferFromOwnString range_prefix;
-    writeVarUInt(1, range_prefix);
+    writeVarUInt(STATE_VERSION, range_prefix);
     writeBinary(UInt8(2), range_prefix);
     WriteBufferFromOwnString swapped_range;
     writeFieldBinary(Field(UInt64(10)), swapped_range);
@@ -190,7 +192,7 @@ TEST(RuntimeFilterSerialization, GarbageFailsLoudly)
 
     /// A row count above the exact-values limit is rejected before any column is allocated.
     WriteBufferFromOwnString oversized;
-    writeVarUInt(1, oversized);
+    writeVarUInt(STATE_VERSION, oversized);
     writeBinary(UInt8(0), oversized); /// no key range
     writeBinary(UInt8(0), oversized);
     writeVarUInt(1000 * 1000 * 1000, oversized);

@@ -255,6 +255,38 @@ private:
 extern template class ExactSetRuntimeFilter<false>;
 extern template class ExactSetRuntimeFilter<true>;
 
+/// The bloom filter of a join runtime filter. It lives for one query, so it need not share the layout of the
+/// persisted bloom filter indexes (`BloomFilter`), and it is probed for every row of the probe side, so the
+/// probe is the cost that matters: all `k` bits of a key live in one cache-line block (512 bits) selected by
+/// the first hash, with the bit positions inside the block taken from the second hash. A probe touches one
+/// cache line and needs no division, against `k` independent random cache lines in the classic layout; the
+/// false positive rate is close to the classic one at the same size.
+class RuntimeBloomFilter
+{
+public:
+    RuntimeBloomFilter(size_t bytes, size_t hashes_, UInt64 seed_);
+
+    void addHashPairs(const BloomFilterHashPair * pairs, size_t count);
+    /// Writes 1 for the keys that may be present, 0 for the ones that are certainly absent; returns the count of 1-s.
+    size_t findHashPairs(const BloomFilterHashPair * pairs, size_t count, UInt8 * out_mask) const;
+
+    /// The allocation is checked against the memory limit, like the one of `BloomFilter`.
+    using Container = VectorWithMemoryTracking<UInt64>;
+
+    [[nodiscard]] const Container & getFilter() const { return words; }
+    [[nodiscard]] Container & getFilter() { return words; }
+    [[nodiscard]] size_t getFilterSizeBytes() const { return words.size() * sizeof(UInt64); }
+    [[nodiscard]] size_t getHashes() const { return hashes; }
+    [[nodiscard]] UInt64 getSeed() const { return seed; }
+
+private:
+    size_t hashes;
+    UInt64 seed;
+    /// The number of blocks is a power of two, so a block is selected by masking the first hash.
+    size_t block_index_mask;
+    Container words;
+};
+
 /// Bloom-backed runtime filter for approximate set membership checks.
 class ApproximateSetRuntimeFilter
 {
@@ -283,7 +315,7 @@ public:
 private:
     void insertIntoBloomFilter(const ColumnPtr & values, size_t first_row);
 
-    BloomFilter bloom_filter;
+    RuntimeBloomFilter bloom_filter;
 };
 
 /// Exact runtime filter for (U)Int8 and (U)Int16 keys: one bit per value of the key type.
