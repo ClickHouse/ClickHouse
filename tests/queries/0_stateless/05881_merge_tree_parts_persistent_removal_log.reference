@@ -1,0 +1,9 @@
+-- with a persistent removal log
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+nothing was created
+-- without it
+0
+x	UInt8
+no removal log directory

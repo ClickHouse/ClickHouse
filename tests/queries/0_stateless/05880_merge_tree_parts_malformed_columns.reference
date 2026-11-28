@@ -1,0 +1,20 @@
+--- intact parts
+1000
+499500
+1000
+499500
+--- compact: columns.txt without columns
+CORRUPTED_DATA
+CORRUPTED_DATA
+--- compact: columns.txt with other columns than columns_substreams.txt
+CORRUPTED_DATA
+CORRUPTED_DATA
+--- wide: columns.txt without columns
+CORRUPTED_DATA
+CORRUPTED_DATA
+--- wide: columns.txt with other columns than columns_substreams.txt
+CORRUPTED_DATA
+CORRUPTED_DATA
+--- restored parts
+499500
+499500

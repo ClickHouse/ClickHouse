@@ -1,0 +1,11 @@
+-- a local disk inside the base directory
+x	UInt8					
+-- a local disk outside the base directory
+BAD_ARGUMENTS
+-- a local object storage outside the base directory
+BAD_ARGUMENTS
+-- the metadata of an object storage disk outside the base directory
+BAD_ARGUMENTS
+-- from_env without dynamic_disk_allow_from_env
+ACCESS_DENIED
+no directory

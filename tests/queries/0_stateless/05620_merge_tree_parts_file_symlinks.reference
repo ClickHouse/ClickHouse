@@ -1,0 +1,8 @@
+-- a copy of the part inside the root of the disk
+10	45
+-- a part whose files are symlinks to the files inside the root of the disk
+10	45
+-- a part whose files are symlinks to the files outside the root of the disk
+BAD_ARGUMENTS
+-- a part with a single file symlinked outside the root of the disk
+BAD_ARGUMENTS
