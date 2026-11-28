@@ -62,6 +62,14 @@ public:
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "Function {} can be used only inside a query: the current thread is not attached to a query", getName());
 
+        /// A nested group of the same query (e.g. of a materialized view) only forwards its counters to the parent.
+        while (auto parent = thread_group->getParent())
+        {
+            if (parent->query_context.lock() != thread_group->query_context.lock())
+                break;
+            thread_group = parent;
+        }
+
         UInt64 value = thread_group->performance_counters[event];
         return ColumnUInt64::create(input_rows_count, value);
     }

@@ -141,6 +141,15 @@ endif ()
 target_link_libraries (clickhouse PRIVATE clickhouse_common_io ${HARMFUL_LIB})
 target_include_directories (clickhouse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
+# Start `.text` at a multiple of 2 MiB, so that a change of the size of the read-only data in front of it
+# does not move the code relative to the 2 MiB boundaries (see `text_alignment.ld`).
+# The linker script relies on `lld`. Sanitizer and coverage builds are not used to measure performance.
+if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND LINKER_NAME MATCHES "lld" AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
+    target_sources (clickhouse PRIVATE text_alignment.S)
+    target_link_options (clickhouse PRIVATE "LINKER:-T,${CMAKE_CURRENT_SOURCE_DIR}/text_alignment.ld")
+    set_property (TARGET clickhouse APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/text_alignment.ld")
+endif ()
+
 if (ENABLE_CLICKHOUSE_KEEPER)
     clickhouse_target_link_split_lib(clickhouse keeper)
 endif()
@@ -263,7 +272,7 @@ if (BUILD_STRIPPED_BINARY)
 endif()
 
 if (ENABLE_TESTS)
-    set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms)
+    set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms unit_tests_wyrd)
     add_custom_target (clickhouse-tests ALL DEPENDS ${CLICKHOUSE_UNIT_TESTS_TARGETS})
     add_dependencies(clickhouse-bundle clickhouse-tests)
 endif()

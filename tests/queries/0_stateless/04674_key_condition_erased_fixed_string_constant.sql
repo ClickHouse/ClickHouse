@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Test output depends on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 -- A `FixedString(N)` constant hidden inside a `Variant`/`Dynamic` wrapper is compared zero-padded,
 -- so a point key range built from its padded bytes prunes matching granules. Each `equals`/`notEquals`
 -- arm below must agree with the unindexed `ENGINE = Log` oracle; each pruning arm must keep pruning.

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the reference pins the granule counts, which depend on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 -- `use_skip_indexes_if_final_exact_mode` adds back the granules that can hold another version of a row
 -- selected by the skip index. When the partition key is computed from primary key columns, all versions
 -- of a row are in one partition, so only the parts of that partition can hold one.

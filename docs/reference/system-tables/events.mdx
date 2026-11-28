@@ -4862,7 +4862,7 @@ Number of Parquet column chunks without an offset index whose pages holding the 
 
 ### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
 
-Row groups whose column data a Parquet reader of a file in object storage or at a URL started reading before their decoding was scheduled, within its share of max_download_threads
+Row groups whose column data a Parquet reader of a file in object storage or at a URL started reading before their decoding was scheduled, within its share of max_download_threads, or one more if decoding uses up that share and the read is small and separate
 
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 

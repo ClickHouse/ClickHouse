@@ -96,6 +96,7 @@ BlockIO InterpreterSetQuery::execute()
     session_context->applySettingsChanges(changes);
     session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
     session_context->resetSettingsToDefaultValue(ast.default_settings);
+    session_context->reportObsoleteSettingsReset(ast.default_settings);
     return {};
 }
 
@@ -116,6 +117,7 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     }
     getContext()->applySettingsChanges(changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
+    getContext()->reportObsoleteSettingsReset(ast.default_settings);
 }
 
 static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, ContextMutablePtr context)
@@ -315,6 +317,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                         std::vector<String> names{name};
                         context_->checkSettingsConstraintsForSettingsReset(names, SettingSource::QUERY);
                         context_->resetSettingsToDefaultValue(names);
+                        context_->reportObsoleteSettingsReset(names);
                         it = engine_settings->default_settings.erase(it);
                     }
                     else
@@ -400,6 +403,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
 
             /// After the overrides, so a name in both carriers ends at its default, as in `SET x = 1, x = DEFAULT`.
             context_->resetSettingsToDefaultValue(core.default_names);
+            context_->reportObsoleteSettingsReset(core.default_names);
         }
     }
 }

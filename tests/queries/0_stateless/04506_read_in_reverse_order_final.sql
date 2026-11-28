@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: EXPLAIN output shows the read type `InOrder`/`InReverseOrder`, which flips with a descending key
+SET force_primary_key_reverse_order = 0;
+
 -- Reading in reverse order of the sorting key with FINAL for ReplacingMergeTree.
 SET explain_query_plan_default = 'legacy';
 SET optimize_read_in_order = 1;

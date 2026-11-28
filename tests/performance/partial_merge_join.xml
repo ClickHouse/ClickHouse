@@ -35,6 +35,10 @@
     <query>SELECT count() FROM test_u64_left_1000000 AS a JOIN pmj_u64_sparse_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
     <query>SELECT count() FROM pmj_u64_mult2 AS a JOIN pmj_u64_mult3 AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
 
+    <!-- The result of each left block is cut into blocks of 8192 rows, so a left block is joined in eight calls.
+         Only the first call has to sort it. -->
+    <query>SELECT count() FROM test_u64_left_100 AS a JOIN test_u64_right_100 AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'partial_merge', max_joined_block_size_rows = 8192</query>
+
     <drop_query>DROP TABLE IF EXISTS test_u64_left_{card}</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_u64_right_{card}</drop_query>
     <drop_query>DROP TABLE IF EXISTS pmj_u64_sparse_right</drop_query>

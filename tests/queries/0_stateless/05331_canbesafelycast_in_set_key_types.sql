@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 -- `k IN (subquery)` on a MergeTree key column lets the primary key index prune with the subquery
 -- result. To do that it has to move the set from the subquery's element type into the key column
 -- type, and `canBeSafelyCast` (src/DataTypes/Utils.cpp) answers whether that is lossless. On `true`

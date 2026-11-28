@@ -1,4 +1,4 @@
-# FlatBuffers: the runtime library, used by the native Arrow IPC reader/writer and by Arrow itself,
+# FlatBuffers: the runtime library, used by the native Arrow IPC reader/writer,
 # and the `flatc` schema compiler, which generates the Arrow IPC metadata bindings at build time
 # (see `contrib/arrow-cmake`).
 #

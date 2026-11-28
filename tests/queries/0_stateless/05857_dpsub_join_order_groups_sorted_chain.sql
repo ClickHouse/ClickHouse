@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the reference pins the choice of merge joins over inputs sorted by an ascending key
+SET force_primary_key_reverse_order = 0;
+
 -- A chain of joins on the sorting key, planned in groups of `query_plan_optimize_join_order_limit` tables: the joins between
 -- the groups are sort-merge joins of sorted inputs too. The statistics hint gives the sizes the plans are chosen for.
 

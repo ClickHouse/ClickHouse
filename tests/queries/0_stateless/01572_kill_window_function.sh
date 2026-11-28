@@ -31,8 +31,10 @@ function wait_for_query_to_start()
 # The single partition is deliberate: with `PARTITION BY` the partitions are calculated in
 # parallel and the frames are smaller, so the query becomes faster the higher `max_threads` is,
 # and the test runner randomizes it.
+# `window_sliding_aggregation_min_frame_rows = 0` keeps the aggregate recalculated from the rows of the frame; otherwise
+# the query ends before it can be killed.
 query_id="01572_kill_window_function-$CLICKHOUSE_DATABASE"
-$CLICKHOUSE_CLIENT --query_id="$query_id" --query "SELECT sum(number) OVER (ORDER BY number DESC NULLS FIRST ROWS BETWEEN CURRENT ROW AND 999999 FOLLOWING) FROM numbers(0, 1000000) format Null;" >/dev/null 2>&1 &
+$CLICKHOUSE_CLIENT --query_id="$query_id" --query "SELECT sum(number) OVER (ORDER BY number DESC NULLS FIRST ROWS BETWEEN CURRENT ROW AND 999999 FOLLOWING) FROM numbers(0, 1000000) SETTINGS window_sliding_aggregation_min_frame_rows = 0 format Null;" >/dev/null 2>&1 &
 client_pid=$!
 echo Started
 

@@ -15,8 +15,8 @@ else
 fi
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.warnings WHERE message LIKE '%Obsolete setting%'"
-${CLICKHOUSE_CLIENT} --multiple_joins_rewriter_version=42 -q "SELECT message FROM system.warnings WHERE message LIKE '%Obsolete setting%'"
-${CLICKHOUSE_CLIENT} --cloud_mode=1 --multiple_joins_rewriter_version=42 -q "SELECT count() FROM system.warnings WHERE message LIKE '%Obsolete setting%'"
+${CLICKHOUSE_CLIENT} -q "SELECT message FROM system.warnings WHERE message LIKE '%Obsolete setting%' SETTINGS multiple_joins_rewriter_version = 42"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.warnings WHERE message LIKE '%Obsolete setting%' SETTINGS cloud_mode = 1, multiple_joins_rewriter_version = 42"
 
 # Avoid duplicated warnings
 ${CLICKHOUSE_CLIENT} -q "SELECT count() = countDistinct(message) FROM system.warnings"
