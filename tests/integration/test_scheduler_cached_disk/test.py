@@ -79,6 +79,29 @@ def workload_cost(workload):
     )
 
 
+def workload_throttling_us(workload):
+    return int(
+        node.query(
+            "select sum(throttling_us) from system.scheduler where resource = 'io_s3'"
+            f" and type = 'bandwidth_limit' and path like '%{workload}%'"
+        ).strip()
+    )
+
+
+def cached_size():
+    return int(
+        node.query("select sum(downloaded_size) from system.filesystem_cache").strip()
+    )
+
+
+def background_download_queue_pushes():
+    return int(
+        node.query(
+            "select sum(value) from system.events where event = 'FilesystemCacheBackgroundDownloadQueuePush'"
+        ).strip()
+    )
+
+
 def wait_query_end(query_id):
     assert_eq_with_retry(
         node, f"select count() from system.processes where query_id = '{query_id}'", "0"
@@ -106,6 +129,9 @@ def test_background_download_after_query_end():
     wait_query_end("bg_download_off_select")
     assert node.query("select 1").strip() == "1"
     node.query("system drop filesystem cache")
+    cost = workload_cost("bg_download")
+    throttling = workload_throttling_us("bg_download")
+    queue_pushes = background_download_queue_pushes()
     node.query(
         "select s from data_bg limit 1 format Null settings workload = 'bg_download', max_threads = 1,"
         " filesystem_cache_allow_background_download = 1",
@@ -113,8 +139,7 @@ def test_background_download_after_query_end():
     )
     wait_query_end("bg_download_select")
 
-    # The cache finishes the file segment in the background, but not through the finished query's workload.
-    cost = workload_cost("bg_download")
+    # The cache finishes the file segment in the background, through the finished query's workload.
     deadline = time.monotonic() + 60
     while (
         node.query(
@@ -124,7 +149,11 @@ def test_background_download_after_query_end():
     ):
         assert time.monotonic() < deadline, "the background download did not finish"
         time.sleep(1)
-    assert workload_cost("bg_download") == cost
+    assert background_download_queue_pushes() > queue_pushes
+    size = cached_size()
+    # The cache was empty before the query, so the workload read all of it: the query a part, the background download the rest.
+    assert workload_cost("bg_download") - cost >= size
+    assert workload_throttling_us("bg_download") > throttling
 
     assert node.query("select 1").strip() == "1"
     node.query("drop table data_bg sync")

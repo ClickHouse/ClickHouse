@@ -2,6 +2,8 @@
 
 #include <base/types.h>
 
+#include <memory>
+
 namespace DB
 {
 
@@ -60,6 +62,15 @@ struct ResourceLink
     }
 };
 
+/// The workload and the resources of the links in `IOSchedulingSettings`, for work that outlives the query
+/// and has to get its own links (from its own classifier) for the same workload. An empty name has no link.
+struct IOSchedulingWorkload
+{
+    String workload;
+    String read_resource;
+    String write_resource;
+};
+
 /*
  * Everything required for IO scheduling.
  * Note that raw pointer are stored inside, so make sure that `ClassifierPtr` that produced
@@ -69,6 +80,8 @@ struct IOSchedulingSettings
 {
     ResourceLink read_resource_link;
     ResourceLink write_resource_link;
+    /// Null if there are no links from a workload classifier.
+    std::shared_ptr<const IOSchedulingWorkload> workload;
 
     bool operator==(const IOSchedulingSettings &) const = default;
     explicit operator bool() const { return read_resource_link && write_resource_link; }
