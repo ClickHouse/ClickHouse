@@ -304,7 +304,12 @@ struct ToDateTimeImpl
             if (d < 0 || d > MAX_DATETIME_DAY_NUM) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", d);
         }
-        return static_cast<UInt32>(time_zone.fromDayNum(ExtendedDayNum(d)));
+        /// The start of 1970-01-01 is negative ahead of UTC. Even `throw` clamps it to the epoch:
+        /// day 0 is also the value behind a NULL, and conversions run on those values too.
+        const Int64 seconds = time_zone.fromDayNum(ExtendedDayNum(d));
+        if constexpr (date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore)
+            return static_cast<UInt32>(std::max<Int64>(seconds, 0));
+        return static_cast<UInt32>(seconds);
     }
 
     static UInt32 execute(UInt32 dt, const DateLUTImpl & /*time_zone*/)
