@@ -340,6 +340,8 @@ static struct InitFiu
     REGULAR(slowdown_skip_index_read_result_build) \
     REGULAR(slowdown_index_analysis_per_part) \
     ONCE(iceberg_writes_cleanup) \
+    ONCE(iceberg_metadata_commit_response_lost) \
+    REGULAR(iceberg_metadata_commit_reconcile_fail) \
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
     ONCE(iceberg_writes_lose_metadata_commit_response) \
     ONCE(iceberg_writes_lose_metadata_commit_request) \

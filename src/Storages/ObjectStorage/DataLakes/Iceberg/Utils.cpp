@@ -90,11 +90,19 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
 extern const int READONLY;
+extern const int UNKNOWN_STATUS_OF_TRANSACTION;
+extern const int NETWORK_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int FILE_ALREADY_EXISTS;
 extern const int STALE_VERSION;
 extern const int S3_ERROR;
 extern const int CANNOT_WRITE_TO_FILE;
+}
+
+namespace DB::FailPoints
+{
+extern const char iceberg_metadata_commit_response_lost[];
+extern const char iceberg_metadata_commit_reconcile_fail[];
 }
 
 namespace DB::DataLakeStorageSetting
@@ -426,6 +434,190 @@ static bool isKnownAbsent(const DB::ObjectStoragePtr & object_storage, const std
     }
 }
 
+static constexpr size_t VERSION_HINT_CONVERGENCE_ATTEMPTS = 4;
+
+/// Only `LostRace` proves that the commit did not happen, so only it licenses deleting the staged files.
+enum class MetadataCommitOutcome : uint8_t
+{
+    Committed,
+    LostRace,
+    Unknown,
+};
+
+static std::string readMetadataFileContentUncached(
+    const std::string & storage_metadata_path,
+    CompressionMethod compression_method,
+    const ObjectStoragePtr & object_storage,
+    const ContextPtr & context)
+{
+    auto read_settings = context->getReadSettings();
+    read_settings.enable_filesystem_cache = false;
+    read_settings.use_page_cache_for_object_storage = false;
+    read_settings.use_page_cache_for_disks_without_file_cache = false;
+    read_settings.use_page_cache_with_distributed_cache = false;
+    read_settings.use_page_cache_for_local_disks = false;
+    read_settings.page_cache_settings.cache = nullptr;
+    read_settings.read_through_distributed_cache = false;
+
+    ObjectInfo object_info(storage_metadata_path);
+    auto source_buf = createReadBuffer(
+        object_info.relative_path_with_metadata,
+        object_storage,
+        context,
+        getLogger("IcebergCommitReconciliation"),
+        read_settings,
+        /* allow_page_cache */ false);
+
+    std::unique_ptr<ReadBuffer> buf;
+    if (compression_method != CompressionMethod::None)
+        /// The write path pins `SnappyMode::Basic`; the mode is not encoded in the file name, so both
+        /// sides must agree statically.
+        buf = wrapReadBufferWithCompressionMethod(std::move(source_buf), compression_method, /*zstd_window_log_max=*/ 0, SnappyMode::Basic);
+    else
+        buf = std::move(source_buf);
+
+    std::string content;
+    readStringUntilEOF(content, *buf);
+    return content;
+}
+
+/// Establishes the outcome of a failed conditional metadata write by comparing the stored bytes with the written ones.
+/// Nothing cancels a failed write server-side, so an absent target does not prove that it will not land.
+static MetadataCommitOutcome reconcileMetadataCommit(
+    const std::string & storage_metadata_path,
+    const std::string & metadata_file_content,
+    CompressionMethod compression_method,
+    const ObjectStoragePtr & object_storage,
+    const ContextPtr & context)
+{
+    try
+    {
+        fiu_do_on(FailPoints::iceberg_metadata_commit_reconcile_fail,
+        {
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Failpoint for reconciliation read failure enabled");
+        });
+
+        if (!object_storage->exists(StoredObject(storage_metadata_path)))
+            return MetadataCommitOutcome::Unknown;
+
+        auto stored_content = readMetadataFileContentUncached(storage_metadata_path, compression_method, object_storage, context);
+        if (stored_content == metadata_file_content)
+            return MetadataCommitOutcome::Committed;
+
+        LOG_DEBUG(
+            getLogger("IcebergCommitReconciliation"),
+            "Metadata file {} holds another writer's content, the commit was lost",
+            storage_metadata_path);
+        return MetadataCommitOutcome::LostRace;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return MetadataCommitOutcome::Unknown;
+    }
+}
+
+/// Once any writer has created `version-hint.text`, every later writer must keep it in sync, or readers with
+/// `iceberg_use_version_hint = 1` observe stale data. Runs after the commit is durable, so failures are logged,
+/// never thrown: a throw would reach the callers' cleanup of a committed snapshot.
+static void convergeVersionHint(
+    const std::string & storage_version_hint_path,
+    Int32 committed_version,
+    const ObjectStoragePtr & object_storage,
+    const ContextPtr & context,
+    bool try_write_version_hint)
+{
+    auto log = getLogger("IcebergVersionHint");
+    std::string last_error;
+    std::optional<Int32> seen_version;
+    size_t attempts_without_progress = 0;
+
+    for (size_t attempt = 0; attempts_without_progress < VERSION_HINT_CONVERGENCE_ATTEMPTS; ++attempt)
+    {
+        try
+        {
+            StoredObject object_info(storage_version_hint_path);
+            std::string version_hint_value;
+            std::string etag;
+            std::string write_if_none_match = "*";
+            if (object_storage->exists(object_info))
+            {
+                auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), MAX_HINT_FILE_SIZE);
+                version_hint_value = object_data;
+                boost::algorithm::trim(version_hint_value);
+                etag = object_metadata.etag;
+                write_if_none_match.clear();
+            }
+            else if (!try_write_version_hint)
+            {
+                /// The file does not exist and this writer was not asked to create it.
+                return;
+            }
+
+            Int32 old_version = 0;
+            if (!version_hint_value.empty())
+            {
+                try
+                {
+                    if (std::all_of(version_hint_value.begin(), version_hint_value.end(), isdigit))
+                    {
+                        old_version = parseMetadataVersion(version_hint_value, version_hint_value);
+                    }
+                    else
+                    {
+                        old_version = getMetadataFileAndVersion(version_hint_value).version;
+                    }
+                }
+                catch (...)
+                {
+                    /// Deterministic for these bytes, so a retry cannot help.
+                    LOG_WARNING(
+                        log,
+                        "Version hint {} holds '{}', which names no metadata version, so it cannot be advanced to {}. "
+                        "Readers using the hint may observe an older snapshot: {}",
+                        storage_version_hint_path, version_hint_value, committed_version, getCurrentExceptionMessage(false));
+                    return;
+                }
+            }
+            if (old_version >= committed_version)
+                return;
+
+            /// A hint advanced by another writer since the previous attempt is progress, not a failure to converge.
+            if (seen_version && old_version > *seen_version)
+                attempts_without_progress = 0;
+            seen_version = old_version;
+
+            /// Write just the version number for Spark/spec compatibility.
+            Iceberg::writeMessageToFile(
+                std::to_string(committed_version),
+                storage_version_hint_path,
+                object_storage,
+                context,
+                write_if_none_match,
+                /* write-if-match */ etag);
+            return;
+        }
+        catch (...)
+        {
+            /// A lost hint-write race or a transient read; both can resolve on a later attempt.
+            ++attempts_without_progress;
+            last_error = getCurrentExceptionMessage(false);
+            LOG_DEBUG(log, "Attempt {} to advance version hint {} failed: {}", attempt + 1, storage_version_hint_path, last_error);
+        }
+    }
+
+    LOG_WARNING(
+        log,
+        "Version hint {} did not reach version {} in {} attempts without progress. "
+        "Readers using the hint may observe an older snapshot: {}",
+        storage_version_hint_path, committed_version, VERSION_HINT_CONVERGENCE_ATTEMPTS, last_error);
+}
+
+bool isCommitStateUnknown(const Exception & e)
+{
+    return e.code() == ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION;
+}
+
 bool writeMetadataFile(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
@@ -434,6 +626,7 @@ bool writeMetadataFile(
     DB::ContextPtr context)
 {
     auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
+    auto outcome = MetadataCommitOutcome::Committed;
     bool write_attempted = false;
     try
     {
@@ -449,6 +642,11 @@ bool writeMetadataFile(
             /* write-if-none-match */ "*",
             "",
             metadata_file_info.compression_method);
+
+        fiu_do_on(FailPoints::iceberg_metadata_commit_response_lost,
+        {
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Failpoint for a lost commit response enabled");
+        });
     }
     catch (const Exception & e)
     {
@@ -461,13 +659,29 @@ bool writeMetadataFile(
                 getLogger("IcebergWrites"), "Metadata file {} was written by a concurrent commit: {}", storage_metadata_path, e.message());
         else
             tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
+        if (!write_attempted)
+            return false;
+        outcome = reconcileMetadataCommit(
+            storage_metadata_path, metadata_file_content, metadata_file_info.compression_method, object_storage, context);
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
+        if (!write_attempted)
+            return false;
+        outcome = reconcileMetadataCommit(
+            storage_metadata_path, metadata_file_content, metadata_file_info.compression_method, object_storage, context);
     }
+
+    if (outcome == MetadataCommitOutcome::LostRace)
+        return false;
+
+    if (outcome == MetadataCommitOutcome::Unknown)
+        throw Exception(
+            ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
+            "Cannot determine whether the Iceberg commit of metadata file {} succeeded, so no staged files were removed. "
+            "Check the table's current metadata before retrying, because the commit may have taken effect",
+            storage_metadata_path);
 
     return true;
 }
@@ -579,14 +793,10 @@ bool writeMetadataFileAndVersionHint(
     if (!writeMetadataFile(resolver, metadata_file_info, metadata_file_content, object_storage, context))
         return false;
 
-    (void)tryWriteVersionHintFile(
-        resolver,
-        metadata_file_info,
-        version_hint_path,
-        object_storage,
-        context,
-        /* create */ try_write_version_hint,
-        /* assert_version_exactly */ false);
+    /// The commit is durable here, so the hint update must not throw: a throw would reach the callers'
+    /// cleanup of a committed snapshot.
+    convergeVersionHint(
+        resolver.resolve(version_hint_path), metadata_file_info.version, object_storage, context, try_write_version_hint);
     return true;
 }
 
@@ -665,7 +875,8 @@ bool commitMetadataFile(
     {
         /// The request was lost, so nothing was written, but the writer cannot know it.
         const bool request_lost = check_fail_point(fail_points.lose_request);
-        /// The name of the metadata file is the commit lock. Throws only if nothing was written.
+        /// The name of the metadata file is the commit lock. Throws `UNKNOWN_STATUS_OF_TRANSACTION` if the outcome of the
+        /// write cannot be established; the caller then keeps the files of the attempt.
         committed = !request_lost && writeMetadataFile(resolver, metadata_file_info, json_representation, object_storage, context);
         /// The write landed, but its response was lost.
         if (check_fail_point(fail_points.lose_response))
@@ -736,23 +947,10 @@ bool commitMetadataFile(
     /// The commit succeeded, so its files stay referenced even if advancing the version hint throws.
     commit_outcome_unknown = true;
     /// The version hint is not a part of the commit: if writing it fails, the next writer advances it.
-    if (!catalog_writes_metadata_file
-        && !tryWriteVersionHintFile(
-            resolver,
-            metadata_file_info,
-            version_hint_path,
-            object_storage,
-            context,
-            create_version_hint,
-            /* assert_version_exactly */ false))
-    {
-        LOG_WARNING(
-            log,
-            "Committed {}, but could not advance `version-hint.text` to version {}: readers that use it see an older version "
-            "until the next commit",
-            metadata_file_info.path,
-            metadata_file_info.version);
-    }
+    /// `convergeVersionHint` logs its failures and never throws, so the committed operation is not reported as failed.
+    if (!catalog_writes_metadata_file)
+        convergeVersionHint(
+            resolver.resolve(version_hint_path), metadata_file_info.version, object_storage, context, create_version_hint);
     commit_outcome_unknown = false;
     LOG_DEBUG(log, "Metadata file {} committed", metadata_file_info.path);
     return true;
