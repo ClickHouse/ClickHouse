@@ -1,0 +1,18 @@
+a: LIMIT 0
+b: LIMIT 1
+BuildRuntimeFilter (Build runtime join filter on __table3.k)
+c: LIMIT 0 OFFSET 1
+d: LIMIT 0, exact_rows_before_limit
+BuildRuntimeFilter (Build runtime join filter on __table3.k)
+e: WITH TOTALS LIMIT 0
+BuildRuntimeFilter (Build runtime join filter on __table3.k)
+f: LIMIT 0 inside a join side
+BuildRuntimeFilter (Build runtime join filter on __table2.k)
+g: LIMIT 0 in one UNION ALL branch
+BuildRuntimeFilter (Build runtime join filter on __table6.k)
+i: GROUP BY LIMIT 0
+j: WITH TOTALS ORDER BY LIMIT 0
+k: LIMIT 0, extremes
+h: results
+0
+5

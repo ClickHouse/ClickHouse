@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -120,6 +121,16 @@ static String describeProjectionRejections(const UnorderedMapWithMemoryTracking<
         formatted_reasons.push_back(fmt::format("projection {} is rejected because {}", projection, reason));
 
     return fmt::format("{}", fmt::join(formatted_reasons, "; "));
+}
+
+/// No row of a node below such a `LIMIT` is ever read.
+static bool isBelowLimitTakingNoRows(const Stack & stack)
+{
+    return std::any_of(stack.rbegin() + 1, stack.rend(), [](const Frame & frame)
+    {
+        const auto * limit = typeid_cast<const LimitStep *>(frame.node->step.get());
+        return limit && limit->takesNoRows();
+    });
 }
 
 void optimizeTreeFirstPass(
@@ -408,7 +419,7 @@ void optimizeTreeSecondPass(
             /// The joins stay logical until after `applyParallelReplicas` below: it needs the final
             /// (reordered, runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical`
             /// supports, and lazy materialization for joins reads the join expressions from it.
-            if (add_join_runtime_filters)
+            if (add_join_runtime_filters && !isBelowLimitTakingNoRows(stack))
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
         });
 
