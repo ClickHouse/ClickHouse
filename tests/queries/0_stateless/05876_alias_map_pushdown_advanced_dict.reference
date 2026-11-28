@@ -1,0 +1,36 @@
+=== A1. Runtime-adjustable attribute allowlist per user + live dict update ===
+1	checkout	10.20.30.44			0
+1	{'client_ip':'10.20.30.44','http.url':'https://shop.local/pay?item=book&token=sec1&ok=1','service':'checkout'}
+1	checkout	alice@acme.com	
+2	auth	bob@acme.com	
+=== A2. Array(String) denylist per user + EXPLAIN uses __mat_service ===
+1	checkout			alice@acme.com	0
+1
+0
+=== B1. Multi-action redaction modes (SHA256, HMAC, cutURLParameter, IPv4NumToStringClassC, drop, redact, allow) ===
+1	checkout	DC3E17D322F8	BEB918BC5552	https://shop.local/pay?item=book&ok=1	10.20.30.xxx		***		0
+2	auth	E60D8EB76A6D	69B1AEE1EFF1	https://shop.local/login?next=/home	192.168.55.xxx		***		0
+1	{'client_ip':'10.20.30.xxx','credit_card':'4111','email':'BEB918BC5552','http.url':'https://shop.local/pay?item=book&ok=1','internal.host':'db-01','pii.phone':'555-0100','service':'checkout','ssn':'DC3E17D322F8','token':'***'}
+=== B2. Live dictionary action transition for email (hmac -> email_mask -> hash -> drop) ===
+1	***@acme.com
+2	***@acme.com
+1	0A0A58273565
+2	405AC8384FA9
+1		0
+2		0
+=== C1. Nested lambda prefix denylist + live reload adding http. prefix ===
+1	checkout	https://shop.local/pay?item=book&token=sec1&ok=1		
+2	auth	https://shop.local/login?token=sec2&next=/home		
+1	{'client_ip':'10.20.30.44','credit_card':'4111','email':'alice@acme.com','http.url':'https://shop.local/pay?item=book&token=sec1&ok=1','secret_note':'top_secret','service':'checkout','ssn':'111-11','token':'tok_123'}
+1	checkout	
+2	auth	
+=== C2. Nested lambda role-based dictionary + QueryResultCache non-leakage ===
+ACCESS_DENIED
+1	checkout	111-11	top_secret
+2	auth	222-22	hidden
+1	checkout		
+2	auth		
+=== D. Primary-key condition extraction across allowlist & nested-lambda policies ===
+1
+1
+1

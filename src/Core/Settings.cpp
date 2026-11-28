@@ -6440,6 +6440,34 @@ Possible values:
 
 - true, false
 )", 0)                                                                                                                                         \
+    DECLARE(Bool, optimize_map_alias_pushdown, false, R"(
+Enable pushing constant-key `Map` lookups (`m['const_key']`, `arrayElement(m, 'const_key')`, `has(m, 'const_key')`, `mapContainsKey(m, 'const_key')`) into table `ALIAS` column expressions before subcolumn and materialized-column optimizations, while preserving column-level `SELECT` access checks on the `ALIAS` column.
+
+Supports `mapFilter`, `mapApply` (value transforms and ASCII `startsWith`/`substring` prefix slicing on `String` keys), `mapUpdate`, `if`, `multiIf`, literal `map`, `_CAST`, and nested `ALIAS` columns. With `enable_early_constant_folding = 1` on non-distributed queries, constant/dictionary expressions inside the `ALIAS` (such as `dictGet`, `dictHas`, `currentUser`, `currentRoles`, and constant-folding `arrayExists`/`arrayAll` over arrays of at most `64` elements) may fold early and dead conditional branches are eliminated (which can alter exception behavior on unreachable branches).
+
+Automatically skipped for distributed parallel-replica queries, `Nullable` / `LowCardinality(Nullable(...))` keys, `join_use_nulls = 1` over joins, `group_by_use_nulls = 1` with `ROLLUP`/`CUBE`/`GROUPING SETS`, `GROUP BY` on the whole `Map`/`ALIAS` column, `short_circuit_function_evaluation = 'disable'` when `mapFilter`/`mapApply` inspects values, and dynamic runtime keys (which fall back to normal `ALIAS` evaluation).
+
+The default is `false`.
+
+Possible values:
+
+- true, false
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New experimental setting to push constant-key Map lookups into ALIAS column expressions."}) \
+    DECLARE(Bool, optimize_map_materialized_columns, false, R"(
+Enable substituting constant-key `Map` element lookups (`col['const_key']`) on plain `MergeTree`-family tables (such as `MergeTree`, `ReplicatedMergeTree`, and `SharedMergeTree`, excluding specialized merging engines like `ReplacingMergeTree`, `SummingMergeTree`, `AggregatingMergeTree`, `CollapsingMergeTree`, and queries with `FINAL`) with matching `MATERIALIZED` columns defined as `col['const_key']` of the exact same type and without a column `TTL`.
+
+When enabled, queries can use primary-key and skip-index pruning on the `MATERIALIZED` column instead of scanning the full `Map`. Assumes matching `MATERIALIZED` columns are kept in sync with the underlying `Map` column: `ALTER TABLE ... UPDATE` (or lightweight updates) on the `Map` column does not automatically recompute dependent `MATERIALIZED` columns unless `MATERIALIZE COLUMN` is also run, and writing a `MATERIALIZED` column directly with `insert_allow_materialized_columns` can also diverge.
+
+The optimization is automatically skipped for distributed parallel-replica queries, queries with `join_use_nulls = 1` over joins, `group_by_use_nulls = 1` with `ROLLUP`/`CUBE`/`GROUPING SETS`, queries grouping by the whole `Map` column, and non-primary-key `MATERIALIZED` columns when the whole `Map` is also read by the query. Direct lookups require `SELECT` privilege on the `MATERIALIZED` column.
+
+The default is `false`.
+
+Possible values:
+
+- true, false
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New experimental setting to rewrite constant-key Map element lookups into matching MATERIALIZED columns on plain MergeTree tables."}) \
     DECLARE(Bool, optimize_append_index, false, R"(
 Use [constraints](/reference/statements/create/table#constraints) in order to append index condition. The default is `false`.
 

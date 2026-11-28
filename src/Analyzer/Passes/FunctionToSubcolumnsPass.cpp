@@ -1276,6 +1276,9 @@ bool canOptimizeDistinctJSONPaths(
 ///   * subquery columns (source is QueryNode or UnionNode), which are not storage columns.
 ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
 {
+    if (column_node->getAccessCheckColumnName())
+        return nullptr;
+
     auto initial_source = column_node->getColumnSource();
     if (!initial_source->as<TableNode>() && !initial_source->as<TableFunctionNode>())
         return nullptr;
@@ -1283,7 +1286,7 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
     while (column_node->hasExpression())
     {
         auto * inner = column_node->getExpression()->as<ColumnNode>();
-        if (!inner)
+        if (!inner || inner->getAccessCheckColumnName())
             return nullptr;
         /// Every step must come from the same TableNode as the outer column. This rejects
         /// ARRAY JOIN, JOIN USING, and subquery-resolved aliases whose expression happens to be
@@ -1350,7 +1353,9 @@ getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & c
         return {};
 
     auto * first_argument_column_node = function_arguments_nodes.front()->as<ColumnNode>();
-    if (!first_argument_column_node || first_argument_column_node->getColumnName() == "__grouping_set")
+    if (!first_argument_column_node
+        || first_argument_column_node->getColumnName() == "__grouping_set"
+        || first_argument_column_node->getAccessCheckColumnName())
         return {};
 
     /// For ALIAS columns whose body is just another ColumnNode (i.e. `c ALIAS some_storage_column`, maybe chained),
@@ -1423,7 +1428,8 @@ getTypedNodesForChainedOptimization(
     auto * first_argument_column_node = current->as<ColumnNode>();
     if (!first_argument_column_node
         || first_argument_column_node->getColumnName() == "__grouping_set"
-        || first_argument_column_node->hasExpression())
+        || first_argument_column_node->hasExpression()
+        || first_argument_column_node->getAccessCheckColumnName())
         return {};
 
     auto column_source = first_argument_column_node->getColumnSource();

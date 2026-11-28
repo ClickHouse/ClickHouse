@@ -1,0 +1,62 @@
+<test>
+
+    <settings>
+        <optimize_map_alias_pushdown>1</optimize_map_alias_pushdown>
+        <optimize_map_materialized_columns>1</optimize_map_materialized_columns>
+    </settings>
+
+    <create_query>
+CREATE TABLE perf_alias_pushdown_logs
+(
+    ts UInt64,
+    raw_attrs Map(String, String),
+    __mat_service String MATERIALIZED raw_attrs['service'],
+    hot_attrs Map(String, String),
+    cold_attrs Map(String, String),
+    attrs_masked Map(String, String) ALIAS mapApply(
+        (k, v) -> (k, multiIf(
+            k = 'ssn', '***',
+            k = 'email', concat('***@', splitByChar('@', v)[2]),
+            v
+        )),
+        mapFilter((k, v) -> k NOT IN ('secret_drop', 'audit_only'), raw_attrs)
+    ),
+    attrs_split Map(String, String) ALIAS mapUpdate(
+        mapFilter((k, v) -> k NOT IN ('service', 'status'), cold_attrs),
+        mapFilter((k, v) -> k IN ('service', 'status'), hot_attrs)
+    ),
+    merged_c Map(String, String),
+    merged_a Map(String, String) ALIAS mapApply(
+        (k, v) -> (substring(k, 3), v),
+        mapFilter((k, v) -> startsWith(k, 'a.'), merged_c)
+    )
+)
+ENGINE = MergeTree
+ORDER BY (__mat_service, ts)
+SETTINGS index_granularity = 8192
+    </create_query>
+
+    <fill_query>
+INSERT INTO perf_alias_pushdown_logs
+SELECT
+    number AS ts,
+    cast((
+        ['service', 'env', 'ssn', 'email', 'secret_drop', 'k1', 'k2', 'k3', 'k4', 'k5'],
+        [concat('svc_', toString(number % 20)), 'prod', '123-45', concat('user', toString(number % 100), '@example.com'), 'hidden',
+         'v1', 'v2', 'v3', 'v4', toString(number)]
+    ), 'Map(String, String)') AS raw_attrs,
+    map('service', concat('svc_', toString(number % 20)), 'status', '200') AS hot_attrs,
+    map('trace_id', toString(number), 'host', 'h1', 'region', 'us-east') AS cold_attrs,
+    map('a.foo', toString(number), 'a.bar', 'bar', 'b.baz', 'baz') AS merged_c
+FROM numbers_mt(200000)
+SETTINGS max_insert_threads = 8
+    </fill_query>
+
+    <query>SELECT count() FROM perf_alias_pushdown_logs WHERE attrs_masked['service'] = 'svc_7'</query>
+    <query>SELECT count() FROM perf_alias_pushdown_logs WHERE NOT ignore(attrs_masked['secret_drop'])</query>
+    <query>SELECT count() FROM perf_alias_pushdown_logs WHERE attrs_masked['email'] = '***@example.com'</query>
+    <query>SELECT count() FROM perf_alias_pushdown_logs WHERE attrs_split['service'] = 'svc_7'</query>
+    <query>SELECT count() FROM perf_alias_pushdown_logs WHERE merged_a['foo'] = '42'</query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_alias_pushdown_logs</drop_query>
+</test>

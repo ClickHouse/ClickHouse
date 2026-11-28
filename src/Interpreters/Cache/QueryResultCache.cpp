@@ -340,7 +340,9 @@ bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, QueryResultCa
 
     if ((skip_context_check || context->getCanUseQueryResultCache()) && hasQueryResultCacheWriteBackend(context, on_disk_cache))
     {
-        const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
+        const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context)
+            || context->queryHasNonDeterministicAlias()
+            || (context->hasQueryContext() && context->getQueryContext()->queryHasNonDeterministicAlias());
         const bool ast_contains_system_tables = astContainsSystemTables(ast, context);
 
         const QueryResultCacheNondeterministicFunctionHandling nondeterministic_function_handling
