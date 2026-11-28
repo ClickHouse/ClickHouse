@@ -1,0 +1,22 @@
+--- bounded, no cursor
+t1	1	1	0
+t1	2	1	1
+t1	3	2	0
+t2	10	1	0
+t2	20	2	0
+t2	30	2	1
+--- bounded, with cursor
+t1	3
+t2	30
+--- merge table function, with cursor
+t1	3
+t2	30
+--- a table without STREAM support
+ILLEGAL_STREAM
+--- unbounded, with cursor
+t1 4
+t2 40
+--- incremental refresh
+round1	8	110
+round2	10	165
+round3	10	165
