@@ -11,7 +11,7 @@
 # a branch whose correspondence stays ambiguous keeps its decoded type, so no guess is ever made. Children the
 # writer stores as one Arrow type, such as `IPv6` and `Int128`, are told apart by the child names it writes.
 # A composite branch needs the same shape and a field correspondence the repair cast realises without
-# defaulting a target field or pairing two disjoint name sets positionally.
+# defaulting a target field.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -247,8 +247,7 @@ columns = {
         ["b", "i"], [0, 0, 0, 1], [0, 0, 2, 0], 4),
     # A composite branch takes an alternative of the same shape, but only under a field correspondence the
     # repair cast realises without inventing a value: a target field the struct does not have would be
-    # filled with a default, and two disjoint name sets are paired positionally, so a field named `b` would
-    # come back holding `a`.
+    # filled with a default.
     "struct_utf8": dense(
         [pa.StructArray.from_arrays([pa.array([1, 2], type=pa.int32())], fields=[pa.field("a", pa.int32())]),
          pa.array(["x", "y"])], ["t", "s"]),
@@ -272,6 +271,11 @@ columns = {
     "struct_ci_dup": dense(
         [struct([("A", pa.int32(), pa.array([1, 2], type=pa.int32())),
                  ("a", pa.int32(), pa.array([3, 4], type=pa.int32()))], nullable=False),
+         fsb], ["t", "f"]),
+    # Two fields that one requested name matches only case-insensitively.
+    "struct_ci_amb": dense(
+        [struct([("Ab", pa.int32(), pa.array([1, 2], type=pa.int32())),
+                 ("aB", pa.int32(), pa.array([3, 4], type=pa.int32()))], nullable=False),
          fsb], ["t", "f"]),
     # Neither branch prefers a requested alternative and both match both, so nothing is assigned.
     "binary_fsb": dense([pa.array([b"aa", b"bb"], type=pa.binary()), fsb], ["b", "f"]),
@@ -434,6 +438,9 @@ read_column struct_ci_dup 'Variant(Tuple(A Int32, a Int32), IPv6)' Arrow \
     "input_format_arrow_case_insensitive_column_matching = 1"
 echo "--- and a case-sensitive lookup names each of those two fields exactly, so a widening one reads back ---"
 read_column struct_ci_dup 'Variant(Tuple(A Int64, a Int64), IPv6)'
+echo "--- as does the case-insensitive one, which prefers the field spelled the same, as in a plain column ---"
+read_column struct_ci_dup 'Variant(Tuple(A Int64, a Int64), IPv6)' Arrow \
+    "input_format_arrow_case_insensitive_column_matching = 1"
 
 echo "--- a date32 branch is excluded by design, so this stays rejected ---"
 rejected date32_utf8 'Variant(Int32, String)'
@@ -451,8 +458,8 @@ echo "--- and so does one target field among fields the struct does have ---"
 rejected struct_fields 'Variant(Tuple(a Int32, c Int32), String)'
 echo "--- the case-insensitive match is the setting's, so by default a case-differing field is rejected ---"
 rejected struct_ci 'Variant(Tuple(a Int32, b Int32), String)'
-echo "--- and under that setting two fields differing only in case make the lookup ambiguous, so it is rejected ---"
-rejected struct_ci_dup 'Variant(Tuple(A Int64, a Int64), IPv6)' \
+echo "--- and under that setting a field matching two fields only case-insensitively is ambiguous, so it is rejected ---"
+rejected struct_ci_amb 'Variant(Tuple(ab Int32), IPv6)' \
     "input_format_arrow_case_insensitive_column_matching = 1"
 echo "--- and the date32 exclusion is inherited by the recursion into a struct field ---"
 rejected struct_fields 'Variant(Tuple(d Int32), String)'

@@ -356,6 +356,15 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
 namespace
 {
 
+RequestedTypeCastSettings requestedTypeCastSettings(const FormatSettings & format_settings)
+{
+    return {
+        .null_as_default = format_settings.null_as_default,
+        .case_insensitive = format_settings.arrow.case_insensitive_column_matching,
+        .null_tuple_as_default = !format_settings.schema_inference_allow_nullable_tuple_type,
+    };
+}
+
 /// An integer or float alternative strictly wider than a `width`-byte decoded integer.
 bool variantElementWidensTo(const DataTypePtr & alternative, size_t width)
 {
@@ -377,17 +386,8 @@ bool variantElementPrefersType(const DataTypePtr & decoded, const DataTypePtr & 
 std::optional<DataTypes> variantElementTargets(const DataTypeVariant & from, const DataTypeVariant & to, bool case_insensitive);
 bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative, bool case_insensitive);
 
-bool namesDistinctCaseInsensitively(const Strings & names)
-{
-    UnorderedSetWithMemoryTracking<String> lowered;
-    for (const auto & name : names)
-        if (!lowered.insert(boost::to_lower_copy(name)).second)
-            return false;
-    return true;
-}
-
-/// The tuple cast defaults a target field the source lacks and pairs disjoint name sets by position, so a
-/// named target tuple must find each of its fields by name in the decoded struct.
+/// The tuple cast defaults a target field the source lacks, so each field of a named target tuple must be
+/// found in the decoded struct the way the cast matches it.
 bool variantElementCompositeMatchesType(const DataTypePtr & decoded, const DataTypePtr & to, bool case_insensitive)
 {
     const auto child_matches = [&](const DataTypePtr & from_child, const DataTypePtr & to_child)
@@ -422,17 +422,14 @@ bool variantElementCompositeMatchesType(const DataTypePtr & decoded, const DataT
     {
         if (!from_tup->hasExplicitNames() || to_elements.empty())
             return false;
-        if (case_insensitive
-            && !(namesDistinctCaseInsensitively(from_tup->getElementNames())
-                 && namesDistinctCaseInsensitively(to_tup->getElementNames())))
+        bool ambiguous = false;
+        const auto positions = DataTypeTuple::matchElementsByName(
+            from_tup->getElementNames(), to_tup->getElementNames(), case_insensitive, &ambiguous);
+        if (ambiguous)
             return false;
-        const Strings & to_names = to_tup->getElementNames();
         for (size_t i = 0; i < to_elements.size(); ++i)
-        {
-            const auto position = from_tup->tryGetPositionByName(to_names[i], case_insensitive);
-            if (!position || !child_matches(from_elements[*position], to_elements[i]))
+            if (!positions[i] || !child_matches(from_elements[*positions[i]], to_elements[i]))
                 return false;
-        }
         return true;
     }
     if (from_elements.size() != to_elements.size())
@@ -854,6 +851,7 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
 
     const auto & variant_col = assert_cast<const ColumnVariant &>(*col);
     const size_t num_elements = variant_col.getNumVariants();
+    const RequestedTypeCastSettings cast_settings = requestedTypeCastSettings(format_settings);
 
     Columns new_elements(num_elements);
     DataTypes new_types(num_elements);
@@ -872,17 +870,13 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
             std::tie(element, element_type) = reinterpretRawBytes(
                 element, from_element, target, /*ancestor_nulls=*/nullptr, case_insensitive, /*field=*/nullptr,
                 format_settings, /*repair_variants=*/true);
-            /// The tuple cast pairs disjoint name sets by position, so case-differing names are aligned first.
-            if (case_insensitive && element_type->getName() != target->getName())
-                element_type = alignStructFieldNamesCaseInsensitive(element_type, target);
             /// By name, not `equals`: `Bool` and `UInt8` compare equal yet the element must end up under
             /// exactly the requested one.
             if (element_type->getName() != target->getName())
             {
-                auto prepared = prepareArrowColumnForCast({element, element_type, ""}, target, format_settings);
-                if (format_settings.null_as_default)
-                    insertNullAsDefaultIfNeeded(prepared, {target->createColumn(), target, ""}, 0, nullptr);
-                element = castColumn(prepared, target);
+                ColumnWithTypeAndName cast_element{element, element_type, ""};
+                castColumnToRequestedType(cast_element, target, cast_settings);
+                element = std::move(cast_element.column);
                 element_type = target;
             }
         }
@@ -1021,11 +1015,7 @@ Chunk ArrowIPC::buildChunk(
     /// The backing block must outlive the extractor (it holds a reference into it), so keep both.
     UnorderedMapWithMemoryTracking<size_t, std::pair<std::shared_ptr<Block>, std::shared_ptr<NestedColumnExtractHelper>>> nested_extractors;
 
-    const RequestedTypeCastSettings cast_settings{
-        .null_as_default = format_settings.null_as_default,
-        .case_insensitive = case_insensitive,
-        .null_tuple_as_default = !format_settings.schema_inference_allow_nullable_tuple_type,
-    };
+    const RequestedTypeCastSettings cast_settings = requestedTypeCastSettings(format_settings);
 
     Columns columns;
     columns.reserve(header.columns());
