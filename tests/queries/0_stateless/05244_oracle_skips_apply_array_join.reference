@@ -1,0 +1,10 @@
+lambda arrayJoin: no mismatch
+lambda unnest: no mismatch
+bare function name of a UDF: no mismatch
+COLUMNS matcher: no mismatch
+qualified asterisk: no mismatch
+second of two chained transformers: no mismatch
+transformer without arrayJoin: checked
+arrayJoin scoped inside a subquery: checked
+arrayJoin scoped inside a subquery: no mismatch
+call written in the select list: not checked

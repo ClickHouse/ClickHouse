@@ -11,6 +11,10 @@ CREATE TABLE t_check_array_join (k UInt32, arr Array(UInt32), CONSTRAINT c CHECK
 CREATE TABLE t_check_array_join (k UInt32, arr Array(UInt32), CONSTRAINT c CHECK unnest(arr) > 0) ENGINE = MergeTree ORDER BY k; -- { serverError INCORRECT_QUERY }
 CREATE TABLE t_check_array_join (k UInt32, arr Array(UInt32), CONSTRAINT c CHECK UNNEST(arr) > 0) ENGINE = MergeTree ORDER BY k; -- { serverError INCORRECT_QUERY }
 
+-- An `APPLY` column transformer keeps its lambda and its function name outside the node's children,
+-- so a walk over the children alone does not see the call written inside one.
+CREATE TABLE t_check_array_join (k UInt32, arr Array(UInt32), CONSTRAINT c CHECK * APPLY (x -> arrayJoin([x]))) ENGINE = MergeTree ORDER BY k; -- { serverError INCORRECT_QUERY }
+
 -- An `ASSUME` constraint is substituted into queries by the constraint optimizer, and it has no more
 -- business changing the number of rows than a `CHECK` has.
 CREATE TABLE t_check_array_join (k UInt32, arr Array(UInt32), CONSTRAINT c ASSUME arrayJoin(arr) > 0) ENGINE = MergeTree ORDER BY k; -- { serverError INCORRECT_QUERY }
