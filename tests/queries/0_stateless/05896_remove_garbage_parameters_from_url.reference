@@ -1,0 +1,35 @@
+http://yandex.ru/clck/jsredir?from=yandex.ru;search%2F;web;;&text=&etext=1004&l10n=ru&cts=1458904227333&mc=1.584962500721156
+https://www.youtube.com/watch?t=42
+https://example.com/?a=1&b=2
+https://example.com/callback#token_type=bearer
+https://example.com/?s=d41d8cd98f00b20
+https://example.com/?a=aaaaaaaaaaaaaaaa&b=0000000000000000&c=1458904227333123&d=0a0a0a0a0a0a0a0a&e=deadbeefdeadbeef
+https://example.com/?utm_campaign=SummerSaleCampaign&utm_content=summer_sale_2024&q=how+to+cook+pasta+at+home&host=www.example.com&path=/account/settings/profile&ts=1458904227333&v=1.584962500721156
+https://example.com/?v=dQw4w9WgXc
+https://example.com/?v=dQw4w9WgXc=
+https://example.com/?
+https://example.com/?v=dQw4w9WgXcQ===
+https://example.com/?
+https://example.com/?v=Xyz1Xyz1Xyz1Xyz1Xyz1
+https://example.com/?v=dQw4w9WgXcQ.mp4
+https://example.com/?v=.dQw4w9WgXcQ
+https://example.com/?v=dQw4w9WgXcQ..q3Cx9Lm2RtW
+https://example.com/?
+https://example.com/?
+https://example.com/?a=1
+https://example.com/?a=1
+https://example.com/?
+https://example.com/?#top
+https://example.com/?a=1#
+https://example.com/?flag&&e=&dQw4w9WgXcQ
+https://example.com/#/route?tab=1
+https://example.com/#/route?
+https://example.com/?a=1&x?b=2
+https://example.com/?redirect=/a?v=dQw4w9WgXcQ&b=2
+https://example.com/path/dQw4w9WgXcQ
+
+?
+https://www.youtube.com/watch?t=42
+https://www.youtube.com/watch?t=42	Nullable(String)
+\N	Nullable(String)
+https://www.youtube.com/watch?t=42	LowCardinality(String)
