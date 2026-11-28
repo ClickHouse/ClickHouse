@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: output row order depends on MergeTree sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 select * from (SELECT number as a FROM numbers(10)) t1 PASTE JOIN (select number as a from numbers(10)) t2;
 select * from (SELECT number as a FROM numbers(10)) t1 PASTE JOIN (select number as a from numbers(10) order by a desc) t2;
 create table if not exists test (number UInt64) engine=Memory;

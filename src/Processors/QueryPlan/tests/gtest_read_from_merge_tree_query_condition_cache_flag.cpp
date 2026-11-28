@@ -89,7 +89,7 @@ struct TableFixture
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
         auto partition_key = metadata.partition_key.expression_list_ast->clone();
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            columns, partition_key, minmax_columns, metadata.primary_key, &metadata.partition_key, context));
+            columns, partition_key, minmax_columns, metadata.primary_key, metadata.sorting_key, &metadata.partition_key, context));
 
         auto storage_settings = std::make_unique<MergeTreeSettings>(context->getMergeTreeSettings());
 
@@ -157,7 +157,7 @@ struct TableFixture
 
     /// A read of the (empty) table, built through the same `readFromParts` entry point the
     /// deserializer uses, so both sides of the round-trip are shaped identically.
-    std::unique_ptr<ReadFromMergeTree> makeRead() const
+    [[nodiscard]] std::unique_ptr<ReadFromMergeTree> makeRead() const
     {
         const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 

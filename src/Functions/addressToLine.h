@@ -101,8 +101,8 @@ protected:
             if (!object->dsym)
                 return {object->name};
             auto dwarf_it = cache.dwarfs.try_emplace(object->name, object->dsym).first;
-            /// Convert runtime address to linked (pre-ASLR) address for DWARF lookup.
-            uintptr_t dwarf_addr = addr - object->slide;
+            /// Convert the offset from the image start to the linked (pre-ASLR) address for DWARF lookup.
+            uintptr_t dwarf_addr = addr + uintptr_t(object->address_begin) - object->slide;
 #else
             auto dwarf_it = cache.dwarfs.try_emplace(object->name, object->elf).first;
             if (!std::filesystem::exists(object->name))

@@ -36,12 +36,13 @@ class LogClusterUnavailable(LogClusterError):
     """The cluster never answered about this query.
 
     The endpoint or its credentials could not be resolved, every POST failed at
-    the transport level, the answer did not come from the server at all (a
-    gateway, a proxy, a closed connection), or the server reported one of the
-    exception codes that describe its own load rather than the query - the
-    shared cluster goes through minutes-long server-wide memory-pressure
-    windows that fail every query with Code 241. Nothing was read, so this says
-    nothing about the caller or about the commit it reports on.
+    the transport level or the readiness probe timed out after connecting, the
+    answer did not come from the server at all (a gateway, a proxy, a closed
+    connection), or the server reported one of the exception codes that
+    describe its own load rather than the query - the shared cluster goes
+    through minutes-long server-wide memory-pressure windows that fail every
+    query with Code 241. Nothing was read, so this says nothing about the
+    caller or about the commit it reports on.
     """
 
 
@@ -60,9 +61,10 @@ class LogClusterQueryError(LogClusterError):
 class LogClusterNotReady(LogClusterError):
     """The endpoint never became ready.
 
-    A readiness probe that never answers is indistinguishable from a rotated
-    password or a deleted SSM parameter, and completing green on that would
-    blank the check fleet-wide for as long as the condition lasts.
+    A readiness probe without a secret, without a connection or rejected by
+    the server is indistinguishable from a rotated password, a deleted SSM
+    parameter or a wrong endpoint, and completing green on that would blank
+    the check fleet-wide for as long as the condition lasts.
     """
 
 
@@ -127,9 +129,44 @@ class LogCluster:
         ),
     )
 
+    # The columns that tell apart the servers of one check: the integration
+    # tests run many servers per check and fill these in per instance (see
+    # tests/integration/helpers/ci_logs_export.py), every other job exports one
+    # server and leaves them empty. They belong to the `system.*_log` export
+    # only - the hand-made tables of LogClusterBuildProfileQueries do not have
+    # them - so they extend META_COLUMNS in `log_export_columns` rather than
+    # being a part of it.
+    PER_SERVER_COLUMNS = (
+        MetaColumn(
+            name="test_name",
+            type="LowCardinality(String)",
+            cast="toLowCardinality('{}')",
+            index="INDEX ix_test (test_name) TYPE set(100)",
+        ),
+        MetaColumn(
+            name="node_name",
+            type="LowCardinality(String)",
+            cast="toLowCardinality('{}')",
+        ),
+    )
+
+    # The META_COLUMNS column the per-server columns follow.
+    PER_SERVER_COLUMNS_AFTER = "check_name"
+
     @classmethod
     def meta_columns(cls):
         return cls.META_COLUMNS
+
+    @classmethod
+    def log_export_columns(cls):
+        """The columns of the `system.*_log` export: META_COLUMNS with
+        PER_SERVER_COLUMNS spliced in after PER_SERVER_COLUMNS_AFTER."""
+        columns = []
+        for column in cls.META_COLUMNS:
+            columns.append(column)
+            if column.name == cls.PER_SERVER_COLUMNS_AFTER:
+                columns.extend(cls.PER_SERVER_COLUMNS)
+        return tuple(columns)
 
     @classmethod
     def workflow_start_time(cls):
@@ -168,20 +205,64 @@ class LogCluster:
         followed by their skip indexes. The trailing separator belongs to it,
         the script splices the fragment right after the opening parenthesis of
         a `SHOW CREATE TABLE` output."""
-        columns = cls.meta_columns()
+        columns = cls.log_export_columns()
         return "".join(
             [f"{c.name} {c.type}, " for c in columns]
             + [f"{c.index}, " for c in columns if c.index]
         )
 
     @classmethod
-    def extra_columns_expression(cls, check_start_time, check_name="", commit_sha=""):
+    def _expression(cls, columns, values):
+        return ", ".join(
+            f"{c.cast.format(values[c.name])} AS {c.name}" for c in columns
+        )
+
+    @classmethod
+    def log_export_values(
+        cls, check_start_time, check_name="", commit_sha="", test_name="", node_name=""
+    ):
+        """Value of every column of the `system.*_log` export."""
+        values = cls.meta_values(check_start_time, check_name, commit_sha)
+        values["test_name"] = test_name
+        values["node_name"] = node_name
+        return values
+
+    @classmethod
+    def extra_columns_expression(
+        cls, check_start_time, check_name="", commit_sha="", test_name="", node_name=""
+    ):
         """`EXTRA_COLUMNS_EXPRESSION` for setup_log_cluster.sh: the same
         columns as SELECT expressions, in the same order as the DDL above."""
-        values = cls.meta_values(check_start_time, check_name, commit_sha)
-        return ", ".join(
-            f"{c.cast.format(values[c.name])} AS {c.name}" for c in cls.meta_columns()
+        return cls._expression(
+            cls.log_export_columns(),
+            cls.log_export_values(
+                check_start_time, check_name, commit_sha, test_name, node_name
+            ),
         )
+
+    @classmethod
+    def extra_columns_expression_head(
+        cls, check_start_time, check_name="", commit_sha=""
+    ):
+        """The part of `extra_columns_expression` before the per-server columns.
+
+        A job that runs more than one server per check - the integration tests -
+        gets the expression in two parts and fills the per-server columns in
+        itself, for every server it starts."""
+        columns = cls.log_export_columns()
+        head = columns[: columns.index(cls.PER_SERVER_COLUMNS[0])]
+        return cls._expression(
+            head, cls.meta_values(check_start_time, check_name, commit_sha)
+        )
+
+    @classmethod
+    def extra_columns_expression_tail(cls):
+        """The part of `extra_columns_expression` after the per-server columns.
+
+        None of these columns depends on the check, so it takes no arguments."""
+        columns = cls.log_export_columns()
+        tail = columns[columns.index(cls.PER_SERVER_COLUMNS[-1]) + 1 :]
+        return cls._expression(tail, cls.meta_values(""))
 
     @classmethod
     def meta_column_names(cls):
@@ -213,8 +294,9 @@ class LogCluster:
         # it with an exception, classified like a `select` answer: a
         # LogClusterUnavailable for the codes about its own load, a
         # LogClusterQueryError otherwise (e.g. Code 516 for a rotated
-        # password). None when the probe succeeded or the server did not
-        # answer it (no secret, no connection, a gateway).
+        # password). A LogClusterUnavailable as well when the probe connected
+        # and its answer timed out. None when the probe succeeded, had no
+        # secret, could not connect, or got a gateway answer.
         self.probe_error = None
 
     def close_session(self):
@@ -258,6 +340,10 @@ class LogCluster:
             )
         except Exception as ex:
             print(f"ERROR: LogCluster connection failed with exception [{ex}]")
+            # A read timeout means the name resolved and the connection was accepted:
+            # an outage of the cluster, not a wrong endpoint, which fails to resolve or connect.
+            if isinstance(ex, requests.exceptions.ReadTimeout):
+                self.probe_error = LogClusterUnavailable(f"the readiness probe timed out: {ex}")
             return False
         if not response.ok:
             print(
@@ -509,9 +595,10 @@ class LogCluster:
         # of them (no secret, or `SELECT 1` never succeeded). When the last
         # probe was answered by the server rejecting even `SELECT 1` about its
         # own load (a replica stuck above its memory limit answers Code 241 to
-        # every query, for days), it is the same outage `select` reports green
-        # after a POST, and the endpoint is not in question: the server itself
-        # answered. A missing secret, no connection, a gateway answer or a
+        # every query, for days), or connected and then timed out waiting for
+        # the answer, it is the same outage `select` reports green after a
+        # POST, and the endpoint is not in question: it resolved and accepted
+        # the connection. A missing secret, no connection, a gateway answer or a
         # probe the server rejected (Code 516 for a rotated password) stay
         # fail-closed.
         if isinstance(self.probe_error, LogClusterUnavailable):

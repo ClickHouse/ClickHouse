@@ -144,19 +144,27 @@ ReadSettings PaimonTableClient::getPaimonMetadataReadSettings(bool disable_files
 std::pair<Int32, String> PaimonTableClient::getLatestTableSchemaInfo()
 {
     /// list all schema files
-    const auto schema_files = listFiles(
+    const auto listing = listPrefixNonRecursive(
         *object_storage,
         table_location,
         PAIMON_SCHEMA_DIR,
+        "",
         [](const RelativePathWithMetadata & path_with_metadata)
         {
             String relative_path = path_with_metadata.relative_path;
             String file_name(relative_path.begin() + relative_path.find_last_of('/') + 1, relative_path.end());
             return file_name.starts_with(PAIMON_SCHEMA_PREFIX);
         });
+    const auto & schema_files = listing.matched;
     if (schema_files.empty())
     {
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Paimon table with path {} doesn't exist", table_location);
+        throw Exception(
+            ErrorCodes::FILE_DOESNT_EXIST,
+            "The metadata file for Paimon table with path {} doesn't exist. No schema file was found under {}, "
+            "which held {}",
+            table_location,
+            listing.listed_prefix,
+            describeListedObjects(listing.entries, listing.listed_prefix, MAX_REPORTED_LISTING_ENTRIES));
     }
     /// find max schema version
     std::vector<std::pair<UInt32, String>> schema_files_with_versions;
@@ -262,7 +270,7 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
     }
 
     // find real latest snapshot
-    auto snapshot_files = listFiles(
+    auto snapshot_files = listFilesNonRecursive(
         *object_storage,
         table_location,
         PAIMON_SNAPSHOT_DIR,
@@ -344,7 +352,7 @@ std::optional<Int64> PaimonTableClient::getEarliestSnapshotId()
     }
 
     /// The hint is missing, unusable or stale - the snapshot directory is the source of truth.
-    auto snapshot_files = listFiles(
+    auto snapshot_files = listFilesNonRecursive(
         *object_storage,
         table_location,
         PAIMON_SNAPSHOT_DIR,

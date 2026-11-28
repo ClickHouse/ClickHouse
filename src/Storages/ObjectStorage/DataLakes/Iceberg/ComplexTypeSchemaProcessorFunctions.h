@@ -54,9 +54,9 @@ public:
     {
     }
 
-    ChangeType getType() const { return change_type; }
+    [[nodiscard]] ChangeType getType() const { return change_type; }
 
-    const std::vector<Edge> & getPath() const { return root; }
+    [[nodiscard]] const std::vector<Edge> & getPath() const { return root; }
 
 protected:
     ChangeType change_type;
@@ -71,6 +71,10 @@ public:
     explicit IIcebergSchemaTransform(std::vector<IcebergChangeSchemaOperation::Edge> path_);
 
     virtual void transformChildNode(Tuple & initial_node) = 0;
+
+    /// The bytes that the transform adds to every row, e.g. the `initial-default` of a field added to a struct.
+    /// Values added to the elements of arrays and maps are not counted: their number per row is unknown.
+    [[nodiscard]] virtual size_t getBytesPerRowAdded() const { return 0; }
 
     void transform(ComplexNode & initial_node);
 
@@ -103,6 +107,9 @@ public:
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override;
+
+    /// See `EvolutionFunctionStruct::getBytesPerRowOfAddedFields`.
+    [[nodiscard]] size_t getBytesPerRowOfAddedFields() const;
 
 private:
     /// To process schema evolution in case when we have tree-based tuple we use DFS
@@ -166,6 +173,14 @@ public:
     bool isDeterministic() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+
+    /// The bytes per row of the fields (with their `initial-default`s) that the function adds to the struct, not counting
+    /// those added inside arrays and maps. The reader of a data file does not form them, so a reader that bounds the size
+    /// of its chunks by the memory limit has to be told about them.
+    [[nodiscard]] size_t getBytesPerRowOfAddedFields() const
+    {
+        return ExecutableEvolutionFunction(types[0], old_types[0], old_json, field).getBytesPerRowOfAddedFields();
+    }
 
 private:
     DataTypes types;

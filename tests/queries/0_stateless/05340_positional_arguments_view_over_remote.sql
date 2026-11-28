@@ -1,5 +1,8 @@
 -- Tags: distributed
 
+-- Disable force_primary_key_reverse_order: the reference pins rows picked from the physical order of the table, which depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 -- `ORDER BY ALL` expands to the whole projection, so the constant `3` reaches the shard query as a
 -- bare literal. The local replica of a `remote` read inside a view, and a `Merge` child re-analyzed
 -- from its AST, must keep it a constant: the shard query is printed from a resolved query tree.

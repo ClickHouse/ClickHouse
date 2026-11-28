@@ -7,18 +7,21 @@ keywords: ['postgres security', 'ip whitelisting', 'encryption', 'tls', 'ssl', '
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
-
 ClickHouse Managed Postgres is built with enterprise-grade security features to protect your data and meet compliance requirements. This page covers network security, encryption, and backup retention policies.
 
 ## IP whitelisting {#ip-whitelisting}
 
 IP filters control which source IP addresses are permitted to connect to your ClickHouse Managed Postgres instance, providing network-level access control to protect your database from unauthorized connections.
 
-<Image img="/images/managed-postgres/ip-filters.webp" alt="IP Access List configuration" size="md" border/>
+<div className="ch-image-md">
+
+<Frame>
+
+![IP Access List configuration](/images/managed-postgres/ip-filters.webp)
+
+</Frame>
+
+</div>
 
 ### Configuring IP filters {#configuring-ip-filters}
 
@@ -47,28 +50,14 @@ If no IP filters are configured, connections from all IP addresses are permitted
 
 ## Encryption {#encryption}
 
-ClickHouse Managed Postgres encrypts your data both at rest and in transit to ensure comprehensive data protection.
+ClickHouse Managed Postgres encrypts your data at rest and in transit.
 
 ### Encryption at rest {#encryption-at-rest}
 
-All data stored by ClickHouse Managed Postgres is encrypted at rest to protect against unauthorized access to the underlying storage infrastructure.
+Encryption at rest is enabled for every instance and can't be disabled. It's transparent to your applications and requires no configuration. It covers:
 
-#### NVMe storage encryption {#nvme-encryption}
-
-Your database files, transaction logs, and temporary files stored on NVMe drives are encrypted using industry-standard encryption algorithms. This encryption is transparent to your applications and requires no configuration.
-
-#### Object storage encryption {#s3-encryption}
-
-Backups and Write-Ahead Log (WAL) archives stored in object storage are also encrypted at rest. This includes:
-- Full daily backups
-- Incremental WAL archives
-- Point-in-time recovery data
-
-All backup data is stored in dedicated, isolated storage buckets with credentials scoped to each individual instance, ensuring that backup data remains secure and accessible only to authorized systems.
-
-<Info>
-Encryption at rest is enabled by default for all ClickHouse Managed Postgres instances and can't be disabled. No additional configuration is required.
-</Info>
+- **NVMe storage:** database files, transaction logs, and temporary files, encrypted using industry-standard encryption algorithms.
+- **Object storage:** full daily backups, incremental WAL archives, and point-in-time recovery data.
 
 ### Encryption in transit {#encryption-in-transit}
 
@@ -166,9 +155,6 @@ ClickHouse Managed Postgres automatically backs up your data to protect against 
 
 ### Backup security {#backup-security}
 
-Backups are stored with the same security guarantees as your primary data:
-- **Encryption at rest** in object storage
-- **Isolated storage buckets** per instance with scoped credentials
-- **Access control** limited to the Postgres Instance linked to the backup.
+Backups are [encrypted at rest](#encryption-at-rest) and stored in isolated storage buckets per instance, with credentials scoped so that only the Postgres instance linked to the backup can access them.
 
 For more details on backup strategies and point-in-time recovery, see the [Backup and restore](/products/managed-postgres/backup-and-restore) page.

@@ -64,3 +64,35 @@ TEST(Common, ConfigProcessorManyElements)
     /// More that 5 min is way too slow
     ASSERT_LE(enumerate_elapsed_ms, 300*1000);
 }
+
+TEST(Common, ConfigProcessorPathWithDotDotAfterSymlink)
+{
+    namespace fs = std::filesystem;
+
+    auto path = fs::path("/tmp/test_config_processor_dot_dot/");
+
+    fs::create_directories(path / "sub" / "dir");
+    fs::create_directories(path / "sub" / "config.d");
+    SCOPE_EXIT({ fs::remove_all(path); });
+    fs::create_directory_symlink("sub/dir", path / "link");
+
+    auto write_file = [](const fs::path & file, const std::string & data)
+    {
+        DB::WriteBufferFromFile out(file.string());
+        writeString(data, out);
+        out.finalize();
+    };
+
+    write_file(path / "config.xml", "<clickhouse><a>outer</a></clickhouse>");
+    write_file(path / "sub" / "config.xml", "<clickhouse><a>sub</a></clickhouse>");
+    write_file(path / "sub" / "config.d" / "b.xml", "<clickhouse><b>merged</b></clickhouse>");
+
+    /// `link/..` is `sub`, not the lexically normal `path`.
+    DB::ConfigProcessor processor((path / "link" / ".." / "config.xml").string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+    bool has_zk_includes = {};
+    DB::XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
+    DB::ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
+
+    ASSERT_EQ("sub", configuration->getString("a"));
+    ASSERT_EQ("merged", configuration->getString("b"));
+}

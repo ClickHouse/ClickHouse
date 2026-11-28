@@ -146,13 +146,13 @@ struct SocketInterruptablePollWrapper
         return pipe.fds_rw[1];
     }
 
-    PollResult poll(Poco::Timespan remaining_time, const ReadBufferFromPocoSocket & in)
+    PollResult poll(Poco::Timespan remaining_time, ReadBuffer & in)
     {
 
         bool socket_ready = false;
         bool fd_ready = false;
 
-        if (in.available() != 0)
+        if (in.poll(0))
             socket_ready = true;
 
         if (response_in.available() != 0)
@@ -605,7 +605,7 @@ void KeeperTCPHandler::runImpl()
         {
             using namespace std::chrono_literals;
 
-            PollResult result = poll_wrapper->poll(session_timeout, *in);
+            PollResult result = poll_wrapper->poll(session_timeout, getReadBuffer());
 
             if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
             {
@@ -619,7 +619,7 @@ void KeeperTCPHandler::runImpl()
             logging_stopwatch.restart();
             if (result.has_requests && !close_received)
             {
-                if (in->eof())
+                if (getReadBuffer().eof())
                 {
                     LOG_DEBUG(log, "Client closed connection, session id #{}", session_id);
                     break;
@@ -1039,7 +1039,7 @@ KeeperTCPHandler::~KeeperTCPHandler()
 }
 
 std::mutex KeeperTCPHandler::conns_mutex;
-std::unordered_set<KeeperTCPHandler *> KeeperTCPHandler::connections;
+[[clang::no_destroy]] std::unordered_set<KeeperTCPHandler *> KeeperTCPHandler::connections;
 
 void KeeperTCPHandler::registerConnection(KeeperTCPHandler * conn)
 {

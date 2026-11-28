@@ -1,17 +1,13 @@
 #pragma once
 
 #include <Common/WKB.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <base/types.h>
-
-#if USE_ARROW
-#    include <arrow/util/key_value_metadata.h>
-#    include <arrow/array/array_binary.h>
-#endif
 
 namespace DB
 {
@@ -57,11 +53,7 @@ struct GeoColumnMetadata
     std::optional<BboxCovering> covering_bbox;
 };
 
-#if USE_ARROW
-const std::string * extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata);
-#endif
-
-std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::string * geo_json_str);
+UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::string * geo_json_str);
 
 DataTypePtr getGeoDataType(GeoType type);
 

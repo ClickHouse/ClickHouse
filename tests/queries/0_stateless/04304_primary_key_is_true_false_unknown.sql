@@ -2,6 +2,8 @@
 -- truth-value predicates and their `IS NOT` variants on a `Nullable(Bool)`
 -- column used as the leading primary-key column.
 -- Follow-up to https://github.com/ClickHouse/ClickHouse/pull/99997
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS bool_pk;
 

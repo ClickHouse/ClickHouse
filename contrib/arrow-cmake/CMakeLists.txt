@@ -1,17 +1,12 @@
-# We dont use arrow's cmakefiles because they uses too many depends and download some libs in compile time
-# But you can update auto-generated parquet files manually:
-# cd {BUILD_DIR}/contrib/arrow/cpp/src/parquet && mkdir -p build && cd build
-# cmake .. -DARROW_COMPUTE=ON -DARROW_PARQUET=ON -DARROW_SIMD_LEVEL=NONE -DARROW_VERBOSE_THIRDPARTY_BUILD=ON
-#          -DARROW_BUILD_SHARED=1 -DARROW_BUILD_UTILITIES=OFF -DARROW_BUILD_INTEGRATION=OFF
-#          -DBoost_FOUND=1 -DARROW_TEST_LINKAGE="shared"
-# make -j8
-# copy {BUILD_DIR}/contrib/arrow/cpp/src/parquet/*.cpp,*.h -> {BUILD_DIR}/contrib/arrow-cmake/cpp/src/parquet/
-
-# Also useful parquet reader:
-# cd {BUILD_DIR}/contrib/arrow/cpp && mkdir -p build && cd build
-# cmake .. -DARROW_PARQUET=1 -DARROW_WITH_SNAPPY=1 -DPARQUET_BUILD_EXECUTABLES=1
-# make -j8
-# {BUILD_DIR}/contrib/arrow/cpp/build/release/parquet-reader some_file.parquet
+# Arrow and Parquet are implemented in ClickHouse: the native Parquet reader and writer
+# (`src/Processors/Formats/Impl/Parquet`), the native `Arrow` and `ArrowStream` formats and the Arrow C data interface
+# (`src/Processors/Formats/Impl/ArrowIPC`), and Arrow Flight on gRPC (`src/Server/ArrowFlight`,
+# `src/Storages/ArrowFlight`). The Apache Arrow C++ library and parquet-cpp are not built.
+#
+# Only the definitions of the formats are taken from `contrib/arrow`:
+# - the FlatBuffers schemas of the Arrow IPC metadata (`format/*.fbs`);
+# - the structures generated from `parquet.thrift` (`cpp/src/generated/parquet_types.*`);
+# - the protocol of Arrow Flight (`format/Flight.proto` and `format/FlightSql.proto`).
 
 # `ENABLE_PARQUET` is declared in `contrib/CMakeLists.txt`, before `flatbuffers-cmake`.
 if (NOT ENABLE_PARQUET)
@@ -19,55 +14,20 @@ if (NOT ENABLE_PARQUET)
     return()
 endif()
 
-# Support C11
-if(NOT DEFINED CMAKE_C_STANDARD)
-  set(CMAKE_C_STANDARD 11)
-endif()
-
-# This ensures that a standard higher than the minimum can be passed correctly
-if(NOT DEFINED CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 20)
-elseif(${CMAKE_CXX_STANDARD} VERSION_LESS 20)
-  message(FATAL_ERROR "Cannot set a CMAKE_CXX_STANDARD smaller than 20")
-endif()
-
-# We require a C++20 compliant compiler
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-set(ARROW_VERSION "25.0.0")
-string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" ARROW_BASE_VERSION "${ARROW_VERSION}")
-
-set(ARROW_VERSION_MAJOR "25")
-set(ARROW_VERSION_MINOR "0")
-set(ARROW_VERSION_PATCH "0")
-
-if(ARROW_VERSION_MAJOR STREQUAL "0")
-    # Arrow 0.x.y => SO version is "x", full SO version is "x.y.0"
-    set(ARROW_SO_VERSION "${ARROW_VERSION_MINOR}")
-    set(ARROW_FULL_SO_VERSION "${ARROW_SO_VERSION}.${ARROW_VERSION_PATCH}.0")
-else()
-    # Arrow 1.x.y => SO version is "10x", full SO version is "10x.y.0"
-    math(EXPR ARROW_SO_VERSION "${ARROW_VERSION_MAJOR} * 100 + ${ARROW_VERSION_MINOR}")
-    set(ARROW_FULL_SO_VERSION "${ARROW_SO_VERSION}.${ARROW_VERSION_PATCH}.0")
-endif()
-
-
 set(ARROW_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
 
 # === Arrow IPC metadata bindings
-# Arrow's pre-generated `generated/*_generated.h` are pinned by a `static_assert` to the FlatBuffers
-# version they were produced with, so regenerate them with our `flatc`. The flags are from Arrow's
-# `cpp/build-support/update-flatbuffers.sh`, minus `--scoped-enums`, which Arrow's code does not use.
+# Generated with our `flatc` from the schemas of the format. `Message.fbs` includes the schemas of tensors,
+# so their bindings are generated too.
 
-if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
     set(FLATC_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/flatbuffers-cmake/flatc")
 else ()
     set(FLATC_EXECUTABLE $<TARGET_FILE:flatc>)
 endif()
 
 set(ARROW_FORMAT_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/format")
-# The bindings live in a "generated" subdirectory of the include directory, because that is how
-# Arrow's sources spell them: #include "generated/Message_generated.h".
+# The bindings live in a "generated" subdirectory of the include directory: #include <generated/Message_generated.h>.
 set(ARROW_IPC_GENERATED_INCLUDE_DIR "${ClickHouse_BINARY_DIR}/contrib/flatbuffers")
 set(ARROW_IPC_GENERATED_DIR "${ARROW_IPC_GENERATED_INCLUDE_DIR}/generated")
 
@@ -76,16 +36,14 @@ set(ARROW_FBS
   ${ARROW_FORMAT_DIR}/Message.fbs
   ${ARROW_FORMAT_DIR}/Schema.fbs
   ${ARROW_FORMAT_DIR}/SparseTensor.fbs
-  ${ARROW_FORMAT_DIR}/Tensor.fbs
-  ${ARROW_SRC_DIR}/arrow/ipc/feather.fbs)
+  ${ARROW_FORMAT_DIR}/Tensor.fbs)
 
 set(ARROW_IPC_GENERATED_HEADERS
   ${ARROW_IPC_GENERATED_DIR}/File_generated.h
   ${ARROW_IPC_GENERATED_DIR}/Message_generated.h
   ${ARROW_IPC_GENERATED_DIR}/Schema_generated.h
   ${ARROW_IPC_GENERATED_DIR}/SparseTensor_generated.h
-  ${ARROW_IPC_GENERATED_DIR}/Tensor_generated.h
-  ${ARROW_IPC_GENERATED_DIR}/feather_generated.h)
+  ${ARROW_IPC_GENERATED_DIR}/Tensor_generated.h)
 
 add_custom_command(OUTPUT ${ARROW_IPC_GENERATED_HEADERS}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${ARROW_IPC_GENERATED_DIR}"
@@ -101,453 +59,53 @@ add_custom_target(_arrow_ipc_generated DEPENDS ${ARROW_IPC_GENERATED_HEADERS})
 
 # Interface target exposing only the FlatBuffers-generated Arrow IPC metadata headers
 # (Message_generated.h, Schema_generated.h, File_generated.h) plus the FlatBuffers library.
-# The native Arrow IPC reader/writer (src/Processors/Formats/Impl/ArrowIPC) links this instead
-# of the Apache Arrow C++ runtime: it parses/builds the IPC metadata with FlatBuffers and decodes
-# the buffers directly to/from ClickHouse columns. The include base ".../cpp/src" lets the code
-# use <generated/Message_generated.h> while the generated headers' own relative includes resolve.
+# The native Arrow IPC reader/writer (src/Processors/Formats/Impl/ArrowIPC) parses/builds the IPC
+# metadata with FlatBuffers and decodes the buffers directly to/from ClickHouse columns.
+# The sources of Arrow are not on the include path: no code of ClickHouse can include its headers.
 add_library(_arrow_ipc_metadata INTERFACE)
-target_include_directories(_arrow_ipc_metadata SYSTEM INTERFACE "${ARROW_IPC_GENERATED_INCLUDE_DIR}" "${ARROW_SRC_DIR}")
+target_include_directories(_arrow_ipc_metadata SYSTEM INTERFACE "${ARROW_IPC_GENERATED_INCLUDE_DIR}")
 target_link_libraries(_arrow_ipc_metadata INTERFACE ch_contrib::flatbuffers)
 add_dependencies(_arrow_ipc_metadata _arrow_ipc_generated)
 add_library(ch_contrib::arrow_ipc_metadata ALIAS _arrow_ipc_metadata)
 
-
-# ===  hdfs
-# NOTE: cannot use ch_contrib::hdfs since it's INCLUDE_DIRECTORIES does not includes trailing "hdfs/"
-set(HDFS_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include/hdfs/")
-
-
-# === arrow
-
-set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow")
-
-set(ARROW_GENERATED_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR}/cpp/src)
-configure_file("${LIBRARY_DIR}/util/config.h.cmake" "${ARROW_GENERATED_SRC_DIR}/arrow/util/config.h" ESCAPE_QUOTES)
-configure_file("${LIBRARY_DIR}/util/config_internal.h.cmake" "${ARROW_GENERATED_SRC_DIR}/arrow/util/config_internal.h" ESCAPE_QUOTES)
-
-# arrow/cpp/src/arrow/CMakeLists.txt (ARROW_SRCS + ARROW_COMPUTE + ARROW_IPC)
-# find . \( -iname \*.cc -o -iname \*.cpp -o -iname \*.c \) | sort | awk '{print "\"${LIBRARY_DIR}" substr($1,2) "\"" }' | grep -v 'test.cc' | grep -v 'json' | grep -v 'flight' \|
-# grep -v 'csv' | grep -v 'acero' | grep -v 'dataset' | grep -v 'testing' | grep -v 'gpu' | grep -v 'engine' | grep -v 'filesystem' | grep -v 'benchmark.cc' | grep -v 'adapters/orc'
-set(ARROW_SRCS
-        "${LIBRARY_DIR}/array/array_base.cc"
-        "${LIBRARY_DIR}/array/array_binary.cc"
-        "${LIBRARY_DIR}/array/array_decimal.cc"
-        "${LIBRARY_DIR}/array/array_dict.cc"
-        "${LIBRARY_DIR}/array/array_nested.cc"
-        "${LIBRARY_DIR}/array/array_primitive.cc"
-        "${LIBRARY_DIR}/array/array_run_end.cc"
-        "${LIBRARY_DIR}/array/builder_adaptive.cc"
-        "${LIBRARY_DIR}/array/builder_base.cc"
-        "${LIBRARY_DIR}/array/builder_binary.cc"
-        "${LIBRARY_DIR}/array/builder_decimal.cc"
-        "${LIBRARY_DIR}/array/builder_dict.cc"
-        "${LIBRARY_DIR}/array/builder_nested.cc"
-        "${LIBRARY_DIR}/array/builder_primitive.cc"
-        "${LIBRARY_DIR}/array/builder_run_end.cc"
-        "${LIBRARY_DIR}/array/builder_union.cc"
-        "${LIBRARY_DIR}/array/concatenate.cc"
-        "${LIBRARY_DIR}/array/data.cc"
-        "${LIBRARY_DIR}/array/diff.cc"
-        "${LIBRARY_DIR}/array/statistics.cc"
-        "${LIBRARY_DIR}/array/util.cc"
-        "${LIBRARY_DIR}/array/validate.cc"
-        "${LIBRARY_DIR}/buffer.cc"
-        "${LIBRARY_DIR}/builder.cc"
-        "${LIBRARY_DIR}/c/bridge.cc"
-        "${LIBRARY_DIR}/c/dlpack.cc"
-        "${LIBRARY_DIR}/chunk_resolver.cc"
-        "${LIBRARY_DIR}/chunked_array.cc"
-        "${LIBRARY_DIR}/compare.cc"
-        "${LIBRARY_DIR}/compute/api_aggregate.cc"
-        "${LIBRARY_DIR}/compute/api_scalar.cc"
-        "${LIBRARY_DIR}/compute/api_vector.cc"
-        "${LIBRARY_DIR}/compute/cast.cc"
-        "${LIBRARY_DIR}/compute/exec.cc"
-        "${LIBRARY_DIR}/compute/expression.cc"
-        "${LIBRARY_DIR}/compute/function.cc"
-        "${LIBRARY_DIR}/compute/function_internal.cc"
-        "${LIBRARY_DIR}/compute/kernel.cc"
-        "${LIBRARY_DIR}/compute/kernels/aggregate_basic.cc"
-        "${LIBRARY_DIR}/compute/kernels/aggregate_mode.cc"
-        "${LIBRARY_DIR}/compute/kernels/aggregate_quantile.cc"
-        "${LIBRARY_DIR}/compute/kernels/aggregate_tdigest.cc"
-        "${LIBRARY_DIR}/compute/kernels/aggregate_var_std.cc"
-        "${LIBRARY_DIR}/compute/kernels/codegen_internal.cc"
-        "${LIBRARY_DIR}/compute/kernels/hash_aggregate.cc"
-        "${LIBRARY_DIR}/compute/kernels/ree_util_internal.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_arithmetic.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_boolean.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_cast_boolean.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_cast_dictionary.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_cast_extension.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_cast_internal.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_cast_nested.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_cast_numeric.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_cast_string.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_cast_temporal.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_compare.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_if_else.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_nested.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_random.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_round.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_set_lookup.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_string_ascii.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_string_utf8.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_temporal_binary.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_temporal_unary.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_validity.cc"
-        "${LIBRARY_DIR}/compute/kernels/temporal_internal.cc"
-        "${LIBRARY_DIR}/compute/kernels/util_internal.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_array_sort.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_cumulative_ops.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_hash.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_nested.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_pairwise.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_rank.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_replace.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_run_end_encode.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_select_k.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_selection.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_selection_filter_internal.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_selection_internal.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_selection_take_internal.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_sort.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_swizzle.cc"
-        "${LIBRARY_DIR}/compute/key_hash_internal.cc"
-        "${LIBRARY_DIR}/compute/key_map_internal.cc"
-        "${LIBRARY_DIR}/compute/light_array_internal.cc"
-        "${LIBRARY_DIR}/compute/ordering.cc"
-        "${LIBRARY_DIR}/compute/registry.cc"
-        "${LIBRARY_DIR}/compute/row/compare_internal.cc"
-        "${LIBRARY_DIR}/compute/row/encode_internal.cc"
-        "${LIBRARY_DIR}/compute/row/grouper.cc"
-        "${LIBRARY_DIR}/compute/row/row_internal.cc"
-        "${LIBRARY_DIR}/compute/util.cc"
-        "${LIBRARY_DIR}/config.cc"
-        "${LIBRARY_DIR}/datum.cc"
-        "${LIBRARY_DIR}/device.cc"
-        "${LIBRARY_DIR}/device_allocation_type_set.cc"
-        "${LIBRARY_DIR}/extension_type.cc"
-        "${LIBRARY_DIR}/extension/bool8.cc"
-        "${LIBRARY_DIR}/extension/json.cc"
-        "${LIBRARY_DIR}/extension/parquet_variant.cc"
-        "${LIBRARY_DIR}/extension/uuid.cc"
-        "${LIBRARY_DIR}/integration/c_data_integration_internal.cc"
-        "${LIBRARY_DIR}/io/buffered.cc"
-        "${LIBRARY_DIR}/io/caching.cc"
-        "${LIBRARY_DIR}/io/compressed.cc"
-        "${LIBRARY_DIR}/io/file.cc"
-        "${LIBRARY_DIR}/io/hdfs.cc"
-        "${LIBRARY_DIR}/io/hdfs_internal.cc"
-        "${LIBRARY_DIR}/io/interfaces.cc"
-        "${LIBRARY_DIR}/io/memory.cc"
-        "${LIBRARY_DIR}/io/slow.cc"
-        "${LIBRARY_DIR}/io/stdio.cc"
-        "${LIBRARY_DIR}/io/transform.cc"
-        "${LIBRARY_DIR}/ipc/dictionary.cc"
-        "${LIBRARY_DIR}/ipc/feather.cc"
-        "${LIBRARY_DIR}/ipc/file_to_stream.cc"
-        "${LIBRARY_DIR}/ipc/message.cc"
-        "${LIBRARY_DIR}/ipc/metadata_internal.cc"
-        "${LIBRARY_DIR}/ipc/options.cc"
-        "${LIBRARY_DIR}/ipc/reader.cc"
-        "${LIBRARY_DIR}/ipc/stream_to_file.cc"
-        "${LIBRARY_DIR}/ipc/writer.cc"
-        "${LIBRARY_DIR}/memory_pool.cc"
-        "${LIBRARY_DIR}/pretty_print.cc"
-        "${LIBRARY_DIR}/record_batch.cc"
-        "${LIBRARY_DIR}/result.cc"
-        "${LIBRARY_DIR}/scalar.cc"
-        "${LIBRARY_DIR}/sparse_tensor.cc"
-        "${LIBRARY_DIR}/status.cc"
-        "${LIBRARY_DIR}/table.cc"
-        "${LIBRARY_DIR}/table_builder.cc"
-        "${LIBRARY_DIR}/tensor.cc"
-        "${LIBRARY_DIR}/tensor/coo_converter.cc"
-        "${LIBRARY_DIR}/tensor/csf_converter.cc"
-        "${LIBRARY_DIR}/tensor/csx_converter.cc"
-        "${LIBRARY_DIR}/type.cc"
-        "${LIBRARY_DIR}/type_traits.cc"
-        "${LIBRARY_DIR}/util/align_util.cc"
-        "${LIBRARY_DIR}/util/async_util.cc"
-        "${LIBRARY_DIR}/util/atfork_internal.cc"
-        "${LIBRARY_DIR}/util/basic_decimal.cc"
-        "${LIBRARY_DIR}/util/bit_block_counter.cc"
-        "${LIBRARY_DIR}/util/bit_run_reader.cc"
-        "${LIBRARY_DIR}/util/bit_util.cc"
-        "${LIBRARY_DIR}/util/bitmap.cc"
-        "${LIBRARY_DIR}/util/bitmap_builders.cc"
-        "${LIBRARY_DIR}/util/bitmap_ops.cc"
-        "${LIBRARY_DIR}/util/bpacking.cc"
-        "${LIBRARY_DIR}/util/bpacking_scalar.cc"
-        "${LIBRARY_DIR}/util/bpacking_simd_128.cc"
-        "${LIBRARY_DIR}/util/byte_size.cc"
-        "${LIBRARY_DIR}/util/byte_stream_split_internal.cc"
-        "${LIBRARY_DIR}/util/cancel.cc"
-        "${LIBRARY_DIR}/util/compression.cc"
-        "${LIBRARY_DIR}/util/counting_semaphore.cc"
-        "${LIBRARY_DIR}/util/cpu_info.cc"
-        "${LIBRARY_DIR}/util/crc32.cc"
-        "${LIBRARY_DIR}/util/debug.cc"
-        "${LIBRARY_DIR}/util/decimal.cc"
-        "${LIBRARY_DIR}/util/delimiting.cc"
-        "${LIBRARY_DIR}/util/dict_util.cc"
-        "${LIBRARY_DIR}/util/fixed_width_internal.cc"
-        "${LIBRARY_DIR}/util/float16.cc"
-        "${LIBRARY_DIR}/util/formatting.cc"
-        "${LIBRARY_DIR}/util/future.cc"
-        "${LIBRARY_DIR}/util/fuzz_internal.cc"
-        "${LIBRARY_DIR}/util/hashing.cc"
-        "${LIBRARY_DIR}/util/int_util.cc"
-        "${LIBRARY_DIR}/util/io_util.cc"
-        "${LIBRARY_DIR}/util/key_value_metadata.cc"
-        "${LIBRARY_DIR}/util/list_util.cc"
-        "${LIBRARY_DIR}/util/logger.cc"
-        "${LIBRARY_DIR}/util/logging.cc"
-        "${LIBRARY_DIR}/util/math_internal.cc"
-        "${LIBRARY_DIR}/util/memory.cc"
-        "${LIBRARY_DIR}/util/mutex.cc"
-        "${LIBRARY_DIR}/util/ree_util.cc"
-        "${LIBRARY_DIR}/util/secure_string.cc"
-        "${LIBRARY_DIR}/util/string.cc"
-        "${LIBRARY_DIR}/util/string_util.cc"
-        "${LIBRARY_DIR}/util/task_group.cc"
-        "${LIBRARY_DIR}/util/tdigest.cc"
-        "${LIBRARY_DIR}/util/thread_pool.cc"
-        "${LIBRARY_DIR}/util/time.cc"
-        "${LIBRARY_DIR}/util/tracing.cc"
-        "${LIBRARY_DIR}/util/trie.cc"
-        "${LIBRARY_DIR}/util/union_util.cc"
-        "${LIBRARY_DIR}/util/unreachable.cc"
-        "${LIBRARY_DIR}/util/ulp_distance.cc"
-        "${LIBRARY_DIR}/util/uri.cc"
-        "${LIBRARY_DIR}/util/utf8.cc"
-        "${LIBRARY_DIR}/util/value_parsing.cc"
-        "${LIBRARY_DIR}/vendored/base64.cpp"
-        "${LIBRARY_DIR}/vendored/datetime.cpp"
-        "${LIBRARY_DIR}/vendored/double-conversion/bignum-dtoa.cc"
-        "${LIBRARY_DIR}/vendored/double-conversion/bignum.cc"
-        "${LIBRARY_DIR}/vendored/double-conversion/cached-powers.cc"
-        "${LIBRARY_DIR}/vendored/double-conversion/double-to-string.cc"
-        "${LIBRARY_DIR}/vendored/double-conversion/fast-dtoa.cc"
-        "${LIBRARY_DIR}/vendored/double-conversion/fixed-dtoa.cc"
-        "${LIBRARY_DIR}/vendored/double-conversion/string-to-double.cc"
-        "${LIBRARY_DIR}/vendored/double-conversion/strtod.cc"
-        "${LIBRARY_DIR}/vendored/musl/strptime.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriCommon.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriCompare.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriEscape.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriFile.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriIp4.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriIp4Base.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriMemory.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriNormalize.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriNormalizeBase.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriParse.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriParseBase.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriQuery.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriRecompose.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriResolve.c"
-        "${LIBRARY_DIR}/vendored/uriparser/UriShorten.c"
-        "${LIBRARY_DIR}/visitor.cc"
-        )
-
-
-add_definitions(-DARROW_WITH_BROTLI)
-SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_brotli.cc" ${ARROW_SRCS})
-
-add_definitions(-DARROW_WITH_BZ2)
-SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_bz2.cc" ${ARROW_SRCS})
-
-add_definitions(-DARROW_WITH_LZ4)
-SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_lz4.cc" ${ARROW_SRCS})
-
-add_definitions(-DARROW_WITH_SNAPPY)
-SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_snappy.cc" ${ARROW_SRCS})
-
-add_definitions(-DARROW_WITH_ZLIB)
-SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zlib.cc" ${ARROW_SRCS})
-
-add_definitions(-DARROW_WITH_ZSTD)
-SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zstd.cc" ${ARROW_SRCS})
-
-
-# Enable Arrow's SIMD codepaths (bit unpacking, byte stream split, UTF-8 validation); otherwise they fall back
-# to scalar. These headers include <xsimd/xsimd.hpp>, hence the xsimd dependency. Our production target is ARM,
-# where NEON is part of the aarch64 baseline. On x86 we follow X86_ARCH_LEVEL: the build already targets
-# x86-64-v${X86_ARCH_LEVEL}, so when it is >= 3 (AVX2/BMI2 guaranteed) the AVX2 sources compile under the base
-# -march with no extra flags. Lower levels keep the scalar path.
+# === Parquet format
+# The structures generated from `parquet.thrift` with the minimal Thrift runtime to (de)serialize them:
+# everything the native Parquet reader and writer need from third-party code. The generated code is
+# compiled from a copy in a directory of its own.
 #
-# The defines are applied with target_compile_definitions(... PUBLIC) below rather than add_definitions(),
-# because Arrow's SIMD entry points are inline in headers: ClickHouse code that includes them (e.g. the native
-# Parquet decoder calling ByteStreamSplitDecode) must see the same defines to pick the SIMD path.
-set(ARROW_SIMD_DEFS "")
-if (ARCH_AARCH64)
-    set(ARROW_SIMD_DEFS ARROW_HAVE_NEON)
-elseif (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
-    set(ARROW_SIMD_DEFS
-        ARROW_HAVE_SSE4_2 ARROW_HAVE_AVX2 ARROW_HAVE_BMI2
-        ARROW_HAVE_RUNTIME_SSE4_2 ARROW_HAVE_RUNTIME_AVX2 ARROW_HAVE_RUNTIME_BMI2)
-    # bpacking's unpack() has no compile-time AVX2 path, only a runtime-dispatched one, so its source is needed.
-    SET(ARROW_SRCS ${ARROW_SRCS}
-        "${LIBRARY_DIR}/util/bpacking_simd_256.cc"
-        "${LIBRARY_DIR}/util/byte_stream_split_internal_avx2.cc")
-    if (X86_ARCH_LEVEL VERSION_GREATER_EQUAL 4)
-        list (APPEND ARROW_SIMD_DEFS ARROW_HAVE_AVX512 ARROW_HAVE_RUNTIME_AVX512)
-        SET(ARROW_SRCS ${ARROW_SRCS} "${LIBRARY_DIR}/util/bpacking_simd_avx512.cc")
-    endif ()
-endif ()
+# The enums are given the fixed underlying type `int32_t`, the type of a Thrift enum on the wire. Without it, a value
+# outside the range of an enum, which a corrupted file may contain, is undefined behavior as soon as it is loaded, and
+# the generated code loads it before the reader can validate it: e.g. when a vector of `SchemaElement` grows and moves
+# its elements. With a fixed underlying type, every `int32_t` is a valid value of the enum.
+set(PARQUET_FORMAT_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/parquet_format_include")
+foreach (file parquet_types.h parquet_types.tcc parquet_types.cpp)
+    set(source "${ARROW_SRC_DIR}/generated/${file}")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${source}")
+    file(READ "${source}" content)
+    string(REPLACE "  enum type {" "  enum type : int32_t {" content "${content}")
+    # The only Arrow header included by the generated code. It does nothing outside Windows.
+    string(REPLACE "#include \"parquet/windows_compatibility.h\"\n" "" content "${content}")
+    set(output "${PARQUET_FORMAT_INCLUDE_DIR}/generated/${file}")
+    set(previous_content "")
+    if (EXISTS "${output}")
+        file(READ "${output}" previous_content)
+    endif()
+    # Rewriting an unchanged file would rebuild everything that includes it after each run of CMake.
+    if (NOT previous_content STREQUAL content)
+        file(WRITE "${output}" "${content}")
+    endif()
+endforeach()
+file(READ "${PARQUET_FORMAT_INCLUDE_DIR}/generated/parquet_types.h" content)
+string(REGEX MATCHALL "enum type {" unfixed_enums "${content}")
+if (unfixed_enums)
+    message(FATAL_ERROR "Not all enums of parquet_types.h got a fixed underlying type")
+endif()
 
+add_library(_parquet_format "${PARQUET_FORMAT_INCLUDE_DIR}/generated/parquet_types.cpp")
+target_include_directories(_parquet_format SYSTEM PUBLIC "${PARQUET_FORMAT_INCLUDE_DIR}")
+target_link_libraries(_parquet_format PUBLIC ch_contrib::thrift_minimal)
+add_library(ch_contrib::parquet_format ALIAS _parquet_format)
 
-add_library(_arrow ${ARROW_SRCS})
-if (ARROW_SIMD_DEFS)
-    target_compile_definitions(_arrow PUBLIC ${ARROW_SIMD_DEFS})
-endif ()
-add_library(ch_contrib::arrow ALIAS _arrow)
-
-target_link_libraries(_arrow PRIVATE
-    boost::filesystem
-
-    ch_contrib::flatbuffers
-
-    ch_contrib::double_conversion
-
-    ch_contrib::lz4
-    ch_contrib::snappy
-    ch_contrib::zlib
-    ch_contrib::zstd
-    ch_contrib::brotli
-    ch_contrib::bzip2
-)
-# PUBLIC so the xsimd headers are visible to _parquet too (it links _arrow PUBLIC).
-target_link_libraries(_arrow PUBLIC ch_contrib::xsimd)
-
-target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
-target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src")
-# Must come before ${ARROW_SRC_DIR}, so that our generated bindings shadow the ones Arrow ships.
-target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_IPC_GENERATED_INCLUDE_DIR})
-add_dependencies(_arrow _arrow_ipc_generated)
-
-target_include_directories(_arrow SYSTEM PRIVATE ${HDFS_INCLUDE_DIR})
-
-# === arrow flight
+# === Arrow Flight protocol
 
 include(flight.cmake)
-
-# === parquet
-
-set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/parquet")
-set(GEN_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/generated")
-# arrow/cpp/src/parquet/CMakeLists.txt
-set(PARQUET_SRCS
-        "${LIBRARY_DIR}/arrow/fuzz_internal.cc"
-        "${LIBRARY_DIR}/arrow/path_internal.cc"
-        "${LIBRARY_DIR}/arrow/reader.cc"
-        "${LIBRARY_DIR}/arrow/reader_internal.cc"
-        "${LIBRARY_DIR}/arrow/schema.cc"
-        "${LIBRARY_DIR}/arrow/schema_internal.cc"
-        "${LIBRARY_DIR}/arrow/writer.cc"
-        "${LIBRARY_DIR}/benchmark_util.cc"
-        "${LIBRARY_DIR}/bloom_filter.cc"
-        "${LIBRARY_DIR}/bloom_filter_reader.cc"
-        "${LIBRARY_DIR}/chunker_internal.cc"
-        "${LIBRARY_DIR}/column_reader.cc"
-        "${LIBRARY_DIR}/column_scanner.cc"
-        "${LIBRARY_DIR}/column_writer.cc"
-        "${LIBRARY_DIR}/decoder.cc"
-        "${LIBRARY_DIR}/encoder.cc"
-        "${LIBRARY_DIR}/encryption/crypto_factory.cc"
-        "${LIBRARY_DIR}/encryption/encryption.cc"
-        "${LIBRARY_DIR}/encryption/encryption_internal.cc"
-        "${LIBRARY_DIR}/encryption/encryption_internal_nossl.cc"
-        "${LIBRARY_DIR}/encryption/file_key_unwrapper.cc"
-        "${LIBRARY_DIR}/encryption/file_key_wrapper.cc"
-        "${LIBRARY_DIR}/encryption/file_system_key_material_store.cc"
-        "${LIBRARY_DIR}/encryption/internal_file_decryptor.cc"
-        "${LIBRARY_DIR}/encryption/internal_file_encryptor.cc"
-        "${LIBRARY_DIR}/encryption/key_material.cc"
-        "${LIBRARY_DIR}/encryption/key_metadata.cc"
-        "${LIBRARY_DIR}/encryption/key_toolkit.cc"
-        "${LIBRARY_DIR}/encryption/key_toolkit_internal.cc"
-        "${LIBRARY_DIR}/encryption/kms_client.cc"
-        "${LIBRARY_DIR}/encryption/local_wrap_kms_client.cc"
-        "${LIBRARY_DIR}/encryption/openssl_internal.cc"
-        "${LIBRARY_DIR}/exception.cc"
-        "${LIBRARY_DIR}/file_reader.cc"
-        "${LIBRARY_DIR}/file_writer.cc"
-        "${LIBRARY_DIR}/geospatial/statistics.cc"
-        "${LIBRARY_DIR}/geospatial/util_internal.cc"
-        "${LIBRARY_DIR}/geospatial/util_json_internal.cc"
-        "${LIBRARY_DIR}/level_comparison.cc"
-        "${LIBRARY_DIR}/level_comparison_avx2.cc"
-        "${LIBRARY_DIR}/level_conversion.cc"
-        "${LIBRARY_DIR}/level_conversion_bmi2.cc"
-        "${LIBRARY_DIR}/metadata.cc"
-        "${LIBRARY_DIR}/page_index.cc"
-        "${LIBRARY_DIR}/platform.cc"
-        "${LIBRARY_DIR}/printer.cc"
-        "${LIBRARY_DIR}/properties.cc"
-        "${LIBRARY_DIR}/schema.cc"
-        "${LIBRARY_DIR}/size_statistics.cc"
-        "${LIBRARY_DIR}/statistics.cc"
-        "${LIBRARY_DIR}/stream_reader.cc"
-        "${LIBRARY_DIR}/stream_writer.cc"
-        "${LIBRARY_DIR}/types.cc"
-        "${LIBRARY_DIR}/xxhasher.cc"
-
-        "${GEN_LIBRARY_DIR}/parquet_types.cpp"
-        )
-#list(TRANSFORM PARQUET_SRCS PREPEND "${LIBRARY_DIR}/") # cmake 3.12
-
-# The Bloom filter dispatch table references `FindHashBlockAvx2` whenever AVX2 is available, so the
-# kernel has to be built. Unlike `level_comparison_avx2.cc` this one is x86-only (it instantiates
-# `xsimd::batch<uint32_t, xsimd::avx2>`), so it must not be added on other architectures.
-if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
-    list (APPEND PARQUET_SRCS "${LIBRARY_DIR}/bloom_filter_avx2.cc")
-endif ()
-
-add_library(_parquet ${PARQUET_SRCS})
-add_library(ch_contrib::parquet ALIAS _parquet)
-target_include_directories(_parquet SYSTEM BEFORE
-    PUBLIC
-        # Same as for `_arrow`: must come before the Arrow source directory.
-        "${ARROW_IPC_GENERATED_INCLUDE_DIR}"
-        "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src"
-        "${CMAKE_CURRENT_SOURCE_DIR}/cpp/src")
-add_dependencies(_parquet _arrow_ipc_generated)
-target_link_libraries(_parquet
-    PUBLIC
-        _arrow
-        ch_contrib::thrift
-    PRIVATE
-        boost::headers_only
-        boost::regex
-        OpenSSL::Crypto OpenSSL::SSL
-        ch_contrib::rapidjson)
-
-if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
-    target_compile_options(_parquet PRIVATE -fno-sanitize=undefined)
-    target_compile_options(_arrow PRIVATE -fno-sanitize=undefined)
-endif ()
-
-# Define Thrift version for parquet (we use 0.16.0)
-add_definitions(-DPARQUET_THRIFT_VERSION_MAJOR=0)
-add_definitions(-DPARQUET_THRIFT_VERSION_MINOR=16)
-
-# As per https://github.com/apache/arrow/pull/35672 you need to enable it explicitly.
-add_definitions(-DARROW_ENABLE_THREADING)
-
-# === tools
-
-set(TOOLS_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/tools/parquet")
-set(PARQUET_TOOLS parquet_dump_schema parquet_reader parquet_scan)
-foreach (TOOL ${PARQUET_TOOLS})
-    add_executable(${TOOL} "${TOOLS_DIR}/${TOOL}.cc")
-    target_link_libraries(${TOOL} PRIVATE _parquet)
-endforeach ()
-
-# The library is large - avoid bloat.
-if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_arrow PRIVATE -g1)
-    target_compile_options (_parquet PRIVATE -g1)
-endif()

@@ -82,8 +82,8 @@ void FileLogDirectoryWatcher::commitEvents()
 void FileLogDirectoryWatcher::onError(Exception e)
 {
     std::lock_guard lock(mutex);
-    LOG_ERROR(log, "Error happened during watching directory: {}", error.error_msg);
     error.has_error = true;
     error.error_msg = e.message();
+    LOG_ERROR(log, "Error happened during watching directory: {}", error.error_msg);
 }
 }

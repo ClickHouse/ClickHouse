@@ -1,19 +1,23 @@
+#include <algorithm>
 #include <memory>
 #include <stack>
 #include <variant>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ComplexTypeSchemaProcessorFunctions.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <base/defines.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/SharedPtr.h>
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -404,7 +408,7 @@ public:
 
     void transformChildNode(Tuple & initial_node) override { initial_node.erase(initial_node.begin() + index_to_delete); }
 
-    size_t getDeleteIndex() const { return index_to_delete; }
+    [[nodiscard]] size_t getDeleteIndex() const { return index_to_delete; }
 
 private:
     IcebergDeletingOperation operation;
@@ -414,7 +418,8 @@ private:
 class AddingTransform : public IIcebergSchemaTransform
 {
 public:
-    explicit AddingTransform(const IcebergAddingOperation & operation_, DataTypePtr type, DataTypePtr old_type)
+    explicit AddingTransform(
+        const IcebergAddingOperation & operation_, DataTypePtr type, DataTypePtr old_type, const Poco::JSON::Object::Ptr & subfield)
         : IIcebergSchemaTransform(operation_.getPath())
         , operation(operation_)
     {
@@ -496,18 +501,30 @@ public:
         }
         if (index_to_insert == current_types.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find field {} in data", operation.field_name);
+
+        const auto & inserted_type = current_types[index_to_insert];
+        inserted_value = getIcebergInitialDefault(subfield, inserted_type).value_or(inserted_type->getDefault());
+
+        if (std::ranges::all_of(operation_.getPath(), [](const auto & edge) { return edge.parent_type == TransformType::STRUCT; }))
+        {
+            auto column = inserted_type->createColumnConst(1, inserted_value);
+            bytes_per_row_added = assert_cast<const ColumnConst &>(*column).getDataColumn().byteSize();
+        }
     }
+
+    [[nodiscard]] size_t getBytesPerRowAdded() const override { return bytes_per_row_added; }
 
     void transformChildNode(Tuple & initial_node) override
     {
-        Field inserted_field = current_types[index_to_insert]->getDefault();
-        initial_node.insert(initial_node.begin() + index_to_insert, inserted_field);
+        initial_node.insert(initial_node.begin() + index_to_insert, inserted_value);
     }
 
 private:
     IcebergAddingOperation operation;
     size_t index_to_insert;
     DataTypes current_types;
+    Field inserted_value;
+    size_t bytes_per_row_added = 0;
 };
 
 class ReorderingTransform : public IIcebergSchemaTransform
@@ -627,6 +644,21 @@ ColumnPtr ExecutableEvolutionFunction::executeImpl(
     return result_column;
 }
 
+size_t ExecutableEvolutionFunction::getBytesPerRowOfAddedFields() const
+{
+    std::lock_guard lock(mutex);
+    if (!initialized)
+    {
+        lazyInitialize();
+        initialized = true;
+    }
+
+    size_t bytes = 0;
+    for (const auto & transform : transforms)
+        bytes += transform->getBytesPerRowAdded();
+    return bytes;
+}
+
 void ExecutableEvolutionFunction::fillMissingElementsInPermutation(std::vector<size_t> & permutation, size_t target_size)
 {
     std::unordered_set<size_t> existing_elements;
@@ -737,7 +769,7 @@ static std::shared_ptr<AddingTransform> makeAddingTransform(
     Poco::JSON::Object::Ptr subfield)
 {
     auto operation = IcebergAddingOperation(current_path, subfield->getValue<String>("name"));
-    auto transform = std::make_shared<AddingTransform>(operation, type, old_type);
+    auto transform = std::make_shared<AddingTransform>(operation, type, old_type, subfield);
     return transform;
 }
 

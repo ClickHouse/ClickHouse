@@ -233,7 +233,7 @@ Al igual que en la inserción, el método Scan requiere que las variables de des
 
 Por último, tenga en cuenta la posibilidad de pasar un `Context` a los métodos `Query` y `QueryRow`. Esto puede usarse para configuraciones a nivel de consulta; consulte [Using Context](#using-context) para obtener más detalles.
 
-## Insert asíncrono {#async-insert}
+## Inserción asíncrona {#async-insert}
 
 Las inserciones asíncronas son compatibles mediante el método Async. Esto permite al usuario especificar si el cliente debe esperar a que el servidor complete la inserción o si debe responder una vez recibidos los datos. Esto controla de forma efectiva el parámetro [wait&#95;for&#95;async&#95;insert](/es/reference/settings/session-settings#wait_for_async_insert).
 
@@ -270,7 +270,27 @@ for i := 0; i < 100; i++ {
 }
 ```
 
-[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/async.go)
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/async_native.go)
+
+### Inserción asíncrona con un lote {#async-insert-batch}
+
+`WithAsync` también se aplica a las inserciones por lotes en los protocolos Native y HTTP. Un lote utiliza únicamente el contexto que se pasa a `PrepareBatch`. `Send` envía el lote con los ajustes de ese contexto.
+
+```go
+ctx := clickhouse.Context(context.Background(), clickhouse.WithAsync(true))
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example") // WithAsync must be on this context
+if err != nil {
+    return err
+}
+for i := 0; i < 100; i++ {
+    if err := batch.Append(uint64(i), "Golang SQL database driver", []uint8{1, 2, 3, 4, 5, 6, 7, 8, 9}, time.Now()); err != nil {
+        return err
+    }
+}
+return batch.Send()
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/async_native.go)
 
 ## Inserción columnar {#columnar-insert}
 

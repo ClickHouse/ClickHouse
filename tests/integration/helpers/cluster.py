@@ -2,6 +2,7 @@ import base64
 import errno
 import glob
 import http.client
+import io
 import json
 import logging
 import os
@@ -61,7 +62,8 @@ from docker.models.containers import Container
 from kazoo.exceptions import KazooException
 from minio import Minio
 
-from . import pytest_xdist_logging_to_separate_files
+from . import ci_logs_export, pytest_xdist_logging_to_separate_files
+from .redact import is_secret_env_name, redact_docker_inspect, redact_env
 from .client import Client, QueryRuntimeException, set_transport_error_describer
 from .hdfs_api import HDFSApi
 from .config_cluster import (
@@ -192,6 +194,16 @@ def describe_transport_error_for_host(host, error_text):
 set_transport_error_describer(describe_transport_error_for_host)
 
 
+def describe_lost_network_interfaces():
+    """The verdicts of the instances that already reported a lost interface and still have none, or ""."""
+    verdicts = [
+        instance.describe_lost_network_interface()
+        for instance in list(_INSTANCES_BY_ADDRESS.values())
+        if instance.reported_lost_network_interface
+    ]
+    return " ".join(verdict for verdict in verdicts if verdict)
+
+
 def find_default_config_path():
     path = os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", None)
     if path is not None:
@@ -228,7 +240,10 @@ DEFAULT_THREAD_FUZZER_SETTINGS = {
 
 DOCKER_BASE_TAG = os.environ.get("DOCKER_BASE_TAG", "latest")
 
-SANITIZER_SIGN = "=================="
+# ASan, MSan and TSan reports start with a `=====` banner; UBSan and CFI diagnostics reports have none.
+SANITIZER_SIGNS = ("==================", ": runtime error: ")
+# For `zgrep` (basic regex alternation).
+SANITIZER_SIGN = "\\|".join(SANITIZER_SIGNS)
 
 CLICKHOUSE_START_COMMAND = (
     "clickhouse server --config-file=/etc/clickhouse-server/{main_config_file}"
@@ -281,7 +296,7 @@ except Exception:
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
-    logging.debug("Env %s stored in %s", variables, path)
+    logging.debug("Env %s stored in %s", redact_env(variables), path)
     with open(path, "w") as f:
         for var, value in list(variables.items()):
             f.write("=".join([var, value]) + "\n")
@@ -349,7 +364,8 @@ def run_and_check(
     if res.returncode != 0:
         logging.debug("Exitcode:%s", res.returncode)
         if env:
-            logging.debug("Env:%s", env)
+            # The logs are collected as CI artifacts, do not expose secrets
+            logging.debug("Env:%s", redact_env(env))
         if not nothrow:
             raise Exception(
                 f"Command [{shell_args}] return non-zero code {res.returncode}: {err}"
@@ -747,9 +763,14 @@ class ClickHouseCluster:
         azurite_default_port=0,
         server_binaries=[],
         with_dolor=False,
+        s3_server="minio",
     ):
         for param in list(os.environ.keys()):
-            logging.debug("ENV %40s %s" % (param, os.environ[param]))
+            # The logs are collected as CI artifacts, do not expose secrets
+            if is_secret_env_name(param):
+                logging.debug("ENV %40s [MASKED]" % param)
+            else:
+                logging.debug("ENV %40s %s" % (param, os.environ[param]))
         self.base_path = base_path
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else extract_test_name(base_path)
@@ -821,6 +842,7 @@ class ClickHouseCluster:
                 self.env_variables[key] = value
 
         self.up_called = False
+        self.kazoo_clients = []
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get(
             "CLICKHOUSE_TESTS_DOCKERD_HOST"
@@ -901,7 +923,10 @@ class ClickHouseCluster:
         self.minio_dir = os.path.join(self.instances_dir, "minio")
         self.minio_certs_dir = None  # source for certificates
         self.minio_data_dir = p.join(self.minio_dir, "data")
-        self.minio_host = "minio1"
+        # The S3 server behind `with_minio`: "minio" or "seaweedfs"
+        assert s3_server in ("minio", "seaweedfs"), f"Unknown s3_server {s3_server}"
+        self.s3_server = s3_server
+        self.minio_host = "seaweedfs1" if s3_server == "seaweedfs" else "minio1"
         self.minio_ip = None
         self.minio_bucket = "root"
         self.minio_bucket_2 = "root2"
@@ -2053,14 +2078,17 @@ class ClickHouseCluster:
         env_variables["RESOLVER_LOGS"] = self.resolver_logs_dir
         env_variables["RESOLVER_LOGS_FS"] = "bind"
 
-        self.base_cmd.extend(
-            ["--file", p.join(docker_compose_yml_dir, "docker_compose_minio.yml")]
+        compose_file = p.join(
+            docker_compose_yml_dir,
+            (
+                "docker_compose_seaweedfs.yml"
+                if self.s3_server == "seaweedfs"
+                else "docker_compose_minio.yml"
+            ),
         )
+        self.base_cmd.extend(["--file", compose_file])
         self.base_minio_cmd = self.compose_cmd(
-            "--env-file",
-            instance.env_file,
-            "--file",
-            p.join(docker_compose_yml_dir, "docker_compose_minio.yml"),
+            "--env-file", instance.env_file, "--file", compose_file
         )
         return self.base_minio_cmd
 
@@ -2378,6 +2406,7 @@ class ClickHouseCluster:
         tmpfs=None,
         mem_limit=None,
         cpu_limit=None,
+        cpuset=None,
         pids_limit=None,
         zookeeper_docker_compose_path=None,
         minio_certs_dir=None,
@@ -2396,8 +2425,15 @@ class ClickHouseCluster:
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
         extra_parameters=None,
+        with_ci_logs_export=True,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
+
+        with_ci_logs_export - whether the system log tables of the server are
+        exported to the CI Logs cluster in CI (see helpers/ci_logs_export.py).
+        Turn it off for a server whose memory or CPU budget the test measures:
+        the export materialises every log table at startup and keeps a sender
+        per table running.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
         base_config_dir - a directory with config.xml and users.xml files which will be copied to /etc/clickhouse-server/ directory
@@ -2529,12 +2565,14 @@ class ClickHouseCluster:
             tmpfs=tmpfs or [],
             mem_limit=mem_limit,
             cpu_limit=cpu_limit,
+            cpuset=cpuset,
             pids_limit=pids_limit,
             config_root_name=config_root_name,
             extra_configs=extra_configs,
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
             extra_parameters=extra_parameters,
+            with_ci_logs_export=with_ci_logs_export,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -2757,6 +2795,7 @@ class ClickHouseCluster:
             )
 
         if minio_certs_dir is not None:
+            assert self.s3_server == "minio", "TLS for the S3 server needs s3_server='minio'"
             if self.minio_certs_dir is None:
                 self.minio_certs_dir = minio_certs_dir
             else:
@@ -2973,10 +3012,13 @@ class ClickHouseCluster:
                 image_id = container_info.get("Image")
                 image_info = self.docker_client.api.inspect_image(image_id)
                 logging.debug("Command failed in container %s: ", container_id)
-                pprint.pprint(container_info)
+                # The output is collected as a CI artifact, and `Config.Env`
+                # holds the secrets passed to the container, e.g. the
+                # credentials of the CI Logs cluster
+                pprint.pprint(redact_docker_inspect(container_info))
                 logging.debug("")
                 logging.debug("Container %s uses image %s: ", container_id, image_id)
-                pprint.pprint(image_info)
+                pprint.pprint(redact_docker_inspect(image_info))
                 logging.debug("")
                 message = (
                     f'Cmd "{" ".join(cmd)}" failed in container {container_id}. '
@@ -3649,9 +3691,35 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Minio to start")
 
+    def wait_seaweedfs_writable(self, deadline):
+        # SeaweedFS fails writes until it has allocated its first volume
+        minio_client = Minio(
+            f"{self.minio_ip}:{self.minio_port}",
+            access_key=minio_access_key,
+            secret_key=minio_secret_key,
+            secure=False,
+            # Bounded calls, so that a server that never answers cannot outlast the deadline
+            http_client=urllib3.PoolManager(
+                timeout=urllib3.Timeout(connect=5, read=10), retries=False
+            ),
+        )
+        while True:
+            try:
+                minio_client.put_object(
+                    self.minio_bucket, "write_probe", io.BytesIO(b"ready"), 5
+                )
+                minio_client.remove_object(self.minio_bucket, "write_probe")
+                return
+            except Exception as ex:
+                if time.time() >= deadline:
+                    raise
+                logging.debug("SeaweedFS is not writable yet: %s", str(ex))
+                time.sleep(1)
+
     def wait_minio_to_start(self, timeout=180, secure=False):
         self.minio_ip = self.get_instance_ip(self.minio_host)
-        self.minio_redirect_ip = self.get_instance_ip(self.minio_redirect_host)
+        if self.s3_server == "minio":
+            self.minio_redirect_ip = self.get_instance_ip(self.minio_redirect_host)
 
         os.environ["SSL_CERT_FILE"] = p.join(
             self.base_dir, self.minio_dir, "certs", "public.crt"
@@ -3690,6 +3758,10 @@ class ClickHouseCluster:
                         minio_client.remove_bucket(bucket)
                     minio_client.make_bucket(bucket)
                     logging.debug("S3 bucket '%s' created", bucket)
+
+                if self.s3_server == "seaweedfs":
+                    # Own retry: re-running this loop fails on the created buckets
+                    self.wait_seaweedfs_writable(start + timeout)
 
                 self.minio_client = minio_client
                 return
@@ -4637,6 +4709,10 @@ class ClickHouseCluster:
                 )
                 instance.arm_per_test_coverage()
 
+            for instance in self.instances.values():
+                if instance.ci_logs_export_enabled:
+                    ci_logs_export.setup_for_instance(self, instance)
+
             self.is_up = True
             started_clusters.append(self)
             self.save_logs()
@@ -4688,10 +4764,23 @@ class ClickHouseCluster:
         ignore_logical_errors=False,
         ignore_sanitizer=False,
     ):
+        # A client left running reconnects to whichever cluster gets these addresses next.
+        for zk in self.kazoo_clients:
+            try:
+                zk.stop()
+                zk.close()
+            except Exception as e:
+                logging.warning("Failed to stop a Kazoo client: %s", repr(e))
+        self.kazoo_clients = []
+
         sanitizer_assert_instance = None
         failure_logs = []
 
         if self.up_called:
+            if self.is_up:
+                for instance in self.instances.values():
+                    ci_logs_export.flush_before_shutdown(instance)
+
             if self in started_clusters:
                 started_clusters.remove(self)
             if kill:
@@ -4767,7 +4856,8 @@ class ClickHouseCluster:
                 # Search for sinitizer signs in docker.log if it's still empty
                 with open(self.docker_logs_path, "r", errors="replace") as f:
                     for line in f:
-                        if SANITIZER_SIGN in line:
+                        # Only the banner: other containers log Go panics with `runtime error:`.
+                        if SANITIZER_SIGNS[0] in line:
                             sanitizer_assert_instance = line.split("|")[0].strip()
                             break
 
@@ -4784,7 +4874,7 @@ class ClickHouseCluster:
                     if not os.path.exists(keeper_stderr):
                         continue
                     with open(keeper_stderr, "r", errors="replace") as f:
-                        if any(SANITIZER_SIGN in line for line in f):
+                        if any(sign in line for line in f for sign in SANITIZER_SIGNS):
                             sanitizer_assert_instance = f"zoo{i}"
                             logging.error(
                                 "Sanitizer in Keeper instance zoo%s log %s",
@@ -5106,6 +5196,7 @@ class ClickHouseCluster:
             certfile=self.zookeeper_certfile,
             keyfile=self.zookeeper_keyfile,
         )
+        self.kazoo_clients.append(zk)
         zk.start(timeout=timeout)
         return zk
 
@@ -5220,6 +5311,7 @@ services:
         tmpfs: {tmpfs}
         {mem_limit}
         {cpu_limit}
+        {cpuset}
         {pids_limit}
         cap_add:
             - SYS_PTRACE
@@ -5232,6 +5324,7 @@ services:
         user: '{user}'
         env_file:
             - {env_file}
+        {ci_logs_env}
         security_opt:
             - label:disable
             - seccomp:unconfined
@@ -5343,12 +5436,14 @@ class ClickHouseInstance:
         tmpfs=None,
         mem_limit=None,
         cpu_limit=None,
+        cpuset=None,
         pids_limit=None,
         config_root_name="clickhouse",
         extra_configs=[],
         randomize_settings=True,
         use_docker_init_flag=False,
         extra_parameters=None,
+        with_ci_logs_export=True,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -5372,6 +5467,9 @@ class ClickHouseInstance:
             self.cpu_limit = ""
         else:
             self.cpu_limit = f"cpus: {cpu_limit}"
+
+        # CPUs the container may run on, e.g. "0-1" (the `--cpuset-cpus` option of `docker run`).
+        self.cpuset = f'cpuset: "{cpuset}"' if cpuset is not None else ""
 
         if pids_limit is not None:
             self.pids_limit = f"pids_limit: {pids_limit}"
@@ -5516,6 +5614,7 @@ class ClickHouseInstance:
 
         self.docker_client = None
         self.ip_address = None
+        self.reported_lost_network_interface = False
         self.client = None
         self.image = image
         self.tag = tag
@@ -5532,6 +5631,27 @@ class ClickHouseInstance:
         # How the last server exited, kept once its exec id is dropped; every start clears them.
         self.clickhouse_last_exit_code = None
         self.clickhouse_forced_stop = False
+
+        # Export of the system log tables to the CI Logs cluster, see
+        # helpers/ci_logs_export.py. Only for servers that run - or, for a
+        # `with_installed_binary` instance, can be switched to - the binary
+        # under test: a server of an old release may not support the configs
+        # and the DDL that the export needs. A test can opt a server out, see
+        # add_instance.
+        self.ci_logs_export_supported = (
+            ci_logs_export.is_enabled()
+            and with_ci_logs_export
+            and not cluster.with_dolor
+            and ci_logs_export.supports_export(image, tag, with_installed_binary)
+            and config_root_name == "clickhouse"
+        )
+        # `with_installed_binary` starts the container with an old release
+        # installed over the image, so the export is off until (and unless) the
+        # instance switches to the binary under test, see
+        # restart_with_latest_version.
+        self.ci_logs_export_enabled = (
+            self.ci_logs_export_supported and not with_installed_binary
+        )
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -5651,6 +5771,7 @@ class ClickHouseInstance:
         if interfaces - DISCONNECTED_INTERFACE_NAMES:
             return ""
 
+        self.reported_lost_network_interface = True
         return (
             f"{LOST_NETWORK_INTERFACE_ERROR} {self.docker_id}: docker attached it to the "
             f"cluster network with address {expected_ip}, but the running container is "
@@ -6119,6 +6240,15 @@ class ClickHouseInstance:
                 logging.warning("ClickHouse process already stopped")
                 return False
 
+            # A graceful stop is not a crash simulation, so push the tail of the
+            # system logs out to the CI Logs cluster first: the rows still in the
+            # buffers of the log tables, in the asynchronous insert queue and in
+            # the `_sender` queues would otherwise be lost. restart_clickhouse()
+            # delegates here, so restarts are covered too. A hard kill keeps its
+            # semantics: nothing is sent to the server before it is killed.
+            if not kill:
+                ci_logs_export.flush_before_shutdown(self)
+
             if kill:
                 self.flush_per_test_coverage()
 
@@ -6248,7 +6378,6 @@ class ClickHouseInstance:
                     raise Exception("ClickHouse was expected not to be running.")
                 try:
                     self.wait_start(start_wait_sec + start_time - time.time())
-                    return exec_id
                 except Exception:
                     logging.warning(
                         f"Current start attempt failed. Will kill {pid} just in case."
@@ -6259,6 +6388,12 @@ class ClickHouseInstance:
                     if not retry_start:
                         raise
                     time.sleep(time_to_sleep)
+                    continue
+                # A restart may have changed the structure of a log table, see
+                # helpers/ci_logs_export.py
+                if self.ci_logs_export_enabled:
+                    ci_logs_export.refresh_after_start(self.cluster, self)
+                return exec_id
 
         # Every attempt above fails the same way when docker removed the container's interface;
         # say so, the CI job reports that as an infrastructure error.
@@ -6548,6 +6683,13 @@ class ClickHouseInstance:
         begin_time = time.time()
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
+        # The old release the server is about to become may not know the
+        # settings of the `ci_logs_sender` profile nor be able to run the
+        # `_watcher` views, see helpers/ci_logs_export.py
+        if self.ci_logs_export_enabled:
+            ci_logs_export.teardown_for_instance(self)
+            ci_logs_export.remove_instance_config(self.config_d_dir, self.users_d_dir)
+            self.ci_logs_export_enabled = False
         self.exec_in_container(
             ["bash", "-c", "pkill -{} clickhouse".format(signal)], user="root"
         )
@@ -6589,11 +6731,12 @@ class ClickHouseInstance:
                 "echo 'restart_with_original_version: From version' && /usr/bin/clickhouse server --version && echo 'To version' && /usr/share/clickhouse_original server --version",
             ]
         )
+        # Unlink first: a process that is still exiting may keep the old file busy (ETXTBSY).
         self.exec_in_container(
             [
                 "bash",
                 "-c",
-                "cp /usr/share/clickhouse_original /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
+                "rm -f /usr/bin/clickhouse && cp /usr/share/clickhouse_original /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
             ],
             user="root",
         )
@@ -6602,6 +6745,11 @@ class ClickHouseInstance:
             latest_version_seccomp_config_path = self.latest_version_seccomp_config_path()
             if p.exists(latest_version_seccomp_config_path):
                 os.remove(latest_version_seccomp_config_path)
+        delay_merges_after_startup_config_path = (
+            self.delay_merges_after_startup_config_path()
+        )
+        if p.exists(delay_merges_after_startup_config_path):
+            os.remove(delay_merges_after_startup_config_path)
         self.exec_in_container(
             ["bash", "-c", self.clickhouse_start_command_in_daemon],
             user=str(os.getuid()),
@@ -6616,6 +6764,18 @@ class ClickHouseInstance:
 
     def latest_version_seccomp_config_path(self):
         return p.join(self.config_d_dir, "zz_seccomp_latest_version.xml")
+
+    def delay_merges_after_startup_config_path(self):
+        return p.join(self.config_d_dir, "0_common_delay_merges_after_startup.xml")
+
+    def write_delay_merges_after_startup_config(self):
+        # Tests expect background merges right after a restart. Older versions do not know the setting,
+        # so it is written only for the server built from these sources.
+        with open(self.delay_merges_after_startup_config_path(), "w") as f:
+            f.write(
+                f"<{self.config_root_name}><merge_tree><delay_merges_after_startup_seconds>0"
+                f"</delay_merges_after_startup_seconds></merge_tree></{self.config_root_name}>\n"
+            )
 
     def restart_with_latest_version(
         self,
@@ -6655,15 +6815,18 @@ class ClickHouseInstance:
                 f.write(
                     f"<{self.config_root_name}><seccomp>{self.seccomp_config_for_latest_version}</seccomp></{self.config_root_name}>\n"
                 )
+        if self.copy_common_configs:
+            self.write_delay_merges_after_startup_config()
         self.exec_in_container(
             ["bash", "-c", "cp /usr/bin/clickhouse /usr/share/clickhouse_original"],
             user="root",
         )
+        # Unlink first: a process that is still exiting may keep the old file busy (ETXTBSY).
         self.exec_in_container(
             [
                 "bash",
                 "-c",
-                "cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
+                "rm -f /usr/bin/clickhouse && cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
             ],
             user="root",
         )
@@ -6674,6 +6837,18 @@ class ClickHouseInstance:
                 "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' && /usr/share/clickhouse_fresh server --version",
             ]
         )
+        # From here on the container runs the binary under test, so it can carry
+        # the export even if it was started from an installed old release, see
+        # helpers/ci_logs_export.py. The configs are written before the server
+        # starts, so it picks them up without a reload.
+        enable_ci_logs_export = (
+            self.ci_logs_export_supported and not self.ci_logs_export_enabled
+        )
+        if enable_ci_logs_export:
+            ci_logs_export.write_instance_config(self.config_d_dir)
+            ci_logs_export.write_instance_users_config(self.users_d_dir)
+            self.ci_logs_export_enabled = True
+
         if fix_metadata:
             # Versions older than 20.7 might not create .sql file for system and default database
             # Create it manually if upgrading from older version
@@ -6702,6 +6877,13 @@ class ClickHouseInstance:
             raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
+
+        if enable_ci_logs_export:
+            # The log tables still hold the rows of the old release
+            ci_logs_export.setup_for_instance(self.cluster, self, only_since_start=True)
+        elif self.ci_logs_export_enabled:
+            # The binary under test may have log tables of another structure
+            ci_logs_export.refresh_after_start(self.cluster, self)
 
     def get_docker_handle(self) -> Container:
         return self.cluster.get_docker_handle(self.docker_id)
@@ -6964,6 +7146,20 @@ class ClickHouseInstance:
             p.join(self.base_config_dir, self.main_config_name),
             p.join(instance_config_dir, self.main_config_name),
         )
+        # The isolation of the filesystem of the server depends on whether the container allows namespaces, and,
+        # when it is in force, hides what the tests use outside the paths of the server, such as the ODBC drivers
+        # and the interpreters of the scripts, so it is left at its default, `disabled`. An older server version
+        # would not know the element anyway. The stateless tests cover the isolation.
+        main_config_path = p.join(instance_config_dir, self.main_config_name)
+        with open(main_config_path, "r") as f:
+            main_config = f.read()
+        main_config = re.sub(
+            r"\n[ \t]*<filesystem_isolation>[^<]*</filesystem_isolation>|\nfilesystem_isolation:[^\n]*",
+            "",
+            main_config,
+        )
+        with open(main_config_path, "w") as f:
+            f.write(main_config)
         if self.with_installed_binary:
             # The main config.xml comes from the current sources, and an older server version refuses
             # to start on a top-level element it does not know yet, such as `seccomp`. Only the old
@@ -7001,6 +7197,7 @@ class ClickHouseInstance:
         self.config_d_dir = p.abspath(p.join(instance_config_dir, "config.d"))
         os.mkdir(self.config_d_dir)
         users_d_dir = p.abspath(p.join(instance_config_dir, "users.d"))
+        self.users_d_dir = users_d_dir
         os.mkdir(users_d_dir)
         dictionaries_dir = p.abspath(p.join(instance_config_dir, "dictionaries"))
         os.mkdir(dictionaries_dir)
@@ -7024,6 +7221,12 @@ class ClickHouseInstance:
                 self.config_d_dir,
                 self.with_installed_binary,
             )
+        if (
+            self.copy_common_configs
+            and not self.with_installed_binary
+            and not self.cluster.with_dolor
+        ):
+            self.write_delay_merges_after_startup_config()
 
         if not self.cluster.with_dolor:
             write_embedded_config("0_common_instance_users.xml", users_d_dir)
@@ -7053,6 +7256,10 @@ class ClickHouseInstance:
             write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
         write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
         write_embedded_config("0_common_enforce_zookeeper_component_name.xml", self.config_d_dir)
+
+        if self.ci_logs_export_enabled:
+            ci_logs_export.write_instance_config(self.config_d_dir)
+            ci_logs_export.write_instance_users_config(users_d_dir)
 
         if use_distributed_plan:
             write_embedded_config("0_common_enable_distributed_plan.xml", users_d_dir)
@@ -7200,7 +7407,7 @@ class ClickHouseInstance:
             depends_on += list(ZOOKEEPER_CONTAINERS)
 
         if self.with_minio:
-            depends_on.append("minio1")
+            depends_on.append(self.cluster.minio_host)
 
         if self.with_azurite:
             depends_on.append("azurite1")
@@ -7302,6 +7509,17 @@ class ClickHouseInstance:
 
         is_priv = os.environ.get("KEEPER_PRIVILEGED", "") == "1"
 
+        # Keyed on `ci_logs_export_supported`, not on `ci_logs_export_enabled`:
+        # the variables have to be in the container from the start, because a
+        # `with_installed_binary` instance enables the export only after
+        # `restart_with_latest_version`, and the config written then references
+        # them with `from_env` - a server whose `from_env` variable does not
+        # exist refuses to start. Passing them to a container that never
+        # enables the export costs nothing, the config is what uses them.
+        ci_logs_env = ""
+        if self.ci_logs_export_supported:
+            ci_logs_env = ci_logs_export.docker_compose_environment_section()
+
         with open(self.docker_compose_path, "w") as docker_compose:
             docker_compose.write(
                 DOCKER_COMPOSE_TEMPLATE.format(
@@ -7318,6 +7536,7 @@ class ClickHouseInstance:
                     tmpfs=str(self.tmpfs),
                     mem_limit=self.mem_limit,
                     cpu_limit=self.cpu_limit,
+                    cpuset=self.cpuset,
                     pids_limit=self.pids_limit,
                     logs_dir=logs_dir,
                     depends_on=str(depends_on),
@@ -7337,6 +7556,7 @@ class ClickHouseInstance:
                     init_flag="true" if self.docker_init_flag else "false",
                     HELPERS_DIR=HELPERS_DIR,
                     CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR,
+                    ci_logs_env=ci_logs_env,
                     privileged="true" if is_priv else "false",
                     dev_mount=(
                         "- /dev:/dev" if is_priv else ""

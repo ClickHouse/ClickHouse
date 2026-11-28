@@ -45,15 +45,16 @@ doc_type: 'reference'
 | `http_proxy`               | str 或 None                   | 环境变量/默认值               | 每个客户端的 HTTP 代理地址。                                                                                                                                                                                                                                    |
 | `https_proxy`              | str 或 None                   | 环境变量/默认值               | 每个客户端的 HTTPS 代理地址。                                                                                                                                                                                                                                   |
 | `pool_mgr`                 | `urllib3.PoolManager` 或 None | 进程内共享                  | 仅用于同步客户端的自定义连接池管理器。                                                                                                                                                                                                                                  |
+| `dedicated_pool`           | bool                         | `False`                | 为同步 HTTP 客户端分配独立的连接池。不能与 `pool_mgr` 同时使用。异步客户端可接受该参数，但不会生效。直接传给 chDB 工厂时会被忽略。                                                                                                                                                                        |
 | `tz_source`                | str 或 None                   | `"auto"`               | 用于没有时区元数据的列的后备时区来源：`"auto"`、`"server"` 或 `"local"`。                                                                                                                                                                                                  |
 | `tz_mode`                  | str 或 None                   | `"naive_utc"`          | UTC 结果处理策略：`"naive_utc"`、`"aware"` 或 `"schema"`。参见 [时区](/zh/integrations/language-clients/python/advanced-querying#time-zones)。                                                                                                                         |
 | `show_clickhouse_errors`   | bool、布尔值字符串、`"scrub"` 或 None | `True`                 | 控制服务器错误、传输错误和流中 `StreamFailureError` 的 `str(exc)`。`True` 会包含请求 URL 和服务器版本尾注。`"scrub"` 会保留 SQL 错误文本和符号名称，但会移除主机名/URL 及 `(version ...)` 尾注。`False` 会返回通用消息 (服务器错误仍会设置 `code`) 。接受布尔值字符串。其他字符串会引发 `ProgrammingError`。对于传输错误，`__cause__` 和回溯信息仍包含原始传输异常。 |
 | `proxy_path`               | str                          | `""`                   | 通过代理路由时，添加到服务器 URL 的路径前缀。                                                                                                                                                                                                                            |
-| `form_encode_query_params` | bool                         | `False`                | 始终将查询参数放入采用表单编码的请求体中。即使该值为 false，较大的非二进制参数载荷也会自动移入请求体中。                                                                                                                                                                                              |
+| `form_encode_query_params` | bool                         | `False`                | 始终将查询参数放入采用表单编码的请求体中。即使该值为 false，较大的非二进制参数载荷也会自动移入请求体中，除非最终 SQL 的 UTF-8 字节数超过 128 KiB。                                                                                                                                                               |
 | `native_codec`             | str 或 None                   | 全局设置，`"python"`        | 用于客户端管理的 Native 格式流量的 Experimental 编解码器：`"python"`、`"rust"` 或 `"rust_strict"`。Rust 相关取值需要 `clickhouse-connect-core` wheel 包。请参阅 [Rust codec](/zh/integrations/language-clients/python/rust-codec)。                                                      |
 | `rename_response_column`   | str 或 None                   | `None`                 | 列重命名策略：`"remove_prefix"`、`"to_camelcase"`、`"to_camelcase_without_prefix"`、`"to_underscore"` 或 `"to_underscore_without_prefix"`。                                                                                                                      |
 
-同步和异步 HTTP 工厂都会对以下客户端选项进行字符串值转换，这些值可来自 DSN 查询参数或 `generic_args`：`connect_timeout`、`send_receive_timeout`、`query_limit` 和 `query_retries` 会转换为上文所示的数值类型；`autogenerate_query_id`、`autogenerate_session_id` 和 `form_encode_query_params` 会转换为布尔值。如果这些选项的字符串值无效，则会引发 `ProgrammingError`。
+同步和异步 HTTP 工厂都会对以下客户端选项进行字符串值转换，这些值可来自 DSN 查询参数或 `generic_args`：`connect_timeout`、`send_receive_timeout`、`query_limit` 和 `query_retries` 会转换为上文所示的数值类型；`autogenerate_query_id`、`autogenerate_session_id`、`form_encode_query_params` 和 `dedicated_pool` 会转换为布尔值。如果这些选项的字符串值无效，则会引发 `ProgrammingError`。
 
 异步工厂还接受 `connector_limit=100`、`connector_limit_per_host=20` 和 `keepalive_timeout=30.0`，用于配置其 aiohttp 连接池。这些参数可以作为关键字参数直接传入，也可以通过 DSN 查询参数或 `generic_args` 传入 (`generic_args` 在内部用于 SQLAlchemy 的 `connect_args`) 。这些连接器选项的字符串值会转换为文档所述的数值类型。上述选项的字符串值无效时，会引发 `ProgrammingError`。优先次序依次为：显式传入的非 `None` 关键字参数、`generic_args`、DSN。异步工厂不接受 `pool_mgr`。同步 chDB 后端接受 `path` 和 `chdb_options`；参见 [嵌入式 chDB 后端](#embedded-chdb-backend)。
 
@@ -153,11 +154,15 @@ with clickhouse_connect.get_client(interface="chdb") as client:
 
 同步和异步 HTTP 客户端在遇到某些远程连接关闭，或收到 HTTP 429、503、504 响应时，都会对符合条件的读操作进行重试。对于 `query` 及其专用查询方法、`raw_query` 和 `raw_stream`，可通过 `query_retries` 设置额外尝试的次数。即使 `query_retries=0`，符合条件的读操作在远程连接关闭后也至少会重试一次。通过 `command` 发送的读操作在远程连接关闭后可重试一次，但不计入 `query_retries` 的重试额度，也不会因上述 HTTP 状态码而重试。
 
+在因 HTTP 429、503 或 504 响应而重试之前，两种客户端都会等待 `0.1 * attempt` 秒 (`attempt` 从 1 开始计数) ，并关闭失败的响应。
+
+如果连接在 HTTP 状态行或进度请求头之后、ClickHouse 发送最终响应头之前关闭，同样遵循上述远程连接关闭策略。
+
 客户端能够识别 `SELECT`、`SHOW`、`DESCRIBE` 和 `EXISTS` 等读语句，包括受支持的 `WITH` 和 `EXPLAIN` 形式。无法识别为读操作的 SQL 在发生上述故障后不会重试。包含 `PARALLEL WITH` 或 `INTO OUTFILE` 的语句以及多语句也不在重试范围内。
 
 通过 `command`、`query`、`raw_query` 或 `raw_stream` 发送的 SQL 写操作、DDL 和变更在发生上述故障后不会重放。DB-API 或 SQLAlchemy 通过这些方法执行 SQL 时同样如此。连接错误并不能说明写操作是否已提交，因此在应用程序中重试前，请先确认执行结果。
 
-当请求正文可以重放时，插入 API 仍会在连接关闭后进行重试，这可能会产生重复行。请参阅[插入重试与去重](/zh/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)。
+当请求体可以重放时，插入 API 仍会在连接关闭后进行重试，这可能会产生重复行。请参阅[插入重试与去重](/zh/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)。
 
 ## 客户端生命周期和最佳实践 {#client-lifecycle-and-best-practices}
 
@@ -257,7 +262,7 @@ def worker(thread_id):
 
 ### 正确清理 {#proper-cleanup}
 
-务必在关闭时关闭客户端。请注意，只有当客户端拥有自己的连接池管理器时 (例如，使用自定义 TLS/代理选项创建时) ，`client.close()` 才会释放客户端并关闭池化的 HTTP 连接。对于默认的共享连接池，请使用 `client.close_connections()` 主动清理套接字；否则，连接会在空闲超时后以及进程退出时自动回收。
+务必在关闭时关闭客户端。对于同步 HTTP 客户端，只有当客户端拥有自己的连接池管理器时 (例如使用 `dedicated_pool=True` 或自定义 TLS 选项时) ，`client.close()` 才会关闭池化的 HTTP 连接。对于默认的共享连接池，请使用 `client.close_connections()` 主动清理套接字；否则，连接会在空闲超时后以及进程退出时自动回收。有关专用连接池的清理行为，请参阅[自定义 HTTP 连接池](/zh/integrations/language-clients/python/advanced-usage#customizing-the-http-connection-pool)。
 
 ```python
 client = clickhouse_connect.get_client(
@@ -292,6 +297,12 @@ with clickhouse_connect.get_client(
 * **隔离的会话**：当你需要为临时表或会话级设置使用独立会话时
 * **按线程隔离**：当线程需要独立会话时 (如上所示)
 
+## Client `ping` 方法 {#client-ping-method}
+
+使用 `client.ping(timeout=1.5)` 检查服务器是否可访问。检查成功时返回 `True`，发生网络故障时返回 `False`。对于异步客户端，请使用 `await client.ping(timeout=1.5)`。
+
+`timeout` 接受以秒为单位的正数。若省略该参数或传入 `None`，则默认使用 3 秒，且不受 `connect_timeout` 和 `send_receive_timeout` 影响。同步 HTTP 客户端会将该值分别应用于连接和读取操作，而异步 HTTP 客户端则将其用作请求的总超时时间。如果传入零或负值，两种 HTTP 客户端都会引发 `ProgrammingError`。chDB 客户端会忽略 `timeout`。
+
 ## 常用方法参数 {#common-method-arguments}
 
 多个客户端方法会使用通用的 `parameters` 和/或 `settings` 参数。下面将介绍这些关键字参数。
@@ -300,15 +311,15 @@ with clickhouse_connect.get_client(
 
 ClickHouse Connect 客户端的 `query*` 和 `command` 方法都接受一个可选的 `parameters` 关键字参数，用于将 Python 表达式绑定到 ClickHouse 值表达式。提供两种绑定方式。
 
-#### 服务器端绑定 {#server-side-binding}
+#### 服务端绑定 {#server-side-binding}
 
-ClickHouse 支持对查询值使用[服务器端绑定](/zh/concepts/features/interfaces/client#cli-queries-with-parameters)。绑定的值会作为 HTTP 参数与查询分开发送。ClickHouse Connect 在检测到形如 `{<name>:<datatype>}` 的表达式时，会使用此模式。请以 Python 字典形式传入这些值。
+ClickHouse 支持对查询值使用[服务端绑定](/zh/concepts/features/interfaces/client#cli-queries-with-parameters)。绑定的值会作为 HTTP 参数与查询分开发送。ClickHouse Connect 在字符串、用引号括起的标识符、注释和 Here 文档 之外检测到形如 `{<name>:<datatype>}` 的表达式时，会使用此模式。请以 Python 字典形式传入这些值。
 
-参数名称必须是 ClickHouse ASCII BareWord 名称。只要服务器接受，驱动程序允许在名称开头、中间或末尾使用 `$`，例如 `{$tenant_id:String}`。以 `$` 开头和结尾，且值为 `bytes`、`bytearray` 或 `memoryview` 等缓冲区类型的字典键，保留给 ClickHouse Connect 的原始二进制参数约定。如果此类键用于非二进制服务器端参数，请仅使用一个 `{name:Type}` 占位符。重复的 `$tag$` 名称可能会被 ClickHouse 解析为 Heredoc 标记。
+参数名称必须是 ClickHouse ASCII BareWord 名称。只要服务器接受，驱动程序允许在名称开头、中间或末尾使用 `$`，例如 `{$tenant_id:String}`。以 `$` 开头和结尾，且值为 `bytes`、`bytearray` 或 `memoryview` 等缓冲区类型的字典键，保留给 ClickHouse Connect 的原始二进制参数约定。如果此类键用于非二进制服务端参数，请仅使用一个 `{name:Type}` 占位符。重复的 `$tag$` 名称可能会被 ClickHouse 解析为 Here 文档 标记。
 
 对于可空值，请使用 Python `None`。`Array` 和 `Tuple` 参数中支持嵌套的 `None` 值；当 `dict_parameter_format` 设置为 `"map"` 时，`Map` 字面量中也支持嵌套的 `None` 值。
 
-* 使用 Python 字典、日期时间值和字符串值的服务器端绑定
+* 使用 Python 字典、日期时间值和字符串值的服务端绑定
 
 ```python
 import datetime
@@ -336,15 +347,28 @@ WHERE date >= '2022-10-01 15:20:05'
   AND string ILIKE 'a string with a single quote\''
 ```
 
-服务器端绑定适用于 `SELECT` 查询和 `INSERT ... VALUES` 语句。如需批量插入大量普通数据，建议使用 `Client.insert`。
+服务端绑定适用于 `SELECT` 查询和 `INSERT ... VALUES` 语句。如需批量插入大量普通数据，建议使用 `Client.insert`。
+
+命名 `Tuple` 参数接受一个字典，其键必须与声明的字段完全一致。客户端会按照类型声明对其中的值进行排序，因此字典中键的顺序无关紧要：
+
+```python
+client.query(
+    "SELECT {p:Tuple(protocol UInt8, port UInt16)}",
+    parameters={"p": {"port": 79, "protocol": 13}},
+)
+```
+
+这同样适用于 `Array`、`Tuple`、`Nullable` 和 `Map` 值中的命名元组。如果缺少字段或存在多余字段，会引发 `ProgrammingError`。对于 `Map` 参数，请照常设置 `dict_parameter_format="map"`。未指定类型的客户端参数没有 Tuple 声明，因此字典会沿用已配置的 JSON 或 map 格式化方式。
 
 #### 客户端绑定 {#client-side-binding}
 
 ClickHouse Connect 也支持客户端参数绑定，这样在生成模板化 SQL 查询时会更灵活。对于客户端绑定，`parameters` 参数应为字典或序列。客户端绑定使用 Python 的[&quot;printf&quot; 风格](https://docs.python.org/3/library/stdtypes.html#old-string-formatting)字符串格式化进行参数替换。
 
-请注意，与服务器端绑定不同，客户端绑定不适用于数据库标识符，例如 database、表或列名，因为 Python 风格的格式化无法区分不同类型的字符串，而这些字符串需要采用不同的格式化方式 (数据库标识符使用反引号或双引号，数据值使用单引号) 。
+请注意，与服务器端绑定不同，客户端绑定不适用于数据库标识符，例如 数据库、表或列名，因为 Python 风格的格式化无法区分不同类型的字符串，而这些字符串需要采用不同的格式化方式 (数据库标识符使用反引号或双引号，数据值使用单引号) 。
 
-* 使用 Python Dictionary、日期时间 值和字符串转义的示例
+由于替换采用 printf 风格，只要传入了 `parameters`，查询中的字面量 `%` 就必须写成 `%%`。如果查询中仅有的 `{name:Type}` 文本位于字符串、用引号括起的标识符、注释或 Here 文档之中，该查询就会走客户端绑定这条路径，因此其中未转义的 `%` 会引发 `ValueError`。
+
+* 使用 Python 字典、日期时间 值和字符串转义的示例
 
 ```python
 import datetime
@@ -390,13 +414,13 @@ WHERE metric >= 35200.44
 ```
 
 <Note>
-  Datetime 绑定会将不带时区信息的值视为墙钟时间。客户端会原样格式化不带时区信息的 `datetime`。ClickHouse 会根据服务器端占位符中声明的时区 (例如 `{dt:DateTime('Europe/Berlin')}`) 解释它，随后使用已设置的 `session_timezone`，最后使用服务器时区。带时区信息的 `datetime` 会转换为占位符中声明的时区 (如有) ，否则转换为连接时报告的服务器时区。如果 `session_timezone` 设置与报告的服务器时区不同，请在占位符中声明时区，以确保带时区信息的值保持预期的时间点。
+  Datetime 绑定会将不带时区信息的值视为墙钟时间。客户端会原样格式化不带时区信息的 `datetime`。ClickHouse 会根据服务端占位符中声明的时区 (例如 `{dt:DateTime('Europe/Berlin')}`) 解释它，随后使用已设置的 `session_timezone`，最后使用服务器时区。带时区信息的 `datetime` 会转换为占位符中声明的时区 (如有) ，否则转换为连接时报告的服务器时区。如果 `session_timezone` 设置与报告的服务器时区不同，请在占位符中声明时区，以确保带时区信息的值保持预期的时间点。
 
   如需临时兼容较旧的主机本地转换方式，请在绑定参数前设置 `common.set_setting("naive_datetime_binding", "legacy")`。为保留时间点，请在将 `datetime` 值作为参数传递前附加预期的 `tzinfo`。默认情况下，通过 `client.insert` 向 `DateTime` 或 `DateTime64` 列插入时，会在进程本地时区中解释不带时区信息的 `datetime` 值。将全局 `naive_datetime_insert` 设置设为 `"server"`，可将其解释为列时区中的墙钟时间；如果列没有时区，则使用服务器时区。请参阅[不带时区信息的 datetime 对象](/zh/integrations/language-clients/python/advanced-inserting#timezone-naive-datetime-objects)。
 
   向 `Date` 和 `Date32` 列执行原生插入时，会直接使用 Python `datetime` 值自身的日历日期，不进行时区转换。如果插入和查询参数需要使用相同的日历日期，请显式传入 `value.date()`。请参阅[Date 和 Date32 值](/zh/integrations/language-clients/python/advanced-inserting#date-and-date32-values)。
 
-  对于服务器端的 `{value:DateTime64(precision)}` 占位符，已声明的类型会自动保留子秒级精度，在 `Array` 和 `Tuple` 提示中也是如此。
+  对于服务端的 `{value:DateTime64(precision)}` 占位符，已声明的类型会自动保留子秒级精度，在 `Array`、命名或未命名的 `Tuple`、`Nested` 以及 `Map` 提示中也是如此。`Map` 参数需要设置 `dict_parameter_format="map"`。仅当 `Variant` 中唯一的日期时间备选类型是 `DateTime64` 时，它才会保留 `DateTime64` 的精度和时区。包含多个日期时间备选类型的 Variant，其行为与之前相同。
 
   客户端 `%s` 绑定没有声明类型。如果必须以子秒级精度进行格式化，请将 `datetime` 封装在 `DT64Param` 中：
 
@@ -844,7 +868,11 @@ with dbapi.connect(
 
 `Cursor.description` 会根据每个结果列的类型确定 `null_ok`。不可为 NULL 的类型返回 `False`，可为 NULL 的类型返回 `True`，包括 `Nullable` 包装器、`Variant` 和 `Dynamic`。`None` 表示可空性未知。当以 `SELECT` 或 `WITH` 开头的查询 (忽略前导注释) 既不返回行也不返回列元数据时，游标会执行 `LIMIT 0` 元数据查询来填充 `description`。如果该元数据查询失败，`description` 将保持为空。
 
-ClickHouse 不通过此 HTTP 接口提供传统事务。`Connection.commit()` 和 `Connection.rollback()` 都是空操作，因此退出连接上下文时会调用 `Connection.close()`，而不会执行提交或回滚。共享 connection 时，[会话 ID 并发规则](/zh/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids)仍然适用。
+对于已编译的 SQLAlchemy Core 和 ORM SELECT 语句，如果其投影的列结构固定、编译后的列名唯一，并且每个结果列所用的结果处理器都不读取服务器类型代码，则会跳过这一额外查询。受支持的处理器类别包括结果处理器仅依赖方言标志的 SQLAlchemy 通用类型，例如 `String`、`Boolean`、`Numeric`、`Float`、`Enum`，以及继承默认 `TypeEngine` 处理器的类型，例如 `Integer` 和 `DateTime`。驱动自身用于反射 ClickHouse 列的 `ChSqlaType` 类型同样符合条件。`TypeDecorator` 包装器只要经方言解析后的内部类型符合条件，其本身也符合条件，嵌套包装器、`with_variant` 和 `load_dialect_impl` 均适用此规则。自定义的 `result_processor` 重写、`Enum` 子类以及 `JSON` 尚未验证是否会忽略服务器类型代码，因此仍会执行 `LIMIT 0` 查询。
+
+对于符合条件的空结果，`Cursor.description` 使用编译后的列名，并将 `type_code` 和 `null_ok` 均报告为 `None`。原始 SQL 投影或修饰符、由服务器展开的列、被重写的语句以及游标 `execute` 包装器仍会使用元数据回退查询。普通 DB-API 查询、SQLAlchemy `text()` 和 `exec_driver_sql()` 同样保留该回退机制。如需获取空结果的服务器类型代码和可空性，请使用上述任一文本执行方式。
+
+ClickHouse 不通过此 HTTP 接口提供传统事务。`Connection.commit()` 和 `Connection.rollback()` 都是空操作，因此退出连接上下文时会调用 `Connection.close()`，而不会执行提交或回滚。共享 连接 时，[会话 ID 并发规则](/zh/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids)仍然适用。
 
 ## 实用类和函数 {#utility-classes-and-functions}
 

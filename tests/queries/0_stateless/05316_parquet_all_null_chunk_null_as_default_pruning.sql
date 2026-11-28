@@ -1,6 +1,4 @@
--- Tags: no-fasttest
--- no-fasttest: the Parquet format is not built in the fast-test image.
-
+-- Random settings limits: output_format_parquet_write_page_index=(1, 1)
 -- An all-NULL row group or page of a Nullable Parquet column read as non-Nullable under
 -- `input_format_null_as_default` holds only the default value: min/max pruning must keep it for a
 -- predicate on the default and may skip it for any other value.

@@ -1,35 +1,37 @@
 ---
 slug: /optimize/query-parallelism
-sidebarTitle: '查询并行度'
+sidebarTitle: '查询并行性'
 description: 'ClickHouse 通过处理通道和 max_threads 设置并行执行查询。'
 title: 'ClickHouse 如何并行执行查询'
 doc_type: 'guide'
 keywords: ['并行处理', '查询优化', '性能', '线程', '最佳实践']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickHouse [专为速度而打造](/zh/get-started/about/why-clickhouse-is-so-fast)。它以高度并行的方式执行查询，利用所有可用的 CPU 核心，将数据分配到各个处理通道中，并且常常让硬件接近其性能极限。
 
-本指南将逐步讲解 ClickHouse 中的查询并行度如何工作，以及你如何对其进行调优或监控，以提升大型工作负载下的性能。
+本指南将逐步讲解 ClickHouse 中的查询并行性如何工作，以及你如何对其进行调优或监控，以提升大型工作负载下的性能。
 
 我们使用 [uk&#95;price&#95;paid&#95;simple](/zh/concepts/core-concepts/parts) 数据集上的一个聚合查询来说明关键概念。
 
-<div id="step-by-step-how-clickHouse-parallelizes-an-aggregation-query">
-  ## 分步说明：ClickHouse 如何并行处理聚合查询
-</div>
+## 分步说明：ClickHouse 如何并行处理聚合查询 {#step-by-step-how-clickHouse-parallelizes-an-aggregation-query}
 
 当 ClickHouse ① 执行带有表主键过滤条件的聚合查询时，会 ② 将主索引加载到内存中，以 ③ 判断哪些粒度需要处理，哪些可以安全地跳过：
 
-<Image img="/images/guides/best-practices/query-parallelism_01.webp" size="md" alt="索引分析" />
-
-<div id="distributing-work-across-processing-lanes">
-  ### 将工作分配到各处理通道
+<div className="ch-image-md">
+  <Frame>
+    ![索引分析](/images/guides/best-practices/query-parallelism_01.webp)
+  </Frame>
 </div>
+
+### 将工作分配到各处理通道 {#distributing-work-across-processing-lanes}
 
 然后，选定的数据会被[动态](#load-balancing-across-processing-lanes)分配到 `n` 个并行的[处理通道](/zh/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization)中，这些通道会将数据按[块](/zh/resources/develop-contribute/introduction/architecture#block)流式传输并逐块处理，最终得到结果：
 
-<Image img="/images/guides/best-practices/query-parallelism_02.webp" size="md" alt="4 个并行处理通道" />
+<div className="ch-image-md">
+  <Frame>
+    ![4 个并行处理通道](/images/guides/best-practices/query-parallelism_02.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -39,7 +41,11 @@ ClickHouse [专为速度而打造](/zh/get-started/about/why-clickhouse-is-so-fa
 
 在一台具有 `8` 个核心的机器上，查询处理吞吐量大致会翻倍 (但内存占用也会相应增加) ，因为会有更多通道并行处理数据：
 
-<Image img="/images/guides/best-practices/query-parallelism_03.webp" size="md" alt="8 个并行处理通道" />
+<div className="ch-image-md">
+  <Frame>
+    ![8 个并行处理通道](/images/guides/best-practices/query-parallelism_03.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -47,13 +53,15 @@ ClickHouse [专为速度而打造](/zh/get-started/about/why-clickhouse-is-so-fa
 
 高效的通道分配是最大化 CPU 利用率并缩短总查询时间的关键。
 
-<div id="processing-queries-on-sharded-tables">
-  ### 在分片表上处理查询
-</div>
+### 在分片表上处理查询 {#processing-queries-on-sharded-tables}
 
 当表数据作为[分片](/zh/guides/oss/deployment-and-scaling/shards)分布在多台服务器上时，每台服务器都会并行处理自己的分片。在每台服务器内部，本地数据也会像上文所述那样，通过并行处理通道进行处理：
 
-<Image img="/images/guides/best-practices/query-parallelism_04.webp" size="md" alt="分布式通道" />
+<div className="ch-image-md">
+  <Frame>
+    ![分布式通道](/images/guides/best-practices/query-parallelism_04.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -61,21 +69,19 @@ ClickHouse [专为速度而打造](/zh/get-started/about/why-clickhouse-is-so-fa
 
 最先接收到查询的服务器会收集各个分片返回的所有子结果，并将其合并为最终的全局结果。
 
-将查询负载分散到各个分片上，可以横向扩展并行能力，尤其适用于高吞吐量环境。
+将查询负载分散到各个分片上，可以横向扩展并行度，尤其适用于高吞吐量环境。
 
 <Info>
   **ClickHouse Cloud 使用并行副本，而不是分片**
 
-  在 ClickHouse Cloud 中，同样的并行能力是通过[并行副本](/zh/products/cloud/features/infrastructure/parallel-replicas)实现的，其工作方式与shared-nothing 集群中的分片类似。每个 ClickHouse Cloud 副本——也就是一个无状态计算节点——都会并行处理一部分数据，并像独立分片一样共同形成最终结果。
+  在 ClickHouse Cloud 中，同样的并行度是通过[并行副本](/zh/products/cloud/features/infrastructure/parallel-replicas)实现的，其工作方式与shared-nothing 集群中的分片类似。每个 ClickHouse Cloud 副本——也就是一个无状态计算节点——都会并行处理一部分数据，并像独立分片一样共同形成最终结果。
 </Info>
 
-<div id="monitoring-query-parallelism">
-  ## 监控查询并行度
-</div>
+## 监控查询并行性 {#monitoring-query-parallelism}
 
 使用这些工具来验证查询是否充分利用了可用的 CPU 资源，并在未充分利用时进行诊断。
 
-这里我们在一台配备 59 个 CPU 核心的测试服务器上运行示例，这样 ClickHouse 就能充分展示其查询并行能力。
+这里我们在一台配备 59 个 CPU 核心的测试服务器上运行示例，这样 ClickHouse 就能充分展示其查询并行性。
 
 为了观察示例查询的执行方式，我们可以让 ClickHouse server 在聚合查询期间返回所有 trace 级别的日志条目。为便于演示，我们去掉了查询中的谓词——否则只会处理 3 个粒度，这不足以让 ClickHouse 利用超过少数几个并行处理通道：
 
@@ -98,7 +104,7 @@ SETTINGS send_logs_level='trace';
 * ① ClickHouse 需要在 3 个数据范围内读取 3,609 个粒度 (在跟踪日志中记为标记) 。
 * ② 借助 59 个 CPU 核心，它会将这项工作分配到 59 个并行处理流中——每个处理通道对应一个流。
 
-或者，我们也可以使用 [EXPLAIN](/zh/reference/statements/explain#explain-pipeline) 子句来查看聚合查询的[物理算子计划](/zh/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization)——也称为“查询管道”：
+或者，我们也可以使用 [EXPLAIN](/zh/reference/statements/explain#explain-pipeline) 子句来查看聚合查询的[物理算子计划](/zh/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization)——也称为&quot;查询管道&quot;：
 
 ```sql
 EXPLAIN PIPELINE
@@ -127,18 +133,22 @@ FROM
 
 ClickHouse 的[嵌入式 web UI](/zh/concepts/features/interfaces/http) (可通过 `/play` 端点访问) 可以将上面的物理计划渲染为图形化视图。在此示例中，我们将 `max_threads` 设置为 `4`，以使可视化更紧凑，因此只显示 4 条并行处理通道：
 
-<Image img="/images/guides/best-practices/query-parallelism_05.webp" alt="查询管道" />
+<div className="ch-image-lg">
+  <Frame>
+    ![查询管道](/images/guides/best-practices/query-parallelism_05.webp)
+  </Frame>
+</div>
 
 注意：请从左到右阅读该可视化图。每一行代表一条并行处理通道，数据以数据块为单位流式传输，并依次应用过滤、聚合和最终处理等转换。在这个示例中，你可以看到与 `max_threads = 4` 设置对应的四条并行通道。
 
 <div id="load-balancing-across-processing-lanes">
-  ### 跨处理通道的负载均衡
+  ### 跨处理通道的负载均衡 {#load-balancing-across-processing-lanes}
 </div>
 
 请注意，上述物理计划中的 `Resize` 算子会在各处理通道之间对数据块流进行[重新分区和重新分发](/zh/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization)，以保持各通道的负载均衡。当不同数据范围中满足查询谓词的行数差异较大时，这种重新平衡尤为重要；否则，某些通道可能负载过高，而其他通道则处于空闲状态。通过重新分配工作，较快的通道实际上可以帮助较慢的通道分担负载，从而优化整体查询运行时间。
 
 <div id="why-max-threads-isnt-always-respected">
-  ## 为什么 max_threads 并不总是被遵守
+  ## 为什么 max_threads 并不总是被遵守 {#why-max-threads-isnt-always-respected}
 </div>
 
 如上所述，`n` 条并行处理通道的数量由 `max_threads` 设置控制，默认情况下，它与服务器上 ClickHouse 可用的 CPU 核心数一致：
@@ -270,7 +280,7 @@ MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59
 这说明，对于小型数据集上的查询，ClickHouse 会主动限制并发度。设置覆盖仅应用于测试，不要用于生产环境，因为这可能导致执行效率低下或资源争用。
 
 <div id="key-takeaways">
-  ## 关键要点
+  ## 关键要点 {#key-takeaways}
 </div>
 
 * ClickHouse 使用与 `max_threads` 关联的处理通道并行执行查询。
@@ -278,7 +288,7 @@ MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59
 * 使用 `EXPLAIN PIPELINE` 和跟踪日志分析通道使用情况。
 
 <div id="where-to-find-more-information">
-  ## 在哪里查找更多信息
+  ## 在哪里查找更多信息 {#where-to-find-more-information}
 </div>
 
 如果你想进一步了解 ClickHouse 如何并行执行查询，以及它如何在大规模场景下实现高性能，可参阅以下资源：

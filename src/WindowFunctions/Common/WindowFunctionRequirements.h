@@ -5,9 +5,11 @@ namespace DB
 
 struct WindowFunctionRequirements
 {
-    bool frame = false;
-    bool peers = false;
-    bool partition = false;
+    bool frame_start = false;
+    bool frame_end = false;
+    bool peers_start = false;
+    bool peers_end = false;
+    bool partition_end = false;
     bool order_by = false;
 };
 

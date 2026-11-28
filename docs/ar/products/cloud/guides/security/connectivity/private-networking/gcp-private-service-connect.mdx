@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['Private Service Connect']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="GCP PSC" />
@@ -16,7 +15,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 ينشر منتجو الخدمات تطبيقاتهم للمستهلكين من خلال إنشاء خدمات Private Service Connect. ويصل مستهلكو الخدمات إلى خدمات Private Service Connect هذه مباشرةً عبر أحد أنواع Private Service Connect.
 
-<Image img="/images/cloud/security/gcp-psc-overview.webp" size="lg" alt="نظرة عامة على Private Service Connect" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![نظرة عامة على Private Service Connect](/images/cloud/security/gcp-psc-overview.webp)
+  </Frame>
+</div>
 
 <Warning>
   يدعم GCP Private Service Connect فقط الاتصالات التي تبدأ من شبكة GCP VPC الخاصة بك إلى ClickHouse Cloud. ولا يمكن استخدامه للاتصالات التي تبدأ من ClickHouse Cloud إلى الخدمات الموجودة في شبكة VPC الخاصة بك، مثل [قاعدة بيانات خاصة](#connecting-to-a-remote-database).
@@ -28,7 +31,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 1. يجب أن تنتمي المناطق التي تستخدم Global Access إلى شبكة VPC نفسها.
 2. يجب تمكين Global Access صراحةً على مستوى PSC (راجع لقطة الشاشة أدناه).
-3. تأكد من أن إعدادات firewall لديك لا تمنع الوصول إلى PSC من مناطق أخرى.
+3. تأكد من أن إعدادات جدار الحماية لديك لا تمنع الوصول إلى PSC من مناطق أخرى.
 4. انتبه إلى أنك قد تتحمل رسوم نقل البيانات بين المناطق في GCP.
 
 لا يتوفر دعم للاتصال بين المناطق. يجب أن تكون منطقتا المنتج والمستهلك متماثلتين. ومع ذلك، يمكنك الاتصال من مناطق أخرى داخل شبكة VPC الخاصة بك عبر تمكين [Global Access](https://cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access) على مستوى Private Service Connect (PSC).
@@ -41,7 +44,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 4. أضف &quot;Endpoint ID&quot; إلى قائمة السماح لخدمة ClickHouse.
 
 <div id="attention">
-  ## انتباه
+  ## انتباه {#attention}
 </div>
 
 يحاول ClickHouse تجميع خدماتك لإعادة استخدام [PSC endpoint](https://cloud.google.com/vpc/docs/private-service-connect) المنشور نفسه داخل منطقة GCP. ومع ذلك، لا يضمن هذا التجميع دائمًا، خاصةً إذا كانت خدماتك موزعة على عدة مؤسسات في ClickHouse.
@@ -50,7 +53,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 يمكنك العثور على أمثلة Terraform [هنا](https://github.com/ClickHouse/terraform-provider-clickhouse/tree/main/examples/).
 
 <div id="before-you-get-started">
-  ## قبل البدء
+  ## قبل البدء {#before-you-get-started}
 </div>
 
 <Note>
@@ -89,19 +92,23 @@ jq ".result[] | select (.region==\"${REGION:?}\" and .provider==\"${PROVIDER:?}\
 </Note>
 
 <div id="obtain-gcp-service-attachment-and-dns-name-for-private-service-connect">
-  ## الحصول على service attachment في GCP واسم DNS لـ Private Service Connect
+  ## الحصول على service attachment في GCP واسم DNS لـ Private Service Connect {#obtain-gcp-service-attachment-and-dns-name-for-private-service-connect}
 </div>
 
 <div id="option-1-clickhouse-cloud-console">
-  ### الخيار 1: ClickHouse Cloud console
+  ### الخيار 1: وحدة تحكم ClickHouse Cloud {#option-1-clickhouse-cloud-console}
 </div>
 
-في ClickHouse Cloud console، افتح الخدمة التي تريد الاتصال بها باستخدام Private Service Connect، ثم افتح قائمة **Settings**. انقر على الزر **Set up private endpoint**. دوّن **اسم الخدمة** (`endpointServiceId`) و**اسم DNS** (`privateDnsHostname`). ستستخدمهما في الخطوات التالية.
+في وحدة تحكم ClickHouse Cloud، افتح الخدمة التي تريد الاتصال بها باستخدام Private Service Connect، ثم افتح قائمة **Settings**. انقر على الزر **Set up private endpoint**. دوّن **اسم الخدمة** (`endpointServiceId`) و**اسم DNS** (`privateDnsHostname`). ستستخدمهما في الخطوات التالية.
 
-<Image img="/images/cloud/security/gcp-privatelink-pe-create.webp" size="lg" alt="نقاط النهاية الخاصة" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![نقاط النهاية الخاصة](/images/cloud/security/gcp-privatelink-pe-create.webp)
+  </Frame>
+</div>
 
 <div id="option-2-api">
-  ### الخيار 2: API
+  ### الخيار 2: API {#option-2-api}
 </div>
 
 <Note>
@@ -121,7 +128,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 دوّن `endpointServiceId` و`privateDnsHostname`. ستستخدمهما في الخطوات التالية.
 
 <div id="create-service-endpoint">
-  ## إنشاء نقطة نهاية للخدمة
+  ## إنشاء نقطة نهاية للخدمة {#create-service-endpoint}
 </div>
 
 <Warning>
@@ -135,39 +142,49 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 في هذا القسم، ستنشئ نقطة نهاية للخدمة.
 
 <div id="adding-a-private-service-connection">
-  ### إضافة Private Service Connection
+  ### إضافة Private Service Connection {#adding-a-private-service-connection}
 </div>
 
 أولًا، ستُنشئ Private Service Connection.
 
-<div id="option-1-using-google-cloud-console">
-  #### الخيار 1: استخدام Google Cloud console
-</div>
+#### الخيار 1: استخدام Google Cloud console {#option-1-using-google-cloud-console}
 
 في Google Cloud console، انتقل إلى **Network services -&gt; Private Service Connect**.
 
-<Image img="/images/cloud/security/gcp-psc-open.webp" size="lg" alt="افتح Private Service Connect في Google Cloud console" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![افتح Private Service Connect في Google Cloud console](/images/cloud/security/gcp-psc-open.webp)
+  </Frame>
+</div>
 
-افتح مربع حوار إنشاء Private Service Connect بالنقر على الزر **Connect Endpoint**.
+افتح مربع حوار إنشاء Private Service Connect بالنقر على الزر **Connect نقطة نهاية**.
 
 * **Target**: استخدم **Published service**
 * **Target service**: استخدم `endpointServiceId`<sup>واجهة برمجة تطبيقات</sup> أو `Service name`<sup>console</sup> من خطوة [الحصول على service attachment في GCP لـ Private Service Connect](#obtain-gcp-service-attachment-and-dns-name-for-private-service-connect).
-* **Endpoint name**: عيّن اسمًا لـ PSC **Endpoint name**.
+* **اسم نقطة النهاية**: عيّن اسمًا لـ PSC **اسم نقطة النهاية**.
 * **Network/Subnetwork/IP address**: اختر الشبكة التي تريد استخدامها للاتصال. ستحتاج إلى إنشاء عنوان IP أو استخدام عنوان موجود لنقطة نهاية Private Service Connect. في مثالنا، أنشأنا مسبقًا عنوانًا بالاسم **your-ip-address** وعيّنا له عنوان IP `10.128.0.2`.
-* لجعل نقطة النهاية متاحة من أي Region، يمكنك تفعيل مربع الاختيار **Enable global access**.
+* لجعل نقطة النهاية متاحة من أي منطقة، يمكنك تفعيل مربع الاختيار **Enable global access**.
 
-<Image img="/images/cloud/security/gcp-psc-enable-global-access.webp" size="md" alt="فعّل Global Access لـ Private Service Connect" border />
+<div className="ch-image-md">
+  <Frame>
+    ![فعّل Global Access لـ Private Service Connect](/images/cloud/security/gcp-psc-enable-global-access.webp)
+  </Frame>
+</div>
 
-لإنشاء PSC Endpoint، استخدم الزر **ADD ENDPOINT**.
+لإنشاء نقطة نهاية PSC، استخدم الزر **ADD نقطة نهاية**.
 
 سيتغير عمود **Status** من **Pending** إلى **Accepted** بمجرد الموافقة على الاتصال.
 
-<Image img="/images/cloud/security/gcp-psc-copy-connection-id.webp" size="lg" alt="انسخ PSC Connection ID" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![انسخ PSC Connection ID](/images/cloud/security/gcp-psc-copy-connection-id.webp)
+  </Frame>
+</div>
 
-انسخ ***PSC Connection ID***؛ ستستخدمه بوصفه ***Endpoint ID*** في الخطوات التالية.
+انسخ ***PSC Connection ID***؛ ستستخدمه بوصفه ***معرّف نقطة النهاية*** في الخطوات التالية.
 
 <div id="option-2-using-terraform">
-  #### الخيار 2: استخدام Terraform
+  #### الخيار 2: استخدام Terraform {#option-2-using-terraform}
 </div>
 
 ```json
@@ -221,7 +238,7 @@ output "psc_connection_id" {
 </Note>
 
 <div id="set-private-dns-name-for-endpoint">
-  ## اضبط اسم DNS الخاص لنقطة النهاية
+  ## اضبط اسم DNS الخاص لنقطة النهاية {#set-private-dns-name-for-endpoint}
 </div>
 
 <Note>
@@ -235,21 +252,23 @@ output "psc_connection_id" {
 </Warning>
 
 <div id="add-endpoint-id-to-clickhouse-cloud-organization">
-  ## أضِف Endpoint ID إلى مؤسسة ClickHouse Cloud
+  ## أضِف Endpoint ID إلى مؤسسة ClickHouse Cloud {#add-endpoint-id-to-clickhouse-cloud-organization}
 </div>
 
-<div id="option-1-clickhouse-cloud-console">
-  ### الخيار 1: ClickHouse Cloud console
+### الخيار 1: وحدة تحكم ClickHouse Cloud {#option-1-clickhouse-cloud-console-1}
+
+لإضافة نقطة نهاية إلى مؤسستك، انتقل إلى خطوة [إضافة &quot;Endpoint ID&quot; إلى قائمة السماح لخدمة ClickHouse](#add-endpoint-id-to-services-allow-list). تؤدي إضافة `PSC Connection ID` باستخدام وحدة تحكم ClickHouse Cloud إلى قائمة السماح للخدمة إلى إضافته تلقائيًا إلى المؤسسة أيضًا.
+
+لإزالة نقطة نهاية، افتح **Organization details -&gt; نقاط النهاية الخاصة** وانقر على زر الحذف لإزالة نقطة النهاية.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![إزالة نقطة النهاية الخاصة من ClickHouse Cloud](/images/cloud/security/gcp-pe-remove-private-endpoint.webp)
+  </Frame>
 </div>
-
-لإضافة نقطة نهاية إلى مؤسستك، انتقل إلى خطوة [إضافة &quot;Endpoint ID&quot; إلى قائمة السماح لخدمة ClickHouse](#add-endpoint-id-to-services-allow-list). تؤدي إضافة `PSC Connection ID` باستخدام ClickHouse Cloud console إلى قائمة السماح للخدمة إلى إضافته تلقائيًا إلى المؤسسة أيضًا.
-
-لإزالة نقطة نهاية، افتح **Organization details -&gt; Private Endpoints** وانقر على زر الحذف لإزالة نقطة النهاية.
-
-<Image img="/images/cloud/security/gcp-pe-remove-private-endpoint.webp" size="lg" alt="إزالة Private Endpoint من ClickHouse Cloud" border />
 
 <div id="option-2-api">
-  ### الخيار 2: API
+  ### الخيار 2: API {#option-2-api-1}
 </div>
 
 عيّن متغيرات البيئة التالية قبل تشغيل أي أوامر:
@@ -300,25 +319,27 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 ```
 
 <div id="add-endpoint-id-to-services-allow-list">
-  ## أضف &quot;Endpoint ID&quot; إلى قائمة السماح لخدمة ClickHouse
+  ## أضف &quot;Endpoint ID&quot; إلى قائمة السماح لخدمة ClickHouse {#add-endpoint-id-to-services-allow-list}
 </div>
 
 تحتاج إلى إضافة Endpoint ID إلى قائمة السماح لكل مثيل يُفترض إتاحته عبر Private Service Connect.
 
-<div id="option-1-clickhouse-cloud-console">
-  ### الخيار 1: ClickHouse Cloud console
-</div>
+### الخيار 1: وحدة تحكم ClickHouse Cloud {#option-1-clickhouse-cloud-console-2}
 
-في ClickHouse Cloud console، افتح الخدمة التي تريد الاتصال بها عبر Private Service Connect، ثم انتقل إلى **Settings**. أدخل `Endpoint ID` الذي حصلت عليه من خطوة [إضافة Private Service Connection](#adding-a-private-service-connection). انقر على **Create endpoint**.
+في وحدة تحكم ClickHouse Cloud، افتح الخدمة التي تريد الاتصال بها عبر Private Service Connect، ثم انتقل إلى **Settings**. أدخل `Endpoint ID` الذي حصلت عليه من خطوة [إضافة Private Service Connection](#adding-a-private-service-connection). انقر على **Create نقطة نهاية**.
 
 <Note>
-  إذا كنت تريد السماح بالوصول من اتصال Private Service Connect موجود، فاستخدم القائمة المنسدلة الحالية الخاصة بـ endpoint.
+  إذا كنت تريد السماح بالوصول من اتصال Private Service Connect موجود، فاستخدم القائمة المنسدلة الحالية الخاصة بنقطة النهاية.
 </Note>
 
-<Image img="/images/cloud/security/gcp-privatelink-pe-filters.webp" size="lg" alt="عامل تصفية Private Endpoints" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![عامل تصفية نقاط النهاية الخاصة](/images/cloud/security/gcp-privatelink-pe-filters.webp)
+  </Frame>
+</div>
 
 <div id="option-2-api">
-  ### الخيار 2: API
+  ### الخيار 2: API {#option-2-api-2}
 </div>
 
 عيّن متغيرات البيئة التالية قبل تشغيل أي أوامر:
@@ -360,25 +381,27 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 ```
 
 <div id="accessing-instance-using-private-service-connect">
-  ## الوصول إلى المثيل عبر Private Service Connect
+  ## الوصول إلى المثيل عبر Private Service Connect {#accessing-instance-using-private-service-connect}
 </div>
 
 تحتوي كل خدمة مفعَّل لها Private Service Connect على نقطة نهاية عامة وأخرى خاصة. وللاتصال باستخدام Private Service Connect، يجب استخدام نقطة النهاية الخاصة، وهي `privateDnsHostname` المذكورة في خطوة [الحصول على service attachment واسم DNS في GCP لـ Private Service Connect](#obtain-gcp-service-attachment-and-dns-name-for-private-service-connect).
 
 <div id="getting-private-dns-hostname">
-  ### الحصول على اسم مضيف DNS خاص
+  ### الحصول على اسم مضيف DNS خاص {#getting-private-dns-hostname}
 </div>
 
-<div id="option-1-clickhouse-cloud-console-3">
-  #### الخيار 1: ClickHouse Cloud console
+#### الخيار 1: وحدة تحكم ClickHouse Cloud {#option-1-clickhouse-cloud-console-3}
+
+في وحدة تحكم ClickHouse Cloud، انتقل إلى **Settings**. انقر على زر **Set up private endpoint**. في اللوحة المنبثقة التي تفتح، انسخ **اسم DNS**.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![اسم DNS لنقطة النهاية الخاصة](/images/cloud/security/gcp-privatelink-pe-dns.webp)
+  </Frame>
 </div>
-
-في ClickHouse Cloud console، انتقل إلى **Settings**. انقر على زر **Set up private endpoint**. في اللوحة المنبثقة التي تفتح، انسخ **اسم DNS**.
-
-<Image img="/images/cloud/security/gcp-privatelink-pe-dns.webp" size="lg" alt="اسم DNS لنقطة النهاية الخاصة" border />
 
 <div id="option-2-api-3">
-  #### الخيار 2: واجهة برمجة التطبيقات
+  #### الخيار 2: واجهة برمجة التطبيقات {#option-2-api-3}
 </div>
 
 ```bash
@@ -395,11 +418,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 في هذا المثال، سيُوجَّه الاتصال إلى اسم المضيف `xxxxxxx.yy-xxxxN.p.gcp.clickhouse.cloud` عبر Private Service Connect. وفي المقابل، سيُوجَّه `xxxxxxx.yy-xxxxN.gcp.clickhouse.cloud` عبر الإنترنت.
 
 <div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها
+  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
 <div id="test-dns-setup">
-  ### اختبار إعدادات DNS
+  ### اختبار إعدادات DNS {#test-dns-setup}
 </div>
 
 DNS&#95;NAME - استخدم `privateDnsHostname` من خطوة [الحصول على service attachment واسم DNS لـ Private Service Connect](#obtain-gcp-service-attachment-and-dns-name-for-private-service-connect)
@@ -415,13 +438,13 @@ Address: 10.128.0.2
 ```
 
 <div id="connection-reset-by-peer">
-  ### إعادة تعيين الاتصال من الطرف المقابل
+  ### إعادة تعيين الاتصال من الطرف المقابل {#connection-reset-by-peer}
 </div>
 
 * على الأرجح، لم تتم إضافة Endpoint ID إلى قائمة السماح الخاصة بالخدمة. راجع خطوة [*إضافة Endpoint ID إلى قائمة السماح الخاصة بالخدمات*](#add-endpoint-id-to-services-allow-list).
 
 <div id="test-connectivity">
-  ### اختبار الاتصال
+  ### اختبار الاتصال {#test-connectivity}
 </div>
 
 إذا واجهت مشكلات في الاتصال باستخدام رابط PSC، فتحقق من إمكانية الاتصال باستخدام `openssl`. تأكد من أن حالة نقطة نهاية Private Service Connect هي `Accepted`:
@@ -455,11 +478,11 @@ Verify return code: 0 (ok)
 ```
 
 <div id="checking-endpoint-filters">
-  ### التحقق من مرشّحات نقاط النهاية
+  ### التحقق من مرشّحات نقاط النهاية {#checking-endpoint-filters}
 </div>
 
 <div id="rest-api">
-  #### واجهة برمجة تطبيقات REST
+  #### واجهة برمجة تطبيقات REST {#rest-api}
 </div>
 
 ```bash
@@ -470,7 +493,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X GET -H "Content-Type: appl
 ```
 
 <div id="connecting-to-a-remote-database">
-  ### الاتصال بقاعدة بيانات بعيدة
+  ### الاتصال بقاعدة بيانات بعيدة {#connecting-to-a-remote-database}
 </div>
 
 وفقًا لـ [وثائق GCP Private Service Connect](https://cloud.google.com/vpc/docs/private-service-connect):
@@ -480,7 +503,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X GET -H "Content-Type: appl
 لتوصيل دوال الجداول [MySQL](/ar/reference/functions/table-functions/mysql) أو [PostgreSQL](/ar/reference/functions/table-functions/postgresql) في ClickHouse Cloud بقاعدة بيانات مستضافة في GCP VPC لديك، قم بتهيئة قواعد جدار الحماية في GCP VPC للسماح بالاتصالات من ClickHouse Cloud. راجع [عناوين IP الصادرة الافتراضية لمناطق ClickHouse Cloud](/ar/products/cloud/guides/data-sources/cloud-endpoints-api)، إلى جانب [عناوين IP الثابتة المتاحة](https://api.clickhouse.cloud/static-ips.json).
 
 <div id="more-information">
-  ## مزيد من المعلومات
+  ## مزيد من المعلومات {#more-information}
 </div>
 
 لمزيد من المعلومات التفصيلية، يُرجى زيارة [cloud.google.com/vpc/docs/configure-private-service-connect-services](https://cloud.google.com/vpc/docs/configure-private-service-connect-services).

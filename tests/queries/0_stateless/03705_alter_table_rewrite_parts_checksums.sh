@@ -4,6 +4,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Part checksums depend on physical data sort order
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 set -e
 
 # Firstly write parts with use_const_adaptive_granularity=0 and then enable it and check that index_granularity_bytes_in_memory_allocated=25 (sizeof constant granularity)
@@ -42,7 +45,8 @@ settings
   map_serialization_version_for_zero_level_parts='basic',
   map_serialization_version='basic',
   enable_block_number_column=0,
-  enable_block_offset_column=0
+  enable_block_offset_column=0,
+  enable_adaptive_codec_selection=0
 ;
 insert into test_materialize select number, repeat('a', number), [1 + number/10e3, 0 + number/10e3] from numbers(10e3) settings max_block_size=1e6;
 -- { echo }

@@ -73,7 +73,7 @@ plan with its `DelayedCreatingSets` placeholder as an ordinary step, and the
 set-building subqueries are planned separately, distributed like any other query.
 
 The feature fails closed. `make_distributed_plan` first rejects plan shapes the
-distributed pipeline cannot execute correctly (`WITH TOTALS`, `ROLLUP`, `CUBE`, extremes,
+distributed pipeline cannot execute correctly (`WITH TOTALS`, extremes,
 `PASTE JOIN`) and distributed reads a worker cannot reproduce (pinned block-number
 boundaries, `_part_index` / `_part_starting_offset`). When Cascades is active, a second
 pre-check rejects reads that cannot be cloned, `LOCAL` joins, non-full sorts, and
@@ -124,7 +124,17 @@ Each physical expression has **properties** describing what it produces:
   - `{4 nodes, by custkey}` — data hash-partitioned by `custkey` across 4 nodes
   - `{4 nodes, replicated}` — full copy on every node
 
-- **Sorting**: Whether the output is sorted and by which columns.
+- **Sorting**: Whether the output is sorted and by which columns. The sorting describes
+  each stream on its own; with one stream per node it is the node's total order.
+
+- **Stream layout**: How one node's streams relate to each other. `Unknown` — several
+  streams with no relation (reads, joins, exchange receive sides). `Single` — one stream
+  per node (a plain full sort, a sorted gather). `Disjoint` on a column set — rows equal
+  on those columns share a stream (a sort partitioned by the columns), so an operator
+  that works per group, such as a `PARTITION BY` window, can run on every stream at once.
+  One stream keeps every group whole, so `Single` satisfies every requirement; `Disjoint`
+  on a subset of the required columns satisfies a `Disjoint` requirement (a coarser split
+  never tears a required group apart).
 
 A parent step **requires** specific properties from its child. For example, a
 `ShuffleHashJoin` on `custkey` requires both inputs to be distributed `{4 nodes, by custkey}`.
@@ -166,23 +176,36 @@ creates a `GatherExchange` that collects data from 4 nodes to 1.
 
 Enforcers are **self-referential**: a `GatherExchange` in Group G has its input pointing
 back to Group G itself, but with relaxed required properties (the input asks for
-`{4 nodes}` while the output provides `{1 node}`). Left unchecked this can form a real
-cycle, because a relaxed requirement acts as a wildcard: an empty required sort is
-satisfied by any sorted expression, and empty required distribution columns are satisfied
-by any keyed expression — including the enforcer itself or a sibling enforcer.
+`{4 nodes}` while the output provides `{1 node}`). A relaxed requirement is satisfied by
+more expressions than the ones it is meant for: an empty required sort is satisfied by any
+sorted expression, and empty required distribution columns are satisfied by any keyed
+expression, including the enforcer itself or a sibling enforcer.
 
-Two invariants keep enforcer self-reference acyclic:
+Two rules prevent a cycle in a plan:
 
-- Every enforcer expression carries an **enforcer axis** (`Sorting` or `Distribution`).
-  When resolving a self-referential enforcer input, an enforcer candidate that satisfies a
-  wildcard axis only by over-providing on it is not eligible (a sorted enforcer cannot
-  fill an empty-sort slot; a keyed exchange cannot fill an empty-columns slot). Productive
-  compositions stay eligible: `Sort` feeding a sorted `GatherExchange`, a `GatherExchange`
-  feeding a `Sort` or a `BroadcastExchange`.
-- Plan extraction (`buildBestPlan`) tracks the single-input expressions on the current
-  chain and resolves each input through the same eligibility rule, scanning the group's
-  costed physical expressions as a fallback when the best-implementation cache holds only
-  expressions already on the chain.
+- **An enforcer answers only the required properties that it was made for.** An enforcer adds
+  an operator to get some properties. It satisfies weaker required properties too, but the plan
+  below it is the answer to those. Each enforcer expression records the required properties that
+  enforcer rules made it for (`GroupExpression::enforced_for`), and the group selects it only
+  for these, or for required properties equal to its own properties
+  (`GroupExpression::answers`). The second case is an enforcer that was made as a step towards
+  other required properties, for example a gather below a sort. So a sort is not an answer to
+  its own unsorted input, and a keyed exchange is not an answer to its own input without
+  columns. Other expressions answer all required properties that their properties satisfy.
+- **Plan extraction excludes the expressions of the chain that it builds.** Enforcers of one
+  group can still lead to each other through different required properties: a gather takes
+  `{4 nodes}`, a scatter takes `{1 node}`. With the default costs such a pair is not cheaper
+  than the plan below it, because each exchange adds to the cost. This is not a guarantee: a
+  cost configuration can make an exchange free, and a very large cost can absorb a small
+  addition. So `buildBestPlan` tracks the single-input expressions on the current chain and
+  does not select them again. If no other answer is left, it throws an exception; it does not
+  go back to select another expression higher in the chain.
+
+The first rule does not depend on costs. The second one makes plan extraction end, with a plan
+or with an exception. A plan exists because an enforcer never removes another implementation
+from the best implementations (see the `best_implementations` section), so the implementation
+that a chain of enforcers starts from stays available. Costing does not exclude a chain: an
+enforcer is priced on the best answer to its input, which cannot be the enforcer itself.
 
 ### Two-Phase Aggregation
 
@@ -237,8 +260,8 @@ Each rule carries a static **promise** (a priority). The rules applicable to an
 expression are sorted by promise and pushed on the LIFO stack, so the highest-promise
 rule runs first. Promise does not change which plans are considered — every applicable
 rule is eventually applied — but it orders their generation, which breaks ties among
-equal-cost alternatives (the first-found best is kept and a later equal-cost candidate is
-pruned). Enforcer rules are scheduled by the Stage-3 fixed-point loop, so their promise
+equal-cost alternatives (the first-found best is kept and a later equal-cost candidate
+does not replace it). Enforcer rules are scheduled by the Stage-3 fixed-point loop, so their promise
 is not consulted.
 
 **Key files**: `Task.h/cpp`, `Optimizer.h/cpp`, `CascadesParams.h/cpp`, `OptimizerContext.h`
@@ -406,17 +429,23 @@ logs of one `EXPLAIN` run.
 Best implementations per group are stored in an
 `unordered_map<UInt64, vector<GroupExpressionPtr>>` keyed by distribution shape
 `(node_count, is_replicated)`. This gives O(1) bucket lookup followed by a linear scan
-of the non-dominated alternatives for that distribution shape.
+of the entries for that distribution shape.
 
 An expression whose input has no implementation for its required properties is never
-recorded (see `ExpressionCost::buildable`), so plan extraction cannot walk into a
-missing subtree.
+recorded (see `ExpressionCost::buildable`): each recorded expression had an implementation
+for each input when it got its cost.
 
-A Pareto frontier is maintained: when a new implementation is added, dominated entries
-(same or broader properties at higher cost) are removed. One exception protects plan
-extraction: an enforcer never suppresses or evicts a non-enforcer implementation with
-strictly weaker properties, so the acyclic base alternative stays reachable even when a
-cheaper enforcer covers its requirement.
+Among the expressions that are not enforcers a Pareto frontier is maintained: when a new
+implementation is added, dominated entries (same or broader properties at higher cost) are
+removed. Such an expression also removes a dominated enforcer. An enforcer does not suppress
+or evict another entry, because it answers only the required properties that it was made for,
+and the other entry can be the only answer to different ones or the only one that is not on
+the chain that plan extraction builds. So all costed enforcers that no other expression
+dominates stay in the list, and the list is longer than a frontier of all expressions would
+be. The number of optimizer tasks does not depend on it.
+
+Every buildable expression keeps its cost, also when a cheaper implementation keeps it out of
+the list.
 
 ### Rules
 
@@ -456,6 +485,11 @@ The lists below use class names; `getName` log names may omit the `Implementatio
   `ANY`/`RightAny` joins are not replication-safe: with duplicate build-side keys the
   kept row depends on the parallel build order, so nodes could produce different rows
 - `TopNImplementation` — bounded sort at one node, or per node for the top-N partial
+- `WindowImplementation` — a window on a single node, or on each node for a `PARTITION BY`
+  window: the input is required hashed by the partition keys, sorted on each node, and
+  with streams disjoint on the partition keys, so the enforcers add the keyed shuffle and
+  a per-node sort partitioned by the keys, and every node runs the window on several
+  streams at once with each partition whole in one stream
 - `DefaultImplementation` — wraps otherwise-unhandled steps at `{1 node}`; operators
   with dedicated rules above are excluded
 - `DistributionPassthrough` — propagates distribution through steps that run on any split
@@ -469,7 +503,10 @@ The lists below use class names; `getName` log names may omit the `Implementatio
   `ShuffleExchange`, `ScatterExchange` (keyed, or column-less round-robin for a
   multi-node requirement with no partitioning constraint). Produces both regular
   and sorted-merge gather variants.
-- `SortingEnforcer` — adds `SortingStep` with required sort description.
+- `SortingEnforcer` — adds `SortingStep` with the required sort description. It also
+  closes stream-layout gaps: for a `Disjoint` requirement whose columns cover a prefix of
+  the sort it builds the sort partitioned by those columns (streams stay split per
+  partition), otherwise a plain sort whose single merged stream satisfies every layout.
 
 **Key files**: `Rules/*.cpp`, `DagNameTranslation.h/cpp`
 
@@ -489,18 +526,41 @@ enforces (the keys of an inner join under the filter) are tracked as equivalence
 classes, and an equality inside such a class removes nothing. A read also carries its
 physical scan volume (see the cost model) next to the output estimate.
 
+A step that emits the rows of several inputs or several sets of groups adds them up.
+`UNION ALL` has the rows of all its inputs; the distinct count of a column is the sum over
+the inputs, which is its upper limit, and an input without a count adds its rows. `ROLLUP`,
+`CUBE` and `GROUPING SETS` have one set of groups for each of their key sets: the prefixes
+of the keys for `ROLLUP`, all the subsets for `CUBE`. A key that is absent from a set holds
+a default value or `NULL` in the rows of that set, so it has one more distinct value. A
+step with no estimate of its own (`WindowStep`, `ArrayJoinStep`, ...) takes the rows of its
+first input and keeps the statistics of the columns that it passes with the same name and
+type; a column that it adds or changes has no statistics. An expression or a filter also
+emits the input columns that its actions do not read, and these keep their statistics.
+
 Row widths drive the exchange costs, so they come from measured data, not type sizes.
 A read's per-column average widths come from the parts' column-data sizes (compact parts
 carry only a total, so type-based estimates are scaled to match it; the total deliberately
 excludes non-column files such as statistics sketches, which can dwarf a small table's
-data). A test hint overrides them: per-column `column_bytes` first, else a table-level
-`avg_row_bytes` distributed over the columns by type (a hinted table's physical parts are
-stand-ins and are not trusted). Widths follow columns through renames only while the value
-bytes are unchanged (`Nullable`/`LowCardinality` wrapping is ignored; a value-changing hop
+data). A test hint overrides them: per-column `column_bytes` first, else `avg_row_bytes`,
+the width of the rows that a read of the table emits, divided between the emitted columns
+by type (a hinted table's physical parts are stand-ins and are not trusted). A width that
+the statistics of a column have (the measured average size of a `String`) is used before
+the size from the parts. For a filter directly above a read, the width of the rows of the
+read is the sum of these sizes of all columns of the read, also of the columns that the
+filter does not emit, as for a filter above another step. Widths follow
+columns through renames only while the value bytes are unchanged (`Nullable`/`LowCardinality` wrapping is ignored; a value-changing hop
 such as `toString` drops the width to unknown, falling back to the type default — 64 bytes
-for `String`). Joins and aggregations recompute their width from their actual output
-header using the known column widths. The only floor is 1 byte per row, guarding against
-a zero-width row (a bare `count()`) making exchanges look free.
+for `String`). The row width of every step is the sum of the widths of its output columns:
+the known width of a column, else the default of its type. So a projection that drops a
+column makes the rows narrower for the exchanges above it. An expression, a filter, a
+`ROLLUP` or `CUBE` step, and a step without its own estimate make the row narrower than
+their input row only if the width of each output column is known (a width in the column
+statistics, or a type that gives the size of its values). A computed value of a variable
+size with no known width, such as the result of `concat`, can be as wide as the columns
+that it is computed from, so the row then keeps at least the width of the input row. A
+join, an aggregation and a `UNION ALL` do not have this rule: above them such a value has
+the default of its type. The last floor is 1 byte per row, guarding against a zero-width
+row (a bare `count()`) making exchanges look free.
 
 **Key files**: `Statistics.h/cpp`, `StatisticsDerivation.cpp`
 
@@ -564,27 +624,22 @@ branch-and-bound pruning as the primary bound.
 1. **Decouple statistics** from pre-Cascades code.
 2. **Convergence detection and sound branch-and-bound pruning** instead of relying on
    the fail-closed task budget alone.
-3. **Pruned expressions keep no cost**: same-group best-cost pruning drops an
-   expression before its cost is recorded, but plan extraction considers only costed
-   expressions as acyclic fallbacks for self-referential enforcers. A cheaper
-   over-providing enforcer can therefore prune the only fallback a later composition
-   needs. Recording the cost before the early return closes the gap.
 
 ### Cost Model
 
-4. **Range selectivity over aggregate results**: a `HAVING` range predicate
+3. **Range selectivity over aggregate results**: a `HAVING` range predicate
    (`sum(x) > c`) gets the same default factor as a base-column range, which can
    overestimate it by orders of magnitude; no statistics can exist for an aggregate
    output.
-5. **`arrayJoin` fan-out**: an `ExpressionStep` with `arrayJoin` grows the row count,
+4. **`arrayJoin` fan-out**: an `ExpressionStep` with `arrayJoin` grows the row count,
    which is not estimated yet.
-6. **Build-side choice of a shuffle join is a near-tie**: with the build priced as
+5. **Build-side choice of a shuffle join is a near-tie**: with the build priced as
    parallel work, the two orientations of a shuffle join differ by well under a
    percent, so the chosen build side is effectively arbitrary. Measured plans show the
    orientations perform alike, but the choice can flip between runs and builds, which
    makes plan-shape tests fragile. A size-aware hash cost (a table beyond the cache
    costs more per row) would restore a principled asymmetry.
-7. **Scan-volume refinements**: the scan estimate charges every touched column at
+6. **Scan-volume refinements**: the scan estimate charges every touched column at
    granule volume. Measured scans show three bounded deviations: a size-only string
    predicate (`s <> ''`) reads only the string sizes; a scattered point-key selection
    decompresses whole compression blocks per granule; and a lazily materialized
@@ -592,29 +647,33 @@ branch-and-bound pruning as the primary bound.
 
 ### Optimizer Features
 
-8. **`ReplicatedRead` validation and gating**: the rule assumes every worker sees the
+7. **`ReplicatedRead` validation and gating**: the rule assumes every worker sees the
    same complete table (shared storage) and has no hard size gate; an oversized
    replicated read loses only on cost.
-9. **Runtime bloom filter placement in Cascades**: the pre-Cascades pass may add
+8. **Runtime bloom filter placement in Cascades**: the pre-Cascades pass may add
    `BuildRuntimeFilterStep` and Cascades passes it through, but Cascades does not
    create or cost runtime-filter alternatives. The single biggest gap vs StarRocks.
-10. **Join ordering in Cascades**: the pre-Cascades join orderer already offers `dphyp`
+9. **Join ordering in Cascades**: the pre-Cascades join orderer already offers `dphyp`
    (inner joins) alongside `dpsub`, `dpsize`, and `greedy`; in an algorithm chain such as
    `dphyp,greedy`, unsupported cases fall through to the next algorithm. Cascades still
    receives a single fixed order; feeding the top k orders into the memo (the hybrid TOP-K
    of Gretscher & Dittrich, PVLDB 2025) is future work.
-11. **Window function distribution**: `WindowStep` currently goes through
-   `DefaultImplementation` at `{1 node}`. Needs a `WindowImplementation` rule
-   that sets distribution by PARTITION BY key.
-12. **CTE / common subplan sharing**: Detect `CommonSubplanReferenceStep` and
+10. **CTE / common subplan sharing**: Detect `CommonSubplanReferenceStep` and
    map to existing groups instead of cloning.
-13. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
+11. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
    functional dependencies from MergeTree keys.
-14. **Width through same-type value-changing functions**: a deterministic `String` ->
-   `String` function (`substring`, `hex`) keeps the source column's average width even
-   though the bytes change; width preservation needs a value-pass-through rule separate
-   from the NDV rule.
-15. **Reads from remote shards**: a read from a `Distributed` table (or the `remote`/
+12. **Width of computed values**: a deterministic `String` -> `String` function
+   (`substring`, `hex`) keeps the source column's average width even though the bytes
+   change; width preservation needs a value-pass-through rule separate from the NDV rule.
+   A computed value with no known width has no estimate of its own: an expression or a
+   filter keeps the width of its input row for it, so a narrow value that is computed from
+   a wide column (`substring(url, 1, 10)`) is priced as wide, and above a join, an
+   aggregation or a `UNION ALL` it has the default of its type. The width that is kept
+   is that of the whole input row, also of input columns that the step does not emit
+   (the key of a sort with a limit). All of these need an estimated width for each
+   computed column that follows the column through all steps. The statistics have the
+   names of the columns, so two output columns with one name share one width.
+13. **Reads from remote shards**: a read from a `Distributed` table (or the `remote`/
    `cluster` table functions) with genuinely remote shards is rejected up front
    (`checkStepSupportedByCascades`); localhost shards are inlined and planned normally.
    Supporting it as a coordinator-pinned single-task source is future work.

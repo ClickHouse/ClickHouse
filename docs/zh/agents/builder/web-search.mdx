@@ -1,0 +1,42 @@
+---
+sidebarTitle: '网页搜索'
+slug: /agents/builder/web-search
+title: '网页搜索'
+description: '适用于 ClickHouse 智能体的外部网页搜索工具'
+keywords: ['AI', 'ClickHouse Cloud', '智能体', '网页搜索']
+doc_type: 'reference'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+借助网页搜索，agent 可以在对话过程中从公共网络获取信息。如果问题需要最新的答案，例如了解最近的发行版、查阅您的服务之外的文档，或对照权威来源快速核实，即可使用此功能。
+
+## 启用网页搜索 {#enable-it}
+
+在agent构建器的 **能力** 区域中启用 **网页搜索**。启用后，agent会根据用户的问题和agent的指令，自行判断何时发起搜索。搜索执行后，系统会抓取搜索结果，并将最相关的内容传回模型上下文。
+
+<div className="ch-image-sm">
+  <Frame>
+    ![“能力”面板，其中“网页搜索”区域已高亮显示，可见“网页搜索”复选框](/images/cloud/agent-builder/web-search/web-search.webp)
+  </Frame>
+</div>
+
+## 搜索轮次的工作原理 {#how-a-search-round-works}
+
+每次搜索分为三个阶段，均由 Cloud 为您托管：
+
+1. **搜索** - agent 的查询被发送至搜索提供商，由其返回候选 URL。
+2. **抓取** - 拉取相关网页，并从中提取有意义的文本。
+3. **重排序** - 重排序器对结果进行评分，使模型优先看到最有用的结果。
+
+agent 的响应会注明其实际引用的 URL。
+
+## 何时使用 {#when-to-use-it}
+
+* 查找您的服务中没有的发行说明或更新日志。
+* 对照模型可能不了解的来源核实某项事实。
+* 将公开的博客文章或文档拉取到对话中进行分析。
+
+如果问题可以根据您的数据或模型自身的知识来回答，则无需使用此功能。每个搜索轮次都会增加延迟。

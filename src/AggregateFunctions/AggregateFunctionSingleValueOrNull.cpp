@@ -49,9 +49,9 @@ public:
     ~AggregateFunctionSingleValueOrNullData() { data().~SingleValueDataBase(); }
 
     SingleValueDataBase & data() { return v_data.get(); }
-    const SingleValueDataBase & data() const { return v_data.get(); }
+    [[nodiscard]] const SingleValueDataBase & data() const { return v_data.get(); }
 
-    bool isNull() const { return is_null; }
+    [[nodiscard]] bool isNull() const { return is_null; }
 
     void add(const IColumn & column, size_t row_num, Arena * arena)
     {

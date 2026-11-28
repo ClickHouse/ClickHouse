@@ -23,7 +23,7 @@
 namespace Poco {
 
 
-FastMutex SharedLibraryImpl::_mutex;
+[[clang::no_destroy]] FastMutex SharedLibraryImpl::_mutex;
 
 
 SharedLibraryImpl::SharedLibraryImpl()

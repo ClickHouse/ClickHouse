@@ -9,6 +9,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include "config.h"
@@ -21,6 +22,7 @@
 #include <Common/EventNotifier.h>
 #include <Common/FailPoint.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
 #include <base/getMemoryAmount.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
@@ -36,6 +38,7 @@
 #include <Common/PageCache.h>
 #if USE_GPU
 #include <GPU/GPUDevice.h>
+#include <GPU/GPUKernelCache.h>
 #endif
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
@@ -50,6 +53,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context_fwd.h>
 #include <Server/ServerType.h>
+#include <Storages/FileLog/DirectoryWatchReactor.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyIndexCache.h>
 #include <Common/JemallocCacheArena.h>
@@ -66,6 +70,7 @@
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Storages/StreamingStorageRegistry.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
@@ -84,6 +89,7 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
@@ -368,6 +374,7 @@ namespace Setting
     extern const SettingsUInt64 hsts_max_age;
     extern const SettingsString local_filesystem_read_method;
     extern const SettingsBool local_filesystem_read_prefetch;
+    extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_backup_bandwidth;
     extern const SettingsUInt64 max_local_read_bandwidth;
     extern const SettingsUInt64 max_local_write_bandwidth;
@@ -386,7 +393,9 @@ namespace Setting
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsUInt64 prefetch_buffer_size;
+    extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
+    extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_cache_temporarily;
     extern const SettingsBool read_from_page_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsUInt64 page_cache_block_size;
     extern const SettingsUInt64 page_cache_lookahead_blocks;
@@ -528,6 +537,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int INVALID_USAGE_OF_INPUT;
 }
 
 namespace
@@ -558,7 +568,7 @@ MergeTreeSettings mergeTreeSettingsFromCompatibility(const String & compatibilit
 /// mutations and `Buffer` flushes. They are dropped there so the server setting always wins.
 /// The global context is dropped at resolution time instead (`resolveReadThroughDistributedCache`):
 /// it is already shared with running threads when profiles are applied, so a reset would race there.
-static const std::vector<String> distributed_cache_force_setting_names
+[[clang::no_destroy]] static const std::vector<String> distributed_cache_force_setting_names
     = {"force_read_through_distributed_cache", "force_write_through_distributed_cache"};
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -829,6 +839,13 @@ struct ContextSharedPart : boost::noncopyable
     OnceFlag streaming_schedule_pool_initialized;
     mutable BackgroundSchedulePoolPtr streaming_schedule_pool TSA_GUARDED_BY(schedule_pools_mutex); /// A thread pool that runs streaming background jobs
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    OnceFlag directory_watch_reactor_initialized;
+    mutable std::mutex directory_watch_reactor_mutex;
+    /// The thread that watches the directories of all `FileLog` tables
+    mutable std::shared_ptr<DirectoryWatchReactor> directory_watch_reactor TSA_GUARDED_BY(directory_watch_reactor_mutex);
+#endif
+
     mutable OnceFlag readers_initialized;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_local_fs_reader;
@@ -920,6 +937,11 @@ struct ContextSharedPart : boost::noncopyable
     std::optional<S3SettingsByEndpoint> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
     std::optional<AzureSettingsByEndpoint> storage_azure_settings TSA_GUARDED_BY(mutex);   /// Settings of AzureBlobStorage
     std::unordered_map<Context::WarningType, PreformattedMessage> warnings TSA_GUARDED_BY(mutex); /// Store warning messages about server.
+
+    /// Obsolete query-level settings that queries or settings profiles changed since the server start.
+    /// A separate mutex, because they are reported while the mutex of a (non-global) context is held.
+    mutable std::mutex used_obsolete_settings_mutex;
+    std::set<String, std::less<>> used_obsolete_settings TSA_GUARDED_BY(used_obsolete_settings_mutex);
 
     /// Background executors for *MergeTree tables
     /// Has background executors for MergeTree tables been initialized?
@@ -1325,6 +1347,9 @@ struct ContextSharedPart : boost::noncopyable
         BackgroundSchedulePoolPtr delete_message_broker_schedule_pool;
         BackgroundSchedulePoolPtr delete_iceberg_schedule_pool;
         BackgroundSchedulePoolPtr delete_streaming_schedule_pool;
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        std::shared_ptr<DirectoryWatchReactor> delete_directory_watch_reactor;
+#endif
 
         std::unique_ptr<AccessControl> delete_access_control;
 
@@ -1460,6 +1485,13 @@ struct ContextSharedPart : boost::noncopyable
             delete_streaming_schedule_pool = std::move(streaming_schedule_pool);
         }
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        {
+            std::lock_guard lock(directory_watch_reactor_mutex);
+            delete_directory_watch_reactor = std::move(directory_watch_reactor);
+        }
+#endif
+
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
         /// - before storage startup (because of some streaming of, i.e. Kafka, to
@@ -1495,6 +1527,11 @@ struct ContextSharedPart : boost::noncopyable
         join_background_pool(std::move(delete_message_broker_schedule_pool));
         join_background_pool(std::move(delete_iceberg_schedule_pool));
         join_background_pool(std::move(delete_streaming_schedule_pool));
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        /// The tables are shut down by now, so this is normally the last reference and stops the reactor thread.
+        delete_directory_watch_reactor.reset();
+#endif
 
         delete_access_control.reset();
 
@@ -1700,12 +1737,15 @@ ContextData::ContextData(const ContextData &o) :
     is_sql_security_overridden_body(o.is_sql_security_overridden_body),
     join_analyze_mode(o.join_analyze_mode),
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
+    totals_without_storage_access(o.totals_without_storage_access),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
+    is_metadata_query(o.is_metadata_query),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
     runtime_filter_lookup(o.runtime_filter_lookup),
     columns_cache_write_budget(o.columns_cache_write_budget),
+    query_max_threads_snapshot(o.query_max_threads_snapshot),
     kitchen_sink(o.kitchen_sink),
     query_parameters(o.query_parameters),
     host_context(o.host_context),
@@ -2096,6 +2136,22 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
             String settings_list = fmt::format("'{}'", fmt::join(obsolete_settings, "', '"));
             common_warnings[Context::WarningType::OBSOLETE_SETTINGS]
                 = PreformattedMessage::create(message_format_string, single_element ? "" : "s", settings_list, single_element ? " is" : " are");
+        }
+
+        std::vector<String> used_obsolete_settings;
+        {
+            std::lock_guard lock(shared->used_obsolete_settings_mutex);
+            used_obsolete_settings.assign(shared->used_obsolete_settings.begin(), shared->used_obsolete_settings.end());
+        }
+
+        if (!used_obsolete_settings.empty())
+        {
+            common_warnings[Context::WarningType::OBSOLETE_SETTINGS_USED] = PreformattedMessage::create(
+                "Queries or settings profiles changed obsolete settings since the server start: ['{}']. "
+                "They have no effect or must be defined in the server configuration instead, and they will be removed. "
+                "Please check 'SELECT name, description FROM system.settings WHERE is_obsolete', "
+                "and find their usage in the `Settings` column of `system.query_log`",
+                fmt::join(used_obsolete_settings, "', '"));
         }
     }
 
@@ -2745,8 +2801,13 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
         /// If setUserID() was never called then this must be the global context with the full access.
         bool full_access = !user_id;
 
+        /// The row policies of the initial user are added to the row policies of the current user. The initiator of
+        /// a secondary query also forwards the current roles of the initial user (after `SET ROLE`); if the initial user
+        /// is the current user, the query still runs with the default roles of the user on a connection without
+        /// an interserver secret, so the row policies of the forwarded roles are needed then too.
         std::optional<UUID> initial_user_id;
-        if (client_info.initial_user != client_info.current_user)
+        if (client_info.initial_user != client_info.current_user
+            || (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.current_roles.has_value()))
             initial_user_id = getAccessControl().find<User>(client_info.initial_user);
 
         return ContextAccessParams{
@@ -2835,13 +2896,13 @@ void Context::setCurrentProfileWithLock(const UUID & profile_id, bool check_cons
     {
         /// Check the profile's settings against current constraints before resolving, because after
         /// resolving the parent_profile references are already expanded and checkSettingsConstraints
-        /// would not see them. A config-defined admin is trusted to apply looser profiles (structural
-        /// rules still apply); a SQL-defined user must satisfy the constraints it is bound by.
+        /// would not see them. The profile replaces this context's settings, so every user is bound by
+        /// its constraints, even one defined in the server config; only a context without a user is trusted.
         SettingsProfileElements elements;
         elements.emplace_back().parent_profile = profile_id;
         getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(
             *settings, elements, SettingSource::PROFILE, /* skip_config_defined_profiles= */ false,
-            /* actor_is_config_defined= */ isCurrentUserDefinedInConfigWithLock());
+            /* actor_is_config_defined= */ !user_id);
     }
     auto profile_info = getAccessControl().getSettingsProfileInfo(profile_id);
     setCurrentProfilesWithLock(*profile_info, /* check_constraints= */ false, lock);
@@ -2919,6 +2980,20 @@ ResourceManagerPtr Context::getResourceManager() const
     return shared->resource_manager;
 }
 
+namespace
+{
+    /// Maps every resource to an empty ResourceLink, so a query using it is exempt from all workload
+    /// scheduling (query-slot and memory-reservation admission, CPU and IO) and never throws on an
+    /// unknown workload. Stateless, so a single shared instance serves every exempt query.
+    class ExemptClassifier : public IClassifier
+    {
+    public:
+        bool has(const String &) override { return false; }
+        ResourceLink get(const String &) override { return {}; }
+        [[nodiscard]] WorkloadSettings getWorkloadSettings(const String &) const override { return {}; }
+    };
+}
+
 ClassifierPtr Context::getWorkloadClassifier() const
 {
     const auto & query_settings = getSettingsRef();
@@ -2937,8 +3012,22 @@ ClassifierPtr Context::getWorkloadClassifier() const
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)
-        classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
+    {
+        if (is_metadata_query)
+        {
+            static const ClassifierPtr metadata_exempt_classifier = std::make_shared<ExemptClassifier>();
+            classifier = metadata_exempt_classifier;
+        }
+        else
+            classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
+    }
     return classifier;
+}
+
+void Context::setMetadataQuery()
+{
+    std::lock_guard lock(mutex);
+    is_metadata_query = true;
 }
 
 void Context::releaseQuerySlot() const
@@ -3387,6 +3476,15 @@ void Context::addQueryAccessInfo(const Names & partition_names)
         query_access_info->partitions.emplace(partition_name);
 }
 
+void Context::addUsedDataSkippingIndex(const StorageID & storage_id, const String & index_name)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
+    query_access_info->data_skipping_indices.emplace(fmt::format("{}.{}", storage_id.getFullTableName(), backQuoteIfNeed(index_name)));
+}
+
 void Context::addViewAccessInfo(const String & view_name)
 {
     if (isGlobalContext())
@@ -3394,6 +3492,33 @@ void Context::addViewAccessInfo(const String & view_name)
 
     std::lock_guard<std::mutex> lock(query_access_info->mutex);
     query_access_info->views.emplace(view_name);
+}
+
+void Context::addSQLSecurityOverriddenBody(const StorageID & view_id, const ContextPtr & body_context, const ASTPtr & body_query)
+{
+    /// Only the context of a `DEFINER` / `NONE` body has a query context of its own.
+    if (!body_context->hasQueryContext() || body_context->getQueryContext().get() == this)
+        return;
+
+    const auto hash = body_query->getTreeHash(/*ignore_aliases=*/ false);
+    const std::pair<UInt64, UInt64> query_hash{hash.low64, hash.high64};
+    auto user = body_context->getUserName();
+    auto current_database = body_context->getCurrentDatabase();
+    auto body_query_context = body_context->getQueryContext();
+
+    std::lock_guard lock(query_access_info->mutex);
+    auto & bodies = query_access_info->sql_security_overridden_bodies;
+    for (const auto & body : bodies)
+    {
+        if (body->query_hash == query_hash && body->user == user && StorageID::DatabaseAndTableNameEqual{}(body->view, view_id))
+        {
+            body_query_context->setQueryAccessInfo(body->access_info);
+            return;
+        }
+    }
+    bodies.push_back(std::make_shared<const SQLSecurityOverriddenBody>(SQLSecurityOverriddenBody{
+        .view = view_id, .query_hash = query_hash, .user = std::move(user), .current_database = std::move(current_database),
+        .query = body_query, .access_info = body_query_context->getQueryAccessInfoPtr()}));
 }
 
 void Context::addUsedRowPolicy(const String & policy_name)
@@ -3507,11 +3632,7 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
 
 void Context::addQueryPrivilegesInfo(const String & privilege, bool granted) const
 {
-    std::lock_guard lock(query_privileges_info->mutex);
-    if (granted)
-        query_privileges_info->used_privileges.emplace(privilege);
-    else
-        query_privileges_info->missing_privileges.emplace(privilege);
+    query_privileges_info->add(privilege, granted);
 }
 
 static bool findIdentifier(const ASTFunction * function)
@@ -3583,6 +3704,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             create.set(create.sql_security, sql_security);
 
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+            if (hasQueryContext())
+                getQueryContext()->addSQLSecurityOverriddenBody(table->getStorageID(), view_context, query);
             auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
@@ -3875,6 +3998,8 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     create.set(create.sql_security, sql_security);
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+    if (hasQueryContext())
+        getQueryContext()->addSQLSecurityOverriddenBody(original_view->getStorageID(), view_context, query);
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
@@ -3999,6 +4124,7 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
         settings->checkShorthandChange(change);
         setSettingWithLock(change.name, change.value, lock);
         contextSanityClampSettingsWithLock(*this, *settings, lock);
+        reportObsoleteSettingChange(change);
     }
     catch (Exception & e)
     {
@@ -4007,6 +4133,51 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
                          change.name, applyVisitor(FieldVisitorToString(), change.value)));
         throw;
     }
+}
+
+void Context::reportObsoleteSettingChange(const SettingChange & change) const
+{
+    /// A `merge_tree_`-prefixed name refers to a `MergeTreeSettings` setting, which has its own tier.
+    if (settingGetTier(change.name) != SettingsTierType::OBSOLETE)
+        return;
+    reportObsoleteSettingUse(change.name, applyVisitor(FieldVisitorToString(), change.value));
+}
+
+void Context::reportObsoleteSettingsReset(const std::vector<String> & names) const
+{
+    for (const auto & name : names)
+        if (settingGetTier(name) == SettingsTierType::OBSOLETE)
+            reportObsoleteSettingUse(name, "DEFAULT");
+}
+
+void Context::reportObsoleteSettingUse(const String & name, const String & new_value) const
+{
+    /// The client refuses obsolete settings on its command line. Besides, it applies the settings of the user's
+    /// profile it receives from the server (`apply_settings_from_server`), and the server reports them itself.
+    if (getApplicationType() == ApplicationType::CLIENT)
+        return;
+
+    /// The initiator of a distributed query sends its changed settings on (and always sends some obsolete ones,
+    /// such as `allow_experimental_analyzer`, for compatibility with older servers). The initiator reports them itself.
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        return;
+
+    {
+        std::lock_guard lock(shared->used_obsolete_settings_mutex);
+        /// Log only the first use of each setting, so that a settings profile with an obsolete setting,
+        /// which is applied to every session, does not flood the log.
+        if (!shared->used_obsolete_settings.emplace(name).second)
+            return;
+    }
+
+    /// Only the first use is logged, so sending it to the client would be arbitrary: the setting is shown to
+    /// every user in `system.warnings` instead.
+    CurrentThread::HideLogsFromClientScope hide_logs_from_client;
+    LOG_WARNING(shared->log,
+        "Obsolete setting `{}` is changed (to {}). It has no effect or must be defined in the server configuration instead, "
+        "and it will be removed. Please remove it from queries, settings profiles and client configurations. "
+        "Further uses of this setting will not be logged, but they are visible in the `Settings` column of `system.query_log`",
+        name, new_value);
 }
 
 void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex>& lock)
@@ -4042,6 +4213,7 @@ void Context::applySettingChange(const SettingChange & change)
     {
         settings->checkShorthandChange(change);
         setSetting(change.name, change.value);
+        reportObsoleteSettingChange(change);
     }
     catch (Exception & e)
     {
@@ -4219,17 +4391,31 @@ void Context::checkSettingsConstraintsForSettingsReset(
 
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
+    /// The check removes the changes that keep the current value, so they never reach `applySettingChange`.
+    /// Report the obsolete ones among them here, otherwise e.g. `allow_experimental_json_type = 1` passed over HTTP
+    /// or in the native protocol would go unnoticed.
+    SettingsChanges obsolete_changes;
+    for (const auto & change : changes)
+        if (settingGetTier(change.name) == SettingsTierType::OBSOLETE)
+            obsolete_changes.push_back(change);
+
     if (std::ranges::any_of(changes, isProfileChange))
     {
         changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
         {
             context.checkSettingsConstraints(segment, source);
         });
-        return;
+    }
+    else
+    {
+        SharedLockGuard lock(mutex);
+        checkSettingsConstraintsWithLock(changes, source);
     }
 
-    SharedLockGuard lock(mutex);
-    checkSettingsConstraintsWithLock(changes, source);
+    /// The remaining changes are reported when they are applied.
+    for (const auto & change : obsolete_changes)
+        if (!changes.tryGet(change.name))
+            reportObsoleteSettingChange(change);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source)
@@ -4245,6 +4431,37 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSourc
 
     SharedLockGuard lock(mutex);
     clampToSettingsConstraintsWithLock(changes, source);
+}
+
+SettingsChanges Context::applyNestedQuerySettingsClamped(const SettingsChanges & changes, const std::vector<String> & default_settings)
+{
+    /// Clamping the whole clause as a batch would check every change against the settings as they were
+    /// before the clause - so `SETTINGS use_query_cache = 1, use_query_cache = 0` could resolve differently
+    /// from the last-wins reading the clause has everywhere else. `clampToSettingsConstraintsRejectingInvalidChanges`
+    /// keeps a change that does not change the value, so clamping one change at a time does not lose the batch's
+    /// `compatibility` marker: `SETTINGS use_variant_as_common_type = 1, compatibility = '25.12'` keeps the `1`.
+    SettingsChanges effective_changes;
+    for (const auto & change : changes)
+    {
+        SettingsChanges single_change{change};
+        clampToSettingsConstraintsRejectingInvalidChanges(single_change, SettingSource::QUERY);
+        applySettingsChanges(single_change);
+        effective_changes.insert(effective_changes.end(), single_change.begin(), single_change.end());
+    }
+
+    if (!default_settings.empty())
+    {
+        /// Report the requested resets before clamping: a reset that the constraints drop or that does
+        /// not change the value still names the obsolete setting in the query.
+        reportObsoleteSettingsReset(default_settings);
+        auto allowed_resets = default_settings;
+        SettingsChanges clamped_resets;
+        clampSettingsConstraintsForSettingsReset(allowed_resets, clamped_resets, SettingSource::QUERY);
+        resetSettingsToDefaultValue(allowed_resets);
+        applySettingsChanges(clamped_resets);
+    }
+
+    return effective_changes;
 }
 
 void Context::clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges & changes, SettingSource source)
@@ -4578,6 +4795,7 @@ void Context::makeQueryContext()
     query_execution_counters = std::make_shared<QueryExecutionCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
     columns_cache_write_budget = std::make_shared<ColumnsCacheWriteBudget>();
+    query_max_threads_snapshot = std::make_shared<QueryMaxThreadsSnapshot>();
     /// A new query must classify under its own workload and scheduling settings. The ContextData
     /// copy-ctor copies `classifier`, which now carries this query's scheduling identity (weight,
     /// priority, and its per-query `ResourceSchedulingContext`), so a query context created from
@@ -5329,6 +5547,26 @@ GPU::GPUDevice & Context::getGPU() const
         throw Exception(ErrorCodes::GPU_ERROR, "There is no GPU: the server setting `enable_gpu` is not set");
     return *shared->gpu;
 }
+
+void Context::updateGPUKernelCacheConfiguration(const ServerSettings & server_settings)
+{
+    if (!shared->gpu)
+        return;
+
+    const GPU::GPUDeviceSettings settings = GPU::GPUDeviceSettings::fromServerSettings(server_settings);
+    GPU::GPUKernelCache & cache = shared->gpu->kernelCache();
+    cache.setMaxSizeInBytes(settings.kernel_cache_max_size_in_bytes);
+    cache.setMaxCount(settings.kernel_cache_max_count);
+}
+
+std::pair<size_t, size_t> Context::getGPUKernelCacheLimits() const
+{
+    if (!shared->gpu)
+        return {0, 0};
+
+    const GPU::GPUKernelCache & cache = shared->gpu->kernelCache();
+    return {cache.maxSizeInBytes(), cache.maxCount()};
+}
 #endif
 
 PageCachePtr Context::getPageCache() const
@@ -5811,12 +6049,27 @@ VectorSimilarityIndexCachePtr Context::getVectorSimilarityIndexCache() const
     return shared->vector_similarity_index_cache;
 }
 
-void Context::clearVectorSimilarityIndexCache() const
+void Context::clearVectorSimilarityIndexCache(const StorageID & table_id) const
 {
-    std::lock_guard lock(shared->mutex);
+    if (table_id)
+    {
+        auto table = DatabaseCatalog::instance().getTable(table_id, shared_from_this());
 
-    if (shared->vector_similarity_index_cache)
-        shared->vector_similarity_index_cache->clear();
+        auto table_lock = table->lockForShare(getCurrentQueryId(), getSettingsRef()[Setting::lock_acquire_timeout]);
+
+        auto merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load);
+
+        /// Only `MergeTree` tables can have vector similarity indexes, so there is nothing to clear for other tables.
+        if (merge_tree)
+            merge_tree->clearVectorSimilarityIndexCache();
+    }
+    else
+    {
+        std::lock_guard lock(shared->mutex);
+
+        if (shared->vector_similarity_index_cache)
+            shared->vector_similarity_index_cache->clear();
+    }
 }
 
 void Context::setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
@@ -6262,6 +6515,10 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
 
 void Context::clearCaches() const
 {
+    /// These take the context mutex themselves.
+    clearPageCache();
+    clearColumnsCache();
+
     std::lock_guard lock(shared->mutex);
 
     /// Each cache is null-checked because some `Context` users intentionally do
@@ -6382,7 +6639,7 @@ BackgroundSchedulePoolPtr Context::getBufferFlushSchedulePool() const
         auto created_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_buffer_flush_schedule_pool_size],
             shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-            /*max_parallel_tasks_per_type*/ 0,
+            /*max_parallel_tasks_per_type_ratio*/ 0,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             ThreadName::BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL);
@@ -6443,9 +6700,6 @@ BackgroundTaskSchedulingSettings Context::getBackgroundStreamingTaskSchedulingSe
 
 BackgroundSchedulePoolPtr Context::getSchedulePool() const
 {
-    size_t max_parallel_tasks_per_type = static_cast<size_t>(
-        static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_size])
-        * static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]));
     callOnce(
         shared->schedule_pool_initialized,
         [&]
@@ -6453,7 +6707,7 @@ BackgroundSchedulePoolPtr Context::getSchedulePool() const
             auto created_pool = BackgroundSchedulePool::create(
                 shared->server_settings[ServerSetting::background_schedule_pool_size],
                 shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-                max_parallel_tasks_per_type,
+                static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]),
                 CurrentMetrics::BackgroundSchedulePoolTask,
                 CurrentMetrics::BackgroundSchedulePoolSize,
                 DB::ThreadName::BACKGROUND_SCHEDULE_POOL);
@@ -6471,7 +6725,7 @@ BackgroundSchedulePoolPtr Context::getDistributedSchedulePool() const
         auto created_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_distributed_schedule_pool_size],
             shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-            /*max_parallel_tasks_per_type*/ 0,
+            /*max_parallel_tasks_per_type_ratio*/ 0,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             DB::ThreadName::DISTRIBUTED_SCHEDULE_POOL);
@@ -6483,13 +6737,28 @@ BackgroundSchedulePoolPtr Context::getDistributedSchedulePool() const
     return shared->distributed_schedule_pool;
 }
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+std::shared_ptr<DirectoryWatchReactor> Context::getDirectoryWatchReactor() const
+{
+    callOnce(shared->directory_watch_reactor_initialized, [&]
+    {
+        auto created_reactor = std::make_shared<DirectoryWatchReactor>();
+        std::lock_guard lock(shared->directory_watch_reactor_mutex);
+        shared->directory_watch_reactor = std::move(created_reactor);
+    });
+
+    std::lock_guard lock(shared->directory_watch_reactor_mutex);
+    return shared->directory_watch_reactor;
+}
+#endif
+
 BackgroundSchedulePoolPtr Context::getMessageBrokerSchedulePool() const
 {
     callOnce(shared->message_broker_schedule_pool_initialized, [&] {
         auto created_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_message_broker_schedule_pool_size],
             shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-            /*max_parallel_tasks_per_type*/ 0,
+            /*max_parallel_tasks_per_type_ratio*/ 0,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             DB::ThreadName::MSG_BROKER_SCHEDULE_POOL);
@@ -6507,7 +6776,7 @@ BackgroundSchedulePoolPtr Context::getIcebergSchedulePool() const
         auto created_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::iceberg_background_schedule_pool_size],
             shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-            /*max_parallel_tasks_per_type*/ 0,
+            /*max_parallel_tasks_per_type_ratio*/ 0,
             CurrentMetrics::IcebergSchedulePoolTask,
             CurrentMetrics::IcebergSchedulePoolSize,
             DB::ThreadName::ICEBERG_SCHEDULE_POOL);
@@ -6525,7 +6794,7 @@ BackgroundSchedulePoolPtr Context::getStreamingSchedulePool() const
         auto created_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_streaming_schedule_pool_size],
             shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-            /*max_parallel_tasks_per_type*/ 0,
+            /*max_parallel_tasks_per_type_ratio*/ 0,
             CurrentMetrics::BackgroundStreamingSchedulePoolTask,
             CurrentMetrics::BackgroundStreamingSchedulePoolSize,
             DB::ThreadName::BACKGROUND_STREAMING_SCHEDULE_POOL);
@@ -6970,7 +7239,7 @@ public:
     }
 
 private:
-    std::chrono::steady_clock::duration nextStep() const
+    [[nodiscard]] std::chrono::steady_clock::duration nextStep() const
     {
         std::chrono::steady_clock::duration step = std::chrono::milliseconds(100);
         if (deadline)
@@ -8814,7 +9083,8 @@ const S3SettingsByEndpoint & Context::getStorageS3Settings() const
     if (!shared->storage_s3_settings)
     {
         const auto & config = shared->getConfigRefWithLock(lock);
-        shared->storage_s3_settings.emplace().loadFromConfig(config, "s3", getSettingsRef());
+        /// Shared by all queries, so built from the server settings, as on a config reload.
+        shared->storage_s3_settings.emplace().loadFromConfig(config, "s3", getGlobalContext()->getSettingsRef());
     }
 
     return *shared->storage_s3_settings;
@@ -8930,6 +9200,11 @@ size_t Context::getConfigReloaderInterval() const
     return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
 }
 
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const
+{
+    return getInputFormat(name, buf, sample, max_block_size, std::nullopt);
+}
+
 InputFormatPtr Context::getInputFormat(
     const String & name,
     ReadBuffer & buf,
@@ -8957,9 +9232,19 @@ InputFormatPtr Context::getInputFormat(
         min_block_size_bytes);
 }
 
+OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
+{
+    return getOutputFormat(name, buf, sample, std::nullopt);
+}
+
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
 {
     return FormatFactory::instance().getOutputFormat(name, buf, sample, shared_from_this(), format_settings);
+}
+
+OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
+{
+    return getOutputFormatParallelIfPossible(name, buf, sample, std::nullopt);
 }
 
 OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
@@ -9030,6 +9315,11 @@ void Context::stopServers(const ServerType & server_type) const
 void Context::shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     shared->shutdown();
+}
+
+bool Context::isShutdownCalled() const
+{
+    return shared->shutdown_called;
 }
 
 
@@ -9253,7 +9543,13 @@ void Context::setInputInitializer(InputInitializer && initializer)
 void Context::initializeInput(const ColumnsDescription & columns, const Block & header)
 {
     if (!input_initializer_callback)
+    {
+        /// The server sets both callbacks together and resets only the initializer once `input` is read, so the
+        /// blocks reader without the initializer means a second read of the same input, e.g. from a view in RETURNING.
+        if (input_blocks_reader)
+            throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "The `input` table function can be read only once per query");
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Input initializer is not set");
+    }
 
     input_initializer_callback(shared_from_this(), columns, header);
     /// Reset callback
@@ -9374,6 +9670,9 @@ void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address
 
 void Context::setInitialUserName(const String & initial_user_name)
 {
+    /// The forwarded current roles are the roles of the initial user, so they cannot be kept for another user.
+    if (client_info.initial_user != initial_user_name)
+        client_info.current_roles.reset();
     client_info.initial_user = initial_user_name;
     need_recalculate_access = true;
 }
@@ -9917,8 +10216,14 @@ StatelessWorkersProviderPtr Context::getStatelessWorkersProvider() const
     auto query_context_ptr = getQueryContext();
     std::lock_guard lock(query_context_ptr->stateless_worker_allocation_mutex);
     if (!query_context_ptr->stateless_worker_provider)
-        query_context_ptr->stateless_worker_provider = query_context_ptr->getStatelessWorkersProvider(
+    {
+        auto provider = query_context_ptr->getStatelessWorkersProvider(
             query_context_ptr->getSettingsRef()[Setting::distributed_plan_worker_cluster]);
+        /// Taken one time, so that the planning and the allocation of the query see the same workers.
+        if (auto query_snapshot = provider->tryGetQuerySnapshot())
+            provider = std::move(query_snapshot);
+        query_context_ptr->stateless_worker_provider = std::move(provider);
+    }
     return query_context_ptr->stateless_worker_provider;
 }
 
@@ -10062,8 +10367,12 @@ ReadSettings Context::getReadSettings() const
     res.remote_fs_settings.max_backoff_ms = settings_ref[Setting::remote_fs_read_max_backoff_ms];
     res.remote_fs_settings.max_retries = settings_ref[Setting::remote_fs_read_backoff_max_tries];
     res.enable_filesystem_cache = settings_ref[Setting::enable_filesystem_cache];
+    const bool bypass_filesystem_cache = settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache];
+    /// A variant of the bypass: readers without the temporary mode bypass the cache. The plain bypass wins.
+    res.filesystem_cache_settings.cache_temporarily
+        = !bypass_filesystem_cache && settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_cache_temporarily];
     res.filesystem_cache_settings.read_if_exists_otherwise_bypass
-        = settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache];
+        = bypass_filesystem_cache || res.filesystem_cache_settings.cache_temporarily;
     res.filesystem_cache_settings.enable_log = settings_ref[Setting::enable_filesystem_cache_log];
     res.filesystem_cache_settings.verbose_logging = settings_ref[Setting::filesystem_cache_verbose_logging];
     res.filesystem_cache_settings.segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
@@ -10113,6 +10422,11 @@ ReadSettings Context::getReadSettings() const
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Invalid value {} for reader_executor_plan_look_ahead: must be at least reader_executor_block_size ({} bytes)",
             res.reader_executor.plan_look_ahead, res.reader_executor.block_size);
+    /// The plan refills once half of it is left, so twice the window keeps a whole fetch resolved ahead.
+    if (res.reader_executor.plan_look_ahead < 2 * res.reader_executor.window_size)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value {} for reader_executor_plan_look_ahead: must be at least twice reader_executor_window_size ({} bytes)",
+            res.reader_executor.plan_look_ahead, res.reader_executor.window_size);
     res.reader_executor.min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
     res.reader_executor.max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
     res.page_cache_settings.read_if_exists_otherwise_bypass
@@ -10145,6 +10459,9 @@ ReadSettings Context::getReadSettings() const
     res.http_settings.retry_max_backoff_ms = settings_ref[Setting::http_retry_max_backoff_ms];
     res.http_settings.skip_not_found_url_for_globs = settings_ref[Setting::http_skip_not_found_url_for_globs];
     res.http_settings.make_head_request = settings_ref[Setting::http_make_head_request];
+    res.http_settings.max_fields = settings_ref[Setting::http_max_fields];
+    res.http_settings.max_field_name_size = settings_ref[Setting::http_max_field_name_size];
+    res.http_settings.max_field_value_size = settings_ref[Setting::http_max_field_value_size];
 
     res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
@@ -10431,6 +10748,17 @@ ColumnsCacheWriteBudgetPtr Context::getColumnsCacheWriteBudget() const
     return columns_cache_write_budget;
 }
 
+const QueryMaxThreadsSnapshotPtr & Context::getQueryMaxThreadsSnapshot() const
+{
+    return query_max_threads_snapshot;
+}
+
+void Context::shareQueryMaxThreadsSnapshot(const Context & from)
+{
+    if (from.query_max_threads_snapshot)
+        query_max_threads_snapshot = from.query_max_threads_snapshot;
+}
+
 UInt64 Context::getClientProtocolVersion() const
 {
     return client_protocol_version;
@@ -10473,6 +10801,19 @@ StorageSnapshotPtr Context::getPinnedStorageSnapshot(const UUID & table_uuid) co
 const ServerSettings & Context::getServerSettings() const
 {
     return shared->server_settings;
+}
+
+void Context::enablePlanLogCapture(const CollectedStatistics & collected)
+{
+    query_plan_log_capture = std::make_shared<QueryPlanLogCapture>(collected);
+    setJoinAnalyzeMode(collected.join_matches ? JoinAnalyzeMode::Exact : JoinAnalyzeMode::Derived);
+}
+
+QueryPlanLogCapturePtr Context::getPlanLogCapture() const
+{
+    if (!hasQueryContext())
+        return nullptr;
+    return getQueryContext()->query_plan_log_capture;
 }
 
 ServerSettings Context::getServerSettingsCopy() const

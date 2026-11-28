@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# - no-fasttest: writes and reads Parquet files
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,7 +18,6 @@ trap 'rm -rf "${DIR}"' EXIT
 LOCAL=(${CLICKHOUSE_LOCAL}
     --use_top_k_dynamic_filtering_for_variable_length_types=0
     --query_plan_max_limit_for_top_k_optimization=1000
-    --input_format_parquet_use_native_reader_v3=1
     --input_format_parquet_filter_push_down=1
     --max_block_size=65409
     --max_threads=1 --max_parsing_threads=1)

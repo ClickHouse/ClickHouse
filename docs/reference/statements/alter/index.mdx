@@ -51,6 +51,7 @@ These `ALTER` statements modify entities related to role-based access control:
 |---------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
 | [ALTER TABLE ... MODIFY COMMENT](/reference/statements/alter/comment)  | Adds, modifies, or removes comments to the table, regardless if it was set before or not. |
 | [ALTER DATABASE ... MODIFY COMMENT](/reference/statements/alter/database-comment) | Adds, modifies, or removes comments to the database, regardless if it was set before or not. |
+| [ALTER DATABASE ... MODIFY SETTING](/reference/statements/alter/database-setting) | Changes settings of a database engine. |
 | [ALTER NAMED COLLECTION](/reference/statements/alter/named-collection) | Modifies [Named Collections](/concepts/features/configuration/server-config/named-collections).                   |
 | [ALTER HANDLER](/reference/statements/create/handler#alter-handler) | Modifies a SQL-defined HTTP handler created by [CREATE HANDLER](/reference/statements/create/handler). |
 
@@ -88,7 +89,7 @@ Mutations are totally ordered by their creation order and are applied to each pa
 
 A mutation query returns immediately after the mutation entry is added (in case of replicated tables to ZooKeeper, for non-replicated tables - to the filesystem). The mutation itself executes asynchronously using the system profile settings. To track the progress of mutations you can use the [`system.mutations`](/reference/system-tables/mutations) table. A mutation that was successfully submitted will continue to execute even if ClickHouse servers are restarted. There is no way to roll back the mutation once it is submitted, but if the mutation is stuck for some reason it can be cancelled with the [`KILL MUTATION`](/reference/statements/kill#kill-mutation) query.
 
-Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter). Older mutation entries are deleted.
+Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter; if it is set to zero, no finished mutation entries are kept). Older mutation entries are deleted.
 
 ## Execution cost and completion {#execution-cost-and-completion}
 

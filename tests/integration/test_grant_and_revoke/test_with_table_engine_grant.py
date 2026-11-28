@@ -1,5 +1,6 @@
 import pytest
 
+from helpers.ci_logs_export import without_sender_user
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -193,7 +194,7 @@ def test_grant_all_on_table():
     instance.query("GRANT ALL ON test.table TO B", user="A")
     assert (
         instance.query("SHOW GRANTS FOR B")
-        == "GRANT CHECK, SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, SYSTEM DROP TIME SERIES CACHES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM BACKGROUND, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, SYSTEM REDUCE BLOCKING PARTS, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM RESTORE DATABASE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM WAIT QUERY RUNNER, SYSTEM FLUSH DISTRIBUTED, SYSTEM FLUSH OBJECT STORAGE QUEUE, SYSTEM LOAD PRIMARY KEY, SYSTEM UNLOAD PRIMARY KEY, SYSTEM RESET FILELOG, dictGet ON test.`table` TO B\n"
+        == "GRANT CHECK, SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, SYSTEM DROP VECTOR SIMILARITY INDEX CACHE, SYSTEM DROP TIME SERIES CACHES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM BACKGROUND, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, SYSTEM REDUCE BLOCKING PARTS, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM RESTORE DATABASE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM WAIT QUERY RUNNER, SYSTEM FLUSH DISTRIBUTED, SYSTEM FLUSH OBJECT STORAGE QUEUE, SYSTEM LOAD PRIMARY KEY, SYSTEM UNLOAD PRIMARY KEY, SYSTEM RESET FILELOG, dictGet ON test.`table` TO B\n"
     )
     instance.query("REVOKE ALL ON test.table FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
@@ -414,7 +415,11 @@ def test_introspection():
     instance.query("GRANT SELECT ON test.table TO A")
     instance.query("GRANT CREATE ON *.* TO B WITH GRANT OPTION")
 
-    assert instance.query("SHOW USERS") == TSV(["A", "B", "default"])
+    # The CI logs export adds the `ci_logs_sender` user to every instance, see
+    # helpers/ci_logs_export.py
+    assert without_sender_user(instance.query("SHOW USERS")) == TSV(
+        ["A", "B", "default"]
+    )
     assert instance.query("SHOW CREATE USERS A") == TSV(
         ["CREATE USER A IDENTIFIED WITH no_password"]
     )
@@ -427,7 +432,7 @@ def test_introspection():
             "CREATE USER B IDENTIFIED WITH no_password",
         ]
     )
-    assert instance.query("SHOW CREATE USERS") == TSV(
+    assert without_sender_user(instance.query("SHOW CREATE USERS")) == TSV(
         [
             "CREATE USER A IDENTIFIED WITH no_password",
             "CREATE USER B IDENTIFIED WITH no_password",
@@ -456,7 +461,7 @@ def test_introspection():
             "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
         ]
     )
-    assert instance.query("SHOW GRANTS FOR ALL") == TSV(
+    assert without_sender_user(instance.query("SHOW GRANTS FOR ALL")) == TSV(
         [
             "GRANT SELECT ON test.`table` TO A",
             "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
@@ -477,7 +482,7 @@ def test_introspection():
     assert instance.query("SHOW GRANTS FOR ALL", user="B") == TSV(
         ["GRANT CREATE ON *.* TO B WITH GRANT OPTION"]
     )
-    assert instance.query("SHOW GRANTS FOR ALL") == TSV(
+    assert without_sender_user(instance.query("SHOW GRANTS FOR ALL")) == TSV(
         [
             "GRANT SELECT ON test.`table` TO A",
             "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
@@ -498,8 +503,8 @@ def test_introspection():
         "GRANT CREATE ON *.* TO B WITH GRANT OPTION\n"
         "GRANT ALL ON *.* TO default WITH GRANT OPTION\n"
     )
-    assert expected_access1 in instance.query("SHOW ACCESS")
-    assert expected_access2 in instance.query("SHOW ACCESS")
+    assert expected_access1 in without_sender_user(instance.query("SHOW ACCESS"))
+    assert expected_access2 in without_sender_user(instance.query("SHOW ACCESS"))
 
     assert instance.query(
         "SELECT name, storage, auth_type, auth_params, host_ip, host_names, host_names_regexp, host_names_like, default_roles_all, default_roles_list, default_roles_except from system.users WHERE name IN ('A', 'B') ORDER BY name"
@@ -538,8 +543,8 @@ def test_introspection():
         "SELECT * from system.grants WHERE user_name IN ('A', 'B') ORDER BY user_name, access_type, grant_option"
     ) == TSV(
         [
-            ["A", "\\N", "SELECT", "", "test", "table", "\\N", 0, 0, 0],
-            ["B", "\\N", "CREATE", "", "\\N", "\\N", "\\N", 0, 1, 0],
+            ["A", "\\N", "SELECT", "", "test", "table", "\\N", 0, 0, 0, 0],
+            ["B", "\\N", "CREATE", "", "\\N", "\\N", "\\N", 0, 1, 0, 0],
         ]
     )
 
@@ -749,12 +754,16 @@ def test_current_grants_override():
         ["GRANT SELECT ON test.`table` TO B"]
     )
 
-    instance.query("GRANT CURRENT GRANTS ON *.* TO B WITH REPLACE OPTION", user="A")
+    # CURRENT GRANTS ... WITH REPLACE now authorizes its implicit REVOKE ALL like plain WITH REPLACE:
+    # A lacks grant option on test.`table`, so wiping B's grant there is denied and B is unchanged (#60304).
+    expected_error = (
+        "it's necessary to have the grant SELECT ON test.`table` WITH GRANT OPTION"
+    )
+    assert expected_error in instance.query_and_get_error(
+        "GRANT CURRENT GRANTS ON *.* TO B WITH REPLACE OPTION", user="A"
+    )
     assert instance.query("SHOW GRANTS FOR B") == TSV(
-        [
-            "GRANT SELECT ON *.* TO B",
-            "REVOKE SELECT ON test.* FROM B",
-        ]
+        ["GRANT SELECT ON test.`table` TO B"]
     )
 
 

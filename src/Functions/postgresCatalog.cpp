@@ -15,10 +15,13 @@
 #include <Common/assert_cast.h>
 
 #include <Common/config_version.h>
+#include <Common/DateLUTImpl.h>
 
 #include <Poco/String.h>
 
 #include <fmt/format.h>
+
+#include <optional>
 
 
 namespace DB
@@ -64,6 +67,21 @@ String pgFormatTimestamp(Int64 typmod, const char * suffix)
     return fmt::format("timestamp({}) {}", typmod, suffix);
 }
 
+/// Render the name of the blank-padded character type (OID 1042). PostgreSQL prints `character(n)` when
+/// a length is given: the modifier is the length plus `VARHDRSZ`. Without a length it does not print
+/// `character`, which by the SQL standard means `character(1)`: a modifier of -1 gives `bpchar`, and only
+/// a `NULL` modifier, which says nothing about the length, gives the bare `character`.
+String pgFormatBlankPaddedCharacter(std::optional<Int64> typmod)
+{
+    if (!typmod)
+        return "character";
+    if (*typmod < 0)
+        return "bpchar";
+    if (*typmod <= VARHDRSZ)
+        return "character";
+    return fmt::format("character({})", *typmod - VARHDRSZ);
+}
+
 /// PostgreSQL type OID -> human readable name, in the spelling produced by PostgreSQL's `format_type`.
 /// The set mirrors the built-in types advertised by ClickHouse's `pg_type` emulation (see PostgreSQLHandler).
 /// Unknown OIDs are rendered as `text`, matching how the counterpart mapping in
@@ -75,13 +93,18 @@ String pgFormatTimestamp(Int64 typmod, const char * suffix)
 /// Array types are rendered as `<element>[]` (regardless of the number of dimensions, which PostgreSQL
 /// carries separately in `attndims`); for a `numeric` array the modifier applies to the element type, so
 /// e.g. `numeric(20, 0)[]` round-trips back to `Array(Decimal(20, 0))`.
-String pgFormatType(Int64 oid, Int64 typmod)
+/// A `NULL` type modifier is the same as -1 for every type except the blank-padded character type.
+/// The OIDs are the ones of PostgreSQL's `pg_type.dat`. The OID that follows the OID of a range type
+/// there is the array of that range type; the multirange types have OIDs of their own (4451, 4532 - 4536).
+String pgFormatType(Int64 oid, std::optional<Int64> typmod_or_null)
 {
+    const Int64 typmod = typmod_or_null.value_or(-1);
     switch (oid)
     {
         case 16: return "boolean";
         case 17: return "bytea";
-        case 18: return "character";
+        /// The internal one-byte type, which PostgreSQL prints in quotes to tell it from `character`.
+        case 18: return "\"char\"";
         case 19: return "name";
         case 20: return "bigint";
         case 21: return "smallint";
@@ -90,7 +113,7 @@ String pgFormatType(Int64 oid, Int64 typmod)
         case 26: return "oid";
         case 700: return "real";
         case 701: return "double precision";
-        case 1042: return "character";
+        case 1042: return pgFormatBlankPaddedCharacter(typmod_or_null);
         case 1043: return "character varying";
         case 1082: return "date";
         case 1114: return pgFormatTimestamp(typmod, "without time zone");
@@ -98,17 +121,17 @@ String pgFormatType(Int64 oid, Int64 typmod)
         case 1700: return pgFormatNumeric(typmod);
         case 2950: return "uuid";
         case 3904: return "int4range";
-        case 3905: return "int4multirange";
         case 3906: return "numrange";
-        case 3907: return "nummultirange";
-        case 3910: return "tsrange";
-        case 3911: return "tsmultirange";
-        case 3912: return "tstzrange";
-        case 3913: return "tstzmultirange";
-        case 3914: return "daterange";
-        case 3915: return "datemultirange";
+        case 3908: return "tsrange";
+        case 3910: return "tstzrange";
+        case 3912: return "daterange";
         case 3926: return "int8range";
-        case 3927: return "int8multirange";
+        case 4451: return "int4multirange";
+        case 4532: return "nummultirange";
+        case 4533: return "tsmultirange";
+        case 4534: return "tstzmultirange";
+        case 4535: return "datemultirange";
+        case 4536: return "int8multirange";
         case 40000: return "mood";
 
         /// Array types (element OID + "[]").
@@ -123,6 +146,12 @@ String pgFormatType(Int64 oid, Int64 typmod)
         case 1182: return "date[]";
         case 1231: return pgFormatNumeric(typmod) + "[]";
         case 2951: return "uuid[]";
+        case 3905: return "int4range[]";
+        case 3907: return "numrange[]";
+        case 3909: return "tsrange[]";
+        case 3911: return "tstzrange[]";
+        case 3913: return "daterange[]";
+        case 3927: return "int8range[]";
 
         default: return "text";
     }
@@ -135,21 +164,21 @@ String pgFormatType(Int64 oid, Int64 typmod)
 /// queries issued by libpq/pqxx clients - in particular by ClickHouse itself when the `postgresql`
 /// table function or engine points at another ClickHouse instance.
 /// As in PostgreSQL, the function is not strict: a `NULL` type modifier means that no specific modifier
-/// is known (the same as `-1`), so `format_type(t.oid, NULL)` renders the base type name, and only a
-/// `NULL` type OID gives `NULL`.
+/// is known (the same as `-1`, except for the blank-padded character type, see `pgFormatBlankPaddedCharacter`),
+/// so `format_type(t.oid, NULL)` renders the base type name, and only a `NULL` type OID gives `NULL`.
 class FunctionFormatType final : public IFunction
 {
 public:
     static constexpr auto name = "format_type";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatType>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto is_integer_or_null = [](const DataTypePtr & type)
         {
@@ -174,7 +203,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// The values of an argument and its null map; no values at all for an argument that is always `NULL`.
         struct Argument
@@ -183,7 +212,7 @@ public:
             const IColumn * values = nullptr;
             const NullMap * null_map = nullptr;
 
-            bool isNull(size_t row) const { return !values || (null_map && (*null_map)[row]); }
+            [[nodiscard]] bool isNull(size_t row) const { return !values || (null_map && (*null_map)[row]); }
         };
 
         const auto unwrap = [](const ColumnWithTypeAndName & argument)
@@ -216,7 +245,9 @@ public:
                 continue;
             }
 
-            const Int64 type_modifier = typmod.isNull(i) ? -1 : typmod.values->getInt(i);
+            std::optional<Int64> type_modifier;
+            if (!typmod.isNull(i))
+                type_modifier = typmod.values->getInt(i);
             const String type_name = pgFormatType(oid.values->getInt(i), type_modifier);
             result->insertData(type_name.data(), type_name.size());
         }
@@ -289,16 +320,16 @@ public:
     {
     }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
     /// The result depends on the session: the current database (`search_path`) and the effective
     /// timezone (which follows the `session_timezone` setting).
-    bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 2)
             throw Exception(
@@ -313,7 +344,7 @@ public:
         return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnConst * name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
         if (!name_column)
@@ -403,15 +434,15 @@ public:
 
     explicit FunctionArrayPosition(FunctionOverloadResolverPtr index_of_) : index_of(std::move(index_of_)) {}
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     /// The default-null wrapper would short-circuit a `NULL` element to `NULL`, but in PostgreSQL a
     /// `NULL` element searches for the first `NULL` of the array. `indexOf` handles `NULL` arguments
     /// itself; the only `NULL` this function has to produce is for a `NULL` array.
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// A literal `NULL` array (`Nullable` cannot wrap `Array`, so `Nullable(Nothing)` is the only
         /// nullable shape the array argument can take) is handled here; the rest of the argument
@@ -423,7 +454,7 @@ public:
         return std::make_shared<DataTypeNullable>(index_of->build(arguments)->getResultType());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// A literal `NULL` array: the result is all-`NULL`.
         if (isNothing(removeNullable(arguments[0].type)))

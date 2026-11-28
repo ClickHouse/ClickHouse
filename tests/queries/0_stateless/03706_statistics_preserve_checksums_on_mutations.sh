@@ -6,6 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: creates MergeTree with ORDER BY, tests mutations and checksums
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 $CLICKHOUSE_CLIENT -nm -q "
 drop table if exists mt;
 create table mt (key Int, value String) engine=MergeTree() order by key settings
@@ -23,7 +26,8 @@ create table mt (key Int, value String) engine=MergeTree() order by key settings
   -- This uncovers the bug
   auto_statistics_types='uniq,basic,countmin,tdigest',
   enable_block_number_column=0,
-  enable_block_offset_column=0
+  enable_block_offset_column=0,
+  enable_adaptive_codec_selection=0
 ;
 SET materialize_statistics_on_insert = 1;
 insert into mt select number, repeat('a', number) from numbers(10e3) settings max_block_size=1e6;

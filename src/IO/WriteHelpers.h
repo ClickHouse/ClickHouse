@@ -9,10 +9,12 @@
 #include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
+#include <Common/Exception.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
 #include <Common/LocalTime.h>
 #include <Common/transformEndianness.h>
+#include <base/DecomposedFloat.h>
 #include <base/find_symbols.h>
 #include <base/itoa.h>
 
@@ -30,12 +32,20 @@
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <Formats/FormatSettings.h>
+#include <Core/Defines.h>
+#include <Core/Names.h>
+#include <base/unit.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
 class Exception;
+struct FormatSettings;
 
 /// Helper functions for formatted and binary output.
 
@@ -165,17 +175,132 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 }
 
 
+namespace detail
+{
+/// The out-of-line paths of `writeFloatTextFastPath`.
+char * writeIntegerFloatText(Int64 x, char * buffer);
+char * writeIntegerFloatText(Int32 x, char * buffer);
+size_t writeFloatTextFastPathFloat64Rounded(Float64 f64, int16_t exp, char * buffer);
+size_t writeFloatTextFastPathFloat32Rounded(Float32 f32, int16_t exp, char * buffer);
+char * writeShortestFloatText(Float64 x, char * buffer);
+char * writeShortestFloatText(Float32 x, char * buffer);
+}
+
+/// Only the path choice is inline and each path is one call, so `writeFloatText` stays small enough to inline into column loops.
 template <typename T>
 requires is_floating_point<T>
-size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point);
+ALWAYS_INLINE inline size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
+{
+    size_t result = 0;
 
-extern template size_t writeFloatTextFastPath(Float64 x, char * buffer, bool force_decimal_point);
-extern template size_t writeFloatTextFastPath(Float32 x, char * buffer, bool force_decimal_point);
-extern template size_t writeFloatTextFastPath(BFloat16 x, char * buffer, bool force_decimal_point);
+    if constexpr (std::is_same_v<T, Float64>)
+    {
+        DecomposedFloat64 decomposed(x);
+        auto exp = decomposed.normalizedExponent();
+
+        /// Float64 integer fast path, same structure as Float32:
+        ///   exp 0..52:  exact integers (isIntegerInRepresentableRange).
+        ///   exp 53:     ULP=2, all values are even integers, itoa matches dragonbox.
+        ///   exp 54..62: ULP=4..1024, use rounding to find the "roundest" integer.
+        ///   exp < 0:    |value| < 1, not an integer.
+        ///   exp > 62:   |value| >= 2^63, overflows Int64.
+        if (decomposed.isIntegerInRepresentableRange() || exp == 53)
+        {
+            result = detail::writeIntegerFloatText(Int64(x), buffer) - buffer;
+            if (force_decimal_point)
+                buffer[result++] = '.';
+            return result;
+        }
+        else if (exp > 53 && exp <= 62)
+        {
+            result = detail::writeFloatTextFastPathFloat64Rounded(x, exp, buffer);
+            if (force_decimal_point)
+                buffer[result++] = '.';
+            return result;
+        }
+        else
+            result = detail::writeShortestFloatText(x, buffer) - buffer;
+    }
+    else if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, BFloat16>)
+    {
+        Float32 f32 = Float32(x);
+        DecomposedFloat32 decomposed(f32);
+        auto exp = decomposed.normalizedExponent();
+
+        /// Float32 integer fast path: covers exp 0..30 (values up to ~2^31).
+        ///
+        /// Three sub-ranges:
+        ///   exp 0..23:  ULP <= 1, every integer has a unique float. itoa gives the
+        ///               exact value, which is the only valid shortest representation.
+        ///               We just need to verify the float IS an integer (fractional
+        ///               mantissa bits are zero).
+        ///
+        ///   exp 24:     ULP = 2, but cast-to-int always lands on an even number.
+        ///               Exhaustive testing shows itoa matches dragonbox for all 8M values.
+        ///
+        ///   exp 25..30: ULP = 4..128. itoa gives the exact value, but dragonbox may
+        ///               prefer a "rounder" decimal (more trailing zeros). We use
+        ///               writeFloatTextFastPathFloat32Rounded to adjust, matching
+        ///               dragonbox exactly for all ~4.3 billion Float32 values
+        ///               (positive and negative, exhaustively verified).
+        ///               zmij was patched to produce identical output to dragonbox,
+        ///               so these results still hold.
+        ///
+        /// exp < 0:     |value| < 1, not an integer.
+        /// exp > 30:    |value| >= 2^31, overflows Int32.
+
+        /// Most common fast path first: exp 0..24, exact integers.
+        if (decomposed.isIntegerInRepresentableRange() || exp == 24)
+        {
+            result = detail::writeIntegerFloatText(Int32(f32), buffer) - buffer;
+            if (force_decimal_point)
+                buffer[result++] = '.';
+            return result;
+        }
+        /// Extended fast path: exp 25..30, round to "roundest" decimal then itoa.
+        else if (exp > 24 && exp <= 30)
+        {
+            result = detail::writeFloatTextFastPathFloat32Rounded(f32, exp, buffer);
+            if (force_decimal_point)
+                buffer[result++] = '.';
+            return result;
+        }
+        /// Not an integer, or exp out of range: use zmij.
+        else
+            result = detail::writeShortestFloatText(f32, buffer) - buffer;
+    }
+    else
+        static_assert(false, "`writeFloatTextFastPath` supports only `Float64`, `Float32` and `BFloat16`");
+
+    /// The integer paths have already handled `force_decimal_point`. The `zmij` path can also
+    /// emit a bare integer for large magnitudes (e.g. `toFloat32(1.23e20)` ->
+    /// `123000000000000000000`). Append a point if there is no point or exponent in its output.
+    /// The `isFinite` guard keeps `inf`/`nan` untouched. The caller guarantees at least
+    /// `DoubleConverter<false>::MAX_REPRESENTATION_LENGTH` bytes, which leaves room for the extra '.'.
+    if (force_decimal_point && isFinite(x)
+        && find_first_symbols<'.', 'e', 'E'>(buffer, buffer + result) == buffer + result)
+    {
+        buffer[result] = '.';
+        ++result;
+    }
+
+    return result;
+}
+
+namespace detail
+{
+template <typename T>
+requires is_floating_point<T>
+void writeFloatTextThroughStackBuffer(T x, WriteBuffer & buf, bool force_decimal_point);
+
+extern template void writeFloatTextThroughStackBuffer(Float64 x, WriteBuffer & buf, bool force_decimal_point);
+extern template void writeFloatTextThroughStackBuffer(Float32 x, WriteBuffer & buf, bool force_decimal_point);
+extern template void writeFloatTextThroughStackBuffer(BFloat16 x, WriteBuffer & buf, bool force_decimal_point);
+}
 
 template <typename T>
 requires is_floating_point<T>
-inline void writeFloatText(T x, WriteBuffer & buf, bool force_decimal_point = false)
+ALWAYS_INLINE inline void writeFloatText(T x, WriteBuffer & buf, bool force_decimal_point = false)
 {
     using Converter = DoubleConverter<false>;
     if (likely(buf.available() >= Converter::MAX_REPRESENTATION_LENGTH))
@@ -184,9 +309,7 @@ inline void writeFloatText(T x, WriteBuffer & buf, bool force_decimal_point = fa
         return;
     }
 
-    Converter::BufferType buffer;
-    size_t result = writeFloatTextFastPath(x, buffer, force_decimal_point);
-    buf.write(buffer, result);
+    detail::writeFloatTextThroughStackBuffer(x, buf, force_decimal_point);
 }
 
 template <typename T>
@@ -222,120 +345,7 @@ inline void writeString(std::string_view ref, WriteBuffer & buf)
  *  - it is assumed that string is in UTF-8, the invalid UTF-8 is not processed
  *  - all other non-ASCII characters remain as is
  */
-inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings)
-{
-    /// A byte with a nonzero entry never gets copied verbatim; it always reaches the switch below.
-    /// 0xE2 needs an entry because it leads U+2028 and U+2029: a bulk copy would swallow the lead byte and
-    /// emit the sequence raw. Their continuation bytes need none, being written unchanged either way.
-    static constexpr auto stop_tables = []
-    {
-        std::array<std::array<UInt8, 256>, 2> tables{};
-        for (auto & table : tables)
-        {
-            for (size_t i = 0; i <= 0x1F; ++i)
-                table[i] = 1;
-            table['"'] = 1;
-            table['\\'] = 1;
-            table[0xE2] = 1;
-        }
-        tables[true]['/'] = 1;
-        return tables;
-    }();
-    const auto & stop = stop_tables[settings.json.escape_forward_slashes];
-
-    writeChar('"', buf);
-
-    const char * it = begin;
-
-    while (true)
-    {
-        const char * run_end = it;
-        while (run_end != end && !stop[static_cast<UInt8>(*run_end)])
-            ++run_end;
-
-        if (run_end != it)
-        {
-            buf.write(it, static_cast<size_t>(run_end - it));
-            it = run_end;
-        }
-
-        if (it == end)
-            break;
-
-        switch (*it)
-        {
-            case '\b':
-                writeChar('\\', buf);
-                writeChar('b', buf);
-                break;
-            case '\f':
-                writeChar('\\', buf);
-                writeChar('f', buf);
-                break;
-            case '\n':
-                writeChar('\\', buf);
-                writeChar('n', buf);
-                break;
-            case '\r':
-                writeChar('\\', buf);
-                writeChar('r', buf);
-                break;
-            case '\t':
-                writeChar('\\', buf);
-                writeChar('t', buf);
-                break;
-            case '\\':
-                writeChar('\\', buf);
-                writeChar('\\', buf);
-                break;
-            case '/':
-                if (settings.json.escape_forward_slashes)
-                    writeChar('\\', buf);
-                writeChar('/', buf);
-                break;
-            case '"':
-                writeChar('\\', buf);
-                writeChar('"', buf);
-                break;
-            default:
-                UInt8 c = *it;
-                if (c <= 0x1F)
-                {
-                    /// Escaping of ASCII control characters.
-
-                    UInt8 higher_half = c >> 4;
-                    UInt8 lower_half = c & 0xF;
-
-                    writeCString("\\u00", buf);
-                    writeChar('0' + higher_half, buf);
-
-                    if (lower_half <= 9)
-                        writeChar('0' + lower_half, buf);
-                    else
-                        writeChar('A' + lower_half - 10, buf);
-                }
-                else if (end - it >= 3 && it[0] == '\xE2' && it[1] == '\x80' && (it[2] == '\xA8' || it[2] == '\xA9'))
-                {
-                    /// This is for compatibility with JavaScript, because unescaped line separators are prohibited in string literals,
-                    ///  and these code points are alternative line separators.
-
-                    if (it[2] == '\xA8')
-                        writeCString("\\u2028", buf);
-                    if (it[2] == '\xA9')
-                        writeCString("\\u2029", buf);
-
-                    /// Byte sequence is 3 bytes long. We have additional two bytes to skip.
-                    it += 2;
-                }
-                else
-                    writeChar(*it, buf);
-        }
-
-        ++it;
-    }
-
-    writeChar('"', buf);
-}
+void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings);
 
 
 /** Will escape quote_character and a list of special characters('\b', '\f', '\n', '\r', '\t', '\0', '\\').
@@ -555,51 +565,6 @@ inline void writeAnyMarkdownEscapedString(const char * begin, const char * end, 
 inline void writeJSONString(std::string_view s, WriteBuffer & buf, const FormatSettings & settings)
 {
     writeJSONString(s.data(), s.data() + s.size(), buf, settings);
-}
-
-template <typename T>
-void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
-{
-    bool is_finite = isFinite(x);
-
-    const bool need_quote = (is_integer<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
-        || (settings.json.quote_denormals && !is_finite) || (is_floating_point<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_floats);
-
-    if (need_quote)
-        writeChar('"', ostr);
-
-    if (is_finite)
-    {
-        if constexpr (is_floating_point<T>)
-            writeFloatText(x, ostr, settings);
-        else
-            writeText(x, ostr);
-    }
-    else if (!settings.json.quote_denormals)
-        writeCString("null", ostr);
-    else
-    {
-        if constexpr (is_floating_point<T>)
-        {
-            if (signBit(x))
-            {
-                if (isNaN(x))
-                    writeCString("-nan", ostr);
-                else
-                    writeCString("-inf", ostr);
-            }
-            else
-            {
-                if (isNaN(x))
-                    writeCString("nan", ostr);
-                else
-                    writeCString("inf", ostr);
-            }
-        }
-    }
-
-    if (need_quote)
-        writeChar('"', ostr);
 }
 
 
@@ -1409,8 +1374,13 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     }
 
     constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
-    chassert(scale <= max_digits);
-    chassert(fractional_length <= max_digits);
+    /// The digits go to a buffer on the stack, so this is checked in the release build as well: the scale
+    /// of a `DecimalField` is not tied to a data type, and a value that slipped through a boundary without
+    /// validation must not write past the buffer.
+    if (scale > max_digits || fractional_length > max_digits) [[unlikely]]
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Cannot write a decimal with scale {} and {} fractional digits: at most {} digits are supported",
+            scale, fractional_length, max_digits);
     /// Rounding to a narrower field is the caller's job, because a carry out of the fractional part
     /// belongs to the whole part, which has already been written by then.
     chassert(!fixed_fractional_length || fractional_length >= scale);
@@ -1452,6 +1422,16 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
                bool fixed_fractional_length = false, UInt32 fractional_length = 0,
                bool force_decimal_point = false)
 {
+    /// The scale of a `DecimalField` is not tied to a data type, so check it in the release build before any
+    /// arithmetic that depends on it: a scale wider than the type overflows `scaleMultiplier` and the rounding
+    /// below, and a scale of 2^31 or more becomes a negative exponent, which gives a division by zero.
+    constexpr size_t max_scale = DecimalUtils::max_precision<Decimal<T>>;
+    constexpr size_t max_fractional_length = std::numeric_limits<UInt256>::digits10;
+    if (scale > max_scale || fractional_length > max_fractional_length) [[unlikely]]
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Cannot write a decimal with scale {} and {} fractional digits: the maximum scale is {} and at most {} fractional digits are supported",
+            scale, fractional_length, max_scale, max_fractional_length);
+
     /// A fixed fractional length narrower than the scale rounds the value away from zero. Round the whole value
     /// before it is split, so that a carry out of the fractional part reaches the whole part: rounding the
     /// fractional part alone turns 9.995 into 9.00 instead of 10.00.

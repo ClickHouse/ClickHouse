@@ -80,6 +80,12 @@ struct ReadOptions
 
     /// Null if the columns cache is not used.
     std::shared_ptr<const ColumnsCacheOptions> columns_cache;
+
+    NameSet map_columns_read_by_keys;
+    NameSet map_columns_read_by_values;
+
+    /// See `IInputFormat::setBytesPerRowAddedAfterReading`.
+    size_t bytes_per_row_added_after_reading = 0;
 };
 
 struct SharedResourcesExt
@@ -274,7 +280,7 @@ struct PruningMemoryReservation
 
     /// Reserve `bytes` against the shared budget. Returns true and charges the counter if it fits;
     /// otherwise charges nothing and returns false (skip pruning). Unbounded reservations always fit.
-    bool tryReserve(size_t bytes) const
+    [[nodiscard]] bool tryReserve(size_t bytes) const
     {
         if (stage_memory == nullptr || watermark == 0)
             return true;

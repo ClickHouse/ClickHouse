@@ -1,6 +1,9 @@
 -- Tags: no-fasttest
 -- no-fasttest: requires idna library
 
+-- Disable force_primary_key_reverse_order: creates MergeTree with ORDER BY idna, output order depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 -- See also 02932_punycode.sql
 
 SELECT '-- Negative tests';

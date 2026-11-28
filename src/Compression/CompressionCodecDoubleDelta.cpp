@@ -7,6 +7,7 @@
 #include <Compression/registerCompressionCodecs.h>
 #include <DataTypes/IDataType.h>
 #include <base/unaligned.h>
+#include <base/sanitizer_defs.h>
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -123,8 +124,8 @@ class CompressionCodecDoubleDelta : public ICompressionCodec
 public:
     explicit CompressionCodecDoubleDelta(UInt8 data_bytes_size_);
 
-    uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -134,12 +135,12 @@ protected:
 
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    bool isCompression() const override { return true; }
-    bool isGenericCompression() const override { return false; }
-    bool isDeltaCompression() const override { return true; }
-    String getDescription() const override { return "Stores difference between neighboring delta values; suitable for time series data."; }
+    [[nodiscard]] bool isCompression() const override { return true; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] bool isDeltaCompression() const override { return true; }
+    [[nodiscard]] String getDescription() const override { return "Stores difference between neighboring delta values; suitable for time series data."; }
 
 private:
     UInt8 data_bytes_size;
@@ -276,8 +277,10 @@ UInt64 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
     return (items_count * max_item_size_bits + 7) / 8;
 }
 
+/// Double delta coding is modular arithmetic by definition: the deltas wrap around, and the
+/// decoder recovers the original values by wrapping back.
 template <typename ValueType>
-UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
+UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     // Since only unsigned int has granted 2-complement overflow handling,
     // we are doing math here only on unsigned types.
@@ -364,7 +367,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 }
 
 template <typename ValueType>
-UInt32 decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
+UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
     static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
     using UnsignedDeltaType = ValueType;

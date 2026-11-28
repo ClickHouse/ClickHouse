@@ -47,7 +47,18 @@ python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
 
 ## Running on macOS with Apple container
 
-On Apple silicon with macOS 26, [Apple container](https://github.com/apple/container) can host a Docker Engine for the local CI runner. The CI runner uses Docker inside Apple's Linux VM. Install the Docker CLI and Apple container, and provide a Linux ARM64 ClickHouse binary in one of the locations listed above. A native macOS binary cannot run in this environment.
+On Apple silicon with macOS 26, [Apple container](https://github.com/apple/container) can host a Docker Engine for the local CI runner. The CI runner uses Docker inside Apple's Linux VM. Install the Docker CLI and Apple container (`brew install docker container`), and provide a Linux ARM64 ClickHouse binary in one of the locations listed above or with `--path`. A native macOS binary cannot run in this environment.
+
+To cross-compile the Linux ARM64 binary on the Mac, use the toolchain from [Build on macOS](../../docs/resources/develop-contribute/build/build-osx.mdx) with the Linux toolchain file in a separate build directory. Add the Rust target to the toolchain the build uses (the configure step prints the exact command if it is missing):
+
+```bash
+rustup target add aarch64-unknown-linux-gnu
+cmake -S . -B build_linux -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-aarch64.cmake \
+    -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang \
+    -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++
+ninja -C build_linux clickhouse
+```
 
 The following setup was verified with Apple container 1.4.1 and `docker:28-dind`. Run it from the repository root:
 
@@ -197,6 +208,10 @@ Use debug mode to attach a low-level debugger to the ClickHouse server inside in
    │ 1 │
    └───┘
    ```
+
+## Logs Export to the CI Logs Cluster
+
+In CI, the system log tables (`system.query_log`, `system.text_log`, ...) of every server started by the tests are exported to the CI Logs cluster, augmented with `test_name` and `node_name` columns (see `helpers/ci_logs_export.py`). The `test_name` column holds the suite directory for a single-file suite (`test_storage_s3`) and `<suite>/<module>` for a multi-file suite (`test_prometheus_protocols/test_series_api`). A cluster created in the `conftest.py` or `__init__.py` of a suite (e.g. `test_storage_iceberg_with_spark`) is shared by all of its modules, and the label is fixed when its servers start, so its rows are labelled with just the suite name. The export runs as the dedicated `ci_logs_sender` user (`tests/config/users.d/ci_logs_sender.yaml`, installed into the instance `users.d` and used as the `DEFINER` of the exporting materialized views), whose profile pins the settings of the export regardless of the settings of the query that triggered it. The export is enabled by the `CLICKHOUSE_CI_LOGS_HOST` environment variable, which `ci/jobs/integration_test_job.py` sets from the CI secrets. To use it in a local run, export `CLICKHOUSE_CI_LOGS_HOST`, `CLICKHOUSE_CI_LOGS_USER`, `CLICKHOUSE_CI_LOGS_PASSWORD` (and optionally `CLICKHOUSE_CI_LOGS_PORT`, `CLICKHOUSE_CI_LOGS_SECURE=0` for a plain-TCP destination) before running the tests. A test can keep the export off for a server whose memory or CPU budget, or whose exact system log contents, it measures with `cluster.add_instance(..., with_ci_logs_export=False)`.
 
 ## Troubleshooting
 

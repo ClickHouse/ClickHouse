@@ -4,6 +4,10 @@
 -- `accurateCastOrNull` prepare conversion to `String`. Each check pins the selected granules, and the
 -- key condition pins the range endpoints of the equality checks, whose counts and granules would be
 -- the same for the label and the number.
+
+-- Disable force_primary_key_reverse_order: the selected granules depend on the physical order of the rows, which follows the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 SET explain_query_plan_default = 'legacy';
 SET enable_parallel_replicas = 0;
 SET use_query_condition_cache = 0;

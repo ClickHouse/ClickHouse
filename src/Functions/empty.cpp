@@ -40,12 +40,12 @@ public:
     ExecutableFunctionJSONEmpty(bool negative_, const char * name_, bool skip_null_typed_paths_)
         : negative(negative_), function_name(name_), skip_null_typed_paths(skip_null_typed_paths_) {}
 
-    std::string getName() const override { return function_name; }
+    [[nodiscard]] std::string getName() const override { return function_name; }
 
 private:
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const ColumnWithTypeAndName & elem = arguments[0];
         const auto * object_column = typeid_cast<const ColumnObject *>(elem.column.get());
@@ -201,7 +201,7 @@ Checks whether the input array is empty.
 An array is considered empty if it does not contain any elements.
 
 <Note>
-Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+When the column isn't used anywhere else in the query, the function can read only the [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`. This optimization is controlled by the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting, which is enabled by default.
 </Note>
 
 The function also works for Strings or UUIDs.
@@ -212,7 +212,7 @@ Checks whether the input array is non-empty.
 An array is considered non-empty if it contains at least one element.
 
 <Note>
-Can be optimized by enabling the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
+When the column isn't used anywhere else in the query, the function can read only the [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`. This optimization is controlled by the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting, which is enabled by default.
 </Note>
 
 The function also works for Strings or UUIDs.

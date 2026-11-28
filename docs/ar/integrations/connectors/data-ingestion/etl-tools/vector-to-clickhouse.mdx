@@ -12,8 +12,6 @@ integration:
 keywords: ['vector', 'جمع السجلات', 'Observability', 'إدخال البيانات', 'مسار معالجة']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -40,7 +38,7 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
     CREATE DATABASE IF NOT EXISTS nginxdb
     ```
 
-    2. أدرِج حدث السجل بالكامل كسلسلة نصية واحدة. من الواضح أن هذا ليس تنسيقًا مناسبًا جدًا لإجراء التحليلات على بيانات السجل، لكننا سنعالج هذا الجزء أدناه باستخدام ***العروض المُجسَّدة***.
+    2. أدرِج حدث السجل بالكامل كسلسلة نصية واحدة. من الواضح أن هذا ليس تنسيقًا مناسبًا جدًا لإجراء التحليلات على بيانات السجل، لكننا سنعالج هذا الجزء أدناه باستخدام ***العروض المُجسَّدة***.
 
     ```sql
     CREATE TABLE IF NOT EXISTS  nginxdb.access_logs (
@@ -86,9 +84,9 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 
   <Step title="تكوين Vector" id="3-configure-vector">
     يجمع Vector السجلات والمقاييس والتتبعات، ويحوّلها ويوجّهها (ويُشار إليها باسم **المصادر**) إلى العديد من المزوّدين المختلفين (ويُشار إليهم باسم **الوجهات**)؛ بما في ذلك التوافق الجاهز مع ClickHouse.
-    تُعرَّف المصادر والوجهات في ملف تكوين باسم **vector.toml**.
+    تُعرَّف المصادر والوجهات في ملف تكوين باسم **vector.toml**.
 
-    1. يحدّد ملف **vector.toml** التالي **مصدرًا** من النوع **file** يتابع نهاية ملف **my&#95;access.log**، كما يحدّد **وجهة** بوصفها جدول **access&#95;logs** المعرَّف أعلاه:
+    1. يحدّد ملف **vector.toml** التالي **مصدرًا** من النوع **file** يتابع نهاية ملف **my&#95;access.log**، كما يحدّد **وجهة** بوصفها جدول **access&#95;logs** المعرَّف أعلاه:
 
     ```bash
     [sources.nginx_logs]
@@ -113,7 +111,11 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
     SELECT * FROM nginxdb.access_logs
     ```
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="عرض سجلات ClickHouse بتنسيق جدولي" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![عرض سجلات ClickHouse بتنسيق جدولي](/images/integrations/data-ingestion/etl-tools/vector_01.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="تحليل السجلات" id="4-parse-the-logs">
@@ -215,11 +217,15 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
     SELECT * FROM nginxdb.access_logs_view
     ```
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/vector_02.webp" size="lg" border alt="اعرض سجلات ClickHouse المُحلَّلة بتنسيق جدولي" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![اعرض سجلات ClickHouse المُحلَّلة بتنسيق جدولي](/images/integrations/data-ingestion/etl-tools/vector_02.webp)
+      </Frame>
+    </div>
 
     <Note>
       في الدرس أعلاه، جرى تخزين البيانات في جدولين، لكن يمكنك تغيير الجدول الأولي `nginxdb.access_logs` لاستخدام محرك الجدول [`Null`](/ar/reference/engines/table-engines/special/null).
-      ستظل البيانات المُحلَّلة تنتهي في الجدول `nginxdb.access_logs_view`، لكن البيانات الخام لن تُخزَّن في أي جدول.
+      ستظل البيانات المُحلَّلة تنتهي في الجدول `nginxdb.access_logs_view`، لكن البيانات الخام لن تُخزَّن في أي جدول.
     </Note>
   </Step>
 </Steps>

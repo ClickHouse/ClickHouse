@@ -2,15 +2,10 @@
 slug: /cloud/managed-postgres/connection
 sidebarTitle: 'Connexion'
 title: 'Connexion à ClickHouse Managed Postgres'
-description: 'Chaînes de connexion, pool de connexions PgBouncer et configuration TLS pour ClickHouse Managed Postgres'
+description: 'Chaînes de connexion, pool de connexions PgBouncer et Configuration TLS pour ClickHouse Managed Postgres'
 keywords: ['connexion Postgres', 'chaîne de connexion', 'pgbouncer', 'tls', 'ssl']
 doc_type: 'guide'
 ---
-
-import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/fr/components/Image.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
 
 <Tip>
   **SQL Console**
@@ -22,23 +17,31 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 Pour connecter vos applications à ClickHouse Managed Postgres, accédez à la section **Connect** dans la barre latérale gauche de votre instance.
 
-<Image img="/images/managed-postgres/connect-button.webp" alt="Cliquez sur Connect dans la barre latérale gauche pour afficher les informations de connexion" size="md" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Cliquez sur Connect dans la barre latérale gauche pour afficher les informations de connexion](/images/managed-postgres/connect-button.webp)
+  </Frame>
+</div>
 
 Un clic sur **Connect** ouvre une fenêtre modale affichant vos identifiants et vos chaînes de connexion dans plusieurs formats.
 
-<Image img="/images/managed-postgres/connect-modal.webp" alt="Fenêtre modale de connexion affichant les identifiants et les formats de chaîne de connexion" size="md" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Fenêtre modale de connexion affichant les identifiants et les formats de chaîne de connexion](/images/managed-postgres/connect-modal.webp)
+  </Frame>
+</div>
 
-La fenêtre modale de connexion affiche les informations suivantes :
+La fenêtre modale de connexion affiche les informations suivantes :
 
-* **Nom d’utilisateur** : L’utilisateur de la base de données (par défaut : `postgres`)
-* **Mot de passe** : Le mot de passe de votre base de données (masqué par défaut, cliquez sur l’icône en forme d’œil pour l’afficher)
-* **Serveur** : Le nom d’hôte de votre instance ClickHouse Managed Postgres
-* **Port** : Le port PostgreSQL (par défaut : `5432`)
+* **Nom d’utilisateur** : L’utilisateur de la base de données (par défaut : `postgres`)
+* **Mot de passe** : Le mot de passe de votre base de données (masqué par défaut, cliquez sur l’icône en forme d’œil pour l’afficher)
+* **Serveur** : Le nom d’hôte de votre instance ClickHouse Managed Postgres
+* **Port** : Le port PostgreSQL (par défaut : `5432`)
 
 ClickHouse Managed Postgres vous donne un accès superutilisateur à votre base de données. Utilisez ces identifiants pour vous connecter en tant que superutilisateur, ce qui vous permet de créer des utilisateurs supplémentaires et de gérer les objets de la base de données.
 
 <div id="connection-string">
-  ## Formats de chaîne de connexion
+  ## Formats de chaîne de connexion {#connection-string}
 </div>
 
 Les onglets **Connect via** fournissent votre chaîne de connexion dans plusieurs formats afin de s&#39;adapter aux besoins de votre application :
@@ -76,7 +79,7 @@ Pour utiliser le pool de connexions, cliquez sur le bouton bascule **via PgBounc
 Toutes les instances ClickHouse Managed Postgres sont sécurisées par TLS. La version minimale prise en charge est **TLS 1.3**.
 
 <div id="quick-connection">
-  ### Connexion rapide (chiffrée avec TLS)
+  ### Connexion rapide (chiffrée avec TLS) {#quick-connection}
 </div>
 
 Par défaut, les connexions utilisent le chiffrement TLS sans vérification du certificat :
@@ -89,11 +92,15 @@ psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/post
 
 Pour les charges de travail de production, nous vous recommandons d’utiliser une connexion TLS vérifiée afin de garantir que vous communiquez avec le bon serveur. Pour ce faire, téléchargez le bundle de certificats CA depuis l’onglet **Settings** et ajoutez-le aux certificats de confiance de votre client de base de données.
 
-<Image img="/images/managed-postgres/tls-ca-bundle.webp" alt="Télécharger le certificat CA depuis l’onglet Settings" size="md" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Télécharger le certificat CA depuis l’onglet Settings](/images/managed-postgres/tls-ca-bundle.webp)
+  </Frame>
+</div>
 
 Le certificat CA est propre à votre instance ClickHouse Managed Postgres et ne fonctionnera pas avec d’autres instances.
 
-Pour vous connecter avec une connexion TLS vérifiée, ajoutez `sslmode=verify-full` ainsi que le chemin vers le certificat que vous avez téléchargé :
+Pour vous connecter avec une connexion TLS vérifiée, ajoutez `sslmode=verify-full` ainsi que le chemin vers le certificat que vous avez téléchargé :
 
 ```bash
 psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=/path/to/ca-certificate.pem'

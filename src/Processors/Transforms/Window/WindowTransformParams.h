@@ -1,11 +1,13 @@
 #pragma once
 
+#include <WindowFunctions/Common/WindowFunctionRequirements.h>
+#include <WindowFunctions/Common/WindowFunctionSettings.h>
+
 #include <Interpreters/WindowDescription.h>
+
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Block.h>
-
-#include <vector>
 
 namespace DB
 {
@@ -21,16 +23,21 @@ struct WindowTransformParams
 {
     const Block input_header;
     const WindowDescription window_description;
+    const VectorWithMemoryTracking<WindowFunctionDescription> functions;
+    const WindowFunctionSettings function_settings;
     const VectorWithMemoryTracking<size_t> partition_by_indices;
     const VectorWithMemoryTracking<size_t> order_by_indices;
     const VectorWithMemoryTracking<bool> should_materialize;
     const RangeOffsetComparator range_offset_comparator;
+    const WindowFunctionRequirements requirements;
+    const bool needs_peer_group_indexes;
 
 public:
     static WindowTransformParams create(
         const Block & input_header,
         const WindowDescription & window_description,
-        const VectorWithMemoryTracking<WindowFunctionDescription> & functions);
+        VectorWithMemoryTracking<WindowFunctionDescription> functions,
+        WindowFunctionSettings settings);
 };
 
 }

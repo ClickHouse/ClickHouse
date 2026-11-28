@@ -11,8 +11,8 @@ namespace DB
 /// the requested key belongs to (via `getBucketForKey`), reads only that single bucket,
 /// and extracts the value for the matching key from the deserialized data.
 /// This avoids reading all buckets when only one key is needed.
-/// A key with a float zero is the exception: the other zero can be in another bucket,
-/// so `read_whole_map` reads all buckets, as for the BASIC format.
+/// A key with a float zero (the other zero can be in another bucket) or with a `JSON` or `Dynamic` value (older versions
+/// put it into a bucket by another hash) is the exception: `read_whole_map` reads all buckets, as for the BASIC format.
 /// Serialization (writing) is not supported because subcolumns are read-only.
 class SerializationMapKeyValue final : public SerializationWrapper
 {

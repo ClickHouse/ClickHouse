@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# - no-fasttest: reads Parquet files
 # Fail point state is process global and each clickhouse-local invocation owns its own, so arming
 # one here cannot reach a concurrent test: no no-parallel tag is needed.
 

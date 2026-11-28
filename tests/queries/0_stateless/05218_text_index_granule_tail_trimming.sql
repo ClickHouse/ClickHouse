@@ -1,5 +1,7 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: with `parallel_replicas_local_plan = 0` the initiator reads no rows
+-- Disable force_primary_key_reverse_order: checks the number of rows read, which depends on the granule layout
+SET force_primary_key_reverse_order = 0;
 -- itself, so the RowsReadByMainReader assertion below reads 0 instead of 2.
 
 SET enable_full_text_index = 1;

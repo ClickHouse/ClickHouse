@@ -24,10 +24,10 @@ public:
         explicit IPSubnet(const IPAddress & address) { set(address); }
         explicit IPSubnet(const String & str);
 
-        const IPAddress & getPrefix() const { return prefix; }
-        const IPAddress & getMask() const { return mask; }
-        bool isMaskAllBitsOne() const;
-        String toString() const;
+        [[nodiscard]] const IPAddress & getPrefix() const { return prefix; }
+        [[nodiscard]] const IPAddress & getMask() const { return mask; }
+        [[nodiscard]] bool isMaskAllBitsOne() const;
+        [[nodiscard]] String toString() const;
 
         friend bool operator ==(const IPSubnet & lhs, const IPSubnet & rhs) { return (lhs.prefix == rhs.prefix) && (lhs.mask == rhs.mask); }
         friend bool operator !=(const IPSubnet & lhs, const IPSubnet & rhs) { return !(lhs == rhs); }
@@ -55,7 +55,7 @@ public:
     /// Removes all contained addresses. This will disallow all hosts.
     void clear();
 
-    bool empty() const;
+    [[nodiscard]] bool empty() const;
 
     /// Allows exact IP address.
     /// For example, 213.180.204.3 or 2a02:6b8::3
@@ -63,7 +63,7 @@ public:
     void addAddress(const String & address) { addAddress(IPAddress(address)); }
     void removeAddress(const IPAddress & address);
     void removeAddress(const String & address) { removeAddress(IPAddress{address}); }
-    const std::vector<IPAddress> & getAddresses() const { return addresses; }
+    [[nodiscard]] const std::vector<IPAddress> & getAddresses() const { return addresses; }
 
     /// Allows an IP subnet.
     /// For example, 312.234.1.1/255.255.255.0 or 2a02:6b8::3/64
@@ -75,39 +75,39 @@ public:
     void removeSubnet(const String & subnet) { removeSubnet(IPSubnet{subnet}); }
     void removeSubnet(const IPAddress & prefix, const IPAddress & mask) { removeSubnet(IPSubnet{prefix, mask}); }
     void removeSubnet(const IPAddress & prefix, size_t num_prefix_bits) { removeSubnet(IPSubnet{prefix, num_prefix_bits}); }
-    const std::vector<IPSubnet> & getSubnets() const { return subnets; }
+    [[nodiscard]] const std::vector<IPSubnet> & getSubnets() const { return subnets; }
 
     /// Allows an exact host name. The `contains()` function will check that the provided address equals to one of that host's addresses.
     void addName(const String & name);
     void removeName(const String & name);
-    const std::vector<String> & getNames() const { return names; }
+    [[nodiscard]] const std::vector<String> & getNames() const { return names; }
 
     /// Allows the host names matching a regular expression.
     void addNameRegexp(const String & name_regexp);
     void removeNameRegexp(const String & name_regexp);
-    const std::vector<String> & getNameRegexps() const { return name_regexps; }
+    [[nodiscard]] const std::vector<String> & getNameRegexps() const { return name_regexps; }
 
     /// Allows IP addresses or host names using LIKE pattern.
     /// This pattern can contain % and _ wildcard characters.
     /// For example, addLikePattern("%") will allow all addresses.
     void addLikePattern(const String & pattern);
     void removeLikePattern(const String & like_pattern);
-    const std::vector<String> & getLikePatterns() const { return like_patterns; }
+    [[nodiscard]] const std::vector<String> & getLikePatterns() const { return like_patterns; }
 
     /// Allows local host.
     void addLocalHost();
     void removeLocalHost();
-    bool containsLocalHost() const { return local_host;}
+    [[nodiscard]] bool containsLocalHost() const { return local_host;}
 
     /// Allows any host.
     void addAnyHost();
-    bool containsAnyHost() const { return any_host;}
+    [[nodiscard]] bool containsAnyHost() const { return any_host;}
 
     void add(const AllowedClientHosts & other);
     void remove(const AllowedClientHosts & other);
 
     /// Checks if the provided address is in the list. Returns false if not.
-    bool contains(const IPAddress & address) const;
+    [[nodiscard]] bool contains(const IPAddress & address) const;
 
     friend bool operator ==(const AllowedClientHosts & lhs, const AllowedClientHosts & rhs);
     friend bool operator !=(const AllowedClientHosts & lhs, const AllowedClientHosts & rhs) { return !(lhs == rhs); }

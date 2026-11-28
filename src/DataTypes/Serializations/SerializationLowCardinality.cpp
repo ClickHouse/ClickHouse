@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationLowCardinality.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -231,7 +232,7 @@ struct IndexesSerializationType
                             "Expected ColumnUInt*, got {}", column.getName());
     }
 
-    DataTypePtr getDataType() const
+    [[nodiscard]] DataTypePtr getDataType() const
     {
         if (type == TUInt8)
             return std::make_shared<DataTypeUInt8>();

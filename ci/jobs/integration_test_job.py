@@ -9,6 +9,7 @@ import traceback
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
+from ci.jobs.scripts import log_export
 from ci.jobs.scripts.bugfix_validation import (
     bugfix_build_types,
     download_master_builds,
@@ -20,6 +21,7 @@ from ci.jobs.scripts.integration_coverage_export import IntegrationCoverageExpor
 from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
     LLVM_COVERAGE_SKIP_PREFIXES,
+    PER_TEST_COVERAGE_KEEP_PREFIXES,
     PER_TEST_COVERAGE_SKIP_PREFIXES,
     force_exclusive_modules_sequential,
     get_optimal_test_batch,
@@ -42,7 +44,7 @@ MAX_FAILS_BEFORE_DROP = 5
 # The merge-queue targeted check stops after this many failed tests (fail fast).
 MERGE_QUEUE_MAX_FAILURES = 3
 # The selection sources that are run whatever the coverage ranking (see `protect_selection`).
-MANDATORY_SELECTION_SOURCES = {"changed", "previously_failed", "merge_queue_drift"}
+MANDATORY_SELECTION_SOURCES = {"changed", "previously_failed"}
 # Flaky-check best-effort scope cap: the maximum number of changed test modules a single
 # flaky-check run will execute. A PR can mechanically touch a large number of integration
 # test modules (e.g. a repo-wide lint/format change), and running every one of them
@@ -139,7 +141,9 @@ MEMCG_OOM_OWNER = re.compile(rb"oom_memcg=([^,\s]+)")
 # leaves from a breach OF one. The kernel always prints them adjacent and in this order.
 MEMCG_OOM_KILL = re.compile(rb"oom_memcg=([^,\s]+),task_memcg=([^,\s]+)")
 
-MAX_CPUS_PER_WORKER = 5
+# 16-vCPU runners with a 48 GiB nested budget run 4 workers (12 GiB each): with 5 CPUs per
+# worker they ran 3 and left a fourth worker's memory unused.
+MAX_CPUS_PER_WORKER = 4
 MAX_MEM_PER_WORKER = 11
 # Flaky checks run with --dist=each, so every worker runs the full set
 # of changed modules concurrently (each with its own Docker cluster) instead of
@@ -1351,11 +1355,18 @@ def get_parallel_sequential_tests_to_run(
     ]
 
     if "amd_llvm_coverage" in (job_options or ""):
+        skip_prefixes = LLVM_COVERAGE_SKIP_PREFIXES
+        if "per_test_coverage" in (job_options or ""):
+            # The targeted jobs need the per-module coverage of these modules, see
+            # `PER_TEST_COVERAGE_KEEP_PREFIXES`.
+            skip_prefixes = [
+                p for p in skip_prefixes if p not in PER_TEST_COVERAGE_KEEP_PREFIXES
+            ]
         before = len(test_files)
         test_files = [
             f
             for f in test_files
-            if not any(f.startswith(prefix) for prefix in LLVM_COVERAGE_SKIP_PREFIXES)
+            if not any(f.startswith(prefix) for prefix in skip_prefixes)
         ]
         print(
             f"LLVM coverage: skipped {before - len(test_files)} test files matching LLVM_COVERAGE_SKIP_PREFIXES"
@@ -1559,6 +1570,45 @@ def is_empty_best_effort_skip(
     False.
     """
     return (is_flaky_check or is_targeted_check) and not has_results and timed_out
+
+
+def setup_ci_logs_export_env(check_start_time: float) -> None:
+    """
+    Enable the export of system log tables to the CI Logs cluster for the
+    ClickHouse servers started by the integration tests, see
+    tests/integration/helpers/ci_logs_export.py. The credentials are passed to
+    pytest (and further into the server containers) through the process
+    environment only: they must never be materialized in files, since the
+    instance directories are collected as CI artifacts. Best effort: if the
+    credentials cannot be fetched, the tests run without the export.
+    """
+    try:
+        host, password = log_export.get_credentials()
+    except Exception as e:
+        print(
+            f"WARNING: Failed to fetch the CI Logs cluster credentials, the tests will run without logs export: {e}"
+        )
+        return
+    if not host or not password:
+        print(
+            "WARNING: Empty CI Logs cluster credentials, the tests will run without logs export"
+        )
+        return
+    os.environ["CLICKHOUSE_CI_LOGS_HOST"] = host
+    os.environ["CLICKHOUSE_CI_LOGS_USER"] = log_export.CLICKHOUSE_CI_LOGS_USER
+    os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = password
+    # Values for the extra columns of the destination tables, in two parts: the
+    # test framework fills in `test_name` and `node_name` per server, and the
+    # expression has to follow the EXTRA_COLUMNS order, see
+    # ci/jobs/scripts/log_export.py and
+    # tests/integration/helpers/ci_logs_export.py.
+    os.environ["EXTRA_COLUMNS_EXPRESSION_HEAD"] = (
+        log_export.extra_columns_expression_head(check_start_time)
+    )
+    os.environ["EXTRA_COLUMNS_EXPRESSION_TAIL"] = (
+        log_export.extra_columns_expression_tail()
+    )
+    print("Export of system logs to the CI Logs cluster is enabled")
 
 
 def finalize_llvm_coverage_status(R: Result, has_error: bool) -> bool:
@@ -1922,7 +1972,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         and not is_llvm_coverage
         and not args.test
     ):
-        changed_files = info.get_changed_files()
+        changed_files = info.get_changed_files() or []
         # The `arm_binary` jobs replacing the LLVM coverage jobs in pull requests must run in full
         # when a CI job script changes: `filter_job.py` lets them through for that very reason.
         is_coverage_replacement_with_ci_script_changes = False
@@ -1992,9 +2042,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
         # The merge-queue targeted check runs under a 30-minute cap that ends the run
         # without failing it, so the order decides what is cut off. Keep the priority
         # order of the selection there (the changed modules, the modules owning changed
-        # files, the modules `master` changed since the PR CI, then the coverage
-        # ranking): sorting by name would let a large coverage selection starve the
-        # mandatory modules and report OK without running them.
+        # files, then the coverage ranking): sorting by name would let a large coverage
+        # selection starve the mandatory modules and report OK without running them.
         if is_merge_queue_targeted_check:
             priority = {}
             for t in targeted_tests:
@@ -2011,6 +2060,16 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
         parallel_test_modules = sorted(parallel_test_modules, key=module_key)
         sequential_test_modules = sorted(sequential_test_modules, key=module_key)
+
+    # The export adds `Distributed` tables and materialized views to every
+    # server. The targeted and flaky checks pack many modules (or many copies of
+    # a module) into one job with higher parallelism, and with the export on, the
+    # `Integration tests (amd_asan_ubsan, db disk, targeted)` job hit its memory
+    # budget for `/docker` once `helpers/cluster.py` made it run about 1000
+    # tests. The regular shards already cover every test, so the logs are not
+    # lost.
+    if not info.is_local_run and not is_targeted_check and not is_flaky_check:
+        setup_ci_logs_export_env(sw.start_time)
 
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():
@@ -2079,7 +2138,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
         # Auto-detect available LLVM profdata tool
-        for ver in ["22", "21", "20", "18", "19", "17", "16", ""]:
+        for ver in ["23", "22", "21", "20", "18", "19", "17", "16", ""]:
             cmd = f"llvm-profdata{'-' + ver if ver else ''}"
             if Shell.check(f"command -v {cmd}", verbose=False):
                 llvm_profdata_cmd = cmd
@@ -2107,6 +2166,15 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if is_llvm_coverage:
         session_timeout_parallel = 7200
         session_timeout_sequential = 7200
+
+    # The export of the system logs costs a couple of seconds of setup and a
+    # `SYSTEM FLUSH LOGS` per server, and a shard starts hundreds of them, so a
+    # shard that exports runs about 10% longer (measured on this branch:
+    # 6.9-7.4 ks against a master p50 of 6.2 ks). Give the parallel phase that
+    # back: without it the shards which were already close to the budget are cut
+    # short by the session-timeout instead of finishing their tests.
+    if os.environ.get("CLICKHOUSE_CI_LOGS_HOST"):
+        session_timeout_parallel += 900
 
     if args.session_timeout:
         session_timeout_parallel = args.session_timeout * 2

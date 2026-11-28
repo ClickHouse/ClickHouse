@@ -193,7 +193,11 @@ def sendQuery(s, query, stage):
     writeVarUInt(1, ba)  # Query
     writeStringBinary(query_id, ba)
     serializeClientInfo(ba, query_id)
-    writeStringBinary("", ba)  # empty per-query settings
+    # The test reads only the first packet; without this, the server sends ProfileEvents while it waits for the plan.
+    writeStringBinary("send_profile_events", ba)
+    writeVarUInt(1, ba)  # is_important
+    writeStringBinary("0", ba)
+    writeStringBinary("", ba)  # end of per-query settings
     writeStringBinary("", ba)  # interserver externally granted roles
     writeStringBinary("", ba)  # interserver secret
     writeVarUInt(stage, ba)  # query processing stage
