@@ -1,12 +1,18 @@
 #include <Storages/MergeTree/MergeTreeReaderCompactMultipleBuffers.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 
 #include <algorithm>
 #include <limits>
 #include <numeric>
 #include <ranges>
 #include <unordered_set>
+
+namespace ProfileEvents
+{
+    extern const Event RuntimeDataflowStatisticsInputNanoseconds;
+}
 
 namespace DB
 {
@@ -172,6 +178,33 @@ void MergeTreeReaderCompactMultipleBuffers::updateStreamsReadRequestMap()
         shared_stream->stream->updateReadRequestMap(read_request_map);
     for (auto & [_, stream] : streams_by_position)
         stream.stream->updateReadRequestMap(read_request_map);
+}
+
+void MergeTreeReaderCompactMultipleBuffers::setStreamsRangesReadSink()
+{
+    if (shared_stream)
+        shared_stream->stream->setRangesReadSink(&ranges_read);
+    for (auto & [_, stream] : streams_by_position)
+        stream.stream->setRangesReadSink(&ranges_read);
+}
+
+void MergeTreeReaderCompactMultipleBuffers::setReadRangesRegistry(ReadRangesRegistryPtr registry)
+{
+    MergeTreeReaderCompact::setReadRangesRegistry(std::move(registry));
+    /// The streams created later get their sink in `init`.
+    setStreamsRangesReadSink();
+}
+
+void MergeTreeReaderCompactMultipleBuffers::registerReadRanges()
+{
+    if (!read_ranges_registry || ranges_read.empty())
+        return;
+
+    ProfileEventTimeIncrement<Time::Nanoseconds> watch(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds);
+    if (!read_ranges)
+        read_ranges = &read_ranges_registry->getReadRanges(
+            data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
+    read_ranges_registry->registerRanges(*read_ranges, ranges_read);
 }
 
 MergeTreeReaderStream & MergeTreeReaderCompactMultipleBuffers::getStream(const NameAndTypePair & column)
@@ -399,6 +432,8 @@ try
 
     initialized = true;
     updateStreamsReadRequestMap();
+    if (read_ranges_registry)
+        setStreamsRangesReadSink();
 }
 catch (...)
 {

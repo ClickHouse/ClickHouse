@@ -81,7 +81,9 @@ ExpressionStep::ExpressionStep(SharedHeader input_header_, ActionsDAG actions_da
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
+    auto actions_settings = settings.getActionsSettings();
+    actions_settings.can_compile_expressions = actions_settings.can_compile_expressions && can_compile_expressions;
+    auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), actions_settings);
 
     /// All streams of the pipe have the same header, so compute the transformed header once
     /// instead of in every ExpressionTransform instance: the computation is linear in the size
@@ -99,7 +101,7 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
             ActionsDAG::MatchColumnsMode::Name,
             nullptr, false, false, nullptr,
             &columns_contain_compiled_function);
-        auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
+        auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), actions_settings);
 
         auto converted_header = std::make_shared<const Block>(ExpressionTransform::transformHeader(pipeline.getHeader(), convert_actions->getActionsDAG()));
         pipeline.addSimpleTransform([&](const SharedHeader & header)

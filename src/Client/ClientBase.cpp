@@ -150,6 +150,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 max_generic_compression_threads;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -218,6 +219,18 @@ namespace ProfileEvents
     extern const Event ThrottlerSleepMicroseconds;
     extern const Event SchedulerIOReadWaitMicroseconds;
     extern const Event SchedulerIOWriteWaitMicroseconds;
+    extern const Event OSReadBytes;
+    extern const Event OSWriteBytes;
+    extern const Event ReadBufferFromS3Bytes;
+    extern const Event WriteBufferFromS3Bytes;
+    extern const Event ReadBufferFromAzureBytes;
+    extern const Event WriteBufferFromAzureBytes;
+    extern const Event ReadWriteBufferFromHTTPBytes;
+    extern const Event WriteBufferFromHTTPBytes;
+    extern const Event NetworkSendBytes;
+    extern const Event NetworkReceiveBytes;
+    extern const Event StreamingExchangeSendBytes;
+    extern const Event StreamingExchangeReceiveBytes;
 }
 
 namespace
@@ -1179,7 +1192,9 @@ try
                     compression_method,
                     static_cast<int>(compression_level),
                     /*zstd_window_log=*/ 0,
-                    client_context->getSettingsRef()[Setting::snappy_mode]
+                    client_context->getSettingsRef()[Setting::snappy_mode],
+                    DBMS_DEFAULT_BUFFER_SIZE, /* existing_memory */ nullptr, /* alignment */ 0, /* compress_empty */ true,
+                    client_context->getSettingsRef()[Setting::max_generic_compression_threads]
                 );
 
                 if (query_with_output->isIntoOutfileWithStdout())
@@ -1247,7 +1262,9 @@ try
 
         if (!out_file_buf && default_output_compression_method != CompressionMethod::None)
             out_file_buf = wrapWriteBufferWithCompressionMethod(
-                out_buf, default_output_compression_method, 3, 0, client_context->getSettingsRef()[Setting::snappy_mode]);
+                out_buf, default_output_compression_method, 3, 0, client_context->getSettingsRef()[Setting::snappy_mode],
+                DBMS_DEFAULT_BUFFER_SIZE, /* existing_memory */ nullptr, /* alignment */ 0, /* compress_empty */ true,
+                client_context->getSettingsRef()[Setting::max_generic_compression_threads]);
 
         auto format_settings = getFormatSettings(client_context);
         format_settings.is_writing_to_terminal = stdout_is_a_tty && !select_into_file;
@@ -2324,6 +2341,19 @@ void ClientBase::onProfileEvents(Block & block)
         std::string_view throttler_sleep_name = ProfileEvents::getName(ProfileEvents::ThrottlerSleepMicroseconds);
         std::string_view scheduler_io_read_wait_name = ProfileEvents::getName(ProfileEvents::SchedulerIOReadWaitMicroseconds);
         std::string_view scheduler_io_write_wait_name = ProfileEvents::getName(ProfileEvents::SchedulerIOWriteWaitMicroseconds);
+        std::string_view os_read_bytes_name = ProfileEvents::getName(ProfileEvents::OSReadBytes);
+        std::string_view os_write_bytes_name = ProfileEvents::getName(ProfileEvents::OSWriteBytes);
+        std::string_view s3_read_bytes_name = ProfileEvents::getName(ProfileEvents::ReadBufferFromS3Bytes);
+        std::string_view s3_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromS3Bytes);
+        std::string_view azure_read_bytes_name = ProfileEvents::getName(ProfileEvents::ReadBufferFromAzureBytes);
+        std::string_view azure_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromAzureBytes);
+        std::string_view http_rw_bytes_name = ProfileEvents::getName(ProfileEvents::ReadWriteBufferFromHTTPBytes);
+        std::string_view http_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromHTTPBytes);
+        std::string_view network_send_bytes_name = ProfileEvents::getName(ProfileEvents::NetworkSendBytes);
+        std::string_view network_receive_bytes_name = ProfileEvents::getName(ProfileEvents::NetworkReceiveBytes);
+        /// `NetworkSendBytes` and `NetworkReceiveBytes` do not count the sockets of streaming exchanges.
+        std::string_view exchange_send_bytes_name = ProfileEvents::getName(ProfileEvents::StreamingExchangeSendBytes);
+        std::string_view exchange_receive_bytes_name = ProfileEvents::getName(ProfileEvents::StreamingExchangeReceiveBytes);
 
         HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
@@ -2356,6 +2386,13 @@ void ClientBase::onProfileEvents(Block & block)
             /// (workload resource requests), summed up into a single "waited" figure.
             else if (event_name == throttler_sleep_name || event_name == scheduler_io_read_wait_name || event_name == scheduler_io_write_wait_name)
                 thread_times[host_name].waited_us += value;
+            else if (
+                event_name == os_read_bytes_name || event_name == s3_read_bytes_name || event_name == azure_read_bytes_name
+                || event_name == os_write_bytes_name || event_name == s3_write_bytes_name || event_name == azure_write_bytes_name
+                || event_name == http_rw_bytes_name || event_name == http_write_bytes_name
+                || event_name == network_send_bytes_name || event_name == network_receive_bytes_name
+                || event_name == exchange_send_bytes_name || event_name == exchange_receive_bytes_name)
+                thread_times[host_name].io_bytes += value;
             /// The rows below are `GAUGE` snapshots and can also come in several rows for one host:
             /// from several queued snapshots of one source, or from several shards on one server.
             /// Summing would multiply one source's usage by the number of coalesced snapshots,
@@ -4438,9 +4475,14 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
     auto & storage_settings = *ast_create.storage->settings;
     bool added_new_setting = false;
 
+    /// The query may name a setting by its alias, while the changes from the command line use canonical names.
+    std::unordered_set<String> settings_in_query;
+    for (const auto & change : storage_settings.changes)
+        settings_in_query.emplace(MergeTreeSettings::resolveName(change.name));
+
     for (const auto & change : all_changed)
     {
-        if (!storage_settings.changes.tryGet(change.name))
+        if (!settings_in_query.contains(String(MergeTreeSettings::resolveName(change.name))))
         {
             storage_settings.changes.emplace_back(change.name, change.value);
             added_new_setting = true;
@@ -4581,7 +4623,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
             switch (packet.type)
             {
                 case Protocol::Server::Data:
-                    if (!packet.block.empty() && packet.block.rows() > 0)
+                    if (packet.block.columns() != 0 && packet.block.rows() > 0)
                     {
                         /// Convert block to string representation
                         /// For schema queries, we expect single column results

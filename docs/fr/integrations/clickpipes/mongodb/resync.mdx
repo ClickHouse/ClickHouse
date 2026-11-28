@@ -11,7 +11,7 @@ integration:
 ---
 
 <div id="what-mongodb-resync-do">
-  ### Que fait resynchroniser ?
+  ### Que fait resynchroniser ? {#what-mongodb-resync-do}
 </div>
 
 resynchroniser effectue les opérations suivantes, dans cet ordre :
@@ -28,27 +28,21 @@ Tous les paramètres du ClickPipe d&#39;origine sont conservés dans le ClickPip
   car un chargement initial avec des threads parallèles est effectué à chaque fois.
 </Note>
 
-<div id="guide-mongodb-resync">
-  ### Guide de resynchronisation de ClickPipe
-</div>
+### Guide de resynchronisation de ClickPipe {#guide-mongodb-resync}
 
 1. Dans l’onglet Sources de données, cliquez sur le ClickPipe MongoDB que vous souhaitez resynchroniser.
 2. Accédez à l’onglet **Paramètres**.
 3. Cliquez sur le bouton **Resync**.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![](/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp)
-
-</Frame>
-
+  <Frame>
+    ![](/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp)
+  </Frame>
 </div>
 
 4. Une boîte de dialogue de confirmation devrait s’afficher. Cliquez de nouveau sur Resync.
 5. Accédez à l’onglet **Métriques**.
 6. Attendez que le statut du pipe soit **Setup** ou **Snapshot**.
-7. Le chargement initial de la resynchronisation peut être suivi dans l’onglet **Tables** - dans la section **Initial Load Stats**.
+7. Le chargement initial de la resynchronisation peut être suivi dans l’onglet **Tables** - dans la section **Statistiques du chargement initial**.
 8. Une fois le chargement initial terminé, le pipe remplacera de manière atomique les tables d’origine par les tables `_resync`. Pendant cette opération, le statut sera **Resync**.
-9. Une fois l’échange terminé, le pipe passera à l’état **Running** et effectuera la CDC si elle est activée.
+9. Une fois le swap terminé, le pipe passera à l’état **Running** et effectuera la CDC si elle est activée.

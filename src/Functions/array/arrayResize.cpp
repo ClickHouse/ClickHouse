@@ -80,6 +80,8 @@ ColumnPtr FunctionArrayResize::executeImpl(const ColumnsWithTypeAndName & argume
     /// plain integer to use its real value (rounded towards zero), consistent with Float and integer sizes.
     if (isDecimal(arguments[1].type))
         size_column = castColumn(arguments[1], std::make_shared<DataTypeInt64>());
+    else
+        checkIntegerArgumentFitsInt64(*size_column, getName(), "size");
 
     if (!arguments[0].type->equals(*return_type))
         array_column = castColumn(arguments[0], return_type);

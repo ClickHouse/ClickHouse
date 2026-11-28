@@ -26,7 +26,7 @@ L’intégration entre JupySQL et ClickHouse est rendue possible par l’utilisa
 %pip install --quiet jupysql clickhouse_sqlalchemy
 ```
 
-Remarque : vous devrez peut-être redémarrer le noyau pour utiliser les paquets mis à jour.
+Remarque : vous devrez peut-être redémarrer le noyau pour utiliser les paquets mis à jour.
 
 ```python
 import pandas as pd
@@ -39,7 +39,7 @@ from sklearn_evaluation import plot
 
 **Vous devez vous assurer que votre instance ClickHouse est opérationnelle et accessible pour les prochaines étapes. Vous pouvez utiliser une version locale ou la version Cloud.**
 
-**Remarque :** vous devrez ajuster la chaîne de connexion en fonction du type d’instance à laquelle vous essayez de vous connecter (URL, utilisateur, mot de passe). Dans l’exemple ci-dessous, nous avons utilisé une instance locale. Pour en savoir plus, consultez [ce guide](/fr/get-started/setup/install).
+**Remarque :** vous devrez ajuster la chaîne de connexion en fonction du type d’instance à laquelle vous essayez de vous connecter (URL, utilisateur, mot de passe). Dans l’exemple ci-dessous, nous avons utilisé une instance locale. Pour en savoir plus, consultez [ce guide](/fr/get-started/setup/install).
 
 ```python
 %sql clickhouse://default:@localhost:8123/default
@@ -173,7 +173,7 @@ SELECT * FROM s3(
 ```
 
 * clickhouse://default:***@localhost:8123/default
-  C&#39;est fait.
+  Terminé.
 
 <table>
   <tr>
@@ -245,7 +245,7 @@ GROUP BY passenger_count
 ```
 
 * clickhouse://default:***@localhost:8123/default
-  C&#39;est fait.
+  Terminé.
 
 <table>
   <tr>
@@ -384,13 +384,9 @@ WHERE trip_distance < 6.3
 ```
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Histogramme montrant la répartition des distances de trajet en 10 classes à partir du jeu de données short-trips](/images/integrations/sql-clients/jupysql-plot-1.webp)
-
-</Frame>
-
+  <Frame>
+    ![Histogramme montrant la répartition des distances de trajet en 10 classes à partir du jeu de données short-trips](/images/integrations/sql-clients/jupysql-plot-1.webp)
+  </Frame>
 </div>
 
 ```python
@@ -401,11 +397,7 @@ _ = ax.set_xlabel("Trip distance")
 ```
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Histogramme montrant la répartition des distances de trajet en 50 classes, avec grille, intitulé « Distance de trajet pour les trajets < 6,3 »](/images/integrations/sql-clients/jupysql-plot-2.webp)
-
-</Frame>
-
+  <Frame>
+    ![Histogramme montrant la répartition des distances de trajet en 50 classes, avec grille, intitulé « Distance de trajet pour les trajets \< 6,3 »](/images/integrations/sql-clients/jupysql-plot-2.webp)
+  </Frame>
 </div>

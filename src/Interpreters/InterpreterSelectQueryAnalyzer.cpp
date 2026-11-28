@@ -136,6 +136,12 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_name
     return select_query;
 }
 
+/// Only `considerEnablingParallelReplicas` calls the builder, and only when the mode it reads from this same context is on.
+bool needsQueryPlanWithParallelReplicasBuilder(const Context & context)
+{
+    return Context::getAutomaticParallelReplicasMode(context.getSettingsRef()) != 0;
+}
+
 ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOptions & select_query_options)
 {
     auto result_context = Context::createCopy(context);
@@ -496,15 +502,16 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , select_query_options(buildSelectQueryOptions(select_query_options_, context_, nullptr /*storage*/))
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/, result_column_origins))
     , planner(query_tree, select_query_options, post_filter_)
-    , query_plan_with_parallel_replicas_builder(
-          // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
-          [ast = query_->clone(),
-           ctx = Context::createCopy(context_),
-           select_options = select_query_options_,
-           single_node_tree = query_tree,
-           column_names](const BuiltSetsByHashPtr & built_sets, const FindSingleNodeReadByOccurrence & find_single_node_read_by_occurrence, const LoggerPtr & logger)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, find_single_node_read_by_occurrence, logger, column_names); })
 {
+    if (needsQueryPlanWithParallelReplicasBuilder(*context))
+        // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
+        query_plan_with_parallel_replicas_builder =
+            [ast = query_->clone(),
+             ctx = Context::createCopy(context_),
+             select_options = select_query_options_,
+             single_node_tree = query_tree,
+             column_names](const BuiltSetsByHashPtr & built_sets, const FindSingleNodeReadByOccurrence & find_single_node_read_by_occurrence, const LoggerPtr & logger)
+            { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, find_single_node_read_by_occurrence, logger, column_names); };
     tweakSettingsForStreamingQuery(context, query_tree);
 }
 
@@ -519,16 +526,17 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , select_query_options(buildSelectQueryOptions(select_query_options_, context_, storage_))
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_, result_column_origins))
     , planner(query_tree, select_query_options)
-    , query_plan_with_parallel_replicas_builder(
-          // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
-          [ast = query_->clone(),
-           ctx = Context::createCopy(context_),
-           storage = storage_,
-           select_options = select_query_options_,
-           single_node_tree = query_tree,
-           column_names](const BuiltSetsByHashPtr & built_sets, const FindSingleNodeReadByOccurrence & find_single_node_read_by_occurrence, const LoggerPtr & logger)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, find_single_node_read_by_occurrence, logger, storage, column_names); })
 {
+    if (needsQueryPlanWithParallelReplicasBuilder(*context))
+        // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
+        query_plan_with_parallel_replicas_builder =
+            [ast = query_->clone(),
+             ctx = Context::createCopy(context_),
+             storage = storage_,
+             select_options = select_query_options_,
+             single_node_tree = query_tree,
+             column_names](const BuiltSetsByHashPtr & built_sets, const FindSingleNodeReadByOccurrence & find_single_node_read_by_occurrence, const LoggerPtr & logger)
+            { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, find_single_node_read_by_occurrence, logger, storage, column_names); };
     tweakSettingsForStreamingQuery(context, query_tree);
 }
 
@@ -539,17 +547,18 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , select_query_options(select_query_options_)
     , query_tree(query_tree_)
     , planner(query_tree_, select_query_options)
-    , query_plan_with_parallel_replicas_builder(
-          // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
-          // `tree` is cloned because `toAST` below feeds a separate interpreter, while
-          // `single_node_tree` must stay the very tree the single-node plan was built from: it is the
-          // one carrying the query's own `SETTINGS` clause, which is what the eligibility check reads.
-          [tree = query_tree_->clone(),
-           ctx = Context::createCopy(context_),
-           select_options = SelectQueryOptions(select_query_options_).positionalArgumentsAlreadyResolved(),
-           single_node_tree = query_tree](const BuiltSetsByHashPtr & built_sets, const FindSingleNodeReadByOccurrence & find_single_node_read_by_occurrence, const LoggerPtr & logger)
-          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, single_node_tree, built_sets, find_single_node_read_by_occurrence, logger); })
 {
+    if (needsQueryPlanWithParallelReplicasBuilder(*context))
+        // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
+        // `tree` is cloned because `toAST` below feeds a separate interpreter, while
+        // `single_node_tree` must stay the very tree the single-node plan was built from: it is the
+        // one carrying the query's own `SETTINGS` clause, which is what the eligibility check reads.
+        query_plan_with_parallel_replicas_builder =
+            [tree = query_tree_->clone(),
+             ctx = Context::createCopy(context_),
+             select_options = SelectQueryOptions(select_query_options_).positionalArgumentsAlreadyResolved(),
+             single_node_tree = query_tree](const BuiltSetsByHashPtr & built_sets, const FindSingleNodeReadByOccurrence & find_single_node_read_by_occurrence, const LoggerPtr & logger)
+            { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, single_node_tree, built_sets, find_single_node_read_by_occurrence, logger); };
     tweakSettingsForStreamingQuery(context, query_tree);
 }
 

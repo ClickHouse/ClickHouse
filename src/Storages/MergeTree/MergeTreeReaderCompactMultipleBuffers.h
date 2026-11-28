@@ -38,6 +38,10 @@ public:
 
     void updateAllMarkRanges(const MarkRanges & ranges) override;
 
+    void registerReadRanges() override;
+
+    void setReadRangesRegistry(ReadRangesRegistryPtr registry) override;
+
 private:
     MergeTreeReaderStream & getStream(const NameAndTypePair & column) override;
     void readGranule(size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask) override;
@@ -45,6 +49,7 @@ private:
     /// Whether to read all columns with one buffer for the current `all_mark_ranges`.
     bool shouldUseSharedStream();
     void updateStreamsReadRequestMap();
+    void setStreamsRangesReadSink();
     void fillReadOrder();
     /// Position of the first substream of a granule that the reading of `columns_to_read[column_idx]` needs,
     /// if it can be established. For a subcolumn it is the first of its own substreams, not of the whole column.
@@ -72,6 +77,12 @@ private:
     /// Stream for every column of `columns_to_read` (nullptr for columns missing in the part).
     std::vector<MergeTreeReaderStream *> streams;
     std::unordered_map<String, MergeTreeReaderStream *> streams_by_name;
+    /// Read since the last `registerReadRanges`, see `CompressedReadBufferBase::setRangesReadSink`.
+    /// All streams read the same file on the thread of the reader, so they share the sink, which outlives
+    /// the streams when they are created again.
+    CompressedBlockRanges ranges_read;
+    /// Of `read_ranges_registry`, looked up at the first flush.
+    ReadRangesRegistry::ReadRanges * read_ranges = nullptr;
 };
 
 }

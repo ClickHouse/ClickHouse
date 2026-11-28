@@ -27,22 +27,16 @@ Se o seu caso de uso envolver uma ferramenta específica que não tenha um drive
   Isso não pode ser desativado e, em raros casos extremos, pode levar a um comportamento diferente entre as consultas enviadas às interfaces de consulta padrão e MySQL do ClickHouse.
 </Note>
 
-<div id="enabling-the-mysql-interface-on-clickhouse-cloud">
-  ## Habilitando a interface MySQL no ClickHouse Cloud
-</div>
+## Habilitando a interface MySQL no ClickHouse Cloud {#enabling-the-mysql-interface-on-clickhouse-cloud}
 
 1. Depois de criar seu serviço no ClickHouse Cloud, clique no botão `Connect`.
 
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Tela de credenciais - Prompt](/images/interfaces/mysql0.webp)
-
-</Frame>
-
+  <Frame>
+    ![Tela de credenciais - Prompt](/images/interfaces/mysql0.webp)
+  </Frame>
 </div>
 
 2. Altere o menu suspenso `Connect with` para `MySQL`.
@@ -50,13 +44,9 @@ Se o seu caso de uso envolver uma ferramenta específica que não tenha um drive
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Tela de credenciais - MySQL selecionado](/images/interfaces/mysql1.webp)
-
-</Frame>
-
+  <Frame>
+    ![Tela de credenciais - MySQL selecionado](/images/interfaces/mysql1.webp)
+  </Frame>
 </div>
 
 3. Ative o botão para habilitar a interface MySQL para este serviço específico. Isso vai expor a porta `3306` para esse serviço e exibir a tela de conexão MySQL, que inclui seu nome de usuário MySQL exclusivo. A senha será a mesma do usuário padrão do serviço.
@@ -64,29 +54,21 @@ Se o seu caso de uso envolver uma ferramenta específica que não tenha um drive
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Tela de credenciais - MySQL habilitado](/images/interfaces/mysql2.webp)
-
-</Frame>
-
+  <Frame>
+    ![Tela de credenciais - MySQL habilitado](/images/interfaces/mysql2.webp)
+  </Frame>
 </div>
 
 Copie a string de conexão MySQL exibida.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Tela de credenciais - String de conexão](/images/interfaces/mysql3.webp)
-
-</Frame>
-
+  <Frame>
+    ![Tela de credenciais - String de conexão](/images/interfaces/mysql3.webp)
+  </Frame>
 </div>
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
-  ## Criando vários usuários MySQL no ClickHouse Cloud
+  ## Criando vários usuários MySQL no ClickHouse Cloud {#creating-multiple-mysql-users-in-clickhouse-cloud}
 </div>
 
 Por padrão, há um usuário integrado `mysql4<subdomain>`, que usa a mesma senha do usuário `default`. A parte `<subdomain>` é o primeiro segmento do hostname do seu ClickHouse Cloud. Esse formato é necessário para funcionar com ferramentas que implementam conexão segura, mas não fornecem [informações de SNI durante o handshake TLS](https://www.cloudflare.com/learning/ssl/what-is-sni), o que torna impossível fazer o roteamento interno sem uma indicação extra no nome de usuário (o cliente de linha de comando do MySQL é uma dessas ferramentas).
@@ -130,7 +112,7 @@ Você pode criar usuários adicionais para usar com a interface MySQL se, por ex
 4. Use o usuário criado para se conectar ao seu serviço do ClickHouse Cloud com a interface MySQL.
 
 <div id="troubleshooting-multiple-mysql-users-in-clickhouse-cloud">
-  ### Solução de problemas com vários usuários do MySQL no ClickHouse Cloud
+  ### Solução de problemas com vários usuários do MySQL no ClickHouse Cloud {#troubleshooting-multiple-mysql-users-in-clickhouse-cloud}
 </div>
 
 Se você criou um novo usuário do MySQL e vê o seguinte erro ao se conectar usando o cliente de linha de comando do MySQL:
@@ -142,7 +124,7 @@ ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization pa
 Nesse caso, certifique-se de que o nome de usuário siga o formato `mysql4<subdomain>_<username>`, conforme descrito ([mais acima](#creating-multiple-mysql-users-in-clickhouse-cloud)).
 
 <div id="enabling-the-mysql-interface-on-self-managed-clickhouse">
-  ## Ativando a interface MySQL no ClickHouse autogerenciado
+  ## Ativando a interface MySQL no ClickHouse autogerenciado {#enabling-the-mysql-interface-on-self-managed-clickhouse}
 </div>
 
 Adicione a configuração [mysql&#95;port](/pt-BR/reference/settings/server-settings/settings/mysql#mysql_port) ao arquivo de configuração do servidor. Por exemplo, você pode definir a porta em um novo arquivo XML na [pasta](/pt-BR/concepts/features/configuration/server-config/configuration-files) `config.d/`:
@@ -160,7 +142,7 @@ Inicie o servidor ClickHouse e procure uma mensagem no log semelhante à seguint
 ```
 
 <div id="connect-mysql-to-clickhouse">
-  ## Conecte o MySQL ao ClickHouse
+  ## Conecte o MySQL ao ClickHouse {#connect-mysql-to-clickhouse}
 </div>
 
 O comando a seguir mostra como conectar o cliente MySQL `mysql` ao ClickHouse:

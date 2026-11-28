@@ -1,0 +1,202 @@
+---
+slug: /clickstack/observability/integration-partners/bindplane
+title: 'Bindplane으로 ClickHouse Observability에 OpenTelemetry 데이터 전송하기'
+sidebarTitle: 'Bindplane'
+description: 'Bindplane으로 collector를 중앙에서 관리하고 텔레메트리를 ClickHouse Observability로 라우팅합니다'
+doc_type: 'guide'
+keywords: ['Bindplane', 'OTEL', 'ClickHouse Observability', 'OpenTelemetry', 'collector 관리']
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **TL;DR**
+
+  이 가이드에서는 Bindplane의 네이티브 **ClickStack** 대상을 사용하여 텔레메트리를 ClickHouse Observability로 라우팅하는 방법을 설명합니다. 다루는 내용은 다음과 같습니다.
+
+  * Bindplane에서 ClickHouse Observability를 대상으로 구성
+  * 텔레메트리를 처리하고 라우팅하는 구성 생성
+  * OTel collector에 구성을 원격으로 배포하고 데이터 수집 시작
+  * ClickHouse Observability에서 텔레메트리 확인
+
+  Bindplane은 사용자 환경의 collector를 관리하고, 수집된 텔레메트리를 ClickHouse Observability로 전달합니다.
+
+  소요 시간: 10-15분
+</Info>
+
+## Bindplane이란? {#what-is-bindplane}
+
+Bindplane은 OpenTelemetry 네이티브 텔레메트리 파이프라인으로, OpenTelemetry 수집기를 중앙에서 관리할 수 있는 기능을 제공합니다. 시각적 구성 편집, 안전한 롤아웃, 파이프라인 인텔리전스 기능을 통해 대규모 collector fleet의 운영을 간소화합니다.
+
+## Bindplane + ClickHouse Observability를 사용하는 이유 {#why-bindplane-clickstack}
+
+ClickHouse Observability는 텔레메트리 저장, 검색 및 조사 도구를 제공합니다. Bindplane은 사용자 환경에서 데이터를 수집하고 전달하는 OpenTelemetry 수집기를 관리합니다.
+
+Bindplane은 다음과 같은 기능으로 이 문제를 해결합니다.
+
+* 수천 개에서 100만 개 이상에 이르는 OpenTelemetry 수집기의 중앙 집중식 관리
+* 안전한 원클릭 롤아웃을 지원하는 시각적 구성 편집
+* 데이터가 ClickHouse Observability에 도달하기 전에 일관되게 적용되는 자동 리소스 감지 및 데이터 보강
+* 동일한 텔레메트리 스트림을 ClickHouse Observability와 다른 대상으로 동시에 전송할 수 있는 팬아웃 라우팅
+* 수집기 상태, 처리량, 엔드투엔드 성능을 포함한 파이프라인 전반의 가시성
+
+<Tip>
+  **핵심 요약**
+
+  * **ClickHouse Observability는 텔레메트리를 저장하고 조사를 지원합니다**
+  * **Bindplane은 수집 파이프라인을 관리하고 collector fleet 운영의 복잡성을 덜어 줍니다**
+</Tip>
+
+## 사전 요구 사항 {#prerequisites}
+
+* [완전 관리형 ClickHouse Observability 서비스](/ko/clickstack/observability/getting-started) 또는 [자가 관리형 배포](/ko/clickstack/self-configured/getting-started/managed)
+* Bindplane 계정([계정 생성](https://app.bindplane.com))
+* 설치된 Bindplane OTel Collector([첫 번째 collector 설치](https://docs.bindplane.com/readme/install-your-first-collector) 참조)
+* **완전 관리형**: **팀 설정 → 데이터 → Managed Telemetry**에서 확인할 수 있는 OTLP HTTP 엔드포인트와 수집 API Key
+* **자가 관리형**: 실행 중인 [독립형 collector](/ko/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured)와 해당 collector의 OTLP 엔드포인트, 그리고 collector에 구성된 [`OTLP_AUTH_TOKEN`](/ko/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)
+* Bindplane collector에서 OTLP 엔드포인트로 연결 가능한 네트워크
+
+## ClickHouse Observability와 Bindplane 통합 {#integrate-bindplane-clickstack}
+
+<Steps>
+  <Step title="ClickHouse Observability를 대상으로 구성" id="configure-destination">
+    Bindplane에서 **Library → Add Destination**을 열고 **ClickStack**을 선택하십시오. 이는 OTLP를 통해 텔레메트리를 ClickHouse Observability로 전송하는 Bindplane 대상의 이름입니다.
+
+    <Tabs>
+      <Tab title="완전 관리형">
+        <BetaBadge label="베타 서비스" />
+
+        관리형 OTLP 엔드포인트로 텔레메트리를 전송합니다. 수집, 스키마(schemas), 저장소, 스케일링은 ClickHouse가 처리합니다.
+
+        1. **Protocol**을 **HTTP**로 설정하십시오.
+        2. **Hostname**에는 관리형 OTLP 엔드포인트의 호스트명을 `https://`와 포트를 제외하고 입력하십시오. 예를 들어 엔드포인트가 `https://<service-id>.otel.<region>.aws.clickhouse.com:4318`이라면 `<service-id>.otel.<region>.aws.clickhouse.com`을 입력합니다.
+        3. **Port**를 `4318`로 설정하십시오.
+        4. **API Ingestion Key**에는 `Bearer` 접두사를 포함하여 `Bearer <YOUR_INGESTION_API_KEY>`를 입력하십시오. 이 필드 값은 `authorization` 헤더로 전달됩니다.
+        5. **Enable TLS**를 켜고 **Skip TLS Certificate Verification**은 끈 상태로 두십시오.
+
+        포트 `8443`을 사용하는 ClickHouse 데이터베이스 엔드포인트가 아니라 관리형 OTLP 엔드포인트를 사용해야 합니다.
+      </Tab>
+
+      <Tab title="자가 관리형">
+        ClickHouse Cloud 서비스에 연결된 독립형 collector로 텔레메트리를 전송합니다. 이 collector는 이미 실행 중이어야 하며 [요청을 인증하도록 구성](/ko/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)되어 있어야 합니다.
+
+        1. **Protocol**을 **HTTP** 또는 **gRPC**로 설정하십시오.
+        2. **Hostname**에는 독립형 collector의 호스트명 또는 IP 주소를 URL 스킴과 포트를 제외하고 입력하십시오.
+        3. **Port**는 HTTP이면 `4318`, gRPC이면 `4317`로 설정하십시오. 다른 포트를 구성했다면 해당 포트를 입력합니다.
+        4. **API Ingestion Key**에는 `Bearer` 접두사 없이 collector의 `OTLP_AUTH_TOKEN` 값을 입력하십시오.
+        5. **Enable TLS**는 collector 엔드포인트 구성에 맞게 설정하십시오. TLS 엔드포인트라면 인증서 검증을 활성화된 상태로 유지하십시오.
+      </Tab>
+    </Tabs>
+
+    대상에 **Observability production** 등의 이름을 지정한 다음 **Save**를 클릭하십시오. 엔드포인트가 다른 압축 알고리즘을 지원하는지 확인하지 않았다면 기본값인 gzip 압축을 그대로 사용하십시오.
+  </Step>
+
+  <Step title="구성 생성" id="create-configuration">
+    대상을 구성한 후 텔레메트리를 처리하고 라우팅할 구성을 생성하십시오:
+
+    1. **Configurations** → **Create Configuration**으로 이동합니다
+    2. 구성의 이름을 지정합니다(예: &quot;Observability pipeline&quot;)
+    3. 배포 환경에 맞는 **Collector Type**과 **Platform**을 선택합니다
+    4. 소스를 추가합니다:
+       * **Add Source**를 클릭하고 사용 가능한 80개 이상의 소스 중에서 선택합니다
+       * 테스트할 때는 텔레메트리 generator 소스를 추가하여 트래픽을 시뮬레이션할 수 있습니다
+       * 운영 환경에서는 실제 텔레메트리(로그, 메트릭, trace)용 소스를 추가합니다
+    5. 대상을 추가합니다:
+       * **Add Destination**을 클릭합니다
+       * 이전 단계에서 생성한 대상을 선택합니다
+       * 전송할 텔레메트리 타입(Logs, Metrics, Traces 또는 전체)을 선택합니다
+
+    <Tip>
+      **핵심 요약**
+
+      필터링, 샘플링, 마스킹(masking), 데이터 보강, 일괄 처리 등을 수행하는 프로세서를 추가하면 텔레메트리가 ClickHouse Observability에 도달하기 전에 원하는 형태로 가공할 수 있습니다. 이를 통해 일관되고 구조화된 데이터가 ClickHouse에 저장됩니다.
+    </Tip>
+  </Step>
+
+  <Step title="프로세서 추가(선택 사항)" id="add-processors">
+    Bindplane은 파이프라인 인텔리전스와 프로세서 권장 사항을 제공합니다. 다음과 같은 용도로 프로세서를 추가할 수 있습니다.
+
+    * **필터(Filter)**: 불필요한 텔레메트리를 제외하여 데이터 볼륨을 줄입니다.
+    * **샘플링(Sample)**: 대용량 트레이스에 샘플링 전략을 적용합니다.
+    * **보강(Enrich)**: 리소스 속성, 레이블 또는 메타데이터를 추가합니다.
+    * **변환(Transform)**: 텔레메트리의 구조나 내용을 수정합니다.
+    * **배치(Batch)**: 효율적인 전송을 위해 배치 크기를 최적화합니다.
+
+    이러한 프로세서는 데이터가 ClickHouse Observability로 전달되기 전에 collector fleet 전체에 일관되게 적용됩니다.
+  </Step>
+
+  <Step title="collector 배포 및 롤아웃 시작" id="deploy-collectors">
+    1. 구성에 collector(BDOT Collector)를 추가하세요:
+       * Bindplane에서 **Collectors**로 이동하세요
+       * [Bindplane 설치 지침에 따라](https://docs.bindplane.com/readme/install-your-first-collector) 대상 시스템에 Bindplane collector를 설치하세요
+       * collector가 연결되면 collector 목록에 표시됩니다
+
+    2. collector에 구성을 할당하세요:
+       * 사용할 collector를 선택하세요
+       * 선택한 collector에 구성을 할당하세요
+
+    3. 롤아웃을 시작하세요:
+       * **Start Rollout**을 클릭하여 구성을 배포하세요
+       * Bindplane은 구성을 롤아웃하기 전에 유효성 검사를 수행합니다
+       * Bindplane UI에서 롤아웃 상태를 모니터링하세요
+
+    <Tip>
+      **핵심 요약**
+
+      Bindplane은 유효성 검사가 포함된 안전한 원클릭 롤아웃을 제공합니다. Bindplane 인터페이스에서 collector 상태, 처리량, 오류를 실시간으로 모니터링할 수 있습니다.
+    </Tip>
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Bindplane을 통해 ClickHouse Observability로 수집된 텔레메트리](/images/clickstack/bindplane/bindplane-configuration.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="ClickHouse Observability에서 텔레메트리 확인" id="verify-telemetry">
+    구성이 배포되면 관리형 collector fleet의 텔레메트리가 ClickHouse Observability로 유입되기 시작합니다.
+
+    1. ClickHouse Cloud 콘솔에서 해당 서비스의 ClickHouse Observability를 여십시오.
+    2. **검색** 뷰에서 서비스를 검색하고, 메트릭은 **차트 탐색기**에서 확인하십시오.
+    3. Bindplane에서 관리하는 collector의 텔레메트리가 예상대로 수신되었는지 확인하십시오.
+    4. 데이터가 누락된 경우 Bindplane collector 로그에서 연결 또는 인증 오류를 확인하십시오.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Bindplane을 통해 ClickHouse Observability로 수집된 텔레메트리](/images/clickstack/bindplane/bindplane-hyperdx.webp)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 고급 구성 {#advanced-configuration}
+
+### 팬아웃 라우팅 {#fan-out-routing}
+
+Bindplane은 팬아웃 라우팅(fan-out routing)을 지원하므로 동일한 텔레메트리 스트림을 여러 대상으로 동시에 전송할 수 있습니다. 예를 들어 다음과 같이 활용할 수 있습니다.
+
+* 장기 보관 및 분석을 위해 로그, 메트릭, 트레이스를 ClickHouse Observability로 전송
+* 실시간 알림을 위해 동일한 데이터를 다른 관측성 플랫폼으로 라우팅
+* 보안 분석을 위해 특정 텔레메트리를 SIEM 플랫폼으로 전달
+
+Bindplane 구성에 여러 대상을 추가하면 팬아웃 라우팅이 구성됩니다.
+
+### 압축 및 성능 {#compression}
+
+대역폭 사용량을 줄이려면 gzip 압축을 활성화된 상태로 유지하십시오. 다른 압축 알고리즘은 프로토콜에 따라 사용 가능 여부가 다르며, 수신 엔드포인트에서 지원해야 합니다. 완전 관리형 배포에서는 gzip을 사용하십시오.
+
+## 다음 단계 {#next-steps}
+
+이제 Bindplane에서 ClickHouse Observability로 텔레메트리가 전송되므로 다음 작업을 수행할 수 있습니다.
+
+* **대시보드 구축**: ClickHouse Observability에서 로그, 메트릭, 트레이스 시각화를 생성합니다
+* **알림 설정**: ClickHouse Observability에서 중요한 상황이 발생할 때 알림을 받도록 구성합니다
+* **배포 확장**: 관측성 요구 사항이 늘어나면 collector와 소스를 추가합니다
+* **파이프라인 최적화**: Bindplane의 파이프라인 인텔리전스를 활용하여 최적화할 수 있는 부분을 파악합니다
+
+## 더 알아보기 {#read-more}
+
+* [Bindplane 문서의 ClickStack 대상](https://docs.bindplane.com/integrations/destinations/clickstack)

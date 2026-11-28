@@ -172,11 +172,16 @@ public:
             auto data_version = info.getDataVersion();
             auto it = committing_blocks_ptr->find(info.getOriginalPartitionId());
 
-            if (it != committing_blocks_ptr->end() && !it->second.empty() && data_version > it->second.begin()->number)
+            if (it != committing_blocks_ptr->end())
             {
-                return std::unexpected(PreformattedMessage::create(
-                    "Patch part {} with data version {} cannot be used in merges because patches with lower data version are still being processed",
-                    name, data_version));
+                auto min_update_block_number = getMinUpdateBlockNumber(it->second);
+
+                if (min_update_block_number && *min_update_block_number < data_version)
+                {
+                    return std::unexpected(PreformattedMessage::create(
+                        "Patch part {} with data version {} cannot be used in merges because patches with lower data version are still being processed",
+                        name, data_version));
+                }
             }
         }
 

@@ -161,6 +161,19 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
   * `replace`: UTF-8 エンコーディングでは、無効なバイトを Unicode の
     置換文字 (`�`) に置き換えます。その他のエンコーディングでは `remove` と同じ動作です
   * `truncate`: 最初の無効なバイトの位置でテキストを切り詰めます
+* `settings`: このサーバー上の外部テーブルに対するクエリおよび挿入処理で送信する
+  [ClickHouse settings] です。
+  構文は [`pg_clickhouse.session_settings`](#pg_clickhousesession_settings) と同じです。
+  サーバー設定を上書きするには、外部テーブルの `settings` を使用します。
+  キーが一致する場合は、`pg_clickhouse.session_settings` の値がその両方より優先されます。
+  詳細は [設定の優先順位](#settings-precedence) を参照してください。例:
+
+  ```sql
+  ALTER SERVER taxi_srv OPTIONS(ADD settings 'max_threads 8, final 0');
+  ```
+
+  pg&#95;clickhouse はオプションの設定時に構文をチェックし、ClickHouse は
+  クエリで値が使用される時点でその値をチェックします。
 
 ### ALTER SERVER {#alter-server}
 
@@ -346,12 +359,30 @@ CREATE FOREIGN TABLE acts (
 * `engine`: ClickHouse テーブルで使用される [テーブルエンジン] です。
   `CollapsingMergeTree()` および `AggregatingMergeTree()` では、pg&#95;clickhouse が
   テーブル上で実行される関数式に対して自動的にパラメーターを適用します。
+* `settings`: このテーブルに対するクエリおよび挿入処理とともに送信する
+  [ClickHouse settings] です。
+  [`pg_clickhouse.session_settings`](#pg_clickhousesession_settings) と同じ構文で指定します。
+  キーが一致する場合はテーブル設定が [サーバー設定](#create-server) より優先されるため、
+  ベクトルインデックスのオプションなど、テーブル固有の設定をテーブルごとに使用できます。
+  ClickHouse ではクエリごとに 1 つの設定リストが使用されます。ClickHouse にプッシュダウンされる
+  JOIN やサブクエリでは、対象となる各テーブルの設定が結合されます。テーブル間で同じ設定に
+  異なる値が指定されている場合、pg&#95;clickhouse はそれらのテーブルの値を無視します。
+  その場合でも、サーバー設定や [session settings](#pg_clickhousesession_settings) は引き続き
+  適用されます。競合している設定名と、実際に適用されるクエリの値、または ClickHouse の
+  デフォルトへのフォールバックについては、`NOTICE` で通知されます。
+  [設定の優先順位](#settings-precedence) を参照してください。
+
+  ```sql
+  ALTER FOREIGN TABLE acts OPTIONS(
+      ADD settings 'hnsw_candidate_list_size_for_search 512'
+  );
+  ```
 
 各カラムには、リモートの ClickHouse の
 [データ型](#data-types) に対応するものを使用してください。サポートされているカラムオプションは次のとおりです。
 
 * `column_name`: ClickHouse 側のカラム名です。クエリや
-  INSERT のデパース時には、PostgreSQL の属性名よりもこちらが優先して使用されます。
+  挿入処理のデパース時には、PostgreSQL の属性名よりもこちらが優先して使用されます。
   これは、引用符なしの小文字の PostgreSQL カラム名を
   大文字と小文字を区別する ClickHouse カラムにマッピングする場合に便利です。例:
 
@@ -680,6 +711,16 @@ try=# EXPLAIN (ANALYZE, VERBOSE)
 Postgres に引き戻す必要のある行数が 1000 行 (全件) から
 各ノード 1 行ずつのわずか 8 行まで削減されます。
 
+#### グループ化セット {#grouping-sets}
+
+pg&#95;clickhouse は、`GROUPING SETS`、`ROLLUP`、`CUBE`、`GROUPING()` を
+`GROUPING SETS` 句を使用して ClickHouse 上で実行します。`GROUPING()` のプッシュダウンには
+ClickHouse 26.6 以降が必要です。
+
+Postgres は、グループ化セットに含まれないキーに対して NULL を返します。ClickHouse も同様ですが、
+`Array` や `Map` など `Nullable` にできない型は例外です。これらの型のキーには
+NULL の代わりに空の値が返されます (配列の場合は `{}` など) 。
+
 ### パーティション化テーブル {#partitioned-tables}
 
 PostgreSQL の[パーティション化テーブル]では、ローカルパーティションと ClickHouse をバックエンドとする外部パーティションを混在させることができます。一般的な構成では、古いデータを ClickHouse にオフロードし、最新のデータは PostgreSQL に保持します。
@@ -701,10 +742,10 @@ CREATE TABLE events_2024 PARTITION OF events
 ローカルパーティションから外部パーティションへデータを移動する例については、
 [offload-partition.sql]を参照してください。
 
-ローカルパーティションと外部パーティションの両方にまたがる集計には、PostgreSQL でデフォルトでは無効になっている[パーティション単位の
+ローカルパーティションと外部パーティションの両方にまたがる集約関数には、PostgreSQL でデフォルトでは無効になっている[パーティション単位の
 集約]が必要です。
 
-```pgsql
+```sql
 SET enable_partitionwise_aggregate = on;
 ```
 
@@ -721,7 +762,7 @@ try=# EXPLAIN (VERBOSE, COSTS OFF)
          ->  Foreign Scan
                Output: (PARTIAL count(*)), (PARTIAL sum(events.val)), (PARTIAL min(events.ts)), (PARTIAL max(events.ts))
                Relations: Aggregate on (events_2023 events)
-               Remote SQL: SELECT count(*), sum(val), min(ts), max(ts) FROM "default".events
+               Remote SQL: SELECT count(*), sumOrNull(val), minOrNull(ts), maxOrNull(ts) FROM "default".events
          ->  Partial Aggregate
                Output: PARTIAL count(*), PARTIAL sum(events_1.val), PARTIAL min(events_1.ts), PARTIAL max(events_1.ts)
                ->  Seq Scan on public.events_2024 events_1
@@ -847,6 +888,56 @@ try=# COPY logs FROM stdin CSV;
 > insert API のサポートをまだ実装していません。そのため、現在 [COPY] はレコードを
 > 挿入するために [INSERT](#insert) ステートメントを使用しています。これは今後のリリースで改善される予定です。
 
+### UPDATE と DELETE {#update-and-delete}
+
+pg&#95;clickhouse は、外部テーブルに対する [UPDATE] および [DELETE] を、単一の
+ClickHouse [lightweight UPDATE] または [lightweight DELETE] ステートメントとして実行します。
+
+```pgsql
+try=# EXPLAIN (VERBOSE, COSTS OFF)
+       DELETE FROM logs WHERE resource = '/search' AND response >= 500;
+                                              QUERY PLAN
+-------------------------------------------------------------------------------------------------------
+ Delete on public.logs
+   ->  Foreign Delete on public.logs
+         Remote SQL: DELETE FROM "default".logs WHERE ((response >= 500)) AND ((resource = '/search'))
+(3 rows)
+```
+
+以下はプッシュダウンされません:
+
+* `RETURNING`
+* `UPDATE ... FROM`、`DELETE ... USING`、`IN (SELECT ...)` などの結合
+* 外部テーブル上の row-level トリガー、または `WITH CHECK OPTION` 付きのビュー
+
+外側のクエリのカラムを参照しないサブクエリは、まず Postgres で実行され、
+その結果がクエリパラメータとして ClickHouse に渡されます。
+
+デフォルト設定では、`UPDATE` および `DELETE` はストレージ操作の完了を待ってから戻るため、
+後続のクエリには変更内容が反映されます。
+ClickHouse は影響を受けた行数を返さないため、Postgres は常に `UPDATE 0`
+または `DELETE 0` を返します。
+
+軽量`DELETE` には [MergeTree] ファミリーのテーブルが必要です。軽量
+`UPDATE` には ClickHouse 25.7 以降が必要です。また、対象テーブルは `SummingMergeTree`、`AggregatingMergeTree`、`GraphiteMergeTree` 以外の MergeTree ファミリーのテーブルで、
+`SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1` を指定して作成されている必要があります。
+ClickHouse 25.7 では、`allow_experimental_lightweight_update = 1` も設定してください。
+`lightweight_deletes_sync` などの ClickHouse 設定は、他のクエリと同じ方法で指定します
+([設定の優先順位](#settings-precedence) を参照)。
+
+### TRUNCATE {#truncate}
+
+外部テーブルからすべての行を削除するには、[TRUNCATE] を使用します。pg&#95;clickhouse は、テーブルごとに 1 つの
+ClickHouse [TRUNCATE TABLE] ステートメントを送信します。
+
+```pgsql
+try=# TRUNCATE logs;
+TRUNCATE TABLE
+```
+
+ClickHouse では切り詰めは即座に実行されます。ROLLBACK を実行しても、切り詰められたデータは復元されません。テーブルの切り詰めが途中で失敗した場合、
+すでに切り詰められたテーブルは切り詰められたままになります。
+
 ### LOAD {#load}
 
 pg&#95;clickhouse 共有ライブラリを読み込むには、[LOAD] を使用します:
@@ -877,16 +968,16 @@ pg&#95;clickhouse のパラメータを設定してから、それらに依存�
 SET pg_clickhouse.session_settings = 'join_use_nulls 1, final 1';
 ```
 
-デフォルトは
+デフォルトは空文字列です。pg&#95;clickhouse は以下の組み込み設定を常に送信します。このパラメーターで同じキーを指定すると、その値がオーバーライドされます:
 
 ```
 join_use_nulls 1, group_by_use_nulls 1, final 1, transform_null_in 0
 ```
 
-ClickHouse サーバー の設定に戻すには、これを空文字列に設定します —
-ただし、プッシュダウンの正しさは、これらのデフォルト設定の一部に依存します:
-外部結合には `join_use_nulls`、`IN` ファミリーには `transform_null_in`
-([IN と NULL のセマンティクス](#in-and-null-semantics)を参照) 。
+正しい結果を得るには、外部結合には `join_use_nulls`、
+[グループ化セット](#grouping-sets) には `group_by_use_nulls`、
+`IN` ファミリーには `transform_null_in` が必要です
+([IN と NULL のセマンティクス](#in-and-null-semantics)を参照)。
 
 ```sql
 SET pg_clickhouse.session_settings = '';
@@ -931,6 +1022,8 @@ $$;
 * `date_time_output_format`: http ドライバーではこれが &quot;iso&quot; である必要があります
 * `format_tsv_null_representation`: http ドライバーではデフォルト値が必要です
 * `output_format_tsv_crlf_end_of_line` http ドライバーではデフォルト値が必要です
+* `session_timezone`: ClickHouse 23.6 以降では、pg&#95;clickhouse がこれを PostgreSQL の [TimeZone] に
+  設定します
 
 それ以外については、pg&#95;clickhouse は設定を検証せず、すべてのクエリごとに
 ClickHouse にそのまま渡します。したがって、各 ClickHouse バージョンですべての設定をサポートします。
@@ -938,6 +1031,31 @@ ClickHouse にそのまま渡します。したがって、各 ClickHouse バー
 `pg_clickhouse.session_settings` を設定する前に、
 pg&#95;clickhouse を読み込んでおく必要がある点に注意してください。[共有ライブラリのプリロード] を使用するか、
 または拡張機能内のいずれかのオブジェクトを使って、確実に読み込まれるようにしてください。
+
+##### 設定の優先順位 {#settings-precedence}
+
+外部テーブルに対するクエリおよび挿入処理では、設定がキー単位でマージされます。後のエントリが
+前のエントリをオーバーライドします。
+
+1. 上記の組み込み設定
+2. 外部サーバーの `settings`
+3. 外部テーブルの `settings`
+4. `pg_clickhouse.session_settings`
+
+オーバーライドは、一致するキーにのみ適用されます。たとえば、テーブルオプション
+`settings 'final 0'` は組み込みの `final 1` をオーバーライドします。このテーブルオプションを
+オーバーライドするには、次のようにします。
+
+```sql
+SET pg_clickhouse.session_settings = 'final 1';
+```
+
+これにより、このテーブルに対するクエリでは、他の設定に加えて `final 1` が使用されるようになります。
+
+[`clickhouse_query()`](#clickhouse_query) と
+[`clickhouse_perform()`](#clickhouse_perform) が使用するのは、組み込みの設定と
+`pg_clickhouse.session_settings` のみです。`settings` オプションは、外部テーブルに対するクエリと
+挿入処理に適用されます。
 
 #### `pg_clickhouse.pushdown_regex` {#pg_clickhousepushdown_regex}
 
@@ -950,6 +1068,18 @@ SET pg_clickhouse.pushdown_regex = 'false';
 ```
 
 詳細については、[正規表現](#regular-expressions)を参照してください。
+
+#### `pg_clickhouse.vector_planner_warnings` {#pg_clickhousevector_planner_warnings}
+
+pg&#95;clickhouse は、pgvector による最近傍検索が `ORDER BY`
+や `LIMIT` の指定が原因で ClickHouse のベクトル類似度索引を使用できない場合、デフォルトで警告を出力します。各警告にはその理由が示されます。これらの警告を抑制するには、
+`pg_clickhouse.vector_planner_warnings` を false に設定します：
+
+```sql
+SET pg_clickhouse.vector_planner_warnings = 'false';
+```
+
+詳細については、[ベクトル索引の使用](#vector-index-use)を参照してください。
 
 ### ALTER ROLE {#alter-role}
 
@@ -1062,6 +1192,7 @@ FOREIGN TABLE](#create-foreign-table) を使用してください。
 | Nullable(T)                  | T                           |                                         | カラムは NOT NULL 制約なしでインポートされる            |
 | Point                        | point                       |                                         |                                        |
 | Polygon                      | polygon[]                   |                                         |                                        |
+| QBit(T,N)                    | T[]                         |                                         | N 個の要素をビットプレーンとの間で相互に転置                |
 | Ring                         | polygon                     | lseg                                    | lseg には 2 点が必要                         |
 | SimpleAggregateFunction(f,T) | T                           |                                         | 値は T として格納される                          |
 | String                       | text                        | bytea; 入力互換の型                           | bytea では raw bytes が保持される              |
@@ -1105,6 +1236,23 @@ ClickHouse が書き込んだとおりのバイト列として読み取れます
 `IntervalDay` の値 `3` は整数 `3` にマッピングされます。
 `IntervalNanosecond` を `bigint` にマッピングするとナノ秒の精度が保持されますが、
 `interval` にマッピングするとマイクロ秒単位に切り捨てられます。
+
+### Vector 型 {#vector-types}
+
+[pgvector] 拡張機能がインストールされている場合、ClickHouse の float 配列カラムを `vector` として宣言すると、pgvector の値として読み書きできます。
+
+```sql
+CREATE FOREIGN TABLE items (
+    id        bigint NOT NULL,
+    embedding vector(768) NOT NULL
+) SERVER ch OPTIONS (table_name 'items');
+```
+
+| ClickHouse        | PostgreSQL  | 注記                                   |
+| ----------------- | ----------- | ------------------------------------ |
+| `Array(Float32)`  | `vector(n)` | ロスレス                                 |
+| `Array(Float64)`  | `vector(n)` | 読み取り時は `real` に丸められ、書き込み時は正確に保持される   |
+| `Array(BFloat16)` | `vector(n)` | 読み取り時は正確、書き込み時は bfloat16 の仮数に切り詰められる |
 
 ### BYTEA {#bytea}
 
@@ -1197,7 +1345,7 @@ SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM texts ORDER B
 しかし、[BYTEA]として読み取ることはできません:
 
 ```pgsql
-# SELECT * FROM bytes;
+try=# SELECT * FROM bytes;
  c1 |                                                           c2                                                           |                                   c3
 ----+------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------------
   1 | \x5c783162663766306363383231643331313738363136613535613865306335323637373733353339376364646536663431353361396664336437 | \x5c786165336232386364653032353432663831616363653837383332343534333064
@@ -1236,11 +1384,64 @@ SELECT id, vals FROM t1 WHERE vals[1:2] = ARRAY[10,20];
 SELECT id, vals FROM t1 WHERE vals[1:2][2] = 20; -- currently fails
 ```
 
+#### Tuple {#tuple}
+
+PostgreSQL には、ClickHouse の [Tuple] 型に対応する型がありません。
+そのため、[IMPORT FOREIGN SCHEMA](#import-foreign-schema) は [Tuple] カラムを
+`text[]` にマッピングし、各要素は [Tuple] で定義された順序で
+並びます。pg&#95;clickhouse は、このようなマッピングを行う際に `NOTICE` を出力します。
+
+例えば、次の ClickHouse テーブルがあるとします。
+
+```sql
+CALL clickhouse_perform('ch_srv', $$
+    CREATE TABLE named_tuples (
+      a Tuple(s String, i Int64)
+    ) ENGINE = Memory
+$$);
+```
+
+[IMPORT FOREIGN SCHEMA](#import-foreign-schema) では、次のようにインポートされます。
+
+```
+ attname |  type  | attndims | attnotnull
+---------+--------+----------+------------
+ a       | text[] |        1 | t
+```
+
+タプルは値の配列として挿入します：
+
+```sql
+INSERT INTO named_tuples VALUES (ARRAY['y', '10']), (ARRAY['x', '-10']);
+```
+
+各配列には、ClickHouse のタプルが想定する数の要素が正しく含まれている必要があります。互換性のない値を指定するとエラーが発生します。
+
+データは次のように取得されます:
+
+```pgsql
+try=# SELECT * FROM named_tuples;
+    a
+---------
+ {y,10}
+ {x,-10}
+```
+
+値には配列の添字でアクセスできません。つまり、次のクエリは
+エラーを返します。
+
+```sql
+SELECT * FROM named_tuples WHERE a[2] = '10';
+```
+
+ただし、[複合型][composite type]を使用してタプル要素のデータ型をマッピングする方法や、
+フィールド値を条件にクエリを実行する方法については、[手動による型マッピング](#manual-type-mappings)を参照してください。
+
 #### Map {#map}
 
 PostgreSQL には、ClickHouse の [Map] 型に対応する型がありません。
-そのため pg&#95;clickhouse は [Map] カラムを `text[][]` にマッピングし、各キー・バリュー
-ペアをそれぞれ個別の配列として表現します。[IMPORT FOREIGN SCHEMA](#import-foreign-schema) でも
+そのため pg&#95;clickhouse は [Map] 型を `text[][]` にマッピングし、各キー・バリューのペアを
+それぞれ個別の配列として表現します。[IMPORT FOREIGN SCHEMA](#import-foreign-schema) でも
 このマッピングが使用されます。また、Map 値を配列として `INSERT` することもできます。例:
 
 ```sql
@@ -1267,13 +1468,14 @@ try=# SELECT * FROM maps;
 
 ネストされた各配列には、テキスト値をちょうど 2 つ含める必要があります。対応する ClickHouse のキー型または値型と互換性のない値を指定すると、エラーが発生します。
 
-<Note>
-  `Map` を挿入するには `binary` ドライバーが必要です。このドライバーは ClickHouse サーバーからカラム型を取得します。一方、`http` ドライバーはカラム型を取得しないため、適切な値をフォーマットして挿入するために必要な情報を持ちません。
-</Note>
+値に配列の添字でアクセスすることはできません。つまり、次のクエリは
+エラーを返します:
 
-#### Tuple {#tuple}
+```sql
+SELECT * FROM maps WHERE c2[1] = 'b';
+```
 
-同様に、ClickHouse の [Tuple] カラムは `text[]` にマッピングされ、バイナリドライバー経由での `INSERT` に対応しています。`IMPORT FOREIGN SCHEMA` は、このようなマッピングを行う際に `NOTICE` を出力します。
+ただし、[複合型][composite type]を使用して [Map] の要素のデータ型をマッピングする方法や、フィールド値でクエリを実行する方法については、[手動による型マッピング](#manual-type-mappings) を参照してください。
 
 #### Nested {#nested}
 
@@ -1354,10 +1556,10 @@ INSERT INTO nests
 VALUES (1, ARRAY[['42', 'Arthur'], ['99', 'Barbara']]);
 ```
 
-ただし、Nested 型を介した `text[][]` カラムのプッシュダウンは失敗します。
+ただし、添字アクセスのプッシュダウンは失敗します。
 
 ```pgsql
-SELECT * FROM nests WHERE c2[1][1] = '42`
+try=# SELECT * FROM nests WHERE c2[1][1] = '42`
 ERROR:  pg_clickhouse: DB::Exception: First argument for function 'arrayElement' must be array, got 'Tuple(serial UInt32, order_id String)' instead
 ```
 
@@ -1368,7 +1570,7 @@ ERROR:  pg_clickhouse: DB::Exception: First argument for function 'arrayElement'
 Nested のフィールド名と一致していれば、プッシュダウンが機能します。
 
 ```sql
-SELECT * FROM nests WHERE c2[1].id = 42;
+SELECT * FROM nests WHERE (c2[1]).id = 42;
 ```
 
 ### 手動による型マッピング {#manual-type-mappings}
@@ -1386,11 +1588,6 @@ CALL clickhouse_perform('ch_srv', $$
       labels Map(String, Int64),
       items  Nested(id Int32, name String)
     ) ORDER BY id SETTINGS flatten_nested = 0
-$$);
-
-CALL clickhouse_perform('ch_srv', $$
-    INSERT INTO events
-    VALUES(1, 'new', tuple(3, 4), {'k1': 5, 'k2': 6}, [tuple(100, 'xx')])
 $$);
 ```
 
@@ -1417,13 +1614,24 @@ CREATE FOREIGN TABLE events (
   ClickHouse の enum ラベルおよび `Nested` や `Tuple` のフィールド名と必ず一致させてください。
 </Tip>
 
-複合型のフィールドの順序と型は、ClickHouse での宣言に合わせてください。[Map] のキーと
+カスタム型を使用して行を挿入するには、複合型のフィールドの順序と型を ClickHouse での宣言に合わせてください。[Map] のキーと
 値は、それぞれ 1 番目と 2 番目のフィールド (この例では `key` と `value`) になります。
 `Nested` と `Map` は複合型の配列になり、`Tuple` は 1 つの複合型の値になります。
+`Nested` カラムへの複合型の挿入には、`binary` ドライバーが必要です。
+
+```sql
+INSERT INTO events
+VALUES (
+    1, 'new', (3, 4),
+    ARRAY[('k1', 5), ('k2', 6)]::event_label[],
+    ARRAY[(100, 'xx'), (101, 'yy')]::event_item[]
+);
+```
+
+また、値を取得するには次のようにします:
 
 ```pgsql
-SELECT * FROM events ORDER BY id;
- id | status | point |       labels        |          items
+try=# SELECT * FROM events ORDER BY id; id | status | point |       labels        |          items
 ----+--------+-------+---------------------+-------------------------
   1 | new    | (3,4) | {"(k1,5)","(k2,6)"} | {"(100,xx)","(101,yy)"}
 (1 row)
@@ -1433,9 +1641,9 @@ SELECT * FROM events ORDER BY id;
 リストの中で使用することもできます:
 
 ```pgsql
-SELECT (point).x,       (point).y,
-       (labels[1]).key, (labels[1]).value,
-       (items[1]).id,   (items[1]).name
+try=# SELECT (point).x,       (point).y,
+             (labels[1]).key, (labels[1]).value,
+             (items[1]).id,   (items[1]).name
   FROM events ORDER BY id;
  x | y | key | value | id  | name
 ---+---+-----+-------+-----+------
@@ -1531,12 +1739,12 @@ pg&#95;clickhouse は、条件式 (`HAVING` 句および `WHERE` 句) で使用�
 * `abs`: [abs](/ja/reference/functions/regular-functions/arithmetic-functions#abs)
 * `factorial`: [factorial](/ja/reference/functions/regular-functions/math-functions#factorial)
 * `mod` (int2/int4/int8/numeric): [剰余](/ja/reference/functions/regular-functions/arithmetic-functions#modulo)
-* `pow` &amp; `power` (float8、numeric は対象外): [pow](https://clickhouse.com/docs/sql-reference/functions/math-functions#pow)
+* `pow` &amp; `power` (float8、numeric は対象外): [pow](/ja/reference/functions/regular-functions/math-functions#pow)
 * `round`: [round](/ja/reference/functions/regular-functions/rounding-functions#round)
 * `sin`, `cos`, `tan`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `asinh`, `degrees`, `radians`, `pi`: [ClickHouse の数学関数](/ja/reference/functions/regular-functions/math-functions)
   と同名です。`asin`, `acos`, `atanh`, `acosh` はプッシュダウンされません。PG
   では範囲外の入力でエラーになりますが、CH では `NaN` が返されます。
-* `date_part`:
+* `date_part`: `timestamp` および `timestamptz` の値に対して、PostgreSQL の [TimeZone] を ClickHouse に渡します。
   * `date_part('day')`: [toDayOfMonth](/ja/reference/functions/regular-functions/date-time-functions#toDayOfMonth)
   * `date_part('doy')`: [toDayOfYear](/ja/reference/functions/regular-functions/date-time-functions#toDayOfYear)
   * `date_part('dow')`: [toDayOfWeek](/ja/reference/functions/regular-functions/date-time-functions#toDayOfWeek)
@@ -1549,7 +1757,7 @@ pg&#95;clickhouse は、条件式 (`HAVING` 句および `WHERE` 句) で使用�
   * `date_part('isoyear')`: [toISOYear](/ja/reference/functions/regular-functions/date-time-functions#toISOYear)
   * `date_part('week')`: [toISOYear](/ja/reference/functions/regular-functions/date-time-functions#toISOWeek)
   * `date_part('epoch')`: [toISOYear](/ja/reference/functions/regular-functions/date-time-functions#toUnixTimestamp)
-* `date_trunc`:
+* `date_trunc`: `timestamp` および `timestamptz` の値については、PostgreSQL の `TimeZone` を ClickHouse に渡します。
   * `date_trunc('week')`: [toMonday](/ja/reference/functions/regular-functions/date-time-functions#toMonday)
   * `date_trunc('second')`: [toStartOfSecond](/ja/reference/functions/regular-functions/date-time-functions#toStartOfSecond)
   * `date_trunc('minute')`: [toStartOfMinute](/ja/reference/functions/regular-functions/date-time-functions#toStartOfMinute)
@@ -1558,9 +1766,17 @@ pg&#95;clickhouse は、条件式 (`HAVING` 句および `WHERE` 句) で使用�
   * `date_trunc('month')`: [toStartOfMonth](/ja/reference/functions/regular-functions/date-time-functions#toStartOfMonth)
   * `date_trunc('quarter')`: [toStartOfQuarter](/ja/reference/functions/regular-functions/date-time-functions#toStartOfQuarter)
   * `date_trunc('year')`: [toStartOfYear](/ja/reference/functions/regular-functions/date-time-functions#toStartOfYear)
-* `extract(field FROM source)`: `date_part` と同じ対応
-* `date(timestamp)` &amp; `date(timestamptz)`: [toDate](/ja/reference/functions/regular-functions/type-conversion-functions#toDate)
-  (CH alias `date` としてデパースされます)
+* `extract(field FROM source)`: `date_part` と同じ対応。`timestamp` および `timestamptz` の値については、PostgreSQL の
+  `TimeZone` を ClickHouse に渡します。
+* `date(timestamp)` &amp; `date(timestamptz)`: [toDate32](/ja/reference/functions/regular-functions/type-conversion-functions#toDate32)。
+  PostgreSQL の `TimeZone` を ClickHouse に渡します。`date`
+  と `timestamp` または `timestamptz` の間のキャストも同様です。
+* `AT TIME ZONE` &amp; `timezone(zone, source)`: [toString](/ja/reference/functions/regular-functions/type-conversion-functions#tostring)
+  に続けて [toDateTime64](/ja/reference/functions/regular-functions/type-conversion-functions#todatetime64)
+  を使用し、ローカルの日付と時刻を保持したままタイムゾーンを変更します。
+  `timestamp` を `timestamptz` に変換する際、夏時間の切り替えによってスキップまたは重複するローカル時刻については
+  結果が異なります。ClickHouse は
+  PostgreSQL よりも早い時刻を選択します。
 * `array_position`: [indexOf](/ja/reference/functions/regular-functions/array-functions#indexOf) に
   [nullIf](reference/functions/regular-functions/functions-for-nulls#nullif)
   を使用して `0` を `NULL` に変換し、検索開始インデックスを指定する第 3 引数がある場合は
@@ -1570,9 +1786,9 @@ pg&#95;clickhouse は、条件式 (`HAVING` 句および `WHERE` 句) で使用�
 * `array_append`: [arrayPushBack](/ja/reference/functions/regular-functions/array-functions#arrayPushBack)
 * `array_prepend`: [arrayPushFront](/ja/reference/functions/regular-functions/array-functions#arrayPushFront)
 * `array_remove`: [arrayRemove](/ja/reference/functions/regular-functions/array-functions#arrayRemove)
-* `cardinality`: ClickHouse 26.9 以降では [arrayFlattenedLength](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayFlattenedLength)、
+* `cardinality`: ClickHouse 26.9 以降では [arrayFlattenedLength](/ja/reference/functions/regular-functions/array-functions#arrayFlattenedLength)、
   それ以前のバージョンでは
-  [length](https://clickhouse.com/docs/sql-reference/functions/array-functions#length)
+  [length](/ja/reference/functions/regular-functions/array-functions#length)
   (外側の配列の要素のみをカウントします)
 * `array_length(array, 1)`: `nullIf(length(array), 0)`
 * `array_length` &amp; `cardinality`: [length](/ja/reference/functions/regular-functions/array-functions#length)
@@ -1607,7 +1823,7 @@ pg&#95;clickhouse は、条件式 (`HAVING` 句および `WHERE` 句) で使用�
 * `regexp_split_to_array`: [splitByRegexp](/ja/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)
 * `md5`: [MD5](/ja/reference/functions/regular-functions/hash-functions#MD5)
 * `sha224`、`sha256`、`sha384`、`sha512`: 対応する ClickHouse の
-  [SHA 関数](https://clickhouse.com/docs/sql-reference/functions/hash-functions#sha224)
+  [SHA 関数](/ja/reference/functions/regular-functions/hash-functions#sha224)
 * `fmt` が文字列定数 (大文字と小文字を区別しない) の場合の `encode(bytea, fmt)`:
   * `encode(bytea, 'hex')`: [hex](/ja/reference/functions/regular-functions/encoding-functions#hex)
     を [lower](/ja/reference/functions/regular-functions/string-functions#lower) でラップします。
@@ -1627,7 +1843,8 @@ pg&#95;clickhouse は、条件式 (`HAVING` 句および `WHERE` 句) で使用�
   ClickHouse で忠実に対応するものがある文字列定数である場合は、[formatDateTime](/ja/reference/functions/regular-functions/date-time-functions#formatDateTime)
   です。対応しているキーワードについては、Compatibility
   Notes の [to&#95;char()](#to_char) を参照してください。それ以外の場合、この関数は
-  PostgreSQL 側でローカルに評価されます。
+  PostgreSQL 側でローカルに評価されます。`timestamp` および `timestamptz` の値については、PostgreSQL の `TimeZone` が
+  ClickHouse に渡されます。
 * `statement_timestamp`, `transaction_timestamp`, &amp; `clock_timestamp`:
   [nowInBlock64](/ja/reference/functions/regular-functions/date-time-functions#nowInBlock64)
   (`nowInBlock64(9, $session_timezone)`)
@@ -1659,8 +1876,22 @@ pg&#95;clickhouse は、条件式 (`HAVING` 句および `WHERE` 句) で使用�
 * `!~` (正規表現に一致しない) : [match](/ja/reference/functions/regular-functions/string-search-functions#match)
 * `~*` (大文字と小文字を区別しない正規表現に一致しない) : [match](/ja/reference/functions/regular-functions/string-search-functions#match)
 * `!~*` (大文字と小文字を区別しない正規表現に一致しない) : [match](/ja/reference/functions/regular-functions/string-search-functions#match)
-* `->>` (JSON/JSONB の要素をテキストとして抽出) : [sub-column syntax](/ja/reference/data-types/newjson#reading-json-paths-as-sub-columns)
-* `->` (JSON/JSONB を抽出) : [toJSONString](/ja/reference/functions/regular-functions/json-functions#toJSONString) + [sub-column syntax](/ja/reference/data-types/newjson#reading-json-paths-as-sub-columns)
+* `->>` (JSON/JSONB の要素をテキストとして抽出) : [サブカラム構文](/ja/reference/data-types/newjson#reading-json-paths-as-sub-columns)
+* `->` (JSON/JSONB を抽出) : [toJSONString](/ja/reference/functions/regular-functions/json-functions#toJSONString) + [サブカラム構文](/ja/reference/data-types/newjson#reading-json-paths-as-sub-columns)
+* `jsonb` の添字 (`data['a']['b']`) : [toJSONString](/ja/reference/functions/regular-functions/json-functions#toJSONString) + [サブカラム構文](/ja/reference/data-types/newjson#reading-json-paths-as-sub-columns)。
+  プッシュダウンには、定数かつ非 NULL のテキスト添字を持つカラムが必要です。
+  整数、数値テキスト、および定数でない添字はローカルで評価されます。
+* `/` (整数除算) : [intDiv](/ja/reference/functions/regular-functions/arithmetic-functions#intDiv)
+* `^` (指数) : [pow](/ja/reference/functions/regular-functions/math-functions#pow)
+* `|/` (平方根) : [sqrt](/ja/reference/functions/regular-functions/math-functions#sqrt)
+* `||/` (立方根) : [cbrt](/ja/reference/functions/regular-functions/math-functions#cbrt)
+* `@` (絶対値) : [abs](/ja/reference/functions/regular-functions/arithmetic-functions#abs)
+* `&` (ビット単位の論理積) : [bitAnd](/ja/reference/functions/regular-functions/bit-functions#bitAnd)
+* `|` (ビット単位の論理和) : [bitOr](/ja/reference/functions/regular-functions/bit-functions#bitOr)
+* `#` (ビット単位の排他的論理和) : [bitXor](/ja/reference/functions/regular-functions/bit-functions#bitXor)
+* `~` (ビット単位のNOT) : [bitNot](/ja/reference/functions/regular-functions/bit-functions#bitNot)
+* `<<` (左シフト) : [bitShiftLeft](/ja/reference/functions/regular-functions/bit-functions#bitShiftLeft)
+* `>>` (右シフト) : [bitShiftRight](/ja/reference/functions/regular-functions/bit-functions#bitShiftRight)
 
 ### IN と NULL のセマンティクス {#in-and-null-semantics}
 
@@ -1669,7 +1900,7 @@ ANY`、`<> ALL`) を無条件にプッシュダウンします。プローブと
 
 NULL 許容カラムに対する `NOT IN (SELECT ...)` フィルタもプッシュダウンされ、PostgreSQL の動作を維持するための補償ガードを付加して逆変換されます。NULL を含む集合はすべての行を除外し、NULL のプローブが通過するのは集合が空の場合のみです。`NOT NULL` 宣言によって不要であることが証明できる場合は、各ガードを省略します。上記の配列形式とは異なり、このガードは通常のフィルタ条件内 (または `NOT` 配下) でのみ適用されます。値の位置にある `IN (SELECT ...)` や、グループ化または集計されたサブクエリ本体は、引き続きプッシュダウンされません。カラムを `NOT NULL` と宣言すると、より低コストなガードなし形式を送信できるため、プッシュダウンを最大化できます。[IMPORT FOREIGN SCHEMA] は、`Nullable` ではない ClickHouse カラムに対してこれを自動的に行います。この証明では、非 NULL 定数、`NOT NULL` カラム、およびそれらに対する基本的な算術演算 (`+`、`-`、`*`、単項 `-`) を追跡します。
 
-これらの規則は、ClickHouse のデフォルト設定である `transform_null_in = 0` を前提としています。pg&#95;clickhouse は [`pg_clickhouse.session_settings`](#pg_clickhousesession_settings) パラメータのデフォルト値を通じて、すべてのクエリでこれを設定します。これにより、ClickHouseサーバープロファイルがこの設定を暗黙的に変更することはありません。`transform_null_in = 1` を設定すると、プッシュダウンされたすべての `IN` のセマンティクスが破綻します。
+これらの規則は、ClickHouse のデフォルト設定である `transform_null_in = 0` を前提としています。pg&#95;clickhouse は組み込みの [session settings](#pg_clickhousesession_settings) を通じて、すべてのクエリでこれを設定します。これにより、ClickHouseサーバープロファイルがこの設定を暗黙的に変更することはありません。`transform_null_in = 1` を設定すると、プッシュダウンされたすべての `IN` のセマンティクスが破綻します。
 
 ### カスタム関数 {#custom-functions}
 
@@ -1712,11 +1943,99 @@ pg&#95;clickhouse は、一部のコア拡張機能やサードパーティ拡�
 * `soundex`: [soundex](/ja/reference/functions/regular-functions/string-functions#soundex)
 * `levenshtein` (2引数) : [editDistanceUTF8](/ja/reference/functions/regular-functions/string-functions#editDistanceUTF8)
 
-#### pgcyrpto {#pgcrypto}
+#### pgvector {#pgvector}
+
+`vector` 型に対する以下の [pgvector] 演算子および関数は、
+ClickHouse にプッシュダウンされます。
+
+* `<->`, `l2_distance`: [L2Distance](/ja/reference/functions/regular-functions/distance-functions#L2Distance)
+* `<=>`, `cosine_distance`: [cosineDistance](/ja/reference/functions/regular-functions/distance-functions#cosineDistance)
+* `<#>`: 符号を反転した [dotProduct](/ja/reference/functions/regular-functions/array-functions#arrayDotProduct)
+* `inner_product`: [dotProduct](/ja/reference/functions/regular-functions/array-functions#arrayDotProduct)
+* `<+>`, `l1_distance`: [L1Distance](/ja/reference/functions/regular-functions/distance-functions#L1Distance)
+* `vector_dims`: [length](/ja/reference/functions/regular-functions/array-functions#length)
+* `=`: [equals](/ja/reference/operators#equals)
+* `<>`: [notEquals](/ja/reference/operators#notEquals)
+
+最近傍探索クエリでは、距離によるソートと `LIMIT` が、
+`WHERE` 条件とあわせて ClickHouse にプッシュダウンされます。
+
+```sql
+SELECT id FROM items
+ WHERE category = 'footwear'
+ ORDER BY embedding <=> '[0.12, 0.03, 0.4]'
+ LIMIT 10;
+```
+
+`EXPLAIN (VERBOSE)` を実行すると、リモートクエリが表示されます：
+
+```sql
+SELECT id, embedding FROM items WHERE ((category = 'footwear'))
+ORDER BY cosineDistance(embedding, cast([0.12,0.03,0.4] as Array(Float32))) ASC NULLS LAST
+LIMIT 10
+```
+
+pgvector の `<#>` は負の内積を返すため、pg&#95;clickhouse はこれを `dotProduct(...) DESC` としてソートします。これは ClickHouse のベクトル類似度索引が利用できる形式です。`<#>` および `inner_product` には ClickHouse 23.8 以降が必要です。このバージョン以降では
+`dotProduct` が配列を受け付けますが、それより前のバージョンでは Postgres 側で評価されます。
+ClickHouse は、pgvector と同様に `Array(Float32)` カラムの距離を `Float32` で計算します。
+
+`ORDER BY embedding <=> '[...]', id` のようなタイブレーカーを指定した場合もプッシュダウンされますが、
+ClickHouse は複数のキーによるソートではベクトル類似度索引を使用しません。
+
+##### ベクトル索引の使用 {#vector-index-use}
+
+最近傍探索では、`EXPLAIN` に距離関数と、それを処理できる
+ClickHouse の [ベクトル類似度索引] が表示されます。処理できる索引がない場合は、
+その理由が表示されます：
+
+```pgsql
+try=# EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM items ORDER BY embedding <=> '[1,0]' LIMIT 5;
+                                                                 QUERY PLAN
+--------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.items
+   Output: id, (embedding <=> '[1,0]'::vector)
+   Vector Search: cosineDistance on embedding
+   Vector Index: none
+   Vector Index Not Used: index "items_idx" uses L2Distance (<->), not cosineDistance
+   Remote SQL: SELECT id, embedding FROM try.items ORDER BY cosineDistance(embedding, cast([1,0] as Array(Float32))) ASC NULLS LAST LIMIT 5
+(6 rows)
+```
+
+`EXPLAIN` は、ClickHouse の
+`system.data_skipping_indices` テーブルから索引定義を読み取ります。このルックアップが失敗した場合、`EXPLAIN`
+は索引の詳細を含めずに処理を続行します。次のいずれかに該当する場合、ClickHouse は索引を使用できず、
+すべての行を比較します。
+
+* 索引の距離関数が検索で使用する距離関数と異なる
+* カラムに索引がない
+* ソートが降順である、またはソートキーが複数ある
+* クエリに `LIMIT` がない、または `LIMIT` が `max_limit_for_vector_search_queries` を超えている
+* `WHERE` 条件がプッシュダウンされず、そのため `LIMIT` もプッシュダウンされない
+* サーバーが ClickHouse 25.8 より古い
+
+このような完全検索では、真の最近傍が返されます。索引による検索ははるかに高速ですが、
+結果は近似になります。`EXPLAIN` に索引が表示されている場合でも、ClickHouse
+が先に行をフィルタしてから完全な比較を行うことがあります。たとえば、
+`WHERE` 条件が主キーに一致する場合です。
+
+<Note>
+  pgvector の最近傍検索が `ORDER BY` または
+  `LIMIT` が原因で ClickHouse のベクトル類似度索引を使用できない場合、クエリプランニング時にも警告が出力されます。詳細は `EXPLAIN` で確認してください。これらの警告を抑制するには、
+  [`pg_clickhouse.vector_planner_warnings`](#pg_clickhousevector_planner_warnings)
+  を false に設定します。
+</Note>
+
+pg&#95;clickhouse は `vector` 定数を `Array(Float32)` にキャストするため、等値比較では
+ClickHouse が `Array(Float32)` カラムに格納しているものと同じ `Float32` 値が比較されます。`vector_norm`、`l2_normalize`、`subvector` などの pgvector
+関数はプッシュダウンされません。ゼロベクトルや負のオフセットの扱い、または古いバージョンにおいて、
+ClickHouse の同等の関数とは動作が異なるためです。サポートされているカラム型については、データ型の
+[Vector Types](#vector-types) を参照してください。
+
+#### pgcrypto {#pgcrypto}
 
 * `digest(text, text)` および `digest(bytea, text)`: アルゴリズムが定数で、`md5`、`sha1`、`sha224`、
   `sha256`、`sha384`、`sha512` のいずれか (大文字と小文字を区別せずに照合) である場合は、
-  対応する ClickHouse の[ハッシュ関数](https://clickhouse.com/docs/sql-reference/functions/hash-functions)
+  対応する ClickHouse の[ハッシュ関数](/ja/reference/functions/regular-functions/hash-functions)
   にプッシュダウンされます。
 
 ### キャストのプッシュダウン {#pushdown-casts}
@@ -1731,7 +2050,7 @@ pg&#95;clickhouse は、互換性のあるデータ型に対して `CAST(x AS bi
 * [toUInt64](/ja/reference/functions/regular-functions/type-conversion-functions#touint64)
 * [toUInt128](/ja/reference/functions/regular-functions/type-conversion-functions#touint128)
 
-### 集計のプッシュダウン {#pushdown-aggregates}
+### 集約関数のプッシュダウン {#pushdown-aggregates}
 
 以下の PostgreSQL 集約関数は ClickHouse にプッシュダウンされます。
 
@@ -1755,6 +2074,18 @@ pg&#95;clickhouse は、互換性のあるデータ型に対して `CAST(x AS bi
 * [sum](/ja/reference/functions/aggregate-functions/sum)
 * [var&#95;op](/ja/reference/functions/aggregate-functions/varPop)
 * [var&#95;samp /variance](/ja/reference/functions/aggregate-functions/varSamp)
+
+以下の PostgreSQL 回帰集約関数は、ClickHouse 26.9 以降ではプッシュダウンされますが、それより前のバージョンの ClickHouse では Postgres 側でローカルに処理されます。
+
+* [regr&#95;avgx](/ja/reference/functions/aggregate-functions/regr_avgx)
+* [regr&#95;avgy](/ja/reference/functions/aggregate-functions/regr_avgy)
+* [regr&#95;count](/ja/reference/functions/aggregate-functions/regr_count)
+* [regr&#95;intercept](/ja/reference/functions/aggregate-functions/regr_intercept)
+* [regr&#95;r2](/ja/reference/functions/aggregate-functions/regr_r2)
+* [regr&#95;slope](/ja/reference/functions/aggregate-functions/regr_slope)
+* [regr&#95;sxx](/ja/reference/functions/aggregate-functions/regr_sxx)
+* [regr&#95;sxy](/ja/reference/functions/aggregate-functions/regr_sxy)
+* [regr&#95;syy](/ja/reference/functions/aggregate-functions/regr_syy)
 
 ### カスタム集約関数 {#custom-aggregates}
 
@@ -1783,16 +2114,16 @@ SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
 次のClickHouseクエリにマッピングされます：
 
 ```sql
-SELECT quantile(0.25)(a) FROM t1;
+SELECT quantileOrNull(0.25)(a) FROM t1;
 ```
 
 デフォルト以外の `ORDER BY` 接尾辞である `DESC` と `NULLS FIRST` は
 サポートされておらず、error が発生します。
 
 * `percentile_cont(double)`: [quantile](/ja/reference/functions/aggregate-functions/quantile)
-* `percentile_cont(double[])`: [quantiles](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantiles)
-* `percentile_disc(double)`: [quantileExactLow](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantileExactLow)
-* `percentile_disc(double[])`: [quantilesExactLow](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantilesExactLow)
+* `percentile_cont(double[])`: [quantiles](/ja/reference/functions/aggregate-functions/quantiles)
+* `percentile_disc(double)`: [quantileExactLow](/ja/reference/functions/aggregate-functions/quantileExactLow)
+* `percentile_disc(double[])`: [quantilesExactLow](/ja/reference/functions/aggregate-functions/quantilesExactLow)
 
 ### カスタム ordered-set 集約関数 {#custom-ordered-set-aggregates}
 
@@ -1804,27 +2135,27 @@ pg&#95;clickhouse によって作成されたこれらのカスタム[ordered-se
 
 ### カスタム ordered-set 集約関数 {#custom-ordered-set-aggregates-2}
 
-pg&#95;clickhouse が提供するこれらのカスタム[ordered-set 集約関数]では、特定の ClickHouse [parametric 集約関数]に対して外部クエリのプッシュダウンが可能です。これらの関数のいずれかをプッシュダウンできない場合は、例外が発生します。
+pg&#95;clickhouse が提供するこれらのカスタム[ordered-set 集約関数]では、特定の ClickHouse [parametric 集約関数]に対して外部クエリのプッシュダウンが可能です。これらの関数のいずれかをプッシュダウンできない場合は、例外を送出します。
 
-* [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
-* [quantileExact](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantileexact)
+* [quantile](/ja/reference/aggregate-functions/reference/quantile)
+* [quantileExact](/ja/reference/aggregate-functions/reference/quantileexact)
 
 ### プッシュダウンされるウィンドウ関数 {#pushdown-window-functions}
 
 以下の PostgreSQL [ウィンドウ関数]は、該当する場合はフレーム指定を含む
 `OVER (PARTITION BY ... ORDER BY ...)` 句とともに ClickHouse にプッシュダウンされます。
 
-* [row&#95;number](https://clickhouse.com/docs/reference/functions/window-functions/row_number)
-* [rank](https://clickhouse.com/docs/reference/functions/window-functions/rank)
-* [dense&#95;rank](https://clickhouse.com/docs/reference/functions/window-functions/dense_rank)
-* [ntile](https://clickhouse.com/docs/reference/functions/window-functions/ntile)
-* [cume&#95;dist](https://clickhouse.com/docs/reference/functions/window-functions/cume_dist)
-* [percent&#95;rank](https://clickhouse.com/docs/reference/functions/window-functions/percent_rank)
-* [lead](https://clickhouse.com/docs/reference/functions/window-functions/lead)
-* [lag](https://clickhouse.com/docs/reference/functions/window-functions/lag)
-* [first&#95;value](https://clickhouse.com/docs/reference/functions/window-functions/first_value)
-* [last&#95;value](https://clickhouse.com/docs/reference/functions/window-functions/last_value)
-* [nth&#95;value](https://clickhouse.com/docs/reference/functions/window-functions/nth_value)
+* [row&#95;number](/ja/reference/functions/window-functions/row_number)
+* [rank](/ja/reference/functions/window-functions/rank)
+* [dense&#95;rank](/ja/reference/functions/window-functions/dense_rank)
+* [ntile](/ja/reference/functions/window-functions/ntile)
+* [cume&#95;dist](/ja/reference/functions/window-functions/cume_dist)
+* [percent&#95;rank](/ja/reference/functions/window-functions/percent_rank)
+* [lead](/ja/reference/functions/window-functions/lead)
+* [lag](/ja/reference/functions/window-functions/lag)
+* [first&#95;value](/ja/reference/functions/window-functions/first_value)
+* [last&#95;value](/ja/reference/functions/window-functions/last_value)
+* [nth&#95;value](/ja/reference/functions/window-functions/nth_value)
 * `min` / `max` (`OVER` 句あり)
 
 ランキング関数 (`row_number`、`rank`、`dense_rank`、`ntile`、`cume_dist`、
@@ -1958,7 +2289,10 @@ ClickHouse の指定子プレフィックスをエスケープするため、`%%
 
 ## 著者 {#authors}
 
-[David E. Wheeler](https://justatheory.com/)
+* [David E. Wheeler](https://justatheory.com/)
+* [serprex](https://github.com/serprex)
+* [Josh Ventura](https://github.com/JoshDreamland)
+* [Kaushik Iska](https://github.com/iskakaushik)
 
 ## 著作権 {#copyright}
 
@@ -2034,17 +2368,33 @@ ClickHouse の指定子プレフィックスをエスケープするため、`%%
 
 [COPY]: https://www.postgresql.org/docs/current/sql-copy.html "PostgreSQL ドキュメント: COPY"
 
+[UPDATE]: https://www.postgresql.org/docs/current/sql-update.html "PostgreSQL ドキュメント: UPDATE"
+
+[DELETE]: https://www.postgresql.org/docs/current/sql-delete.html "PostgreSQL ドキュメント: DELETE"
+
+[lightweight UPDATE]: /reference/statements/update "ClickHouse ドキュメント: 論理更新 (Lightweight UPDATE) ステートメント"
+
+[lightweight DELETE]: /reference/statements/delete "ClickHouse ドキュメント: 論理削除 (Lightweight DELETE) ステートメント"
+
+[MergeTree]: /reference/engines/table-engines/index/mergetree-family/mergetree "ClickHouse ドキュメント: MergeTree"
+
+[TRUNCATE]: https://www.postgresql.org/docs/current/sql-truncate.html "PostgreSQL ドキュメント: TRUNCATE"
+
+[TRUNCATE TABLE]: /reference/statements/truncate "ClickHouse ドキュメント: TRUNCATE"
+
 [LOAD]: https://www.postgresql.org/docs/current/sql-load.html "PostgreSQL ドキュメント: LOAD"
 
 [SET]: https://www.postgresql.org/docs/current/sql-set.html "PostgreSQL ドキュメント: SET"
 
+[TimeZone]: https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-TIMEZONE "PostgreSQL ドキュメント: TimeZone"
+
 [ALTER ROLE]: https://www.postgresql.org/docs/current/sql-alterrole.html "PostgreSQL ドキュメント: ALTER ROLE"
 
-[共有ライブラリのプリロード]: https://www.postgresql.org/docs/current/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-PRELOAD "PostgreSQL ドキュメント: 共有ライブラリのプリロード"
+[shared library preloading]: https://www.postgresql.org/docs/current/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-PRELOAD "PostgreSQL ドキュメント: 共有ライブラリのプリロード"
 
-[ordered-set 集約関数]: https://www.postgresql.org/docs/current/functions-aggregate.html#FUNCTIONS-ORDEREDSET-TABLE
+[ordered-set aggregate functions]: https://www.postgresql.org/docs/current/functions-aggregate.html#FUNCTIONS-ORDEREDSET-TABLE
 
-[parametric 集約関数]: /reference/functions/aggregate-functions/parametric-functions
+[parametric aggregate functions]: /reference/functions/aggregate-functions/parametric-functions
 
 [ClickHouse settings]: /reference/settings/session-settings "ClickHouse ドキュメント: セッション設定"
 
@@ -2066,24 +2416,38 @@ ClickHouse の指定子プレフィックスをエスケープするため、`%%
 
 [CALL]: https://www.postgresql.org/docs/current/sql-call.html "PostgreSQL ドキュメント: CALL"
 
-[Array] https://clickhouse.com/docs/reference/data-types/array
-&quot;ClickHouse ドキュメント: Array(T)&quot;
-[Map]: https://clickhouse.com/docs/sql-reference/data-types/map
-&quot;ClickHouse ドキュメント: Map&quot;
-[Tuple]: https://clickhouse.com/docs/reference/data-types/tuple
-&quot;ClickHouse ドキュメント: Tuple(T1, T2, ...)&quot;
-[Nested]: https://clickhouse.com/docs/sql-reference/data-types/nested-data-structures/nested
-&quot;ClickHouse ドキュメント: Nested&quot;
-[Enum]: https://clickhouse.com/docs/reference/data-types/enum
-&quot;ClickHouse ドキュメント: Enum&quot;
-[String]: /reference/data-types/string &quot;ClickHouse ドキュメント: String&quot;
-[TEXT]: https://www.postgresql.org/docs/current/datatype-character.html &quot;PostgreSQL ドキュメント: 文字型&quot;
-[window functions]: https://www.postgresql.org/docs/current/functions-window.html &quot;PostgreSQL ドキュメント: ウィンドウ関数&quot;
-[POSIX Regular Expressions]: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-POSIX-REGEXP &quot;PostgreSQL ドキュメント: POSIX 正規表現&quot;
-[Postgres flags]: https://www.postgresql.org/docs/current/functions-matching.html#POSIX-EMBEDDED-OPTIONS-TABLE &quot;PostgreSQL ドキュメント: ARE 埋め込みオプション文字&quot;
-[RE2]: https://github.com/google/re2/wiki/Syntax &quot;RE2 構文&quot;
-[re2 extension]: https://github.com/ClickHouse/pg&#95;re2 &quot;pg&#95;re2: RE2 を使用する ClickHouse 互換の正規表現関数&quot;
-[intarray]: https://www.postgresql.org/docs/current/intarray.html &quot;PostgreSQL ドキュメント: intarray&quot;
-[fuzzystrmatch]: https://www.postgresql.org/docs/current/fuzzystrmatch.html &quot;PostgreSQL ドキュメント: fuzzystrmatch&quot;
-[`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html &quot;PostgreSQL ドキュメント: データ型フォーマット関数&quot;
-[formatDateTime]: /reference/functions/regular-functions/date-time-functions#formatDateTime &quot;ClickHouse ドキュメント: formatDateTime&quot;
+[Array]: /reference/data-types/array "ClickHouse ドキュメント: Array(T)"
+
+[Map]: /reference/data-types/map "ClickHouse ドキュメント: Map"
+
+[Tuple]: /reference/data-types/tuple "ClickHouse ドキュメント: Tuple(T1, T2, ...)"
+
+[Nested]: /reference/data-types/nested-data-structures/nested "ClickHouse ドキュメント: Nested"
+
+[Enum]: /reference/data-types/enum "ClickHouse ドキュメント: Enum"
+
+[String]: /reference/data-types/string "ClickHouse ドキュメント: String"
+
+[TEXT]: https://www.postgresql.org/docs/current/datatype-character.html "PostgreSQL ドキュメント: 文字型"
+
+[window functions]: https://www.postgresql.org/docs/current/functions-window.html "PostgreSQL ドキュメント: ウィンドウ関数"
+
+[POSIX Regular Expressions]: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-POSIX-REGEXP "PostgreSQL ドキュメント: POSIX 正規表現"
+
+[Postgres flags]: https://www.postgresql.org/docs/current/functions-matching.html#POSIX-EMBEDDED-OPTIONS-TABLE "PostgreSQL ドキュメント: ARE 埋め込みオプション文字"
+
+[RE2]: https://github.com/google/re2/wiki/Syntax "RE2 構文"
+
+[re2 extension]: https://github.com/ClickHouse/pg_re2 "pg_re2: RE2 を使用する ClickHouse 互換の正規表現関数"
+
+[intarray]: https://www.postgresql.org/docs/current/intarray.html "PostgreSQL ドキュメント: intarray"
+
+[fuzzystrmatch]: https://www.postgresql.org/docs/current/fuzzystrmatch.html "PostgreSQL ドキュメント: fuzzystrmatch"
+
+[pgvector]: https://github.com/pgvector/pgvector "pgvector: Postgres 向けオープンソースのベクトル類似度検索"
+
+[vector similarity index]: /reference/engines/table-engines/mergetree-family/annindexes "ClickHouse ドキュメント: 厳密ベクトル検索と近似ベクトル検索"
+
+[`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html "PostgreSQL ドキュメント: データ型フォーマット関数"
+
+[formatDateTime]: /reference/functions/regular-functions/date-time-functions#formatDateTime "ClickHouse ドキュメント: formatDateTime"

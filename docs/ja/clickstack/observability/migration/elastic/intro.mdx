@@ -1,0 +1,39 @@
+---
+slug: /clickstack/observability/migration/elastic/intro
+title: 'Elastic から ClickHouse オブザーバビリティへの移行'
+sidebarTitle: 'はじめに'
+description: 'Elastic Stack から完全マネージド型の ClickHouse オブザーバビリティへ移行する際の考慮事項。'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="ベータ版" />
+
+## Elastic から ClickHouse オブザーバビリティへの移行 {#migrating-to-clickstack-from-elastic-self-configured}
+
+このガイドでは、Elastic Stack からの移行について説明します。Elastic Agent で収集して Elasticsearch に保存したログ、トレース、メトリクスを Kibana で探索しているデプロイメントも対象です。完全マネージド型の ClickHouse オブザーバビリティを中心に、Lucene ベースの検索を移行する方法、テレメトリー収集を移行する方法、データ移行の計画の立て方を説明します。セルフマネージド環境で手順が異なる箇所については、その手順も併記しています。
+
+ClickHouse オブザーバビリティは、SRE、開発者、およびそのエージェントのための完全マネージド型プラットフォームです。フルフィデリティのテレメトリーを、高速な検索、high-cardinality な集計、SQL と組み合わせて障害を調査できます。テレメトリーをマネージドな OpenTelemetry エンドポイントに送信するだけで、インジェスト、スキーマ、インフラストラクチャ、スケーリングは ClickHouse が処理します。
+
+利用を開始するにあたって、Elasticsearch の内部構造を ClickHouse に対応付ける必要はありません。セルフマネージドのデプロイメントについては、[同等の概念](/ja/clickstack/self-configured/migration/elastic/concepts)および[型のマッピング](/ja/clickstack/self-configured/migration/elastic/types)を参照してください。
+
+次のような場合は、ClickHouse オブザーバビリティへの移行を検討してください。
+
+* **独自の SRE エージェントを使用したい場合。** [ClickStack MCP サーバー](/ja/clickstack/observability/mcp)を介して Claude、Codex、または独自のエージェントハーネスを接続し、チームに合ったモデルと調査ワークフローを選択できます。
+* **エージェントに定義済みの検索以上の機能が必要な場合。** MCP ツールは、ログ検索、トレース探索、イベントパターン、イベント差分をサポートしています。SQL を使えば、テレメトリーをまたいだ結合、過去データとの比較、より踏み込んだ分析にも対応できます。
+* **クエリの遅さが調査の妨げになっている場合。** high-cardinality なテレメトリーに対しても検索と集計が高速なため、エンジニアやエージェントは仮説の検証や証拠の比較をすばやく行えます。
+* **根本原因分析のためにフルフィデリティのテレメトリーが必要な場合。** サンプリングや事前集約で失われがちな詳細なログ、トレーススパン、属性を保持し、調査に必要なコンテキストを損なわずに残せます。
+* **テレメトリー量の増加がコストを圧迫している場合。** ClickHouse のカラム指向圧縮と分析エンジンにより、大量のテレメトリーを効率的に保存・クエリできます。
+* **オブザーバビリティプラットフォームの運用にかける時間を減らしたい場合。** 完全マネージド型のサービスが、データベースのサイジング、スキーマ、インジェスト、スケーリングを担います。
+* **オープンスタンダードを基盤にしたい場合。** オープンソース版 ClickStack を基盤として、収集には OpenTelemetry、分析には SQL、エージェントのアクセスには MCP を使用できます。
+
+次のような場合、ClickHouse オブザーバビリティは適さない可能性があります。
+
+* 主な要件がセキュリティ分析であり、SIEM に特化した製品が必要な場合。
+* Universal Profiling がワークフローに不可欠な場合。
+* SRE や開発者向けの調査ワークフローではなく、汎用のビジネスインテリジェンスプラットフォームが必要な場合。この場合は、ClickHouse を [Grafana](/ja/integrations/connectors/data-visualization/grafana/index) または [Superset](/ja/integrations/connectors/data-visualization/superset-and-clickhouse) と組み合わせて使用することを検討してください。
+
+テレメトリーを外部のビジネスデータと結合するためにデータベースへ直接アクセスする必要がある場合や、データベースを独自に最適化したい場合は、[Self-managed ClickHouse Observability](/ja/clickstack/self-configured/overview) を検討してください。ほとんどのチームには、完全マネージド型のエクスペリエンスが第一の選択肢となります。

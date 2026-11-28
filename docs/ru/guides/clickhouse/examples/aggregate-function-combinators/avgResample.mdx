@@ -7,22 +7,16 @@ sidebarTitle: 'avgResample'
 doc_type: 'reference'
 ---
 
-<div id="description">
-  ## Описание
-</div>
+## Описание {#description}
 
 Комбинатор [`Resample`](/ru/reference/functions/aggregate-functions/combinators#-resample)
 можно применять к агрегатной функции [`count`](/ru/reference/functions/aggregate-functions/count),
 чтобы подсчитывать значения в указанном ключевом столбце для фиксированного числа
 интервалов (`N`).
 
-<div id="example-usage">
-  ## Пример использования
-</div>
+## Пример использования {#example-usage}
 
-<div id="basic-example">
-  ### Базовый пример
-</div>
+### Базовый пример {#basic-example}
 
 Рассмотрим пример. Мы создадим таблицу с именем, возрастом и
 зарплатой сотрудников и вставим в неё несколько записей:
@@ -35,7 +29,7 @@ CREATE TABLE employee_data
     wage Float32
 ) 
 ENGINE = MergeTree()
-ORDER BY tuple()
+ORDER BY tuple();
 
 INSERT INTO employee_data (name, age, wage) VALUES
     ('John', 16, 10.0),
@@ -68,9 +62,7 @@ FROM avg_wage;
 └──────────────────┘
 ```
 
-<div id="see-also">
-  ## См. также
-</div>
+## См. также {#see-also}
 
 * [`count`](/ru/reference/functions/aggregate-functions/count)
 * [`Комбинатор Resample`](/ru/reference/functions/aggregate-functions/combinators#-resample)

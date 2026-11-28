@@ -7,16 +7,16 @@ keywords: ['facturation', 'alertes de dépenses', "seuils d'utilisation", 'notif
 doc_type: 'guide'
 ---
 
-Les alertes de dépenses vous avertissent lorsque la consommation de votre organisation atteint les seuils configurés au cours d’une période de facturation, afin d’éviter des frais imprévus. Elles envoient uniquement des notifications ; pour les seuils qui déclenchent une facturation automatique, consultez [Seuils de paiement](/fr/products/cloud/reference/billing/payment-thresholds).
+Les alertes de dépenses vous avertissent lorsque la consommation de votre organisation atteint les seuils configurés au cours d’une période de facturation, afin d’éviter des frais imprévus. Elles envoient uniquement des notifications ; pour les seuils qui déclenchent une facturation automatique, consultez [Seuils de paiement](/fr/products/cloud/reference/billing/payment-thresholds).
 
 <div id="prerequisites">
-  ## Prérequis
+  ## Prérequis {#prerequisites}
 </div>
 
 * Vous devez disposer du rôle **Organization Admin** ou **Billing Admin** pour configurer et afficher les alertes de dépenses.
 
 <div id="how-spend-alerts-work">
-  ## Fonctionnement des alertes de dépenses
+  ## Fonctionnement des alertes de dépenses {#how-spend-alerts-work}
 </div>
 
 * Les alertes sont basées sur la consommation brute pendant une période de facturation et sont réinitialisées au début de chaque nouveau cycle.
@@ -28,45 +28,35 @@ Les alertes de dépenses vous avertissent lorsque la consommation de votre organ
   Atteindre 100 % de votre alerte de dépenses ne restreint ni ne plafonne votre consommation — les dépenses continuent de s’accumuler au-delà du seuil de 100 %.
 </Info>
 
-<div id="set-up-spend-alert">
-  ## Configurer une alerte de dépenses
-</div>
+## Configurer une alerte de dépenses {#set-up-spend-alert}
 
 <Steps>
   <Step title="Ouvrir la boîte de dialogue des alertes de dépenses" id="open-spend-alerts-dialog">
-    1. Accédez à **Organization &gt; Billing** dans la console ClickHouse Cloud.
-    2. Cliquez sur **Actions &gt; Add spend alerts**.
+    1. Accédez à **Organisation &gt; Facturation** dans la console ClickHouse Cloud.
+    2. Cliquez sur **Actions &gt; Add alertes de dépenses**.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Page Billing avec le menu Actions ouvert et Add spend alerts mis en évidence](/images/cloud/reference/billing/spend-alerts-actions.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Page Facturation avec le menu Actions ouvert et Add alertes de dépenses mis en évidence](/images/cloud/reference/billing/spend-alerts-actions.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="Configurer et enregistrer l’alerte" id="configure-and-save">
     1. Saisissez un montant d’alerte de dépenses en dollars ou en crédits par période de facturation.
-    2. Sélectionnez vos canaux de notification : **E-mail**, **UI** et/ou **Slack**.
+    2. Sélectionnez vos canaux de notification : **E-mail**, **UI** et/ou **Slack**.
     3. Cliquez sur **Save**.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Boîte de dialogue des alertes de dépenses de l’organisation avec limite de dépenses, alertes de seuil automatiques et canaux de notification](/images/cloud/reference/billing/spend-alerts-config.png)
-
-    </Frame>
-
+      <Frame>
+        ![Boîte de dialogue des alertes de dépenses de l’organisation avec limite de dépenses, alertes de seuil automatiques et canaux de notification](/images/cloud/reference/billing/spend-alerts-config.png)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="threshold-alerts">
-  ## Alertes de seuil automatiques
+  ## Alertes de seuil automatiques {#threshold-alerts}
 </div>
 
 Quatre alertes sont automatiquement créées et déclenchées en fonction du montant configuré pour votre alerte de dépenses :
@@ -79,7 +69,7 @@ Quatre alertes sont automatiquement créées et déclenchées en fonction du mon
 | **100%** | Le montant total des dépenses est atteint             | 10 $                    |
 
 <div id="notification-channels">
-  ## Canaux de notification
+  ## Canaux de notification {#notification-channels}
 </div>
 
 | Canal      | Description                                                                                                    |

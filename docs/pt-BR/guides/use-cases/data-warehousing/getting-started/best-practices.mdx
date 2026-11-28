@@ -195,13 +195,13 @@ Consulte [Gravando em lagos de dados](/pt-BR/guides/use-cases/data-warehousing/g
 
 ### Delta Lake {#delta-lake-settings}
 
-A partir da versão 25.6, o ClickHouse lê Delta Lake no S3 e no GCS por meio do kernel do Delta Lake em Rust. A configuração chama-se [`allow_delta_kernel_rs`](/pt-BR/reference/settings/session-settings/allow#allow_delta_kernel_rs) na versão 26.8 e posteriores, e `allow_experimental_delta_kernel_rs` nas versões 25.5 a 26.7. No Azure Blob Storage, use [deltaLakeAzure()](/pt-BR/reference/functions/table-functions/deltalake) com o leitor legado, porque o kernel fica desabilitado nesse ambiente. Sem o kernel, a poda de partições, o Feed de dados de alterações e a leitura de versões de snapshot não estão disponíveis.
+O ClickHouse lê dados do Delta Lake por meio do kernel Rust do Delta Lake (`delta-kernel-rs`). A partir da versão 26.11, ele passa a ser o único leitor de Delta Lake, e a configuração que o selecionava está obsoleta.
 
 #### Delta Kernel {#delta-kernel}
 
-A configuração do Delta kernel deve estar habilitada para poda de partições, Feed de dados de alterações e leitura de versões de snapshot. Ele vem habilitado por padrão no S3 e no GCS a partir da versão 25.5. Ao habilitá-la explicitamente, use o nome correspondente à sua versão do ClickHouse.
+Em versões anteriores à 26.11, a configuração do Delta kernel deve estar habilitada para poda de partições, feed de alterações de dados e leitura de versões de snapshot. Ele vem habilitado por padrão no S3 e no GCS a partir da versão 25.5. Sem o kernel, o ClickHouse usa um leitor legado que não oferece suporte a essas funcionalidades. Ao habilitá-la explicitamente, use o nome correspondente à sua versão do ClickHouse.
 
-Para a versão 26.8 e posteriores:
+Para as versões de 26.8 a 26.10:
 
 ```sql
 SET allow_delta_kernel_rs = 1;
