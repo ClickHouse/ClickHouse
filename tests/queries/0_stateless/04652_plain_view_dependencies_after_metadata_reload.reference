@@ -1,0 +1,13 @@
+--- stored definition of the view ---
+CREATE VIEW views_db.v (`id` UInt64) AS SELECT * FROM src
+--- dependents before the reload ---
+other_db	src	['views_db.v_xdb']
+views_db	src	['views_db.v']
+--- dependents after the reload ---
+other_db	src	['views_db.v_xdb']
+views_db	src	['views_db.v']
+--- the reloaded view reads the source it depends on ---
+42
+--- the source of the reloaded view is protected from DROP ---
+views_db.src (unqualified source of views_db.v): blocked
+other_db.src (qualified source of views_db.v_xdb): blocked
