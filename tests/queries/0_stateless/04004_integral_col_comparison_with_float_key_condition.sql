@@ -227,6 +227,19 @@ SELECT count() FROM test_nullable_int64 WHERE uid >= (1.0 / 0.0) SETTINGS force_
 SELECT count() FROM test_nullable_int64 WHERE uid < 9223372036854775808.0;
 SELECT count() FROM test_nullable_int64 WHERE uid >= 9223372036854775808.0 SETTINGS force_primary_key = 1, max_rows_to_read = 1;
 
+DROP TABLE IF EXISTS test_nullable_uint8_second_key;
+CREATE TABLE test_nullable_uint8_second_key (a UInt64, b Nullable(UInt8)) ENGINE = MergeTree ORDER BY (a, b) SETTINGS allow_nullable_key = 1, index_granularity = 1, index_granularity_bytes = 10485760;
+INSERT INTO test_nullable_uint8_second_key VALUES (1, 1), (2, NULL), (3, 3), (4, NULL);
+
+-- Nullable UInt8 as a second key column: a comparison folded to a constant must not count NULL key rows as exact matches
+SELECT count() FROM test_nullable_uint8_second_key WHERE a >= 2 AND b != 2.5 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, use_query_condition_cache = 0;
+SELECT count() FROM test_nullable_uint8_second_key WHERE a >= 2 AND b > -1.0 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, use_query_condition_cache = 0;
+SELECT count() FROM test_nullable_uint8_second_key WHERE a >= 2 AND b < 256.0 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, use_query_condition_cache = 0;
+SELECT count() FROM test_nullable_uint8_second_key WHERE a >= 2 AND NOT (b = 2.5) SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, use_query_condition_cache = 0;
+SELECT count() FROM test_nullable_uint8_second_key WHERE a >= 2 AND NOT (b != 2.5) SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, use_query_condition_cache = 0;
+SELECT count() FROM test_nullable_uint8_second_key WHERE a >= 2 AND b != 2.5 SETTINGS optimize_use_implicit_projections = 0, use_query_condition_cache = 0;
+SELECT count() FROM test_nullable_uint8_second_key WHERE a >= 2 AND b = 2.5 SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+
 DROP TABLE IF EXISTS test_int64_2pow53;
 CREATE TABLE test_int64_2pow53 (uid Int64) ENGINE = MergeTree ORDER BY uid SETTINGS index_granularity = 1, index_granularity_bytes = 10485760;
 INSERT INTO test_int64_2pow53 VALUES (9007199254740991), (9007199254740992), (9007199254740993), (9007199254740994);
