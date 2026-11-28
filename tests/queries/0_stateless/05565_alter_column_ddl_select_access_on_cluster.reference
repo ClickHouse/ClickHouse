@@ -1,0 +1,28 @@
+-- on cluster, not granted column
+ACCESS_DENIED SELECT ON db.t
+-- on cluster, identifier without a column
+ACCESS_DENIED SELECT ON db.t
+-- on cluster, granted column
+ACCESS_DENIED SELECT ON db.t
+-- on cluster, whole table granted
+OK
+-- on cluster, constant
+OK
+-- on cluster, type of the initiator
+ACCESS_DENIED SELECT(restricted) ON db.t
+-- on cluster, table only on the hosts
+ACCESS_DENIED SELECT ON db.t_absent
+-- on cluster, type change, table only on the hosts
+ACCESS_DENIED SELECT(x) ON db.t_absent
+-- on cluster, alias without target grants
+ACCESS_DENIED ALTER ON db.t
+-- on cluster, alias with target grants
+OK
+-- local, identifier without a column
+(UNKNOWN_IDENTIFIER)
+-- schema
+id
+restricted
+oc_ok
+oc_const
+oc_via_alias

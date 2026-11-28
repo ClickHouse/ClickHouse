@@ -5,8 +5,10 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InsertDeduplication.h>
+#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -405,6 +407,7 @@ void StorageAlias::checkAlterIsPossible(const AlterCommands & commands, ContextP
 {
     /// `InterpreterAlterQuery` checks the export grants (`SELECT` on the table and its row policy) on the name in the query,
     /// which is the alias, not the target. The refusal does not need the user, so it also holds on the hosts of `ON CLUSTER`.
+    const bool is_secondary_replay = isSecondaryDDLReplay(local_context);
     for (const auto & command : commands)
     {
         if (command.type == AlterCommand::MODIFY_SETTING && !StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes).empty())
@@ -412,6 +415,38 @@ void StorageAlias::checkAlterIsPossible(const AlterCommands & commands, ContextP
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Changing the settings that send the data of a table elsewhere through an alias is not supported. "
+                "Execute the ALTER directly on the target table: {}.{}",
+                backQuoteIfNeed(target_database),
+                backQuoteIfNeed(target_table));
+        }
+
+        /// A replica replaying a committed entry applies what its initiator, possibly of an older version, accepted.
+        if (command.ignore || is_secondary_replay)
+            continue;
+
+        bool reads_target_columns = false;
+        if ((command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::MODIFY_COLUMN) && command.default_expression)
+        {
+            auto target = getTargetTable();
+            const auto target_metadata = target->getInMemoryMetadataPtr(local_context, false);
+            reads_target_columns = !InterpreterAlterQuery::getColumnsReadByColumnExpression(
+                *command.default_expression, target_metadata->getColumnsWithVirtuals(), target->supportsSubcolumns()).empty();
+        }
+
+        bool changes_type = false;
+        if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type && !command.add_enum_values)
+        {
+            const auto target_metadata = getTargetTable()->getInMemoryMetadataPtr(local_context, false);
+            const auto * column = target_metadata->getColumns().tryGet(command.column_name);
+            changes_type = !column || !column->type->equals(*command.data_type);
+        }
+
+        if (reads_target_columns || changes_type || command.type == AlterCommand::RENAME_COLUMN)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "A column expression that reads columns of the target table, a column type change, or a column rename, cannot be "
+                "applied through an alias, because the target's grants are not checked for it. "
                 "Execute the ALTER directly on the target table: {}.{}",
                 backQuoteIfNeed(target_database),
                 backQuoteIfNeed(target_table));

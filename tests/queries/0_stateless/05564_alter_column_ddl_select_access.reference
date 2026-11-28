@@ -1,0 +1,155 @@
+-- alias
+ACCESS_DENIED SELECT(restricted)
+-- default
+ACCESS_DENIED SELECT(restricted)
+-- materialized
+ACCESS_DENIED SELECT(restricted)
+-- ephemeral
+ACCESS_DENIED SELECT(restricted)
+-- inside a lambda
+ACCESS_DENIED SELECT(restricted)
+-- qualified
+ACCESS_DENIED SELECT(restricted)
+-- shadowed by an expression alias
+ACCESS_DENIED SELECT(restricted)
+-- modify alias
+ACCESS_DENIED SELECT(restricted)
+-- modify default
+ACCESS_DENIED SELECT(restricted)
+-- multiple commands
+ACCESS_DENIED SELECT(restricted)
+-- nested prefix
+ACCESS_DENIED SELECT(n.secret)
+-- subcolumn of an alias column
+ACCESS_DENIED SELECT(pub_tup)
+-- ephemeral column
+ACCESS_DENIED SELECT(restricted)
+-- ephemeral column made stored
+ACCESS_DENIED SELECT(eph)
+-- alias table, expression
+NOT_IMPLEMENTED
+-- alias table, rename
+NOT_IMPLEMENTED
+-- alias table, modify
+NOT_IMPLEMENTED
+-- alias table, constant
+OK
+-- alias table, lambda only
+OK
+-- alias table, type change
+NOT_IMPLEMENTED
+-- alias table, same type
+OK
+-- alias table, modify to a constant
+OK
+-- alias table, missing column
+OK
+-- alias table, rename of a missing column
+OK
+-- alias table without target grants, same type
+ACCESS_DENIED ALTER ON t
+-- alias table without target grants, type change
+ACCESS_DENIED ALTER ON t
+-- alias table without column grant, same type
+ACCESS_DENIED ALTER ON t
+-- alias table without column grant, type change
+ACCESS_DENIED ALTER ON t
+-- alias table with a dropped target
+ACCESS_DENIED ALTER ON t_gone
+-- alias table without alias grants
+ACCESS_DENIED ON t_alias
+-- rename
+ACCESS_DENIED SELECT(restricted)
+-- granted column
+OK
+-- modify, granted column
+OK
+-- rename, granted column
+OK
+-- type change, granted column
+OK
+-- type change by a NULL modifier
+ACCESS_DENIED SELECT(restricted)
+-- lambda parameter
+OK
+-- field of a lambda parameter
+OK
+-- granted alias column
+OK
+-- not granted column
+ACCESS_DENIED SELECT(restricted)
+-- not granted virtual column
+ACCESS_DENIED SELECT(_table)
+-- granted virtual column
+OK
+-- type change, granted subcolumn
+ACCESS_DENIED SELECT(tup)
+-- same type, granted subcolumn
+OK
+-- same type by a NULL modifier
+OK
+-- granted subcolumn
+OK
+-- not granted subcolumn
+ACCESS_DENIED SELECT(tup)
+-- subcolumn of a granted column
+OK
+-- subcolumn of a revoked column
+ACCESS_DENIED SELECT(tup)
+-- quoted dotted column
+OK
+-- full access
+OK
+-- rename, then expression
+ACCESS_DENIED SELECT ON t_shadow
+-- rename, then modify
+ACCESS_DENIED SELECT ON t_shadow
+-- drop, then expression
+ACCESS_DENIED SELECT ON t_shadow
+-- expression, then drop
+ACCESS_DENIED SELECT ON t_shadow
+-- modify, then drop
+ACCESS_DENIED SELECT ON t_shadow
+-- expression, then rename
+ACCESS_DENIED SELECT ON t_shadow
+-- constant expression, then rename
+OK
+-- table grant, expression, then rename
+OK
+-- dictionary identifier
+OK
+-- full access, read
+F-S1
+F-S2
+-- shadowing alias, read
+k	public-o1	o1
+S1
+-- added columns
+1	[2,3]	['e1']	a1	q1
+2	[3,4]	['e2']	a2	q2
+-- schema
+id
+restricted
+other
+pub
+tup
+arr
+n.secret
+n.x
+pub_tup
+eph
+q.k
+k
+nul
+via_alias_const
+via_alias_lambda
+ok_default2
+c_lambda
+c_field
+c_pub
+p_virtual
+s_a
+c_sub
+d_quoted
+f
+c_dict

@@ -5,14 +5,19 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Access/ContextAccess.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Access/User.h>
 #include <Backups/BackupsWorker.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/dataTypeToAST.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
@@ -30,14 +35,17 @@
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetadataCache.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IndicesDescription.h>
@@ -46,6 +54,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -584,6 +593,191 @@ void checkNoRowPolicyForExport(const ASTAlterQuery & alter, const String & datab
     }
 }
 
+using IdentifierParts = VectorWithMemoryTracking<String>;
+
+/// Identifiers that can name a column: a lambda parameter, or a field of it, resolves to the parameter or throws.
+void collectColumnIdentifiers(
+    const IAST & ast, VectorWithMemoryTracking<String> & lambda_parameters, SetWithMemoryTracking<IdentifierParts> & identifiers)
+{
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        IdentifierParts parts(identifier->name_parts.begin(), identifier->name_parts.end());
+        if (parts.empty())
+            parts.push_back(identifier->name());
+        if (std::ranges::find(lambda_parameters, parts.front()) == lambda_parameters.end())
+            identifiers.insert(std::move(parts));
+        return;
+    }
+
+    if (ast.as<ASTSubquery>())
+        return;
+
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+    {
+        const size_t outer_size = lambda_parameters.size();
+        std::ranges::move(RequiredSourceColumnsMatcher::extractNamesFromLambda(*function), std::back_inserter(lambda_parameters));
+        collectColumnIdentifiers(*function->arguments->children[1], lambda_parameters, identifiers);
+        lambda_parameters.resize(outer_size);
+        return;
+    }
+
+    for (const auto & child : ast.children)
+        collectColumnIdentifiers(*child, lambda_parameters, identifiers);
+}
+
+struct ReadColumnsState
+{
+    const ColumnsDescription & columns;
+    bool supports_subcolumns;
+    NameSet expanded_ephemerals;
+    size_t max_column_name_size = 0;
+    /// The columns `n.a`, `n.b` by `n`, removed once expanded.
+    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<const ColumnDescription *>> nested_prefixes{};
+};
+
+void addColumnsReadBy(const IdentifierParts & parts, ReadColumnsState & state, NameSet & result);
+
+/// An EPHEMERAL column also carries what its expression reads, and the same ALTER can make it a stored column.
+void addColumnRead(const ColumnDescription & column, ReadColumnsState & state, NameSet & result)
+{
+    result.insert(column.name);
+    if (column.default_desc.kind != ColumnDefaultKind::Ephemeral || !column.default_desc.expression
+        || !state.expanded_ephemerals.insert(column.name).second)
+        return;
+
+    SetWithMemoryTracking<IdentifierParts> identifiers;
+    VectorWithMemoryTracking<String> lambda_parameters;
+    collectColumnIdentifiers(*column.default_desc.expression, lambda_parameters, identifiers);
+    for (const auto & identifier : identifiers)
+        addColumnsReadBy(identifier, state, result);
+}
+
+/// What checking `SELECT identifier FROM t` requires; any leading parts may be a table qualifier.
+void addColumnsReadBy(const IdentifierParts & parts, ReadColumnsState & state, NameSet & result)
+{
+    /// A qualifier is a table or `database.table`.
+    for (size_t first = 0; first < std::min<size_t>(parts.size(), 3); ++first)
+    {
+        String suffix;
+        for (size_t i = first; i < parts.size(); ++i)
+        {
+            if (i != first)
+                suffix += '.';
+            suffix += parts[i];
+        }
+
+        if (const auto * column = state.columns.tryGet(suffix))
+        {
+            addColumnRead(*column, state, result);
+            continue;
+        }
+
+        bool is_subcolumn = false;
+        for (const auto & [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(suffix))
+        {
+            if (column_name.size() > state.max_column_name_size)
+                break;
+            const auto * column = state.columns.tryGet(String(column_name));
+            if (!column || !column->type->tryGetSubcolumnType(subcolumn_name))
+                continue;
+
+            is_subcolumn = true;
+            /// An ALIAS column has no subcolumns of its own: the read path extracts them from the whole alias.
+            if (state.supports_subcolumns && column->default_desc.kind != ColumnDefaultKind::Alias
+                && column->default_desc.kind != ColumnDefaultKind::Ephemeral)
+                result.insert(suffix);
+            else
+                addColumnRead(*column, state, result);
+        }
+
+        /// `n` over the columns `n.a`, `n.b` reads them as one Nested.
+        if (auto it = state.nested_prefixes.find(suffix); !is_subcolumn && !suffix.contains('.') && it != state.nested_prefixes.end())
+        {
+            const auto members = std::move(it->second);
+            state.nested_prefixes.erase(it);
+            for (const auto * column : members)
+                addColumnRead(*column, state, result);
+        }
+    }
+}
+
+/// Separate from `getRequiredAccessForCommand`: `KILL MUTATION` reuses that, and stopping a mutation reads nothing.
+void addRequiredSelectForCommand(
+    AccessRightsElements & required_access,
+    const ASTAlterCommand & command,
+    const String & database,
+    const String & table,
+    const StoragePtr & storage,
+    StorageMetadataHandle & metadata,
+    bool bind_to_table,
+    const ContextPtr & context)
+{
+    if (command.type == ASTAlterCommand::RENAME_COLUMN)
+    {
+        required_access.emplace_back(AccessType::SELECT, database, table, getIdentifierName(command.column));
+        return;
+    }
+
+    if (command.type != ASTAlterCommand::ADD_COLUMN && command.type != ASTAlterCommand::MODIFY_COLUMN)
+        return;
+
+    if (storage && bind_to_table && !metadata)
+        metadata = storage->getInMemoryMetadataPtr(context, false);
+
+    const auto & declaration = command.col_decl->as<const ASTColumnDeclaration &>();
+    /// Converting the values can give them other subcolumn names, e.g. unnamed `Tuple` elements become named ones.
+    if (command.type == ASTAlterCommand::MODIFY_COLUMN && declaration.getType())
+    {
+        const auto * column = metadata ? metadata->getColumns().tryGet(declaration.name) : nullptr;
+        auto new_type = DataTypeFactory::instance().tryGet(declaration.getType());
+        if (new_type && declaration.null_modifier.value_or(false))
+            new_type = makeNullable(new_type);
+        if (!column || !new_type || !column->type->equals(*new_type))
+            required_access.emplace_back(AccessType::SELECT, database, table, declaration.name);
+    }
+
+    const auto expression = declaration.getDefaultExpression();
+    if (!expression)
+        return;
+
+    if (!metadata)
+    {
+        SetWithMemoryTracking<IdentifierParts> identifiers;
+        VectorWithMemoryTracking<String> lambda_parameters;
+        collectColumnIdentifiers(*expression, lambda_parameters, identifiers);
+        if (!identifiers.empty())
+            required_access.emplace_back(AccessType::SELECT, database, table);
+        return;
+    }
+
+    const NameSet read_columns = InterpreterAlterQuery::getColumnsReadByColumnExpression(
+        *expression, metadata->getColumnsWithVirtuals(), storage->supportsSubcolumns());
+    Names sorted(read_columns.begin(), read_columns.end());
+    std::ranges::sort(sorted);
+    for (auto & column : metadata->getColumns().getColumnNamesForSelectAccessCheck(sorted, context, storage->getStorageID()))
+        required_access.emplace_back(AccessType::SELECT, database, table, std::move(column));
+}
+
+}
+
+NameSet InterpreterAlterQuery::getColumnsReadByColumnExpression(
+    const IAST & expression, const ColumnsDescription & columns, bool supports_subcolumns)
+{
+    SetWithMemoryTracking<IdentifierParts> identifiers;
+    VectorWithMemoryTracking<String> lambda_parameters;
+    collectColumnIdentifiers(expression, lambda_parameters, identifiers);
+
+    ReadColumnsState state{columns, supports_subcolumns, {}};
+    for (const auto & column : columns)
+    {
+        state.max_column_name_size = std::max(state.max_column_name_size, column.name.size());
+        if (const auto dot = column.name.find('.'); dot != String::npos)
+            state.nested_prefixes[column.name.substr(0, dot)].push_back(&column);
+    }
+    NameSet result;
+    for (const auto & identifier : identifiers)
+        addColumnsReadBy(identifier, state, result);
+    return result;
 }
 
 InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_)
@@ -985,6 +1179,35 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr &
         if (command.type == ASTAlterCommand::MODIFY_QUERY && !sql_security_is_being_replaced)
             addRequiredAccessForModifyQuerySQLSecurity(required_access, storage);
     }
+
+    /// The hosts of a `Replicated` database or of `ON CLUSTER` forward an ALTER of an `Alias` without the user. Its target
+    /// is authorized after the alias and before anything below consults the target's metadata.
+    if (const auto alias = castStorage<StorageAlias>(storage, DeferredTable::Load))
+    {
+        if (!getContext()->getAccess()->isGranted(required_access))
+            return required_access;
+        for (const auto & [database, table] : alias->getTargetChain())
+            required_access.emplace_back(AccessType::ALTER, database, table);
+        if (!getContext()->getAccess()->isGranted(required_access))
+            return required_access;
+    }
+
+    /// An expression binds to the table as it is now, except on the hosts of `ON CLUSTER`, which have their own definition,
+    /// and after a RENAME COLUMN or DROP COLUMN in the same ALTER.
+    bool bind_to_table = alter.cluster.empty();
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type == ASTAlterCommand::RENAME_COLUMN
+            || (command.type == ASTAlterCommand::DROP_COLUMN && !command.clear_column && !command.partition))
+            bind_to_table = false;
+    }
+
+    StorageMetadataHandle metadata;
+    for (const auto & child : alter.command_list->children)
+        addRequiredSelectForCommand(
+            required_access, child->as<ASTAlterCommand &>(), alter.getDatabase(), alter.getTable(), storage, metadata,
+            bind_to_table, getContext());
 
     return required_access;
 }

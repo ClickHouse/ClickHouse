@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
@@ -11,6 +12,7 @@ namespace DB
 class AccessRightsElements;
 class ASTAlterCommand;
 class ASTAlterQuery;
+class ColumnsDescription;
 
 
 /** Allows you add or remove a column in the table.
@@ -43,6 +45,10 @@ public:
         RowExistsColumnKind row_exists_column_kind,
         const ContextPtr & context_,
         const String & engine = {});
+
+    /// The columns and subcolumns a column with this DEFAULT/MATERIALIZED/ALIAS/EPHEMERAL expression would expose, named as a
+    /// query reading them names them.
+    static NameSet getColumnsReadByColumnExpression(const IAST & expression, const ColumnsDescription & columns, bool supports_subcolumns);
 
     /// Returns unknown when the target storage is not available on the submitting host.
     static RowExistsColumnKind getRowExistsColumnKind(const StoragePtr & storage, const ContextPtr & context_);
