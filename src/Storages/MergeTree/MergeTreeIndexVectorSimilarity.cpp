@@ -280,11 +280,14 @@ void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr,
 
     UInt64 dimensions = 0;
     readIntBinary(dimensions, istr);
-    index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 
-    index->deserialize(istr);
+    /// Load into a local object and publish it only when it is complete, so that `index` never points to a half-loaded index
+    /// and the object being loaded cannot be destroyed by somebody else replacing `index`.
+    auto new_index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+    new_index->deserialize(istr);
+    auto statistics = new_index->getStatistics();
+    index = std::move(new_index);
 
-    auto statistics = index->getStatistics();
     LOG_TRACE(logger, "Loaded vector similarity index: {}", statistics.toString());
 }
 

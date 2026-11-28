@@ -215,6 +215,12 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
     }
     else
     {
+        /// The caller reuses `granule` across the marks of a part. If the previous mark was read while the part was still Active,
+        /// `granule` is the object owned by the cache and shared with other queries. Deserializing into it would overwrite the
+        /// cache entry of the previous mark and race with the queries which use it, so load into a new granule instead.
+        if (index->isVectorSimilarityIndex())
+            granule = nullptr;
+
         load_func(granule);
     }
 }
