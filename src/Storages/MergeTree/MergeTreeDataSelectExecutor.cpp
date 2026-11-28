@@ -71,6 +71,9 @@
 #include <Common/quoteString.h>
 #include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
+#include <Interpreters/allocateCPUSlots.h>
+#include <Common/Scheduler/CurrentCPULease.h>
+#include <Common/scope_guard_safe.h>
 #include <base/sleep.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -140,6 +143,8 @@ namespace Setting
     extern const SettingsBool use_partition_minmax_for_primary_key_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
+    extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool use_concurrency_control_for_indexes;
 }
 
 namespace FailPoints
@@ -160,6 +165,155 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_STREAM;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+
+/// The CPU slot that the current thread runs on. It is created and destroyed on that thread:
+/// a CPU lease charges the workload with the CPU time that the thread has spent in between.
+/// While the thread waits for a read (e.g. from object storage), `CPULeaseParkGuard` gives the slot to other threads.
+struct CPUSlotHolder : boost::noncopyable
+{
+    CPUSlotHolder(AcquiredSlotPtr slot_, bool preemptible)
+        : slot(std::move(slot_))
+        , previous_lease(getCurrentCPULease())
+    {
+        if (auto * lease = dynamic_cast<ISlotLease *>(slot.get()))
+        {
+            lease->startConsumption();
+            if (lease->isParkingEnabled())
+                setCurrentCPULease(lease);
+            if (preemptible)
+                renewable_lease = lease;
+        }
+    }
+
+    ~CPUSlotHolder() { setCurrentCPULease(previous_lease); }
+
+    /// Reports the CPU time spent to the workload scheduler, which can preempt the thread in return.
+    /// Returns false if it did: the slot is lost, and the thread has to stop.
+    bool renew()
+    {
+        if (!renewable_lease)
+            return true;
+
+        /// Once a millisecond at most, like `PipelineExecutor`: `ISlotLease::renew` makes a system call.
+        const UInt64 now_ns = clock_gettime_ns();
+        if (now_ns - last_renew_ns < 1'000'000)
+            return true;
+        last_renew_ns = now_ns;
+        return renewable_lease->renew();
+    }
+
+    AcquiredSlotPtr slot;
+    ISlotLease * previous_lease;
+    ISlotLease * renewable_lease = nullptr;
+    UInt64 last_renew_ns = 0;
+};
+
+/// Calls `process_part(part_index)` for the parts [0, num_parts), until one of the calls returns false or throws.
+/// The parts are taken in order by the calling thread and by up to `num_threads - 1` threads of a pool.
+///
+/// With `use_concurrency_control` every thread runs on a CPU slot (see `allocateCPUSlots`), but none waits for one:
+/// - The calling thread always runs: it gets a slot at once and never renews it. Otherwise it could wait forever for
+///   the slot that it holds itself as a thread of `PipelineExecutor` (`mergeTreeAnalyzeIndexes`), and `KILL QUERY`
+///   does not interrupt such a wait. In return, the workload is not charged with its CPU time.
+/// - A pool thread is started for each slot granted along the way, and stops once it is preempted.
+template <typename ProcessPart>
+void processPartsInParallel(size_t num_parts, size_t num_threads, bool use_concurrency_control, const ProcessPart & process_part)
+{
+    if (num_threads <= 1)
+    {
+        for (size_t part_index = 0; part_index < num_parts; ++part_index)
+        {
+            if (!process_part(part_index))
+                return;
+        }
+        return;
+    }
+
+    SlotAllocationPtr cpu_slots = use_concurrency_control
+        ? allocateCPUSlots(num_threads, /*lazy_allocation=*/ false, /*blocking=*/ false)
+        : std::make_shared<GrantedAllocation>(num_threads);
+
+    /// With `cpu_slot_preemption` disabled the slots only limit the number of threads, so no thread renews its slot.
+    auto query_context = CurrentThread::tryGetQueryContext();
+    const bool preemption = query_context && query_context->getCPUSlotPreemption();
+
+    std::atomic<size_t> next_part_index = 0;
+    std::atomic<bool> stopped = false;
+
+    /// Returns false if no part is left or the processing is stopped.
+    auto process_next_part = [&]
+    {
+        if (stopped.load(std::memory_order_relaxed))
+            return false;
+
+        const size_t part_index = next_part_index.fetch_add(1, std::memory_order_relaxed);
+        if (part_index >= num_parts)
+            return false;
+
+        try
+        {
+            if (!process_part(part_index))
+                stopped.store(true, std::memory_order_relaxed);
+        }
+        catch (...)
+        {
+            stopped.store(true, std::memory_order_relaxed);
+            throw;
+        }
+        return true;
+    };
+
+    /// Declared after everything its jobs use: its destructor joins them.
+    ThreadPool pool(
+        CurrentMetrics::MergeTreeDataSelectExecutorThreads,
+        CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
+        CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
+        num_threads - 1);
+
+    /// If the calling thread throws, stop the jobs before the pool joins them.
+    SCOPE_EXIT({ stopped.store(true, std::memory_order_relaxed); });
+
+    /// Starts a thread for each granted slot, but only while parts are left: a thread that finds no part
+    /// releases its slot, which is granted here again, and so on without an end.
+    auto start_threads = [&]
+    {
+        while (next_part_index.load(std::memory_order_relaxed) < num_parts && !stopped.load(std::memory_order_relaxed))
+        {
+            auto granted_slot = cpu_slots->tryAcquire();
+            if (!granted_slot)
+                break;
+
+            pool.scheduleOrThrowOnError(
+                attachedJob(ThreadName::MERGETREE_INDEX, [&process_next_part, preemption, slot = std::move(granted_slot),
+                 component_name = Coordination::getCurrentComponent()] mutable
+                {
+                    /// ThreadGroupSwitcher does not carry the Keeper component, so propagate it
+                    /// explicitly: index analysis may read from a Keeper-backed disk.
+                    auto local_component_guard = Coordination::setCurrentComponent(component_name);
+                    CPUSlotHolder slot_holder(std::move(slot), preemption);
+                    while (process_next_part() && slot_holder.renew())
+                        ;
+                }));
+        }
+    };
+
+    {
+        /// Main thread cannot be preemptible, since we need at least one thread which will do the job and check for cancellation
+        CPUSlotHolder slot_holder(cpu_slots->acquire(), /*preemptible=*/ false);
+        /// Slots are granted at any time, also after a pool thread has been preempted, so check for them before every part.
+        do
+        {
+            start_threads();
+        } while (process_next_part());
+    }
+
+    pool.wait();
+}
+
 }
 
 
@@ -277,76 +431,41 @@ bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
         num_threads = std::min<size_t>(num_threads, settings[Setting::max_threads_for_indexes]);
     num_threads = std::max<size_t>(num_threads, 1);
 
-    /// Windows are consumed in order, so the decision and the exception are those of the serial analysis.
-    std::vector<size_t> window_marks(num_threads);
-    std::vector<std::exception_ptr> window_exceptions(num_threads);
-    /// Declared after the vectors to be destroyed first: its destructor joins the jobs that still use them.
-    std::optional<ThreadPool> pool;
+    /// Loading the index dominates the analysis of a part, so other threads only help if there are indexes to load.
+    if (num_threads > 1 && std::ranges::count_if(parts, [](const auto & part) { return !part.data_part->isIndexInMemory(); }) <= 1)
+        num_threads = 1;
+    else
+        LOG_TRACE(log, "Analyzing the primary key of parts in up to {} threads to decide whether to load statistics", num_threads);
 
     /// Stop as soon as the limit is reached, so a large read costs the analysis of a few parts only.
-    size_t marks = 0;
-    for (size_t window_begin = 0; window_begin < parts.size(); window_begin += num_threads)
+    /// The parts are taken in order, so the analyzed parts are a prefix of `parts`, which has at least `limit` marks
+    /// or an exception if the analysis has stopped early: the decision and the exception are those of the serial analysis.
+    std::vector<size_t> part_marks(parts.size());
+    std::vector<std::exception_ptr> part_exceptions(parts.size());
+    std::atomic<size_t> marks_analyzed = 0;
+    processPartsInParallel(parts.size(), num_threads, settings[Setting::use_concurrency_control] && settings[Setting::use_concurrency_control_for_indexes], [&](size_t part_index)
     {
-        const size_t window_end = std::min(parts.size(), window_begin + num_threads);
-
-        size_t indexes_to_load = 0;
-        if (num_threads > 1)
+        try
         {
-            for (size_t part_index = window_begin; part_index < window_end; ++part_index)
-                indexes_to_load += !parts[part_index].data_part->isIndexInMemory();
+            part_marks[part_index] = probe_part(parts[part_index]);
         }
-
-        if (indexes_to_load <= 1)
+        catch (...)
         {
-            for (size_t part_index = window_begin; part_index < window_end; ++part_index)
-            {
-                marks += probe_part(parts[part_index]);
-                if (marks >= limit)
-                    return false;
-            }
-            continue;
+            part_exceptions[part_index] = std::current_exception();
+            return false;
         }
+        return marks_analyzed.fetch_add(part_marks[part_index], std::memory_order_relaxed) + part_marks[part_index] < limit;
+    });
 
-        if (!pool)
-        {
-            LOG_TRACE(log, "Analyzing the primary key of parts in {} threads to decide whether to load statistics", num_threads);
-            pool.emplace(
-                CurrentMetrics::MergeTreeDataSelectExecutorThreads,
-                CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
-                CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
-                num_threads);
-        }
+    size_t marks = 0;
+    for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+    {
+        if (part_exceptions[part_index])
+            std::rethrow_exception(part_exceptions[part_index]);
 
-        for (size_t part_index = window_begin; part_index < window_end; ++part_index)
-        {
-            pool->scheduleOrThrowOnError(
-                attachedJob(ThreadName::MERGETREE_INDEX, [&, part_index, slot = part_index - window_begin,
-                 component_name = Coordination::getCurrentComponent()]
-                {
-                    auto local_component_guard = Coordination::setCurrentComponent(component_name);
-                    try
-                    {
-                        window_marks[slot] = probe_part(parts[part_index]);
-                    }
-                    catch (...)
-                    {
-                        window_exceptions[slot] = std::current_exception();
-                    }
-                }));
-        }
-
-        pool->wait();
-
-        for (size_t part_index = window_begin; part_index < window_end; ++part_index)
-        {
-            const size_t slot = part_index - window_begin;
-            if (window_exceptions[slot])
-                std::rethrow_exception(window_exceptions[slot]);
-
-            marks += window_marks[slot];
-            if (marks >= limit)
-                return false;
-        }
+        marks += part_marks[part_index];
+        if (marks >= limit)
+            return false;
     }
 
     return true;
@@ -1670,7 +1789,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
     if (settings[Setting::max_threads_for_indexes])
     {
-        num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
+        num_threads = std::min<size_t>(num_threads, settings[Setting::max_threads_for_indexes]);
     }
 
     bool use_skip_indexes_for_disjunctions = useSkipIndexesForDisjunctions(
@@ -1829,47 +1948,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         LOG_TRACE(log, "Filtering marks by primary and secondary keys");
 
-        if (num_threads <= 1)
+        processPartsInParallel(parts_with_ranges.size(), num_threads, settings[Setting::use_concurrency_control] && settings[Setting::use_concurrency_control_for_indexes], [&](size_t part_index)
         {
-            for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
-                process_part(part_index);
-        }
-        else
-        {
-            /// Outlives `pool`, whose destructor joins the jobs that still read it when scheduling throws.
-            std::atomic<size_t> next_part_index = 0;
-
-            /// Parallel loading and filtering of data parts.
-            ThreadPool pool(
-                CurrentMetrics::MergeTreeDataSelectExecutorThreads,
-                CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
-                CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
-                num_threads);
-
-            const size_t num_jobs = std::min(num_threads, parts_with_ranges.size());
-            for (size_t job = 0; job < num_jobs; ++job)
-            {
-                pool.scheduleOrThrowOnError(
-                    attachedJob(ThreadName::MERGETREE_INDEX, [&, component_name = Coordination::getCurrentComponent()]
-                    {
-                        /// ThreadGroupSwitcher does not carry the Keeper component, so propagate it
-                        /// explicitly: skip-index analysis below may read from a Keeper-backed disk.
-                        auto local_component_guard = Coordination::setCurrentComponent(component_name);
-
-                        /// The pool is finished once a job has thrown or its destructor has started, then the other parts are abandoned.
-                        while (!pool.isFinished())
-                        {
-                            const size_t part_index = next_part_index.fetch_add(1, std::memory_order_relaxed);
-                            if (part_index >= parts_with_ranges.size())
-                                break;
-
-                            process_part(part_index);
-                        }
-                    }));
-            }
-
-            pool.wait();
-        }
+            process_part(part_index);
+            return true;
+        });
 
     }
 
