@@ -4,6 +4,7 @@
 #include <Coordination/tests/gtest_coordination_common.h>
 
 #include <Coordination/KeeperLogStore.h>
+#include <Disks/DiskEncrypted.h>
 #include <base/defines.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
@@ -453,6 +454,55 @@ TEST_P(CoordinationTestWithCompression, ChangelogReadWrite)
     EXPECT_EQ(entries_from_range_read->size(), entries_from_range->size());
     EXPECT_EQ(10, entries_from_range->size());
 }
+
+#if USE_SSL
+/// Without `force_sync`, a flush on `DiskEncrypted` must still pass the encrypted records to the file.
+TEST_P(CoordinationTestWithCompression, ChangelogTestEncryptedDisk)
+{
+    ChangelogDirTest test("./logs");
+    auto disk_settings = std::make_unique<DB::DiskEncryptedSettings>();
+    disk_settings->wrapped_disk = std::make_shared<DB::DiskLocal>("LogDisk", "./logs");
+    disk_settings->current_algorithm = DB::FileEncryption::Algorithm::AES_128_CTR;
+    disk_settings->current_key = DB::SecretString(16, 'k');
+    disk_settings->current_key_fingerprint = DB::FileEncryption::calculateKeyFingerprint(disk_settings->current_key);
+    disk_settings->all_keys[disk_settings->current_key_fingerprint] = disk_settings->current_key;
+    this->keeper_context->setLogDisk(std::make_shared<DB::DiskEncrypted>("EncryptedLogDisk", std::move(disk_settings)));
+
+    DB::LogFileSettings settings{
+        .force_sync = false, .compress_logs = this->enable_compression, .latest_logs_cache_entry_count_threshold = 1};
+
+    /// Appends 10 entries and reads the second of them, which is not in the cache anymore if the log is uncompressed.
+    const auto append_and_read = [](DB::KeeperLogStore & changelog, size_t first_term)
+    {
+        const auto first_index = changelog.next_slot();
+        for (size_t i = 0; i < 10; ++i)
+        {
+            auto entry = getLogEntry("hello world", first_term + i);
+            changelog.append(entry);
+        }
+        changelog.end_of_append_batch(0, 0);
+        waitDurableLogs(changelog);
+        changelog.end_of_append_batch(0, 0);
+        EXPECT_EQ(changelog.entry_at(first_index + 1)->get_term(), first_term + 1);
+    };
+
+    {
+        DB::KeeperLogStore changelog(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        changelog.init(0, 0);
+        append_and_read(changelog, 100);
+
+        /// The writer is still open, so the reader gets only what a killed process would leave in the file.
+        DB::KeeperLogStore changelog_reader(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        changelog_reader.init(0, 0);
+        EXPECT_EQ(changelog_reader.size(), 10);
+    }
+
+    /// The positions of the entries appended after a restart must count what the file already had.
+    DB::KeeperLogStore changelog(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    changelog.init(0, 0);
+    append_and_read(changelog, 200);
+}
+#endif
 
 TEST_P(CoordinationTestWithCompression, ChangelogWriteAt)
 {

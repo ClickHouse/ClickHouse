@@ -348,6 +348,9 @@ public:
 
             auto latest_log_disk = getLatestLogDisk();
             chassert(file_description->disk == latest_log_disk);
+            if (!dynamic_cast<const DiskLocal *>(latest_log_disk.get()))
+                initial_file_size = mode == WriteMode::Append && latest_log_disk->existsFile(file_description->path)
+                    ? latest_log_disk->getFileSize(file_description->path) : 0;
             file_buf = latest_log_disk->writeFile(file_description->path, DBMS_DEFAULT_BUFFER_SIZE, mode);
             chassert(file_buf);
             last_index_written.reset();
@@ -473,7 +476,12 @@ public:
                 }
             }
             else
+            {
                 file_buffer->next();
+                /// The buffer of `DiskEncrypted` only encrypts into the buffer of the file it wraps.
+                if (auto * decorator = dynamic_cast<WriteBufferDecorator<WriteBufferFromFileBase> *>(file_buffer))
+                    decorator->getNestedBuffer()->next();
+            }
         }
         entry_storage.addLogLocations(std::move(unflushed_indices_with_log_location));
         unflushed_indices_with_log_location.clear();
