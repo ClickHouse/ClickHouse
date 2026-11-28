@@ -1,0 +1,9 @@
+--- a subcolumn with another precision than the column
+event = if(equals(toTypeName(t_sub.event), \'DateTime64(3)\'), toDateTime64(\'2020-01-01 00:00:00.500\', 3, \'Asia/Tokyo\'), toDateTime(\'2020-01-01 00:00:00.500\', \'Asia/Tokyo\')))
+2
+--- a String subcolumn
+event = \'2020-01-01 00:00:00\')
+2
+--- a Memory table, which runs the mutation in the session
+1
+2

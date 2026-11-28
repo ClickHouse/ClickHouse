@@ -1,0 +1,14 @@
+--- CREATE
+TTL if(event = toDateTime64(\'1960-01-01 00:00:00\', 0, \'UTC\'), toDateTime(\'2000-01-01 00:00:00\'), toDateTime(\'2100-01-01 00:00:00\'))
+1
+2
+--- MODIFY TTL
+TTL if(event = toDateTime64(\'1960-01-01 00:00:00\', 0, \'UTC\'), toDateTime(\'2000-01-01 00:00:00\'), toDateTime(\'2100-01-01 00:00:00\'))
+1
+2
+--- a DateTime element of a Tuple column
+TTL if(n.ts = toDateTime64(\'1960-01-01 00:00:00\', 0, \'UTC\'), toDateTime(\'2000-01-01 00:00:00\'), toDateTime(\'2100-01-01 00:00:00\'))
+1
+2
+--- DELETE WHERE, which is analyzed with the original columns
+TTL event + toIntervalDay(1) WHERE event = toDateTime(\'2020-01-01 00:00:00\', \'UTC\')
