@@ -7,14 +7,14 @@ keywords: ['OOM', 'memory limit exceeded']
 ---
 
 <div id="troubleshooting-out-of-memory-issues">
-  ## 쿼리의 메모리 한도 초과
+  ## 쿼리의 메모리 한도 초과 {#troubleshooting-out-of-memory-issues}
 </div>
 
 처음 ClickHouse를 사용하면 ClickHouse가 마치 마법처럼 느껴질 때가 많습니다. 가장 큰 데이터셋과 가장 복잡한 쿼리에서도 모든 쿼리가 매우 빠르게 실행되기 때문입니다.
 하지만 실제 환경에서는 결국 ClickHouse의 한계도 시험받게 됩니다. 메모리 한도를 초과하는 쿼리는 여러 가지 원인으로 발생할 수 있습니다. 가장 흔한 원인은 카디널리티가 높은 필드에서 대규모 조인이나 집계를 수행하는 경우입니다. 성능이 매우 중요하고 이러한 쿼리가 꼭 필요하다면, 일반적으로는 단순히 리소스를 확장하는 방법을 권장합니다. ClickHouse Cloud는 쿼리 응답성을 유지할 수 있도록 이를 자동으로, 그리고 손쉽게 처리합니다. 다만 자가 관리형 환경에서는 이것이 항상 간단하지 않을 수 있고, 최적의 성능 자체가 꼭 필요한 것은 아닐 수도 있다는 점도 잘 알고 있습니다. 이런 경우에는 몇 가지 선택지가 있습니다.
 
 <div id="aggregations">
-  ### 집계
+  ### 집계 {#aggregations}
 </div>
 
 메모리 사용량이 큰 집계 또는 정렬 시나리오에서는
@@ -33,9 +33,7 @@ keywords: ['OOM', 'memory limit exceeded']
 사용자가 `GROUP BY` 뒤에 `LIMIT`가 있는 `ORDER BY`를 사용하는 경우에도 유용하며,
 특히 쿼리가 분산되는 경우 더욱 그렇습니다.
 
-<div id="joins">
-  ### 조인
-</div>
+### 조인 {#joins}
 
 조인에서는 필요한 메모리를 줄이는 데 도움이 되도록 여러 `JOIN` 알고리즘을 선택할 수 있습니다. 기본적으로는 해시 조인이 사용되며, 기능 지원 측면에서 가장 완전하고 대체로 성능도 가장 우수합니다.
 이 알고리즘은 `JOIN`의 오른쪽 테이블을 메모리 내 해시
@@ -53,13 +51,9 @@ keywords: ['OOM', 'memory limit exceeded']
 조인할 수 있습니다.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![조인 알고리즘](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
-
-</Frame>
-
+  <Frame>
+    ![조인 알고리즘](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
+  </Frame>
 </div>
 
 20.3부터 ClickHouse는 `join_algorithm` 설정에서 auto 값을 지원합니다.

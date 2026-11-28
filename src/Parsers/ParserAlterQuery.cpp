@@ -135,7 +135,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserToken parser_opening_round_bracket(TokenType::OpeningRoundBracket);
     ParserToken parser_closing_round_bracket(TokenType::ClosingRoundBracket);
 
-    ParserCompoundIdentifier parser_name;
+    ParserCompoundIdentifier parser_name(/* table_name_with_optional_uuid = */ false, /* allow_query_parameter = */ true);
     ParserStringLiteral parser_string_literal;
     ParserStringAndSubstitution parser_string_and_substituion;
     ParserCompoundColumnDeclaration parser_col_decl(/* require_type = */ true, /* allow_null_modifiers = */ true);
@@ -1374,7 +1374,7 @@ Mutations are totally ordered by their creation order and are applied to each pa
 
 A mutation query returns immediately after the mutation entry is added (in case of replicated tables to ZooKeeper, for non-replicated tables - to the filesystem). The mutation itself executes asynchronously using the system profile settings. To track the progress of mutations you can use the [`system.mutations`](/reference/system-tables/mutations) table. A mutation that was successfully submitted will continue to execute even if ClickHouse servers are restarted. There is no way to roll back the mutation once it is submitted, but if the mutation is stuck for some reason it can be cancelled with the [`KILL MUTATION`](/reference/statements/kill#kill-mutation) query.
 
-Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter). Older mutation entries are deleted.
+Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter; if it is set to zero, no finished mutation entries are kept). Older mutation entries are deleted.
 
 ## Execution cost and completion {#execution-cost-and-completion}
 
@@ -1560,6 +1560,8 @@ Example:
 ```sql
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
+
+For tables of the `MergeTree` family, `CLEAR COLUMN` also accepts the virtual columns [`_block_number` and `_block_offset`](/reference/engines/table-engines/mergetree-family/mergetree#virtual-columns). Either name clears both of them, so that a part returns its minimum block number as `_block_number` and `_part_offset` as `_block_offset`.
 
 ## COMMENT COLUMN {#comment-column}
 
@@ -2632,11 +2634,11 @@ The following operations are available:
 
 ## ADD INDEX {#add-index}
 
-`ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]` - Adds index description to tables metadata.
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]` - Adds index description to tables metadata. [`CREATE INDEX`](/reference/statements/create/skipping-index) adds an index with a standalone statement.
 
 ## DROP INDEX {#drop-index}
 
-`ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name` - Removes index description from tables metadata and deletes index files from disk. Implemented as a [mutation](/reference/statements/alter/index#mutations).
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name` - Removes index description from tables metadata and deletes index files from disk. Implemented as a [mutation](/reference/statements/alter/index#mutations). [`DROP INDEX ... ON`](/reference/statements/drop#drop-index) is the standalone form.
 
 ## MATERIALIZE INDEX {#materialize-index}
 
@@ -2669,7 +2671,7 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] n
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [IN PARTITION partition_name]
 )",
         .parent = "ALTER",
-        .related = {"ALTER", "CREATE TABLE", "HYPOTHETICAL INDEX", "ALTER TABLE ... PROJECTION"},
+        .related = {"ALTER", "CREATE TABLE", "CREATE INDEX", "HYPOTHETICAL INDEX", "ALTER TABLE ... PROJECTION"},
     };
 
     documentation["ALTER TABLE ... PROJECTION"] =

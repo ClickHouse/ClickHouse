@@ -47,8 +47,8 @@ public:
 
 TEST_F(DeltaKernelTest, ExpressionVisitor)
 {
-    auto * predicate = ffi::get_testing_kernel_predicate();
-    SCOPE_EXIT(ffi::free_kernel_predicate(predicate));
+    auto * predicate = ::get_testing_kernel_predicate();
+    SCOPE_EXIT(::free_kernel_predicate(predicate));
     try
     {
         auto dag = DeltaLake::visitExpression(
@@ -596,7 +596,6 @@ TEST(DeltaLakeAzureKernelHelper, EntrypointsRefuseRestrictedSessionWhateverTheSh
         expectAccessDenied([&] { return metadata->buildStorageMetadataFromState(DeltaLake::TableStateSnapshot{}, restricted); });
         expectAccessDenied([&] { return metadata->iterate(nullptr, {}, 1000, nullptr, restricted); });
         expectAccessDenied([&] { return metadata->prepareReadingFromFormat({}, nullptr, restricted, true, true); });
-        expectAccessDenied([&] { return metadata->getTableChanges({0, std::nullopt}, DB::Block{}, std::nullopt, restricted); });
         expectAccessDenied([&]
         {
             return metadata->write(

@@ -97,7 +97,7 @@ ENGINE = IcebergS3(
 또는 S3와 함께 AWS Glue Data Catalog를 사용하세요:
 
 ```sql
-CREATE TABLE `my_database.my_table`  
+CREATE TABLE `my_database.my_table`
 ENGINE = IcebergS3(
   's3://my-data-bucket/warehouse/my_database/my_table/',
   'aws_access_key',
@@ -132,12 +132,12 @@ ClickHouse는 [삭제 벡터](https://iceberg.apache.org/spec/#deletion-vectors)
 ### 기본 사용법 {#basic-usage}
 
 ```sql
-SELECT * FROM example_table ORDER BY 1 
+SELECT * FROM example_table ORDER BY 1
 SETTINGS iceberg_timestamp_ms = 1714636800000
 ```
 
 ```sql
-SELECT * FROM example_table ORDER BY 1 
+SELECT * FROM example_table ORDER BY 1
 SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```
 
@@ -164,37 +164,30 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```sql
 -- Create a table with two columns
  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
- order_number bigint, 
+ order_number bigint,
  product_code string
- ) 
- USING iceberg 
- OPTIONS ('format-version'='2')
+)
+USING iceberg
+OPTIONS ('format-version'='2')
 
-- - Insert data into the table
- INSERT INTO spark_catalog.db.time_travel_example VALUES 
+-- Insert data into the table
+INSERT INTO spark_catalog.db.time_travel_example VALUES
    (1, 'Mars')
 
  ts1 = now() // A piece of pseudo code
 
-- - Alter table to add a new column
- ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
+-- Alter table to add a new column
+ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
 
  ts2 = now()
 
-- - Insert data into the table
- INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+-- Insert data into the table
+INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
 
-  ts3 = now()
+ ts3 = now()
 
-- - Query the table at each timestamp
- SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
-
-+------------+------------+
-|order_number|product_code|
-+------------+------------+
-|           1|        Mars|
-+------------+------------+
- SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+-- Query the table at each timestamp
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
 
 +------------+------------+
 |order_number|product_code|
@@ -202,7 +195,15 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 |           1|        Mars|
 +------------+------------+
 
- SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
 
 +------------+------------+-----+
 |order_number|product_code|price|
@@ -222,25 +223,25 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 현재 시점에서 실행한 time travel 쿼리에서는 현재 테이블(table)과 다른 스키마(schema)가 표시될 수 있습니다:
 
 ```sql
--- 테이블 생성
+-- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
-  order_number bigint, 
+  order_number bigint,
   product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2')
+)
+USING iceberg
+OPTIONS ('format-version'='2')
 
--- 테이블에 초기 데이터 삽입
-  INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
+-- Insert initial data into the table
+INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
 
--- 새 컬럼 추가를 위해 테이블 변경
-  ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
+-- Alter table to add a new column
+ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
 
   ts = now();
 
--- timestamp 구문을 사용하여 현재 시점 테이블 쿼리
+-- Query the table at a current moment but using timestamp syntax
 
-  SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
+SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
 
     +------------+------------+
     |order_number|product_code|
@@ -248,9 +249,11 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
     |           2|       Venus|
     +------------+------------+
 
--- 현재 시점 테이블 쿼리
-  SELECT * FROM spark_catalog.db.time_travel_example_2;
-    +------------+------------+-----+
+-- Query the table at a current moment
+
+SELECT * FROM spark_catalog.db.time_travel_example_2;
+
++------------+------------+-----+
     |order_number|product_code|price|
     +------------+------------+-----+
     |           2|       Venus| NULL|
@@ -266,16 +269,16 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```sql
 -- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
-  order_number bigint, 
+  order_number bigint,
   product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2');
+)
+USING iceberg
+OPTIONS ('format-version'='2');x
 
   ts = now();
 
 -- Query the table at a specific timestamp
-  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
+SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finishes with error: Cannot find a snapshot older than ts.
 ```
 
 ClickHouse에서는 동작 방식이 Spark와 일관됩니다. 즉, Spark의 Select 쿼리를 ClickHouse의 Select 쿼리로 바꿔 생각해도 동일하게 동작합니다.
@@ -318,7 +321,7 @@ ClickHouse에서 `iceberg` 테이블 함수를 사용할 때 시스템은 Iceber
 **참고**: 여기서 언급한 설정 중 `iceberg_list_only_v_prefixed_metadata_files`를 제외한 모든 설정은 테이블 함수 설정(전역 설정이나 쿼리 수준 설정이 아님)이며, 아래와 같이 지정해야 합니다:
 
 ```sql
-SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
+SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
     SETTINGS iceberg_metadata_table_uuid = 'a90eed4c-f74b-4e5b-b630-096fb9d09021');
 ```
 
@@ -421,7 +424,7 @@ y: 993
 
 이 작업을 사용하려면 `allow_insert_into_iceberg`를 활성화하십시오.
 
-이 작업은 파티션 스펙(spec)이 하나뿐이고 한 번도 변경(evolve)되지 않은 Iceberg `format-version` 2 테이블에서만 지원됩니다. 선택한 파티션을 포함하는 각 매니페스트에는 다른 파티션의 파일이 없어야 합니다. 선택한 파티션과 다른 파티션이 하나의 매니페스트를 공유하면 작업이 실패하며, 테이블은 변경되지 않습니다. 또한 영향을 받는 매니페스트에 동등 삭제(equality-delete) 파일이 포함되어 있으면 작업이 거부됩니다.
+이 작업은 파티션 명세가 하나뿐이고 한 번도 변경(evolve)되지 않은 Iceberg `format-version` 2 테이블에서만 지원됩니다. 선택한 파티션을 포함하는 각 매니페스트에는 다른 파티션의 파일이 없어야 합니다. 선택한 파티션과 다른 파티션이 하나의 매니페스트를 공유하면 작업이 실패하며, 테이블은 변경되지 않습니다. `iceberg_insert_single_manifest_for_all_partitions`가 활성화되어 있으면 `INSERT`의 각 삽입 스트림은 수신한 모든 파티션의 파일을 하나의 매니페스트에 기록합니다(`max_insert_threads = 1`이면 `INSERT`당 정확히 1개의 매니페스트). 따라서 다른 파티션과 함께 같은 `INSERT`로 기록된 파티션은 삭제할 수 없습니다. 또한 영향을 받는 매니페스트에 동등성 기반 삭제 파일(equality-delete files)이 포함되어 있으면 작업이 거부됩니다.
 
 파티션 값은 `MergeTree`와 동일한 규칙을 따릅니다. 단일 컬럼 파티션에는 스칼라 리터럴을, 다중 컬럼 파티션에는 값의 튜플을 전달하십시오.
 
@@ -668,8 +671,8 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 <Note>
   * Iceberg 형식 버전 2 테이블만 지원됩니다(v1 스냅샷은 정리 작업에 필요한 파일을 안전하게 식별하는 데 필요한 `manifest-list`를 보장하지 않음)
   * 지정된 타임스탬프보다 오래된 경우에도 현재 스냅샷은 항상 유지됩니다
-  * `allow_insert_into_iceberg` setting이 활성화되어 있어야 합니다
-  * `allow_experimental_expire_snapshots` setting이 활성화되어 있어야 합니다
+  * `allow_insert_into_iceberg` 설정이 활성화되어 있어야 합니다
+  * `allow_expire_snapshots` 설정이 활성화되어 있어야 합니다
   * ClickHouse가 메타데이터를 업데이트할 때는 카탈로그 자체의 권한 부여(REST 카탈로그 인증, AWS Glue IAM 등)가 별도로 적용됩니다
 </Note>
 

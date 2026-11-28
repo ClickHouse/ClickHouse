@@ -451,6 +451,9 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
     /// `Time64(0)` must not change what `accurateCast` accepts.
     can_apply_accurate_cast |= (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
         && which.isTimeOrTime64() && (to.isTime() || to.isDateOrDate32() || to.isDateTimeOrDateTime64());
+    can_apply_accurate_cast |= (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
+        && ((to.isDateTime() && (which.isDateOrDate32() || which.isDateTime64()))
+            || (to.isDate() && (which.isDate32() || which.isDateTime() || which.isDateTime64())));
     can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
     if (requested_result_is_nullable && (which.isString() || (cast_type == CastType::accurateOrNull && which.isFixedString())))
@@ -583,6 +586,22 @@ case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
 
                     return true;
                 }
+            }
+            else if constexpr (is_any_of<LeftDataType, DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64>
+                && is_any_of<RightDataType, DataTypeDate, DataTypeDateTime> && !std::is_same_v<LeftDataType, RightDataType>)
+            {
+                /// The range is checked up front, and only `Ignore` converts every value in range exactly.
+                using Convert = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::Ignore>;
+                if (cast_type == CastType::accurate)
+                    result_column = Convert::execute(
+                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings,
+                        DateTimeAccurateConvertStrategyAdditions());
+                else
+                    result_column = Convert::execute(
+                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings,
+                        DateTimeAccurateOrNullConvertStrategyAdditions());
+
+                return true;
             }
             else if constexpr (IsDataTypeStringOrFixedString<LeftDataType>)
             {
@@ -915,35 +934,6 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
                 }
             };
         }
-
-        /// Different state variants (e.g. Window vs Aggregation) of the same aggregate function
-        /// can be converted by merging the source state into a fresh target state.
-        if (to_type->getFunction()->canMergeStateFromDifferentVariant(*agg_type->getFunction()))
-        {
-            return [function = to_type->getFunction(), from_function = agg_type->getFunction(), version = to_type->getVersionIfExplicit()](
-                       ColumnsWithTypeAndName & arguments,
-                       const DataTypePtr & /* result_type */,
-                       const ColumnNullable * /* nullable_source */,
-                       size_t /*input_rows_count*/) -> ColumnPtr
-            {
-                const auto & argument_column = arguments.front();
-                const auto * col_agg = checkAndGetColumn<ColumnAggregateFunction>(argument_column.column.get());
-                if (!col_agg)
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Illegal column {} for function CAST AS AggregateFunction",
-                        argument_column.column->getName());
-
-                auto res = ColumnAggregateFunction::create(function, version);
-
-                for (const auto * src_state : col_agg->getData())
-                {
-                    res->insertDefault();
-                    function->mergeStateFromDifferentVariant(res->getData().back(), *from_function, src_state, &res->createOrGetArena());
-                }
-                return res;
-            };
-        }
     }
 
     if (cast_type == CastType::accurateOrNull)
@@ -1248,7 +1238,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(
     const auto & from_element_types = from_type->getElements();
     const auto & to_element_types = to_type->getElements();
 
-    const auto source_positions = getTupleCastElementPositions(*from_type, *to_type);
+    const auto source_positions = getTupleCastElementPositions(*from_type, *to_type, settings.tuple_elements_matching);
     ElementWrappers element_wrappers;
     element_wrappers.reserve(to_element_types.size());
     for (size_t i = 0; i < to_element_types.size(); ++i)
@@ -2294,7 +2284,7 @@ bool fitsIntoMaxScaleDateTime64(const IColumn & column, const IDataType & type, 
         {
             if (null_map && (*null_map)[row])
                 continue;
-            if (!fitsIntoMaxScaleDateTime64(column_array.getData(), *array_type->getNestedType(), offsets[row - 1], offsets[row]))
+            if (!fitsIntoMaxScaleDateTime64(column_array.getData(), *array_type->getNestedType(), offsets[static_cast<ssize_t>(row) - 1], offsets[row]))
                 return false;
         }
         return true;
@@ -2356,7 +2346,7 @@ bool hasNonFiniteFloats(const IColumn & column, const IDataType & type, size_t b
         {
             if (null_map && (*null_map)[row])
                 continue;
-            if (hasNonFiniteFloats(column_array.getData(), *array_type->getNestedType(), offsets[row - 1], offsets[row]))
+            if (hasNonFiniteFloats(column_array.getData(), *array_type->getNestedType(), offsets[static_cast<ssize_t>(row) - 1], offsets[row]))
                 return true;
         }
         return false;
@@ -2394,7 +2384,7 @@ bool uint64ValuesFitInt64(const IColumn & column, const IDataType & type, size_t
         {
             if (null_map && (*null_map)[row])
                 continue;
-            if (!uint64ValuesFitInt64(column_array.getData(), *array_type->getNestedType(), offsets[row - 1], offsets[row]))
+            if (!uint64ValuesFitInt64(column_array.getData(), *array_type->getNestedType(), offsets[static_cast<ssize_t>(row) - 1], offsets[row]))
                 return false;
         }
         return true;
@@ -2725,21 +2715,21 @@ ObjectConversionPlan buildObjectConversionPlan(
         }
         else
         {
-            const bool equal = it->second->equals(*dst_path_type);
-            /// equals treats types that serialize differently as the same (Bool vs UInt8, including the
-            /// SimpleAggregateFunction(any, Bool) wrapper and these nested in any carrier). Reuse the column
-            /// unchanged only when the types are also textually identical; otherwise force the format+parse
-            /// fallback so the stored values are normalized rather than reused as raw bytes.
-            const bool reuse_unsafe = equal && it->second->getName() != dst_path_type->getName();
-            if (!equal || reuse_unsafe)
+            /// Only an identical type is reused as is, CAST decides for any other. A renamed type that equals
+            /// the source one keeps its structure, so it needs no format+parse fallback, unless it has a
+            /// Variant, whose CAST matches alternatives by name and rejects renamed ones.
+            if (it->second->getName() == dst_path_type->getName())
             {
-                plan.changed_typed_paths[path] = {it->second, dst_path_type};
-                if (isStructuralTypeForJSON(it->second) || isStructuralTypeForJSON(dst_path_type) || reuse_unsafe)
-                    plan.has_structural_type_change = true;
+                plan.unchanged_typed_paths.insert(path);
             }
             else
             {
-                plan.unchanged_typed_paths.insert(path);
+                plan.changed_typed_paths[path] = {it->second, dst_path_type};
+                const bool structural = it->second->equals(*dst_path_type)
+                    ? anyInTypeTree(*it->second, [](const IDataType & t) { return isVariant(t); })
+                    : isStructuralTypeForJSON(it->second) || isStructuralTypeForJSON(dst_path_type);
+                if (structural)
+                    plan.has_structural_type_change = true;
             }
         }
     }
@@ -2791,7 +2781,7 @@ bool sharedDataIsAffectedByNewTypedPaths(
     const auto & shared_data_offsets = src.getSharedDataOffsets();
     for (size_t row = 0; row < shared_data_offsets.size(); ++row)
     {
-        size_t start = shared_data_offsets[row - 1];
+        size_t start = shared_data_offsets[static_cast<ssize_t>(row) - 1];
         size_t end = shared_data_offsets[row];
         if (start == end)
             continue;
@@ -2926,7 +2916,7 @@ bool newLeafTypedPathsNeedFormatParse(
 
     for (size_t row = 0; row != rows; ++row)
     {
-        size_t search_start = has_shared_data ? shared_data_offsets[row - 1] : 0;
+        size_t search_start = has_shared_data ? shared_data_offsets[static_cast<ssize_t>(row) - 1] : 0;
         const size_t search_end = has_shared_data ? shared_data_offsets[row] : 0;
 
         for (const auto & leaf : leaves)
@@ -2985,6 +2975,8 @@ FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_sett
     result.float_precision = 0;
     result.bool_true_representation = "true";
     result.bool_false_representation = "false";
+    /// The text holds stored values, not user input, so a date/time is read back in its type's zone.
+    result.session_time_zone = nullptr;
     return result;
 }
 
@@ -3227,9 +3219,6 @@ ColumnPtr castColumnWithSettings(
     const FunctionConvertSettingsPtr & convert_settings,
     CastType cast_type)
 {
-    if (arg.type->equals(*type))
-        return arg.column;
-
     ColumnsWithTypeAndName arguments
     {
         arg,
@@ -3646,7 +3635,7 @@ ColumnPtr convertObjectColumns(
 
         for (size_t row = 0; row < rows; ++row)
         {
-            size_t src_start = src_shared_offsets[row - 1];
+            size_t src_start = src_shared_offsets[static_cast<ssize_t>(row) - 1];
             size_t src_end = src_shared_offsets[row];
 
             populated_in_row.clear();
@@ -3812,11 +3801,15 @@ ColumnPtr convertObjectViaFormatParse(
     }
     write_helper.finalize();
 
+    /// The text holds stored values, not user input, so a date/time is read back in its type's zone.
+    FunctionConvertSettings parse_settings = cast_settings;
+    parse_settings.format_settings.session_time_zone = nullptr;
+
     ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
     if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-        return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, cast_settings);
+        return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, parse_settings);
 
-    return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, cast_settings);
+    return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, parse_settings);
 }
 
 } /// anonymous namespace
@@ -3824,9 +3817,16 @@ ColumnPtr convertObjectViaFormatParse(
 FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
 {
     /// Types that differ only in SHARED marks of typed paths have identical columns, no conversion is needed.
+    /// equalsIgnoringSharedTypedPaths compares typed paths with equals, so also require identical path types.
     if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get());
         from_object && from_object->equalsIgnoringSharedTypedPaths(*to_object))
-        return createIdentityWrapper(from_type);
+    {
+        const auto & to_typed = to_object->getTypedPaths();
+        const auto & from_typed = from_object->getTypedPaths();
+        if (std::all_of(from_typed.begin(), from_typed.end(),
+                [&](const auto & entry) { return entry.second->getName() == to_typed.at(entry.first)->getName(); }))
+            return createIdentityWrapper(from_type);
+    }
 
     if (checkAndGetDataType<DataTypeString>(from_type.get()))
     {
@@ -3942,12 +3942,6 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
     /// Check that the set of old variants types is a subset of new variant types and collect new global discriminator for each old global discriminator.
     UnorderedMapWithMemoryTracking<ColumnVariant::Discriminator, ColumnVariant::Discriminator> old_global_discriminator_to_new;
     old_global_discriminator_to_new.reserve(old_variants.size());
-    /// Two distinct types can share the same name. AggregateFunction has a hidden state representation
-    /// (Aggregation vs Window) that is not encoded in its name, so an old and a new variant matched by name
-    /// can still have different in-memory layouts. In that case we must convert the subcolumn to the new
-    /// representation instead of reusing it as-is, otherwise later reads would interpret the bytes using the
-    /// wrong layout and crash. We keep the converting wrapper keyed by the old global discriminator.
-    UnorderedMapWithMemoryTracking<ColumnVariant::Discriminator, WrapperType> old_global_discriminator_to_convert_wrapper;
     for (const auto & [old_variant_type, old_discriminator] : old_variant_types_to_old_global_discriminator)
     {
         auto it = new_variant_types_to_new_global_discriminator.find(old_variant_type);
@@ -3957,11 +3951,6 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
                 "Cannot convert type {} to {}. Conversion between Variant types is allowed only when new Variant type is an extension "
                 "of an initial one", from_variant.getName(), to_variant.getName());
         old_global_discriminator_to_new[old_discriminator] = it->second;
-
-        const auto & old_type = old_variants[old_discriminator];
-        const auto & new_type = new_variants[it->second];
-        if (!old_type->equals(*new_type))
-            old_global_discriminator_to_convert_wrapper[old_discriminator] = prepareUnpackDictionaries(old_type, new_type);
     }
 
     /// Collect variant types and their global discriminators that should be added to the old Variant to get the new Variant.
@@ -3973,7 +3962,7 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
             variant_types_and_discriminators_to_add.emplace_back(new_variants[i], i);
     }
 
-    return [old_global_discriminator_to_new, old_global_discriminator_to_convert_wrapper, old_variants, new_variants, variant_types_and_discriminators_to_add]
+    return [old_global_discriminator_to_new, variant_types_and_discriminators_to_add]
            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
     {
         const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
@@ -3984,18 +3973,8 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
         new_local_to_global_discriminators.reserve(num_old_variants + variant_types_and_discriminators_to_add.size());
         for (ColumnVariant::Discriminator i = 0; i != num_old_variants; ++i)
         {
-            const auto old_global_discriminator = column_variant.globalDiscriminatorByLocal(i);
-            const auto new_global_discriminator = old_global_discriminator_to_new.at(old_global_discriminator);
-            auto variant_column = column_variant.getVariantPtrByLocalDiscriminator(i);
-            /// The type matched by name but its representation changed: convert the subcolumn to the new layout.
-            if (auto wrapper_it = old_global_discriminator_to_convert_wrapper.find(old_global_discriminator);
-                wrapper_it != old_global_discriminator_to_convert_wrapper.end())
-            {
-                ColumnsWithTypeAndName convert_args = {{variant_column, old_variants[old_global_discriminator], ""}};
-                variant_column = wrapper_it->second(convert_args, new_variants[new_global_discriminator], nullptr, variant_column->size());
-            }
-            new_variant_columns.push_back(std::move(variant_column));
-            new_local_to_global_discriminators.push_back(new_global_discriminator);
+            new_variant_columns.push_back(column_variant.getVariantPtrByLocalDiscriminator(i));
+            new_local_to_global_discriminators.push_back(old_global_discriminator_to_new.at(column_variant.globalDiscriminatorByLocal(i)));
         }
 
         for (const auto & [new_variant_type, new_global_discriminator] : variant_types_and_discriminators_to_add)
@@ -4012,6 +3991,7 @@ FunctionCast::WrapperType FunctionCast::createWrapperIfCanConvert(const DataType
 {
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         /// We can avoid try/catch here if we will implement check that 2 types can be cast, but it
         /// requires quite a lot of work. By now let's simply use try/catch.
         /// First, check that we can create a wrapper.
@@ -4159,8 +4139,7 @@ FunctionCast::WrapperType FunctionCast::createColumnToVariantWrapper(const DataT
         };
     }
 
-    auto from_nested_type = removeNullableOrLowCardinalityNullable(from_type);
-    auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(from_nested_type->getName());
+    auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(removeNullableOrLowCardinalityNullable(from_type)->getName());
     /// Cast String to Variant through parsing if it's not Variant(String).
     if (settings.cast_string_to_variant_use_inference && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))) && (!variant_discr_opt || to_variant.getVariants().size() > 1))
         return createStringToVariantWrapper();
@@ -4168,38 +4147,11 @@ FunctionCast::WrapperType FunctionCast::createColumnToVariantWrapper(const DataT
     if (!variant_discr_opt)
         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert type {} to {}. Conversion to Variant allowed only for types from this Variant", from_type->getName(), to_variant.getName());
 
-    /// We resolve the destination variant type by name, but two distinct types can share the same name.
-    /// AggregateFunction has a hidden state representation (Aggregation vs Window) that is not encoded
-    /// in its name, since it is not a user-facing difference but an internal implementation detail.
-    /// So when DataTypeVariant is constructed from two AggregateFunction(f, ...) types that differ only
-    /// in state representation, its constructor collapses them by name to a single variant type.
-    /// If our source column carries the other state representation, we must cast it to the destination
-    /// variant type before storing it as a subcolumn, otherwise serialization would interpret the bytes
-    /// using the wrong layout and crash. The source type was matched to the destination variant by name,
-    /// so any remaining inequality is such a hidden representation difference (it may be nested inside
-    /// Array/Map/Tuple); prepareUnpackDictionaries converts it and recurses into nested types.
-    const auto & target_variant_type = to_variant.getVariants()[*variant_discr_opt];
-    WrapperType to_target_variant_type_cast;
-    if (!from_nested_type->equals(*target_variant_type))
-        to_target_variant_type_cast = prepareUnpackDictionaries(from_nested_type, target_variant_type);
-
-    return [variant_discr = *variant_discr_opt,
-            cast_to_variant_type_wrapper = std::move(to_target_variant_type_cast),
-            target_variant_type,
-            unwrapped_from_type = from_nested_type]
+    return [variant_discr = *variant_discr_opt]
            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t) -> ColumnPtr
     {
         const auto & result_variant_type = assert_cast<const DataTypeVariant &>(*result_type);
         const auto & variant_types = result_variant_type.getVariants();
-
-        auto cast_to_variant_type_if_needed = [&](const ColumnPtr & col) -> ColumnPtr
-        {
-            if (!cast_to_variant_type_wrapper)
-                return col;
-            ColumnsWithTypeAndName args = {{col, unwrapped_from_type, ""}};
-            return cast_to_variant_type_wrapper(args, target_variant_type, nullptr, col->size());
-        };
-
         if (const ColumnNullable * col_nullable = typeid_cast<const ColumnNullable *>(arguments.front().column.get()))
         {
             const auto & column = col_nullable->getNestedColumnPtr();
@@ -4232,7 +4184,7 @@ FunctionCast::WrapperType FunctionCast::createColumnToVariantWrapper(const DataT
             /// Otherwise we should use filtered column.
             else
                 variant_column = column->filter(filter, variant_size_hint);
-            return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), cast_to_variant_type_if_needed(variant_column), variant_discr);
+            return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), variant_column, variant_discr);
         }
         else if (isColumnLowCardinalityNullable(*arguments.front().column))
         {
@@ -4273,14 +4225,14 @@ FunctionCast::WrapperType FunctionCast::createColumnToVariantWrapper(const DataT
             else
                 variant_column = assert_cast<const ColumnLowCardinality &>(*column->filter(filter, variant_size_hint)).cloneWithDefaultOnNull();
 
-            return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), cast_to_variant_type_if_needed(variant_column), variant_discr);
+            return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), variant_column, variant_discr);
         }
         else
         {
             const auto & column = arguments.front().column;
             auto discriminators = ColumnVariant::ColumnDiscriminators::create();
             discriminators->getData().resize_fill(column->size(), variant_discr);
-            return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), cast_to_variant_type_if_needed(column), variant_discr);
+            return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), column, variant_discr);
         }
     };
 }
@@ -4357,22 +4309,8 @@ FunctionCast::WrapperType FunctionCast::createStringToDynamicThroughParsingWrapp
 
 FunctionCast::WrapperType FunctionCast::createVariantToDynamicWrapper(const DataTypeVariant & from_variant_type, const DataTypeDynamic & dynamic_type) const
 {
-    /// A Dynamic column identifies its stored types by their name and re-resolves the type from that name
-    /// (e.g. in dynamicElement or the -Merge combinator). Two distinct types can share the same name:
-    /// AggregateFunction has a hidden state representation (Aggregation vs Window) that is not encoded in
-    /// its name. If we stored a Window-representation state under its name, a later read would resolve the
-    /// name to the canonical (Aggregation) representation and interpret the bytes with the wrong layout and
-    /// crash. So the Dynamic must hold each type in its canonical (name-resolved) representation. Build the
-    /// storage Variant from those canonical types; the Variant to Variant cast below converts any subcolumn
-    /// whose representation differs (it recurses into Array/Map/Tuple).
-    auto source_variants = from_variant_type.getVariants();
-    DataTypes variants_for_dynamic;
-    variants_for_dynamic.reserve(source_variants.size() + 1);
-    for (const auto & source_variant : source_variants)
-    {
-        auto canonical_variant = DataTypeFactory::instance().tryGet(source_variant->getName());
-        variants_for_dynamic.push_back(canonical_variant && !canonical_variant->equals(*source_variant) ? canonical_variant : source_variant);
-    }
+    /// First create extended Variant with shared variant type and cast this Variant to it.
+    auto variants_for_dynamic = from_variant_type.getVariants();
     size_t number_of_variants = variants_for_dynamic.size();
     variants_for_dynamic.push_back(ColumnDynamic::getSharedVariantDataType());
     const auto & variant_type_for_dynamic = std::make_shared<DataTypeVariant>(variants_for_dynamic);
@@ -5020,6 +4958,27 @@ FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(
     };
 }
 
+/// Converts only the rows that are not NULL in `null_map`; the NULL rows get default values.
+static ColumnPtr convertNotNullRows(
+    const FunctionCast::WrapperType & wrapper,
+    ColumnsWithTypeAndName & nested_args,
+    const NullMap & null_map,
+    const DataTypePtr & nested_type,
+    size_t input_rows_count)
+{
+    IColumn::Filter not_null(input_rows_count);
+    for (size_t row = 0; row < input_rows_count; ++row)
+        not_null[row] = !null_map[row];
+    const size_t rows_without_nulls = countBytesInFilter(not_null);
+
+    for (auto & column : nested_args)
+        column.column = column.column->filter(not_null, rows_without_nulls);
+
+    auto res = IColumn::mutate(wrapper(nested_args, nested_type, nullptr, rows_without_nulls));
+    res->expand(not_null, /* inverted */ false);
+    return res;
+}
+
 FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
     const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check, bool report_failures_as_null) const
 {
@@ -5039,6 +4998,10 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
     /// An identity conversion can neither reject a value nor produce a NULL, so a source NULL needs no filtering.
     const bool nested_types_equal = from_nested_type->equals(*to_nested_type);
 
+    /// The element conversions of a Tuple do not all read its null map, so they would convert the placeholders of its NULL rows.
+    const bool exclude_source_nulls = source_is_nullable && !nested_types_equal
+        && (cast_type == CastType::accurate || isTuple(from_nested_type) || !from_nested_type->isDefaultInsertTrivial());
+
     /// A conversion asked to report its failures as NULL needs a nullable result even when `to_type` cannot
     /// hold NULL (see `prepareUnpackDictionaries`).
     const bool requested_result_is_nullable = (result_is_nullable && !strict_text_conversion) || report_failures_as_null;
@@ -5047,8 +5010,6 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
 
     if (result_is_nullable)
     {
-        bool exclude_source_nulls = source_is_nullable && cast_type == CastType::accurate && !nested_types_equal;
-
         return [wrapper, source_is_nullable, exclude_source_nulls]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
         {
@@ -5083,21 +5044,9 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
                     return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
 
                 if (rows_with_nulls != 0)
-                {
-                    const size_t rows_without_nulls = input_rows_count - rows_with_nulls;
-
-                    IColumn::Filter not_null(input_rows_count);
-                    for (size_t row = 0; row < input_rows_count; ++row)
-                        not_null[row] = !null_map[row];
-
-                    for (auto & column : tmp_args)
-                        column.column = column.column->filter(not_null, rows_without_nulls);
-
-                    auto filtered_res = wrapper(tmp_args, nested_type, nullptr, rows_without_nulls);
-                    auto mutable_res = IColumn::mutate(std::move(filtered_res));
-                    mutable_res->expand(not_null, /* inverted */ false);
-                    return wrapInNullable(std::move(mutable_res), nullable_column.getNullMapColumnPtr());
-                }
+                    return wrapInNullable(
+                        convertNotNullRows(wrapper, tmp_args, null_map, nested_type, input_rows_count),
+                        nullable_column.getNullMapColumnPtr());
             }
 
             /// Perform the requested conversion.
@@ -5115,7 +5064,7 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
     {
         /// Conversion from Nullable to non-Nullable.
 
-        return [wrapper, skip_not_null_check, report_failures_as_null]
+        return [wrapper, skip_not_null_check, report_failures_as_null, exclude_source_nulls]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
         {
             auto tmp_args = createBlockWithNestedColumns(arguments);
@@ -5138,7 +5087,12 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
             }
 
             const ColumnNullable * nullable_source = typeid_cast<const ColumnNullable *>(arguments.front().column.get());
-            auto tmp_res = wrapper(tmp_args, nested_type, nullable_source, input_rows_count);
+            ColumnPtr tmp_res;
+            if (report_failures_as_null && exclude_source_nulls && nullable_source
+                && !memoryIsZero(nullable_source->getNullMapData().data(), 0, input_rows_count))
+                tmp_res = convertNotNullRows(wrapper, tmp_args, nullable_source->getNullMapData(), nested_type, input_rows_count);
+            else
+                tmp_res = wrapper(tmp_args, nested_type, nullable_source, input_rows_count);
 
             /// A conversion asked to report its failures as NULL returns ColumnNullable where source NULLs
             /// and conversion-failure NULLs are merged. This happens for Tuple element conversions under
@@ -5164,20 +5118,18 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
 
 FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
 {
+    /// Bool shares the UInt8 type id, so the dispatch below would reuse the column unchanged. It also comes
+    /// before the identity shortcut: a Bool column may hold a raw byte (e.g. from `reinterpret`), which
+    /// Bool -> Bool normalizes too.
     if (isUInt8(from_type) && (isBool(to_type) || isSimpleAggregateFunctionOfBool(*to_type)))
         return createUInt8ToBoolWrapper(from_type, to_type);
 
-    /// We can cast IPv6 into IPv6, IPv4 into IPv4, but we should not allow to cast FixedString(16) into IPv6 as part of identity cast
-    bool safe_convert_custom_types = true;
-
-    if (const auto * to_type_custom_name = to_type->getCustomName())
-        safe_convert_custom_types = from_type->getCustomName() && from_type->getCustomName()->getName() == to_type_custom_name->getName();
-    else if (const auto * from_type_custom_name = from_type->getCustomName())
-        safe_convert_custom_types = to_type->getCustomName() && from_type_custom_name->getName() == to_type->getCustomName()->getName();
-
-    if (from_type->equals(*to_type) && safe_convert_custom_types)
+    /// Only an identical type is an identity cast. equals is not enough: it ignores custom names (Bool vs UInt8)
+    /// and time zones, also inside a container, where a leaf may still need a conversion. Such a type goes
+    /// through its regular wrapper, which reuses the columns that need no conversion.
+    if (from_type->getName() == to_type->getName())
     {
-        /// We can only use identity conversion for DataTypeAggregateFunction when they are strictly equivalent.
+        /// The state variant of an AggregateFunction is not part of its name.
         if (typeid_cast<const DataTypeAggregateFunction *>(from_type.get()))
         {
             if (DataTypeAggregateFunction::strictEquals(from_type, to_type))
@@ -5369,9 +5321,10 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
 
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
+    TupleElementsMatching tuple_elements_matching)
 {
-    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior);
+    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior, tuple_elements_matching);
 }
 
 FunctionBasePtr createFunctionBaseCast(

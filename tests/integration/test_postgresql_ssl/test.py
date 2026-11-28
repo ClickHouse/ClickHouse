@@ -30,6 +30,10 @@ node = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_postgres=True,
     stay_alive=True,
+    # Pin HOME so libpq's default client-certificate directory (`$HOME/.postgresql`) is deterministic,
+    # which the ambient-default-credential test relies on. Shared cluster env (the default), so the
+    # node keeps the cluster `.env` that also carries `MINIO_CERTS_DIR`.
+    env_variables={"HOME": "/var/lib/clickhouse"},
 )
 
 # The docker service/alias name the ClickHouse node uses to reach PostgreSQL.
@@ -564,6 +568,43 @@ def test_client_certificate_is_required(started_cluster):
     # positive test above really did authenticate with the certificate.
     error = node.query_and_get_error(f"SELECT count() FROM postgresql(pg_ssl_cert, sslmode='verify-full', sslrootcert_pem='{quote_pem(ca_pem)}')")
     assert "POSTGRESQL_CONNECTION_FAILURE" in error
+
+
+def test_ambient_default_client_certificate_is_not_used(started_cluster):
+    # A query that supplies no client certificate must not authenticate with the
+    # certificate libpq would otherwise load from its default location (`$HOME/.postgresql/postgresql.*`).
+    # Install a valid client certificate and key there and confirm the certificate-only database still
+    # rejects a connection that passes no certificate arguments.
+    default_dir = "/var/lib/clickhouse/.postgresql"
+    default_cert = f"{default_dir}/postgresql.crt"
+    default_key = f"{default_dir}/postgresql.key"
+    node_write_file(default_cert, client_cert_pem)
+    node_write_file(default_key, client_key_pem)
+    # libpq refuses a group/world-readable key and requires it owned by the connecting process's user.
+    node.exec_in_container(
+        ["bash", "-c", f"chown {os.getuid()}:{os.getgid()} {default_key} && chmod 600 {default_key}"]
+    )
+    try:
+        error = node.query_and_get_error(
+            f"SELECT count() FROM postgresql(pg_ssl_cert, sslmode='verify-full', sslrootcert_pem='{quote_pem(ca_pem)}')"
+        )
+        # Require PostgreSQL's exact certificate-rejection diagnostic, not just any connection failure,
+        # so neither a transient error nor an unrelated certificate error can satisfy the assertion.
+        assert "POSTGRESQL_CONNECTION_FAILURE" in error, error
+        assert "connection requires a valid client certificate" in error.lower(), error
+
+        # The installed default credential is valid: passing the same certificate and key explicitly
+        # succeeds, so the rejection above is caused by the ambient default being disabled, not a bad
+        # certificate.
+        assert (
+            node.query(
+                f"SELECT count() FROM postgresql(pg_ssl_cert, sslmode='verify-full', sslrootcert_pem='{quote_pem(ca_pem)}', "
+                f"sslcert_pem='{quote_pem(client_cert_pem)}', sslkey_pem='{quote_pem(client_key_pem)}')"
+            ).strip()
+            == "10"
+        )
+    finally:
+        node.exec_in_container(["bash", "-c", f"rm -f {default_cert} {default_key}"])
 
 
 def test_materialized_postgresql_database_ssl(started_cluster):
