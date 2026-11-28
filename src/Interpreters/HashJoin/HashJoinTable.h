@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <any>
+#include <atomic>
 #include <functional>
 #include <optional>
 #include <span>
@@ -490,8 +491,8 @@ public:
     using Cursor = std::any;
 
     /// `key_class` is the key type of a one-bucket map. A two-level `layout` turns it into the two-level type.
-    /// `robin_hood_allowed` is the setting `enable_robin_hood_hash_for_joins`: a two-level map may switch to the Robin Hood mode
-    /// when it grows large.
+    /// `robin_hood_mode` comes from the setting `enable_robin_hood_hash_for_joins`: when a two-level map may switch to the Robin Hood mode.
+    /// In the mode `OnMemoryPressure` the buckets ask `growth_budget`, which must outlive the table.
     HashJoinTable(
         Type key_class,
         Sizes key_sizes_,
@@ -499,7 +500,8 @@ public:
         JoinStrictness strictness,
         JoinMapsKind maps_kind,
         const HashJoinBuildLayout & layout,
-        bool robin_hood_allowed);
+        RobinHoodMode robin_hood_mode,
+        HashTableGrowthBudget * growth_budget);
 
     /// The key type of the maps. Only `tryConvertToFixedHashMap` changes it.
     Type type() const { return key_type; }
@@ -624,6 +626,24 @@ public:
     /// Clears the buckets of an `ASOF` map in `num_jobs` jobs and passes them to `schedule`.
     /// `schedule` must run them before the table is destroyed.
     void clearInParallel(size_t num_jobs, absl::FunctionRef<void(std::function<void()>)> schedule);
+
+    /// What `halveInParallel` would do now: the bytes it would free, and the size of the largest new bucket buffer, which a job
+    /// allocates before it frees the old one. Only the buckets of a two-level map with the Robin Hood grower are halved, see
+    /// `HashTable::halveInRobinHoodMode`.
+    struct Halving
+    {
+        size_t freed_bytes = 0;
+        size_t largest_new_bucket_bytes = 0;
+    };
+    Halving estimateHalving() const;
+
+    /// Halves those buckets in `num_jobs` jobs and passes them to `schedule`, which must run them before the table is destroyed.
+    /// The jobs add the bytes they free and the buckets they halve to `freed_bytes` and `halved_buckets`.
+    void halveInParallel(
+        size_t num_jobs,
+        absl::FunctionRef<void(std::function<void()>)> schedule,
+        std::atomic<size_t> & freed_bytes,
+        std::atomic<size_t> & halved_buckets);
 
     /// Frees the maps. The table stays, so that a concurrent `keys` stays valid.
     void releaseMaps();

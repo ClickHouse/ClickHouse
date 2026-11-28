@@ -14,6 +14,7 @@
 
 #include <Common/CacheLine.h>
 #include <Common/HashTable/HashTableAllocator.h>
+#include <Common/HashTable/HashTableGrowthBudget.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
 
@@ -339,10 +340,14 @@ static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == DB::CH_CACHE_LINE_S
   *
   * For large hash tables, random memory access is the main bottleneck, not the computations.
   * When the buffer reaches 2^robin_hood_size_degree cells, the grower switches the hash table to the Robin Hood mode
-  * (unless it is disabled with `setRobinHoodAllowed`):
+  * (in the mode `RobinHoodMode::Always`):
   * the max load factor is increased from 0.5 to robin_hood_max_load_factor_percent / 100 (the hash table becomes up to two times smaller),
   * and the elements inside collision resolution chains are ordered by their optimal positions,
   * so a lookup of a missing key can stop early instead of walking to the end of the chain.
+  *
+  * In the mode `RobinHoodMode::OnMemoryPressure` the hash table stays out of the Robin Hood mode until a `HashTableGrowthBudget`
+  * says that the next growth would cost too much memory. Then it switches in place, at any size where that mode holds more
+  * elements. `halveInRobinHoodMode` also moves it into the mode.
   *
   * The memory layout is the same in both modes, and switching happens in place, without growing the buffer.
   * Hash tables check the mode only if the grower has the `isRobinHood` method (see `GrowerWithRobinHood`),
@@ -360,36 +365,62 @@ class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculationAndRobinH
 
     UInt8 size_degree = initial_size_degree;
     bool robin_hood = false;
-    bool robin_hood_allowed = true;
+    RobinHoodMode robin_hood_mode = RobinHoodMode::Always;
     size_t precalculated_mask = (1ULL << initial_size_degree) - 1;
     size_t precalculated_max_fill = 1ULL << (initial_size_degree - 1);
+    HashTableGrowthBudget * budget = nullptr;
+
+    /// An insert takes a cell before `resize`, and undoing it when `resize` throws needs an empty cell, so in the Robin Hood mode
+    /// at most all cells but two are filled before the hash table grows.
+    static constexpr size_t maxFill(UInt8 size_degree_, bool robin_hood_)
+    {
+        const size_t cells = 1ULL << size_degree_;
+        if (!robin_hood_)
+            return cells / 2;
+        return std::min(
+            cells - 2, cells / 100 * robin_hood_max_load_factor_percent + cells % 100 * robin_hood_max_load_factor_percent / 100);
+    }
 
     void setSizeDegree(UInt8 size_degree_, bool robin_hood_)
     {
         size_degree = size_degree_;
         robin_hood = robin_hood_;
         precalculated_mask = (1ULL << size_degree) - 1;
-        precalculated_max_fill = robin_hood
-            ? (1ULL << size_degree) / 100 * robin_hood_max_load_factor_percent
-                + (1ULL << size_degree) % 100 * robin_hood_max_load_factor_percent / 100
-            : 1ULL << (size_degree - 1);
+        precalculated_max_fill = maxFill(size_degree, robin_hood);
     }
+
 
 public:
     [[nodiscard]] UInt8 sizeDegree() const { return size_degree; }
     [[nodiscard]] bool isRobinHood() const { return robin_hood; }
 
-    /// Whether the hash table may switch to the Robin Hood mode. Can be disabled only before the switch.
-    void setRobinHoodAllowed(bool allowed)
+    /// When the hash table switches to the Robin Hood mode.
+    /// The mode `OnMemoryPressure` needs a `budget`, which must outlive every growth of the hash table.
+    void setRobinHoodMode(RobinHoodMode mode, HashTableGrowthBudget * budget_ = nullptr)
     {
-        chassert(allowed || !robin_hood);
-        robin_hood_allowed = allowed;
+        chassert(mode != RobinHoodMode::OnMemoryPressure || budget_);
+        robin_hood_mode = mode;
+        budget = budget_;
+    }
+
+    /// Makes the grower describe half the cells in the Robin Hood mode. Returns false and changes nothing if the hash table is
+    /// in the Robin Hood mode already, has its initial size, or `num_elems` do not fit half the cells.
+    bool halveInRobinHoodMode(size_t num_elems)
+    {
+        if (robin_hood || size_degree <= initial_size_degree)
+            return false;
+        const UInt8 old_size_degree = size_degree;
+        setSizeDegree(static_cast<UInt8>(size_degree - 1), true);
+        if (!overflow(num_elems))
+            return true;
+        setSizeDegree(old_size_degree, false);
+        return false;
     }
 
     void increaseSizeDegree(UInt8 delta)
     {
         UInt8 new_size_degree = size_degree + delta;
-        setSizeDegree(new_size_degree, robin_hood || (robin_hood_allowed && new_size_degree > robin_hood_size_degree));
+        setSizeDegree(new_size_degree, robin_hood || (robin_hood_mode == RobinHoodMode::Always && new_size_degree > robin_hood_size_degree));
     }
 
     static constexpr auto initial_count = 1ULL << initial_size_degree;
@@ -410,29 +441,55 @@ public:
     [[nodiscard]] bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
 
     /// Increase the size of the hash table, or switch it to the Robin Hood mode without changing the size.
+    /// In the mode `OnMemoryPressure` it asks the budget, which records the answer, so call it only when the hash table grows.
     void increaseSize()
     {
-        if (robin_hood_allowed && !robin_hood && size_degree >= robin_hood_size_degree)
+        const UInt8 step = (robin_hood || size_degree >= max_size_degree_quadratic) ? 1 : 2;
+
+        bool in_place = false;
+        if (!robin_hood)
+        {
+            if (robin_hood_mode == RobinHoodMode::Always)
+                in_place = size_degree >= robin_hood_size_degree;
+            /// The smallest hash tables hold no more elements in the Robin Hood mode, so they grow.
+            else if (maxFill(size_degree, true) > maxFill(size_degree, false))
+                in_place = budget->preferSmallerTable(bufSize() * ((1ULL << step) - 1), bufSize());
+        }
+
+        if (in_place)
             setSizeDegree(size_degree, true);
         else
-            increaseSizeDegree(robin_hood || size_degree >= max_size_degree_quadratic ? 1 : 2);
+            increaseSizeDegree(step);
     }
 
-    /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
+    /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table
+    /// and to size it up front. In the mode `OnMemoryPressure` the budget is asked about growing to the size without the Robin Hood mode.
     void set(size_t num_elems)
     {
-        size_t new_size_degree = initial_size_degree;
+        size_t plain_size_degree = initial_size_degree;
         if (num_elems > 1)
-            new_size_degree = std::max(new_size_degree, static_cast<size_t>(log2(num_elems - 1)) + 2);
+            plain_size_degree = std::max(plain_size_degree, static_cast<size_t>(log2(num_elems - 1)) + 2);
 
-        if (!robin_hood_allowed || new_size_degree <= robin_hood_size_degree)
+        size_t first_size_degree = robin_hood_size_degree;
+        bool robin_hood_size = false;
+        if (robin_hood_mode == RobinHoodMode::Always)
         {
-            setSizeDegree(static_cast<UInt8>(new_size_degree), false);
+            robin_hood_size = plain_size_degree > robin_hood_size_degree;
+        }
+        else if ((1ULL << plain_size_degree) > bufSize())
+        {
+            robin_hood_size = budget->preferSmallerTable((1ULL << plain_size_degree) - bufSize(), bufSize());
+            first_size_degree = initial_size_degree;
+        }
+
+        if (!robin_hood_size)
+        {
+            setSizeDegree(static_cast<UInt8>(plain_size_degree), false);
             return;
         }
 
         /// Take the smallest size that fits the elements with the higher load factor.
-        new_size_degree = robin_hood_size_degree;
+        size_t new_size_degree = first_size_degree;
         setSizeDegree(static_cast<UInt8>(new_size_degree), true);
         while (overflow(num_elems))
             setSizeDegree(static_cast<UInt8>(++new_size_degree), true);
@@ -441,7 +498,7 @@ public:
     void setBufSize(size_t buf_size_)
     {
         UInt8 new_size_degree = static_cast<UInt8>(log2(buf_size_ - 1) + 1);
-        setSizeDegree(new_size_degree, robin_hood_allowed && new_size_degree > robin_hood_size_degree);
+        setSizeDegree(new_size_degree, robin_hood_mode == RobinHoodMode::Always && new_size_degree > robin_hood_size_degree);
     }
 };
 
@@ -1842,6 +1899,44 @@ public:
     [[nodiscard]] size_t getBufferSizeInBytes() const
     {
         return grower.bufSize() * sizeof(Cell);
+    }
+
+    /// The bytes that `halveInRobinHoodMode` would free now, 0 if it would not change the hash table.
+    [[nodiscard]] size_t bytesFreedByHalving() const
+    requires GrowerWithRobinHood<Grower>
+    {
+        Grower half = grower;
+        return half.halveInRobinHoodMode(m_size) ? getBufferSizeInBytes() - half.bufSize() * sizeof(Cell) : 0;
+    }
+
+    /// Rebuilds the hash table in the Robin Hood mode in half the cells, if its elements fit there, and returns the bytes freed.
+    /// The new buffer is allocated before the old one is touched, so an exception leaves the hash table as it was.
+    size_t halveInRobinHoodMode()
+    requires GrowerWithRobinHood<Grower>
+    {
+        Grower half = grower;
+        if (!half.halveInRobinHoodMode(m_size))
+            return 0;
+
+        Cell * const old_buf = buf;
+        const size_t old_cells = grower.bufSize();
+        const size_t old_bytes = getBufferSizeInBytes();
+        Cell * const new_buf = reinterpret_cast<Cell *>(Allocator::alloc(allocCheckOverflow(half.bufSize())));
+        for (size_t i = 0; i < old_cells; ++i)
+        {
+            if (old_buf[i].isZero(*this))
+                continue;
+            size_t place_value = half.place(old_buf[i].getHash(*this));
+            while (!new_buf[place_value].isZero(*this))
+                place_value = half.next(place_value);
+            memcpy(static_cast<void *>(&new_buf[place_value]), static_cast<const void *>(&old_buf[i]), sizeof(Cell));
+        }
+
+        Allocator::free(old_buf, old_bytes);
+        buf = new_buf;
+        grower = half;
+        orderCollisionResolutionChains();
+        return old_bytes - getBufferSizeInBytes();
     }
 
     /// Estimates the additional memory charged while inserting this many new keys. Each resize charges

@@ -875,3 +875,248 @@ TEST(HashTableRobinHood, ReserveSerializationAndTwoLevel)
     ASSERT_TRUE(deserialized.empty());
     deserialized.checkInvariants();
 }
+
+namespace
+{
+
+/// Says yes once it is asked about a bucket of at least `latch_at_cells` cells, and to every question after that.
+struct LatchingBudget final : HashTableGrowthBudget
+{
+    explicit LatchingBudget(size_t latch_at_cells_)
+        : latch_at_cells(latch_at_cells_)
+    {
+    }
+
+    bool preferSmallerTable(size_t /*growth_cells*/, size_t bucket_cells) override
+    {
+        ++asked;
+        latched = latched || bucket_cells >= latch_at_cells;
+        return latched;
+    }
+
+    size_t latch_at_cells;
+    size_t asked = 0;
+    bool latched = false;
+};
+
+}
+
+TEST(HashTableRobinHood, GrowerOnMemoryPressure)
+{
+    using Grower = HashTableGrowerWithPrecalculationAndRobinHood<4, 23, 8>;
+
+    LatchingBudget budget(64);
+    Grower grower;
+    grower.setRobinHoodMode(RobinHoodMode::OnMemoryPressure, &budget);
+
+    /// The budget is asked at every size, also below the size at which the mode `Always` switches. The first answer is no.
+    grower.increaseSize();
+    ASSERT_EQ(budget.asked, 1);
+    ASSERT_EQ(grower.bufSize(), 64);
+    ASSERT_FALSE(grower.isRobinHood());
+
+    /// The second one is yes: the bucket switches in place, to the higher load factor.
+    grower.increaseSize();
+    ASSERT_EQ(budget.asked, 2);
+    ASSERT_EQ(grower.bufSize(), 64);
+    ASSERT_TRUE(grower.isRobinHood());
+    ASSERT_FALSE(grower.overflow(57));
+    ASSERT_TRUE(grower.overflow(58));
+
+    /// A bucket in the Robin Hood mode only doubles, and nobody is asked.
+    grower.increaseSize();
+    ASSERT_EQ(budget.asked, 2);
+    ASSERT_EQ(grower.bufSize(), 128);
+    ASSERT_TRUE(grower.isRobinHood());
+
+    /// After a yes the budget answers yes at once, so every other bucket switches as soon as it grows.
+    Grower later;
+    later.setRobinHoodMode(RobinHoodMode::OnMemoryPressure, &budget);
+    later.increaseSize();
+    ASSERT_EQ(budget.asked, 3);
+    ASSERT_EQ(later.bufSize(), 16);
+    ASSERT_TRUE(later.isRobinHood());
+
+    /// Sizing for a number of elements asks about the plain size, and takes the smallest Robin Hood size on a yes.
+    LatchingBudget no(size_t(1) << 40);
+    LatchingBudget yes(1);
+    Grower plain_sized;
+    plain_sized.setRobinHoodMode(RobinHoodMode::OnMemoryPressure, &no);
+    plain_sized.set(600);
+    ASSERT_EQ(no.asked, 1);
+    ASSERT_EQ(plain_sized.bufSize(), 2048);
+    ASSERT_FALSE(plain_sized.isRobinHood());
+
+    Grower robin_hood_sized;
+    robin_hood_sized.setRobinHoodMode(RobinHoodMode::OnMemoryPressure, &yes);
+    robin_hood_sized.set(600);
+    ASSERT_EQ(yes.asked, 1);
+    ASSERT_EQ(robin_hood_sized.bufSize(), 1024);
+    ASSERT_TRUE(robin_hood_sized.isRobinHood());
+    ASSERT_FALSE(robin_hood_sized.overflow(600));
+
+    /// The mode `Always` needs no budget.
+    Grower always;
+    always.setRobinHoodMode(RobinHoodMode::Always);
+    for (size_t i = 0; i < 10; ++i)
+        always.increaseSize();
+    ASSERT_TRUE(always.isRobinHood());
+}
+
+TEST(HashTableRobinHood, OnMemoryPressureKeepsTheInvariants)
+{
+    struct Map : HashTableWithInvariantsCheck<HashMap<UInt64, UInt64, CollidingHash, RobinHoodTestGrower>>
+    {
+        void setMode(RobinHoodMode mode, HashTableGrowthBudget * budget) { this->grower.setRobinHoodMode(mode, budget); }
+    };
+
+    /// The hash table switches at different sizes in the middle of random inserts and erases, or never.
+    for (size_t latch_at_cells : {size_t(16), size_t(64), size_t(1024), size_t(1) << 40})
+    {
+        LatchingBudget budget(latch_at_cells);
+        Map map;
+        map.setMode(RobinHoodMode::OnMemoryPressure, &budget);
+        std::unordered_map<UInt64, UInt64> expected;
+        std::mt19937_64 rng(42); /// NOLINT(cert-msc32-c,cert-msc51-cpp,bugprone-random-generator-seed) a reproducible sequence
+
+        for (size_t i = 0; i < 100000; ++i)
+        {
+            UInt64 key = rng() % 20000;
+            if (rng() % 8 == 0)
+            {
+                ASSERT_EQ(map.erase(key), expected.erase(key) != 0);
+            }
+            else
+            {
+                map[key] = i;
+                expected[key] = i;
+            }
+            if (i % 2000 == 0)
+                map.checkInvariants();
+        }
+
+        map.checkInvariants();
+        ASSERT_EQ(map.size(), expected.size());
+        for (const auto & [key, value] : expected)
+        {
+            auto * it = map.find(key);
+            ASSERT_TRUE(it);
+            ASSERT_EQ(it->getMapped(), value);
+        }
+        ASSERT_EQ(map.isRobinHoodMode(), latch_at_cells < (size_t(1) << 40)) << "latch at " << latch_at_cells << " cells";
+    }
+}
+
+TEST(HashTableRobinHood, HalveInRobinHoodMode)
+{
+    struct Map : HashTableWithInvariantsCheck<HashMap<UInt64, UInt64, CollidingHash, RobinHoodTestGrower>>
+    {
+        void setMode(RobinHoodMode mode, HashTableGrowthBudget * budget) { this->grower.setRobinHoodMode(mode, budget); }
+    };
+    constexpr size_t cell_bytes = sizeof(Map::cell_type);
+    LatchingBudget never_latches(size_t(1) << 40);
+
+    /// 300 keys grow the hash table to 1024 cells. Half the cells hold up to 460 keys in the Robin Hood mode.
+    Map map;
+    map.setMode(RobinHoodMode::OnMemoryPressure, &never_latches);
+    for (UInt64 key = 0; key < 300; ++key)
+        map[key] = key * 10;
+    ASSERT_EQ(map.getBufferSizeInBytes(), 1024 * cell_bytes);
+    ASSERT_FALSE(map.isRobinHoodMode());
+
+    ASSERT_EQ(map.bytesFreedByHalving(), 512 * cell_bytes);
+    ASSERT_EQ(map.halveInRobinHoodMode(), 512 * cell_bytes);
+    map.checkInvariants();
+    ASSERT_TRUE(map.isRobinHoodMode());
+    ASSERT_EQ(map.getBufferSizeInBytes(), 512 * cell_bytes);
+    ASSERT_EQ(map.size(), 300);
+    for (UInt64 key = 0; key < 300; ++key)
+    {
+        auto * it = map.find(key);
+        ASSERT_TRUE(it);
+        ASSERT_EQ(it->getMapped(), key * 10);
+    }
+
+    /// A hash table in the Robin Hood mode is not halved again, and grows by doubling.
+    ASSERT_EQ(map.bytesFreedByHalving(), 0);
+    ASSERT_EQ(map.halveInRobinHoodMode(), 0);
+    for (UInt64 key = 300; key < 2000; ++key)
+        map[key] = key * 10;
+    map.checkInvariants();
+    ASSERT_TRUE(map.isRobinHoodMode());
+    for (UInt64 key = 0; key < 2000; ++key)
+        ASSERT_TRUE(map.find(key));
+
+    /// 470 keys do not fit half the cells, so nothing changes.
+    Map full;
+    full.setMode(RobinHoodMode::OnMemoryPressure, &never_latches);
+    for (UInt64 key = 0; key < 470; ++key)
+        full[key] = key;
+    ASSERT_EQ(full.getBufferSizeInBytes(), 1024 * cell_bytes);
+    ASSERT_EQ(full.bytesFreedByHalving(), 0);
+    ASSERT_EQ(full.halveInRobinHoodMode(), 0);
+    ASSERT_FALSE(full.isRobinHoodMode());
+    full.checkInvariants();
+}
+
+TEST(HashTableRobinHood, OnMemoryPressureLeavesACellForUndoingAnInsert)
+{
+    /// In the Robin Hood mode, an insert that overflows the hash table takes a cell before `resize`, and undoing it when
+    /// `resize` throws needs an empty cell. The budget says yes at every size, so the hash table switches at the first size
+    /// where that mode holds more elements, 8 cells.
+    using Grower = HashTableGrowerWithPrecalculationAndRobinHood<1, 1>;
+    LatchingBudget yes(1);
+    Grower grower;
+    grower.setRobinHoodMode(RobinHoodMode::OnMemoryPressure, &yes);
+    while (grower.bufSize() < 1024)
+    {
+        if (grower.isRobinHood())
+        {
+            size_t overflowing = 0;
+            while (!grower.overflow(overflowing))
+                ++overflowing;
+            ASSERT_LT(overflowing, grower.bufSize());
+        }
+        else
+            ASSERT_LE(grower.bufSize(), 8);
+        grower.increaseSize();
+    }
+    ASSERT_TRUE(grower.isRobinHood());
+}
+
+TEST(HashTableRobinHood, OnMemoryPressureMovesCellsThatOwnMemory)
+{
+    /// The cells of an `ASOF` map own their lookup vectors.
+    struct Map : HashTableWithInvariantsCheck<HashMap<UInt64, std::unique_ptr<UInt64>, CollidingHash, RobinHoodTestGrower>>
+    {
+        void setMode(RobinHoodMode mode, HashTableGrowthBudget * budget) { this->grower.setRobinHoodMode(mode, budget); }
+    };
+    const auto check = [](const Map & map, UInt64 keys)
+    {
+        map.checkInvariants();
+        ASSERT_EQ(map.size(), keys);
+        for (UInt64 key = 0; key < keys; ++key)
+        {
+            const auto * it = map.find(key);
+            ASSERT_TRUE(it);
+            ASSERT_EQ(*it->getMapped(), key * 10);
+        }
+    };
+
+    LatchingBudget latches_at_64(64);
+    Map switched;
+    switched.setMode(RobinHoodMode::OnMemoryPressure, &latches_at_64);
+    for (UInt64 key = 0; key < 1000; ++key)
+        switched[key] = std::make_unique<UInt64>(key * 10);
+    ASSERT_TRUE(switched.isRobinHoodMode());
+    check(switched, 1000);
+
+    LatchingBudget never_latches(size_t(1) << 40);
+    Map halved;
+    halved.setMode(RobinHoodMode::OnMemoryPressure, &never_latches);
+    for (UInt64 key = 0; key < 300; ++key)
+        halved[key] = std::make_unique<UInt64>(key * 10);
+    ASSERT_GT(halved.halveInRobinHoodMode(), 0);
+    ASSERT_TRUE(halved.isRobinHoodMode());
+    check(halved, 300);
+}

@@ -55,13 +55,14 @@ HashJoinTable::HashJoinTable(
     JoinStrictness strictness,
     JoinMapsKind maps_kind,
     const HashJoinBuildLayout & layout,
-    bool robin_hood_allowed)
+    RobinHoodMode robin_hood_mode,
+    HashTableGrowthBudget * growth_budget)
     : key_type(layout.two_level ? toTwoLevelType(key_class) : key_class)
     , key_sizes(std::move(key_sizes_))
     , slots(layout.num_slots)
 {
     joinDispatchInit(kind, strictness, maps, maps_kind);
-    std::visit([&](auto & maps_) { maps_.create(key_type, robin_hood_allowed); }, maps);
+    std::visit([&](auto & maps_) { maps_.create(key_type, robin_hood_mode, growth_budget); }, maps);
 
     arenas.reserve(layout.num_build_streams);
     for (size_t stream = 0; stream < layout.num_build_streams; ++stream)
@@ -468,6 +469,24 @@ void visitAsofMapWithBucketBuffers(const HashJoin::MapsVariant & maps, HashJoin:
         });
 }
 
+/// Calls `f(map)` on the map of type `type` if its buckets can be halved in the Robin Hood mode.
+template <typename F>
+void visitMapWithRobinHoodBuckets(const HashJoin::MapsVariant & maps, HashJoin::Type type, F && f)
+{
+    std::visit(
+        [&](const auto & maps_)
+        {
+            maps_.visit(
+                type,
+                [&]<typename Table>(const std::shared_ptr<Table> & map)
+                {
+                    if constexpr (requires { map->impls[0].halveInRobinHoodMode(); })
+                        if (map)
+                            f(*map);
+                });
+        },
+        maps);
+}
 }
 
 HashJoinTable::ParallelClearWork HashJoinTable::parallelClearWork() const
@@ -492,6 +511,52 @@ void HashJoinTable::clearInParallel(size_t num_jobs, absl::FunctionRef<void(std:
                     table.impls[bucket].clearAndShrink();
             });
     });
+}
+
+HashJoinTable::Halving HashJoinTable::estimateHalving() const
+{
+    Halving halving;
+    visitMapWithRobinHoodBuckets(
+        maps,
+        key_type,
+        [&]<typename Table>(const Table & map)
+        {
+            for (const auto & bucket : map.impls)
+            {
+                /// The new buffer has half the cells, so it is as large as the bytes freed.
+                const size_t freed = bucket.bytesFreedByHalving();
+                halving.freed_bytes += freed;
+                halving.largest_new_bucket_bytes = std::max(halving.largest_new_bucket_bytes, freed);
+            }
+        });
+    return halving;
+}
+
+void HashJoinTable::halveInParallel(
+    size_t num_jobs,
+    absl::FunctionRef<void(std::function<void()>)> schedule,
+    std::atomic<size_t> & freed_bytes,
+    std::atomic<size_t> & halved_buckets)
+{
+    visitMapWithRobinHoodBuckets(
+        maps,
+        key_type,
+        [&]<typename Table>(Table & table)
+        {
+            for (size_t first_bucket = 0; first_bucket < num_jobs; ++first_bucket)
+                schedule(
+                    [&table, first_bucket, num_jobs, &freed_bytes, &halved_buckets]
+                    {
+                        for (size_t bucket = first_bucket; bucket < Table::NUM_BUCKETS; bucket += num_jobs)
+                        {
+                            if (const size_t freed = table.impls[bucket].halveInRobinHoodMode())
+                            {
+                                freed_bytes.fetch_add(freed, std::memory_order_relaxed);
+                                halved_buckets.fetch_add(1, std::memory_order_relaxed);
+                            }
+                        }
+                    });
+        });
 }
 
 void HashJoinTable::releaseMaps()

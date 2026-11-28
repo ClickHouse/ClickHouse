@@ -74,6 +74,7 @@ namespace DB
     M(HASHED_DICT_DTOR, "HashedDictDtor") \
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
     M(HASH_JOIN_DTOR, "HashJoinDtor") \
+    M(HASH_JOIN_HALVING, "HashJoinHalving") \
     M(HTTP_HANDLER, "HTTPHandler") \
     M(HTTP_SERVER_CONN, "HTTPSrvConn") \
     M(ICEBERG_ITERATOR, "IcebergIter") \

@@ -6,6 +6,10 @@
 #include <base/types.h>
 #include <Common/MemoryTracker.h>
 
+/// What the current query can still allocate under the strictest hard limit of the query, user or server, counting the
+/// releasable page cache as free. None without a limit, or outside a query.
+std::optional<UInt64> getAvailableMemoryForSpilling();
+
 /// The query memory threshold at which an operator spills to disk, from its absolute setting `max_bytes` and
 /// its ratio setting `max_bytes_ratio`, where 0 disables either. The ratio applies to the memory available
 /// under the strictest query (`max_memory_usage`), user or server limit, where the userspace page cache above

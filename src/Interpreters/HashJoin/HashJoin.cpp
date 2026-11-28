@@ -22,6 +22,7 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
 #include <Common/StackTrace.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
 
@@ -61,6 +62,7 @@ namespace ProfileEvents
 {
     extern const Event HashJoinBuiltWithParallelLayout;
     extern const Event HashJoinBuiltWithSerialLayout;
+    extern const Event JoinRobinHoodHalvedBuckets;
 }
 
 namespace CurrentMetrics
@@ -68,6 +70,9 @@ namespace CurrentMetrics
 extern const Metric HashJoinDestroyThreads;
 extern const Metric HashJoinDestroyThreadsActive;
 extern const Metric HashJoinDestroyThreadsScheduled;
+extern const Metric HashJoinHalvingThreads;
+extern const Metric HashJoinHalvingThreadsActive;
+extern const Metric HashJoinHalvingThreadsScheduled;
 }
 
 namespace DB
@@ -123,12 +128,11 @@ size_t capReserveAtSpillBudget(size_t keys, size_t max_reserve_bytes, size_t cel
 {
     /// `HashTableGrowerWithPrecalculation::set` keeps a buffer at most half full and rounds its size up to a power of two.
     static constexpr size_t max_cells_per_key = 4;
-    /// `SpillingHashJoin` switches to `GraceHashJoin` at half of the budget, so the reserve stays under that half.
-    static constexpr size_t budget_divisor = 2;
 
     if (!keys || !max_reserve_bytes)
         return keys;
-    return std::min(keys, max_reserve_bytes / (budget_divisor * max_cells_per_key * cell_size));
+    /// `SpillingHashJoin` switches to `GraceHashJoin` at a fraction of the budget, so the reserve stays under that fraction.
+    return std::min(keys, max_reserve_bytes / (SPILL_THRESHOLD_DIVISOR * max_cells_per_key * cell_size));
 }
 
 Block filterColumnsPresentInSampleBlock(const Block & block, const Block & sample_block)
@@ -441,6 +445,8 @@ HashJoin::HashJoin(
     const auto maps_kind = getMapsKind();
     data->tables.reserve(disjuncts_num);
     for (auto & clause_key_sizes : key_sizes)
+    {
+        auto & table_budget = data->growth_budget.addTable();
         data->tables.push_back(
             std::make_unique<HashJoinTable>(
                 *selected_join_method,
@@ -449,7 +455,9 @@ HashJoin::HashJoin(
                 strictness,
                 maps_kind,
                 build_layout,
-                table_join->enableRobinHoodHashForJoins()));
+                table_join->enableRobinHoodHashForJoins() ? RobinHoodMode::Always : RobinHoodMode::OnMemoryPressure,
+                &table_budget));
+    }
     chassert(std::ranges::all_of(data->tables, [&](const auto & table) { return table->type() == keyType(); }));
 
     LOG_TRACE(log, "{}Join hash table type: {}", instance_log_id, keyType());
@@ -470,9 +478,23 @@ HashJoin::HashJoin(
     /// is not: sized from the estimate, it lands on a worse load factor than the grower picks. The cached size counts
     /// the keys of all maps, while each map reserves the whole hint, so a join with several disjuncts does not use it.
     size_t size_hint = reserve_num;
+    size_t expected_right_rows = 0;
     if (!size_hint && build_layout.two_level && table_join->oneDisjunct())
+    {
         if (const auto hint = getSizeHint(stats_collecting_params.build))
+        {
             size_hint = hint->ht_size;
+            expected_right_rows = hint->source_rows;
+        }
+    }
+    data->growth_budget.configure(
+        data->total_bytes,
+        data->allocated_size,
+        data->rows_to_join,
+        expected_right_rows,
+        data->tables.front()->cellSize(),
+        NUM_HASH_TABLE_BUCKETS,
+        build_layout.num_slots);
     const size_t keys_to_reserve
         = capReserveAtSpillBudget(size_hint, table_join->maxBytesBeforeExternalJoin(), data->tables.front()->cellSize());
     for (auto & table : data->tables)
@@ -1654,6 +1676,77 @@ HashJoin::RightTableData::~RightTableData()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+HashJoin::Halving HashJoin::estimateHalvingHashTables() const
+{
+    if (table_join->enableRobinHoodHashForJoins())
+        return {};
+    Halving halving;
+    size_t largest_new_bucket_bytes = 0;
+    for (const auto & table : data->tables)
+    {
+        const auto table_halving = table->estimateHalving();
+        halving.freed_bytes += table_halving.freed_bytes;
+        largest_new_bucket_bytes = std::max(largest_new_bucket_bytes, table_halving.largest_new_bucket_bytes);
+    }
+    halving.peak_bytes = halvingJobs() * largest_new_bucket_bytes;
+    return halving;
+}
+
+size_t HashJoin::halvingJobs() const
+{
+    return std::max<size_t>(getMaxBuildThreads(), 1);
+}
+
+size_t HashJoin::halveHashTables()
+{
+    Stopwatch watch;
+    std::atomic<size_t> freed_bytes = 0;
+    std::atomic<size_t> halved_buckets = 0;
+    /// Also after an exception: the buckets halved before it stay halved.
+    SCOPE_EXIT({
+        data->subBytes(data->bucket_bytes, freed_bytes.load(std::memory_order_relaxed));
+        ProfileEvents::increment(ProfileEvents::JoinRobinHoodHalvedBuckets, halved_buckets.load(std::memory_order_relaxed));
+    });
+
+    const size_t num_jobs = halvingJobs();
+    if (num_jobs == 1)
+    {
+        for (auto & table : data->tables)
+            table->halveInParallel(1, [](std::function<void()> job) { job(); }, freed_bytes, halved_buckets);
+    }
+    else
+    {
+        /// The jobs refer to `freed_bytes` and `halved_buckets`. The pool comes after them, so its destructor waits for the jobs first.
+        ThreadPool pool(
+            CurrentMetrics::HashJoinHalvingThreads,
+            CurrentMetrics::HashJoinHalvingThreadsActive,
+            CurrentMetrics::HashJoinHalvingThreadsScheduled,
+            num_jobs);
+        auto schedule = [&pool, thread_group = CurrentThread::getGroup()](std::function<void()> job)
+        {
+            pool.scheduleOrThrowOnError(
+                [job, thread_group]
+                {
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::HASH_JOIN_HALVING);
+                    job();
+                });
+        };
+        for (auto & table : data->tables)
+            table->halveInParallel(num_jobs, schedule, freed_bytes, halved_buckets);
+        pool.wait();
+    }
+
+    data->growth_budget.latch();
+    LOG_DEBUG(
+        log,
+        "{}Halved {} buckets of the hash tables in the Robin Hood mode, which freed {}, in {} ms",
+        instance_log_id,
+        halved_buckets.load(std::memory_order_relaxed),
+        ReadableSize(freed_bytes.load(std::memory_order_relaxed)),
+        watch.elapsedMilliseconds());
+    return freed_bytes.load(std::memory_order_relaxed);
 }
 
 void HashJoin::RightTableData::spliceBuildStreamLists()
