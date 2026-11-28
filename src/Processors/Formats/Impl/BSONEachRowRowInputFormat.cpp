@@ -42,6 +42,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int INCORRECT_DATA;
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_LARGE_STRING_SIZE;
@@ -92,6 +93,39 @@ inline size_t BSONEachRowRowInputFormat::columnIndex(std::string_view name, size
     return UNKNOWN_FIELD;
 }
 
+/// `ReadBuffer::ignore`, `readNullTerminated` and `skipNullTerminated` throw `ATTEMPT_TO_READ_AFTER_EOF` on truncated data,
+/// which is not a parse error, so a truncated document could not be skipped with `input_format_allow_errors_num`.
+/// The following helpers throw `CANNOT_READ_ALL_DATA` instead, like `ReadBuffer::readStrict`.
+
+static void ignoreBSONBytes(ReadBuffer & in, size_t n)
+{
+    size_t ignored = in.tryIgnore(n);
+    if (ignored != n)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot skip {} bytes in BSON data, only {} bytes are left", n, ignored);
+}
+
+/// Read a null-terminated string into `out`, or skip it if `out` is null.
+static void readBSONNullTerminated(ReadBuffer & in, String * out)
+{
+    while (true)
+    {
+        if (in.eof())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read a null-terminated string in BSON data: unexpected end of data");
+
+        char * next_pos = find_first_symbols<0>(in.position(), in.buffer().end());
+        if (out)
+            out->append(in.position(), next_pos);
+
+        if (next_pos != in.buffer().end())
+        {
+            in.position() = next_pos + 1;
+            return;
+        }
+
+        in.position() = next_pos;
+    }
+}
+
 /// Read the field name. Resulting std::string_view is valid only before next read from buf.
 static std::string_view readBSONKeyName(ReadBuffer & in, String & key_holder)
 {
@@ -110,7 +144,7 @@ static std::string_view readBSONKeyName(ReadBuffer & in, String & key_holder)
     }
 
     key_holder.clear();
-    readNullTerminated(key_holder, in);
+    readBSONNullTerminated(in, &key_holder);
     return key_holder;
 }
 
@@ -734,24 +768,24 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
     {
         case BSONType::DOUBLE:
         {
-            in.ignore(sizeof(Float64));
+            ignoreBSONBytes(in, sizeof(Float64));
             break;
         }
         case BSONType::BOOL:
         {
-            in.ignore(sizeof(UInt8));
+            ignoreBSONBytes(in, sizeof(UInt8));
             break;
         }
         case BSONType::INT64: [[fallthrough]];
         case BSONType::DATETIME: [[fallthrough]];
         case BSONType::TIMESTAMP:
         {
-            in.ignore(sizeof(UInt64));
+            ignoreBSONBytes(in, sizeof(UInt64));
             break;
         }
         case BSONType::INT32:
         {
-            in.ignore(sizeof(Int32));
+            ignoreBSONBytes(in, sizeof(Int32));
             break;
         }
         case BSONType::JAVA_SCRIPT_CODE: [[fallthrough]];
@@ -760,7 +794,7 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         {
             BSONSizeT size = 0;
             readBinaryLittleEndian(size, in);
-            in.ignore(size);
+            ignoreBSONBytes(in, size);
             break;
         }
         case BSONType::DOCUMENT: [[fallthrough]];
@@ -770,14 +804,14 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
             readBinaryLittleEndian(size, in);
             if (size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", size);
-            in.ignore(size - sizeof(size));
+            ignoreBSONBytes(in, size - sizeof(size));
             break;
         }
         case BSONType::BINARY:
         {
             BSONSizeT size = 0;
             readBinaryLittleEndian(size, in);
-            in.ignore(size + 1);
+            ignoreBSONBytes(in, static_cast<size_t>(size) + 1);
             break;
         }
         case BSONType::MIN_KEY: [[fallthrough]];
@@ -789,20 +823,20 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         }
         case BSONType::OBJECT_ID:
         {
-            in.ignore(BSON_OBJECT_ID_SIZE);
+            ignoreBSONBytes(in, BSON_OBJECT_ID_SIZE);
             break;
         }
         case BSONType::REGEXP:
         {
-            skipNullTerminated(in);
-            skipNullTerminated(in);
+            readBSONNullTerminated(in, nullptr);
+            readBSONNullTerminated(in, nullptr);
             break;
         }
         case BSONType::DB_POINTER:
         {
             BSONSizeT size = 0;
             readBinaryLittleEndian(size, in);
-            in.ignore(size + BSON_DB_POINTER_SIZE);
+            ignoreBSONBytes(in, size + BSON_DB_POINTER_SIZE);
             break;
         }
         case BSONType::JAVA_SCRIPT_CODE_W_SCOPE:
@@ -811,12 +845,12 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
             readBinaryLittleEndian(size, in);
             if (size < sizeof(BSONSizeT))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid java code_w_scope size: {}", size);
-            in.ignore(size - sizeof(size));
+            ignoreBSONBytes(in, size - sizeof(size));
             break;
         }
         case BSONType::DECIMAL128:
         {
-            in.ignore(16);
+            ignoreBSONBytes(in, 16);
             break;
         }
     }
