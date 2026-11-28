@@ -122,7 +122,8 @@ FunctionBasePtr createFunctionBaseCast(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type);
+    CastType cast_type,
+    bool nulls_from_source_only);
 
 /// If `target` is a `DateTime` or `DateTime64` (possibly wrapped in `Nullable` and/or `LowCardinality`)
 /// without an explicit time zone, return a copy of it with the given time zone substituted.
@@ -260,7 +261,8 @@ public:
         CastType cast_type,
         std::optional<CastDiagnostic> diagnostic,
         ContextPtr context_,
-        TupleElementsMatching tuple_elements_matching)
+        TupleElementsMatching tuple_elements_matching,
+        bool nulls_from_source_only)
     {
         if (cast_type == CastType::accurateOrNull && !canContainNull(*to))
         {
@@ -274,7 +276,7 @@ public:
 
         return createFunctionBaseCast(
             createFunctionConvertSettings(context_, FormatSettings::DateTimeOverflowBehavior::Saturate, tuple_elements_matching),
-            getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type);
+            getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, nulls_from_source_only);
     }
 
 protected:
@@ -286,7 +288,8 @@ protected:
             arguments,
             return_type,
             diagnostic,
-            cast_type);
+            cast_type,
+            /*nulls_from_source_only=*/ false);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -356,11 +359,17 @@ private:
 };
 
 
-FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic,
-    ContextPtr context, TupleElementsMatching tuple_elements_matching)
+FunctionBasePtr createInternalCast(
+    ColumnWithTypeAndName from,
+    DataTypePtr to,
+    CastType cast_type,
+    std::optional<CastDiagnostic> diagnostic,
+    ContextPtr context,
+    TupleElementsMatching tuple_elements_matching,
+    bool nulls_from_source_only)
 {
     return CastOverloadResolverImpl::createInternalCast(
-        std::move(from), std::move(to), cast_type, std::move(diagnostic), context, tuple_elements_matching);
+        std::move(from), std::move(to), cast_type, std::move(diagnostic), context, tuple_elements_matching, nulls_from_source_only);
 }
 
 REGISTER_FUNCTION(CastOverloadResolvers)

@@ -427,7 +427,10 @@ ExecutableFunctionPtr FunctionCast::prepare(const ColumnsWithTypeAndName & /*sam
     try
     {
         return std::make_unique<ExecutableFunctionCast>(
-            prepareUnpackDictionaries(getArgumentTypes()[0], getResultType()), cast_name, diagnostic);
+            prepareUnpackDictionaries(
+                getArgumentTypes()[0], getResultType(), /*report_failures_as_null=*/ false, nulls_from_source_only),
+            cast_name,
+            diagnostic);
     }
     catch (Exception & e)
     {
@@ -3230,7 +3233,8 @@ ColumnPtr castColumnWithSettings(
     };
 
     auto func_cast = createFunctionBaseCast(
-        convert_settings, cast_type == CastType::accurate ? "accurateCast" : "_CAST", arguments, type, {}, cast_type);
+        convert_settings, cast_type == CastType::accurate ? "accurateCast" : "_CAST", arguments, type, {}, cast_type,
+        /*nulls_from_source_only=*/ false);
     return func_cast->execute(arguments, type, arg.column->size(), /* dry_run = */ false);
 }
 
@@ -4836,7 +4840,7 @@ static FunctionCast::WrapperType createEnumToLowCardinalityStringWrapper(const D
 }
 
 FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(
-    const DataTypePtr & from_type, const DataTypePtr & to_type, bool report_failures_as_null) const
+    const DataTypePtr & from_type, const DataTypePtr & to_type, bool report_failures_as_null, bool result_nulls_from_source_only) const
 {
     /// A `Nothing` column carries no values, so it converts trivially to any target, which is what
     /// `createNothingWrapper` does. `Variant` and `Dynamic` instead resolve the source against their
@@ -4892,7 +4896,7 @@ FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(
     const bool skip_not_null_check = from_low_cardinality && from_nested->isNullable() && !to_nested->isNullable()
         && !report_failures_as_null;
 
-    auto wrapper = prepareRemoveNullable(from_nested, to_nested, skip_not_null_check, report_failures_as_null);
+    auto wrapper = prepareRemoveNullable(from_nested, to_nested, skip_not_null_check, report_failures_as_null, result_nulls_from_source_only);
     if (!from_low_cardinality && !to_low_cardinality)
         return wrapper;
 
@@ -4980,7 +4984,11 @@ static ColumnPtr convertNotNullRows(
 }
 
 FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
-    const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check, bool report_failures_as_null) const
+    const DataTypePtr & from_type,
+    const DataTypePtr & to_type,
+    bool skip_not_null_check,
+    bool report_failures_as_null,
+    bool result_nulls_from_source_only) const
 {
     /// Determine whether pre-processing and/or post-processing must take place during conversion.
 
@@ -4999,12 +5007,17 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
     const bool nested_types_equal = from_nested_type->equals(*to_nested_type);
 
     /// The element conversions of a Tuple do not all read its null map, so they would convert the placeholders of its NULL rows.
+    /// With `result_nulls_from_source_only`, a NULL row's hidden value is not converted either; a numeric one
+    /// is left in place, where converting it is cheaper than filtering.
     const bool exclude_source_nulls = source_is_nullable && !nested_types_equal
-        && (cast_type == CastType::accurate || isTuple(from_nested_type) || !from_nested_type->isDefaultInsertTrivial());
+        && (cast_type == CastType::accurate || isTuple(from_nested_type) || !from_nested_type->isDefaultInsertTrivial()
+            || (result_nulls_from_source_only && !from_nested_type->isValueRepresentedByNumber()));
 
     /// A conversion asked to report its failures as NULL needs a nullable result even when `to_type` cannot
-    /// hold NULL (see `prepareUnpackDictionaries`).
-    const bool requested_result_is_nullable = (result_is_nullable && !strict_text_conversion) || report_failures_as_null;
+    /// hold NULL (see `prepareUnpackDictionaries`). With `result_nulls_from_source_only`, the nested conversion
+    /// uses the non-Nullable rules, so that it cannot create a NULL the source does not carry.
+    const bool requested_result_is_nullable
+        = (result_is_nullable && !strict_text_conversion && !result_nulls_from_source_only) || report_failures_as_null;
 
     auto wrapper = prepareImpl(from_nested_type, to_nested_type, requested_result_is_nullable);
 
@@ -5333,7 +5346,8 @@ FunctionBasePtr createFunctionBaseCast(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type)
+    CastType cast_type,
+    bool nulls_from_source_only)
 {
     DataTypes data_types(arguments.size());
 
@@ -5391,7 +5405,7 @@ FunctionBasePtr createFunctionBaseCast(
     }
 
     return std::make_unique<detail::FunctionCast>(
-        *settings, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
+        *settings, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type, nulls_from_source_only);
 }
 
 

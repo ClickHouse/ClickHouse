@@ -6131,7 +6131,8 @@ public:
             , const DataTypes & argument_types_
             , const DataTypePtr & return_type_
             , std::optional<CastDiagnostic> diagnostic_
-            , CastType cast_type_)
+            , CastType cast_type_
+            , bool nulls_from_source_only_)
         : settings(settings_)
         , cast_name(cast_name_)
         , monotonicity_for_range(std::move(monotonicity_for_range_))
@@ -6139,6 +6140,7 @@ public:
         , return_type(return_type_)
         , diagnostic(std::move(diagnostic_))
         , cast_type(cast_type_)
+        , nulls_from_source_only(nulls_from_source_only_)
     {
     }
 
@@ -6149,7 +6151,11 @@ public:
 
     String getName() const override { return cast_name; }
 
-    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
+    void updateHash(SipHash & hash) const override
+    {
+        settings.updateHash(hash);
+        hash.update(nulls_from_source_only);
+    }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -6181,6 +6187,7 @@ private:
 
     std::optional<CastDiagnostic> diagnostic;
     CastType cast_type;
+    bool nulls_from_source_only;
 
     static WrapperType createFunctionAdaptor(FunctionPtr function, const DataTypePtr & from_type)
     {
@@ -6342,10 +6349,20 @@ private:
     /// of the conversions of its elements and takes the NULLs out into its own null map (see
     /// `createTupleWrapper`). The elements of an array or a map could not keep such NULLs, so their
     /// conversions are not asked and convert strictly.
-    WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type, bool report_failures_as_null = false) const;
+    /// With `result_nulls_from_source_only`, a Nullable `to_type` holds only the NULLs of `from_type`: any
+    /// other value converts as for the non-Nullable type. Only the outermost conversion is asked this.
+    WrapperType prepareUnpackDictionaries(
+        const DataTypePtr & from_type,
+        const DataTypePtr & to_type,
+        bool report_failures_as_null = false,
+        bool result_nulls_from_source_only = false) const;
 
     WrapperType prepareRemoveNullable(
-        const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check, bool report_failures_as_null) const;
+        const DataTypePtr & from_type,
+        const DataTypePtr & to_type,
+        bool skip_not_null_check,
+        bool report_failures_as_null,
+        bool result_nulls_from_source_only) const;
 
     /// `from_type` and `to_type` have their outer `Nullable` wrappers removed.
     /// `requested_result_is_nullable` includes declared nullable targets and intermediate
@@ -6368,6 +6385,7 @@ FunctionBasePtr createFunctionBaseCast(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type);
+    CastType cast_type,
+    bool nulls_from_source_only);
 
 }
