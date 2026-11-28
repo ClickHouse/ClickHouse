@@ -1,0 +1,14 @@
+--- QoS data without padding, QoS data with padding, four addresses with padding, QoS data with four addresses, cut inside the padding ---
+1	75	RADIOTAP	['RADIOTAP','DOT11_QOS_DATA','SNAP','IP','UDP','RAW']		4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	5353	5353	4	ping
+2	77	RADIOTAP	['RADIOTAP','DOT11_QOS_DATA','SNAP','IP','UDP','RAW']		4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	5353	5353	4	ping
+3	81	RADIOTAP	['RADIOTAP','DOT11_DATA','SNAP','IP','UDP','RAW']		4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	5353	5353	4	ping
+4	81	RADIOTAP	['RADIOTAP','DOT11_QOS_DATA','SNAP','IP','UDP','RAW']		4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	5353	5353	4	ping
+5	36	RADIOTAP	['RADIOTAP','DOT11_QOS_DATA']		\N	\N	\N		\N	\N	0	
+--- the decoded columns of the padded frames are the same as of the frame without padding ---
+4	1
+--- the payload is a suffix of the frame ---
+1	71	1
+2	73	1
+3	77	1
+4	77	1
+5	0	1

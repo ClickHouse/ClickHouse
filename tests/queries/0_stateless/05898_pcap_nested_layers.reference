@@ -1,0 +1,7 @@
+--- PPI headers that name PPI as the link type of the frame they carry ---
+1	1600001	PPI	66	[('PPI',65),('RAW',1)]	1600001
+--- 802.1Q tags, MPLS labels, 802.1Q tags of an IEEE 802.3 frame, IPv4 in IPv4 ---
+1	800042	ETHERNET_II	65	[('ETHERNET_II',1),('DOT1Q',63),('RAW',1)]	RAW	1	\N		\N	0	800042
+2	800046	ETHERNET_II	65	[('ETHERNET_II',1),('MPLS',63),('RAW',1)]	MPLS	\N	\N		\N	0	800046
+3	800017	ETHERNET_II	65	[('ETHERNET_II',1),('DOT1Q',63),('RAW',1)]	RAW	1	\N		\N	0	800017
+4	40042	ETHERNET_II	65	[('ETHERNET_II',1),('IP',63),('RAW',1)]	IP	\N	4	IPv4	\N	0	40042
