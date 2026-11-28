@@ -1,0 +1,8 @@
+ARRAY JOIN output equated with the other side of an INNER JOIN
+(7)	(7)	7
+control: renamed
+(7)	(7)	7
+the first ARRAY JOIN output that binds the qualifier decides
+10
+control: not hidden
+10

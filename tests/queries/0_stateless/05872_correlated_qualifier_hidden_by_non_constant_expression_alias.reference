@@ -1,0 +1,25 @@
+tuple without the element
+(0)	2
+2	(0)
+2
+scalar
+1	2
+2	1
+2
+scalar subquery
+2
+2
+alias of another alias
+2
+2
+expression that only the subquery can resolve
+2
+tuple with the element
+(25)	2
+2	(25)
+a table of the enclosing query behind an alias without the element
+1	2
+matcher
+1	3
+unused aliases with the same name
+(0)	(1)	2

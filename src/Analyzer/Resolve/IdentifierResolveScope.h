@@ -139,6 +139,9 @@ struct IdentifierResolveScope
 
     ContextPtr context;
 
+    /// Set by `QueryAnalyzer` for the root scope and inherited by the nested scopes. Owned by `QueryAnalyzer`.
+    const OuterExpressionAliasTypeResolver * outer_expression_alias_type_resolver = nullptr;
+
     /// Identifier lookup to result
     std::unordered_map<IdentifierLookup, IdentifierResolveState, IdentifierLookupHash> identifier_in_lookup_process;
 

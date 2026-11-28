@@ -1,0 +1,13 @@
+a column of the enclosing query does not make the subquery correlated
+0
+an expression that throws is not evaluated
+2
+a scalar subquery is not executed
+2
+an alias inside the expression is not counted as used
+((5),(6),2)
+an expression that cannot be resolved
+2
+an alias that provides the identifier is still used
+2
+2

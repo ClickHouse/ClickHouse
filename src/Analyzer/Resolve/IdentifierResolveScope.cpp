@@ -28,6 +28,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
     {
         subquery_depth = parent_scope->subquery_depth;
         context = parent_scope->context;
+        outer_expression_alias_type_resolver = parent_scope->outer_expression_alias_type_resolver;
         projection_mask_map = parent_scope->projection_mask_map;
         global_with_aliases = parent_scope->global_with_aliases;
         in_prewhere = parent_scope->in_prewhere;

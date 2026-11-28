@@ -225,6 +225,17 @@ private:
         IdentifierResolveScope & scope,
         IdentifierResolveContext identifier_resolve_context);
 
+    /** Returns the type of the expression that the alias `alias_name` of `alias_scope`, an enclosing scope of
+      * `lookup_scope`, gives a lookup that starts in `lookup_scope`. The alias is resolved for that as such a lookup
+      * resolves it, so the answer does not depend on which expressions of the enclosing query are already resolved.
+      * It is resolved in copies of the scopes with a dedicated analyzer, without executing scalar subqueries, so that
+      * asking for the type leaves no trace in the query.
+      * Returns nullptr if the alias gives the lookup no expression, which includes an alias that cannot be resolved,
+      * and std::nullopt if the type cannot be determined: the alias does not resolve to an expression.
+      */
+    std::optional<DataTypePtr> tryGetTypeOfOuterExpressionAlias(
+        const IdentifierResolveScope & lookup_scope, const IdentifierResolveScope & alias_scope, const std::string & alias_name);
+
     IdentifierResolveResult tryResolveIdentifierFromCTE(
         const IdentifierLookup & identifier_lookup,
         IdentifierResolveScope & scope);
@@ -388,6 +399,9 @@ private:
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_type_only;
 
     std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;
+
+    /// The scopes point to it, see `IdentifierResolveScope::outer_expression_alias_type_resolver`.
+    OuterExpressionAliasTypeResolver outer_expression_alias_type_resolver;
 
     /// Deduplicates the built `FunctionBase` for non-deterministic functions (e.g. `randConstant`)
     /// by tree hash, so syntactically-identical calls fold to the same constant. For server constants
