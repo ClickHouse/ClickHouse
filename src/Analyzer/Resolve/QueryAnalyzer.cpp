@@ -3101,7 +3101,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     auto is_aggregate_function = [&](const FunctionNode & function)
     {
         const auto & name = function.getFunctionName();
-        return !function.isWindowFunction()
+        return !function.hasWindow()
             && AggregateFunctionFactory::instance().isAggregateFunctionName(name)
             && !FunctionFactory::instance().hasNameOrAlias(name)
             && !UserDefinedSQLFunctionFactory::instance().has(name)
