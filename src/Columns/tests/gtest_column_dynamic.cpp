@@ -1,5 +1,8 @@
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -1190,4 +1193,201 @@ TEST(ColumnDynamic, InsertRangeFrom4)
         total_variants_sizes += variant->size();
 
     ASSERT_EQ(total_variants_sizes, column_to->getVariantColumn().getLocalDiscriminators().size());
+}
+
+namespace
+{
+
+/// `sources` own the source columns, the methods take raw pointers to them.
+ColumnRawPtrs makeRawSources(const VectorWithMemoryTracking<ColumnPtr> & sources)
+{
+    ColumnRawPtrs raw_sources;
+    raw_sources.reserve(sources.size());
+    for (const auto & source : sources)
+        raw_sources.push_back(source.get());
+    return raw_sources;
+}
+
+}
+
+TEST(ColumnDynamic, PrepareForSquashingFiltersMissingVariants)
+{
+    auto first_source = ColumnDynamic::create(10);
+    first_source->insert(Field(Int64(-10'000'000'000LL)));
+    first_source->insert(Field(Int64(-20'000'000'000LL)));
+
+    auto second_source = ColumnDynamic::create(10);
+    second_source->insert(Field("first"));
+    second_source->insert(Field("second"));
+    second_source->insert(Field("third"));
+
+    VectorWithMemoryTracking<ColumnPtr> sources;
+    sources.emplace_back(std::move(first_source));
+    sources.emplace_back(std::move(second_source));
+
+    auto target = ColumnDynamic::create(10);
+    static constexpr size_t factor = 3;
+    target->prepareForSquashing(makeRawSources(sources), factor);
+
+    ASSERT_GE(target->capacity(), 5u * factor);
+    const auto & variant_info = target->getVariantInfo();
+    ASSERT_TRUE(variant_info.variant_name_to_discriminator.contains("Int64"));
+    ASSERT_TRUE(variant_info.variant_name_to_discriminator.contains("String"));
+    const auto int_discriminator = variant_info.variant_name_to_discriminator.at("Int64");
+    const auto string_discriminator = variant_info.variant_name_to_discriminator.at("String");
+    ASSERT_GE(target->getVariantColumn().getVariantByGlobalDiscriminator(int_discriminator).capacity(), 2u * factor);
+    ASSERT_GE(target->getVariantColumn().getVariantByGlobalDiscriminator(string_discriminator).capacity(), 3u * factor);
+
+    for (size_t batch = 0; batch != factor; ++batch)
+        for (const auto & source : sources)
+            target->insertRangeFrom(*source, 0, source->size());
+
+    ASSERT_EQ(target->size(), 5u * factor);
+    for (size_t batch = 0; batch != factor; ++batch)
+    {
+        size_t offset = batch * 5;
+        ASSERT_EQ((*target)[offset], Field(Int64(-10'000'000'000LL)));
+        ASSERT_EQ((*target)[offset + 1], Field(Int64(-20'000'000'000LL)));
+        ASSERT_EQ((*target)[offset + 2], Field("first"));
+        ASSERT_EQ((*target)[offset + 3], Field("second"));
+        ASSERT_EQ((*target)[offset + 4], Field("third"));
+    }
+}
+
+namespace
+{
+
+constexpr auto variant_type_with_nested_dynamic = "Variant(Array(Dynamic), Int64, Map(String, UInt64), SharedVariant, String)";
+constexpr auto nested_dynamic_variant_type = "Variant(Array(UInt64), Int64, SharedVariant, String)";
+
+/// Sources where every source has only some of the variants, and the `Array(Dynamic)` variant, which `JSON` uses for arrays
+/// of values of different types, has a nested `Dynamic` with different variants in different sources.
+/// The first source has all variants of the result, so its variants match the variants of the result by position, and
+/// the variants of the other sources match by name. The `Map` variant has statistics, but no dynamic structure.
+/// The numbers need 64 bits, so that their types are Int64 and UInt64, not the smallest types that fit.
+VectorWithMemoryTracking<ColumnPtr> makeSourcesWithNestedDynamicVariant()
+{
+    auto full_source = ColumnDynamic::create(10);
+    full_source->insert(Field(Int64(-10'000'000'000LL)));
+    full_source->insert(Field("full"));
+    full_source->insert(Array{Field(Int64(-10'000'000'001LL)), Field("full-nested")});
+    full_source->insert(Map{Tuple{Field("a"), Field(UInt64(10'000'000'000ULL))}});
+
+    auto array_source = ColumnDynamic::create(10);
+    array_source->insert(Field("array"));
+    array_source->insert(Array{Field(Array{Field(UInt64(10'000'000'001ULL))}), Field("array-nested")});
+
+    auto map_source = ColumnDynamic::create(10);
+    map_source->insert(Map{Tuple{Field("b"), Field(UInt64(10'000'000'002ULL))}, Tuple{Field("c"), Field(UInt64(10'000'000'003ULL))}});
+    map_source->insert(
+        Map{Tuple{Field("d"), Field(UInt64(10'000'000'004ULL))},
+            Tuple{Field("e"), Field(UInt64(10'000'000'005ULL))},
+            Tuple{Field("f"), Field(UInt64(10'000'000'006ULL))}});
+
+    VectorWithMemoryTracking<ColumnPtr> sources;
+    sources.emplace_back(std::move(full_source));
+    sources.emplace_back(std::move(array_source));
+    sources.emplace_back(std::move(map_source));
+    return sources;
+}
+
+const IColumn & getVariant(const ColumnDynamic & column, const String & variant_name)
+{
+    const auto & variant_info = column.getVariantInfo();
+    return column.getVariantColumn().getVariantByGlobalDiscriminator(variant_info.variant_name_to_discriminator.at(variant_name));
+}
+
+const ColumnDynamic & getNestedDynamic(const ColumnDynamic & column)
+{
+    return assert_cast<const ColumnDynamic &>(assert_cast<const ColumnArray &>(getVariant(column, "Array(Dynamic)")).getData());
+}
+
+}
+
+TEST(ColumnDynamic, ChooseDynamicStructureAndTakeStatisticsFromNestedDynamicVariant)
+{
+    const auto sources = makeSourcesWithNestedDynamicVariant();
+
+    auto result = ColumnDynamic::create(10);
+    const auto raw_sources = makeRawSources(sources);
+    result->chooseDynamicStructureForMerge(raw_sources, std::nullopt);
+    result->takeOrCalculateStatisticsFrom(raw_sources);
+
+    ASSERT_EQ(result->getVariantInfo().variant_name, variant_type_with_nested_dynamic);
+    ASSERT_TRUE(result->getStatistics());
+    const auto & variants_statistics = result->getStatistics()->variants_statistics;
+    EXPECT_EQ(variants_statistics.at("Array(Dynamic)"), 2u);
+    EXPECT_EQ(variants_statistics.at("Int64"), 1u);
+    EXPECT_EQ(variants_statistics.at("Map(String, UInt64)"), 3u);
+    EXPECT_EQ(variants_statistics.at("String"), 2u);
+
+    /// The nested `Dynamic` takes its structure and statistics from exactly the sources with the `Array(Dynamic)` variant.
+    const auto & nested_dynamic = getNestedDynamic(*result);
+    EXPECT_EQ(nested_dynamic.getVariantInfo().variant_name, nested_dynamic_variant_type);
+    ASSERT_TRUE(nested_dynamic.getStatistics());
+    const auto & nested_variants_statistics = nested_dynamic.getStatistics()->variants_statistics;
+    EXPECT_EQ(nested_variants_statistics.at("Array(UInt64)"), 1u);
+    EXPECT_EQ(nested_variants_statistics.at("Int64"), 1u);
+    EXPECT_EQ(nested_variants_statistics.at("String"), 2u);
+
+    /// The `Map` variant takes statistics from the sources with the `Map` variant: 3 maps with 6 elements.
+    const auto & map_variant = assert_cast<const ColumnMap &>(getVariant(*result, "Map(String, UInt64)"));
+    ASSERT_TRUE(map_variant.getStatistics());
+    EXPECT_EQ(map_variant.getStatistics()->count, 3u);
+    EXPECT_DOUBLE_EQ(map_variant.getStatistics()->avg, 2.0);
+
+    /// A single source, as for every block written to a part.
+    auto single_source_result = ColumnDynamic::create(10);
+    single_source_result->takeExactDynamicStructureFrom(*sources.front());
+    const IColumn * source_column = sources.front().get();
+    single_source_result->takeOrCalculateStatisticsFrom(std::span(&source_column, 1));
+
+    const auto & single_source_nested_dynamic = getNestedDynamic(*single_source_result);
+    ASSERT_TRUE(single_source_nested_dynamic.getStatistics());
+    const auto & single_source_nested_variants_statistics = single_source_nested_dynamic.getStatistics()->variants_statistics;
+    EXPECT_EQ(single_source_nested_variants_statistics.at("Int64"), 1u);
+    EXPECT_EQ(single_source_nested_variants_statistics.at("String"), 1u);
+
+    const auto & single_source_map_variant = assert_cast<const ColumnMap &>(getVariant(*single_source_result, "Map(String, UInt64)"));
+    ASSERT_TRUE(single_source_map_variant.getStatistics());
+    EXPECT_EQ(single_source_map_variant.getStatistics()->count, 1u);
+    EXPECT_DOUBLE_EQ(single_source_map_variant.getStatistics()->avg, 1.0);
+}
+
+TEST(ColumnDynamic, PrepareForSquashingNestedDynamicVariant)
+{
+    const auto sources = makeSourcesWithNestedDynamicVariant();
+
+    auto target = ColumnDynamic::create(10);
+    static constexpr size_t factor = 3;
+    target->prepareForSquashing(makeRawSources(sources), factor);
+
+    ASSERT_EQ(target->getVariantInfo().variant_name, variant_type_with_nested_dynamic);
+    EXPECT_GE(target->capacity(), 8u * factor);
+    EXPECT_GE(getVariant(*target, "Array(Dynamic)").capacity(), 2u * factor);
+    EXPECT_GE(getVariant(*target, "Int64").capacity(), 1u * factor);
+    EXPECT_GE(getVariant(*target, "String").capacity(), 2u * factor);
+    const auto & map_variant = assert_cast<const ColumnMap &>(getVariant(*target, "Map(String, UInt64)"));
+    EXPECT_GE(map_variant.capacity(), 3u * factor);
+    EXPECT_GE(map_variant.getNestedData().getColumn(0).capacity(), 6u * factor);
+    EXPECT_GE(map_variant.getNestedData().getColumn(1).capacity(), 6u * factor);
+
+    /// Every variant of the nested `Dynamic` is reserved for its elements in the sources that have it.
+    const auto & nested_dynamic = getNestedDynamic(*target);
+    ASSERT_EQ(nested_dynamic.getVariantInfo().variant_name, nested_dynamic_variant_type);
+    EXPECT_GE(nested_dynamic.capacity(), 4u * factor);
+    EXPECT_GE(getVariant(nested_dynamic, "Array(UInt64)").capacity(), 1u * factor);
+    EXPECT_GE(getVariant(nested_dynamic, "Int64").capacity(), 1u * factor);
+    EXPECT_GE(getVariant(nested_dynamic, "String").capacity(), 2u * factor);
+
+    for (size_t batch = 0; batch != factor; ++batch)
+        for (const auto & source : sources)
+            target->insertRangeFrom(*source, 0, source->size());
+
+    ASSERT_EQ(target->size(), 8u * factor);
+    size_t row = 0;
+    for (size_t batch = 0; batch != factor; ++batch)
+        for (const auto & source : sources)
+            for (size_t source_row = 0; source_row != source->size(); ++source_row)
+                ASSERT_EQ((*target)[row++], (*source)[source_row]) << "row " << row - 1;
 }

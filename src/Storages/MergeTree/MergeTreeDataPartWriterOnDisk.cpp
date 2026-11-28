@@ -686,7 +686,10 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
             if (column.column->hasDynamicStructure())
                 mutable_column->takeExactDynamicStructureFrom(*column.column);
             if (column.column->hasStatistics())
-                mutable_column->takeOrCalculateStatisticsFrom({column.column});
+            {
+                const IColumn * source_column = column.column.get();
+                mutable_column->takeOrCalculateStatisticsFrom(std::span(&source_column, 1));
+            }
             sample_column.column = std::move(mutable_column);
             block_sample.insert(std::move(sample_column));
         }
@@ -717,7 +720,8 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
             if (column.column->hasStatistics())
             {
                 auto mutable_column = IColumn::mutate(std::move(column.column));
-                mutable_column->takeOrCalculateStatisticsFrom({sample_column.column});
+                const IColumn * source_column = sample_column.column.get();
+                mutable_column->takeOrCalculateStatisticsFrom(std::span(&source_column, 1));
                 column.column = std::move(mutable_column);
             }
         }

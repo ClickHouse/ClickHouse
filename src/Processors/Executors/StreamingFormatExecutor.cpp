@@ -95,7 +95,8 @@ void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const C
             /// prepareForSquashing is used to reserve space
             ///   for complex objects (string, array) we care about internal storages
             /// we don actually do squashing
-            result_columns[i]->prepareForSquashing({reference_columns[i]}, factor);
+            const IColumn * source_column = reference_columns[i].get();
+            result_columns[i]->prepareForSquashing(std::span(&source_column, 1), factor);
         }
     }
 }

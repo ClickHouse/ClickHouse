@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/COW.h>
+#include <Common/PODArray_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <memory>
@@ -35,4 +36,7 @@ using MutableColumnConstPtr = COW<IColumn>::mutable_ptr<ColumnConst>;
 using Columns = std::vector<ColumnPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 using MutableColumns = std::vector<MutableColumnPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 using ColumnRawPtrs = std::vector<const IColumn *>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+/// Raw pointers to columns, stored inline for up to 16 columns. A column collects the nested columns of its source columns
+/// into it to pass them to its nested columns, so that a few source columns don't need a heap allocation.
+using ColumnRawPtrsWithStackMemory = PODArrayWithStackMemory<const IColumn *, 16 * sizeof(const IColumn *)>;
 }

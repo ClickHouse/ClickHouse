@@ -359,6 +359,10 @@ Chunk Squashing::squash(ChunksWithOffsetsAndLengths && input_data)
         }
     }
 
+    /// Raw pointers to the source columns of one column, refilled for every column.
+    ColumnRawPtrs source_column_ptrs;
+    source_column_ptrs.reserve(input_data.size() - 1);
+
     for (size_t col_ind = 0; col_ind != num_columns; ++col_ind)
     {
         /// Materialize ColumnConst before concatenation, because ColumnConst::insertRangeFrom
@@ -377,7 +381,10 @@ Chunk Squashing::squash(ChunksWithOffsetsAndLengths && input_data)
         }
 
         /// We know all the data we will insert in advance and can make all necessary pre-allocations.
-        mutable_columns[col_ind]->prepareForSquashing(source_columns_list[col_ind], /* factor */ 1);
+        source_column_ptrs.clear();
+        for (const auto & column : source_columns_list[col_ind])
+            source_column_ptrs.push_back(column.get());
+        mutable_columns[col_ind]->prepareForSquashing(source_column_ptrs, /* factor */ 1);
         for (size_t chunk_ind = 1; chunk_ind < input_data.size(); ++chunk_ind)
         {
             auto column = std::move(source_columns_list[col_ind][chunk_ind - 1]);
