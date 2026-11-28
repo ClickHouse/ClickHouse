@@ -2,10 +2,10 @@
 #include <Common/QueryFuzzer.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/CancellationBudget.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/IAST.h>
