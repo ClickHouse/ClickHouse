@@ -193,7 +193,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find aggregate function combinator "
                             "to apply a function to Nullable arguments.");
 
-        DataTypes nested_types = combinator->transformArguments(types_without_low_cardinality);
+        DataTypes nested_types = combinator->transformArguments(types_without_low_cardinality, parameters);
         Array nested_parameters = combinator->transformParameters(parameters);
 
         bool has_null_arguments = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
@@ -426,7 +426,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         }
         else
         {
-            DataTypes nested_types = combinator->transformArguments(argument_types);
+            DataTypes nested_types = combinator->transformArguments(argument_types, parameters);
 
             AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties);
             combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
