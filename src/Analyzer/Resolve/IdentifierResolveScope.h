@@ -287,9 +287,16 @@ private:
         const IdentifierLookup & lookup,
         const IdentifierResolveContext & resolve_context) const;
 
+    /// Lambda arguments hidden in this scope and in its parent scopes, see `hidden_expression_arguments`.
+    using HiddenExpressionArgumentsInScopes = std::vector<std::pair<const IdentifierResolveScope *, std::unordered_set<std::string>>>;
+    HiddenExpressionArgumentsInScopes getHiddenExpressionArgumentsInScopes() const;
+
     struct IdentifierResolveCacheEntry
     {
         IdentifierResolveResult result;
+
+        /// A name resolves differently while a lambda argument is hidden, so the result is reused only under the same ones.
+        HiddenExpressionArgumentsInScopes hidden_expression_arguments;
 
         /// Expressions that contain subqueries cannot be shared between use sites:
         /// later stages rewrite each subquery instance independently (`GLOBAL IN`
