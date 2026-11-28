@@ -26,6 +26,7 @@ class AccessRightsElements;
 class SettingsChanges;
 struct StorageID;
 struct ConstraintsDescription;
+class VirtualColumnsDescription;
 
 /** Allows to create a table by the name and parameters of the engine.
   * In 'columns' Nested data structures must be flattened.
@@ -45,6 +46,10 @@ public:
     /// Returns nothing if `changes` set no such place. It reads only the changes, so the table need not exist on this host.
     /// If `own_engine`, also the grants for settings that modify the source files, e.g. `after_processing` of a queue.
     using GetExportAccessFn = AccessRightsElements(const SettingsChanges & changes, bool own_engine);
+
+    /// The grants that settings of a new table require of the user who creates it. They are checked before a distributed or
+    /// replicated `CREATE` is queued, because the hosts that run it may not have the user's grants.
+    using GetCreateAccessFn = AccessRightsElements(const SettingsChanges & changes);
 
     struct Arguments
     {
@@ -100,6 +105,7 @@ public:
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
         GetExportAccessFn * get_export_access_fn = nullptr;
+        GetCreateAccessFn * get_create_access_fn = nullptr;
 
         /// Static over-approximation of IStorage::storesDataOnDisk(): set if the engine can ever store data locally.
         bool stores_data_on_disk = false;
@@ -149,6 +155,7 @@ public:
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
         .get_export_access_fn = nullptr,
+        .get_create_access_fn = nullptr,
         .stores_data_on_disk = false,
         .supports_temporary = false,
     }, Documentation documentation = {});
@@ -192,6 +199,8 @@ public:
     /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
     /// table. An unknown engine needs nothing here: creating it fails later.
     [[nodiscard]] AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
+    /// See `GetCreateAccessFn`. For the same engines as `getExportAccess`.
+    [[nodiscard]] AccessRightsElements getCreateAccess(const ASTCreateQuery & create) const;
     /// For `changes` of a table with `engine`: the destinations of every engine, as below, and the source files of `engine` only.
     [[nodiscard]] AccessRightsElements getExportAccess(const SettingsChanges & changes, const String & engine) const;
     /// The grants of every engine for which `changes` send the data elsewhere. It does not depend on the engine of the table,
@@ -199,6 +208,9 @@ public:
     [[nodiscard]] AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
 
 private:
+    [[nodiscard]] AccessRightsElements collectAccess(
+        const ASTCreateQuery & create, const std::function<AccessRightsElements(const StorageFeatures &, const SettingsChanges &)> & access_of) const;
+
     Storages storages;
 };
 
@@ -210,6 +222,11 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args);
 /// Whether the definition is replayed (attach, DDL replay, Keeper recovery, Shared Catalog replay)
 /// rather than written by the user now. Refusing a replayed definition would block loading or retry forever.
 bool isReplayedTableDefinition(LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context);
+
+/// Rejects columns that conflict with the virtual columns of the storage. Engines that know their virtual columns
+/// from the definition call it before construction, so that a rejected definition leaves no state behind.
+void validateColumnsAgainstVirtuals(
+    const ColumnsDescription & columns, const VirtualColumnsDescription & virtuals, bool reject_reserved_names, const String & engine_name);
 
 /// Rejects a definition of a table with its own unreplicated data on disk when `database_replicated_allow_only_replicated_engine`
 /// restricts the `Replicated` database it is created in. The same restriction as in `InterpreterCreateQuery::doCreateTable`

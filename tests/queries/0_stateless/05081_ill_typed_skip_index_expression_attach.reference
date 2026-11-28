@@ -1,3 +1,5 @@
+D0 a full-definition ATTACH of such an index is rejected like CREATE
+1
 D1 a table already carrying such an index still attaches
 ok
 D2 an unrelated ALTER on it is still allowed

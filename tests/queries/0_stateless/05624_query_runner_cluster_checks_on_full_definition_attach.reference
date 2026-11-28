@@ -1,0 +1,12 @@
+without the REMOTE grant
+0
+with the REMOTE grant
+runner_a
+runner_c
+runner_copy
+runner_oc_a
+runner_oc_c
+runner_oc_copy
+runner_r
+SQL SECURITY with a cluster without secret
+0

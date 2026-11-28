@@ -61,6 +61,7 @@ DROP TABLE t_subcolumn_codecs_target;
 DROP TABLE t_subcolumn_codecs_src;
 
 -- The setting guards new declarations for subcolumns, not the column form and not tables that already have them.
+-- Restoring a table from a backup is a new declaration.
 SELECT 'gate';
 SET enable_subcolumn_codecs = 0;
 CREATE TABLE t_subcolumn_codecs_bad (p Tuple(a UInt8), CODEC p.a (ZSTD)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError SUPPORT_IS_DISABLED }
@@ -79,8 +80,10 @@ ATTACH TABLE t_subcolumn_codecs_existing;
 SELECT replaceRegexpOne(create_table_query, ' SETTINGS .*$', '') FROM system.tables WHERE database = currentDatabase() AND name = 't_subcolumn_codecs_existing';
 CREATE TABLE t_subcolumn_codecs_copy AS t_subcolumn_codecs_existing; -- { serverError SUPPORT_IS_DISABLED }
 
+-- A backup is user input, so its RESTORE is gated like CREATE.
 BACKUP TABLE t_subcolumn_codecs_existing TO Memory('05407_subcolumn_codecs') FORMAT Null;
-RESTORE TABLE t_subcolumn_codecs_existing AS t_subcolumn_codecs_restored FROM Memory('05407_subcolumn_codecs') FORMAT Null;
+RESTORE TABLE t_subcolumn_codecs_existing AS t_subcolumn_codecs_restored FROM Memory('05407_subcolumn_codecs') FORMAT Null; -- { serverError SUPPORT_IS_DISABLED }
+RESTORE TABLE t_subcolumn_codecs_existing AS t_subcolumn_codecs_restored FROM Memory('05407_subcolumn_codecs') SETTINGS enable_subcolumn_codecs = 1 FORMAT Null;
 SELECT 'restored';
 SELECT replaceRegexpOne(create_table_query, ' SETTINGS .*$', '') FROM system.tables WHERE database = currentDatabase() AND name = 't_subcolumn_codecs_restored';
 SELECT count(), sum(p.a) FROM t_subcolumn_codecs_restored;

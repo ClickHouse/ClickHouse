@@ -244,6 +244,12 @@ xargs < "$STYLE_TMPDIR/nobase_excluded" rg '(hardware_destructive_interference_s
 # Forbid std::filesystem::is_symlink and std::filesystem::read_symlink, because it's easy to use them incorrectly
 xargs < "$STYLE_TMPDIR/nobase_excluded" rg '::(is|read)_symlink' | grep -v "STYLE_CHECK_ALLOW_STD_FS_SYMLINK" && echo "Use DB::FS::isSymlink and DB::FS::readSymlink instead"
 
+# Forbid reading the `attach` flag of a create query in storages and databases: a full-definition ATTACH is fresh user input
+grep -E '/src/(Storages|Databases)/' "$STYLE_TMPDIR/nobase_excluded" | xargs rg '(\.|->)attach\b' | grep -vE '(\.|->)attach\s*(=[^=]|\()' | grep -vE ':[[:space:]]*(//|\*)' | grep -v "STYLE_CHECK_ALLOW_ATTACH_FLAG" && echo "Use isFreshDefinition or expectsExistingState instead of the attach flag of a create query"
+
+# Forbid comparing with `LoadingStrictnessLevel::ATTACH`: it no longer covers a full-definition ATTACH, decide in `getLoadingTraits`
+xargs < "$STYLE_TMPDIR/nobase_excluded" rg '([!=]=\s*LoadingStrictnessLevel::ATTACH\b|LoadingStrictnessLevel::ATTACH\b\s*[!=]=)' | grep -v 'src/Databases/LoadingStrictnessLevel\.' && echo "Use a predicate from LoadingStrictnessLevel.h instead of comparing with LoadingStrictnessLevel::ATTACH"
+
 # Forbid using std::shared_mutex and point to the faster alternative
 xargs < "$STYLE_TMPDIR/nobase_excluded" grep 'std::shared_mutex' | \
   xargs -I{} echo "Found std::shared_mutex '{}'. Please use DB::SharedMutex instead"

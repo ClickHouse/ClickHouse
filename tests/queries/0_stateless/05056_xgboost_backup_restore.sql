@@ -1,13 +1,8 @@
 -- Tags: no-fasttest
 -- no-fasttest: needs the XGBoost contrib, which is not built in the fast test.
 
--- An XGBOOST dictionary survives a BACKUP / RESTORE round trip, and the restore is not blocked by
--- `enable_xgboost`.
---
--- The experimental setting gates introducing a new definition (`CREATE DICTIONARY`) and every
--- prediction, but it must not gate restoring metadata that already exists: a backup taken while the
--- feature was enabled has to be restorable on a server where the setting is off, otherwise the
--- setting turns into a trap that makes a backup unrestorable.
+-- An XGBOOST dictionary survives a BACKUP / RESTORE round trip. A backup is user input, so
+-- `enable_xgboost` gates its RESTORE like a `CREATE DICTIONARY`.
 --
 -- The model itself is not stored in the backup - the dictionary retrains from the restored source
 -- table when it is next loaded - so the assertions check that the restored dictionary predicts its
@@ -48,18 +43,14 @@ BACKUP TABLE training_05056, DICTIONARY model_05056 TO Memory('backup_05056') FO
 DROP DICTIONARY model_05056;
 DROP TABLE training_05056;
 
--- With the setting off, a new CREATE would be rejected, but restoring existing metadata must not be.
+-- With the setting off, the restore is refused like a new CREATE.
 SET enable_xgboost = 0;
 
-RESTORE TABLE training_05056, DICTIONARY model_05056 FROM Memory('backup_05056') FORMAT Null;
-
-SELECT 'RESTORE succeeds while enable_xgboost is off';
-
--- The setting still governs every prediction, so the restored dictionary cannot be used until it is
--- enabled again.
-SELECT predictXGBoost('model_05056', 3.0, 4.0); -- { serverError SUPPORT_IS_DISABLED }
+RESTORE DICTIONARY model_05056 FROM Memory('backup_05056') FORMAT Null; -- { serverError SUPPORT_IS_DISABLED }
 
 SET enable_xgboost = 1;
+
+RESTORE TABLE training_05056, DICTIONARY model_05056 FROM Memory('backup_05056') FORMAT Null;
 
 SELECT 'The restored dictionary predicts the same target';
 SELECT abs(predictXGBoost('model_05056', 3.0, 4.0) - 43) < 1;

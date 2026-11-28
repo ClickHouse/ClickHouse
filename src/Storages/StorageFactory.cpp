@@ -3,6 +3,7 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <Interpreters/Context.h>
 #include <Disks/DiskFromAST.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -46,6 +47,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES;
     extern const int UNKNOWN_SETTING;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -61,8 +63,41 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 bool isReplayedTableDefinition(
     LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context)
 {
-    return !isFreshTableDefinition(mode, query.attach_short_syntax) || isSecondaryDDLReplay(local_context)
+    return !isFreshDefinition(mode) || query.attach_short_syntax || isSecondaryDDLReplay(local_context)
         || local_context->isRecoveryFromStoredMetadata();
+}
+
+
+void validateColumnsAgainstVirtuals(
+    const ColumnsDescription & columns, const VirtualColumnsDescription & virtuals, bool reject_reserved_names, const String & engine_name)
+{
+    for (const auto & column : columns)
+    {
+        if (virtuals.tryGet(column.name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
+                column.name, engine_name);
+        }
+
+        /// An EPHEMERAL column cannot shadow a virtual one: the header would take its type, the data the virtual's.
+        if (column.default_desc.kind == ColumnDefaultKind::Ephemeral
+            && virtuals.tryGet(column.name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with ephemeral column '{}' for {} engines "
+                "because it conflicts with a virtual column of the same name",
+                column.name, engine_name);
+        }
+
+        if (reject_reserved_names && virtuals.has(column.name))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with column '{}' for {} engines because it is reserved for a virtual column. "
+                "Use another name or enable the setting `allow_reserved_column_names`",
+                column.name, engine_name);
+        }
+    }
 }
 
 
@@ -413,14 +448,31 @@ void StorageFactory::checkTemporaryTableEngine(const String & storage_name, cons
 
 AccessRightsElements StorageFactory::getExportAccess(const ASTCreateQuery & create) const
 {
+    return collectAccess(create, [](const StorageFeatures & features, const SettingsChanges & changes)
+    {
+        return features.get_export_access_fn ? features.get_export_access_fn(changes, /* own_engine */ true) : AccessRightsElements{};
+    });
+}
+
+AccessRightsElements StorageFactory::getCreateAccess(const ASTCreateQuery & create) const
+{
+    return collectAccess(create, [](const StorageFeatures & features, const SettingsChanges & changes)
+    {
+        return features.get_create_access_fn ? features.get_create_access_fn(changes) : AccessRightsElements{};
+    });
+}
+
+AccessRightsElements StorageFactory::collectAccess(
+    const ASTCreateQuery & create, const std::function<AccessRightsElements(const StorageFeatures &, const SettingsChanges &)> & access_of) const
+{
     AccessRightsElements res;
     auto add = [&](const ASTStorage & storage)
     {
         if (!storage.engine || !storage.settings)
             return;
         auto it = storages.find(storage.engine->name);
-        if (it != storages.end() && it->second.features.get_export_access_fn)
-            res.append_range(it->second.features.get_export_access_fn(storage.settings->changes, /* own_engine */ true));
+        if (it != storages.end())
+            res.append_range(access_of(it->second.features, storage.settings->changes));
     };
 
     if (create.storage)
@@ -457,9 +509,10 @@ AccessRightsElements StorageFactory::getExportAccessOfAnyEngine(const SettingsCh
 
 void throwIfUnreplicatedTableDataNotAllowed(const StorageFactory::Arguments & args)
 {
-    /// The condition matches the one in the interpreter (`!create.attach`), so it also covers `SECONDARY_CREATE`,
+    /// The condition matches the one in the interpreter, so it also covers `SECONDARY_CREATE`,
     /// which is used when other replicas of a `Replicated` database replay the query.
-    if (args.query.attach || !args.getLocalContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
+    if (!(isFreshDefinition(args.mode) || args.mode == LoadingStrictnessLevel::SECONDARY_CREATE)
+        || !args.getLocalContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
         return;
 
     auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);

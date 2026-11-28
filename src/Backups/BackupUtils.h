@@ -47,6 +47,12 @@ void excludeSystemNamedCollectionsFromWildcardSelection(ASTBackupQuery::Elements
 /// `BackupSettings`). A selection excluding the table's data requires none of those rights.
 AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements, std::optional<bool> backup_named_collections);
 
+/// An older server accepted the `disk` of a BigLake catalog together with Google credentials, which `CREATE` refuses:
+/// the data files would be read with the credentials of the disk, not of the catalog. Removes `disk` from such a
+/// definition, so it is the one `CREATE` accepts and the credentials of the catalog read the data files.
+/// Returns whether it was removed.
+bool removeDiskOfBigLakeCatalogWithGoogleCredentials(ASTCreateQuery & create);
+
 /// Checks the definition of a restored table - it must correspond to the definition from the backup.
 bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context);
 bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context);

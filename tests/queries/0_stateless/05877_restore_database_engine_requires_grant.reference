@@ -1,0 +1,9 @@
+--- without TABLE ENGINE ON Atomic
+grant TABLE ENGINE ON Atomic
+grant TABLE ENGINE ON Atomic
+0
+--- with TABLE ENGINE ON *
+restored
+Atomic
+restored
+Atomic

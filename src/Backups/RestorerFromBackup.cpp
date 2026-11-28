@@ -124,6 +124,8 @@ namespace
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "resources");
     }
 
+    constexpr auto REPLACE_EXTERNAL_ENGINES_TO_NULL_SETTING = "restore_replace_external_engines_to_null";
+
     /// Engine name if the database is skipped by the restore, so neither it nor any table under it
     /// is created; empty otherwise.
     String getSkippedDatabaseEngine(const ASTPtr & create_database_query, const ContextPtr & context)
@@ -387,6 +389,18 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                         && create.storage->engine->arguments)
                         DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, context);
                 }
+
+                /// The database is created by an internal query that checks nothing, so its engine is authorized here,
+                /// as for `CREATE`. Only a value in the query reaches the hosts of `ON CLUSTER`: a host may drop a session value.
+                if (database_info.create_database_query)
+                {
+                    const auto & create = database_info.create_database_query->as<const ASTCreateQuery &>();
+                    const bool skipped = !getSkippedDatabaseEngine(database_info.create_database_query, context).empty()
+                        && (mode != Mode::CHECK_ACCESS_ONLY
+                            || restore_settings.core_settings.tryGet(REPLACE_EXTERNAL_ENGINES_TO_NULL_SETTING) != nullptr);
+                    if (!skipped && create.storage && create.storage->engine)
+                        required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+                }
             }
 
             if (!flags)
@@ -462,6 +476,10 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 && (is_temporary || !context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]))
                 required_access.append_range(StorageFactory::instance().getExportAccess(create));
 
+            /// Engines with creation grants are never replaced by `Null`.
+            if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
+                required_access.append_range(StorageFactory::instance().getCreateAccess(create));
+
             /// A skipped database creates none of its tables, so their targets are never written to.
             const auto database_it = database_infos.find(table_name.database);
             const bool database_skipped = (database_it != database_infos.end())
@@ -503,7 +521,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 {
                     const bool hosts_replace_external_engines_to_null
                         = context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
-                        && restore_settings.core_settings.tryGet("restore_replace_external_engines_to_null") != nullptr;
+                        && restore_settings.core_settings.tryGet(REPLACE_EXTERNAL_ENGINES_TO_NULL_SETTING) != nullptr;
                     auto add_engine = [&](const ASTStorage & storage)
                     {
                         if (!storage.engine)
@@ -673,9 +691,25 @@ void RestorerFromBackup::createAndCheckDatabases()
         std::ranges::copy(database_infos | boost::adaptors::map_keys, std::back_inserter(database_names));
     }
 
-    for (const auto & database_name : database_names)
-        createAndCheckDatabase(database_name);
+    /// An `Overlay` database checks on creation that its sources exist, and they cannot be other `Overlay` databases,
+    /// so the sources restored with it are created first.
+    auto is_overlay = [&](const String & database_name)
+    {
+        std::lock_guard lock{mutex};
+        const auto & create_query = database_infos.at(database_name).create_database_query;
+        if (!create_query)
+            return false;
+        const auto & create = create_query->as<const ASTCreateQuery &>();
+        return create.storage && create.storage->engine && create.storage->engine->name == "Overlay";
+    };
+    const auto overlays = std::ranges::partition(database_names, std::not_fn(is_overlay));
 
+    for (const auto & database_name : std::ranges::subrange(database_names.begin(), overlays.begin()))
+        createAndCheckDatabase(database_name);
+    waitFutures();
+
+    for (const auto & database_name : overlays)
+        createAndCheckDatabase(database_name);
     waitFutures();
 }
 

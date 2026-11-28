@@ -107,30 +107,36 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     // session and user are ignored.
     std::optional<FormatSettings> format_settings;
 
-    const bool is_attach = args.mode > LoadingStrictnessLevel::CREATE;
+    /// A stored definition is not validated again.
+    const bool is_attach = !isFreshDefinition(args.mode);
 
-    if (!is_attach && args.storage_def->settings)
+    if (isFreshDefinition(args.mode) && args.storage_def->settings)
     {
-        if (auto * path_setting = args.storage_def->settings->changes.tryGetChange("keeper_path"))
+        auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
+        const String database_engine = database ? database->getEngineName() : "";
+
+        bool is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
+        bool is_replicated_database = args.getLocalContext()->isDDLOrOnClusterInternal() &&
+            database_engine == "Replicated";
+
+        /// Allow implicit {uuid} macros only for keeper_path in ON CLUSTER queries, if the UUID is explicit,
+        /// or on `RESTORE`, which assigns the UUID of the table itself.
+        bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.has_uuid
+            || args.mode == LoadingStrictnessLevel::RESTORE;
+
+        /// `ObjectStorageQueueSettings` also takes the setting under its `s3queue_` alias.
+        for (auto & path_setting : args.storage_def->settings->changes)
         {
-            auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
-            const String database_engine = database ? database->getEngineName() : "";
-
-            bool is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
-            bool is_replicated_database = args.getLocalContext()->isDDLOrOnClusterInternal() &&
-                database_engine == "Replicated";
-
-            /// Allow implicit {uuid} macros only for keeper_path in ON CLUSTER queries
-            /// and if UUID was explicitly passed in CREATE TABLE (like for ATTACH)
-            bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach || args.query.has_uuid;
+            if (path_setting.name != "keeper_path" && path_setting.name != "s3queue_keeper_path")
+                continue;
 
             /// This value is read before the settings are applied to `ObjectStorageQueueSettings`, so the
             /// value-less form `SETTINGS keeper_path` has not been rejected yet, and `safeGet` would report
             /// it as a `Bool` where a `String` was requested.
-            if (path_setting->shorthand)
-                BaseSettingsHelpers::throwValuelessSettingIsNotBool(path_setting->name);
+            if (path_setting.shorthand)
+                BaseSettingsHelpers::throwValuelessSettingIsNotBool(path_setting.name);
 
-            String path = path_setting->value.safeGet<String>();
+            String path = path_setting.value.safeGet<String>();
 
             Macros::MacroExpansionInfo info;
             info.table_id = args.table_id;
@@ -147,9 +153,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 
             /// Actually expand all the macros except {uuid} macro.
             info.expand_special_macros_only = true;
-            path = args.getContext()->getMacros()->expand(path, info);
-
-            args.storage_def->settings->changes.setSetting("keeper_path", Field(path));
+            path_setting.value = Field(args.getContext()->getMacros()->expand(path, info));
         }
     }
 

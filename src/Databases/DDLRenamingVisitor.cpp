@@ -314,6 +314,21 @@ namespace
             /// We'll try to replace the database name but we can do nothing to 'tables_regexp'.
             replaceDatabaseNameInArguments(*storage.engine, data, 0);
         }
+        else if (storage.engine->name == "Overlay" && storage.engine->arguments)
+        {
+            /// Syntax: CREATE DATABASE ... ENGINE = Overlay(db_name, ...): every argument is a source database.
+            for (size_t i = 0; i < storage.engine->arguments->children.size(); ++i)
+            {
+                auto & arg = storage.engine->arguments->children[i];
+                if (const auto * identifier = arg->as<ASTIdentifier>(); identifier && !identifier->compound())
+                {
+                    if (auto new_name = data.renaming_map.getNewDatabaseName(identifier->name()); new_name != identifier->name())
+                        arg = make_intrusive<ASTLiteral>(new_name);
+                }
+                else
+                    replaceDatabaseNameInArguments(*storage.engine, data, i);
+            }
+        }
     }
 
     void visitFunction(const ASTFunction & function, const DDLRenamingVisitor::Data & data)
