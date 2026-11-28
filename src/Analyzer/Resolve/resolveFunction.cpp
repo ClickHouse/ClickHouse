@@ -1706,6 +1706,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     for (auto & parameter_node : parameters_nodes)
     {
+        evaluateDeferredScalarSubqueryNow(parameter_node);
         const auto * constant_node = parameter_node->as<ConstantNode>();
         if (!constant_node)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -3798,6 +3799,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
 
         argument_columns[1].type = std::make_shared<DataTypeSet>();
+    }
+
+    /// The function is built with these arguments as constants, so a deferred scalar subquery there is evaluated now.
+    if (deferred_scalar_subqueries)
+    {
+        for (size_t i : function->getArgumentsThatAreAlwaysConstant())
+        {
+            if (i < function_arguments.size() && evaluateDeferredScalarSubqueryNow(function_arguments[i]))
+                if (const auto * constant = function_arguments[i]->as<ConstantNode>())
+                    argument_columns[i].column = constant->getColumn();
+        }
     }
 
     ConstantNodePtr constant_node;

@@ -1,0 +1,99 @@
+100	-50	224.25	-50	49
+0	0	nan	0
+100	10
+0	49	-50
+1	49	-50
+2	49	-50
+6	100
+100	100
+250	500
+1	2
+999	500	-450
+9	999
+1000	2
+67.5	49
+10	9
+Nullable(UInt64)	Array(UInt8)
+x	y
+10	-810
+_subquery_1	_subquery_2
+10	-810
+1	-401
+1	-455
+\N	10
+100	-50
+10	190
+5	35
+5	35
+500	310050
+500	310050
+9.5	39.5	24.5
+9.5	39.5	24.5
+05814_merged	1
+05814_not_merged	0
+05814_shared_pk_merged	1
+05814_shared_pk_not_merged	0
+05814_tpcds_q9_merged	1
+05814_tpcds_q9_not_merged	0
+\N	2
+\N	2
+\N	2
+\N	10
+\N	10
+10	1
+0	1
+10	1
+10	1
+10	1
+_subquery_1
+_subquery_2
+0	10	1
+1	20	1
+1	1
+1	1
+1	500000
+1	1
+1	1
+ILLEGAL_AGGREGATION
+TYPE_MISMATCH
+-- unprivileged user denied
+ACCESS_DENIED
+-- column-level grant: allowed columns merge and succeed
+1	50
+-- column-level grant: ungranted column in second subquery denied
+ACCESS_DENIED
+-- row policy respected by merged scalar subqueries
+2	50
+0	4000
+\N	5000	Nullable(Int64)
+\N	9949	\N
+0	Nullable(UInt16)
+718.5671435897435	3553192.86	Nullable(Decimal(38, 2))
+2000	4041
+0	2000	4000
+\N	0	100
+\N	\N	117000
+4000	3333
+-4950	9999	9000
+0	-127200
+-122600
+497	148	500
+9999	0
+merged_1	1	1
+merged_2	1	1
+merged_3	1	1
+merged_4	1	1
+merged_5	1	1
+merged_6	1	1
+merged_7	1	1
+merged_8	1	1
+merged_9	1	1
+merged_10	1	1
+merged_11	1	1
+merged_12	1	1
+merged_13	1	1
+merged_14	1	1
+merged_15	2	0
+2	1	1
+1	99997
+1	1

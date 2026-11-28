@@ -160,6 +160,19 @@ private:
 
     void evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & query_tree_node, IdentifierResolveScope & scope, bool execute_for_exists = false);
 
+    struct DeferredScalarSubqueries
+    {
+        const IdentifierResolveScope * projection_scope = nullptr;
+        QueryTreeNodes nodes;
+    };
+
+    void evaluateDeferredScalarSubqueries(QueryTreeNodePtr & projection_node_list, const QueryTreeNodes & nodes, IdentifierResolveScope & scope);
+
+    bool replaceDeferredScalarSubqueries(
+        QueryTreeNodePtr & node, const std::unordered_set<const IQueryTreeNode *> & deferred_nodes, IdentifierResolveScope & scope);
+
+    bool evaluateDeferredScalarSubqueryNow(QueryTreeNodePtr & node);
+
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
     NO_SANITIZE_UNSIGNED_OVERFLOW
@@ -386,6 +399,9 @@ private:
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_local;
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_global;
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_type_only;
+
+    /// The scalar subqueries of the `SELECT` list being resolved, see `evaluateDeferredScalarSubqueries`.
+    DeferredScalarSubqueries * deferred_scalar_subqueries = nullptr;
 
     std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;
 
