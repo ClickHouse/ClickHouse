@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
 CREATE TABLE tm (x UInt64) ENGINE = MergeTree ORDER BY x;

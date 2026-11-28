@@ -20,18 +20,16 @@ enum : size_t
 {
     TRACE_CONTEXT,
     CURRENT_THREAD,
-    INSIDE_SILK_FIBER,
     LOCK_MEMORY_EXCEPTION_COUNTER,
     LOCK_MEMORY_EXCEPTION_LEVEL,
     LOCK_MEMORY_EXCEPTION_BLOCK_FAULT_INJECTIONS,
     MEMORY_TRACKER_BLOCKER_LEVEL,
     MEMORY_TRACKER_UNTRACKED_ALLOCATIONS_BLOCKER_COUNTER,
+    HTTP_CONNECTION_INFO,
+    QUERY_CANCELLATION_BLOCKED,
+    EXPECTED_404_SCOPE_COUNT,
 #if !defined(NDEBUG)
     MEMORY_TRACKER_ALWAYS_THROW_ON_ALLOCATION,
-#endif
-#if defined(SILK_THREAD_LOCAL_STORAGE_SANITIZER)
-    THREAD_LOCAL_STORAGE_SANITIZER_FIRST_SEEN,
-    THREAD_LOCAL_STORAGE_SANITIZER_INSIDE,
 #endif
     COUNT,
 };
@@ -235,7 +233,7 @@ class FiberLocal
     static_assert(static_cast<uintptr_t>(default_value) == fiberLocalSlotDefault(slot), "default_value must match fiberLocalSlotDefault");
 
 public:
-    T get() const requires FiberLocalStoredInline<T> { return FiberLocalStorage::load<T, slot>(); }
+    [[nodiscard]] T get() const requires FiberLocalStoredInline<T> { return FiberLocalStorage::load<T, slot>(); }
     operator T() const requires FiberLocalStoredInline<T> { return get(); } /// NOLINT(google-explicit-constructor)
     T operator->() const requires (FiberLocalStoredInline<T> && std::is_pointer_v<T>) { return get(); }
 
@@ -245,7 +243,7 @@ public:
         return *this;
     }
 
-    T & get() const requires (!FiberLocalStoredInline<T>) { return FiberLocalStorage::heapObject<T, slot>(); }
+    [[nodiscard]] T & get() const requires (!FiberLocalStoredInline<T>) { return FiberLocalStorage::heapObject<T, slot>(); }
     operator T &() const requires (!FiberLocalStoredInline<T>) { return get(); } /// NOLINT(google-explicit-constructor)
     T & operator*() const requires (!FiberLocalStoredInline<T>) { return get(); }
     T * operator->() const requires (!FiberLocalStoredInline<T>) { return &get(); }

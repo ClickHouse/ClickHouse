@@ -17,6 +17,7 @@ struct DivideDecimalsImpl
 {
     static constexpr auto name = "divideDecimal";
     static constexpr auto suitable_for_short_circuit = true;
+    static constexpr bool valid_on_default_arguments = false;
 
     template <typename FirstType, typename SecondType>
     static Decimal256
@@ -63,10 +64,10 @@ REGISTER_FUNCTION(DivideDecimals)
 Performs division on two decimals. Result value will be of type [Decimal256](/reference/data-types/decimal).
 Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
 
-:::note
+<Note>
 These function work significantly slower than usual `divide`.
 In case you don't really need controlled precision and/or need fast computation, consider using [divide](#divide).
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "divideDecimal(x, y[, result_scale])";
     FunctionDocumentation::Argument argument1 = {"x", "First value: [Decimal](/reference/data-types/decimal)."};

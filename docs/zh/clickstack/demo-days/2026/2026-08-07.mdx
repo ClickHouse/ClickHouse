@@ -8,7 +8,7 @@ keywords: ['ClickStack', '演示日']
 ---
 
 <div id="alert-detail-page-with-evaluation-history">
-  ## 带评估历史的告警详情页
+  ## 带评估历史的告警详情页 {#alert-detail-page-with-evaluation-history}
 </div>
 
 *由 [@wrn14897](https://github.com/wrn14897) 演示*
@@ -30,7 +30,7 @@ keywords: ['ClickStack', '演示日']
 **相关 PR：** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) 告警评估读取模型和 GET /alerts/:id/evaluations、[#2834](https://github.com/hyperdxio/hyperdx/pull/2834) 在 AlertHistory 中持久化告警评估错误和 analytics、[#2835](https://github.com/hyperdxio/hyperdx/pull/2835) 带评估历史的告警详情页
 
 <div id="measuring-metric-tool-adoption-in-the-mcp-with-evals">
-  ## 使用 evals 衡量 MCP 中指标工具的采用情况
+  ## 使用 evals 衡量 MCP 中指标工具的采用情况 {#measuring-metric-tool-adoption-in-the-mcp-with-evals}
 </div>
 
 *由 [@karl-power](https://github.com/karl-power) 演示*
@@ -58,7 +58,7 @@ keywords: ['ClickStack', '演示日']
 **相关 PR：** [#2730](https://github.com/hyperdxio/hyperdx/pull/2730) 添加 deploy-regression 场景 (衡量指标工具的自主采用情况) ，[#2717](https://github.com/hyperdxio/hyperdx/pull/2717) 强化 metric-saturation 场景，[#2694](https://github.com/hyperdxio/hyperdx/pull/2694) 对指标工具采用情况进行评分和报告，[#2855](https://github.com/hyperdxio/hyperdx/pull/2855) 通过 MCP 提供摘要指标
 
 <div id="distributed-tables-histograms-and-faster-trace-lookups">
-  ## 分布式表、直方图和更快的 trace 查找
+  ## 分布式表、直方图和更快的 trace 查找 {#distributed-tables-histograms-and-faster-trace-lookups}
 </div>
 
 *[@pulpdrew](https://github.com/pulpdrew) 演示*
@@ -69,24 +69,24 @@ keywords: ['ClickStack', '演示日']
 
 分布式表的情况更复杂。一些底层目标端表并未声明分布式表暴露的所有列。ClickStack 在加载完整行详情时会执行 `SELECT *`，在这种配置下会直接失败。行侧边面板已显示错误，但展开的行没有显示，而且两者都未解释 ClickStack 最初为何发出 `SELECT *`。现在两个视图都会显示错误，并提供足够的上下文，让相关指引真正有用。
 
-指标存在两个独立问题。首先，指数直方图表从未持久化到指标数据源中。在最近加入指数直方图支持之前，这并不重要。用户打开一个现有但不完整的数据源时，会看到 schema 推断填充了该字段，因此合理地认为无需更改，也不会保存该数据源。
+指标存在两个独立问题。首先，指数直方图表从未持久化到指标 source 中。在最近加入指数直方图支持之前，这并不重要。用户打开一个现有但不完整的 source 时，会看到 schema 推断填充了该字段，因此合理地认为无需更改，也不会保存该 source。
 
-打开现有数据源时不再自动运行 schema 推断。现在仅在创建指标数据源或更改其数据库时运行，从而明确提示推断出的表仍需保存。
+打开现有 source 时不再自动运行 schema 推断。现在仅在创建指标 source 或更改其数据库时运行，从而明确提示推断出的表仍需保存。
 
 聚合下拉菜单还为直方图指标提供平均值、最小值、最大值和其他函数，尽管直方图并不支持这些函数。选择其中之一会在运行查询或保存卡片时失败。这些选项现已对直方图和指数直方图指标隐藏。MCP 的 `query_tile` 路径也会拒绝持久化卡片中的这些选项，与 UI 保持一致，而不是另辟蹊径地失败。
 
-时间序列限制修复更为微妙。当 `GROUP BY` 生成多个时间序列时，可以设置限制，以保留按最大值排序的前 N 个时间序列。在比率模式下，排名此前只使用分子。这会偏向较大的分子，而非真正较高的比率，使分子很大且分母同样很大的时间序列挤掉实际比率更高的时间序列。现在排名依据绘制的比率。
+数据系列限制修复更为微妙。当 `GROUP BY` 生成多个数据系列时，可以设置限制，以保留按最大值排序的前 N 个数据系列。在比率模式下，排名此前只使用分子。这会偏向较大的分子，而非真正较高的比率，使分子很大且分母同样很大的数据系列挤掉实际比率更高的数据系列。现在排名依据绘制的比率。
 
-搜索页面上的数据源默认选择也已更改。此前会选择第一个已配置的数据源，即使该数据源包含指标或会话也是如此。用户可能会因并非自己作出的选择而遇到不兼容数据源错误。现在，搜索默认选择第一个实际可用的已启用数据源。
+搜索页面上的 source 默认选择也已更改。此前会选择第一个已配置的 source，即使该 source 包含指标或会话也是如此。用户可能会因并非自己作出的选择而遇到不兼容 source 错误。现在，搜索默认选择第一个实际可用的已启用 source。
 
-从日志侧边面板中选择一个 trace 时，背后还隐藏着一次开销很大的查找。HyperDX 仅按 span 和 trace ID 搜索，忽略时间戳分区和主键。这在高数据量部署中会很慢。现在，查找会限定在根据数据源推断出的日期范围内；当该时间窗口未命中时，则有意回退到无边界查询。例如，当日志关联的 span 在数小时前开始时，这种回退就很重要。
+从日志侧边面板中选择一个 trace 时，背后还隐藏着一次开销很大的查找。ClickStack UI 仅按 span 和 trace ID 搜索，忽略时间戳分区和主键。这在高数据量部署中会很慢。现在，查找会限定在根据 source 推断出的日期范围内；当该时间窗口未命中时，则有意回退到无边界查询。例如，当日志关联的 span 在数小时前开始时，这种回退就很重要。
 
-数据源名称深层链接于前一周推出，随后便出现了一个完全合理的问题：用户该如何发现它们？每个页面接受的 URL 参数本就被视为一种契约，因此现在将其作为契约加以记录。数据源过滤器是唯一遗漏的部分，因为目前仍仅适用于 ClickHouse。另一次文档完善补充了 span 链接等数据源配置字段，涵盖近期新增内容以及一些此前遗漏的内容。
+source 名称深层链接于前一周推出，随后便出现了一个完全合理的问题：用户该如何发现它们？每个页面接受的 URL 参数本就被视为一种契约，因此现在将其作为契约加以记录。source 过滤器是唯一遗漏的部分，因为目前仍仅适用于 ClickHouse。另一次文档完善补充了 span 链接等 source 配置字段，涵盖近期新增内容以及一些此前遗漏的内容。
 
 **相关 PR：**[#2771](https://github.com/hyperdxio/hyperdx/pull/2771) 改进分布式表 `SELECT *` 的错误状态并扩展至展开行，[#2817](https://github.com/hyperdxio/hyperdx/pull/2817) 仅在更改数据库选择时自动检测指标表，[#2794](https://github.com/hyperdxio/hyperdx/pull/2794) 不为已有表的 source 推断指标表 (开放中) ，[#2793](https://github.com/hyperdxio/hyperdx/pull/2793) 隐藏直方图指标不支持的聚合函数，[#2796](https://github.com/hyperdxio/hyperdx/pull/2796) 在 query&#95;tile 中拒绝使用不支持的 aggFns 的持久化直方图卡片 (开放中) ，[#2759](https://github.com/hyperdxio/hyperdx/pull/2759) 在比率模式下使用比率值进行 series-limit 排名，[#2769](https://github.com/hyperdxio/hyperdx/pull/2769) 防止搜索页面默认选择不兼容的 source Kind，[#2816](https://github.com/hyperdxio/hyperdx/pull/2816) 将点击 View Trace 后侧边栏中的行查找限制在时间窗口内，[#2836](https://github.com/hyperdxio/hyperdx/pull/2836) 添加过滤器变量配置
 
 <div id="heatmap-percentiles-and-lucene-search-from-contributors">
-  ## 贡献者带来的热力图百分位数和 Lucene 搜索改进
+  ## 贡献者带来的热力图百分位数和 Lucene 搜索改进 {#heatmap-percentiles-and-lucene-search-from-contributors}
 </div>
 
 *由 [@pulpdrew](https://github.com/pulpdrew) 演示*
@@ -110,12 +110,12 @@ Lucene 语言切换器中的应用内示例也已更新，以涵盖新的范围�
 **相关 PR：** [#2789](https://github.com/hyperdxio/hyperdx/pull/2789) 在热力图悬停提示框中显示百分位数信息、[#2779](https://github.com/hyperdxio/hyperdx/pull/2779) 支持开放、排他性和非数值范围边界、[#2774](https://github.com/hyperdxio/hyperdx/pull/2774) 转义搜索词中的 LIKE 元字符、[#2841](https://github.com/hyperdxio/hyperdx/pull/2841) 在数值和 Bool 搜索中仅转义一次 Map 下标、[#2837](https://github.com/hyperdxio/hyperdx/pull/2837) 添加新 Lucene 语法示例
 
 <div id="red-metrics-on-trace-search">
-  ## trace 搜索中的 RED 指标
+  ## trace 搜索中的 RED 指标 {#red-metrics-on-trace-search}
 </div>
 
 *由 [@alex-fedotyev](https://github.com/alex-fedotyev) 演示*
 
-<iframe width="768" height="432" src="https://www.youtube.com/embed/qbb7MJmUFf8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+<iframe width="768" height="432" src="https://www.youtube.com/embed/qbb7MJmUFf8" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
 **这是一项探索性工作，并不承诺会发布。**
 
@@ -132,7 +132,7 @@ trace 搜索目前使用与日志搜索相同的单一计数直方图，并按�
 **相关 PR：**[#2826](https://github.com/hyperdxio/hyperdx/pull/2826) 在 trace 搜索结果视图中显示 RED 指标 (开放，探索性)
 
 <div id="custom-log-columns-in-the-clickhouse-grafana-plugin">
-  ## ClickHouse Grafana 插件中的自定义日志列
+  ## ClickHouse Grafana 插件中的自定义日志列 {#custom-log-columns-in-the-clickhouse-grafana-plugin}
 </div>
 
 *由 [@alex-fedotyev](https://github.com/alex-fedotyev) 演示*
@@ -154,7 +154,7 @@ trace 搜索目前使用与日志搜索相同的单一计数直方图，并按�
 **相关 PR：**[grafana/clickhouse-datasource#2108](https://github.com/grafana/clickhouse-datasource/pull/2108) 按任意日志表列浏览和过滤 (演示时仍处于开放状态)
 
 <div id="capping-high-cardinality-series-at-the-source">
-  ## 在源端限制高基数时间序列
+  ## 在源端限制高基数时间序列 {#capping-high-cardinality-series-at-the-source}
 </div>
 
 *演示者：[ @brandon-pereira](https://github.com/brandon-pereira)*
@@ -174,7 +174,7 @@ trace 搜索目前使用与日志搜索相同的单一计数直方图，并按�
 **相关 PR：**[#2802](https://github.com/hyperdxio/hyperdx/pull/2802) 通过“全部加载”逃生通道限制高基数时间图表的时间序列，[#2856](https://github.com/hyperdxio/hyperdx/pull/2856) 通过服务端行数/基数限制在源端限制原始 SQL 卡片的开销 (开放中)
 
 <div id="exemplars-from-a-metric-chart-to-the-trace">
-  ## Exemplars：从指标图表跳转至 trace
+  ## Exemplars：从指标图表跳转至 trace {#exemplars-from-a-metric-chart-to-the-trace}
 </div>
 
 *演示：[ @jordan-simonovski](https://github.com/jordan-simonovski)*
@@ -198,7 +198,7 @@ Exemplar 将聚合指标与单个事件 (通常是 trace) 关联起来。如果�
 **相关 PR：** [#2805](https://github.com/hyperdxio/hyperdx/pull/2805) 从 spans 派生带 trace exemplars 的请求指标 (开放) ，[#2806](https://github.com/hyperdxio/hyperdx/pull/2806) 添加 /v1/prometheus/query&#95;exemplars 并强化代理，[#2807](https://github.com/hyperdxio/hyperdx/pull/2807) 将两个最大的图表文件拆分至目录中，[#2808](https://github.com/hyperdxio/hyperdx/pull/2808) 为指标和 PromQL 时间图表添加 exemplar 覆盖层 (开放) ，[#2809](https://github.com/hyperdxio/hyperdx/pull/2809) 支持 API 和 agent 创建的卡片使用 exemplar 设置 (开放)
 
 <div id="terraform-import-helpers-and-batch-export">
-  ## Terraform 导入辅助工具和批量导出
+  ## Terraform 导入辅助工具和批量导出 {#terraform-import-helpers-and-batch-export}
 </div>
 
 *由 [@jordan-simonovski](https://github.com/jordan-simonovski) 演示*
@@ -218,7 +218,7 @@ V2 API 有意不包含 secrets。`GET` 仅返回 UI 已显示的内容，因此�
 **相关 PR：**[#2741](https://github.com/hyperdxio/hyperdx/pull/2741) 为 ClickStack 资源添加 Terraform 导入辅助工具
 
 <div id="shared-chart-components-visual-polish-and-a-drafts-proposal">
-  ## 共享图表组件、视觉优化与草稿方案
+  ## 共享图表组件、视觉优化与草稿方案 {#shared-chart-components-visual-polish-and-a-drafts-proposal}
 </div>
 
 *由 [@elizabetdev](https://github.com/elizabetdev) 演示*

@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -25,31 +24,19 @@ public:
     FunctionArrayPush(bool push_front_, const char * name_)
         : push_front(push_front_), name(name_) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return false; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (arguments[0]->onlyNull())
-            return arguments[0];
-
-        const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
-        if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First argument for function {} must be an array but it has type {}.",
-                            getName(), arguments[0]->getName());
-
-        auto nested_type = array_type->getNestedType();
-
-        DataTypes types = {nested_type, arguments[1]};
-
-        return std::make_shared<DataTypeArray>(getLeastSupertype(types));
+        return "(Array(T), V) -> Array(leastSupertype(T, V))"
+               " OR (NULL, Any) -> NULL";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
         if (return_type->onlyNull())
             return return_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -100,8 +87,8 @@ public:
         return result_column;
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
 private:
     bool push_front;

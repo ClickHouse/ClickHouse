@@ -34,11 +34,7 @@
 
 
 #if !defined(Net_API)
-#    if !defined(POCO_NO_GCC_API_ATTRIBUTE) && defined(__GNUC__) && (__GNUC__ >= 4)
-#        define Net_API __attribute__((visibility("default")))
-#    else
-#        define Net_API
-#    endif
+#    define Net_API
 #endif
 
 

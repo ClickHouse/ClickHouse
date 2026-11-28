@@ -1,0 +1,19 @@
+in, bulk	1
+in, no bulk	1
+equals, bulk	1
+equals, no bulk	1
+absent, bulk	0
+absent, no bulk	0
+index used	1
+in	1
+in	1
+ifNull	5
+ifNull	5
+is null	4
+is null	4
+or is null	5
+or is null	5
+not in	11
+not in	11
+not uint8	11
+not uint8	11

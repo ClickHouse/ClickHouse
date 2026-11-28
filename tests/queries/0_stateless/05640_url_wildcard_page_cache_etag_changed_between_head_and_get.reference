@@ -1,0 +1,7 @@
+ok
+restored	1000	aaaa
+restored	1000	aaaa
+read_1	ExceptionWhileProcessing	FILE_CHANGED_DURING_READ	0
+read_2	QueryFinish	OK	0
+read_3	QueryFinish	OK	1
+the changed read failed with FILE_CHANGED_DURING_READ

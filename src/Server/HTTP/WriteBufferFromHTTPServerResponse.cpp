@@ -276,6 +276,12 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             // If it is not HEAD request send the message in the body.
             setExceptionCode(exception_code_);
 
+            /// Without a usable compression buffer (e.g. it has been canceled by a compression
+            /// failure before producing any output) the exception message below is written raw, so
+            /// the pending Content-Encoding must not be sent, or the body would be mislabeled.
+            if (!use_compression_buffer)
+                compression_method = CompressionMethod::None;
+
             auto & out = use_compression_buffer ? *compression_buffer : *this;
             writeString(message, out);
             if (!message.ends_with('\n'))
@@ -328,7 +334,7 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
                 {
                     breakFixedLength();
                     throw Exception(ErrorCodes::CANNOT_WRITE_TO_SOCKET,
-                        "There is no space left in the fixed length HTTP-write buffer to write the exception header."
+                        "There is no space left in the fixed length HTTP-write buffer to write the exception header. "
                         "But the client should notice the broken HTTP protocol.");
                 }
                 else
@@ -387,7 +393,7 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
 
             LOG_DEBUG(
                 getLogger("WriteBufferFromHTTPServerResponse"),
-                "Write buffer has been canceled with an error."
+                "Write buffer has been canceled with an error. "
                 "Error has been sent at the end of the response. HTTP protocol has been broken by server."
                 " HTTP code: {}, message: <{}>, error code: {}, message: <{}>."
                 " use compression: {}, data has been send through buffers: {}, compression discarded data: {}, discarded data: {}",

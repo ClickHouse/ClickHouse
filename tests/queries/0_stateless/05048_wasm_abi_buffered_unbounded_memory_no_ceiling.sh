@@ -26,7 +26,7 @@ cat "${CUR_DIR}/wasm/text_split_abi.wasm" \
   | ${CLICKHOUSE_CLIENT} --query \
     "INSERT INTO system.webassembly_modules (name, code) SELECT '${MODULE}', code FROM input('code String') FORMAT RawBlob"
 
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
+${CLICKHOUSE_CLIENT} << EOF
 CREATE OR REPLACE FUNCTION ${FUNC}
     LANGUAGE WASM ABI BUFFERED_V1
     FROM '${MODULE}' :: 'batch_row_count'

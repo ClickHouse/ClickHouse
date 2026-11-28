@@ -10,16 +10,12 @@ integration:
   - category: 'clickpipes'
 ---
 
-<div id="faq">
-  ## الأسئلة الشائعة حول Kafka ClickPipes
-</div>
+## الأسئلة الشائعة حول Kafka ClickPipes {#faq}
 
-<div id="general">
-  ### عام
-</div>
+### عام {#general}
 
 <Accordion title="كيف تعمل ClickPipes for Kafka؟">
-  تستخدم ClickPipes معمارية مخصصة تُشغِّل واجهة برمجة تطبيقات Kafka Consumer لقراءة البيانات من topic محدد، ثم تُدرِج هذه البيانات في جدول ClickHouse على خدمة ClickHouse Cloud محددة.
+  تستخدم ClickPipes معمارية مخصصة تُشغِّل واجهة برمجة تطبيقات Kafka Consumer لقراءة البيانات من topic محدد، ثم تُدرِج هذه البيانات في جدول ClickHouse على خدمة ClickHouse Cloud محددة.
 </Accordion>
 
 <Accordion title="ما الفرق بين ClickPipes وClickHouse Kafka Table Engine؟">
@@ -46,17 +42,17 @@ integration:
 
 <Accordion title="هل يمكن توسيع replicas الخاصة بـ ClickPipes؟">
   نعم، يمكن توسيع ClickPipes المخصصة للبثّ أفقيًا وعموديًا.
-  تضيف التوسعة الأفقية المزيد من replicas لزيادة معدل النقل، بينما تزيد التوسعة العمودية الموارد (CPU وRAM) المخصصة لكل replica للتعامل مع workloads أكثر كثافة.
+  تضيف التوسعة الأفقية المزيد من النسخ المتماثلة لزيادة معدل النقل، بينما تزيد التوسعة العمودية الموارد (CPU وRAM) المخصصة لكل نسخة متماثلة للتعامل مع workloads أكثر كثافة.
   يمكن ضبط ذلك أثناء إنشاء ClickPipe، أو في أي وقت لاحق من خلال **Settings** -&gt; **Advanced Settings** -&gt; **Scaling**.
+
+  إذا كان ClickPipe يستخدم نقطة نهاية خاصة عكسية (reverse private endpoint) عبر AWS PrivateLink، فإن العدد الإجمالي للنسخ المتماثلة في جميع ClickPipes التي تتشارك نقطة النهاية هذه يكون محدودًا. راجع [الحد الأقصى للنسخ المتماثلة لكل نقطة نهاية خاصة عكسية](/ar/integrations/clickpipes/networking/aws-privatelink#rpe-replica-limit).
 </Accordion>
 
 <Accordion title="لا أستطيع العثور على بعض Kafka topics الخاصة بي في واجهة إعداد ClickPipes. لماذا؟">
   تعرض واجهة اكتشاف topics في ClickPipes ما يصل إلى 1,500 topic افتراضيًا. إذا كانت Kafka cluster لديك تحتوي على أكثر من 1,500 topic، فقد لا تظهر بعض topics في القائمة المنسدلة. للتحقق من وجود الـ topic، افحصها مباشرةً باستخدام عميل Kafka وببيانات الاعتماد نفسها. وإذا تأكد وجودها وكنت بحاجة إلى رفع حد العرض إلى أكثر من 1,500، فتواصل مع ClickHouse Support.
 </Accordion>
 
-<div id="azure-eventhubs">
-  ### Azure Event Hubs
-</div>
+### Azure Event Hubs {#azure-eventhubs}
 
 <Accordion title="هل يعمل ClickPipe الخاص بـ Azure Event Hubs بدون واجهة Kafka؟">
   لا. يتطلب ClickPipes أن تكون واجهة Kafka مفعّلة على مساحة الاسم الخاصة بـ Event Hubs. ولا يتوفر ذلك إلا في الفئات الأعلى من **basic**. راجع [وثائق Azure Event Hubs](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-quickstart-kafka-enabled-event-hubs?tabs=passwordless#create-an-azure-event-hubs-namespace) لمزيد من المعلومات.

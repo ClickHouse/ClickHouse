@@ -1,0 +1,15 @@
+0
+client: exit code 0
+0
+local: exit code 0
+0
+local, without parallel formatting: exit code 0
+0
+client, ignore error: exit code 0
+0
+local, ignore error: exit code 0
+0
+local, into outfile and stdout: exit code 0
+0
+local, into outfile and stdout, ignore error: exit code 0
+OK: next query was skipped

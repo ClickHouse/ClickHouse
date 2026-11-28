@@ -7,27 +7,29 @@ sidebarTitle: '通知'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouse Cloud は、サービスまたは組織に関連する重要なイベントについて通知を送信します。通知の送信方法や設定方法を理解するうえで、押さえておくべき概念がいくつかあります。
 
 1. **通知カテゴリ**: 請求通知やサービス関連通知など、通知の分類を指します。各カテゴリには、配信方法を設定できる通知が複数含まれます。
 2. **通知重要度**: 通知の重要度は、その重要性に応じて `info`、`warning`、または `critical` になります。これは設定できません。
 3. **通知チャネル**: チャネルとは、UI、メール、Slack など、通知を受信する手段を指します。これはほとんどの通知で設定可能です。
 
-<div id="receiving-notifications">
-  ## 通知の受信
-</div>
+## 通知の受信 {#receiving-notifications}
 
 通知は、さまざまなチャネルで受け取ることができます。ClickHouse Cloud では、メール、ClickHouse Cloud UI、Slack 経由で通知を受信できます。現在の通知を確認するには、左上のメニューにあるベルアイコンをクリックします。すると、フライアウトが開きます。フライアウト下部の **View All** ボタンをクリックすると、すべての通知のアクティビティログが表示されるページに移動します。
 
-<Image img="/images/cloud/manage/notifications-1.webp" size="md" alt="ClickHouse Cloud の通知フライアウト" border />
-
-<Image img="/images/cloud/manage/notifications-2.webp" size="md" alt="ClickHouse Cloud の通知アクティビティログ" border />
-
-<div id="customizing-notifications">
-  ## 通知のカスタマイズ
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud の通知フライアウト](/images/cloud/manage/notifications-1.webp)
+  </Frame>
 </div>
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud の通知アクティビティログ](/images/cloud/manage/notifications-2.webp)
+  </Frame>
+</div>
+
+## 通知のカスタマイズ {#customizing-notifications}
 
 通知ごとに、受信方法をカスタマイズできます。設定画面には、通知のフライアウトまたは通知アクティビティログの 2 番目のタブからアクセスできます。
 
@@ -35,16 +37,24 @@ Cloud UI 経由で配信される通知はカスタマイズでき、設定は�
 
 特定の通知の配信先を設定するには、鉛筆アイコンをクリックして通知の配信チャネルを変更します。
 
-<Image img="/images/cloud/manage/notifications-3.webp" size="md" alt="ClickHouse Cloud 通知設定画面" border />
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud 通知設定画面](/images/cloud/manage/notifications-3.webp)
+  </Frame>
+</div>
 
-<Image img="/images/cloud/manage/notifications-4.webp" size="md" alt="ClickHouse Cloud 通知配信設定" border />
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud 通知配信設定](/images/cloud/manage/notifications-4.webp)
+  </Frame>
+</div>
 
 <Note>
   **Payment failed** など、一部の**必須**通知は設定できません。
 </Note>
 
 <div id="service-notifications">
-  ## サービス通知
+  ## サービス通知 {#service-notifications}
 </div>
 
 ClickHouse は、特定のアラート条件がトリガーされるとサービス通知を送信します。ClickHouse Cloud のサービス通知について詳しくは、以下を参照してください。
@@ -60,25 +70,25 @@ ClickHouse は、特定のアラート条件がトリガーされるとサービ
 | ClickHouse バージョンの変更 | ClickHouseサービスのバージョン更新が開始したとき、および完了したとき。                       |                     | N/A                                                                                                                                             |
 
 <div id="clickpipes-notifications">
-  ## ClickPipes の通知
+  ## ClickPipes の通知 {#clickpipes-notifications}
 </div>
 
 ClickPipe で障害や問題が発生した場合、ClickHouse から ClickPipes の通知が送信されます。
 
 <div id="billing-notifications">
-  ## 請求通知
+  ## 請求通知 {#billing-notifications}
 </div>
 
 ClickHouse は、支払いに問題が発生した場合や、前払いコミットメントの利用量が所定のしきい値に達した場合に、請求通知を送信します。
 
 <div id="supported-notifications">
-  ## 対応している通知
+  ## 対応している通知 {#supported-notifications}
 </div>
 
 現在、請求関連の通知 (支払いの失敗、使用量が一定のしきい値を超えた場合など) と、スケーリング イベント関連の通知 (スケーリングの完了、スケーリングがブロックされた場合など) を送信しています。
 
 <div id="related">
-  ## 関連ページ
+  ## 関連ページ {#related}
 </div>
 
 * [Cloud Console の監視](/ja/products/cloud/features/monitoring/cloud-console) — サービスの健全性、リソース、クエリパフォーマンスのための組み込みダッシュボード

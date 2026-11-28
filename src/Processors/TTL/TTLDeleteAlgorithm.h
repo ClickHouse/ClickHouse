@@ -14,7 +14,7 @@ public:
 
     void execute(Block & block) override;
     void finalize(const MutableDataPartPtr & data_part) const override;
-    size_t getNumberOfRemovedRows() const { return rows_removed; }
+    [[nodiscard]] size_t getNumberOfRemovedRows() const { return rows_removed; }
 
 private:
     size_t rows_removed = 0;

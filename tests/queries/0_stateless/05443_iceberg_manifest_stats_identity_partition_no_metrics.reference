@@ -1,0 +1,6 @@
+--- fixture: data files, rows, files with a NULL count of r (field id 2), partitions
+8	1200	0	4
+distinct r, NULL fraction: 3	0.25
+--- the Estimated statistics trace line of r
+Expect 3 [null 0.25]: the non-NULL partition values and the rows of the NULL partition; without them r had no entry.
+__table1.r: 3 [null 0.25]

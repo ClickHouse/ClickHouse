@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
+${CLICKHOUSE_CLIENT} << EOF
 
 DROP FUNCTION IF EXISTS wasm_throw_exception;
 DROP FUNCTION IF EXISTS wasm_catch_exception;
@@ -19,7 +19,7 @@ EOF
 
 cat ${CUR_DIR}/wasm/exceptions.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'wasm_exceptions', code FROM input('code String') FORMAT RawBlob"
 
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
+${CLICKHOUSE_CLIENT} << EOF
 
 CREATE FUNCTION wasm_throw_exception LANGUAGE WASM ABI ROW_DIRECT FROM 'wasm_exceptions' :: 'throw_exception' ARGUMENTS (UInt32) RETURNS UInt32;
 CREATE FUNCTION wasm_catch_exception LANGUAGE WASM ABI ROW_DIRECT FROM 'wasm_exceptions' :: 'catch_exception' ARGUMENTS (UInt32) RETURNS UInt32;

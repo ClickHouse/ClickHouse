@@ -1,0 +1,23 @@
+-- patch of not indexed column
+1
+200	1
+200	1
+200	1
+1	1
+11	0
+21	0
+1
+-- patch of indexed column
+198
+198
+198
+2
+2
+-- delete-only patch
+197	0
+197	0
+-- pending mutation of indexed column
+198
+198
+2
+2

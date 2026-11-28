@@ -1,0 +1,5 @@
+local_plan 0	100000
+local_plan 1	100000
+direct join used	1
+lookup not distributed	1
+parallel replicas live	1

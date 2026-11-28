@@ -9,8 +9,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تحتوي مجموعة البيانات هذه على جميع الـ commits والتغييرات الخاصة بمستودع ClickHouse. ويمكن إنشاؤها باستخدام أداة `git-import` الأصلية الموزعة مع ClickHouse.
 
 توفّر البيانات الناتجة ملف `tsv` لكل جدول من الجداول التالية:
@@ -26,7 +24,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * `line_changes` - 2.7G - 7,535,157 صفًا
 
 <div id="generating-the-data">
-  ## توليد البيانات
+  ## توليد البيانات {#generating-the-data}
 </div>
 
 هذا أمر اختياري. نحن نوفر البيانات مجانًا — راجع [تنزيل البيانات وإدخالها](#downloading-and-inserting-the-data).
@@ -71,7 +69,7 @@ CREATE TABLE git.commits
 * Linux - `~/clickhouse git-import` - 160 دقيقة
 
 <div id="downloading-and-inserting-the-data">
-  ## تنزيل البيانات وإدراجها
+  ## تنزيل البيانات وإدراجها {#downloading-and-inserting-the-data}
 </div>
 
 يمكن استخدام البيانات التالية لإعادة إنشاء بيئة عمل فعّالة. وبدلًا من ذلك، تتوفر مجموعة البيانات هذه على play.clickhouse.com - راجع [الاستعلامات](#queries) لمزيد من التفاصيل.
@@ -217,7 +215,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 ```
 
 <div id="queries">
-  ## الاستعلامات
+  ## الاستعلامات {#queries}
 </div>
 
 تقترح الأداة عدة استعلامات من خلال مخرجات المساعدة الخاصة بها. وقد أجبنا عن هذه الاستعلامات، إلى جانب بعض الأسئلة الإضافية ذات الاهتمام. وهذه الاستعلامات مرتبة تقريبًا حسب تزايد مستوى التعقيد، بخلاف الترتيب العشوائي الذي تعرضه الأداة.
@@ -225,7 +223,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 مجموعة البيانات هذه متاحة في [play.clickhouse.com](https://sql.clickhouse.com?query_id=DCQPNPAIMAQXRLHYURLKVJ) ضمن قواعد البيانات `git_clickhouse`. ونوفر رابطًا إلى هذه البيئة لجميع الاستعلامات، مع تكييف اسم قاعدة البيانات حسب الحاجة. يُرجى ملاحظة أن نتائج play قد تختلف عن تلك المعروضة هنا بسبب اختلاف وقت جمع البيانات.
 
 <div id="history-of-a-single-file">
-  ### سجلّ ملف واحد
+  ### سجلّ ملف واحد {#history-of-a-single-file}
 </div>
 
 أبسط الاستعلامات. هنا نستعرض جميع رسائل commit الخاصة بالملف `StorageReplicatedMergeTree.cpp`. ونظرًا إلى أن الأحدث غالبًا ما تكون أكثر إثارة للاهتمام، فإننا نفرزها بحيث تظهر أحدث الرسائل أولًا.
@@ -305,7 +303,7 @@ LIMIT 10
 لاحظ أن هناك صيغة أكثر تعقيدًا لهذا الاستعلام، إذ نعثر فيها على [سجل الـ commit لملف سطرًا بسطر](#line-by-line-commit-history-of-a-file) مع أخذ عمليات إعادة التسمية في الحسبان.
 
 <div id="find-the-current-active-files">
-  ### العثور على الملفات الحالية النشطة
+  ### العثور على الملفات الحالية النشطة {#find-the-current-active-files}
 </div>
 
 هذا مهم للتحليل اللاحق عندما نريد أن نأخذ في الاعتبار فقط الملفات الحالية في المستودع. ونقدّر هذه المجموعة بأنها الملفات التي لم تُعَد تسميتها أو تُحذف (ثم تُضاف مرة أخرى/تُعاد تسميتها مرة أخرى).
@@ -443,7 +441,7 @@ git ls-files | grep -v -E 'generated\.cpp|^(contrib|docs?|website|libs/(libcityh
 لا ينبغي أن تؤثر هذه الفروقات بشكل ملحوظ في تحليلنا. **نرحّب بإصدارات محسّنة من هذا الاستعلام**.
 
 <div id="list-files-with-most-modifications">
-  ### عرض الملفات الأكثر تعديلًا
+  ### عرض الملفات الأكثر تعديلًا {#list-files-with-most-modifications}
 </div>
 
 مع الاقتصار على الملفات الحالية، نعتبر عدد التعديلات هو مجموع عمليات الحذف والإضافة.
@@ -502,7 +500,7 @@ LIMIT 10
 ```
 
 <div id="what-day-of-the-week-do-commits-usually-occur">
-  ### في أي يوم من أيام الأسبوع تُجرى عمليات commit عادةً؟
+  ### في أي يوم من أيام الأسبوع تُجرى عمليات commit عادةً؟ {#what-day-of-the-week-do-commits-usually-occur}
 </div>
 
 [تشغيل](https://sql.clickhouse.com?query_id=GED2STFSYJDRAA59H8RLIV)
@@ -530,11 +528,9 @@ GROUP BY dayOfWeek(time) AS day_of_week
 
 يبدو ذلك منطقيًا مع بعض التراجع في الإنتاجية يوم الجمعة. ومن الرائع رؤية الناس يثبتون تغييرات الكود في عطلات نهاية الأسبوع! شكرًا جزيلًا لمساهمينا!
 
-<div id="history-of-subdirectoryfile---number-of-lines-commits-and-contributors-over-time">
-  ### سجل الدليل الفرعي/الملف - عدد الأسطر وعمليات commit والمساهمين بمرور الوقت
-</div>
+### سجل الدليل الفرعي/الملف - عدد الأسطر وعمليات commit والمساهمين بمرور الوقت {#history-of-subdirectoryfile---number-of-lines-commits-and-contributors-over-time}
 
-سينتج عن ذلك نتيجة استعلام كبيرة يصعب عرضها أو تصورها بشكل عملي من دون تصفية. لذلك نتيح في المثال التالي تطبيق تصفية على ملف أو دليل فرعي. هنا نُجري Group By حسب الأسبوع باستخدام الدالة `toStartOfWeek` — عدِّل ذلك حسب الحاجة.
+سينتج عن ذلك نتيجة استعلام كبيرة يصعب عرضها أو تصورها بشكل عملي من دون تصفية. لذلك نتيح في المثال التالي تطبيق تصفية على ملف أو دليل فرعي. هنا نُجري Group By حسب الأسبوع باستخدام الدالة `toStartOfWeek` — عدِّل ذلك حسب الحاجة.
 
 [تشغيل](https://sql.clickhouse.com?query_id=REZRXDVU7CAWT5WKNJSTNY)
 
@@ -572,14 +568,22 @@ LIMIT 10
 
 **بالنسبة إلى الأسطر المضافة والمحذوفة:**
 
-<Image img="/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp" alt="بالنسبة إلى الأسطر المضافة والمحذوفة" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![بالنسبة إلى الأسطر المضافة والمحذوفة](/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp)
+  </Frame>
+</div>
 
 **بالنسبة إلى عمليات commit والمؤلفين:**
 
-<Image img="/images/getting-started/example-datasets/superset-commits-authors.webp" alt="بالنسبة إلى عمليات commit والمؤلفين" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![بالنسبة إلى عمليات commit والمؤلفين](/images/getting-started/example-datasets/superset-commits-authors.webp)
+  </Frame>
+</div>
 
 <div id="list-files-with-maximum-number-of-authors">
-  ### اعرض الملفات التي تضم أكبر عدد من المؤلفين
+  ### اعرض الملفات التي تضم أكبر عدد من المؤلفين {#list-files-with-maximum-number-of-authors}
 </div>
 
 اقتصر على الملفات الحالية فقط.
@@ -638,7 +642,7 @@ LIMIT 10
 ```
 
 <div id="oldest-lines-of-code-in-the-repository">
-  ### أقدم أسطر الشيفرة في المستودع
+  ### أقدم أسطر الشيفرة في المستودع {#oldest-lines-of-code-in-the-repository}
 </div>
 
 يقتصر على الملفات الحالية فقط.
@@ -699,7 +703,7 @@ LIMIT 10
 ```
 
 <div id="files-with-longest-history">
-  ### الملفات ذات السجلّ الأطول
+  ### الملفات ذات السجلّ الأطول {#files-with-longest-history}
 </div>
 
 يقتصر على الملفات الحالية فقط.
@@ -761,7 +765,7 @@ LIMIT 10
 بنية البيانات الأساسية لدينا، Merge Tree، تشهد بطبيعة الحال تطورًا مستمرًا ولها سجل طويل من التعديلات!
 
 <div id="distribution-of-contributors-with-respect-to-docs-and-code-over-the-month">
-  ### توزيع المساهمين بين التوثيق والشفرة البرمجية على مدار الشهر
+  ### توزيع المساهمين بين التوثيق والشفرة البرمجية على مدار الشهر {#distribution-of-contributors-with-respect-to-docs-and-code-over-the-month}
 </div>
 
 **أثناء جمع البيانات، جرى استبعاد التغييرات في المجلد `docs/` بسبب السجل شديد الفوضى للالتزامات (`commit`). لذلك، فإن نتائج هذا الاستعلام غير دقيقة.**
@@ -828,7 +832,7 @@ FROM
 ربما يزداد قليلًا قرب نهاية الشهر، لكننا نحافظ عمومًا على توزيع متوازن جيد. ومرة أخرى، فهذا غير موثوق بسبب التصفية التي يطبّقها مرشّح الوثائق أثناء إدخال البيانات.
 
 <div id="authors-with-the-most-diverse-impact">
-  ### المؤلفون الأكثر تنوعًا في الأثر
+  ### المؤلفون الأكثر تنوعًا في الأثر {#authors-with-the-most-diverse-impact}
 </div>
 
 نقصد بالتنوع هنا عدد الملفات الفريدة التي ساهم فيها المؤلف.
@@ -911,7 +915,7 @@ LIMIT 10
 ```
 
 <div id="favorite-files-for-an-author">
-  ### الملفات المفضلة لدى مؤلف
+  ### الملفات المفضلة لدى مؤلف {#favorite-files-for-an-author}
 </div>
 
 هنا نختار مؤسسنا [Alexey Milovidov](https://github.com/alexey-milovidov) ونقصر تحليلنا على الملفات الحالية.
@@ -1003,7 +1007,7 @@ LIMIT 10
 لعل هذا يعكس مجالات اهتمامه بدرجة أكبر.
 
 <div id="largest-files-with-lowest-number-of-authors">
-  ### أكبر الملفات ذات أقل عدد من المؤلفين
+  ### أكبر الملفات ذات أقل عدد من المؤلفين {#largest-files-with-lowest-number-of-authors}
 </div>
 
 لهذا، نحتاج أولًا إلى تحديد أكبر الملفات. سيكون تقدير ذلك من خلال إعادة بناء كل ملف بالكامل استنادًا إلى سجل الالتزامات مكلفًا جدًا!
@@ -1181,7 +1185,7 @@ LIMIT 10
 ```
 
 <div id="commits-and-lines-of-code-distribution-by-time-by-weekday-by-author-for-specific-subdirectories">
-  ### توزيع الـ التزام وأسطر الشيفرة حسب الوقت؛ وحسب يوم الأسبوع، وحسب المؤلف؛ ولأدلة فرعية محددة
+  ### توزيع الـ التزام وأسطر الشيفرة حسب الوقت؛ وحسب يوم الأسبوع، وحسب المؤلف؛ ولأدلة فرعية محددة {#commits-and-lines-of-code-distribution-by-time-by-weekday-by-author-for-specific-subdirectories}
 </div>
 
 نفسّر ذلك على أنه عدد الأسطر المضافة والمحذوفة بحسب يوم الأسبوع. في هذه الحالة، نركّز على [دليل Functions](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions)
@@ -1313,13 +1317,11 @@ FROM
 24 rows in set. Elapsed: 0.038 sec. Processed 266.05 thousand rows, 14.66 MB (7.09 million rows/s., 390.69 MB/s.)
 ```
 
-<div id="matrix-of-authors-that-shows-what-authors-tends-to-rewrite-another-authors-code">
-  ### مصفوفة للمؤلفين تُظهر أيّ المؤلفين يميلون إلى إعادة كتابة شيفرة مؤلفين آخرين
-</div>
+### مصفوفة للمؤلفين تُظهر أيّ المؤلفين يميلون إلى إعادة كتابة شيفرة مؤلفين آخرين {#matrix-of-authors-that-shows-what-authors-tends-to-rewrite-another-authors-code}
 
 تشير القيمة `sign = -1` إلى حذف شيفرة. نستبعد علامات الترقيم وإدراج الأسطر الفارغة.
 
-[جرّب](https://sql.clickhouse.com?query_id=448O8GWAHY3EM6ZZ7AGLAM)
+[تشغيل](https://sql.clickhouse.com?query_id=448O8GWAHY3EM6ZZ7AGLAM)
 
 ```sql
 SELECT
@@ -1365,14 +1367,22 @@ LIMIT 100
 
 يتيح مخطط Sankey ‏(SuperSet) عرض ذلك بصورة واضحة وجميلة. لاحظ أننا نرفع قيمة `LIMIT BY` إلى 3 للحصول على أبرز 3 أشخاص يزيلون الشيفرة لكل مؤلف، مما يعزّز التنوع في التصور المرئي.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix.webp" alt="مصفوفة المؤلفين في Superset" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![مصفوفة المؤلفين في Superset](/images/getting-started/example-datasets/superset-authors-matrix.webp)
+  </Frame>
+</div>
 
 من الواضح أن Alexey يميل إلى إزالة شيفرة الآخرين. لنستبعده للحصول على عرض أكثر توازنًا لعمليات إزالة الشيفرة.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix_v2.webp" alt="مصفوفة المؤلفين في Superset الإصدار 2" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![مصفوفة المؤلفين في Superset ‏v2](/images/getting-started/example-datasets/superset-authors-matrix_v2.webp)
+  </Frame>
+</div>
 
 <div id="who-is-the-highest-percentage-contributor-per-day-of-week">
-  ### من هو المساهم ذو أعلى نسبة مئوية في كل يوم من أيام الأسبوع؟
+  ### من هو المساهم ذو أعلى نسبة مئوية في كل يوم من أيام الأسبوع؟ {#who-is-the-highest-percentage-contributor-per-day-of-week}
 </div>
 
 إذا اكتفينا بالنظر إلى عدد عمليات commit فقط:
@@ -1495,7 +1505,7 @@ INNER JOIN
 ```
 
 <div id="distribution-of-code-age-across-repository">
-  ### توزيع أعمار الشيفرة في المستودع
+  ### توزيع أعمار الشيفرة في المستودع {#distribution-of-code-age-across-repository}
 </div>
 
 نقصر التحليل على الملفات الحالية. وللاختصار، نقيّد النتائج بعمق 2، مع 5 ملفات لكل مجلد جذري. عدّل ذلك حسب الحاجة.
@@ -1582,7 +1592,7 @@ LIMIT 5 BY root
 ```
 
 <div id="what-percentage-of-code-for-an-author-has-been-removed-by-other-authors">
-  ### ما النسبة المئوية من الشيفرة البرمجية التي كتبها مؤلف وأزالها مؤلفون آخرون؟
+  ### ما النسبة المئوية من الشيفرة البرمجية التي كتبها مؤلف وأزالها مؤلفون آخرون؟ {#what-percentage-of-code-for-an-author-has-been-removed-by-other-authors}
 </div>
 
 بالنسبة إلى هذا السؤال، نحتاج إلى عدد الأسطر التي كتبها مؤلف مقسومًا على العدد الإجمالي للأسطر التي أزالها مساهم آخر.
@@ -1636,7 +1646,7 @@ LIMIT 10
 ```
 
 <div id="list-files-that-were-rewritten-most-number-of-times">
-  ### سرد الملفات التي أُعيدت كتابتها أكبر عدد من المرات؟
+  ### سرد الملفات التي أُعيدت كتابتها أكبر عدد من المرات؟ {#list-files-that-were-rewritten-most-number-of-times}
 </div>
 
 قد يكون أبسط نهج للإجابة عن هذا السؤال هو ببساطة حساب أكبر عدد من تعديلات الأسطر لكل مسار (مع الاقتصار على الملفات الحالية)، على سبيل المثال:
@@ -1783,7 +1793,7 @@ LIMIT 10
 ```
 
 <div id="what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository">
-  ### في أي يوم من أيام الأسبوع تكون احتمالية بقاء الشيفرة في المستودع هي الأعلى؟
+  ### في أي يوم من أيام الأسبوع تكون احتمالية بقاء الشيفرة في المستودع هي الأعلى؟ {#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository}
 </div>
 
 لهذا، نحتاج إلى تمييز سطر من الشيفرة تمييزًا فريدًا. ونقدّر ذلك (إذ قد يظهر السطر نفسه عدة مرات في الملف) باستخدام المسار ومحتوى السطر.
@@ -1849,7 +1859,7 @@ GROUP BY dayOfWeek(added_day) AS day_of_week_added
 ```
 
 <div id="files-sorted-by-average-code-age">
-  ### الملفات المرتبة حسب متوسط عمر الشيفرة
+  ### الملفات المرتبة حسب متوسط عمر الشيفرة {#files-sorted-by-average-code-age}
 </div>
 
 يستخدم هذا الاستعلام المبدأ نفسه كما في [في أي يوم من أيام الأسبوع تكون فرصة بقاء الشيفرة في المستودع هي الأعلى](#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository)، وذلك من خلال السعي إلى تمييز سطر من الشيفرة بشكل فريد باستخدام مسار ومحتوى السطر.
@@ -1943,7 +1953,7 @@ LIMIT 10
 ```
 
 <div id="who-tends-to-write-more-tests--cpp-code--comments">
-  ### من يميل إلى كتابة المزيد من الاختبارات / شيفرة CPP / التعليقات؟
+  ### من يميل إلى كتابة المزيد من الاختبارات / شيفرة CPP / التعليقات؟ {#who-tends-to-write-more-tests--cpp-code--comments}
 </div>
 
 هناك عدة طرق يمكننا من خلالها تناول هذا السؤال. وإذا ركزنا على نسبة الشيفرة إلى الاختبارات، فسيكون هذا الاستعلام بسيطًا نسبيًا: إذ يحسب عدد المساهمات في المجلدات التي تحتوي على `tests`، ثم يحسب نسبتها إلى إجمالي المساهمات.
@@ -2083,7 +2093,7 @@ LIMIT 10
 لاحظ أننا نفرز حسب المساهمات البرمجية. ومن اللافت أن هذه النسبة مرتفعة لدى جميع أكبر المساهمين لدينا، وهو ما يفسّر جزئيًا سهولة قراءة شيفرتنا البرمجية.
 
 <div id="how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage">
-  ### كيف تتغير عمليات commit الخاصة بمؤلف ما بمرور الوقت من حيث النسبة المئوية للكود/التعليقات؟
+  ### كيف تتغير عمليات commit الخاصة بمؤلف ما بمرور الوقت من حيث النسبة المئوية للكود/التعليقات؟ {#how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage}
 </div>
 
 ويُعدّ حساب ذلك حسب المؤلف أمرًا بسيطًا،
@@ -2205,7 +2215,7 @@ LIMIT 20
 ومن المشجّع أن نسبة التعليقات لدينا ثابتة تقريبًا، ولا تنخفض مع طول فترة مساهمة المؤلفين.
 
 <div id="what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay">
-  ### ما متوسط المدة قبل إعادة كتابة الشيفرة، وما الوسيط (نصف عمر تآكل الشيفرة)؟
+  ### ما متوسط المدة قبل إعادة كتابة الشيفرة، وما الوسيط (نصف عمر تآكل الشيفرة)؟ {#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay}
 </div>
 
 يمكننا استخدام المبدأ نفسه كما في [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-times) لتحديد عمليات إعادة الكتابة، ولكن مع احتساب جميع الملفات. تُستخدم دالة نافذة لحساب المدة بين عمليات إعادة الكتابة لكل ملف. ومن ثم يمكننا حساب المتوسط والوسيط عبر جميع الملفات.
@@ -2269,7 +2279,7 @@ FROM rewrites
 ```
 
 <div id="what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written">
-  ### ما أسوأ وقت لكتابة الشيفرة من حيث ارتفاع احتمال إعادة كتابتها؟
+  ### ما أسوأ وقت لكتابة الشيفرة من حيث ارتفاع احتمال إعادة كتابتها؟ {#what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written}
 </div>
 
 على غرار [ما متوسط المدة قبل أن تُعاد كتابة الشيفرة وما الوسيط (نصف عمر تآكل الشيفرة)؟](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) و[سرد الملفات التي أُعيدت كتابتها أكبر عدد من المرات أو بواسطة أكبر عدد من المؤلفين](#list-files-that-were-rewritten-most-number-of-times)، لكننا هنا نُجمِّع حسب يوم الأسبوع. عدّل ذلك حسب الحاجة، مثلًا إلى شهر السنة.
@@ -2337,7 +2347,7 @@ GROUP BY dayOfWeek
 ```
 
 <div id="which-authors-code-is-the-most-sticky">
-  ### أيّ المؤلفين يظل شيفرتهم ثابتًا لأطول مدة؟
+  ### أيّ المؤلفين يظل شيفرتهم ثابتًا لأطول مدة؟ {#which-authors-code-is-the-most-sticky}
 </div>
 
 نعرّف «الثبات» بأنه المدة التي تبقى فيها شيفرة المؤلف قبل أن تُعاد كتابته. وعلى غرار السؤال السابق [ما متوسط الوقت قبل إعادة كتابة الشيفرة، وما الوسيط (نصف عمر تآكل الشيفرة)؟](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay)، نستخدم المقياس نفسه لعمليات إعادة الكتابة، أي 50% إضافات و50% عمليات حذف في الملف. ونحسب متوسط وقت إعادة الكتابة لكل مؤلف، ولا نأخذ في الاعتبار إلا المساهمين الذين لديهم أكثر من ملفين.
@@ -2418,7 +2428,7 @@ LIMIT 10
 ```
 
 <div id="most-consecutive-days-of-commits-by-an-author">
-  ### أطول سلسلة من أيام الـcommit المتتالية حسب المؤلف
+  ### أطول سلسلة من أيام الـcommit المتتالية حسب المؤلف {#most-consecutive-days-of-commits-by-an-author}
 </div>
 
 يتطلب هذا الاستعلام أولًا حساب الأيام التي أجرى فيها المؤلف عمليات commit. وباستخدام دالة نافذة، مع partitioning حسب المؤلف، يمكننا حساب عدد الأيام بين عمليات الـcommit الخاصة به. ولكل commit، إذا كان الفاصل الزمني منذ آخر commit يومًا واحدًا، نعدّه متتاليًا (1)، وإلا فتكون القيمة 0، مع تخزين هذه النتيجة في `consecutive_day`.
@@ -2477,7 +2487,7 @@ LIMIT 10
 ```
 
 <div id="line-by-line-commit-history-of-a-file">
-  ### سجل الالتزامات لكل سطر في ملف
+  ### سجل الالتزامات لكل سطر في ملف {#line-by-line-commit-history-of-a-file}
 </div>
 
 يمكن إعادة تسمية الملفات. وعند حدوث ذلك، نحصل على حدث إعادة تسمية، حيث تُضبط قيمة العمود `path` على المسار الجديد للملف، بينما يمثّل `old_path` الموقع السابق، على سبيل المثال.
@@ -2562,11 +2572,11 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="unsolved-questions">
-  ## أسئلة عالقة
+  ## أسئلة عالقة {#unsolved-questions}
 </div>
 
 <div id="git-blame">
-  ### Git blame
+  ### Git blame {#git-blame}
 </div>
 
 يصعب هنا بشكل خاص الوصول إلى نتيجة دقيقة، نظرًا لعدم إمكانية الاحتفاظ بالحالة حاليًا داخل array functions. وسيصبح ذلك ممكنًا باستخدام `arrayFold` أو `arrayReduce`، ما يتيح الاحتفاظ بالحالة في كل تكرار.

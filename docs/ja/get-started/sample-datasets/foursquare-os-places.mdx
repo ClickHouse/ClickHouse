@@ -7,19 +7,17 @@ keywords: ['サンプルデータセット', 'Foursquare', '地理空間', 'Iceb
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 Foursquare OS Places には、店舗、レストラン、公園、遊び場、記念碑など、1 億件を超える商業施設・場所に関するポイントオブインタレスト (POI) が収録されています。このガイドでは、ClickHouse を Foursquare の Iceberg カタログに接続し、データセットを調査して、地理空間クエリ向けに最適化されたテーブルに読み込みます。
 
 このデータセットは [Foursquare Places Portal](https://places.foursquare.com/) で提供されており、Apache 2.0 ライセンスのもとで無料で利用できます。
 
 <Note>
-  Foursquare は OS Places へのアクセス方法を変更しました。このガイドの以前のバージョンでは、パブリック S3 バケット内の日付で固定されたファイルをクエリしていましたが、現在は Places Portal と認証済みの Iceberg カタログを使用してアクセスします。詳細については、[Foursquare&#39;s OS Places access documentation](https://docs.foursquare.com/data-products/docs/access-fsq-os-places)
+  Foursquare は OS Places へのアクセス方法を変更しました。このガイドの以前のバージョンでは、パブリック S3 バケット内のdate-pinned ファイルをクエリしていましたが、現在は Places Portal と認証済みの Iceberg カタログを使用してアクセスします。詳細については、[Foursquare&#39;s OS Places access documentation](https://docs.foursquare.com/data-products/docs/access-fsq-os-places)
   を参照してください。
 </Note>
 
 <div id="before-you-begin">
-  ## 始める前に
+  ## 始める前に {#before-you-begin}
 </div>
 
 このガイドのクエリを実行する前に、次のものが必要です。
@@ -28,7 +26,7 @@ Foursquare OS Places には、店舗、レストラン、公園、遊び場、�
 * **OS Places** データセットの **Access Data** タブで作成したアクセストークン
 
 <div id="connect-to-the-foursquare-catalog">
-  ## Foursquareカタログに接続する
+  ## Foursquareカタログに接続する {#connect-to-the-foursquare-catalog}
 </div>
 
 アクセストークンは厳重に管理してください。ClickHouseクライアントを起動し、次のクエリ内の
@@ -49,7 +47,7 @@ SETTINGS
 カタログデータベースは読み取り専用です。`places_os` テーブルは日付固定の Parquet リリースではなく、Foursquare&#39;s の最新公開リリースを反映するため、行とスキーマは時間の経過とともに変更される可能性があります。したがって、`ORDER BY` 句のないクエリでは、このガイドに示した応答とは異なるサンプル行が返される場合があります。
 
 <div id="verify-the-connection">
-  ## 接続を確認する
+  ## 接続を確認する {#verify-the-connection}
 </div>
 
 `places_os` Icebergテーブルから1行をクエリします。
@@ -93,7 +91,7 @@ bbox:                (NULL,NULL,NULL,NULL)
 ```
 
 <div id="explore-the-data">
-  ## データを探索する
+  ## データを探索する {#explore-the-data}
 </div>
 
 サンプル行には null のフィールドがいくつか含まれています。より完全な行を返すには、フィルターを追加します：
@@ -180,7 +178,7 @@ DESCRIBE places.`datasets.places_os`;
 ```
 
 <div id="loading-the-data">
-  ## データをClickHouseに読み込む
+  ## データをClickHouseに読み込む {#loading-the-data}
 </div>
 
 データを永続化するには、`clickhouse-server` または ClickHouse Cloud にテーブルを作成します。
@@ -353,9 +351,7 @@ WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
 順序が変更されても、インポートした値の対応がずれることを防ぎます。このクエリでは、ローカルテーブルで不要な `unresolved_flags` を
 除外し、座標のない行はマップ上に配置できないため除外します。その他の Nullable なログソース値は、ローカルテーブルでも null のままです。
 
-<div id="data-visualization">
-  ## データを可視化する
-</div>
+## データを可視化する {#data-visualization}
 
 <Note>
   これらの可視化が作成されて以降、Foursquare のアクセスモデルは変更されています。
@@ -367,10 +363,26 @@ WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
 社内ハッカソンで、ClickHouse の共同創業者兼 CTO である Alexey Milovidov は ClickHouse を使用して、
 Foursquare データセットから以下の可視化を作成しました。
 
-<Image img="/images/getting-started/example-datasets/visualization_1.webp" size="md" alt="ヨーロッパのポイントオブインタレストの密度マップ" />
+<div className="ch-image-md">
+  <Frame>
+    ![ヨーロッパのポイントオブインタレストの密度マップ](/images/getting-started/example-datasets/visualization_1.webp)
+  </Frame>
+</div>
 
-<Image img="/images/getting-started/example-datasets/visualization_2.webp" size="md" alt="日本の日本酒バー" />
+<div className="ch-image-md">
+  <Frame>
+    ![日本の日本酒バー](/images/getting-started/example-datasets/visualization_2.webp)
+  </Frame>
+</div>
 
-<Image img="/images/getting-started/example-datasets/visualization_3.webp" size="md" alt="ATM" />
+<div className="ch-image-md">
+  <Frame>
+    ![ATM](/images/getting-started/example-datasets/visualization_3.webp)
+  </Frame>
+</div>
 
-<Image img="/images/getting-started/example-datasets/visualization_4.webp" size="md" alt="ポイントオブインタレストを国別に分類したヨーロッパ地図" />
+<div className="ch-image-md">
+  <Frame>
+    ![ポイントオブインタレストを国別に分類したヨーロッパ地図](/images/getting-started/example-datasets/visualization_4.webp)
+  </Frame>
+</div>

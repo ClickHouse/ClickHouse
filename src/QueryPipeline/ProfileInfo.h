@@ -26,11 +26,11 @@ struct ProfileInfo
       * If the query does not contain ORDER BY, the number can be underestimated - return the number of rows in blocks that were read before LIMIT reached.
       * If the query contains an ORDER BY, then returns the exact number of rows as if LIMIT is removed from query.
       */
-    size_t getRowsBeforeLimit() const;
-    bool hasAppliedLimit() const;
+    [[nodiscard]] size_t getRowsBeforeLimit() const;
+    [[nodiscard]] bool hasAppliedLimit() const;
 
-    size_t getRowsBeforeAggregation() const;
-    bool hasAppliedAggregation() const;
+    [[nodiscard]] size_t getRowsBeforeAggregation() const;
+    [[nodiscard]] bool hasAppliedAggregation() const;
 
     void update(Block & block);
     void update(size_t num_rows, size_t num_bytes);

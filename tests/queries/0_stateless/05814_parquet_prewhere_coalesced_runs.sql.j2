@@ -1,0 +1,82 @@
+-- Tags: no-fasttest
+-- no-fasttest: Parquet support is not built in fast-test images
+-- Random settings limits: use_columns_cache=(0, 0)
+-- use_columns_cache: a cached column is not decoded again, so later reads would not go through the row mask.
+
+-- PREWHERE over Parquet files with a page index: columns read after a filter go through its row mask.
+-- Covers gaps just under and at the coalescing limit for 8- and 4-byte values (16/17 and 32/33 rows), all or
+-- no rows passing, Nullable, String and array columns, several PREWHERE steps, and 10-row pages, some with no
+-- passing row. Each line compares the rows read with PREWHERE against the same filter over the source table, and
+-- whether any row passed.
+
+SET engine_file_truncate_on_insert = 1;
+
+DROP TABLE IF EXISTS src;
+CREATE TABLE src
+(
+    k UInt64,
+    v UInt64,
+    s String,
+    n Nullable(UInt32),
+    a Array(UInt32),
+    d Decimal64(2),
+    c String
+)
+ENGINE = Memory;
+
+INSERT INTO src SELECT
+    number,
+    number * 3,
+    toString(number),
+    if(number % 7 = 0, NULL, number),
+    range(number % 4),
+    toDecimal64(number, 2),
+    toString(number % 10)
+FROM numbers(20000);
+
+INSERT INTO FUNCTION file(currentDatabase() || '_05814_large_pages.parquet', Parquet) SELECT * FROM src
+SETTINGS output_format_parquet_row_group_size = 20000, output_format_parquet_write_page_index = 1;
+
+INSERT INTO FUNCTION file(currentDatabase() || '_05814_small_pages.parquet', Parquet) SELECT * FROM src
+SETTINGS output_format_parquet_row_group_size = 20000, output_format_parquet_write_page_index = 1,
+    output_format_parquet_data_page_size = 1, output_format_parquet_batch_size = 10;
+
+{% set structure = "'k UInt64, v UInt64, s String, n Nullable(UInt32), a Array(UInt32), d Decimal64(2), c String'" -%}
+{% set rows = 'count(), sum(cityHash64(k, v, s, ifNull(toInt64(n), -1), a, d, c))' -%}
+{% set steps = 'enable_multiple_prewhere_read_steps = 1, allow_reorder_prewhere_conditions = 0' -%}
+{% for pages, label, condition, settings in [
+    ('large', 'every row passes', 'k < 20000', ''),
+    ('large', 'no row passes', 'v % 3 = 1', ''),
+    ('large', 'runs of one row, gaps of two', 'k % 3 = 0', ''),
+    ('large', 'gaps of 16 and 17 rows', 'k % 35 IN (0, 17)', ''),
+    ('large', 'gaps of 32 and 33 rows', 'k % 67 IN (0, 33)', ''),
+    ('large', 'irregular short runs', 'k % 7 IN (0, 2, 3)', ''),
+    ('large', 'random rows', 'cityHash64(k) % 5 < 2', ''),
+    ('large', 'long runs, short gaps', 'k % 100 < 90', ''),
+    ('large', 'filter on the Nullable column', 'n % 3 = 0', ''),
+    ('large', 'two steps, long runs', 'k % 1000 < 700 AND v % 7 != 3', steps),
+    ('large', 'two steps, short runs', 'k % 3 != 0 AND v % 5 != 0', steps),
+    ('large', 'three steps', 'k % 2 = 0 AND v % 9 != 0 AND n % 5 != 1', steps),
+    ('small', 'a whole page in a short gap', 'k % 30 IN (9, 20)', ''),
+    ('small', 'a short gap from a page start', 'k % 20 IN (9, 15)', ''),
+    ('small', 'a short gap up to a page start', 'k % 20 IN (5, 10)', ''),
+    ('small', 'gaps of 16 rows over page starts, one passing row per page', 'k % 17 = 0', ''),
+    ('small', 'short gaps in a page, pages with no passing row', 'k % 40 IN (2, 4, 6)', ''),
+    ('small', 'two steps, short gaps over small pages', 'k % 30 IN (9, 20, 21, 23) AND n % 2 = 1', steps),
+] -%}
+SELECT '{{ label }}',
+    (SELECT ({{ rows }}) FROM file(currentDatabase() || '_05814_{{ pages }}_pages.parquet', Parquet, {{ structure }}) PREWHERE {{ condition }})
+        = (SELECT ({{ rows }}) FROM src WHERE {{ condition }}),
+    (SELECT count() FROM src WHERE {{ condition }}) > 0
+{%- if settings %}
+SETTINGS {{ settings }}
+{%- endif %};
+{% endfor -%}
+
+DROP TABLE src;
+
+-- A failing row whose value is out of range of the requested type must not fail the read.
+INSERT INTO FUNCTION file(currentDatabase() || '_05814_out_of_range.parquet', Parquet)
+SELECT number AS k, toDecimal128(if(number = 1, -1, number), 0) AS w FROM numbers(20)
+SETTINGS output_format_parquet_write_page_index = 1, output_format_parquet_max_dictionary_size = 0;
+SELECT k, w FROM file(currentDatabase() || '_05814_out_of_range.parquet', Parquet, 'k UInt64, w UInt128') PREWHERE k IN (0, 2);

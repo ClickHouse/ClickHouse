@@ -14,10 +14,8 @@ CREATE TABLE t_nested_prefix_non_array
 INSERT INTO t_nested_prefix_non_array (id, `loc.x`, `loc.y`, `loc.z`)
 VALUES ('a', ['x1', 'x2'], ['y1', 'y2'], 'scalar');
 
-SELECT loc.x, loc.y FROM t_nested_prefix_non_array ARRAY JOIN loc ORDER BY loc.x
-SETTINGS enable_analyzer = 1;
+SELECT loc.x, loc.y FROM t_nested_prefix_non_array ARRAY JOIN loc ORDER BY loc.x;
 
-SELECT loc.x, loc.z FROM t_nested_prefix_non_array ARRAY JOIN loc ORDER BY loc.x
-SETTINGS enable_analyzer = 1;
+SELECT loc.x, loc.z FROM t_nested_prefix_non_array ARRAY JOIN loc ORDER BY loc.x;
 
 DROP TABLE t_nested_prefix_non_array SYNC;

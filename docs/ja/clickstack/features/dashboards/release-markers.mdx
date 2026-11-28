@@ -7,33 +7,33 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'リリースマーカー', 'デプロイメント追跡', 'service.version', 'annotations', 'オブザーバビリティ']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 レイテンシーやエラーが急増した際、まず確認したいのは何かがリリースされたかどうかです。ダッシュボードの時系列チャートなら、その場で確認できます。リリースマーカーをオンにすると、各タイルに、サービスのバージョンがテレメトリーに初めて現れた時点を示す破線の縦線が表示されます。
 
 バージョン情報は、すでに送信しているテレメトリーから、タイルのログソースに設定された式を通じて取得されます。CIインテグレーションを設定する必要はなく、デプロイ時に何かをプッシュする必要もありません。
 
-<div id="turn-on">
-  ## リリースマーカーをオンにする
-</div>
+## リリースマーカーをオンにする {#turn-on}
 
 リリースマーカーはデフォルトでオフです。ダッシュボードのオーバーフローメニューを開き、**リリースマーカーを表示**を選択します。
 
-<Image img="/images/clickstack/dashboards/release-markers-menu.webp" alt="ダッシュボードのオーバーフローメニュー。View セクション内の「Show alert annotations」の下に「Show release markers」項目がある" size="sm" />
+<div className="ch-image-sm">
+  <Frame>
+    ![ダッシュボードのオーバーフローメニュー。View セクション内の「Show alert annotations」の下に「Show release markers」項目がある](/images/clickstack/dashboards/release-markers-menu.webp)
+  </Frame>
+</div>
 
 このトグルにより、ダッシュボードの URL に `releaseMarkers=true` が追加されます。そのため、共有したリンクを開くと、マーカーはすでにオンになっています。これはダッシュボードの設定ではなく表示状態です。ダッシュボードとともに保存されることはなく、オフにするとパラメータも削除されます。
 
-マーカーは、ログソースまたはトレースソースをソースとする時系列タイルに描画されます。[アラートアノテーション](/ja/clickstack/features/alerts)も同じメニューから表示でき、同時に表示できます。2 種類のマーカーは一緒に描画され、それぞれのラベルが維持されます。
+マーカーは、ログソースまたはトレースログソースをログソースとする時系列タイルに描画されます。[アラートアノテーション](/ja/clickstack/features/alerts)も同じメニューから表示でき、同時に表示できます。2 種類のマーカーは一緒に描画され、それぞれのラベルが維持されます。
 
-<div id="version-expression">
-  ## バージョンの取得元を設定する
-</div>
+## バージョンの取得元を設定する {#version-expression}
 
 デフォルトでは、ClickStack は OpenTelemetry リソース属性 `ResourceAttributes['service.version']` を読み取ります。サービスが[サービスリソースのセマンティック規約](https://opentelemetry.io/docs/specs/semconv/registry/attributes/service/)に従っている場合、設定なしでマーカーを使用できます。
 
-別の場所からバージョンを読み取るには、ログまたはトレースソースで **Service Version Expression** を設定します。**Team Settings → Sources** でログソースを編集します。ログソースでは、このフィールドは **Configure Optional Fields** 内にあります。トレースソースでは、フォームの **Service Name Expression** の下に直接表示されます。
+別の場所からバージョンを読み取るには、ログまたはトレースログソースで **Service Version Expression** を設定します。**Team Settings → Sources** でログソースを編集します。ログソースでは、このフィールドは **Configure Optional Fields** 内にあります。トレースログソースでは、フォームの **Service Name Expression** の下に直接表示されます。
 
-<Image img="/images/clickstack/dashboards/service-version-expression.webp" alt="ログソースの任意フィールドにある Service Version Expression フィールド。デフォルトのプレースホルダー ResourceAttributes['service.version'] が表示されている" size="lg" />
+<Frame>
+  ![ログソースの任意フィールドにある Service Version Expression フィールド。デフォルトのプレースホルダー ResourceAttributes\['service.version'\] が表示されている](/images/clickstack/dashboards/service-version-expression.webp)
+</Frame>
 
 この値は属性名ではなく SQL 式であり、よくある次の 2 つのケースに対応できます。
 
@@ -47,10 +47,10 @@ coalesce(
 )
 ```
 
-このフィールドは、ログおよびトレースソースの [sources API](/ja/clickstack/api-reference) でも `serviceVersionExpression` として公開されているため、ソースをプログラムでプロビジョニングする際に設定できます。[ログ](/ja/clickstack/managing/config#logs)および[トレース](/ja/clickstack/managing/config#traces)のソース設定の完全な一覧を参照してください。
+このフィールドは、ログおよびトレースログソースの [sources API](/ja/clickstack/api-reference) でも `serviceVersionExpression` として公開されているため、ログソースをプログラムでプロビジョニングする際に設定できます。[ログ](/ja/clickstack/managing/config#logs)および[トレース](/ja/clickstack/managing/config#traces)のログソース設定の完全な一覧を参照してください。
 
 <div id="what-a-marker-means">
-  ## マーカーの意味
+  ## マーカーの意味 {#what-a-marker-means}
 </div>
 
 マーカーは、表示中のウィンドウ内のタイルデータで、あるバージョン値が初めて現れたことを記録します。これはデプロイメントに近いものですが、意図的に同じ事象を示すものではありません。そのため、これらはデプロイメントマーカーではなくリリースマーカーと呼ばれます。
@@ -61,7 +61,7 @@ coalesce(
 ウィンドウを開いた時点ですでに実行されていたバージョンは、実際には発生していないリリースとして描画されないよう、認識して除外されます。そのため、クエリはウィンドウ開始前まで遡り、30 分間、またはそれより長い場合はウィンドウの 10% の期間を対象に、既存のバージョンを特定します。
 
 <div id="scoping">
-  ## タイルに表示されるリリース
+  ## タイルに表示されるリリース {#scoping}
 </div>
 
 リリースクエリは、タイル独自のログソースに対し、タイル独自の条件 (`WHERE` 句、各系列のフィルター、[ダッシュボードフィルター](/ja/clickstack/features/dashboards/overview#custom-filters)) を使用して実行されます。タイルに表示される内容は、何をチャート化しているかによって異なります。
@@ -74,13 +74,15 @@ coalesce(
 
 3つ目のケースでは、マーカーに対応するサービスの線がチャート上にないため、マーカーは除外されます。ウィンドウ内のすべてのリリースが単一のサービスからのものである場合は、代わりにデフォルトのマーカー色で描画されます。
 
-<div id="reading-markers">
-  ## 混み合ったチャートでマーカーを確認する
-</div>
+## 混み合ったチャートでマーカーを確認する {#reading-markers}
 
 マーカーのラベルにカーソルを合わせると、その時点にあるすべてのリリースが一覧表示され、各リリースの提供元サービス、バージョン、時刻を確認できます。
 
-<Image img="/images/clickstack/dashboards/release-marker-tooltip.webp" alt="2 つのサービスを示すチャート上で、サービス frontend、バージョン 2.0.2、そのバージョンが初めて表示された時刻を示すリリースマーカーのホバーツールチップ" size="sm" />
+<div className="ch-image-sm">
+  <Frame>
+    ![2 つのサービスを示すチャート上で、サービス frontend、バージョン 2.0.2、そのバージョンが初めて表示された時刻を示すリリースマーカーのホバーツールチップ](/images/clickstack/dashboards/release-marker-tooltip.webp)
+  </Frame>
+</div>
 
 色はマーカーとその系列を対応付けますが、チャートの凡例には最大 4 件しか表示されず、残りは &quot;+N more&quot; にまとめられます。その場合、画面上では色を照合できません。ツールチップにはサービス名が直接表示されるため、タイルに表示される系列数にかかわらず確認できます。
 
@@ -89,7 +91,7 @@ coalesce(
 マーカーが表示されている場合でも、プロット上を水平方向にドラッグしてズームできます。
 
 <div id="limitations">
-  ## 制限事項
+  ## 制限事項 {#limitations}
 </div>
 
 * **時系列タイルのみ。**テーブル、数値、ヒートマップにはマーカーを表示できません。

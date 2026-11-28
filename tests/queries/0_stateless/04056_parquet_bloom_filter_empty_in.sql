@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 -- Test for Parquet bloom filter with empty IN set
 -- This test verifies that empty IN clauses don't cause assertion failures
 -- when bloom filter push down is enabled.

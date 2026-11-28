@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="vector_search_filter_strategy">
-  ## vector_search_filter_strategy
-</div>
+## vector_search_filter_strategy {#vector_search_filter_strategy}
 
 <SettingsInfoBlock type="VectorSearchFilterStrategy" default_value="auto" />
 
@@ -27,21 +25,17 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * &#39;postfilter&#39; - ベクトル類似度索引を使用して最近傍を特定し、その後に他のフィルタを適用します
 * &#39;prefilter&#39; - 先に他のフィルタを評価し、その後で総当たり検索を実行して最近傍を特定します。
 
-<div id="vector_search_index_fetch_multiplier">
-  ## vector_search_index_fetch_multiplier
-</div>
+## vector_search_index_fetch_multiplier {#vector_search_index_fetch_multiplier}
 
 **別名**: `vector_search_postfilter_multiplier`
 
 <SettingsInfoBlock type="Float" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "設定 'vector_search_postfilter_multiplier' の別名"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "設定 'vector_search_postfilter_multiplier' の別名"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "新しい設定。導入当時は `vector_search_postfilter_multiplier` という名前でしたが、現在はこの設定の別名となっています。"}]}]} />
 
 ベクトル類似度索引から取得する最近傍候補数にこの値を掛けます。ほかのフィルタ条件とのポストフィルタリングを行う場合、または設定 &#39;vector&#95;search&#95;with&#95;rescoring = 1&#39; の場合にのみ適用されます。有効範囲: [1.0, 1000.0]。この範囲外の値は受け付けられません。
 
-<div id="vector_search_use_quantized_codes">
-  ## vector_search_use_quantized_codes
-</div>
+## vector_search_use_quantized_codes {#vector_search_use_quantized_codes}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -52,9 +46,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 1. 量子化されたベクトルをスキャンして絞り込みます (この段階では `k * vector_search_index_fetch_multiplier` 件の結果が生成されます) 。
 2. 見つかったベクトルを、元のフル精度ベクトルに対して再スコアリングします。
 
-<div id="vector_search_with_rescoring">
-  ## vector_search_with_rescoring
-</div>
+## vector_search_with_rescoring {#vector_search_with_rescoring}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

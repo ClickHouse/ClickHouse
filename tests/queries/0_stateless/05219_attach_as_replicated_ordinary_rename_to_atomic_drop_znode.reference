@@ -1,0 +1,6 @@
+path_shape	1	/clickhouse/tables
+renamed	1	1
+uuid_not_in_path	1
+reattached	ReplicatedMergeTree	1
+parent_before_drop	1
+parent_after_drop	0

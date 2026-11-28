@@ -1,0 +1,13 @@
+summing length(name)	1000	1000
+summing v % 7	1000	1000
+summing mapKeys	1000	1000
+coalescing a + b	1000	1000
+coalescing subcolumn	1000	1000
+physical column named like a subcolumn	1000	1000
+aggregating v % 7	1000	1000
+graphite toUInt64(Value) % 7	1000	1000
+graphite toStartOfHour(Time)	1000	1000
+summing rows summed to zero	0
+replacing	1000	1000	60
+stored column named length(name)	500	100	100	7500	500	500
+stored column named length(name), composite index	500	100	100	7500	500	500

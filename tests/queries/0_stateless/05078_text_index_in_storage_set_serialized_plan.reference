@@ -1,0 +1,6 @@
+0
+0
+-- every granule is read for a set that lives in a table
+1
+-- and the index still prunes for a set the query owns
+1

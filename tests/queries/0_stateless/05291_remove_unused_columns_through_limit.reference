@@ -1,0 +1,14 @@
+Output: count()
+Header: count() UInt64
+Header: 
+Header: 
+Output: Empty
+500
+200
+Header: count() UInt64
+Limit (LIMIT WITH TIES)
+Header: __table2.b UInt64
+Header: __table2.b UInt64
+Header: a UInt64
+b UInt64
+100

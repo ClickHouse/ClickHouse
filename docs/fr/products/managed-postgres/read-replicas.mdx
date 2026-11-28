@@ -1,81 +1,88 @@
 ---
 slug: /cloud/managed-postgres/read-replicas
-sidebarTitle: 'Répliques de lecture'
-title: 'Répliques de lecture'
-description: 'Mettez à l’échelle les charges de travail à forte lecture avec des répliques de lecture dans ClickHouse Managed Postgres'
-keywords: ['répliques de lecture', 'évolutivité', 'read scaling', 'répliques Postgres', 'mise à l’échelle horizontale']
+sidebarTitle: 'Réplicas de lecture'
+title: 'Réplicas de lecture'
+description: 'Mettez à l’échelle les charges de travail à forte lecture avec des réplicas de lecture dans ClickHouse Managed Postgres'
+keywords: ['réplicas de lecture', 'évolutivité', 'read scaling', 'répliques Postgres', 'mise à l’échelle horizontale']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/fr/components/Image.jsx";
+Les réplicas de lecture vous permettent de créer une ou plusieurs copies de votre base de données ClickHouse Managed Postgres principale. Ces répliques suivent en continu votre base de données principale grâce à la réplication native de PostgreSQL, afin de rester synchronisées avec les changements.
 
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
+Pour gérer les réplicas de lecture, cliquez sur l’icône de modification de votre warehouse :
 
-Les répliques de lecture vous permettent de créer une ou plusieurs copies de votre base de données ClickHouse Managed Postgres primaire. Ces répliques suivent en continu votre base de données primaire grâce à la réplication native de PostgreSQL, afin de rester synchronisées avec les changements.
-
-Pour gérer les répliques de lecture, cliquez sur l’icône de modification de votre warehouse :
-
-<Image img="/images/managed-postgres/warehouse-view.webp" alt="Vue du warehouse avec l’icône de modification" size="md" border />
-
-La boîte de dialogue du warehouse s’ouvre alors, où vous pouvez voir les services existants et créer de nouvelles répliques de lecture :
-
-<Image img="/images/managed-postgres/read-replica-dialog.webp" alt="Boîte de dialogue de gestion des répliques de lecture" size="md" border />
-
-<div id="managing-read-replicas">
-  ## Gérer les répliques de lecture
+<div className="ch-image-md">
+  <Frame>
+    ![Vue du warehouse avec l’icône de modification](/images/managed-postgres/warehouse-view.webp)
+  </Frame>
 </div>
 
-La page **Répliques de lecture** propose deux vues, accessibles via les contrôles **Flux** et **Tableau** en haut à droite.
+La boîte de dialogue du warehouse s’ouvre alors, où vous pouvez voir les services existants et créer de nouveaux réplicas de lecture :
 
-La vue **Flux** affiche la topologie de réplication : votre instance primaire en haut, avec des flèches pointant vers chaque réplique attachée, ce qui permet de voir d’un coup d’œil le niveau de service, la région et le statut :
+<div className="ch-image-md">
+  <Frame>
+    ![Boîte de dialogue de gestion des réplicas de lecture](/images/managed-postgres/read-replica-dialog.webp)
+  </Frame>
+</div>
 
-<Image img="/images/managed-postgres/read-replicas-flow.webp" alt="Vue Flux des répliques de lecture montrant la topologie de l’instance primaire et des répliques" size="lg" border />
+## Gérer les réplicas de lecture {#managing-read-replicas}
 
-La vue **Tableau** répertorie chaque réplique avec son nom de service, son fournisseur cloud et sa région, le statut du service, l’heure de création, ainsi qu’une action **Détacher le service** :
+La page **Réplicas de lecture** propose deux vues, accessibles via les contrôles **Flux** et **Tableau** en haut à droite.
 
-<Image img="/images/managed-postgres/read-replicas-table.webp" alt="Vue Tableau des répliques de lecture" size="lg" border />
+La vue **Flux** affiche la topologie de réplication : votre instance principale en haut, avec des flèches pointant vers chaque réplique attachée, ce qui permet de voir d’un coup d’œil le niveau de service, la région et le statut :
 
-Pour créer une nouvelle réplique, cliquez sur **Créer une réplique de lecture** en haut à droite, dans l’une ou l’autre vue.
+<div className="ch-image-lg">
+  <Frame>
+    ![Vue Flux des réplicas de lecture montrant la topologie de l’instance principale et des répliques](/images/managed-postgres/read-replicas-flow.webp)
+  </Frame>
+</div>
+
+La vue **Tableau** répertorie chaque réplique avec son nom de service, son fournisseur cloud et sa région, le statut du service, l’heure de création, ainsi qu’une action **Détacher le service** :
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Vue Tableau des réplicas de lecture](/images/managed-postgres/read-replicas-table.webp)
+  </Frame>
+</div>
+
+Pour créer une nouvelle réplique, cliquez sur **Créer un réplica de lecture** en haut à droite, dans l’une ou l’autre vue.
 
 <div id="why-use-read-replicas">
-  ## Pourquoi utiliser des répliques de lecture
+  ## Pourquoi utiliser des répliques de lecture {#why-use-read-replicas}
 </div>
 
 <div id="scalability">
-  ### Évolutivité
+  ### Évolutivité {#scalability}
 </div>
 
 Les répliques de lecture vous permettent de faire évoluer votre base de données à l’horizontale en répartissant les charges de travail principalement en lecture sur plusieurs instances dédiées. C’est particulièrement utile pour les requêtes de reporting, le traitement analytique et les tableaux de bord en temps réel, qui autrement se disputeraient les ressources avec votre trafic de production.
 
 <div id="isolation">
-  ### Isolation
+  ### Isolation {#isolation}
 </div>
 
 En dirigeant les requêtes analytiques et de business intelligence vers des répliques de lecture, vous permettez à votre instance principale de rester dédiée et réactive pour les opérations d’écriture et les charges transactionnelles critiques. Cette séparation améliore les performances globales du système ainsi que sa prévisibilité. Cela signifie aussi que vous n’avez pas besoin d’accorder un accès en écriture aux outils d’analyse ou de reporting : ils peuvent fonctionner en toute sécurité sur une réplique, sans risque de modification accidentelle des données.
 
 <div id="business-continuity">
-  ### Continuité d’activité
+  ### Continuité d’activité {#business-continuity}
 </div>
 
 Les répliques de lecture peuvent jouer un rôle crucial dans la reprise après sinistre. Si votre base de données primaire tombe en panne, une réplique de lecture peut être promue en primaire, ce qui limite au maximum l’indisponibilité et la perte de données. Cela apporte un niveau de résilience supplémentaire, au-delà de vos instances de secours haute disponibilité.
 
-<div id="how-read-replicas-work">
-  ## Fonctionnement des répliques de lecture
-</div>
+## Fonctionnement des réplicas de lecture {#how-read-replicas-work}
 
-Dans ClickHouse Managed Postgres, les répliques de lecture reposent sur une architecture de WAL shipping plutôt que sur la réplication en continu. Ce choix de conception vise à minimiser l’impact sur votre base de données principale.
+Par défaut, dans ClickHouse Managed Postgres, les réplicas de lecture reposent sur une architecture de transfert des journaux WAL plutôt que sur la réplication en continu. Ce choix de conception vise à minimiser l’impact sur votre base de données principale.
 
 <div id="wal-shipping-from-object-storage">
-  ### WAL shipping depuis le stockage d’objets
+  ### WAL shipping depuis le stockage d’objets {#wal-shipping-from-object-storage}
 </div>
 
-Lorsque votre base de données principale traite des transactions, elle génère des enregistrements Write-Ahead Log (WAL). Ces segments WAL sont archivés en continu dans le stockage d’objets (S3). Les répliques de lecture récupèrent ensuite ces segments WAL depuis le stockage d’objets et les rejouent afin de rester synchronisées avec la base principale.
+Lorsque votre base de données primaire traite des transactions, elle génère des enregistrements Write-Ahead Log (WAL). Ces segments WAL sont archivés en continu dans le stockage d’objets. Les répliques de lecture récupèrent ensuite ces segments WAL depuis le stockage d’objets et les rejouent afin de rester synchronisées avec la base primaire.
 
-Cette architecture diffère des [instances de secours haute disponibilité](/fr/products/managed-postgres/high-availability), qui utilisent la réplication en continu avec une connexion directe à la base principale.
+Cette architecture diffère des [instances de secours haute disponibilité](/fr/products/managed-postgres/high-availability), qui utilisent la réplication en continu avec une connexion directe à la base primaire.
 
 <div id="why-we-chose-this-approach">
-  ### Pourquoi nous avons choisi cette approche
+  ### Pourquoi nous avons choisi cette approche {#why-we-chose-this-approach}
 </div>
 
 Nous avons volontairement conçu les répliques de lecture pour qu’elles consomment le WAL depuis le stockage d’objets, plutôt que de se connecter directement à l’instance primaire en tant que standbys en streaming. Cette approche assure une isolation complète entre les répliques de lecture et votre base de données primaire :
@@ -84,10 +91,13 @@ Nous avons volontairement conçu les répliques de lecture pour qu’elles conso
 * **Mise à l’échelle indépendante** : vous pouvez ajouter ou supprimer des répliques de lecture sans aucun impact sur les performances du primaire.
 * **Isolation réseau** : les répliques de lecture fonctionnent dans leur propre environnement réseau, avec des points de terminaison de connexion distincts.
 
-<div id="replication-lag-characteristics">
-  ### Caractéristiques du décalage de réplication
-</div>
+### Caractéristiques du retard de réplication {#replication-lag-characteristics}
 
-Le compromis de cette architecture est le décalage de réplication. Les segments WAL sont archivés depuis le primaire à intervalles réguliers (généralement toutes les 60 secondes, ou lorsqu’un segment est plein, selon la première éventualité). Cela signifie que les répliques de lecture peuvent avoir jusqu’à quelques dizaines de secondes de retard sur le primaire dans des conditions normales.
+Par défaut, l’instance principale transmet les modifications aux répliques dès qu’un segment WAL de 16 MB est rempli ou que 60 secondes se sont écoulées, selon ce qui survient en premier. Sur une instance principale très sollicitée, qui écrit plusieurs MB par seconde, le retard de réplication est généralement de quelques secondes. Sur une instance principale peu active, le retard peut approcher 60 secondes, ce qui peut produire des résultats inattendus dans les environnements de test et à faible débit.
 
-Pour la plupart des cas d’usage de read scaling — reporting, analytique, tableaux de bord — ce décalage est acceptable. Si votre application nécessite des lectures en quasi temps réel, demandez-vous si les requêtes peuvent être dirigées vers le primaire ou si la cohérence éventuelle dans cette fenêtre répond à vos besoins.
+Les requêtes long-running sur une réplique peuvent également accroître le retard. Lorsqu’une requête entre en conflit avec des modifications provenant de l’instance principale, le rejeu est suspendu pendant 30 secondes au maximum afin de permettre à la requête de se terminer.
+
+Pour la plupart des cas d’utilisation de mise à l’échelle des lectures (rapports, analyse de données, tableaux de bord), ce retard est acceptable. Si votre cas d’utilisation exige un retard plus court ou plus prévisible, deux options s’offrent à vous :
+
+* **Ajuster le transfert des journaux WAL.** Dans la plupart des cas, réduire `archive_timeout` et `wal_retrieve_retry_interval` ramène le retard à 1–3 secondes. En contrepartie, l’activité réseau et de stockage augmente légèrement, et les sauvegardes sont plus volumineuses. Contactez l’assistance pour modifier ces paramètres.
+* **Réplication en continu.** Pour des exigences inférieures à la seconde, la réplication en continu ramène le retard à environ 10–20 ms. Elle entraîne en revanche une utilisation réseau et une charge CPU accrues sur l’instance principale, et peut alourdir le surcoût de maintenance. Elle supprime également l’isolation entre l’instance principale et les réplicas de lecture qu’offre le transfert des journaux WAL : les requêtes long-running sur la réplique peuvent bloquer `VACUUM` et provoquer un gonflement (bloat) sur l’instance principale. Si votre application en a besoin, ouvrez une demande d’assistance : nous vous aiderons à vérifier qu’il s’agit de la solution adaptée, puis à la mettre en place.

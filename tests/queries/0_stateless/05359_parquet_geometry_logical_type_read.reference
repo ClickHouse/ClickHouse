@@ -1,0 +1,56 @@
+pt Geometry(crs=)
+mixed Geometry(crs=)
+geog Geography(crs=, algorithm=spherical)
+pt_null Geometry(crs=)
+--- DESCRIBE
+id	Nullable(Int32)					
+pt	Point					
+mixed	Geometry					
+geog	Geometry					
+pt_null	Point					
+mixed_null	Geometry					
+--- data
+1	(1,2)	(1,2)	Point	[[(0,0),(10,0),(10,10),(0,10),(0,0)]]
+2	(3,4)	[(0,0),(1,1)]	LineString	[[(0,0),(10,0),(10,10),(0,10),(0,0)]]
+3	(-5.5,6.25)	[[[(0,0),(10,0),(10,10),(0,10),(0,0)]]]	MultiPolygon	[[(0,0),(10,0),(10,10),(0,10),(0,0)]]
+--- NULLs
+1	(7,8)	\N	None
+2	(0,0)	[(0,0),(1,1)]	LineString
+3	(9,10)	(9,10)	Point
+--- String type hint returns raw WKB
+1	0101000000000000000000F03F0000000000000040	21
+2	010100000000000000000008400000000000001040	41
+3	010100000000000000000016C00000000000001940	102
+--- explicit geo type hint
+1	(1,2)	Point	[[(0,0),(10,0),(10,10),(0,10),(0,0)]]
+2	(3,4)	Point	[[(0,0),(10,0),(10,10),(0,10),(0,0)]]
+3	(-5.5,6.25)	Point	[[(0,0),(10,0),(10,10),(0,10),(0,0)]]
+1	[[(0,0),(10,0),(10,10),(0,10),(0,0)]]
+2	[[(0,0),(10,0),(10,10),(0,10),(0,0)]]
+3	[[(0,0),(10,0),(10,10),(0,10),(0,0)]]
+--- a value of another type than requested
+Types in parquet mismatched
+--- input_format_parquet_allow_geoparquet_parser = 0
+id	Nullable(Int32)					
+pt	Nullable(String)					
+mixed	Nullable(String)					
+geog	Nullable(String)					
+pt_null	Nullable(String)					
+mixed_null	Nullable(String)					
+1	0101000000000000000000F03F0000000000000040
+2	010100000000000000000008400000000000001040
+3	010100000000000000000016C00000000000001940
+--- input_format_parquet_allow_geoparquet_parser = 0 with an explicit geo type
+1	(1,2)
+2	(3,4)
+3	(-5.5,6.25)
+--- spatial functions
+1	100
+2	100
+3	100
+--- geometries with Z coordinates are returned as raw WKB
+[1001]
+id	Nullable(Int32)					
+pt_z	Nullable(String)					
+1	01E9030000000000000000F03F00000000000000400000000000000840
+2	01E9030000000000000000104000000000000014400000000000001840

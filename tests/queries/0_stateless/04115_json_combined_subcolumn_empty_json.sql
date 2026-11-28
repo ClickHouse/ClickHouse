@@ -1,4 +1,3 @@
-set enable_analyzer = 1;
 
 select '{"a" : {"b" : null}}'::JSON(a.b Nullable(UInt32)) as json, json.^a, json.@a, tupleElement(json, 'a');
 drop table if exists test;

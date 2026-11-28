@@ -17,7 +17,7 @@ INSERT INTO ${CLICKHOUSE_DATABASE}_extra.not_allowed SELECT number + 20, number 
 INSERT INTO ${CLICKHOUSE_DATABASE}_extra.no_show_allowed SELECT number + 30, number, number FROM numbers(10);
 
 CREATE TABLE ${CLICKHOUSE_DATABASE}_extra.merge Engine=Merge(${CLICKHOUSE_DATABASE}_extra, '.*allowed');
-SELECT _table, * FROM ${CLICKHOUSE_DATABASE}_extra.merge ORDER BY a SETTINGS enable_analyzer = 1;
+SELECT _table, * FROM ${CLICKHOUSE_DATABASE}_extra.merge ORDER BY a;
 
 DROP USER IF EXISTS user_${CLICKHOUSE_DATABASE};
 CREATE USER user_${CLICKHOUSE_DATABASE} IDENTIFIED WITH plaintext_password BY 'user_${CLICKHOUSE_DATABASE}';

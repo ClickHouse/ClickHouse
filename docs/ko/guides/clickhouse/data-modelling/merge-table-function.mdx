@@ -14,11 +14,9 @@ keywords: ['머지', '테이블 함수', '쿼리 패턴', '테이블 엔진', '�
   <iframe src="https://www.youtube.com/embed/b4YfRhD9SSI?si=MuoDwDWeikAV5ttk" title="YouTube 비디오 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-<div id="setup-tables">
-  ## 테이블 설정
-</div>
+## 테이블 설정 {#setup-tables}
 
-[Jeff Sackmann&#39;s tennis dataset](https://github.com/JeffSackmann/tennis_atp)을 활용해 이 함수를 사용하는 방법을 살펴보겠습니다.
+[TennisMyLife&#39;s ATP match database](https://github.com/Tennismylife/TML-Database)를 활용해 이 함수를 사용하는 방법을 살펴보겠습니다.
 1960년대까지 거슬러 올라가는 경기 데이터가 담긴 CSV 파일을 처리하되, 각 10년 단위로 스키마를 조금씩 다르게 만들겠습니다.
 또한 1990년대 데이터에는 추가 컬럼 몇 개를 더하겠습니다.
 
@@ -27,19 +25,19 @@ keywords: ['머지', '테이블 함수', '쿼리 패턴', '테이블 엔진', '�
 ```sql
 CREATE OR REPLACE TABLE atp_matches_1960s ORDER BY tourney_id AS
 SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, score
-FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1968..1969}.csv')
+FROM url('https://raw.githubusercontent.com/Tennismylife/TML-Database/refs/heads/master/{1968..1969}.csv')
 SETTINGS schema_inference_make_columns_nullable=0, 
          schema_inference_hints='winner_seed Nullable(String), loser_seed Nullable(UInt8)';
 
 CREATE OR REPLACE TABLE atp_matches_1970s ORDER BY tourney_id AS 
 SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, splitByWhitespace(score) AS score
-FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1970..1979}.csv')
+FROM url('https://raw.githubusercontent.com/Tennismylife/TML-Database/refs/heads/master/{1970..1979}.csv')
 SETTINGS schema_inference_make_columns_nullable=0, 
          schema_inference_hints='winner_seed Nullable(UInt8), loser_seed Nullable(UInt8)';
 
 CREATE OR REPLACE TABLE atp_matches_1980s ORDER BY tourney_id AS
 SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, splitByWhitespace(score) AS score
-FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1980..1989}.csv')
+FROM url('https://raw.githubusercontent.com/Tennismylife/TML-Database/refs/heads/master/{1980..1989}.csv')
 SETTINGS schema_inference_make_columns_nullable=0,
          schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16)';
 
@@ -47,14 +45,12 @@ CREATE OR REPLACE TABLE atp_matches_1990s ORDER BY tourney_id AS
 SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, splitByWhitespace(score) AS score,
        toBool(arrayExists(x -> position(x, 'W/O') > 0, score))::Nullable(bool) AS walkover,
        toBool(arrayExists(x -> position(x, 'RET') > 0, score))::Nullable(bool) AS retirement
-FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1990..1999}.csv')
+FROM url('https://raw.githubusercontent.com/Tennismylife/TML-Database/refs/heads/master/{1990..1999}.csv')
 SETTINGS schema_inference_make_columns_nullable=0,
          schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16), surface Enum(\'Hard\', \'Grass\', \'Clay\', \'Carpet\')';
 ```
 
-<div id="schema-multiple-tables">
-  ## 여러 테이블의 스키마
-</div>
+## 여러 테이블의 스키마 {#schema-multiple-tables}
 
 다음 쿼리를 실행하면 각 테이블의 컬럼과 타입을 나란히 표시할 수 있어 차이점을 더 쉽게 확인할 수 있습니다.
 
@@ -93,9 +89,7 @@ SETTINGS output_format_pretty_max_value_width=25;
 * 1980년대 데이터에서는 `winner_seed`와 `loser_seed`가 `Nullable(UInt8)`에서 `Nullable(UInt16)`로 변경됩니다.
 * 1990년대 데이터에서는 `surface`가 `String`에서 `Enum('Hard', 'Grass', 'Clay', 'Carpet')`로 변경되고, `walkover`와 `retirement` 컬럼이 추가됩니다.
 
-<div id="querying-multiple-tables">
-  ## merge를 사용해 여러 테이블 쿼리하기
-</div>
+## merge를 사용해 여러 테이블 쿼리하기 {#querying-multiple-tables}
 
 John McEnroe가 1번 시드를 받은 선수를 상대로 이긴 경기를 찾는 쿼리를 작성해 보겠습니다:
 
@@ -113,18 +107,20 @@ AND loser_seed = 1;
 │ Bjorn Borg    │ ['7-6','6-4']                   │
 │ Bjorn Borg    │ ['4-6','7-6','7-6','6-4']       │
 │ Jimmy Connors │ ['6-1','6-3']                   │
+│ Mats Wilander │ ['6-2','6-4']                   │
 │ Ivan Lendl    │ ['6-2','4-6','6-3','6-7','7-6'] │
 │ Ivan Lendl    │ ['6-3','3-6','6-3','7-6']       │
 │ Ivan Lendl    │ ['6-1','6-3']                   │
 │ Stefan Edberg │ ['6-2','6-3']                   │
 │ Stefan Edberg │ ['7-6','6-2']                   │
+│ Ivan Lendl    │ ['7-6','1-4','WEA']             │
 │ Stefan Edberg │ ['6-2','6-2']                   │
 │ Jakob Hlasek  │ ['6-3','7-6']                   │
 └───────────────┴─────────────────────────────────┘
 ```
 
 다음으로, McEnroe가 3번 시드 이하였던 경기만 찾도록 해당 일치 항목을 필터링해 보겠습니다.
-여러 테이블에서 `winner_seed`에 사용하는 타입이 서로 다르기 때문에 조금 더 까다롭습니다:
+여러 테이블에서 `winner_seed`에 사용하는 유형이 서로 다르기 때문에 조금 더 까다롭습니다:
 
 ```sql
 SELECT loser_name, score, winner_seed
@@ -134,7 +130,7 @@ AND loser_seed = 1
 AND multiIf(
   variantType(winner_seed) = 'UInt8', variantElement(winner_seed, 'UInt8') >= 3,
   variantType(winner_seed) = 'UInt16', variantElement(winner_seed, 'UInt16') >= 3,
-  variantElement(winner_seed, 'String')::UInt16 >= 3
+  variantElement(winner_seed, 'String')::Nullable(UInt16) >= 3
 );
 ```
 
@@ -143,17 +139,17 @@ AND multiIf(
 쿼리 실행 결과는 아래와 같습니다.
 
 ```text
-┌─loser_name────┬─score─────────┬─winner_seed─┐
-│ Bjorn Borg    │ ['6-3','6-4'] │ 3           │
-│ Stefan Edberg │ ['6-2','6-3'] │ 6           │
-│ Stefan Edberg │ ['7-6','6-2'] │ 4           │
-│ Stefan Edberg │ ['6-2','6-2'] │ 7           │
-└───────────────┴───────────────┴─────────────┘
+┌─loser_name────┬─score───────────────┬─winner_seed─┐
+│ Bjorn Borg    │ ['6-3','6-4']       │ 3           │
+│ Mats Wilander │ ['6-2','6-4']       │ 3           │
+│ Stefan Edberg │ ['6-2','6-3']       │ 6           │
+│ Stefan Edberg │ ['7-6','6-2']       │ 4           │
+│ Ivan Lendl    │ ['7-6','1-4','WEA'] │ 4           │
+│ Stefan Edberg │ ['6-2','6-2']       │ 7           │
+└───────────────┴─────────────────────┴─────────────┘
 ```
 
-<div id="which-table-merge">
-  ## merge를 사용할 때 행은 어느 테이블에서 가져옵니까?
-</div>
+## merge를 사용할 때 행은 어느 테이블에서 가져옵니까? {#which-table-merge}
 
 행이 어느 테이블에서 가져오는지 확인하려면 어떻게 해야 할까요?
 다음 쿼리와 같이 `_table` 가상 컬럼을 사용하면 됩니다:
@@ -166,17 +162,19 @@ AND loser_seed = 1
 AND multiIf(
   variantType(winner_seed) = 'UInt8', variantElement(winner_seed, 'UInt8') >= 3,
   variantType(winner_seed) = 'UInt16', variantElement(winner_seed, 'UInt16') >= 3,
-  variantElement(winner_seed, 'String')::UInt16 >= 3
+  variantElement(winner_seed, 'String')::Nullable(UInt16) >= 3
 );
 ```
 
 ```text
-┌─_table────────────┬─loser_name────┬─score─────────┬─winner_seed─┐
-│ atp_matches_1970s │ Bjorn Borg    │ ['6-3','6-4'] │ 3           │
-│ atp_matches_1980s │ Stefan Edberg │ ['6-2','6-3'] │ 6           │
-│ atp_matches_1980s │ Stefan Edberg │ ['7-6','6-2'] │ 4           │
-│ atp_matches_1980s │ Stefan Edberg │ ['6-2','6-2'] │ 7           │
-└───────────────────┴───────────────┴───────────────┴─────────────┘
+┌─_table────────────┬─loser_name────┬─score───────────────┬─winner_seed─┐
+│ atp_matches_1970s │ Bjorn Borg    │ ['6-3','6-4']       │ 3           │
+│ atp_matches_1980s │ Mats Wilander │ ['6-2','6-4']       │ 3           │
+│ atp_matches_1980s │ Stefan Edberg │ ['6-2','6-3']       │ 6           │
+│ atp_matches_1980s │ Stefan Edberg │ ['7-6','6-2']       │ 4           │
+│ atp_matches_1980s │ Ivan Lendl    │ ['7-6','1-4','WEA'] │ 4           │
+│ atp_matches_1980s │ Stefan Edberg │ ['6-2','6-2']       │ 7           │
+└───────────────────┴───────────────┴─────────────────────┴─────────────┘
 ```
 
 또한 이 가상 컬럼을 쿼리의 일부로 사용하여 `walkover` 컬럼 값의 개수를 셀 수 있습니다:
@@ -190,11 +188,11 @@ ORDER BY _table;
 
 ```text
 ┌─_table────────────┬─walkover─┬─count()─┐
-│ atp_matches_1960s │ ᴺᵁᴸᴸ     │    7542 │
-│ atp_matches_1970s │ ᴺᵁᴸᴸ     │   39165 │
-│ atp_matches_1980s │ ᴺᵁᴸᴸ     │   36233 │
-│ atp_matches_1990s │ true     │     128 │
-│ atp_matches_1990s │ false    │   37022 │
+│ atp_matches_1960s │ ᴺᵁᴸᴸ     │    7319 │
+│ atp_matches_1970s │ ᴺᵁᴸᴸ     │   39404 │
+│ atp_matches_1980s │ ᴺᵁᴸᴸ     │   36097 │
+│ atp_matches_1990s │ true     │     129 │
+│ atp_matches_1990s │ false    │   37023 │
 └───────────────────┴──────────┴─────────┘
 ```
 
@@ -223,13 +221,13 @@ ORDER BY _table;
 
 ```text
 ┌─_table────────────┬─multiIf(isNo⋯, '%W/O%'))─┬─count()─┐
-│ atp_matches_1960s │ true                     │     242 │
-│ atp_matches_1960s │ false                    │    7300 │
-│ atp_matches_1970s │ true                     │     422 │
-│ atp_matches_1970s │ false                    │   38743 │
-│ atp_matches_1980s │ true                     │      92 │
-│ atp_matches_1980s │ false                    │   36141 │
-│ atp_matches_1990s │ true                     │     128 │
-│ atp_matches_1990s │ false                    │   37022 │
+│ atp_matches_1960s │ true                     │     296 │
+│ atp_matches_1960s │ false                    │    7023 │
+│ atp_matches_1970s │ true                     │     583 │
+│ atp_matches_1970s │ false                    │   38821 │
+│ atp_matches_1980s │ true                     │     117 │
+│ atp_matches_1980s │ false                    │   35980 │
+│ atp_matches_1990s │ true                     │     129 │
+│ atp_matches_1990s │ false                    │   37023 │
 └───────────────────┴──────────────────────────┴─────────┘
 ```

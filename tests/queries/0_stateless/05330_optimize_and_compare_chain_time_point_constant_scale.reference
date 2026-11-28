@@ -1,0 +1,11 @@
+datetime constant	1
+datetime constant in another time zone	1	1
+lower scale datetime64 constant	1	1
+higher scale constant stays unchained	1
+overflowing constant stays unchained	1
+implied condition is not duplicated	1
+remote	2	2
+join prunes the other table
+1
+100
+100

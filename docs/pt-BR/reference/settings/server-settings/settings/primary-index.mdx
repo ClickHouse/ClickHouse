@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações definem o servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-<div id="primary_index_cache_policy">
-  ## primary_index_cache_policy
-</div>
+## primary_index_cache_policy {#primary_index_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de cache do índice primário.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de evicção do cache do índice primário. Valores possíveis: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="primary_index_cache_prewarm_ratio">
-  ## primary_index_cache_prewarm_ratio
-</div>
+## primary_index_cache_prewarm_ratio {#primary_index_cache_prewarm_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.95" changeable_without_restart="No" />A razão da capacidade total do cache de marcas a ser preenchida durante o pré-aquecimento.
 
-<div id="primary_index_cache_size">
-  ## primary_index_cache_size
-</div>
+## primary_index_cache_size {#primary_index_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />Tamanho máximo do cache do índice primário (índice da família de tabelas MergeTree).
 
-<div id="primary_index_cache_size_ratio">
-  ## primary_index_cache_size_ratio
-</div>
+## primary_index_cache_size_ratio {#primary_index_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />O tamanho da fila protegida (no caso da política SLRU) no cache de índice primário em relação ao tamanho total do cache.
 

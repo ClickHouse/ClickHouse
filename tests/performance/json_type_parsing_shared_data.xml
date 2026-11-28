@@ -1,0 +1,11 @@
+<test>
+    <!-- Parsing a JSON object whose large array of sub-objects goes to shared data (the sub-objects get
+         max_dynamic_paths=0 from max_dynamic_subcolumns_in_json_type_parsing=0, so every field, including the
+         non-scalar ResolutionVersions array, is serialized into shared data). This stresses the non-scalar
+         shared-data serialization path in ObjectJSONNode::insertIntoSharedData. -->
+    <fill_query>INSERT INTO FUNCTION file(test_json_shared_object_arrays.txt, Raw) SELECT toJSONString(map('TenantId', ('t' || toString(number))::Dynamic, 'Risk', map('Status', 'open'::Dynamic, 'Vulnerabilities', arrayMap(x -> map('IsResolved', (x % 2 = 0)::Dynamic, 'Cve', ('CVE-2024-' || toString(x))::Dynamic, 'Severity', 'high'::Dynamic, 'Package', 'libfoo'::Dynamic, 'Description', 'A vulnerability was found in the package.'::Dynamic, 'ResolutionVersions', [toString(1 + x % 5) || '.' || toString(x % 20)]::Dynamic)::Map(String, Dynamic), range(1000))::Dynamic)::Map(String, Dynamic)::Dynamic)::Map(String, Dynamic)) FROM numbers(100) SETTINGS use_variant_as_common_type = 1, engine_file_truncate_on_insert = 1</fill_query>
+
+    <query>SELECT * FROM file(test_json_shared_object_arrays.txt, JSONAsObject, 'json JSON') FORMAT Null SETTINGS max_dynamic_subcolumns_in_json_type_parsing = 0, input_format_try_infer_datetimes = 0</query>
+
+    <drop_query>INSERT INTO FUNCTION file(test_json_shared_object_arrays.txt) SELECT * FROM numbers(0) SETTINGS engine_file_truncate_on_insert = 1</drop_query>
+</test>

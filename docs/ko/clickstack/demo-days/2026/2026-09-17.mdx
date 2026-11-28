@@ -1,0 +1,35 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-09-17
+title: '데모 데이 - 2026-09-17'
+sidebarTitle: '2026-09-17'
+description: '2026-09-17 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+## 절대 오류율에 따라 서비스 맵 노드 색상 지정 {#colouring-service-map-nodes-by-absolute-error-rate}
+
+*시연: [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/d8QHorCCgqY" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+서비스 맵에서 실제로 오류가 발생한 서비스를 알아보기 어렵다는 의견이 있었습니다. 오류가 전혀 없는 서비스까지 모든 노드가 붉은색 계열로 표시되었기 때문입니다. 색상도 현재 그래프를 기준으로 상대적으로 정해져, 최고 오류율이 0.3%에 불과해도 해당 서비스는 가장 진한 빨간색으로 표시되었습니다.
+
+이제 오류율은 다음 4개 구간에 따라 고정된 색상으로 표시됩니다.
+
+* **0%:** 푸른빛이 도는 회색
+* **0% 초과, 1% 미만:** 연한 빨간색
+* **1% 이상, 5% 미만:** 중간 밝기의 빨간색
+* **5% 이상:** 진한 빨간색
+
+트래픽이 없는 서비스는 속이 빈 원으로 표시됩니다. 트래픽은 있지만 오류가 없는 서비스는 회색으로 표시됩니다. 빨간색으로 표시된다면 오류가 발생한 것입니다.
+
+회색을 사용하는 데는 이유가 있습니다. 32px 크기의 노드에서는 옅은 분홍색과 조금 더 진한 분홍색이 거의 똑같아 보입니다. 푸른빛이 도는 회색은 훨씬 구분하기 쉽고, 빨간색 3종은 기존 색상 팔레트에서 가져왔습니다.
+
+이제 범례에는 구간별 색상이 표시되며, 맨 위에는 `≥5%`가 표시됩니다. 이 임계값은 기존 툴팁의 경고 색상에도 적용되므로 두 표시가 일관됩니다. 지연 시간과 처리량은 적절한 임계값이 워크로드에 따라 달라지므로 계속 상대 척도를 사용합니다.
+
+다만 절충 관계가 있습니다. 이제 오류율이 6%인 서비스와 60%인 서비스가 같은 색상으로 표시됩니다. 정확한 백분율은 툴팁에서 확인할 수 있습니다. 비율에 따라 채워지는 도넛 차트를 사용하면 더 자세히 표현할 수 있지만, 변경 범위가 더 커집니다. 또한 현재 소스는 OpenTelemetry의 `Ok`, `Error`, `Unset` 상태만 제공하므로 성공, `4xx`, `5xx`, 스로틀링을 구분할 데이터가 없습니다.
+
+임계값은 현재 고정되어 있습니다. 향후 소스별 재정의 기능을 추가하면 유용할 것입니다. `99.9%` SLO가 적용되는 서비스와 배치 작업은 허용 가능한 오류율의 기준이 다르기 때문입니다.
+
+**관련 PR:** [#3125](https://github.com/hyperdxio/hyperdx/pull/3125) 절대 오류율 임계값에 따라 서비스 맵 노드 색상 지정
