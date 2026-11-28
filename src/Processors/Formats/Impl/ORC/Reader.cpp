@@ -615,7 +615,10 @@ void RowReader::pickRowGroups()
                 it->first, it->second.entry.size(), groups, current_stripe);
     }
 
-    if (!has_leaf_index)
+    const bool has_filter_index = options.row_group_filter
+        && std::ranges::any_of(row_indexes, [&](const auto & column_index) { return column_index.second.entry.size() >= groups; });
+
+    if (!has_leaf_index && !has_filter_index)
     {
         /// Without the row indexes all row groups are read.
         next_skipped_rows.clear();
@@ -653,6 +656,14 @@ void RowReader::pickRowGroups()
         }
 
         bool needed = isNeeded(options.search_argument->evaluate(values));
+        if (needed && options.row_group_filter)
+            needed = options.row_group_filter([&](UInt64 column) -> const Proto::ColumnStatistics *
+            {
+                auto it = row_indexes.find(column);
+                if (it == row_indexes.end() || group >= it->second.entry.size() || !it->second.entry[group].statistics)
+                    return nullptr;
+                return &*it->second.entry[group].statistics;
+            });
         if (!needed)
         {
             next_skipped_rows[group] = 0;

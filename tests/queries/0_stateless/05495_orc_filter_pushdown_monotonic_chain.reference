@@ -1,0 +1,43 @@
+rows	Nullable(Int64)	1000000
+bare	10000
+between	10000
+toUInt64	10000
+toInt64	10000
+toFloat64	10000
+plus0	10000
+minus0	10000
+mul1	10000
+plus1	10000
+mul2	10000
+intDiv1	10000
+intDiv10	10000
+neg	10000
+in	30000
+mixed	20000
+intDiv10	10	555550	555559	5555545
+intDiv10	10	555550	555559	5555545
+neg	1	555555	555555	555555
+neg	1	555555	555555	555555
+in 8192	3	0	999998	1499998
+in 8192	3	0	999998	1499998
+in 10000	3	0	999998	1499998
+in 10000	3	0	999998	1499998
+null or	1
+null kept	20000
+ifNull	1
+ifNull	1
+coalesce	1
+negate ifNull	1
+toFloat64 ifNull	1
+ifNull in	1
+null in	1
+default	28572
+default pruned	10000
+tuple	1	100000
+tuple	1	100000
+dotted	10000
+dotted	10000
+tuple	10000
+dotted	10000
+struct nulls	10
+struct nulls flat	10
