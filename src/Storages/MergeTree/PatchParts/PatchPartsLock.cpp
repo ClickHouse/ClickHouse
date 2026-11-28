@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -19,6 +20,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/ProcessList.h>
+#include <Storages/ColumnsDescription.h>
 #include <thread>
 
 namespace fs = std::filesystem;
@@ -136,13 +138,14 @@ zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
 
 zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
     const MutationCommands & commands,
+    const ColumnsDescription & columns,
     const ContextPtr & context,
     const zkutil::ZooKeeperPtr & zookeeper,
     const String & zookeeper_path)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
 
-    auto affected_columns = getUpdateAffectedColumns(commands, context);
+    auto affected_columns = getUpdateAffectedColumns(commands, columns, context);
     auto in_progress_path = fs::path(zookeeper_path) / "lightweight_updates" / "in_progress";
     auto lock_acquire_timeout = context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds();
     auto affected_columns_str = affected_columns.toString();
@@ -418,7 +421,7 @@ PlainLightweightUpdateLock::~PlainLightweightUpdateLock()
         lightweight_updates_sync->releaseColumns(affected_columns);
 }
 
-UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands, const ContextPtr & context)
+UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands, const ColumnsDescription & columns, const ContextPtr & context)
 {
     UpdateAffectedColumns res;
 
@@ -456,6 +459,29 @@ UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands
         }
     }
 
+    /// An UPDATE also rewrites the MATERIALIZED columns derived from the ones it sets, from the stored values of their other inputs.
+    MaterializedColumnDependencies materialized_dependencies(columns, context);
+    const NameSet set_columns = res.updated;
+    NameSet recalculation_inputs;
+
+    for (const auto & column : columns.getMaterialized())
+    {
+        const auto & inputs = materialized_dependencies.findColumnsToRecalculate(column.name, set_columns);
+        if (inputs.empty())
+            continue;
+
+        res.updated.insert(column.name);
+        recalculation_inputs.insert(inputs.begin(), inputs.end());
+    }
+
+    for (const auto & name : recalculation_inputs)
+        if (!res.updated.contains(name))
+            res.used.insert(name);
+
+    /// With several commands, an assignment keeps the stored value on the rows selected only by the other commands.
+    if (commands.size() > 1)
+        res.used.insert(res.updated.begin(), res.updated.end());
+
     return res;
 }
 
@@ -467,6 +493,7 @@ void LightweightUpdateHolderInKeeper::reset()
 
 zkutil::EphemeralNodeHolderPtr getLockForLightweightUpdateInKeeper(
     const MutationCommands & commands,
+    const ColumnsDescription & columns,
     const ContextPtr & context,
     const zkutil::ZooKeeperPtr & zookeeper,
     const String & zookeeper_path)
@@ -477,7 +504,7 @@ zkutil::EphemeralNodeHolderPtr getLockForLightweightUpdateInKeeper(
         return getLockForSyncMode(context, zookeeper, zookeeper_path);
 
     if (parallel_mode == UpdateParallelMode::AUTO)
-        return getLockForAutoMode(commands, context, zookeeper, zookeeper_path);
+        return getLockForAutoMode(commands, columns, context, zookeeper, zookeeper_path);
 
     return {};
 }
