@@ -387,6 +387,23 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             }
         }
 
+        /// `Bool` is `UInt8` with a custom name, so `equals` considers them the same type.
+        /// Mixing them must give `UInt8` regardless of the order, because `Bool` cannot hold values above 1.
+        if (all_equal && types[0]->getTypeId() == TypeIndex::UInt8)
+        {
+            bool have_bool = false;
+            bool have_non_bool = false;
+            for (const auto & type : types)
+            {
+                if (isBool(type))
+                    have_bool = true;
+                else
+                    have_non_bool = true;
+            }
+            if (have_bool && have_non_bool)
+                return std::make_shared<DataTypeUInt8>();
+        }
+
         if (all_equal)
             return types[0];
     }
