@@ -1059,6 +1059,44 @@ DataTypePtr tryGetLeastSupertype(const DataTypes & types)
     return getLeastSupertype<LeastSupertypeOnError::Null>(types);
 }
 
+namespace
+{
+
+/// A `Variant` keeps its alternatives: they cannot be renamed, and it compares its values per alternative.
+/// A level with a custom name is kept as well, a rebuild would drop the name.
+DataTypePtr compareBoolAsUInt8(const DataTypePtr & type)
+{
+    checkStackSize();
+
+    if (isBool(type))
+        return std::make_shared<DataTypeUInt8>();
+    if (isVariant(type) || type->hasCustomName())
+        return type;
+
+    DataTypes children = type->getChildren();
+    bool moved = false;
+    for (auto & child : children)
+    {
+        auto new_child = compareBoolAsUInt8(child);
+        moved |= new_child != child;
+        child = std::move(new_child);
+    }
+    return moved ? type->cloneWithChildren(children) : type;
+}
+
+}
+
+DataTypePtr getLeastSupertypeForComparison(const DataTypePtr & left, const DataTypePtr & right)
+{
+    return compareBoolAsUInt8(getLeastSupertype(DataTypes{left, right}));
+}
+
+DataTypePtr tryGetLeastSupertypeForComparison(const DataTypePtr & left, const DataTypePtr & right)
+{
+    auto supertype = tryGetLeastSupertype(DataTypes{left, right});
+    return supertype ? compareBoolAsUInt8(supertype) : nullptr;
+}
+
 template<>
 DataTypePtr getLeastSupertype<LeastSupertypeOnError::Dynamic>(const DataTypes & types)
 {

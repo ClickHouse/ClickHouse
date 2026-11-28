@@ -904,7 +904,7 @@ public:
         const size_t map_elements_count = key_column->size();
         ColumnPtr filter;
 
-        if (const auto comparison_type = tryGetLeastSupertype(DataTypes{key_type, remove_key_type}))
+        if (const auto comparison_type = tryGetLeastSupertypeForComparison(key_type, remove_key_type))
         {
             key_column = castColumn(ColumnWithTypeAndName{key_column, key_type, "key"}, comparison_type);
             replicated_remove_key = castColumn(
