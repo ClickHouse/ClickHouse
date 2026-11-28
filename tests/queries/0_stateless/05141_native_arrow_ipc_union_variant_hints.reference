@@ -250,6 +250,11 @@ q	Variant(String, Tuple(\n    v Variant(IPv6, String)))
 1:203:405:607:809:a0b:c0d:e0f	Variant(IPv6, Tuple(\n    A Int64,\n    a Int64))
 (2,4)	Variant(IPv6, Tuple(\n    A Int64,\n    a Int64))
 ::1	Variant(IPv6, Tuple(\n    A Int64,\n    a Int64))
+--- a composite branch with children of the Arrow null type reads them as NULL, as in a plain column ---
+(NULL,[NULL],{'k':NULL})	Variant(String, Tuple(\n    a Nullable(Int32),\n    l Array(Nullable(Int32)),\n    m Map(String, Nullable(Int32))))
+x	Variant(String, Tuple(\n    a Nullable(Int32),\n    l Array(Nullable(Int32)),\n    m Map(String, Nullable(Int32))))
+(NULL,[],{})	Variant(String, Tuple(\n    a Nullable(Int32),\n    l Array(Nullable(Int32)),\n    m Map(String, Nullable(Int32))))
+y	Variant(String, Tuple(\n    a Nullable(Int32),\n    l Array(Nullable(Int32)),\n    m Map(String, Nullable(Int32))))
 --- a date32 branch is excluded by design, so this stays rejected ---
 Cannot convert type Variant(Date32, String) to Variant(Int32, String).
 --- and the narrowing DateTime64 -> DateTime is refused, so this stays rejected ---
@@ -306,6 +311,7 @@ struct_fields	Variant(String, Tuple(\n    a Nullable(Int32),\n    b Nullable(Int
 struct_nested_union	Variant(String, Tuple(\n    v Variant(FixedString(16), String)))					
 struct_ci_dup	Variant(FixedString(16), Tuple(\n    A Int32,\n    a Int32))					
 struct_ci_amb	Variant(FixedString(16), Tuple(\n    Ab Int32,\n    aB Int32))					
+struct_null	Variant(String, Tuple(\n    a Nullable(Nothing),\n    l Array(Nullable(Nothing)),\n    m Map(String, Nullable(Nothing))))					
 binary_fsb	Variant(FixedString(16), String)					
 fsb_fsb	Variant(FixedString(16))					
 utf8_int32	Variant(Int32, String)					

@@ -277,6 +277,13 @@ columns = {
         [struct([("Ab", pa.int32(), pa.array([1, 2], type=pa.int32())),
                  ("aB", pa.int32(), pa.array([3, 4], type=pa.int32()))], nullable=False),
          fsb], ["t", "f"]),
+    # Children of the Arrow `null` type, which hold only NULLs, as a struct field, a list item and a map value.
+    "struct_null": dense(
+        [struct([("a", pa.null(), pa.nulls(2)),
+                 ("l", pa.list_(pa.null()), pa.array([[None], []], type=pa.list_(pa.null()))),
+                 ("m", pa.map_(pa.string(), pa.null()),
+                  pa.array([[("k", None)], []], type=pa.map_(pa.string(), pa.null())))]),
+         pa.array(["x", "y"])], ["t", "s"]),
     # Neither branch prefers a requested alternative and both match both, so nothing is assigned.
     "binary_fsb": dense([pa.array([b"aa", b"bb"], type=pa.binary()), fsb], ["b", "f"]),
     # Two children inferring one type whose names tell nothing apart.
@@ -441,6 +448,8 @@ read_column struct_ci_dup 'Variant(Tuple(A Int64, a Int64), IPv6)'
 echo "--- as does the case-insensitive one, which prefers the field spelled the same, as in a plain column ---"
 read_column struct_ci_dup 'Variant(Tuple(A Int64, a Int64), IPv6)' Arrow \
     "input_format_arrow_case_insensitive_column_matching = 1"
+echo "--- a composite branch with children of the Arrow null type reads them as NULL, as in a plain column ---"
+read_column struct_null 'Variant(Tuple(a Nullable(Int32), l Array(Nullable(Int32)), m Map(String, Nullable(Int32))), String)'
 
 echo "--- a date32 branch is excluded by design, so this stays rejected ---"
 rejected date32_utf8 'Variant(Int32, String)'

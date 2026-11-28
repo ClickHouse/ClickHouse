@@ -392,7 +392,9 @@ bool variantElementCompositeMatchesType(const DataTypePtr & decoded, const DataT
 {
     const auto child_matches = [&](const DataTypePtr & from_child, const DataTypePtr & to_child)
     {
-        return variantElementMatchesType(ArrowIPC::stripHint(from_child), to_child, case_insensitive);
+        const DataTypePtr from_leaf = ArrowIPC::stripHint(from_child);
+        /// An Arrow `null` child holds only NULLs, which the cast converts as in a plain column.
+        return isNothing(from_leaf) || variantElementMatchesType(from_leaf, to_child, case_insensitive);
     };
 
     if (const auto * from_arr = typeid_cast<const DataTypeArray *>(decoded.get()))
