@@ -354,7 +354,8 @@ public:
             current_file_description = std::move(file_description);
             directory_sync_pending = log_file_settings.force_sync;
 
-            if (log_file_settings.compress_logs)
+            /// Readers pick the decoder from the file name, so an existing file keeps its encoding.
+            if (current_file_description->is_compressed)
                 compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(
                     std::move(file_buf),
                     /* compression level = */ 3,
