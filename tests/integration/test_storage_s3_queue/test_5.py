@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 import uuid
 from datetime import datetime
@@ -2479,3 +2480,370 @@ def test_failed_commit_after_success_select(started_cluster):
         assert 0 == int(node.query(f"SELECT count() FROM {table_name}"))
     finally:
         node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_after_success")
+
+
+def test_concurrent_committing_selects_on_ordered_queue(started_cluster):
+    """
+    Committing SELECT queries on one unbucketed ordered queue have their own file
+    iterators and commit the single processed pointer on their own. A query that
+    takes a later file and commits it while an earlier file is still being read
+    by another query moves the pointer past that file, so the slower query fails
+    to commit (the file is already below the pointer) and its rows are lost for
+    the queue.
+
+    The first SELECT is parked by `object_storage_queue_sleep_in_generate` while
+    it reads the first file. The second SELECT starts meanwhile. Committing
+    SELECTs have to run one at a time: both must succeed and every row must be
+    returned exactly once.
+    """
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = f"test_concurrent_select_ordered_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    big_rows = 500000
+    small_rows = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "s3queue_processing_threads_num": 1,
+            "commit_on_select": 1,
+            "enable_hash_ring_filtering": 0,
+        },
+    )
+
+    def s3_function(file_name):
+        return (
+            f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/"
+            f"{started_cluster.minio_bucket}/{files_path}/{file_name}',"
+            f" 'minio', '{minio_secret_key}')"
+        )
+
+    node.query(
+        f"INSERT INTO FUNCTION {s3_function('a.csv')} "
+        f"SELECT number, number, number FROM numbers({big_rows})"
+    )
+    node.query(
+        f"INSERT INTO FUNCTION {s3_function('b.csv')} "
+        f"SELECT number, number, number FROM numbers({small_rows})"
+    )
+
+    select = f"SELECT count() FROM {table_name}"
+    results = {}
+
+    def run_select(name):
+        results[name] = node.query_and_get_answer_with_error(select)
+
+    first = threading.Thread(target=run_select, args=("first",))
+    second = threading.Thread(target=run_select, args=("second",))
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_sleep_in_generate")
+    try:
+        first.start()
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if int(
+                node.query(
+                    f"SELECT count() FROM system.s3queue_metadata_cache "
+                    f"WHERE zookeeper_path ilike '%{table_name}%' "
+                    f"AND file_name ilike '%a.csv' "
+                    f"AND status = 'Processing' AND rows_processed > 0"
+                )
+            ):
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("the first SELECT did not start reading a.csv")
+
+        second.start()
+        first.join(timeout=120)
+        second.join(timeout=120)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_sleep_in_generate")
+
+    for name in ("first", "second"):
+        answer, error = results[name]
+        assert not error, f"{name} SELECT failed: {error}"
+
+    # The first SELECT lists both files, so it takes both. The second one waits for it and finds nothing left.
+    assert int(results["first"][0]) + int(results["second"][0]) == big_rows + small_rows
+    assert 0 == int(node.query(select))
+
+    node.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_committing_selects_on_two_ordered_queues_in_opposite_orders(started_cluster):
+    """
+    A committing SELECT reading two unbucketed ordered queues locks both of them.
+    Queries reading them in opposite orders must not deadlock: one of them could
+    otherwise hold the first queue while waiting for the second one, held by
+    another query which waits for the first one.
+
+    The first queue is held by a SELECT parked by `object_storage_queue_sleep_in_generate`,
+    so the queries reading both queues start while it is busy. All of them must
+    succeed and every row must be returned exactly once.
+    """
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    suffix = generate_random_string()
+    first, second = [f"test_opposite_orders_{i}_{suffix}" for i in range(2)]
+    big_rows = 500000
+    small_rows = 10
+
+    for table_name in (first, second):
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            "ordered",
+            f"{table_name}_data",
+            additional_settings={
+                "s3queue_processing_threads_num": 1,
+                "commit_on_select": 1,
+                "enable_hash_ring_filtering": 0,
+            },
+        )
+
+    def s3_function(table_name):
+        return (
+            f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/"
+            f"{started_cluster.minio_bucket}/{table_name}_data/a.csv',"
+            f" 'minio', '{minio_secret_key}')"
+        )
+
+    node.query(
+        f"INSERT INTO FUNCTION {s3_function(first)} "
+        f"SELECT number, number, number FROM numbers({big_rows})"
+    )
+    node.query(
+        f"INSERT INTO FUNCTION {s3_function(second)} "
+        f"SELECT number, number, number FROM numbers({small_rows})"
+    )
+
+    queries = [f"SELECT count() FROM {first}"] + [
+        f"SELECT count() FROM (SELECT * FROM {a} UNION ALL SELECT * FROM {b})"
+        for a, b in [(first, second), (second, first)] * 3
+    ]
+    results = [None] * len(queries)
+
+    def run_select(i):
+        results[i] = node.query_and_get_answer_with_error(
+            queries[i], query_id=f"{suffix}_{i}"
+        )
+
+    threads = [
+        threading.Thread(target=run_select, args=(i,)) for i in range(len(queries))
+    ]
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_sleep_in_generate")
+    try:
+        threads[0].start()
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if int(
+                node.query(
+                    f"SELECT count() FROM system.s3queue_metadata_cache "
+                    f"WHERE zookeeper_path ilike '%{first}%' "
+                    f"AND file_name ilike '%a.csv' "
+                    f"AND status = 'Processing' AND rows_processed > 0"
+                )
+            ):
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("the first SELECT did not start reading a.csv")
+
+        for thread in threads[1:]:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=120)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_sleep_in_generate")
+
+    stuck = [queries[i] for i, thread in enumerate(threads) if thread.is_alive()]
+    if stuck:
+        node.query(f"KILL QUERY WHERE query_id LIKE '{suffix}_%'")
+    assert not stuck, f"queries did not finish: {stuck}"
+
+    for query, (answer, error) in zip(queries, results):
+        assert not error, f"{query} failed: {error}"
+    assert sum(int(answer) for answer, _ in results) == big_rows + small_rows
+
+    for table_name in (first, second):
+        assert 0 == int(node.query(f"SELECT count() FROM {table_name}"))
+        node.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_committing_select_reading_ordered_queue_twice(started_cluster):
+    """
+    Two reads of one unbucketed ordered queue in one committing query would take
+    files and move the processed pointer on their own, so the query is rejected
+    before it reads anything.
+    """
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = f"test_read_twice_ordered_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "s3queue_processing_threads_num": 1,
+            "commit_on_select": 1,
+            "enable_hash_ring_filtering": 0,
+        },
+    )
+    generate_random_files(started_cluster, files_path, 2, start_ind=0, row_num=10)
+
+    error = node.query_and_get_error(
+        f"SELECT count() FROM {table_name} UNION ALL SELECT count() FROM {table_name}"
+    )
+    assert "QUERY_NOT_ALLOWED" in error and "more than once" in error, error
+
+    assert 20 == int(node.query(f"SELECT count() FROM {table_name}"))
+
+    node.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_committing_select_lock_released_after_failure(started_cluster):
+    """
+    A committing SELECT which fails right after locking an unbucketed ordered
+    queue must release the lock, so that a SELECT with another query id does
+    not wait for it forever.
+    """
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = f"test_select_lock_failure_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "s3queue_processing_threads_num": 1,
+            "commit_on_select": 1,
+            "enable_hash_ring_filtering": 0,
+        },
+    )
+    generate_random_files(started_cluster, files_path, 1, start_ind=0, row_num=10)
+
+    node.query(
+        "SYSTEM ENABLE FAILPOINT object_storage_queue_fail_after_committing_select_lock"
+    )
+    try:
+        error = node.query_and_get_error(f"SELECT count() FROM {table_name}")
+        assert "FAULT_INJECTED" in error, error
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT object_storage_queue_fail_after_committing_select_lock"
+        )
+
+    assert 10 == int(node.query(f"SELECT count() FROM {table_name}", timeout=60))
+
+    node.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_committing_select_reading_ordered_queue_locally_and_remotely(started_cluster):
+    """
+    A loopback `remote` read is a secondary query with its own query id. If it
+    took the queue lock on its own, it would wait for the queue held by the
+    local read of its initial query, which cannot finish before it, even with
+    an empty queue. It shares the locks of its initial query instead, so the
+    queue read twice in one query is rejected.
+    """
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = f"test_read_locally_and_remotely_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "s3queue_processing_threads_num": 1,
+            "commit_on_select": 1,
+            "enable_hash_ring_filtering": 0,
+        },
+    )
+
+    remote = f"remote('127.0.0.1', 'default', '{table_name}')"
+    error = node.query_and_get_error(
+        f"SELECT count() FROM {table_name} UNION ALL SELECT count() FROM {remote} "
+        "SETTINGS prefer_localhost_replica = 0, max_execution_time = 60",
+        timeout=120,
+    )
+    assert "QUERY_NOT_ALLOWED" in error and "more than once" in error, error
+
+    # A query reading the queue only through `remote` takes the lock as usual.
+    generate_random_files(started_cluster, files_path, 2, start_ind=0, row_num=10)
+    assert 20 == int(
+        node.query(
+            f"SELECT count() FROM {remote} SETTINGS prefer_localhost_replica = 0",
+            timeout=60,
+        )
+    )
+    assert 0 == int(node.query(f"SELECT count() FROM {table_name}"))
+
+    node.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_committing_select_on_ordered_queue_with_one_bucket(started_cluster):
+    """
+    With `buckets = 1` an ordered queue has a single processed pointer, also
+    with several processing threads. Each source of a committing SELECT commits
+    on its own, so a source done with small later files could move the pointer
+    past a big earlier file another source is still reading, which then fails
+    to commit. A committing SELECT reads such a queue with one source.
+    """
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = f"test_one_bucket_select_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    big_rows = 500000
+    small_rows = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "s3queue_buckets": 1,
+            "s3queue_processing_threads_num": 4,
+            "commit_on_select": 1,
+            "enable_hash_ring_filtering": 0,
+        },
+    )
+
+    def s3_function(file_name):
+        return (
+            f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/"
+            f"{started_cluster.minio_bucket}/{files_path}/{file_name}',"
+            f" 'minio', '{minio_secret_key}')"
+        )
+
+    node.query(
+        f"INSERT INTO FUNCTION {s3_function('a.csv')} "
+        f"SELECT number, number, number FROM numbers({big_rows})"
+    )
+    for file_name in ("b.csv", "c.csv", "d.csv"):
+        node.query(
+            f"INSERT INTO FUNCTION {s3_function(file_name)} "
+            f"SELECT number, number, number FROM numbers({small_rows})"
+        )
+
+    assert big_rows + 3 * small_rows == int(
+        node.query(f"SELECT count() FROM {table_name}", timeout=120)
+    )
+    assert 0 == int(node.query(f"SELECT count() FROM {table_name}"))
+
+    node.query(f"DROP TABLE {table_name} SYNC")

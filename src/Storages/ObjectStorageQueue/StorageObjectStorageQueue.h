@@ -193,6 +193,12 @@ private:
     std::vector<UInt64> streaming_task_reschedule_intervals_ms;
     ObjectStorageQueueBatchSizeOverride max_files_override;
 
+    /// Every committing SELECT has its own file iterator and commits the processed pointer on its own.
+    /// With a single pointer (ordered mode without buckets) such queries must not run at the same time.
+    class CommittingSelectLocks;
+    /// Set while a committing SELECT reads this queue. Guarded by the mutex of CommittingSelectLocks.
+    bool committing_select_locked = false;
+
     LoggerPtr log;
 
     void startup() override;
