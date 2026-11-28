@@ -709,7 +709,7 @@ ObjectInfos DeferredObjectSplit::splitObject(const ObjectInfoPtr & object_info)
     LOG_DEBUG(getLogger("ReadFromObjectStorageStep"), "Object {} is split into {} parts read by {} sources",
         object_info->getPath(), object_buckets.size(), num_sources);
 
-    auto split_object_read_state = std::make_shared<SplitObjectReadState>(object_buckets.size());
+    auto split_object_read_state = std::make_shared<SplitObjectReadState>(object_buckets.size(), object.metadata->etag);
     ObjectInfos objects;
     objects.reserve(object_buckets.size());
     for (auto & bucket : object_buckets)

@@ -94,9 +94,11 @@ private:
 /// The state shared by the sources that read the buckets of one object, see `DeferredObjectSplit`.
 struct SplitObjectReadState
 {
-    explicit SplitObjectReadState(size_t num_buckets_) : num_buckets(num_buckets_) {}
+    SplitObjectReadState(size_t num_buckets_, String etag_) : num_buckets(num_buckets_), etag(std::move(etag_)) {}
 
     const size_t num_buckets;
+    /// The generation of the object whose footer the buckets reuse.
+    const String etag;
 
     std::mutex mutex;
     /// The query condition cache entry describes the whole object, so it is written only after all buckets are read.

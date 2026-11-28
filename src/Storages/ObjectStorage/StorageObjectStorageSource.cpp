@@ -137,6 +137,8 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int TOO_MANY_ROWS;
     extern const int UNSUPPORTED_METHOD;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
+    extern const int AZURE_OBJECT_CHANGED_DURING_READ;
 }
 
 namespace Setting
@@ -2190,6 +2192,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             read_buf = createReadBuffer(
                 object_info->relative_path_with_metadata, object_storage, context_, log,
                 read_settings, !headers_requested);
+            /// A bucket reuses the footer read at the split, while the `HEAD` authorizing a page cache read can see a newer generation.
+            if (const auto & split_state = object_info->split_object_read_state;
+                split_state && object_info->getObjectMetadata()->etag != split_state->etag)
+                throw Exception(
+                    object_storage->getType() == ObjectStorageType::Azure ? ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ
+                                                                          : ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                    "Object {} was replaced during read (ETag changed from {} to {}); retry the query",
+                    object_info->getPath(), split_state->etag, object_info->getObjectMetadata()->etag);
         }
 
         Block initial_header = read_from_format_info.format_header;
