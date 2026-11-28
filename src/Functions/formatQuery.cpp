@@ -6,6 +6,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/CancellationBudget.h>
 #include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
@@ -114,11 +115,17 @@ private:
         res_offsets.resize(input_rows_count);
         res_data.resize(data.size());
 
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
+
         size_t prev_offset = 0;
         size_t res_data_size = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
+            /// Outside the `try` below, whose `ErrorHandling::Null` handler would turn a cancellation into a NULL.
+            budget.chargeParsedBytes(offsets[i] - prev_offset);
+
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
             const char * end = begin + offsets[i] - prev_offset;
 

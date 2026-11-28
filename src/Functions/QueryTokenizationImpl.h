@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/CancellationBudget.h>
 #include <Interpreters/Context.h>
 
 
@@ -51,7 +52,10 @@ struct QueryTokenizationSettings
 ///                          PaddedPODArray<UInt64> & data_end,
 ///                          PaddedPODArray<Int8> & data_type,
 ///                          size_t & total,
-///                          const QueryTokenizationSettings & settings);
+///                          const QueryTokenizationSettings & settings,
+///                          CancellationBudget & budget);
+/// and has to charge `budget` for the text it lexes or parses, so that a single long row is
+/// interruptible as well.
 template <typename Impl>
 class FunctionQueryTokenization final : public IFunction
 {
@@ -113,12 +117,17 @@ public:
         offsets.resize(input_rows_count);
 
         size_t total = 0;
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             std::string_view query = col_query.getDataAt(i);
 
-            Impl::processRow(query, data_begin, data_end, data_type, total, parser_settings);
+            /// The row itself; `processRow` charges for the text as it goes through it.
+            budget.chargeUnits(1);
+
+            Impl::processRow(query, data_begin, data_end, data_type, total, parser_settings, budget);
 
             offsets[i] = total;
         }

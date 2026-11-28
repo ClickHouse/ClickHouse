@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/CancellationBudget.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTToJSON.h>
 #include <Parsers/IAST.h>
@@ -74,10 +75,14 @@ public:
         auto result = ColumnString::create();
 
         const auto * col = arguments[0].column.get();
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             auto sql = col->getDataAt(i);
+
+            budget.chargeParsedBytes(sql.size());
 
             ParserQuery parser(sql.data() + sql.size(), allow_settings_after_format_in_insert, implicit_select);
             auto ast = parseQuery(parser, sql.data(), sql.data() + sql.size(), "",

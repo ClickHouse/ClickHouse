@@ -4,6 +4,7 @@
 #include <Parsers/Lexer.h>
 #include <base/defines.h>
 
+#include <functional>
 #include <string_view>
 #include <vector>
 
@@ -25,6 +26,7 @@ private:
     size_t max_pos = 0;
     Lexer lexer;
     bool skip_insignificant;
+    std::function<void(const Token &)> on_token_lexed;
 
 public:
     Tokens(const char * begin, const char * end, size_t max_query_size = 0, bool skip_insignificant_ = true)
@@ -52,6 +54,14 @@ public:
     void reset()
     {
         max_pos = 0;
+    }
+
+    /// Called for every token as it is lexed, insignificant ones included. The parser can only advance over
+    /// an input by lexing it, so a caller parsing a long text can observe the progress here, e.g. to check
+    /// whether the query was cancelled. The callback may throw.
+    void setOnTokenLexed(std::function<void(const Token &)> callback)
+    {
+        on_token_lexed = std::move(callback);
     }
 
 private:
