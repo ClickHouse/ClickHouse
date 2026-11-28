@@ -325,8 +325,14 @@ void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchR
         {
             // The role this name is resolved to has changed, but the change is not reconciled yet (see `processRoleChanges`),
             // so the cached ID can be outdated. It is kept for the reconciliation, and the name is resolved again here.
+            // The role granted here is remembered as well: `granted_role_ids` does not know about it, and the name
+            // can be resolved differently by the time of the next reconciliation (e.g. if this role is renamed too),
+            // which has to revoke this role then.
             if (const auto role_id = access_control.find<Role>(role_name))
+            {
+                unreconciled_role_ids[role_name].insert(*role_id);
                 granted_roles.grant(*role_id);
+            }
             else
                 LOG_WARNING(getLogger(), "Unable to grant {} role '{}' to user '{}': role not found", (common ? "common" : "mapped"), role_name, user_name);
             return;

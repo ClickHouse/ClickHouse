@@ -496,3 +496,53 @@ def test_login_during_pending_role_reconciliation_resolves_roles_again(ldap_clus
         instance1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}", **admin)
         instance1.query("DROP ROLE IF EXISTS stale_role, stale_role_renamed", **admin)
         delete_ldap_group(ldap_cluster, group_cn=group_cn)
+
+
+def test_role_granted_by_login_during_pending_role_reconciliation_is_revoked(ldap_cluster):
+    # The mapped role is renamed and another role takes its name, while both reconciliations fail before any user
+    # is updated. A login during the pending changes resolves the mapped name again and grants the replacement role.
+    # Then the replacement role is renamed too, and this time the reconciliation succeeds: the mapped name is not
+    # resolved to any role anymore, so the role granted by that login must be revoked.
+    admin = {"user": "common_user", "password": "qwerty"}
+    failpoint = "ldap_access_storage_fail_role_reconciliation"
+    group_cn = "clickhouse-replaced_role"
+    add_ldap_group(ldap_cluster, group_cn=group_cn, member_cn="johndoe")
+
+    def current_roles():
+        return instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        )
+
+    def granted_roles():
+        return instance1.query(
+            "SELECT granted_role_name FROM system.role_grants WHERE user_name = 'johndoe' ORDER BY ALL",
+            **admin,
+        )
+
+    try:
+        instance1.query("CREATE ROLE replaced_role", **admin)
+        instance1.query("CREATE ROLE replaced_role_spare", **admin)
+        assert current_roles() == TSV([["replaced_role"]])
+
+        # The failpoint is triggered only once, so it is enabled before each of the failing changes.
+        instance1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}", **admin)
+        instance1.query("ALTER ROLE replaced_role RENAME TO replaced_role_old", **admin)
+        instance1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}", **admin)
+        instance1.query("ALTER ROLE replaced_role_spare RENAME TO replaced_role", **admin)
+        assert granted_roles() == TSV([["replaced_role_old"]])
+
+        # The login grants the role which has taken the mapped name.
+        assert current_roles() == TSV([["replaced_role"]])
+        assert granted_roles() == TSV([["replaced_role"]])
+
+        instance1.query("ALTER ROLE replaced_role RENAME TO replaced_role_new", **admin)
+
+        # The state is checked without a login, which would resolve the mapped name again.
+        assert granted_roles() == ""
+        assert current_roles() == ""
+    finally:
+        instance1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}", **admin)
+        instance1.query(
+            "DROP ROLE IF EXISTS replaced_role, replaced_role_spare, replaced_role_old, replaced_role_new", **admin
+        )
+        delete_ldap_group(ldap_cluster, group_cn=group_cn)
