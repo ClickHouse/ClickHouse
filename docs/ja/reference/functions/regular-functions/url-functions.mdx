@@ -353,24 +353,24 @@ SELECT cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list');
 
 導入バージョン: v21.1.0
 
-`www` を削除せず、最初の有意なサブドメインまでのトップレベルサブドメインを含むドメイン部分を返します。カスタム TLD リスト名を受け取ります。最新の TLD リストが必要な場合や、カスタム リストを使用している場合に便利です。
+`www` を削除せず、最初の有意なサブドメインまでの最上位のサブドメインを含むドメイン部分を返します。カスタム TLD リスト名を受け取ります。最新の TLD リストが必要な場合や、カスタム リストを使用している場合に便利です。
 
 **設定例**
 
-````yaml
+```yaml
 <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
 <top_level_domains_lists>
     <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
     <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    <!-- 注: パスは top_level_domains_path の配下です -->
+    <!-- NOTE: path is under top_level_domains_path -->
 </top_level_domains_lists>
-    
+```
 
-**Syntax**
+**構文**
 
 ```sql
 cutToFirstSignificantSubdomainCustomWithWWW(url, tld_list_name)
-````
+```
 
 **引数**
 
@@ -378,7 +378,7 @@ cutToFirstSignificantSubdomainCustomWithWWW(url, tld_list_name)
 
 **戻り値**
 
-`www` を削除せず、最初の意味のあるサブドメインまでのトップレベルサブドメインを含むドメインの一部。[`String`](/ja/reference/data-types/string)
+`www` を削除せず、最初の有意なサブドメインまでの最上位のサブドメインを含むドメインの一部。[`String`](/ja/reference/data-types/string)
 
 **例**
 
@@ -394,31 +394,31 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_lis
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## cutToFirstSignificantSubdomainCustomWithWWWRFC {#cutToFirstSignificantSubdomainRFC}
+## cutToFirstSignificantSubdomainCustomWithWWWRFC {#cutToFirstSignificantSubdomainCustomWithWWWRFC}
 
 導入バージョン: v22.10.0
 
-`www` を削除せずに、最初の有意なサブドメインまでのトップレベルサブドメインを含むドメイン部分を返します。
+`www` を削除せずに、最初の有意なサブドメインまでの最上位のサブドメインを含むドメイン部分を返します。
 カスタム TLD リスト名を受け取ります。
-新しい TLD リストが必要な場合や、カスタム リストがある場合に役立ちます。
+最新の TLD リストが必要な場合や、カスタム リストがある場合に役立ちます。
 [cutToFirstSignificantSubdomainCustomWithWWW](#cutToFirstSignificantSubdomainCustomWithWWW) と似ていますが、[RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) に準拠しています。
 
 **設定例**
 
-````xml
-{/* <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> */}
+```xml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
 <top_level_domains_lists>
-    {/* https://publicsuffix.org/list/public_suffix_list.dat */}
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
     <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    {/* NOTE: path is under top_level_domains_path */}
+    <!-- NOTE: path is under top_level_domains_path -->
 </top_level_domains_lists>
-    
+```
 
-**Syntax**
+**構文**
 
 ```sql
 cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld_list_name)
-````
+```
 
 **引数**
 
@@ -426,7 +426,7 @@ cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld_list_name)
 
 **戻り値**
 
-`www` を削除せず、トップレベルサブドメインから最初の有意なサブドメインまでを含むドメイン部分を返します。[`String`](/ja/reference/data-types/string)
+`www` を削除せず、最上位のサブドメインから最初の有意なサブドメインまでを含むドメイン部分を返します。[`String`](/ja/reference/data-types/string)
 
 **例**
 
@@ -440,7 +440,7 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWWRFC('https://www.subdomain.exa
 example.custom
 ```
 
-## cutToFirstSignificantSubdomainRFC {#cutToFirstSignificantSubdomainWithWWW}
+## cutToFirstSignificantSubdomainRFC {#cutToFirstSignificantSubdomainRFC}
 
 導入バージョン: v22.10.0
 
@@ -476,7 +476,7 @@ SELECT
 └─────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## cutToFirstSignificantSubdomainWithWWW {#cutToFirstSignificantSubdomainWithWWWRFC}
+## cutToFirstSignificantSubdomainWithWWW {#cutToFirstSignificantSubdomainWithWWW}
 
 導入バージョン: v20.12.0
 
@@ -515,7 +515,7 @@ SELECT
 └──────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────┴─────────────────────────────────────────────┘
 ```
 
-## cutToFirstSignificantSubdomainWithWWWRFC {#cutURLParameter}
+## cutToFirstSignificantSubdomainWithWWWRFC {#cutToFirstSignificantSubdomainWithWWWRFC}
 
 導入バージョン: v22.10.0
 
@@ -551,7 +551,7 @@ SELECT
 └───────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## cutURLParameter {#cutWWW}
+## cutURLParameter {#cutURLParameter}
 
 導入バージョン: v1.1.0
 
@@ -590,7 +590,7 @@ SELECT
 └──────────────────────────────┴───────────────────────────┘
 ```
 
-## cutWWW {#decodeURLComponent}
+## cutWWW {#cutWWW}
 
 導入バージョン: v1.1.0
 
@@ -624,7 +624,7 @@ SELECT cutWWW('http://www.example.com/path?query=value#fragment');
 └────────────────────────────────────────────────────────────┘
 ```
 
-## decodeURLComponent {#decodeURLFormComponent}
+## decodeURLComponent {#decodeURLComponent}
 
 導入バージョン: v1.1.0
 
@@ -658,7 +658,7 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 └────────────────────────────────────────┘
 ```
 
-## decodeURLFormComponent {#domain}
+## decodeURLFormComponent {#decodeURLFormComponent}
 
 導入バージョン: v1.1.0
 
@@ -694,7 +694,7 @@ SELECT decodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT%201+2%2B3') A
 └───────────────────────────────────────────┘
 ```
 
-## domain {#domainRFC}
+## domain {#domain}
 
 導入バージョン: v1.1.0
 
@@ -730,7 +730,7 @@ SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk');
 └────────────────────────────────────────────────────────┘
 ```
 
-## domainRFC {#domainWithoutWWW}
+## domainRFC {#domainRFC}
 
 導入バージョン: v22.10.0
 
@@ -769,7 +769,7 @@ SELECT
 └───────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## domainWithoutWWW {#domainWithoutWWWRFC}
+## domainWithoutWWW {#domainWithoutWWW}
 
 導入バージョン: v1.1.0
 
@@ -803,7 +803,7 @@ SELECT domainWithoutWWW('http://paul@www.example.com:80/');
 └─────────────────────────────────────────────────────┘
 ```
 
-## domainWithoutWWWRFC {#encodeURLComponent}
+## domainWithoutWWWRFC {#domainWithoutWWWRFC}
 
 導入バージョン: v1.1.0
 
@@ -839,7 +839,7 @@ SELECT
 └─────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## encodeURLComponent {#encodeURLFormComponent}
+## encodeURLComponent {#encodeURLComponent}
 
 導入バージョン: v22.3.0
 
@@ -873,7 +873,7 @@ SELECT encodeURLComponent('http://127.0.0.1:8123/?query=SELECT 1;') AS EncodedUR
 └──────────────────────────────────────────────────────────┘
 ```
 
-## encodeURLFormComponent {#extractURLParameter}
+## encodeURLFormComponent {#encodeURLFormComponent}
 
 導入バージョン: v22.3.0
 
@@ -909,7 +909,7 @@ SELECT encodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT 1 2+3') AS En
 └───────────────────────────────────────────────────────────┘
 ```
 
-## extractURLParameter {#extractURLParameterNames}
+## extractURLParameter {#extractURLParameter}
 
 導入バージョン: v1.1.0
 
@@ -946,7 +946,7 @@ SELECT extractURLParameter('http://example.com/?param1=value1&param2=value2', 'p
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## extractURLParameterNames {#extractURLParameters}
+## extractURLParameterNames {#extractURLParameterNames}
 
 導入バージョン: v1.1.0
 
@@ -981,7 +981,7 @@ SELECT extractURLParameterNames('http://example.com/?param1=value1&param2=value2
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## extractURLParameters {#firstSignificantSubdomain}
+## extractURLParameters {#extractURLParameters}
 
 導入バージョン: v1.1.0
 
@@ -1016,7 +1016,7 @@ SELECT extractURLParameters('http://example.com/?param1=value1&param2=value2');
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## firstSignificantSubdomain {#firstSignificantSubdomainCustom}
+## firstSignificantSubdomain {#firstSignificantSubdomain}
 
 導入バージョン: v1.1.0
 
@@ -1055,7 +1055,7 @@ SELECT firstSignificantSubdomain('https://news.clickhouse.com/')
 └───────────────────────────────────────────────────────────┘
 ```
 
-## firstSignificantSubdomainCustom {#firstSignificantSubdomainCustomRFC}
+## firstSignificantSubdomainCustom {#firstSignificantSubdomainCustom}
 
 導入バージョン: v21.1.0
 
@@ -1088,7 +1088,7 @@ SELECT firstSignificantSubdomainCustom('https://news.example.com', 'public_suffi
 example
 ```
 
-## firstSignificantSubdomainCustomRFC {#firstSignificantSubdomainRFC}
+## firstSignificantSubdomainCustomRFC {#firstSignificantSubdomainCustomRFC}
 
 導入バージョン: v22.10.0
 
@@ -1121,7 +1121,7 @@ SELECT firstSignificantSubdomainCustomRFC('https://news.example.com', 'public_su
 example
 ```
 
-## firstSignificantSubdomainRFC {#fragment}
+## firstSignificantSubdomainRFC {#firstSignificantSubdomainRFC}
 
 導入バージョン: v22.10.0
 
@@ -1141,7 +1141,7 @@ firstSignificantSubdomainRFC(url)
 
 **例**
 
-## fragment {#netloc}
+## fragment {#fragment}
 
 導入バージョン: v1.1.0
 
@@ -1175,7 +1175,7 @@ SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## netloc {#path}
+## netloc {#netloc}
 
 導入バージョン: v20.5.0
 
@@ -1209,7 +1209,7 @@ SELECT netloc('http://paul@www.example.com:80/');
 └───────────────────────────────────────────┘
 ```
 
-## path {#pathFull}
+## path {#path}
 
 導入バージョン: v1.1.0
 
@@ -1243,7 +1243,7 @@ SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/u
 └─────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## pathFull {#port}
+## pathFull {#pathFull}
 
 導入バージョン: v1.1.0
 
@@ -1277,7 +1277,7 @@ SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functio
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## port {#portRFC}
+## port {#port}
 
 導入バージョン: v20.5.0
 
@@ -1312,7 +1312,7 @@ SELECT port('https://clickhouse.com:8443/docs'), port('https://clickhouse.com/do
 └──────────────────────────────────────────┴──────────────────────────────────────────┘
 ```
 
-## portRFC {#protocol}
+## portRFC {#portRFC}
 
 導入バージョン: v22.10.0
 
@@ -1348,7 +1348,7 @@ SELECT port('http://user:password@example.com:8080/'), portRFC('http://user:pass
 └────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
 ```
 
-## protocol {#queryString}
+## protocol {#protocol}
 
 導入バージョン: v1.1.0
 
@@ -1386,7 +1386,7 @@ SELECT protocol('https://clickhouse.com/');
 └─────────────────────────────────────┘
 ```
 
-## queryString {#queryStringAndFragment}
+## queryString {#queryString}
 
 導入バージョン: v1.1.0
 
@@ -1420,7 +1420,7 @@ SELECT queryString('https://clickhouse.com/docs?query=value&param=123#section');
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-## queryStringAndFragment {#topLevelDomain}
+## queryStringAndFragment {#queryStringAndFragment}
 
 導入バージョン: v1.1.0
 
@@ -1454,7 +1454,7 @@ SELECT queryStringAndFragment('https://clickhouse.com/docs?query=value&param=123
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## topLevelDomain {#topLevelDomainRFC}
+## topLevelDomain {#topLevelDomain}
 
 導入バージョン: v1.1.0
 
@@ -1499,7 +1499,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-## topLevelDomainRFC
+## topLevelDomainRFC {#topLevelDomainRFC}
 
 導入バージョン: v22.10.0
 

@@ -23,7 +23,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeObject.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/getColumnFromBlock.h>
@@ -764,7 +764,7 @@ void IMergeTreeReader::addPendingColumnsCacheEntry(size_t pos, size_t first_mark
 {
     auto entry = makeColumnsCacheEntry();
     {
-        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+        ServerOwnedMemoryScope not_charged_to_query_or_user;
         entry->part_name = columns_cache_part_name;
         entry->column_name = requested_column_names[pos];
     }

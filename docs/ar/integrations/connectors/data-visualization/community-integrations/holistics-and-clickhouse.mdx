@@ -11,12 +11,12 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 
 <CommunityMaintainedBadge />
 
-[Holistics](https://www.holistics.io/) هي منصة ذكاء أعمال ذاتي الخدمة مصممة أصلًا للذكاء الاصطناعي، وتوفّر طبقة دلالية قابلة للبرمجة تضمن مقاييس متسقة وموثوقة.
+[Holistics](https://www.holistics.io/) هي منصة ذكاء الأعمال بالخدمة الذاتية مصممة أصلًا للذكاء الاصطناعي، وتوفّر طبقة دلالية قابلة للبرمجة تضمن مقاييس متسقة وموثوقة.
 
 من خلال ربط ClickHouse بـ Holistics، تحصل فرقك على تجربة ذاتية الخدمة سريعة وموثوقة ومدعومة بالذكاء الاصطناعي، وترتكز إلى طبقة دلالية قائمة على الشيفرة. ويمكن لمستخدمي الأعمال استكشاف البيانات بثقة باستخدام السحب والإفلات والذكاء الاصطناعي، بينما تحافظ أنت على تعريفات المقاييس بحيث تكون قابلة لإعادة الاستخدام، وقابلة للتركيب، وخاضعة للتحكم في الإصدارات عبر Git.
 
 <div id="prerequisites">
-  ## المتطلبات الأساسية
+  ## المتطلبات الأساسية {#prerequisites}
 </div>
 
 قبل الاتصال، تأكد من توفر ما يلي:
@@ -25,9 +25,7 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 * **الوصول إلى الشبكة:** يجب أن يكون خادم ClickHouse لديك متاحًا للوصول من [عناوين IP الخاصة بـ Holistics](https://docs.holistics.io/docs/connect/ip-whitelisting).
 * **مستخدم قاعدة البيانات:** أنشئ مستخدمًا مخصصًا للقراءة فقط لـ Holistics بدلًا من استخدام حساب مسؤول.
 
-<div id="recommended-privileges">
-  ### الامتيازات الموصى بها
-</div>
+### الامتيازات الموصى بها {#recommended-privileges}
 
 يتطلب المستخدم المخصص امتيازات `SELECT` على الجداول التي تريد الاستعلام عنها، بالإضافة إلى جداول `system` (لاكتشاف المخطط).
 
@@ -46,21 +44,17 @@ GRANT SELECT ON system.* TO holistics_user;
     | **المعلمة**       | **الوصف**                                                                                      |
     | ----------------- | ---------------------------------------------------------------------------------------------- |
     | **Host**          | اسم المضيف لخادم ClickHouse لديك (على سبيل المثال: `mz322.eu-central-1.aws.clickhouse.cloud`). |
-    | **Port**          | **8443** لـ ClickHouse Cloud ‏(SSL/TLS)، و**8123** للمثيلات ذاتية الإدارة من دون SSL.          |
+    | **منفذ**          | **8443** لـ ClickHouse Cloud ‏(SSL/TLS)، و**8123** للمثيلات ذاتية الإدارة من دون SSL.          |
     | **Database Name** | اسم قاعدة البيانات التي تريد الاتصال بها. وعادةً ما تكون القيمة الافتراضية `default`.          |
-    | **Username**      | اسم مستخدم قاعدة البيانات. والقيمة الافتراضية هي `default`.                                    |
-    | **Password**      | كلمة المرور الخاصة بمستخدم قاعدة البيانات.                                                     |
+    | **اسم المستخدم**      | اسم مستخدم قاعدة البيانات. والقيمة الافتراضية هي `default`.                                    |
+    | **كلمة المرور**      | كلمة المرور الخاصة بمستخدم قاعدة البيانات.                                                     |
 
     يمكنك العثور على هذه التفاصيل بالنقر على زر **Connect** في وحدة تحكم ClickHouse Cloud واختيار **HTTPS**.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![موضع زر Connect في وحدة تحكم ClickHouse Cloud](/images/integrations/data-visualization/holistics_01.webp)
-
-    </Frame>
-
+      <Frame>
+        ![موضع زر Connect في وحدة تحكم ClickHouse Cloud](/images/integrations/data-visualization/holistics_01.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -70,41 +64,29 @@ GRANT SELECT ON system.* TO holistics_user;
     1. **اتصال مباشر (موصى به):** اسمح بعناوين IP الخاصة بـ Holistics في جدار الحماية لديك أو في IP Access List الخاصة بـ ClickHouse Cloud. يمكنك العثور على قائمة عناوين IP في [دليل IP Whitelisting](https://docs.holistics.io/docs/connect/ip-whitelisting).
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![مثال على السماح بعناوين IP في ClickHouse Cloud](/images/integrations/data-visualization/holistics_02.webp)
-
-       </Frame>
-
+         <Frame>
+           ![مثال على السماح بعناوين IP في ClickHouse Cloud](/images/integrations/data-visualization/holistics_02.webp)
+         </Frame>
        </div>
 
-    2. **نفق SSH عكسي:** إذا كانت قاعدة بياناتك موجودة في شبكة خاصة ‏(VPC) ولا يمكن إتاحتها على الإنترنت العام، فاستخدم [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel).
+    2. **نفق SSH عكسي:** إذا كانت قاعدة بياناتك موجودة في شبكة خاصة ‏(VPC) ولا يمكن إتاحتها على الإنترنت العام، فاستخدم [نفق SSH عكسي](https://docs.holistics.io/docs/connect/connect-tunnel).
   </Step>
 
   <Step title="أضف مصدر بيانات في Holistics" id="step-3-add-data-source-in-holistics">
-    1. في Holistics، انتقل إلى **Settings → Data Sources**.
+    1. في Holistics، انتقل إلى **Settings → مصادر البيانات**.
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![الانتقال إلى Data Sources في إعدادات Holistics](/images/integrations/data-visualization/holistics_03.webp)
-
-       </Frame>
-
+         <Frame>
+           ![الانتقال إلى مصادر البيانات في إعدادات Holistics](/images/integrations/data-visualization/holistics_03.webp)
+         </Frame>
        </div>
 
-    2. انقر على **New Data Source** ثم اختر **ClickHouse**.
+    2. انقر على **مصدر البيانات الجديد** ثم اختر **ClickHouse**.
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![اختيار ClickHouse من قائمة مصادر البيانات الجديدة](/images/integrations/data-visualization/holistics_04.webp)
-
-       </Frame>
-
+         <Frame>
+           ![اختيار ClickHouse من قائمة مصادر البيانات الجديدة](/images/integrations/data-visualization/holistics_04.webp)
+         </Frame>
        </div>
 
     3. املأ النموذج بالتفاصيل التي جمعتها في الخطوة 1.
@@ -112,30 +94,22 @@ GRANT SELECT ON system.* TO holistics_user;
        | **الحقل**         | **الإعداد**                                                             |
        | ----------------- | ----------------------------------------------------------------------- |
        | **Host**          | اسم مضيف ClickHouse لديك                                                |
-       | **Port**          | `8443` (أو `8123`)                                                      |
+       | **منفذ**          | `8443` (أو `8123`)                                                      |
        | **Require SSL**   | بدّل إلى **ON** إذا كنت تستخدم المنفذ 8443 (مطلوب لـ ClickHouse Cloud). |
        | **Database Name** | `default` (أو اسم DB الخاص بك)                                          |
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![إدخال تفاصيل اتصال ClickHouse في Holistics](/images/integrations/data-visualization/holistics_05.webp)
-
-       </Frame>
-
+         <Frame>
+           ![إدخال تفاصيل اتصال ClickHouse في Holistics](/images/integrations/data-visualization/holistics_05.webp)
+         </Frame>
        </div>
 
     4. انقر على **Test Connection**.
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![نجاح اختبار اتصال ClickHouse في Holistics](/images/integrations/data-visualization/holistics_06.webp)
-
-       </Frame>
-
+         <Frame>
+           ![نجاح اختبار اتصال ClickHouse في Holistics](/images/integrations/data-visualization/holistics_06.webp)
+         </Frame>
        </div>
 
        * **نجاح:** انقر على **Save**.
@@ -144,7 +118,7 @@ GRANT SELECT ON system.* TO holistics_user;
 </Steps>
 
 <div id="known-limitations">
-  ## القيود المعروفة
+  ## القيود المعروفة {#known-limitations}
 </div>
 
 تدعم Holistics معظم ميزات SQL القياسية في ClickHouse، مع الاستثناءات التالية:

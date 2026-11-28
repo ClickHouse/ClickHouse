@@ -166,7 +166,7 @@ Paramètres de compression des données pour les tables du moteur [MergeTree](/f
 * Si une partie de données correspond à plusieurs ensembles de conditions, ClickHouse utilise le dernier ensemble correspondant (les sections `<case>` sont examinées dans l’ordre, et chaque correspondance remplace le choix précédent).
 
 <Note>
-  Si aucune condition n’est remplie pour une partie de données, ClickHouse utilise la valeur par défaut intégrée dépendant de la taille : `LZ4` en dessous de 100 Mo et `ZSTD(3)` à partir de ce seuil. Comme pour les conditions `min_part_size` ci-dessus, la taille prise en compte est celle connue au moment où le codec doit être choisi, avant l’écriture des données : `0` pour une partie fraîchement insérée, et la taille des parties source pour un merge ou une mutation. Une réécriture qui réduit son entrée, telle qu’un `TTL DELETE` ou un merge avec collapsing, est donc classée selon la taille d’entrée et peut produire une partie en dessous du seuil qui utilise malgré tout `ZSTD(3)`.
+  Si aucune condition n’est remplie pour une partie de données, ClickHouse utilise la valeur par défaut intégrée dépendant de la taille : `LZ4` en dessous de 100 Mo et `ZSTD(3)` à partir de ce seuil. Comme pour les conditions `min_part_size` ci-dessus, la taille prise en compte est celle connue au moment où le codec doit être choisi, avant l’écriture des données : la taille non compressée du bloc inséré pour une partie fraîchement insérée, et la taille des parties source pour un merge ou une mutation. Ainsi, les petites insertions sont écrites avec `LZ4`, tandis que les grandes insertions sont écrites d’emblée avec `ZSTD(3)`. Une réécriture qui réduit son entrée, telle qu’un `TTL DELETE` ou un merge avec collapsing, est donc classée selon la taille d’entrée et peut produire une partie en dessous du seuil qui utilise malgré tout `ZSTD(3)`.
 </Note>
 
 **Exemple**
@@ -486,6 +486,63 @@ Ce paramètre définit le chemin du cache.
 <filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>
 ```
 
+## filesystem_isolation {#filesystem_isolation}
+
+<SettingsInfoBlock type="FilesystemIsolationMode" default_value="disabled" changeable_without_restart="No" />
+
+Indique si le serveur s’isole du système de fichiers de l’hôte au démarrage, en ne laissant visibles que les chemins dont il a besoin, à la manière d’un conteneur. Un attaquant qui parvient à exécuter du code dans le processus serveur ne trouve alors ni interpréteur de commandes ni autre programme à exécuter, et ne peut ni lire ni modifier les fichiers de l’hôte en dehors des répertoires du serveur.
+
+Au démarrage, avant de lancer le moindre fil d’exécution, le serveur se place dans un nouvel [espace de noms de montage](https://man7.org/linux/man-pages/man7/mount_namespaces.7.html) dont la racine est un `tmpfs` vide en lecture seule, y monte par bind mount, à leurs emplacements habituels, uniquement les chemins dont il a besoin, puis supprime la racine d’origine avec `pivot_root`. Restent visibles :
+
+* Les chemins de la configuration dans lesquels le serveur écrit : `path`, `tmp_path`, `user_files_path`, `format_schema_path`, `filesystem_caches_path`, les répertoires des disques locaux et des métadonnées des autres disques dans `storage_configuration`, les répertoires des fichiers de journal, du fichier pid et de `core_path`, les répertoires de stockage du Keeper intégré, `access_control_path`, les chemins de toutes les entrées `local_directory` dans `user_directories`, `user_defined_path`, `workload_path`, `named_collections_storage.path`, `backups.allowed_path`. Ils sont montés en lecture-écriture, mais avec `noexec`, afin que rien de ce qui y est écrit ne puisse être exécuté.
+* Les chemins de la configuration que le serveur se contente de lire, montés en lecture seule : le répertoire du fichier de configuration, les répertoires des fichiers inclus et des cibles des liens symboliques présents parmi les fichiers de configuration, `users_config`, `user_scripts_path` (les programmes qu’il contient peuvent être exécutés), `top_level_domains_path`, `google_protos_path`, les répertoires des certificats TLS et des clés dans `openSSL`, `grpc`, `ldap_servers`, le keytab Kerberos, ainsi que le programme `clickhouse-odbc-bridge` situé à côté de l’exécutable du serveur, avec son chargeur dynamique et les bibliothèques partagées dont il a besoin, telles que le chargeur dynamique les résout. Les emplacements des journaux du bridge (`logger.odbc_bridge_log`, `logger.odbc_bridge_errlog`, `logger.odbc_bridge_stdout`, `logger.odbc_bridge_stderr`) sont accessibles en écriture.
+* L’exécutable du serveur et les bibliothèques partagées auxquelles il est lié, avec les liens symboliques voisins qui pointent vers elles (comme `libc.so.6`), ainsi que le répertoire des profils du tas de jemalloc si son option `prof_prefix` est définie.
+* Ce dont un programme a besoin sous Linux : `/proc` (avec `/proc/sys`, `/proc/sysrq-trigger`, `/proc/bus`, `/proc/fs` et `/proc/irq` ainsi que les montages qu’ils contiennent en lecture seule, comme dans les conteneurs Docker), `/sys` (en lecture seule), `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random`, `/dev/urandom`, une instance privée de `devpts` sur `/dev/pts` avec `/dev/ptmx` pour les pseudo-terminaux du terminal web et du serveur SSH, la configuration réseau dans `/etc` (`hosts`, `resolv.conf`, `nsswitch.conf`, `host.conf`, `gai.conf`, `services`, `protocols`), `/etc/passwd`, `/etc/group`, `/etc/localtime`, la base de données des fuseaux horaires et les certificats de CA (`/etc/ssl`, `/etc/pki`, `/etc/ca-certificates`, `/usr/share/ca-certificates`, `/usr/local/share/ca-certificates`) avec les cibles des liens qu’ils contiennent, de même que dans un répertoire de CA indiqué dans `caConfig`, `/usr/lib/debug` pour les symboles des traces de pile, le socket du gestionnaire de services indiqué par la variable d’environnement `NOTIFY_SOCKET`, et `/dev/log` si `logger.use_syslog` est activé. Si `/dev/log` est un lien symbolique, comme `/dev/log -> /run/systemd/journal/dev-log` avec systemd, le répertoire de sa cible est visible, de sorte qu’un socket recréé à cet endroit par un service redémarré reste accessible. Un socket situé directement dans `/dev` que le démon syslog recrée lors de son redémarrage n’est plus visible tant que le serveur n’a pas redémarré, car le `/dev` de l’hôte n’est pas visible.
+* Un `/tmp` privé et vide.
+* Les chemins listés dans la section `filesystem_isolation_paths` de la configuration, à l’aide d’éléments `<read_only>` et `<read_write>`.
+
+Les liens symboliques rencontrés le long d&#39;un chemin sont recréés à l&#39;intérieur, et leurs cibles sont également rendues visibles. Un répertoire contenant un fichier référencé dans la configuration, comme un certificat, est monté dans son intégralité, de sorte qu&#39;un fichier renouvelé, remplacé par un nouveau, reste visible. Si un tel fichier est un lien symbolique, comme c&#39;est le cas des certificats Let&#39;s Encrypt, les répertoires des cibles de ces liens sont également montés. Les répertoires accessibles en écriture qui n&#39;existent pas sont créés avant l&#39;isolation, comme le serveur le ferait de toute façon.
+
+Rien d&#39;autre n&#39;est visible, en particulier aucun interpréteur de commandes : les [fonctions exécutables définies par l&#39;utilisateur](/fr/sql-reference/functions/udf), les dictionnaires exécutables, la fonction de table `executable` et le moteur de table `Executable` ne peuvent exécuter que des programmes qui n&#39;ont besoin de rien en dehors des chemins visibles. Pour exécuter un script, rendez visibles son interpréteur et les bibliothèques auxquelles il est lié, par exemple :
+
+```xml
+<filesystem_isolation_paths>
+<read_only>/bin</read_only>
+<read_only>/usr/bin</read_only>
+<read_only>/lib</read_only>
+<read_only>/lib64</read_only>
+<read_only>/usr/lib</read_only>
+</filesystem_isolation_paths>
+```
+
+ou désactiver l’isolation. Il en va de même pour un fichier auquel un table engine, une fonction de table ou un dictionnaire fait référence par un chemin absolu situé en dehors des chemins visibles. Les drivers des fonctions exécutables définies par l’utilisateur (`allow_experimental_executable_udf_drivers`) ne sont pas pris en charge : `CREATE FUNCTION` avec un driver est refusé, car les programmes générés par les drivers se trouvent dans `dynamic_user_defined_executable_functions_path`, qui est accessible en écriture et donc non exécutable. Le `clickhouse-odbc-bridge` s’exécute lui aussi à l’intérieur de l’isolation ; les pilotes ODBC et leur configuration (`/etc/odbc.ini`, `/etc/odbcinst.ini`) doivent donc être rendus visibles pour utiliser la fonction de table `odbc` et les dictionnaires correspondants.
+
+Si le processus dispose de `CAP_SYS_ADMIN`, il crée uniquement un espace de noms de montage et conserve les capacités qu’il utilise, telles que `CAP_NET_BIND_SERVICE`, `CAP_IPC_LOCK`, `CAP_SYS_NICE` et `CAP_NET_ADMIN`, en abandonnant celles qui lui permettraient d’annuler l’isolation (`CAP_SYS_ADMIN`, `CAP_SYS_CHROOT`, `CAP_SYS_PTRACE`, `CAP_DAC_READ_SEARCH`, `CAP_SETUID`, `CAP_SETGID`, `CAP_MKNOD`, `CAP_SYS_MODULE`, `CAP_SYS_RAWIO`, etc.). Dans le cas contraire, il crée également un espace de noms utilisateur, dans lequel seuls son propre utilisateur et son propre groupe sont mappés sur eux-mêmes, et perd toutes ses capacités, car elles ne sont pas valides en dehors du nouvel espace de noms utilisateur : il ne peut alors plus écouter sur un port inférieur à 1024, verrouiller son exécutable en mémoire, augmenter la priorité des fils d’exécution, ni collecter les métriques par fil d’exécution de `taskstats`. Un avertissement émis au démarrage indique les capacités perdues. Dans les deux cas, le serveur définit `PR_SET_NO_NEW_PRIVS`, et tous les montages sont `nosuid`.
+
+La création d’un espace de noms utilisateur sans privilèges n’est pas toujours autorisée : sur certains systèmes, elle est désactivée par les sysctls `kernel.unprivileged_userns_clone` et `user.max_user_namespaces`, et depuis la version 24.04, Ubuntu ne l’autorise qu’aux programmes dotés d’un profil AppArmor qui la permet (voir le sysctl `kernel.apparmor_restrict_unprivileged_userns`). Les environnements d’exécution de conteneurs tels que Docker la refusent également, sauf si le conteneur dispose de `CAP_SYS_ADMIN`. Avant de s’isoler, le serveur vérifie dans un processus enfant qu’il peut le faire, de sorte qu’un échec ne le laisse pas dans un espace de noms privé de ses capacités.
+
+Le `/proc` de l’hôte reste visible à l’intérieur, car en monter un nouveau nécessiterait un nouvel espace de noms PID. Le processus watchdog (`clickhouse-watchdog`) est créé par fork après l’isolation et s’exécute donc lui aussi à l’intérieur. Cependant, via `/proc/<pid>/root`, `/proc/<pid>/cwd` et `/proc/<pid>/fd`, le serveur peut accéder au système de fichiers de l’hôte tel que le voit tout autre processus du même utilisateur s’exécutant hors de l’isolation ; n’exécutez donc rien d’autre sous l’utilisateur du serveur : un utilisateur dédié, comme celui que créent les paquets, suffit.
+
+L’isolation est appliquée une seule fois, au démarrage, avant que le serveur ne lance le moindre fil d’exécution, et ne peut plus être modifiée ensuite : une nouvelle valeur ou un `filesystem_isolation_paths` modifié dans une configuration rechargée ne prend effet qu’après un redémarrage, et un chemin provenant de ZooKeeper via `from_zk` n’est pas pris en compte. Elle est appliquée avant le filtre [`seccomp`](/fr/reference/settings/server-settings/settings/other#seccomp), qui refuse les appels système susceptibles de l’annuler.
+
+Valeurs possibles :
+
+* `disabled` - le serveur n&#39;isole pas le système de fichiers.
+* `best_effort` - le serveur isole le système de fichiers s&#39;il est autorisé à créer les espaces de noms et à y monter des systèmes de fichiers ; sinon, il consigne dans le journal un avertissement indiquant la raison et s&#39;exécute sans isolation.
+* `enforce` - le serveur isole le système de fichiers ou refuse de démarrer.
+
+Un échec survenant après l&#39;entrée du serveur dans le nouvel espace de noms, par exemple un chemin qui ne peut pas être monté, interrompt le démarrage aussi bien en mode `best_effort` qu&#39;en mode `enforce`.
+
+`system.server_settings` indique le mode en vigueur : `disabled` si le serveur s&#39;exécute sans isolation.
+
+L&#39;isolation est une fonctionnalité du noyau Linux. Sur les autres systèmes d&#39;exploitation, `best_effort` consigne un avertissement dans le journal, et `enforce` empêche le serveur de démarrer.
+
+**Exemple**
+
+```xml
+<filesystem_isolation>best_effort</filesystem_isolation>
+```
+
 ## google_protos_path {#google_protos_path}
 
 <SettingsInfoBlock type="String" default_value="/usr/share/clickhouse/protos/" changeable_without_restart="Non" />
@@ -526,9 +583,7 @@ Durée d&#39;expiration de HSTS, en secondes.
 
 ## iceberg_manifest_decode_thread_pool_queue_size {#iceberg_manifest_decode_thread_pool_queue_size}
 
-<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
-
-Le nombre maximal de jobs pouvant être planifiés sur le thread pool chargé du décodage des Iceberg data manifest files.
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />Le nombre maximal de jobs pouvant être planifiés sur le thread pool chargé du décodage des Iceberg data manifest files. Ce paramètre est déconseillé et n’a aucun effet : les fichiers manifestes Iceberg sont lus sur le thread pool d’E/S.
 
 ## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
 
@@ -658,7 +713,7 @@ Exemple (cas typique d’Active Directory avec détection du DN utilisateur conf
 
 L’emplacement et le format des messages de log.
 
-**Clés** :
+**Clés** :
 
 | Clé                          | Description                                                                                                                                                                                                                                                                                                                                                                      |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -667,25 +722,25 @@ L’emplacement et le format des messages de log.
 | `console`                    | Active la journalisation vers la console. Définissez la valeur sur `1` ou `true` pour l’activer. La valeur par défaut est `1` si ClickHouse ne s’exécute pas en mode démon, `0` sinon.                                                                                                                                                                                           |
 | `console_log_level`          | Niveau de journalisation pour la sortie console. La valeur par défaut est `level`.                                                                                                                                                                                                                                                                                               |
 | `console_shutdown_log_level` | Le niveau d’arrêt est utilisé pour définir le niveau de journalisation de la console lors de l’arrêt du serveur.                                                                                                                                                                                                                                                                 |
-| `console_startup_log_level`  | Le niveau de démarrage est utilisé pour définir le niveau de journalisation de la console au démarrage du serveur. Après le démarrage, le niveau de journalisation revient au paramètre `console_log_level`                                                                                                                                                                       |
-| `count`                      | Politique de rotation : nombre maximal de fichiers de log historiques conservés par ClickHouse.                                                                                                                                                                                                                                                                                  |
+| `console_startup_log_level`  | Le niveau de démarrage est utilisé pour définir le niveau de journalisation de la console au démarrage du serveur. Après le démarrage, le niveau de journalisation revient au paramètre `console_log_level`                                                                                                                                                                      |
+| `count`                      | Politique de rotation : nombre maximal de fichiers de log historiques conservés par ClickHouse.                                                                                                                                                                                                                                                                                  |
 | `errorlog`                   | Le chemin du fichier de log des erreurs.                                                                                                                                                                                                                                                                                                                                         |
 | `formatting.type`            | Format de log pour la sortie console. Actuellement, seul `json` est pris en charge                                                                                                                                                                                                                                                                                               |
-| `level`                      | Niveau de journalisation. Valeurs acceptées : `none` (désactive la journalisation), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                                                                                                                                                                                                   |
+| `level`                      | Niveau de journalisation. Valeurs acceptées : `none` (désactive la journalisation), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                                                                                                                                                                                                    |
 | `log`                        | Le chemin du fichier de log.                                                                                                                                                                                                                                                                                                                                                     |
-| `rotation`                   | Politique de rotation : détermine quand les fichiers de log sont rotatés. La rotation peut être basée sur la taille, le temps ou une combinaison des deux. Exemples : 100M, daily, 100M,daily. Une fois que le fichier de log dépasse la taille spécifiée ou que l’intervalle de temps spécifié est atteint, il est renommé et archivé, puis un nouveau fichier de log est créé. |
+| `rotation`                   | Politique de rotation : détermine quand les fichiers de log sont rotatés. La rotation peut être basée sur la taille, le temps ou une combinaison des deux. Exemples : 100M, daily, 100M,daily. Une fois que le fichier de log dépasse la taille spécifiée ou que l’intervalle de temps spécifié est atteint, il est renommé et archivé, puis un nouveau fichier de log est créé. |
 | `shutdown_level`             | Le niveau d’arrêt est utilisé pour définir le niveau du root logger lors de l’arrêt du serveur.                                                                                                                                                                                                                                                                                  |
-| `size`                       | Politique de rotation : taille maximale des fichiers de log en octets. Une fois que la taille du fichier de log dépasse ce seuil, il est renommé et archivé, puis un nouveau fichier de log est créé.                                                                                                                                                                            |
+| `size`                       | Politique de rotation : taille maximale des fichiers de log en octets. Une fois que la taille du fichier de log dépasse ce seuil, il est renommé et archivé, puis un nouveau fichier de log est créé.                                                                                                                                                                            |
 | `startup_level`              | Le niveau de démarrage est utilisé pour définir le niveau du root logger au démarrage du serveur. Après le démarrage, le niveau de journalisation revient au paramètre `level`                                                                                                                                                                                                   |
-| `stream_compress`            | Compresse les messages de log avec LZ4. Définissez la valeur sur `1` ou `true` pour l’activer.                                                                                                                                                                                                                                                                                  |
+| `stream_compress`            | Compresse les messages de log avec LZ4. Définissez la valeur sur `1` ou `true` pour l’activer.                                                                                                                                                                                                                                                                                   |
 | `syslog_level`               | Niveau de journalisation pour la journalisation vers syslog.                                                                                                                                                                                                                                                                                                                     |
-| `use_syslog`                 | Transmet également la sortie de log à syslog.                                                                                                                                                                                                                                                                                                                                    |
+| `use_syslog`                 | Transmet également la sortie des journaux à syslog.                                                                                                                                                                                                                                                                                                                                    |
 
 **Spécificateurs de format de log**
 
 Les noms de fichiers dans les chemins `log` et `errorLog` prennent en charge les spécificateurs de format ci-dessous pour le nom de fichier résultant (la partie répertoire ne les prend pas en charge).
 
-La colonne « Exemple » montre la sortie à `2023-07-06 18:32:07`.
+La colonne « Exemple » montre la sortie à `2023-07-06 18:32:07`.
 
 | Spécificateur | Description                                                                                                                                                                                                | Exemple                    |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
@@ -693,10 +748,10 @@ La colonne « Exemple » montre la sortie à `2023-07-06 18:32:07`.
 | `%n`          | Caractère de nouvelle ligne                                                                                                                                                                                |                            |
 | `%t`          | Caractère de tabulation horizontale                                                                                                                                                                        |                            |
 | `%Y`          | Année sous forme de nombre décimal, par ex. 2017                                                                                                                                                           | `2023`                     |
-| `%y`          | 2 derniers chiffres de l’année sous forme de nombre décimal (plage [00,99])                                                                                                                                | `23`                       |
-| `%C`          | 2 premiers chiffres de l’année sous forme de nombre décimal (plage [00,99])                                                                                                                                | `20`                       |
+| `%y`          | 2 derniers chiffres de l’année sous forme de nombre décimal (plage [00,99])                                                                                                                                | `23`                       |
+| `%C`          | 2 premiers chiffres de l’année sous forme de nombre décimal (plage [00,99])                                                                                                                                | `20`                       |
 | `%G`          | [Année ISO 8601 basée sur les semaines](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) sur quatre chiffres, c.-à-d. l’année qui contient la semaine spécifiée. Généralement utile uniquement avec `%V` | `2023`                     |
-| `%g`          | 2 derniers chiffres de l’[année ISO 8601 basée sur les semaines](https://en.wikipedia.org/wiki/ISO_8601#Week_dates), c.-à-d. l’année qui contient la semaine spécifiée.                                    | `23`                       |
+| `%g`          | 2 derniers chiffres de l’[année ISO 8601 basée sur les semaines](https://en.wikipedia.org/wiki/ISO_8601#Week_dates), c.-à-d. l’année qui contient la semaine spécifiée.                                    | `23`                       |
 | `%b`          | Nom du mois abrégé, par ex. Oct (dépend des paramètres régionaux)                                                                                                                                          | `Jul`                      |
 | `%h`          | Synonyme de %b                                                                                                                                                                                             | `Jul`                      |
 | `%B`          | Nom complet du mois, par ex. October (dépend des paramètres régionaux)                                                                                                                                     | `July`                     |
@@ -711,8 +766,8 @@ La colonne « Exemple » montre la sortie à `2023-07-06 18:32:07`.
 | `%A`          | Nom complet du jour de la semaine, par ex. Friday (dépend des paramètres régionaux)                                                                                                                        | `Thursday`                 |
 | `%w`          | Jour de la semaine sous forme de nombre entier, avec dimanche = 0 (plage [0-6])                                                                                                                            | `4`                        |
 | `%u`          | Jour de la semaine sous forme de nombre décimal, où lundi = 1 (format ISO 8601) (plage [1-7])                                                                                                              | `4`                        |
-| `%H`          | Heure sous forme de nombre décimal, horloge sur 24 heures (plage [00-23])                                                                                                                                  | `18`                       |
-| `%I`          | Heure sous forme de nombre décimal, horloge sur 12 heures (plage [01,12])                                                                                                                                  | `06`                       |
+| `%H`          | Heure sous forme de nombre décimal, horloge sur 24 heures (plage [00-23])                                                                                                                                  | `18`                       |
+| `%I`          | Heure sous forme de nombre décimal, horloge sur 12 heures (plage [01,12])                                                                                                                                  | `06`                       |
 | `%M`          | Minutes sous forme de nombre décimal (plage [00,59])                                                                                                                                                       | `32`                       |
 | `%S`          | Secondes sous forme de nombre décimal (plage [00,60])                                                                                                                                                      | `07`                       |
 | `%c`          | Chaîne standard de date et d’heure, par ex. Sun Oct 17 04:41:13 2010 (dépend des paramètres régionaux)                                                                                                     | `Thu Jul  6 18:32:07 2023` |
@@ -720,7 +775,7 @@ La colonne « Exemple » montre la sortie à `2023-07-06 18:32:07`.
 | `%X`          | Représentation localisée de l’heure, par ex. 18:40:20 ou 6:40:20 PM (dépend des paramètres régionaux)                                                                                                      | `18:32:07`                 |
 | `%D`          | Date courte MM/DD/YY, équivalente à %m/%d/%y                                                                                                                                                               | `07/06/23`                 |
 | `%F`          | Date courte AAAA-MM-JJ, équivalente à %Y-%m-%d                                                                                                                                                             | `2023-07-06`               |
-| `%r`          | Heure localisée au format 12 heures (selon les paramètres régionaux)                                                                                                                                       | `06:32:07 PM`              |
+| `%r`          | Heure localisée au format 12 heures (selon les paramètres régionaux)                                                                                                                                       | `06:32:07 PM`              |
 | `%R`          | Équivalent à &quot;%H:%M&quot;                                                                                                                                                                             | `18:32`                    |
 | `%T`          | Équivalent à &quot;%H:%M:%S&quot; (format d&#39;heure ISO 8601)                                                                                                                                            | `18:32:07`                 |
 | `%p`          | Indication localisée a.m. ou p.m. (selon les paramètres régionaux)                                                                                                                                         | `PM`                       |
@@ -1529,6 +1584,27 @@ ClickHouse vérifiera le type de résolveur ayant la priorité la plus élevée 
 il vérifiera alors le type de résolveur ayant la priorité immédiatement inférieure, jusqu&#39;à atteindre le résolveur d&#39;environnement.
 Cela permet également d&#39;utiliser une combinaison de types de résolveur.
 
+## quick_startup {#quick_startup}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
+
+Démarre le plus rapidement possible en ignorant les tâches facultatives que le serveur effectue au démarrage :
+
+* le `<mlock>` de l&#39;exécutable, comme avec `mlock_executable` = `false` ;
+* le remappage de l&#39;exécutable vers des pages mémoire de grande taille, comme avec `remap_executable` = `false` ;
+* la vérification d&#39;intégrité de l&#39;exécutable, comme avec `skip_binary_checksum_checks` = `true` ;
+* les vérifications de l&#39;environnement (telles que la source d&#39;horloge, les pages mémoire géantes transparentes, la surallocation de mémoire, les limites du noyau, la comptabilisation des délais (delay accounting) et la lecture anticipée du disque), qui ne produisent que des avertissements dans `system.warnings`.
+
+La validation de la configuration, en revanche, est toujours effectuée.
+
+Le code exécutable pèse environ 500 Mio, et le `<mlock>` comme la vérification d&#39;intégrité le lisent intégralement. Avec un cache de pages froid et un disque réseau, cela prend plusieurs secondes, soit l&#39;essentiel du temps de démarrage. Ce paramètre est utile lorsque le serveur est fréquemment redémarré, par exemple pour les tests, les tests de performance et les instances éphémères. En contrepartie, le code peut être évincé de la mémoire en cas de pression mémoire, et un exécutable corrompu n&#39;est pas détecté au démarrage.
+
+**Exemple**
+
+```xml
+<quick_startup>true</quick_startup>
+```
+
 ## remap_executable {#remap_executable}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Non" />
@@ -1662,6 +1738,10 @@ Exemple :
 </ssh_server>
 ```
 
+## stream_kafka_locks_refresh_polls {#stream_kafka_locks_refresh_polls}
+
+<SettingsInfoBlock type="UInt64" default_value="15" changeable_without_restart="Yes" />Nombre d&#39;interrogations au bout duquel un consommateur Kafka dont les positions sont stockées dans Keeper vérifie de nouveau quelles partitions lui sont attribuées
+
 ## table_engines_require_grant {#table_engines_require_grant}
 
 <CloudNotSupportedBadge />
@@ -1696,11 +1776,11 @@ Paramètres de la [table système text&#95;log](/fr/reference/system-tables/text
 
 <SystemLogParameters />
 
-De plus :
+De plus :
 
-| Paramètre | Description                                                                   | Valeur par défaut |
-| --------- | ----------------------------------------------------------------------------- | ----------------- |
-| `level`   | Niveau de message maximal (par défaut `Trace`) qui sera stocké dans la table. | `Trace`           |
+| Paramètre | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Valeur par défaut                                                                 |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `level`   | Niveau de message maximal stocké dans la table. S&#39;il est défini explicitement, le niveau du journaliseur racine est relevé au moins à cette valeur, de sorte que `text_log` peut être plus verbeux que le fichier journal du serveur (`logger.level`). S&#39;il n&#39;est pas défini, les messages sont stockés jusqu&#39;au niveau le plus verbeux parmi les sorties de journaux configurées (`logger.level`, `console_log_level`, `errorlog_level`, `syslog_level`). | `Trace` (limité par les autres sorties de journaux s&#39;il n&#39;est pas défini) |
 
 **Exemple**
 

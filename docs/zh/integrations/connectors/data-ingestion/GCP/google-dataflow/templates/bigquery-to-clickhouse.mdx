@@ -11,7 +11,7 @@ BigQuery 到 ClickHouse 的模板是一个批次管道，用于将 BigQuery 表�
 该模板可以读取整个表，也可以使用提供的 SQL 查询过滤特定记录。
 
 <div id="pipeline-requirements">
-  ## 管道要求
+  ## 管道要求 {#pipeline-requirements}
 </div>
 
 * 源 BigQuery 表必须存在。
@@ -19,7 +19,7 @@ BigQuery 到 ClickHouse 的模板是一个批次管道，用于将 BigQuery 表�
 * 必须能够从 Dataflow 工作节点访问 ClickHouse 主机。
 
 <div id="template-parameters">
-  ## Template参数
+  ## Template参数 {#template-parameters}
 </div>
 
 <br />
@@ -50,7 +50,7 @@ BigQuery 到 ClickHouse 的模板是一个批次管道，用于将 BigQuery 表�
 </Note>
 
 <div id="source-and-target-tables-schema">
-  ## 源表和目标表的 schema
+  ## 源表和目标表的 schema {#source-and-target-tables-schema}
 </div>
 
 为了高效地将 BigQuery 数据集加载到 ClickHouse 中，管道会执行列推断过程，分为以下几个阶段：
@@ -66,7 +66,7 @@ BigQuery 到 ClickHouse 的模板是一个批次管道，用于将 BigQuery 表�
 </Warning>
 
 <div id="data-types-mapping">
-  ## 数据类型映射
+  ## 数据类型映射 {#data-types-mapping}
 </div>
 
 BigQuery 类型会根据你的 ClickHouse 表定义进行转换。因此，上表列出了你的目标 ClickHouse 表中建议采用的映射 (针对给定的 BigQuery 表/查询) ：
@@ -81,9 +81,7 @@ BigQuery 类型会根据你的 ClickHouse 表定义进行转换。因此，上�
 | [**Numeric - Integer 类型**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types) | [**Integer 类型**](/zh/reference/data-types/int-uint)  | 在 BigQuery 中，所有 Int 类型 (`INT`、`SMALLINT`、`INTEGER`、`BIGINT`、`TINYINT`、`BYTEINT`) 都是 `INT64` 的别名。我们建议你在 ClickHouse 中设置合适的整数位宽，因为模板会根据已定义的列类型 (`Int8`、`Int16`、`Int32`、`Int64`) 转换该列。如果 ClickHouse 表中使用了未明确指定的 Int 类型 (`UInt8`、`UInt16`、`UInt32`、`UInt64`) ，模板也会进行转换。 |
 | [**Numeric - Float 类型**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types)   | [**Float 类型**](/zh/reference/data-types/float)       | 支持的 ClickHouse 类型：`Float32` 和 `Float64`                                                                                                                                                                                                                            |
 
-<div id="running-the-template">
-  ## 运行Template
-</div>
+## 运行Template {#running-the-template}
 
 BigQuery 到 ClickHouse 的Template可通过 Google Cloud CLI 运行。
 
@@ -96,34 +94,25 @@ BigQuery 到 ClickHouse 的Template可通过 Google Cloud CLI 运行。
     登录 Google Cloud Console 并搜索 DataFlow。
 
     1. 点击 `CREATE JOB FROM TEMPLATE` 按钮
+
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![DataFlow 控制台](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
-
-       </Frame>
-
+         <Frame>
+           ![DataFlow 控制台](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+         </Frame>
        </div>
     2. 打开Template表单后，输入作业名称并选择所需区域。
+
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![DataFlow Template初始表单](/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp)
-
-       </Frame>
-
+         <Frame>
+           ![DataFlow Template初始表单](/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp)
+         </Frame>
        </div>
-    3. 在 `DataFlow Template` 输入框中，输入 `ClickHouse` 或 `BigQuery`，然后选择 `BigQuery to ClickHouse` Template
+    3. 在 `DataFlow Template` 输入框中，输入 `ClickHouse` 或  `BigQuery`，然后选择 `BigQuery to ClickHouse` Template
+
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![选择 BigQuery 到 ClickHouse Template](/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp)
-
-       </Frame>
-
+         <Frame>
+           ![选择 BigQuery 到 ClickHouse Template](/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp)
+         </Frame>
        </div>
     4. 选中后，表单会展开，以便你填写更多详细信息：
        * ClickHouse server JDBC URL，格式如下：`jdbc:clickhouse://host:port/schema`。
@@ -138,25 +127,22 @@ BigQuery 到 ClickHouse 的Template可通过 Google Cloud CLI 运行。
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![BigQuery 到 ClickHouse 扩展Template表单](/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp)
-
-    </Frame>
-
+      <Frame>
+        ![BigQuery 到 ClickHouse 扩展Template表单](/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp)
+      </Frame>
     </div>
 
     5. 根据[Template参数](#template-parameters)部分中的详细说明，自定义并添加任何与 BigQuery/ClickHouseIO 相关的配置
   </Tab>
 
   <Tab title="Google Cloud CLI">
-    ### 安装并配置 `gcloud` CLI
+### 安装并配置 `gcloud` CLI {#install--configure-gcloud-cli}
 
     * 如果尚未安装，请安装 [`gcloud` CLI](https://cloud.google.com/sdk/docs/install)。
-    * 按照[本指南](https://cloud.google.com/dataflow/docs/guides/templates/using-flex-templates#before-you-begin)中的 `Before you begin` 部分，设置运行 DataFlow Template所需的配置、设置和权限。
+    * 按照[本指南](https://cloud.google.com/dataflow/docs/guides/templates/using-flex-templates#before-you-begin)中的 `Before you begin` 部分，
+      设置运行 DataFlow Template所需的配置、设置和权限。
 
-    ### 运行命令
+### 运行命令 {#run-command}
 
     使用 [`gcloud dataflow flex-template run`](https://cloud.google.com/sdk/gcloud/reference/dataflow/flex-template/run)
     命令运行使用 Flex Template 的 Dataflow 作业。
@@ -169,13 +155,14 @@ BigQuery 到 ClickHouse 的Template可通过 Google Cloud CLI 运行。
      --parameters inputTableSpec="<bigquery table id>",jdbcUrl="jdbc:clickhouse://<clickhouse host>:<clickhouse port>/<schema>?ssl=true&sslmode=NONE",clickHouseUsername="<username>",clickHousePassword="<password>",clickHouseTable="<clickhouse target table>"
     ```
 
-    ### 命令说明
+### 命令说明 {#command-breakdown}
 
     * **作业名称：** `run` 关键字后面的文本是唯一的作业名称。
-    * **Template文件：** `--template-file-gcs-location` 指定的 JSON file 定义了Template结构以及接受的参数详情。该文件路径是公开的，可直接使用。
+    * **Template文件：** `--template-file-gcs-location` 指定的 JSON file 定义了Template结构以及
+      接受的参数详情。该文件路径是公开的，可直接使用。
     * **参数：** 参数之间以逗号分隔。对于字符串参数，请用双引号将值括起来。
 
-    ### 预期响应
+### 预期响应 {#expected-response}
 
     运行命令后，你应会看到类似下面的响应：
 
@@ -192,28 +179,22 @@ BigQuery 到 ClickHouse 的Template可通过 Google Cloud CLI 运行。
   </Tab>
 </Tabs>
 
-<div id="monitor-the-job">
-  ### 监控作业
-</div>
+### 监控作业 {#monitor-the-job}
 
 前往 Google Cloud Console 中的 [Dataflow Jobs 选项卡](https://console.cloud.google.com/dataflow/jobs)，查看该作业的状态。你可以在这里找到作业的详细信息，包括进度以及任何错误：
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![DataFlow 控制台显示一个正在运行的从 BigQuery 到 ClickHouse 的作业](/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp)
-
-</Frame>
-
+  <Frame>
+    ![DataFlow 控制台中显示一个正在运行的 BigQuery 到 ClickHouse 作业](/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp)
+  </Frame>
 </div>
 
 <div id="troubleshooting">
-  ## 故障排查
+  ## 故障排查 {#troubleshooting}
 </div>
 
 <div id="code-241-dbexception-memory-limit-total-exceeded">
-  ### 超出内存限制 (总量) 错误 (代码 241)
+  ### 超出内存限制 (总量) 错误 (代码 241) {#code-241-dbexception-memory-limit-total-exceeded}
 </div>
 
 当 ClickHouse 在处理大批次数据时内存耗尽，就会出现此错误。要解决此问题：
@@ -222,7 +203,7 @@ BigQuery 到 ClickHouse 的Template可通过 Google Cloud CLI 运行。
 * 减小批次大小：调整 Dataflow 作业配置中的批次大小，向 ClickHouse 发送更小的数据块，从而降低每个批次的内存消耗。这些更改有助于在数据摄取期间平衡资源使用。
 
 <div id="template-source-code">
-  ## Template 源代码
+  ## Template 源代码 {#template-source-code}
 </div>
 
 该 Template 的源代码可在以下位置查看：

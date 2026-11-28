@@ -45,9 +45,9 @@ void IntValidator::validate(const Option& option, const std::string& value)
 	if (NumberParser::tryParse(value, n))
 	{
 		if (n < _min || n > _max)
-			throw InvalidArgumentException(format("argument for %s must be in range %d to %d", option.fullName(), _min, _max));
+			throw InvalidArgumentException(Poco::format("argument for %s must be in range %d to %d", option.fullName(), _min, _max));
 	}
-	else throw InvalidArgumentException(format("argument for %s must be an integer", option.fullName()));
+	else throw InvalidArgumentException(Poco::format("argument for %s must be an integer", option.fullName()));
 }
 
 
