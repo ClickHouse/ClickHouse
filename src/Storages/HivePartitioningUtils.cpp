@@ -13,6 +13,7 @@
 #include <Processors/Chunk.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/TypeTree.h>
+#include <Common/Hex.h>
 
 namespace DB
 {
@@ -65,6 +66,28 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
     return key_values;
 }
 
+/// Decodes a partition value as Hive-style writers (pyarrow, DuckDB, Polars) encode it in the path: `%XX` escapes are
+/// decoded (an invalid one stays as it is, as in `decodeURLComponent`), and the NULL directory name gives `std::nullopt`.
+static std::optional<String> decodePartitionValue(std::string_view value)
+{
+    if (value == "__HIVE_DEFAULT_PARTITION__")
+        return std::nullopt;
+
+    String res;
+    res.reserve(value.size());
+    for (size_t i = 0; i < value.size(); ++i)
+    {
+        if (value[i] == '%' && i + 2 < value.size() && unhex(value[i + 1]) != 0xFF && unhex(value[i + 2]) != 0xFF)
+        {
+            res += static_cast<char>(unhex2(&value[i + 1]));
+            i += 2;
+        }
+        else
+            res += value[i];
+    }
+    return res;
+}
+
 std::string_view getPartitionValueFromPath(
     const HivePartitioningKeysAndValues & keys_and_values, const std::string & column_name, const std::string & path)
 {
@@ -88,8 +111,12 @@ Field convertPartitionValueToType(
     const std::string & path,
     const FormatSettings & hive_format_settings)
 {
-    Field field = convertFieldToType(Field(String(value)), type, nullptr, hive_format_settings);
+    const auto decoded = decodePartitionValue(value);
+    Field field = decoded ? convertFieldToType(Field(*decoded), type, nullptr, hive_format_settings) : Field();
     if (field.isNull() && !canContainNull(type))
+    {
+        if (!decoded && hive_format_settings.null_as_default)
+            return type.getDefault();
         throw Exception(
             ErrorCodes::TYPE_MISMATCH,
             "Cannot convert '{}' from the path {} to type {} for the Hive partition column `{}`",
@@ -97,6 +124,7 @@ Field convertPartitionValueToType(
             path,
             type.getName(),
             column_name);
+    }
     return field;
 }
 
@@ -131,8 +159,9 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
         else
         {
             const auto hive_format_settings = buildHiveFormatSettings(format_settings, context);
-            auto type = tryInferDataTypeByEscapingRule(value, hive_format_settings, FormatSettings::EscapingRule::Raw);
-            /// An empty value, `NULL`, `[]` or `{}` alone do not determine a type, and a type with `Nothing` anywhere in it
+            const auto decoded = decodePartitionValue(value);
+            DataTypePtr type = decoded ? tryInferDataTypeByEscapingRule(*decoded, hive_format_settings, FormatSettings::EscapingRule::Raw) : nullptr;
+            /// The default partition, an empty value, `NULL`, `[]` or `{}` alone do not determine a type, and a type with `Nothing` anywhere in it
             /// (a `Variant` alternative included) cannot hold the other paths' values.
             if (!type || anyInTypeTree(*type, [](const IDataType & node) { return isNothing(node); }))
                 type = std::make_shared<DataTypeString>();

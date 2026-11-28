@@ -1,0 +1,25 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: depends on S3
+
+-- { echo }
+
+-- With `partition_strategy = 'hive'` each partition value is written with `%` and `/` escaped, so that it reads back
+-- as it was written (the reader percent-decodes values and splits the path at `/`). Other values keep their plain
+-- directory names.
+
+INSERT INTO FUNCTION s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05841', format = Parquet, partition_strategy = 'hive', structure = 'rid Int64, p String')
+PARTITION BY p
+SELECT number AS rid, ['a/b', 'a%20b', '100%', 'a b', 'é', '', 'x=y'][number + 1] AS p FROM numbers(7);
+
+SELECT rid, p, replaceRegexpOne(_path, '^.*/05841/(.*)/[0-9]+\\.parquet$', '\\1') AS dir
+FROM s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05841/**.parquet', format = Parquet)
+ORDER BY rid;
+
+-- Two partition columns.
+INSERT INTO FUNCTION s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05841_two', format = Parquet, partition_strategy = 'hive', structure = 'rid Int64, n Int64, s String')
+PARTITION BY (n, s)
+SELECT number AS rid, number AS n, '50%/50%' AS s FROM numbers(2);
+
+SELECT rid, n, s, replaceRegexpOne(_path, '^.*/05841_two/(.*)/[0-9]+\\.parquet$', '\\1') AS dir
+FROM s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05841_two/**.parquet', format = Parquet)
+ORDER BY rid;
