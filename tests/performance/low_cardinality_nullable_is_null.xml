@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Requires `LowCardinality` dictionaries, which the Iceberg rewrite removes. -->
     <settings>
         <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
     </settings>
