@@ -1,0 +1,18 @@
+['a','b','c']	['a','b','']	['a','b']
+[]	[]	['abc']
+['a','b','c']	['a','я','b']
+['a',NULL,'c']	['a','*','c']	['a',NULL,'c']
+[NULL]	[NULL]
+[]	[]
+Array(String)	Array(Nullable(String))	Array(String)
+['a','b']
+[]
+['c']
+a,b	,	['a','b']
+\N	,	[]
+ab	\N	['a','b']
+ab		['ab']
+[NULL,'b']
+['a','b']
+['a',NULL]
+1

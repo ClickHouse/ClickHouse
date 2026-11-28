@@ -65,6 +65,9 @@ Returns a random distributed `Float64` number with uniform distribution between 
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionCanonicalRand>(documentation);
+
+    /// PostgreSQL compatibility: `random` returns a `double precision` value in the range [0, 1).
+    factory.registerAlias("random", NameCanonicalRand::name, FunctionFactory::Case::Insensitive);
 }
 
 }
