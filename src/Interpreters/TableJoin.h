@@ -391,6 +391,7 @@ public:
     const ASTTableJoin & getTableJoin() const { return table_join; }
 
     void setJoinOperator(const JoinOperator & join_operator_) { join_operator = join_operator_; }
+    JoinSetOperation setOperation() const { return join_operator ? join_operator->set_operation : JoinSetOperation::None; }
 
     JoinOnClause & getOnlyClause() { assertHasOneOnExpr(); return clauses[0]; }
     const JoinOnClause & getOnlyClause() const { assertHasOneOnExpr(); return clauses[0]; }

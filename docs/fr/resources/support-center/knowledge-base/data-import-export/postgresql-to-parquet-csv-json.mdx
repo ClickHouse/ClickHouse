@@ -6,26 +6,22 @@ tags: ['Export de données', 'Formats de données']
 keywords: ['PostgreSQL', 'Parquet', 'CSV', 'JSON']
 ---
 
-<div id="how-to-export-postgresql-data-to-parquet-csv-or-json">
-  ## Comment exporter des données PostgreSQL vers Parquet, CSV ou JSON
-</div>
+## Comment exporter des données PostgreSQL vers Parquet, CSV ou JSON {#how-to-export-postgresql-data-to-parquet-csv-or-json}
 
-C’est simple avec `clickhouse-local` :
+C’est simple avec `clickhouse-local` :
 
 * Utilisez la [fonction de table `postgresql`](/fr/reference/functions/table-functions/postgresql) pour lire les données
 * Utilisez la clause `INTO OUTFILE _filename_ FORMAT` et indiquez le format de sortie souhaité
 
 Le format de sortie peut être n’importe lequel des [formats de sortie](/fr/reference/formats/index) pris en charge par ClickHouse. Voyons quelques exemples...
 
-Ces exemples utilisent `clickhouse-local`, qui fait partie du binaire ClickHouse. Téléchargez-le avec la commande suivante :
+Ces exemples utilisent `clickhouse-local`, qui fait partie du binaire ClickHouse. Téléchargez-le avec la commande suivante :
 
 ```bash
 curl https://clickhouse.com/ | sh
 ```
 
-<div id="export-postgresql-to-parquet">
-  ## Exporter PostgreSQL vers Parquet
-</div>
+## Exporter PostgreSQL vers Parquet {#export-postgresql-to-parquet}
 
 La fonction de table `postgresql` permet d&#39;exécuter des requêtes `SELECT` (et `INSERT`) sur des données stockées sur un serveur PostgreSQL distant. Par exemple, pour afficher l&#39;intégralité du contenu d&#39;une table dans PostgreSQL :
 
@@ -59,11 +55,9 @@ INTO OUTFILE 'my_output_file.parquet'"
   Comme le nom du fichier de sortie a l’extension `.parquet`, ClickHouse en déduit que nous voulons le format Parquet ; notez donc que nous avons omis la clause `FORMAT Parquet`.
 </Note>
 
-<div id="export-postgresql-to-csv">
-  ## Exporter PostgreSQL au format CSV
-</div>
+## Exporter PostgreSQL au format CSV {#export-postgresql-to-csv}
 
-C’est la même chose que pour Parquet, sauf que nous indiquons un nom de fichier plus approprié pour le fichier de sortie :
+C’est la même chose que pour Parquet, sauf que nous indiquons un nom de fichier plus approprié pour le fichier de sortie :
 
 ```bash
 ./clickhouse local -q "SELECT * FROM
@@ -77,11 +71,9 @@ C’est la même chose que pour Parquet, sauf que nous indiquons un nom de fichi
 INTO OUTFILE 'my_output_file.csv'"
 ```
 
-Et voilà ! ClickHouse repère l’extension `.csv` dans le nom du fichier de sortie et exporte les données sous forme de valeurs séparées par des virgules. Sinon, c’est exactement la même commande que ci-dessus.
+Et voilà ! ClickHouse repère l’extension `.csv` dans le nom du fichier de sortie et exporte les données sous forme de valeurs séparées par des virgules. Sinon, c’est exactement la même commande que ci-dessus.
 
-<div id="export-postgresql-to-json">
-  ## Exporter PostgreSQL en JSON
-</div>
+## Exporter PostgreSQL en JSON {#export-postgresql-to-json}
 
 Pour exporter PostgreSQL en JSON, il suffit de modifier le nom du fichier et ClickHouse détectera le format :
 
@@ -116,9 +108,7 @@ INTO OUTFILE 'my_output_file.ndjson'"
   ```
 </Note>
 
-<div id="stream-postgresql-to-another-process">
-  ## Envoyer PostgreSQL vers un autre processus en flux
-</div>
+## Envoyer PostgreSQL vers un autre processus en flux {#stream-postgresql-to-another-process}
 
 Au lieu d’utiliser `INTO OUTFILE`, vous pouvez envoyer les résultats d’une fonction de table vers un autre processus en flux. Voici un exemple simple pour illustrer la syntaxe : nous comptons le nombre de lignes à l’aide de la commande Linux `wc -l` :
 

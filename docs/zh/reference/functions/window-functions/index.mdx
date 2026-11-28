@@ -9,9 +9,7 @@ doc_type: 'reference'
 窗口函数可让你对与当前行相关的一组行进行计算。
 它们可用于执行与聚合函数类似的计算，但不同之处在于，窗口函数不会将多行分组成单个输出，而是仍会返回各个行。
 
-<div id="standard-window-functions">
-  ## 标准窗口函数
-</div>
+## 标准窗口函数 {#standard-window-functions}
 
 ClickHouse 支持窗口和窗口函数的标准 SQL 语法。
 下表展示了当前支持的功能：
@@ -32,9 +30,7 @@ ClickHouse 支持窗口和窗口函数的标准 SQL 语法。
 | `lag/lead(value, offset)`                                           | ✅   | 你也可以使用以下任一变通方法：<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)`，或者对于 `lead`，使用 `FOLLOWING` 替代 `PRECEDING` <br /> 2) `lagInFrame/leadInFrame`，它们与前者类似，但会遵循窗口帧。若要获得与 `lag/lead` 完全相同的行为，请使用 `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`。 |
 | [`ntile(buckets)`](/zh/reference/functions/window-functions/ntile)     | ✅   | 例如，可将窗口指定为 `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`。                                                                                                                                                                                            |
 
-<div id="syntax">
-  ## 语法
-</div>
+## 语法 {#syntax}
 
 ```text
 aggregate_function (column_name)
@@ -70,9 +66,7 @@ WINDOW window_name as ([
 └─────────────────┘  <--- UNBOUNDED FOLLOWING (END of the PARTITION)
 ```
 
-<div id="functions">
-  ## 仅可作为窗口函数使用的函数
-</div>
+## 仅可作为窗口函数使用的函数 {#functions}
 
 以下函数只能作为窗口函数使用。其中大多数是标准 SQL 函数；`lagInFrame`、`leadInFrame` 和 `nonNegativeDerivative` 是 ClickHouse 扩展。
 
@@ -93,15 +87,11 @@ WINDOW window_name as ([
 | [`ntile(buckets)`](/zh/reference/functions/window-functions/ntile)                                                                             | 将分区内的有序行划分为给定数量的桶，并返回当前行所在的桶编号。                                      |
 | [`nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])`](/zh/reference/functions/window-functions/nonNegativeDerivative) | 计算 `metric_column` 相对于 `timestamp_column` 的非负导数。这是 ClickHouse 特有的函数。 |
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
 下面来看一些窗口函数的使用示例。
 
-<div id="numbering-rows">
-  ### 为行编号
-</div>
+### 为行编号 {#numbering-rows}
 
 ```sql
 CREATE TABLE salaries
@@ -159,9 +149,7 @@ FROM salaries;
 └─────────────────┴────────┴─────┴──────┴───────────┘
 ```
 
-<div id="aggregation-functions">
-  ### 聚合函数
-</div>
+### 聚合函数 {#aggregation-functions}
 
 将每位球员的薪资与其所在球队的平均薪资进行比较。
 
@@ -207,9 +195,7 @@ FROM salaries;
 └─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
 ```
 
-<div id="partitioning-by-column">
-  ### 按列分区
-</div>
+### 按列分区 {#partitioning-by-column}
 
 ```sql
 CREATE TABLE wf_partition
@@ -242,9 +228,7 @@ ORDER BY
 └──────────┴───────┴───────┴──────────────┘
 ```
 
-<div id="frame-bounding">
-  ### 窗口帧界定
-</div>
+### 窗口帧界定 {#frame-bounding}
 
 ```sql
 CREATE TABLE wf_frame
@@ -286,7 +270,7 @@ ORDER BY
 
 ```sql
 -- short form - no bound expression, no order by,
--- an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
+-- an equivalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
 SELECT
     part_key,
     value,
@@ -335,7 +319,7 @@ ORDER BY
 
 ```sql
 -- short form (frame is bounded by the beginning of a partition and the current row)
--- an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+-- an equivalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 SELECT
     part_key,
     value,
@@ -527,9 +511,7 @@ ORDER BY
 └────────────────┴──────────────┘
 ```
 
-<div id="groups-frame">
-  ### GROUPS 窗口帧
-</div>
+### GROUPS 窗口帧 {#groups-frame}
 
 `GROUPS` 窗口帧以完整的*对等组*为单位计数——即 `ORDER BY` 键相同的行集合——而非物理行 (`ROWS`) 或 `ORDER BY` 值 (`RANGE`) 。`N PRECEDING` 和 `N FOLLOWING` 分别表示当前行所属对等组之前和之后的 `N` 个对等组；每个纳入窗口的对等组均包含其所有行。
 
@@ -565,15 +547,11 @@ ORDER BY order, value;
 * `RANGE` 按 `order` 值计数，因此 `1 PRECEDING` 和 `1 FOLLOWING` 覆盖与当前行 `order` 值相差不超过 1 的行。当间隔为 10 时，没有相邻行符合条件，因此窗口帧仅包含与当前行具有相同 `order` 值的行。
 * `GROUPS` 按对等组计数，因此 `1 PRECEDING` 和 `1 FOLLOWING` 始终完整包含相邻组，无论 `order` 值之间的间隔有多大。
 
-<div id="real-world-examples">
-  ## 真实场景示例
-</div>
+## 真实场景示例 {#real-world-examples}
 
 以下示例用于解决常见的实际问题。
 
-<div id="maximumtotal-salary-per-department">
-  ### 各部门的最高/总工资
-</div>
+### 各部门的最高/总工资 {#maximumtotal-salary-per-department}
 
 ```sql
 CREATE TABLE employees
@@ -629,9 +607,7 @@ FROM
 └────────────┴──────┴────────┴────────────────────┴──────────────────────┴──────────────────┘
 ```
 
-<div id="cumulative-sum">
-  ### 累积和
-</div>
+### 累积和 {#cumulative-sum}
 
 ```sql
 CREATE TABLE warehouse
@@ -640,7 +616,7 @@ CREATE TABLE warehouse
     `ts` DateTime,
     `value` Float
 )
-ENGINE = Memory
+ENGINE = Memory;
 
 INSERT INTO warehouse VALUES
     ('sku38', '2020-01-01', 9),
@@ -672,9 +648,7 @@ ORDER BY
 └───────┴─────────────────────┴───────┴───────────────┘
 ```
 
-<div id="moving--sliding-average-per-3-rows">
-  ### 移动平均 / 滑动平均 (每 3 行)
-</div>
+### 移动平均 / 滑动平均 (每 3 行) {#moving--sliding-average-per-3-rows}
 
 ```sql
 CREATE TABLE sensors
@@ -722,9 +696,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴───────────────────┘
 ```
 
-<div id="moving--sliding-average-per-10-seconds">
-  ### 移动平均 / 滑动平均 (每 10 秒)
-</div>
+### 移动平均 / 滑动平均 (每 10 秒) {#moving--sliding-average-per-10-seconds}
 
 ```sql
 SELECT
@@ -750,9 +722,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴────────────────────────────┘
 ```
 
-<div id="moving--sliding-average-per-10-days">
-  ### 移动平均 / 滑动平均 (每 10 天)
-</div>
+### 移动平均 / 滑动平均 (每 10 天) {#moving--sliding-average-per-10-days}
 
 温度以秒级精度存储，但使用 `Range` 和 `ORDER BY toDate(ts)` 时，我们构造出的窗口帧大小为 10 个单位；而由于使用了 `toDate(ts)`，这里的单位是天。
 
@@ -807,21 +777,15 @@ ORDER BY
 └──────────────┴─────────────────────┴───────┴─────────────────────────┘
 ```
 
-<div id="references">
-  ## 参考资料
-</div>
+## 参考资料 {#references}
 
-<div id="github-issues">
-  ### GitHub Issues
-</div>
+### GitHub Issues {#github-issues}
 
 有关窗口函数初步支持的路线图，请参见[此 issue](https://github.com/ClickHouse/ClickHouse/issues/18097)。
 
 所有与窗口函数相关的 GitHub issue 都带有 [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions) 标签。
 
-<div id="tests">
-  ### 测试
-</div>
+### 测试 {#tests}
 
 这些测试包含当前已支持语法的示例：
 
@@ -829,9 +793,7 @@ https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window&#9
 
 https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0&#95;stateless/01591&#95;window&#95;functions.sql
 
-<div id="postgres-docs">
-  ### Postgres 文档
-</div>
+### Postgres 文档 {#postgres-docs}
 
 https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
 
@@ -841,9 +803,7 @@ https://www.postgresql.org/docs/devel/functions-window.html
 
 https://www.postgresql.org/docs/devel/tutorial-window.html
 
-<div id="mysql-docs">
-  ### MySQL 文档
-</div>
+### MySQL 文档 {#mysql-docs}
 
 https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
 
@@ -851,9 +811,7 @@ https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
 
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
 
-<div id="related-content">
-  ## 相关内容
-</div>
+## 相关内容 {#related-content}
 
 * 博客：[在 ClickHouse 中处理时序数据](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 * 博客：[适用于 Git 提交序列的窗口函数和数组函数](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)
