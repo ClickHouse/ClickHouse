@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
+# Random settings limits: output_format_parquet_row_group_size_bytes=(536870912, None)
 
 # Bit-packed dictionary indexes of every width from 1 to 18 bits and definition/repetition levels of widths 1 and 2
 # decode to the values that were written, also when a block starts or ends inside a bit-packed run.

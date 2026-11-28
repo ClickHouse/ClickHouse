@@ -1,8 +1,8 @@
 ---
 slug: /integrations/clickpipes/kinesis/auth
-sidebarTitle: 'Kinesis 역할 기반 접근'
-title: 'Kinesis 역할 기반 접근'
-description: '이 문서에서는 ClickPipes 고객이 역할 기반 접근을 사용하여 Amazon Kinesis에 인증하고 데이터 스트림에 안전하게 접근하는 방법을 설명합니다.'
+sidebarTitle: 'Kinesis 역할 기반 액세스'
+title: 'Kinesis 역할 기반 액세스'
+description: '이 문서에서는 ClickPipes 고객이 역할 기반 액세스를 사용하여 Amazon Kinesis에 인증하고 데이터 스트림에 안전하게 액세스하는 방법을 설명합니다.'
 doc_type: 'guide'
 keywords: ['Amazon Kinesis']
 integration:
@@ -10,12 +10,10 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
-이 문서에서는 ClickPipes 고객이 역할 기반 접근을 활용해 Amazon Kinesis에 인증하고 데이터 스트림에 안전하게 접근하는 방법을 설명합니다.
+이 문서에서는 ClickPipes 고객이 역할 기반 액세스를 활용해 Amazon Kinesis에 인증하고 데이터 스트림에 안전하게 액세스하는 방법을 설명합니다.
 
 <div id="prerequisite">
-  ## 사전 요구 사항
+  ## 사전 요구 사항 {#prerequisite}
 </div>
 
 이 가이드를 따라 하려면 다음이 필요합니다:
@@ -23,23 +21,23 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 * 활성화된 ClickHouse Cloud 서비스
 * AWS 계정
 
-<div id="introduction">
-  ## 소개
+## 소개 {#introduction}
+
+보안 Kinesis 액세스 설정에 들어가기 전에 먼저 그 동작 방식을 이해하는 것이 중요합니다. 다음은 ClickPipes가 고객의 AWS 계정 내 IAM 역할을 수임하여 Amazon Kinesis 스트림에 액세스하는 방식의 개요입니다.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![보안 Kinesis](/images/integrations/data-ingestion/clickpipes/securekinesis.jpg)
+  </Frame>
 </div>
 
-보안 Kinesis 액세스 설정에 들어가기 전에 먼저 그 동작 방식을 이해하는 것이 중요합니다. 다음은 ClickPipes가 고객의 AWS 계정 내 IAM 역할을 Assume하여 Amazon Kinesis 스트림에 액세스하는 방식의 개요입니다.
-
-<Image img="/images/integrations/data-ingestion/clickpipes/securekinesis.jpg" alt="보안 Kinesis" size="lg" border />
-
-이 방식을 사용하면 각 스트림의 액세스 정책을 개별적으로 수정할 필요 없이, 고객은 한 곳(assume된 역할의 IAM 정책)에서 Kinesis 데이터 스트림에 대한 모든 액세스를 관리할 수 있습니다.
+이 방식을 사용하면 각 스트림의 액세스 정책을 개별적으로 수정할 필요 없이, 고객은 한 곳(수임된 역할의 IAM 정책)에서 Kinesis 데이터 스트림에 대한 모든 액세스를 관리할 수 있습니다.
 
 <div id="setup">
-  ## Setup
+  ## Setup {#setup}
 </div>
 
-<div id="obtaining-the-clickhouse-service-iam-role-arn">
-  ### ClickHouse 서비스 IAM 역할 ARN 가져오기
-</div>
+### ClickHouse 서비스 IAM 역할 ARN 가져오기 {#obtaining-the-clickhouse-service-iam-role-arn}
 
 * 1. ClickHouse Cloud 계정에 로그인합니다.
 * 2. 통합을 생성할 ClickHouse 서비스를 선택합니다.
@@ -47,14 +45,18 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 * 4. 페이지 하단의 **Network security information** 섹션까지 스크롤합니다.
 * 5. 아래와 같이 해당 서비스의 **Service role ID (IAM)** 값을 복사합니다.
 
-<Image img="/images/cloud/security/secures3_arn.webp" alt="Secure S3 ARN" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Secure S3 ARN](/images/cloud/security/secures3_arn.webp)
+  </Frame>
+</div>
 
 <div id="setting-up-iam-assume-role">
-  ### IAM AssumeRole 설정
+  ### IAM AssumeRole 설정 {#setting-up-iam-assume-role}
 </div>
 
 <div id="manually-create-iam-role">
-  #### IAM 역할을 수동으로 생성합니다.
+  #### IAM 역할을 수동으로 생성합니다. {#manually-create-iam-role}
 </div>
 
 * 1. IAM 역할을 생성하고 관리할 권한이 있는 IAM 사용자로 웹 브라우저에서 AWS 계정에 로그인합니다.

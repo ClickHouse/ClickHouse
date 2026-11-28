@@ -60,8 +60,8 @@ WHERE explain LIKE '%m.values%';
 
 DROP TABLE t_05212_map_like_ci;
 
--- A case-insensitive file reader resolves m.keys to the physical `M.keys` column. The pass never rewrites
--- Map functions for such readers, so the results must not change with the optimization enabled.
+-- A case-insensitive file reader resolves m.keys to the physical `M.keys` column. The pass rewrites Map functions for
+-- such readers too, but asks them for the whole map m, so the results must not change with the optimization enabled.
 INSERT INTO FUNCTION file(currentDatabase() || '_05212_map_has_keys_ci.orc', ORC, 'm Map(String, UInt64), `M.keys` Array(String)')
 SELECT map('key', toUInt64(1)), ['other']
 SETTINGS engine_file_truncate_on_insert = 1;

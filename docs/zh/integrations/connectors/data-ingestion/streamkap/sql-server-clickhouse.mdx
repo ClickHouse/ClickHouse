@@ -7,12 +7,10 @@ title: '将数据从 SQL Server 流式传输到 ClickHouse，实现快速分析�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 本文将拆解一个教程，向你展示如何将数据从 SQL Server 流式传输到 ClickHouse。如果你希望为内部或面向客户的仪表盘提供超高速分析，ClickHouse 是理想之选。我们会一步步带你完成这两个数据库的设置、连接方式，以及最后如何使用 [Streamkap](https://streamkap.com) 流式传输数据。如果 SQL Server 承担着你的日常业务操作，而你又需要 ClickHouse 的分析速度和能力，那么你来对地方了。
 
 <div id="why-stream-data-from-sql-server-to-clickhouse">
-  ## 为什么要将数据从 SQL Server 流式传输到 ClickHouse？
+  ## 为什么要将数据从 SQL Server 流式传输到 ClickHouse？ {#why-stream-data-from-sql-server-to-clickhouse}
 </div>
 
 如果你读到这里，大概率已经深有体会：SQL Server 在事务处理方面非常可靠，但它并不是为高负载的实时分析查询而设计的。
@@ -26,13 +24,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * 事件流处理，例如让用户活动日志持续保持最新状态，以便进行分析
 
 <div id="what-youll-need-to-get-started">
-  ## 开始前需要准备的内容
+  ## 开始前需要准备的内容 {#what-youll-need-to-get-started}
 </div>
 
 在深入细节之前，请先准备好以下内容：
 
 <div id="prerequisites">
-  ### 前置条件
+  ### 前置条件 {#prerequisites}
 </div>
 
 * 一个正在运行的 SQL Server 实例
@@ -48,7 +46,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * 该工具将作为数据流式管道的核心。
 
 <div id="connection-info">
-  ### 连接信息
+  ### 连接信息 {#connection-info}
 </div>
 
 请确保你已准备好：
@@ -79,11 +77,19 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     * 用户名和密码
     * 数据库名称
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![](/images/integrations/data-ingestion/etl-tools/image3.webp)
+      </Frame>
+    </div>
 
-    #### 后台会发生什么
+#### 后台会发生什么 {#whats-happening-behind-the-scenes}
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image1.webp" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![](/images/integrations/data-ingestion/etl-tools/image1.webp)
+      </Frame>
+    </div>
 
     完成设置后，Streamkap 会连接到你的 SQL Server 并检测表。此次演示中，我们会选择一张已经有一些数据持续流入的表，例如 events 或 transactions。
   </Step>
@@ -95,7 +101,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     和源端一样，我们将使用 ClickHouse 连接详情来创建目标端。
 
-    #### 步骤：
+#### 步骤： {#steps}
 
     1. 前往 Streamkap 中的 destinations 部分。
     2. 添加一个新的目标端——选择 ClickHouse 作为目标端类型。
@@ -108,13 +114,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     示例截图：在 Streamkap 仪表板中添加新的 ClickHouse 目标端。
 
-    ### Upsert 模式：这是什么？
+### Upsert 模式：这是什么？ {#upsert-mode-what-is-that}
 
     这是一个重要步骤：我们要使用 ClickHouse 的 “upsert” 模式——它在底层使用 ClickHouse 的 ReplacingMergeTree engine。这样可以高效合并传入记录，并通过 ClickHouse 所说的“分片合并”在摄取后处理更新。
 
     * 这样可以确保当 SQL Server 端发生变化时，目标端表不会堆满重复数据。
 
-    ### 处理 Schema 演进
+### 处理 Schema 演进 {#handling-schema-evolution}
 
     ClickHouse 和 SQL Server 有时并不会有完全相同的列——尤其是在应用已经上线、开发人员还在持续动态添加列的情况下。
 
@@ -128,7 +134,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     源端和目标端都已设置好，现在到了最有意思的部分——开始流式传输数据！
 
-    #### 管道设置
+#### 管道设置 {#pipeline-setup}
 
     1. 前往 Streamkap 中的 Pipelines 选项卡。
 
@@ -146,9 +152,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     管道设置截图——选择源端、目标端和表。
 
-    #### 需要回填吗？
+#### 需要回填吗？ {#should-you-backfill}
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image2.webp" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![](/images/integrations/data-ingestion/etl-tools/image2.webp)
+      </Frame>
+    </div>
 
     你可能会问：需要回填旧数据吗？
 
@@ -182,7 +192,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Steps>
 
 <div id="under-the-hood-whats-streamkap-actually-doing">
-  ## 底层原理：Streamkap 实际在做什么？
+  ## 底层原理：Streamkap 实际在做什么？ {#under-the-hood-whats-streamkap-actually-doing}
 </div>
 
 让你大致了解一下它的工作方式：
@@ -194,11 +204,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 这不只是 ETL——而是完整的 CDC (变更数据捕获) ，并且是实时流式传输的。
 
 <div id="advanced-options">
-  ## 高级选项
+  ## 高级选项 {#advanced-options}
 </div>
 
 <div id="upsert-vs-insert-modes">
-  ### Upsert 与 Insert 模式
+  ### Upsert 与 Insert 模式 {#upsert-vs-insert-modes}
 </div>
 
 仅插入每一行 (Insert Mode) 与同时确保更新和删除也会同步过来 (Upsert Mode) ，两者有什么区别？
@@ -207,7 +217,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * Upsert Mode：对现有行的更新会覆盖原有内容——更适合让分析数据保持最新且整洁。
 
 <div id="handling-schema-changes">
-  ### 处理 schema 变更
+  ### 处理 schema 变更 {#handling-schema-changes}
 </div>
 
 应用会不断变化，schema 也是如此。使用这条管道后：
@@ -218,11 +228,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   这取决于具体设置，你可能需要执行迁移——不过大多数新增都能顺利处理。
 
 <div id="real-world-monitoring-keeping-tabs-on-the-pipeline">
-  ## 生产环境监控：随时掌握管道运行状态
+  ## 生产环境监控：随时掌握管道运行状态 {#real-world-monitoring-keeping-tabs-on-the-pipeline}
 </div>
 
 <div id="checking-pipeline-health">
-  ### 检查管道运行状况
+  ### 检查管道运行状况 {#checking-pipeline-health}
 </div>
 
 Streamkap 提供了一个仪表盘，你可以：
@@ -234,7 +244,7 @@ Streamkap 提供了一个仪表盘，你可以：
 仪表盘示例：滞后图、行数、健康状态指示器。
 
 <div id="common-metrics-to-watch">
-  ### 需要重点关注的常见指标
+  ### 需要重点关注的常见指标 {#common-metrics-to-watch}
 </div>
 
 * 滞后：ClickHouse 比 SQL Server 落后多少？
@@ -242,7 +252,7 @@ Streamkap 提供了一个仪表盘，你可以：
 * 错误率：应接近零
 
 <div id="going-live-querying-clickhouse">
-  ## 开始使用：查询 ClickHouse
+  ## 开始使用：查询 ClickHouse {#going-live-querying-clickhouse}
 </div>
 
 现在数据已经进入 ClickHouse，你可以使用各种高速分析工具对其进行查询。下面是一个基础示例：
@@ -255,7 +265,7 @@ SELECT user\_id, COUNT(*) AS actionsFROM analytics.eventsWHERE event\_time >= no
 将 ClickHouse 与 Grafana、Superset 或 Redash 等仪表盘工具结合使用，可实现功能完善的报表分析。
 
 <div id="next-steps-and-deep-dives">
-  ## 后续步骤与深入研究
+  ## 后续步骤与深入研究 {#next-steps-and-deep-dives}
 </div>
 
 本指南只是展示了你可以实现的部分功能。掌握基础之后，接下来你还可以进一步探索：
@@ -269,7 +279,7 @@ SELECT user\_id, COUNT(*) AS actionsFROM analytics.eventsWHERE event\_time >= no
 请关注 [Streamkap 博客](https://streamkap.com/blog)，获取更深入的指南。
 
 <div id="faq-and-troubleshooting">
-  ## 常见问题与故障排查
+  ## 常见问题与故障排查 {#faq-and-troubleshooting}
 </div>
 
 问：这适用于云数据库吗？
@@ -282,7 +292,7 @@ SELECT user\_id, COUNT(*) AS actionsFROM analytics.eventsWHERE event\_time >= no
 答：当然可以。在 upsert 模式下，删除操作也会被标记，并在 ClickHouse 中处理。
 
 <div id="wrapping-up">
-  ## 总结
+  ## 总结 {#wrapping-up}
 </div>
 
 以上就是使用 Streamkap 将 SQL Server 数据流式传输到 ClickHouse 的完整介绍。它快速、灵活，非常适合需要近实时分析、又不想给生产数据库带来过大压力的团队。

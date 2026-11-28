@@ -6,8 +6,6 @@ title: 'Пользовательские функции (UDF)'
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-
 import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
@@ -19,8 +17,6 @@ ClickHouse поддерживает несколько типов пользов
 * [Экспериментальные исполняемые UDF на базе драйверов](#driver-based-executable-user-defined-functions) позволяют предоставляемому оператором &quot;драйверу&quot; преобразовывать фрагмент кода, указанный в `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'`, в исполняемый UDF при создании функции (например, путём компиляции). Они основаны на исполняемых UDF и требуют серверной конфигурации драйвера.
 
 ## Исполняемые пользовательские функции {#executable-user-defined-functions}
-
-<BetaBadge />
 
 <Note>
   В ClickHouse Cloud исполняемые UDF общедоступны и создаются через консоль Cloud, Cloud API или Terraform. См. [Пользовательские функции в Cloud](/ru/products/cloud/features/sql-console-features/user-defined-functions), чтобы ознакомиться со специальным процессом для Cloud, включая среду выполнения Native для скомпилированных бинарных файлов.
@@ -56,7 +52,14 @@ ClickHouse может вызывать любую внешнюю исполня�
 
 Команда должна читать аргументы из `STDIN` и выводить результат в `STDOUT`. Команда должна обрабатывать аргументы итеративно. То есть после обработки одного фрагмента аргументов она должна ждать следующий.
 
-## Исполняемые пользовательские функции {#executable-user-defined-functions}
+<Note>
+  При использовании формата `TabSeparated` ClickHouse экранирует специальные символы в аргументах, передаваемых команде, и снимает экранирование с вывода команды в соответствии с [правилами экранирования TabSeparated](/ru/reference/formats/TabSeparated/TabSeparated#tabseparated-data-formatting). Например, обратная косая черта в аргументе передаётся команде как `\\`, а табуляция или перевод строки — как `\t` или `\n`. Команда должна экранировать свой вывод так же. В противном случае обратная косая черта в выводе (например, в тексте JSON) будет воспринята как начало escape-последовательности, и результат окажется неверным или его не удастся разобрать.
+
+  Если команда не экранирует свой вывод, используйте один из следующих форматов:
+
+  * [`TabSeparatedRaw`](/ru/reference/formats/TabSeparated/TabSeparatedRaw): значения не экранируются, поэтому они не должны содержать символов табуляции или перевода строки.
+  * [`JSONEachRow`](/ru/reference/formats/JSON/JSONEachRow): строки могут содержать обратные косые черты, символы табуляции и перевода строки. См. [пример с JSON](#udf-stdin) ниже.
+</Note>
 
 ## Примеры {#examples}
 
@@ -612,6 +615,17 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 * `UnsafeC` - компилирует и выполняет код напрямую на хосте, без песочницы. Как следует из названия, он не обеспечивает никакой изоляции и предназначен только для доверенных окружений и тестирования.
 
 Эти драйверы-примеры служат отправной точкой; прежде чем открывать к ним доступ недоверенным пользователям, проверьте и при необходимости усильте изоляцию для вашей среды.
+
+### Сторонние драйверы {#third-party-drivers}
+
+Драйверы могут разрабатываться и вне ClickHouse. Их сопровождают авторы, а не ClickHouse, поэтому, прежде чем открывать к ним доступ недоверенным пользователям, проверьте их так же, как и примеры драйверов:
+
+* [`HyperlightPython`](https://github.com/hyperlight-dev/hyperlight-unikraft/tree/main/integrations/clickhouse) — выполняет тело функции на Python в микро-ВМ [Hyperlight](https://github.com/hyperlight-dev/hyperlight) с собственным ядром. Hyperlight — проект песочницы под эгидой [Cloud Native Computing Foundation](https://www.cncf.io/projects/hyperlight/). Обработка каждого блока строк начинается со снимка гостевого кода, поэтому у кода нет доступа к сети и к файлам сервера, а состояние между запросами не сохраняется. Требуется Linux с `/dev/kvm`.
+
+  ```sql
+  CREATE FUNCTION py_words ARGUMENTS (s String) RETURNS UInt64
+  ENGINE = HyperlightPython AS 'return len(s.split())';
+  ```
 
 ## См. также {#related-content}
 

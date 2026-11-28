@@ -1,6 +1,7 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/FormatFactorySettings.h>
+#include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -45,6 +46,10 @@ void SetSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)
     {
+        for (const auto & change : storage_def.settings->changes)
+            if (change.name == "disk")
+                DiskFromAST::ensureDiskIsNotInline(change.value);
+
         try
         {
             impl->applyChanges(storage_def.settings->changes);

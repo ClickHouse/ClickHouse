@@ -9,29 +9,30 @@ doc_type: 'guide'
 keywords: ['데이터 카탈로그', '데이터 레이크', 'iceberg', 'unity catalog', 'glue', 'delta lake', 'onelake', 'polaris', 'biglake', 'clickhouse cloud']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
 ClickHouse Cloud를 데이터 카탈로그에 연결하면 오픈 테이블 포맷 테이블에 액세스할 수 있습니다. **데이터 소스** UI에서 연결을 설정할 수 있습니다. SQL로 설정하려면 원하는 SQL Editor에서 [`DataLakeCatalog`](/ko/reference/engines/database-engines/datalake) 데이터베이스 엔진을 사용하십시오.
 
-<Image img="/images/cloud/features/data-catalogs-ui.png" size="md" alt="데이터 카탈로그 통합이 표시된 ClickHouse Cloud UI" />
-
-연결이 완료되면 선택한 데이터베이스 이름 아래의 SQL 콘솔에 카탈로그 테이블이 표시됩니다. 표준 ClickHouse SQL로 쿼리하고, [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블과 조인하거나, [materialized views](/ko/concepts/features/materialized-views)의 소스로 사용할 수 있습니다.
-
-<div id="prerequisites">
-  ## 사전 요구 사항
+<div className="ch-image-md">
+  <Frame>
+    ![데이터 카탈로그 통합이 표시된 ClickHouse Cloud UI](/images/cloud/features/data-catalogs-ui.png)
+  </Frame>
 </div>
 
-카탈로그를 연결하기 전에 다음 사항을 확인하십시오.
+연결이 완료되면 카탈로그 테이블(catalog tables)이 SQL 콘솔에서 지정한 데이터베이스 이름 아래에 표시됩니다. 이 테이블은 표준 ClickHouse SQL로 쿼리하거나 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블과 조인할 수 있으며, [materialized view](/ko/concepts/features/materialized-views)의 소스로도 사용할 수 있습니다.
 
-* **서비스 권한.** **데이터 소스** 페이지에 액세스하고 카탈로그를 추가하려면 `control-plane:service:manage` 권한이 필요합니다.
-* **실행 중인 서비스.** 서비스가 유휴 상태인 경우 연결하거나 연결된 카탈로그를 보기 전에 **데이터 소스** 또는 서비스 설정 페이지에서 서비스를 활성화하십시오.
-* **카탈로그 자격 증명.** 플라이아웃을 열기 전에 카탈로그 유형에 필요한 연결 정보를 준비하십시오. 카탈로그마다 사용하는 필드와 인증 방식이 다릅니다. 아래의 [카탈로그 연결 추가](#add-your-catalog-connection)를 참조하십시오.
+## 사전 요구 사항 {#prerequisites}
+
+카탈로그(Catalog)를 연결하기 전에 다음 사항을 확인하십시오.
+
+* **서비스 권한.** **데이터 소스(Data sources)** 페이지에 액세스하고 카탈로그를 추가하려면 `control-plane:service:manage` 권한이 필요합니다.
+* **실행 중인 서비스.** 서비스가 유휴 상태이면 카탈로그를 연결하거나 연결된 카탈로그를 조회하기 전에 **데이터 소스(Data sources)** 페이지 또는 서비스 설정 페이지에서 서비스를 활성화하십시오.
+* **카탈로그 자격 증명.** 플라이아웃을 열기 전에 사용할 카탈로그 유형에 맞는 연결 정보를 준비하십시오. 카탈로그마다 사용하는 필드와 인증 방식이 다릅니다. 자세한 내용은 아래의 [카탈로그 연결 추가](#add-your-catalog-connection)를 참조하십시오.
 
 <div id="connect-your-catalog">
-  ## 카탈로그 연결하기
+  ## 카탈로그 연결하기 {#connect-your-catalog}
 </div>
 
 <Steps>
@@ -40,7 +41,11 @@ ClickHouse Cloud를 데이터 카탈로그에 연결하면 오픈 테이블 포�
     2. 아직 데이터 소스를 설정하지 않았다면 **+ 카탈로그 추가**를 클릭합니다. 이미 설정한 데이터 소스가 있으면 **데이터 소스 추가** &gt; **데이터 레이크 카탈로그 추가**를 클릭합니다.
     3. **데이터 카탈로그 연결** 플라이아웃의 **카탈로그 선택** 드롭다운에서 카탈로그를 선택합니다. 카탈로그가 여러 오픈 테이블 포맷을 지원하는 경우 **오픈 테이블 포맷**에서 포맷을 선택합니다.
 
-    <Image img="/images/integrations/data-catalogs/catalog-flyout-select.png" alt="AWS Glue, BigLake 메타스토어, Microsoft OneLake, Polaris, REST 카탈로그 및 Unity Catalog가 표시된 카탈로그 선택 드롭다운이 있는 데이터 카탈로그 연결 플라이아웃" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![AWS Glue, BigLake 메타스토어, Microsoft OneLake, Polaris, REST 카탈로그 및 Unity Catalog가 표시된 카탈로그 선택 드롭다운이 있는 데이터 카탈로그 연결 플라이아웃](/images/integrations/data-catalogs/catalog-flyout-select.png)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="카탈로그 연결을 추가합니다" id="add-your-catalog-connection">
@@ -68,7 +73,7 @@ ClickHouse Cloud를 데이터 카탈로그에 연결하면 오픈 테이블 포�
         **IAM 역할 인증(26.2+)**
 
         1. **Authentication method**에서 **AWS IAM Role**을 선택합니다.
-        2. 플라이아웃 패널에서 **Service role ID (IAM)**를 복사하여 IAM 역할 신뢰 정책에 추가합니다.
+        2. 플라이아웃 패널에서 **Service role ID (IAM)**&#xB97C; 복사하여 IAM 역할 신뢰 정책에 추가합니다.
         3. **AWS Role ARN**과 선택 사항인 **AWS Role Session Name**을 입력합니다.
         4. Glue 테이블을 제공할 ClickHouse 데이터베이스의 **Database name**을 입력합니다.
 
@@ -198,15 +203,17 @@ ClickHouse Cloud를 데이터 카탈로그에 연결하면 오픈 테이블 포�
   </Step>
 </Steps>
 
-<div id="query-data">
-  ## 데이터 쿼리
-</div>
+## 데이터 쿼리 {#query-data}
 
 <Steps>
   <Step title="카탈로그 테이블 보기" id="view-tables">
     **데이터 소스** 페이지의 **Linked catalogs** 테이블에서 카탈로그를 찾아 **View tables**를 클릭하세요.
 
-    <Image img="/images/integrations/data-catalogs/linked-catalogs-table.png" alt="View tables 작업이 있는 Linked catalogs 테이블" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![View tables 작업이 있는 Linked catalogs 테이블](/images/integrations/data-catalogs/linked-catalogs-table.png)
+      </Frame>
+    </div>
 
     ClickHouse가 카탈로그 데이터베이스가 선택된 SQL 콘솔을 열고 사용 가능한 테이블을 표시합니다.
 
@@ -214,7 +221,11 @@ ClickHouse Cloud를 데이터 카탈로그에 연결하면 오픈 테이블 포�
       카탈로그를 연결한 직후에는 테이블이 바로 표시되지 않을 수 있습니다. 카탈로그에 따라 모든 테이블이 표시되기까지 최대 3분이 걸릴 수 있습니다.
     </Note>
 
-    <Image img="/images/integrations/data-catalogs/catalog-tables-browser.png" alt="카탈로그 테이블을 표시하는 SQL 콘솔 테이블 브라우저" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![카탈로그 테이블(catalog tables)을 표시하는 SQL 콘솔 테이블 브라우저](/images/integrations/data-catalogs/catalog-tables-browser.png)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="쿼리 실행" id="run-a-query">
@@ -224,19 +235,21 @@ ClickHouse Cloud를 데이터 카탈로그에 연결하면 오픈 테이블 포�
     SELECT * FROM `identity_profiles.identity_profiles_iceberg`
     ```
 
-    <Image img="/images/integrations/data-catalogs/catalog-sql-query.png" alt="점으로 구분된 테이블 이름에 백틱을 사용한 결과가 표시된 SQL 쿼리" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![점으로 구분된 테이블 이름에 백틱을 사용한 결과가 표시된 SQL 쿼리](/images/integrations/data-catalogs/catalog-sql-query.png)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## 문제 해결
+  ## 문제 해결 {#troubleshooting}
 </div>
 
 * SQL 콘솔에 테이블이 표시되지 않으면 자격 증명, 네트워크 액세스 및 카탈로그의 테이블 타입을 확인하십시오. 표시되어야 하는 테이블이 지원되는 파일 및 테이블 포맷을 사용하는지 확인하십시오.
 
-<div id="see-also">
-  ## 관련 항목
-</div>
+## 관련 참고 자료 {#see-also}
 
-* [lakehouse 데이터 분석 가속](/ko/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — 반복 쿼리를 위해 카탈로그 테이블을 MergeTree에 로드
+* [레이크하우스(lakehouse) 데이터 분석 가속화](/ko/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — 반복 쿼리를 위해 카탈로그 테이블(catalog tables)을 MergeTree로 로드
 * [Iceberg 데이터에 안전하게 액세스하기](/ko/products/cloud/guides/data-sources/accessing-iceberg-data-securely) — AWS Iceberg 및 Glue 액세스를 위한 IAM role 설정

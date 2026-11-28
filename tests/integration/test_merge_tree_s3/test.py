@@ -7,6 +7,8 @@ import uuid
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
+from helpers.config_manager import ConfigManager
 from helpers.mock_servers import start_mock_servers, start_s3_mock
 from helpers.utility import generate_values, replace_config
 from helpers.blobs import wait_blobs_count_synchronization
@@ -30,6 +32,7 @@ def cluster():
                 "configs/config.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
                 "configs/config.d/blob_log.xml",
+                "configs/config.d/allowed_disks_for_table_engines.xml",
             ],
             user_configs=[
                 "configs/config.d/users.xml",
@@ -842,6 +845,118 @@ def test_merge_canceled_by_drop(cluster, node_name):
     )
 
 
+def cancel_paused_merge(node, table, query, pause_failpoint):
+    """Run `query` (DROP or DETACH) while the table's merge is paused at `pause_failpoint`,
+    so the merge is flagged for deletion and cancelled when it resumes."""
+    node.query(f"SYSTEM WAIT FAILPOINT {pause_failpoint} PAUSE")
+    assert node.query(f"SELECT count() FROM system.merges WHERE table = '{table}'") == "1\n"
+    node.query("SYSTEM ENABLE FAILPOINT merge_tree_background_task_marked_for_deletion")
+    request = node.get_query_request(query)
+    node.query("SYSTEM WAIT FAILPOINT merge_tree_background_task_marked_for_deletion PAUSE")
+    node.query(f"SYSTEM DISABLE FAILPOINT {pause_failpoint}")
+    node.query("SYSTEM DISABLE FAILPOINT merge_tree_background_task_marked_for_deletion")
+    request.get_answer()
+
+
+def run_merge_paused_at(node, table, pause_failpoint, query):
+    node.query(f"SYSTEM STOP MERGES {table}")
+    for i in range(6):
+        node.query(
+            f"INSERT INTO {table} (dt, id, data) SELECT toDate('2020-01-03'), number, toString(number) FROM numbers({i * 10000}, 10000)"
+        )
+    try:
+        # Only this table's merge may reach the pause.
+        node.query("SYSTEM STOP MERGES")
+        node.query(f"SYSTEM ENABLE FAILPOINT {pause_failpoint}")
+        node.query(f"SYSTEM START MERGES {table}")
+        cancel_paused_merge(node, table, query, pause_failpoint)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {pause_failpoint}")
+        node.query("SYSTEM DISABLE FAILPOINT merge_tree_background_task_marked_for_deletion")
+        node.query("SYSTEM START MERGES")
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_merge_canceled_after_part_handoff(cluster, node_name):
+    node = cluster.instances[node_name]
+    create_table(node, "s3_test")
+    run_merge_paused_at(
+        node, "s3_test", "merge_mutate_task_pause_after_part_handoff", "DETACH TABLE s3_test"
+    )
+
+    node.query("ATTACH TABLE s3_test")
+    assert node.query("SELECT count(), sum(id) FROM s3_test") == "60000\t1799970000\n"
+    node.query("OPTIMIZE TABLE s3_test FINAL")
+    check_no_objects_after_drop(cluster, node_name=node_name)
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_vertical_merge_with_projection_canceled_by_drop(cluster, node_name):
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
+    node.query(
+        "CREATE TABLE s3_test (dt Date, id Int64, data String, a String DEFAULT data, b String DEFAULT data,"
+        " PROJECTION p (SELECT id, data ORDER BY data))"
+        " ENGINE=MergeTree ORDER BY id"
+        " SETTINGS storage_policy='s3', min_bytes_for_wide_part=0, enable_vertical_merge_algorithm=1,"
+        " vertical_merge_algorithm_min_rows_to_activate=1, vertical_merge_algorithm_min_columns_to_activate=1"
+    )
+    run_merge_paused_at(
+        node, "s3_test", "merge_task_projection_stage_pause", "DROP TABLE s3_test SYNC"
+    )
+    wait_for_delete_s3_objects(cluster, 0)
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_merge_with_text_index_canceled_by_drop(cluster, node_name):
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
+    node.query(
+        "CREATE TABLE s3_test (dt Date, id Int64, data String,"
+        " INDEX t data TYPE text(tokenizer = splitByNonAlpha),"
+        " PROJECTION p (SELECT id, data ORDER BY data))"
+        " ENGINE=ReplacingMergeTree ORDER BY id"
+        " SETTINGS storage_policy='s3', min_bytes_for_wide_part=0, deduplicate_merge_projection_mode='rebuild'"
+    )
+    run_merge_paused_at(
+        node, "s3_test", "merge_task_projection_stage_pause", "DROP TABLE s3_test SYNC"
+    )
+    wait_for_delete_s3_objects(cluster, 0)
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_optimize_canceled_by_stop_merges(cluster, node_name):
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
+    node.query(
+        "CREATE TABLE s3_test (dt Date, id Int64, data String, a String DEFAULT data, b String DEFAULT data,"
+        " PROJECTION p (SELECT id, data ORDER BY data))"
+        " ENGINE=MergeTree ORDER BY id"
+        " SETTINGS storage_policy='s3', min_bytes_for_wide_part=0, enable_vertical_merge_algorithm=1,"
+        " vertical_merge_algorithm_min_rows_to_activate=1, vertical_merge_algorithm_min_columns_to_activate=1"
+    )
+    # One part: no background merge selects it, only OPTIMIZE ... FINAL does.
+    node.query(
+        "INSERT INTO s3_test (dt, id, data) SELECT toDate('2020-01-03'), number, toString(number) FROM numbers(60000)"
+    )
+    try:
+        # Only this table's merge may reach the pause.
+        node.query("SYSTEM STOP MERGES")
+        node.query("SYSTEM START MERGES s3_test")
+        node.query("SYSTEM ENABLE FAILPOINT merge_task_projection_stage_pause")
+        optimize = node.get_query_request("OPTIMIZE TABLE s3_test FINAL")
+        node.query("SYSTEM WAIT FAILPOINT merge_task_projection_stage_pause PAUSE")
+        node.query("SYSTEM STOP MERGES s3_test")
+        node.query("SYSTEM DISABLE FAILPOINT merge_task_projection_stage_pause")
+        _, error = optimize.get_answer_and_error()
+        assert "Cancelled merging parts" in error, error
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT merge_task_projection_stage_pause")
+        node.query("SYSTEM START MERGES")
+    assert node.query("SELECT count(), sum(id) FROM s3_test") == "60000\t1799970000\n"
+    check_no_objects_after_drop(cluster, node_name=node_name)
+
+
 @pytest.mark.parametrize("storage_policy", ["broken_s3_always_multi_part", "broken_s3"])
 @pytest.mark.parametrize("node_name", ["node"])
 def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_policy):
@@ -1179,3 +1294,36 @@ def test_no_object_storage_read_when_evicting_index_marks(cluster):
         )
         == 0
     )
+
+
+def test_data_lake_named_custom_disk_remote_host_filter(cluster):
+    node = cluster.instances["node"]
+    named_disk = (
+        "disk(name = 'old_s3', type = 's3', endpoint = 'http://minio1:9001/root/data/old_s3/', "
+        f"access_key_id = 'minio', secret_access_key = '{minio_secret_key}')"
+    )
+    node.query(
+        f"CREATE TABLE t_old_s3 (x UInt32) ENGINE = MergeTree ORDER BY x SETTINGS disk = {named_disk}"
+    )
+    node.query("INSERT INTO t_old_s3 VALUES (1)")
+
+    queries = [
+        "CREATE TABLE t_lake_disk (x Int64) ENGINE = Iceberg(path = 'lake_disk', format = Parquet) "
+        "SETTINGS disk = '{}'",
+        "SELECT * FROM icebergS3('lake_disk', 'Parquet', 'x Int64', SETTINGS disk = '{}')",
+    ]
+
+    with ConfigManager() as cm:
+        cm.add_main_config(node, "configs/remote_url_allow_hosts.xml")
+
+        for query in queries:
+            # `allowed_disks_for_table_engines` allows the name of a custom disk built before the list was tightened.
+            error = node.query_and_get_error(query.format("old_s3"))
+            assert "UNACCEPTABLE_URL" in error, error
+
+            # A disk from the server config is exempt. The path holds no table, so the query fails later.
+            _, error = node.query_and_get_answer_with_error(query.format("s3"))
+            assert "UNACCEPTABLE_URL" not in error, error
+
+    node.query("DROP TABLE IF EXISTS t_lake_disk SYNC")
+    node.query("DROP TABLE t_old_s3 SYNC")

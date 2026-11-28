@@ -133,6 +133,9 @@ class PyIcebergRestWriter(Writer):
             "timestamp",
             "timestamp_ntz",
         ),
+        # PyIceberg 0.11 computes `bucket` with pyiceberg-core < 0.9, which hashes decimals with the wrong bytes
+        # (https://github.com/apache/iceberg-rust/pull/1998), so the rows land in buckets that no reader expects.
+        excluded_partition_shapes=(("bucket", "decimal"),),
         predicate_kinds=("boolean", "int", "long", "string", "date"),
         update_kinds=("boolean", "int", "long", "string", "date", "decimal"),
         op_weights={
@@ -235,6 +238,15 @@ class PyIcebergRestWriter(Writer):
                     required=False,
                 )
         elif kind == "drop_column":
+            source_id = table.schema().find_field(op["name"]).field_id
+            if any(
+                f.source_id == source_id
+                for spec in table.specs().values()
+                for f in spec.fields
+            ):
+                # PyIceberg 0.11 then writes manifests that it cannot read back
+                # (https://github.com/apache/iceberg-python/pull/4115).
+                raise OpRejected(f"a partition spec of the table uses {op['name']}")
             with table.update_schema() as update:
                 update.delete_column(op["name"])
         elif kind == "rename_column":

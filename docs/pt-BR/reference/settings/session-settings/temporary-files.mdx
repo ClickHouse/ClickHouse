@@ -27,6 +27,9 @@ Tamanho do buffer para a escrita de arquivos temporários. Um buffer maior signi
 
 Define o codec de compressão dos arquivos temporários usados em operações de ordenação e join em disco.
 
+Sets de `IN` que fazem spill para o disco não comprimem os arquivos lidos por suas consultas, independentemente do valor desta configuração,
+porque descomprimir os blocos lidos em cada consulta custa mais do que ler os arquivos maiores.
+
 Valores possíveis:
 
 * LZ4 — a compressão [LZ4](https://en.wikipedia.org/wiki/LZ4_\(compression_algorithm\)) é aplicada.

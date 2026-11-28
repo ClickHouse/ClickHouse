@@ -22,6 +22,7 @@ void JSONRowInputFormat::readPrefix()
 {
     skipBOMIfExists(*peekable_buf);
 
+    parse_as_json_each_row = false;
     PeekableReadBufferCheckpoint checkpoint(*peekable_buf);
     NamesAndTypesList names_and_types_from_metadata;
 

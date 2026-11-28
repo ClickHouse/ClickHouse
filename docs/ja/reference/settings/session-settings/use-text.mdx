@@ -31,6 +31,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 転置テキスト索引の Dictionary を走査して LIKE/ILIKE クエリを評価できるようにします。
 
 高速化されるパターンは `%value%`、`value%`、`%value` と、`optimize_rewrite_like_perfect_affix` によって `value%` および `%value` に書き換えられる `startsWith` および `endsWith` の呼び出しです。
+検索文字列が 1 つだけの `multiSearchAny`、`multiSearchAnyUTF8`、`multiSearchAnyCaseInsensitive`、`multiSearchAnyCaseInsensitiveUTF8` の呼び出しは、`%value%` として検索されます。
 
 ## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
 

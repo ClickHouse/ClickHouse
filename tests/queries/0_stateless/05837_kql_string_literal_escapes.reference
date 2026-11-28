@@ -1,0 +1,14 @@
+-- a doubled quote in a verbatim string is one quote --
+it\'s	69742773	4
+-- the escapes for newline, return, tab, NUL and for the three quoted characters --
+0A0D0900	5C2722	3
+-- a u-escape is encoded as UTF-8: one, two and three bytes --
+Aü€	41C3BCE282AC
+-- an unknown escape keeps its backslash, so a regex survives a plain string --
+5C772B5C64	5
+-- an unterminated literal and a broken u-escape are lexer errors --
+newline_in_literal SYNTAX_ERROR
+text_ends_in_literal SYNTAX_ERROR
+text_ends_at_backslash SYNTAX_ERROR
+text_ends_in_u_escape SYNTAX_ERROR
+non_hex_in_u_escape SYNTAX_ERROR

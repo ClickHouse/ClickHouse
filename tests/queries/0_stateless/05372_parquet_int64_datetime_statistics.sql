@@ -1,4 +1,5 @@
 -- Tags: no-fasttest
+-- Random settings limits: input_format_parquet_page_filter_push_down=(1, 1); input_format_parquet_preserve_order=(0, 0); output_format_parquet_write_page_index=(1, 1)
 
 -- A Parquet INT64 column without a logical type, read as DateTime (as ClickBench stores EventTime):
 -- its row group statistics are used to filter and to skip row groups in ORDER BY ... LIMIT.

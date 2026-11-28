@@ -37,7 +37,7 @@ static Pipe getInputStreams(const std::vector<std::string> & column_names, const
     {
         BlocksList blocks;
         size_t start = stride;
-        while (blocks_count--)
+        for (size_t remaining = blocks_count; remaining > 0; --remaining)
             blocks.push_back(getBlockWithSize(column_names, block_size_in_bytes, stride, start));
         pipes.emplace_back(std::make_shared<BlocksListSource>(std::move(blocks)));
     }
@@ -54,7 +54,7 @@ static Pipe getInputStreamsEqualStride(const std::vector<std::string> & column_n
     {
         BlocksList blocks;
         size_t start = i;
-        while (blocks_count--)
+        for (size_t remaining = blocks_count; remaining > 0; --remaining)
             blocks.push_back(getBlockWithSize(column_names, block_size_in_bytes, stride, start));
         pipes.emplace_back(std::make_shared<BlocksListSource>(std::move(blocks)));
         i++;
@@ -93,7 +93,6 @@ TEST(MergingSortedTest, SimpleBlockSizeTest)
         /*limit=*/ 0,
         /*always_read_till_end=*/ false,
         /*out_row_sources_buf=*/ nullptr,
-        /*filter_column_name=*/ std::nullopt,
         /*use_average_block_sizes=*/ true);
 
     pipe.addTransform(std::move(transform));
@@ -152,7 +151,6 @@ TEST(MergingSortedTest, MoreInterestingBlockSizes)
         /*limit=*/ 0,
         /*always_read_till_end=*/ false,
         /*out_row_sources_buf=*/ nullptr,
-        /*filter_column_name=*/ std::nullopt,
         /*use_average_block_sizes=*/ true);
 
     pipe.addTransform(std::move(transform));

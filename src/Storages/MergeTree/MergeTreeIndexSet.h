@@ -28,9 +28,9 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    size_t size() const { return block.rows(); }
-    bool empty() const override { return !size(); }
-    size_t memoryUsageBytes() const override { return block.bytes() + (set_hyperrectangle.capacity() * sizeof(Range)); }
+    [[nodiscard]] size_t size() const { return block.rows(); }
+    [[nodiscard]] bool empty() const override { return !size(); }
+    [[nodiscard]] size_t memoryUsageBytes() const override { return block.bytes() + (set_hyperrectangle.capacity() * sizeof(Range)); }
 
     ~MergeTreeIndexGranuleSet() override = default;
 
@@ -47,6 +47,7 @@ struct MergeTreeIndexBulkGranulesSet final : public IMergeTreeIndexBulkGranules
 {
     explicit MergeTreeIndexBulkGranulesSet(const Block & index_sample_block_);
     void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    [[nodiscard]] size_t numValues() const override { return block.rows(); }
 
     size_t min_granule = 0;
     size_t max_granule = 0;
@@ -66,8 +67,8 @@ struct MergeTreeIndexAggregatorSet final : IMergeTreeIndexAggregator
 
     ~MergeTreeIndexAggregatorSet() override = default;
 
-    size_t size() const { return data.getTotalRowCount(); }
-    bool empty() const override { return !size(); }
+    [[nodiscard]] size_t size() const { return data.getTotalRowCount(); }
+    [[nodiscard]] bool empty() const override { return !size(); }
 
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
 
@@ -104,13 +105,13 @@ public:
         ContextPtr context,
         const IndexDescription & index_description);
 
-    bool alwaysUnknownOrTrue() const override;
+    [[nodiscard]] bool alwaysUnknownOrTrue() const override;
 
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+    [[nodiscard]] bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
 
-    FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const override;
+    [[nodiscard]] FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const override;
 
-    std::string getDescription() const override;
+    [[nodiscard]] std::string getDescription() const override;
 
     ~MergeTreeIndexConditionSet() override = default;
 
@@ -137,7 +138,7 @@ private:
     String index_name;
     size_t max_rows;
 
-    bool isUseless() const
+    [[nodiscard]] bool isUseless() const
     {
         return actions == nullptr;
     }
@@ -168,14 +169,14 @@ public:
 
     ~MergeTreeIndexSet() override = default;
 
-    bool supportsBulkFiltering() const override
+    [[nodiscard]] bool supportsBulkFiltering() const override
     {
         return true;
     }
 
-    MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    [[nodiscard]] MergeTreeIndexGranulePtr createIndexGranule() const override;
+    [[nodiscard]] MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const override;
+    [[nodiscard]] MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const override;

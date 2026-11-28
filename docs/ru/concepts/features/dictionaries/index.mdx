@@ -6,8 +6,6 @@ description: 'Словарь представляет данные в форма
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Словарь в ClickHouse — это хранящееся в памяти представление данных в формате [ключ-значение](https://en.wikipedia.org/wiki/Key%E2%80%93value_database), получаемых из различных [внутренних и внешних источников](/ru/reference/statements/create/dictionary/sources/overview#dictionary-sources) и оптимизированное для запросов поиска со сверхнизкой задержкой.
 
 Словари полезны для:
@@ -15,20 +13,28 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 * Повышения производительности запросов, особенно при использовании `JOIN`
 * Обогащения принимаемых данных на лету без замедления процесса ингестии
 
-<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="Сценарии использования словаря в ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Сценарии использования словаря в ClickHouse](/images/dictionary/dictionary-use-cases.webp)
+  </Frame>
+</div>
 
 ## Ускорение JOIN с помощью словаря {#speeding-up-joins-using-a-dictionary}
 
 Словари можно использовать для ускорения определённого типа `JOIN`: [`LEFT ANY`](/ru/reference/statements/select/join#supported-types-of-join), где ключ JOIN должен совпадать с ключевым атрибутом базового хранилища ключ-значение.
 
-<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="Использование словаря с LEFT ANY JOIN" />
+<div className="ch-image-sm">
+  <Frame>
+    ![Использование словаря с LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
+  </Frame>
+</div>
 
 В этом случае ClickHouse может использовать словарь для выполнения [Direct JOIN](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). Это самый быстрый алгоритм JOIN в ClickHouse; он применим, когда базовый [движок таблицы](/ru/reference/engines/table-engines/index) правой таблицы поддерживает низколатентные запросы ключ-значение. В ClickHouse есть три движка таблиц, которые это обеспечивают: [Join](/ru/reference/engines/table-engines/special/join) (по сути, это заранее вычисленная хеш-таблица), [EmbeddedRocksDB](/ru/reference/engines/table-engines/integrations/embedded-rocksdb) и [Dictionary](/ru/reference/engines/table-engines/special/dictionary). Мы опишем подход на основе словаря, но механизм одинаков для всех трёх движков.
 
 Алгоритм Direct JOIN требует, чтобы правая таблица была основана на словаре, так что данные из этой таблицы, которые нужно объединить, уже находились в памяти в виде низколатентной структуры данных ключ-значение.
 
 <div id="example">
-  ### Пример
+  ### Пример {#example}
 </div>
 
 Используя [набор данных Stack Overflow](/ru/get-started/sample-datasets/stackoverflow), ответим на вопрос:
@@ -85,9 +91,7 @@ Peak memory usage: 3.18 GiB.
 
 Хотя этот запрос выполняется быстро, для хорошей производительности `JOIN` здесь нужно написать очень аккуратно. В идеале мы бы просто отфильтровали посты, содержащие &quot;SQL&quot;, а затем посмотрели на количество `UpVote` и `DownVote` для этого подмножества постов, чтобы вычислить нашу Метрику.
 
-<div id="applying-a-dictionary">
-  #### Применение словаря
-</div>
+#### Применение словаря {#applying-a-dictionary}
 
 Чтобы продемонстрировать эти концепции, мы используем словарь для данных о голосовании. Поскольку словари обычно хранятся в памяти ([ssd&#95;cache](/ru/reference/statements/create/dictionary/layouts/ssd-cache) — исключение), следует учитывать объём данных. Проверим размер нашей таблицы `votes`:
 
@@ -111,7 +115,7 @@ GROUP BY table
 
 > В примере ниже данные для нашего словаря берутся из таблицы ClickHouse. Хотя это самый распространённый источник для словарей, поддерживается [целый ряд источников](/ru/reference/statements/create/dictionary/sources/overview#dictionary-sources), включая файлы, http и базы данных, в том числе [Postgres](/ru/reference/statements/create/dictionary/sources/postgresql). Как мы покажем, словари можно автоматически обновлять, что делает их идеальным решением для небольших наборов данных, которые часто меняются и должны быть доступны для прямых JOIN.
 
-Нашему словарю нужен первичный ключ, по которому будут выполняться lookup-операции. По сути, он полностью аналогичен первичному ключу в транзакционной базе данных и должен быть уникальным. В приведённом выше запросе lookup выполняется по ключу JOIN — `PostId`. Соответственно, словарь должен быть заполнен суммарным числом положительных и отрицательных голосов для каждого `PostId` из нашей таблицы `votes`. Вот запрос для получения данных для этого словаря:
+Нашему словарю нужен первичный ключ, по которому будут выполняться операции поиска. По сути, он полностью аналогичен первичному ключу в транзакционной базе данных и должен быть уникальным. В приведённом выше запросе поиск выполняется по ключу JOIN — `PostId`. Соответственно, словарь должен быть заполнен суммарным числом положительных и отрицательных голосов для каждого `PostId` из нашей таблицы `votes`. Вот запрос для получения данных для этого словаря:
 
 ```sql
 SELECT PostId,
@@ -120,6 +124,10 @@ SELECT PostId,
 FROM votes
 GROUP BY PostId
 ```
+
+<Note title="ClickHouse Cloud">
+  При создании словаря, который читает данные из таблицы ClickHouse, укажите в секции `SOURCE` имя пользователя и пароль отдельного пользователя. У этого пользователя должно быть разрешение `SELECT` на исходную таблицу. См. [пример использования ClickHouse в качестве источника для словаря](/ru/reference/statements/create/dictionary/sources/clickhouse).
+</Note>
 
 Для создания нашего словаря нужен следующий DDL — обратите внимание, что в нём используется приведённый выше запрос:
 
@@ -195,7 +203,7 @@ Peak memory usage: 552.26 MiB.
 Этот запрос не только намного проще, но и более чем в два раза быстрее! Это можно дополнительно оптимизировать, загружая в словарь только посты, набравшие более 10 голосов за и против, и сохраняя только заранее вычисленное значение controversial.
 
 <div id="query-time-enrichment">
-  ## Обогащение данных во время выполнения запроса
+  ## Обогащение данных во время выполнения запроса {#query-time-enrichment}
 </div>
 
 Словари можно использовать для поиска значений во время выполнения запроса. Эти значения можно возвращать в результатах или использовать в агрегированиях. Предположим, мы создаём словарь для сопоставления идентификаторов пользователей с их местоположением:
@@ -342,13 +350,13 @@ Peak memory usage: 666.82 MiB.
 ```
 
 <div id="advanced-dictionary-topics">
-  ## Дополнительные темы по словарям
+  ## Дополнительные темы по словарям {#advanced-dictionary-topics}
 </div>
 
 Рекомендации по выбору структур словарей, использованию словарей вместо JOIN и мониторингу использования словарей см. в разделе [Лучшие практики работы со словарями](/ru/concepts/features/dictionaries/best-practices).
 
 <div id="refreshing-dictionaries">
-  ### Обновление словарей
+  ### Обновление словарей {#refreshing-dictionaries}
 </div>
 
 Мы указали для словаря `LIFETIME` со значениями `MIN 600 MAX 900`. `LIFETIME` — это интервал обновления словаря; указанные здесь значения приводят к периодической перезагрузке через случайный промежуток от 600 до 900 с. Такой случайный интервал нужен, чтобы распределить нагрузку на источник словаря при обновлении на большом количестве серверов. Во время обновления запросы по-прежнему могут выполняться к старой версии словаря; только начальная загрузка блокирует запросы. Обратите внимание, что установка `(LIFETIME(0))` отключает обновление словарей.
@@ -357,7 +365,7 @@ Peak memory usage: 666.82 MiB.
 Для источников баз данных, таких как ClickHouse и Postgres, можно настроить запрос, который будет обновлять словари, только если они действительно изменились (это определяется ответом на запрос), а не по периодическому интервалу. Подробнее см. [здесь](/ru/reference/statements/create/dictionary/lifetime).
 
 <div id="other-dictionary-types">
-  ### Другие типы словарей
+  ### Другие типы словарей {#other-dictionary-types}
 </div>
 
 ClickHouse также поддерживает словари [Hierarchical](/ru/reference/statements/create/dictionary/layouts/hierarchical), [Polygon](/ru/reference/statements/create/dictionary/layouts/polygon) и [Regular Expression](/ru/reference/statements/create/dictionary/layouts/regexp-tree).

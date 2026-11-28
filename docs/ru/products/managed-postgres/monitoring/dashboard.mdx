@@ -7,19 +7,18 @@ keywords: ['managed postgres', 'мониторинг', 'панель монит�
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-dashboard-beta" />
-
 Вкладка **Monitoring** на левой боковой панели экземпляра показывает
 графики использования ресурсов и активности базы данных в реальном
 времени за выбранный временной интервал.
 
-<Image img="/images/managed-postgres/monitoring/dashboard.webp" alt="Панель мониторинга с IOPS, использованием CPU, памятью, диском, сетевым трафиком, размером базы данных, соединениями, пропускной способностью, транзакциями, коэффициентом попаданий в кэш и взаимными блокировками" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Панель мониторинга, на которой отображаются IOPS, использование CPU, память, диск, сетевой трафик, размер базы данных, соединения, пропускная способность, транзакции, коэффициент попаданий в кэш и взаимные блокировки](/images/managed-postgres/monitoring/dashboard.webp)
+  </Frame>
+</div>
 
 <div id="panels">
-  ## Панели
+  ## Панели {#panels}
 </div>
 
 На панели мониторинга метрики сгруппированы по следующим панелям:
@@ -43,15 +42,13 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 * **Взаимные блокировки** — взаимные блокировки, обнаруженные сервером
 
 <div id="time-period">
-  ## Временной интервал
+  ## Временной интервал {#time-period}
 </div>
 
 Используйте селектор **Временной интервал**, чтобы выбрать последний час, день,
 неделю или произвольный диапазон.
 
-<div id="related">
-  ## Связанные страницы
-</div>
+## Связанные страницы {#related}
 
 * [Конечная точка Prometheus](/ru/products/managed-postgres/monitoring/prometheus) — собирайте те же метрики в собственный стек обсервабилити
 * [Справочник по метрикам](/ru/products/managed-postgres/monitoring/metrics) — полный список метрик с типами и метками

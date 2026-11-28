@@ -251,7 +251,7 @@ clickhouse-client --host your-clickhouse-host --secure --login \
   --oauth-scope "openid profile offline_access api://<app-client-id>/.default"
 ```
 
-生成的访问标记将以 JWT 的形式提交给 ClickHouse。角色和授权的映射仍取决于服务器端 JWT 身份验证器的配置 (例如 `clickhouse:roles` 声明) 。
+生成的访问标记将以 JWT 的形式提交给 ClickHouse。角色和授权的映射仍取决于服务器端 JWT 身份验证器的配置 (例如 `clickhouse:roles` 声明) 。如需了解在 ClickHouse Cloud 上使用此流程所需的 Entra ID 应用程序设置，请参阅[使用 Microsoft Entra ID 进行 JWT 身份验证](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id)。
 
 <div id="clickhouse-cloud-built-in">
   ## ClickHouse Cloud 内置 JWT 身份验证器
@@ -277,7 +277,7 @@ clickhouse-client --host your-clickhouse-host --secure --login \
 
 <EnterprisePlanFeatureBadge feature="通过自定义身份提供商进行 JWT 身份验证" />
 
-除内置身份验证器外，您还可以将 ClickHouse Cloud 服务配置为接受由自己的身份提供商 (例如 Microsoft Entra 或 Okta) 签发的 JWT。此功能适用于运行 ClickHouse 26.4 或更高版本的 Enterprise 计划服务。您可以在 Cloud 控制台的 **设置 → 安全 → JWT 身份验证** 中自行配置；有关分步说明，请参阅 [JWT 身份验证设置](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)。每个提供商由以下内容定义：
+除内置身份验证器外，您还可以将 ClickHouse Cloud 服务配置为接受由自己的身份提供商 (例如 Microsoft Entra 或 Okta) 签发的 JWT。此功能适用于运行 ClickHouse 26.4 或更高版本的 Enterprise 计划服务。您可以在 Cloud 控制台的 **设置 → 安全 → JWT 身份验证** 中自行配置；有关分步说明，请参阅 [JWT 身份验证设置](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)；有关端到端的 Entra ID 设置，请参阅 [使用 Microsoft Entra ID 进行 JWT 身份验证](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id)。每个提供商由以下内容定义：
 
 | 参数        | 说明                                                                                                                                                                                                                                                     |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

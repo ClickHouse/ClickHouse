@@ -1,7 +1,6 @@
 #include "config.h"
 
 #include <Backups/BackupFactory.h>
-#include <Core/Settings.h>
 #include <Common/Exception.h>
 #include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
 
@@ -10,6 +9,7 @@
 #include <Backups/BackupIO_AzureBlobStorage.h>
 #include <Backups/BackupImpl.h>
 #include <Backups/BackupInfo.h>
+#include <Backups/BackupLocatorArchive.h>
 #include <Backups/BackupSourceAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <IO/Archives/ArchiveUtils.h>
@@ -34,11 +34,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace Setting
-{
-extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
-}
-
 #if USE_AZURE_BLOB_STORAGE
 namespace
 {
@@ -48,18 +43,6 @@ namespace
         String blob_path;
         String archive_name;
     };
-
-    String removeFileNameFromURL(String & url)
-    {
-        Poco::URI url2{url};
-        String path = url2.getPath();
-        size_t slash_pos = path.find_last_of('/');
-        String file_name = path.substr(slash_pos + 1);
-        path.resize(slash_pos + 1);
-        url2.setPath(path);
-        url = url2.toString();
-        return file_name;
-    }
 
     String stripOneTrailingSlash(String str)
     {
@@ -194,7 +177,7 @@ namespace
         /// Resolving it is still required: that is where `NAMED_COLLECTION` is enforced.
         if (!backup_info.id_arg.empty())
         {
-            backup_info.getNamedCollection(context);
+            (void)backup_info.getNamedCollection(context);
             return target;
         }
 
@@ -253,29 +236,13 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
         auto & connection_params = location.connection_params;
         String & blob_path = location.blob_path;
 
-        BackupImpl::ArchiveParams archive_params;
-        if (!location.archive_name.empty())
-        {
-            if (hasSupportedZipExtension(location.archive_name))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Zip archive format is not supported for AzureBlobStorage backups because zip requires seeking "
-                    "which object storage does not support efficiently. "
-                    "Use tar.gz or other tar-based formats instead");
+        if (hasSupportedZipExtension(location.archive_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Zip archive format is not supported for AzureBlobStorage backups because zip requires seeking "
+                "which object storage does not support efficiently. "
+                "Use tar.gz or other tar-based formats instead");
 
-            if (params.is_internal_backup)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
-
-            archive_params.archive_name = location.archive_name;
-            archive_params.compression_method = params.compression_method;
-            archive_params.compression_level = params.compression_level;
-            archive_params.password = params.password;
-            archive_params.adaptive_buffer_max_size = params.context->getSettingsRef()[Setting::archive_adaptive_buffer_max_size_bytes];
-        }
-        else
-        {
-            if (!params.password.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password is not applicable, backup cannot be encrypted");
-        }
+        auto archive_params = makeBackupArchiveParams(params, location.archive_name);
 
         if (params.open_mode == IBackup::OpenMode::UNLOCK)
         {

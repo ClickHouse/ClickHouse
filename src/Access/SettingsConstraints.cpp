@@ -57,7 +57,7 @@ struct SettingSourceRestrictions
     std::bitset<SettingSource::COUNT> allowed_sources;
 };
 
-const std::unordered_map<std::string_view, SettingSourceRestrictions> SETTINGS_SOURCE_RESTRICTIONS = {
+[[clang::no_destroy]] const std::unordered_map<std::string_view, SettingSourceRestrictions> SETTINGS_SOURCE_RESTRICTIONS = {
     {"max_sessions_for_user", {SettingSource::PROFILE}},
 };
 
@@ -100,6 +100,9 @@ bool isAlwaysChangeableInReadonly(std::string_view name)
         return true;
     /// Output format selection and response compression.
     if (name == "format" || name == "input_format" || name == "output_format" || name == "compression")
+        return true;
+    /// Response buffering; also set by the `buffer_size` / `wait_end_of_query` URL parameters.
+    if (name == "http_response_buffer_size" || name == "http_wait_end_of_query")
         return true;
     /// Query-construction settings introduced for the HTTP "table as file" feature.
     if (name == "select" || name == "order" || name == "sort" || name == "filter")
@@ -499,7 +502,22 @@ void SettingsConstraints::clampResetToDefault(
             checkOrClamp(current_settings, reset_as_change, CLAMP_ON_VIOLATION, source);
 
             if (reset_as_change.empty())
+            {
+                /// The reset was either refused or does not change the value. The latter is not a no-op for an
+                /// explicitly assigned `Settings` setting: the reset clears the assignment, and under an active
+                /// `compatibility` the setting then takes the value of that version. So decide it by the
+                /// constraints alone, which refuse it again if it was refused above.
+                if (Settings::hasBuiltin(name) && current_settings.isChanged(name))
+                {
+                    std::string_view setting_name = Settings::resolveName(name);
+                    SettingChange change{name, default_value};
+                    if (access_control->isSettingNameAllowed(setting_name)
+                        && getChecker(current_settings, setting_name).check(change, settingCastValueUtil(name, default_value), CLAMP_ON_VIOLATION, source)
+                        && change.value == default_value)
+                        allowed_resets.push_back(name);
+                }
                 continue;
+            }
 
             if (reset_as_change.front().value == default_value)
                 allowed_resets.push_back(name);

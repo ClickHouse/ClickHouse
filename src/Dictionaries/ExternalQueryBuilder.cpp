@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
 

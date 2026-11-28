@@ -28,6 +28,9 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -35,14 +38,14 @@ namespace DB::QueryPlanOptimizations
 namespace
 {
 
-using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
-using NullRejectedCache = std::unordered_map<const ActionsDAG::Node *, NodeSet>;
+using NodeSet = UnorderedSetWithMemoryTracking<const ActionsDAG::Node *>;
+using NullRejectedCache = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, NodeSet>;
 
 NodeSet collectNullPropagatingInputs(const ActionsDAG::Node * root)
 {
     NodeSet result;
     NodeSet visited;
-    std::vector<const ActionsDAG::Node *> stack{root};
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack{root};
 
     while (!stack.empty())
     {
@@ -433,7 +436,7 @@ void visit(QueryPlan::Node & root)
         NameSet representation_read_columns;
     };
 
-    std::vector<Frame> stack;
+    VectorWithMemoryTracking<Frame> stack;
     stack.push_back({&root, {}, {}});
 
     while (!stack.empty())
@@ -456,7 +459,7 @@ void visit(QueryPlan::Node & root)
         }
 
         /// Keep only the names this header carries exactly once.
-        std::unordered_map<String, size_t> occurrences;
+        UnorderedMapWithMemoryTracking<String, size_t> occurrences;
         for (const auto & column : *node.step->getOutputHeader())
             ++occurrences[column.name];
         std::erase_if(null_rejected_columns, [&](const auto & name) { return occurrences[name] != 1; });

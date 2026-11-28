@@ -58,6 +58,10 @@ static MutationCommand createCommandWithUpdatedColumns(
     res.max_parser_depth = command.max_parser_depth;
     res.max_parser_backtracks = command.max_parser_backtracks;
     res.ast_text = command.ast_text;
+    /// The rewritten command keeps the partition scope resolved on the original one, so that
+    /// `MutationsInterpreter` reads the resolved ids instead of the partition expression.
+    res.has_partition = command.has_partition;
+    res.partition_ids = command.partition_ids;
 
     auto handle = res.mutateAst();
     auto new_assignments = make_intrusive<ASTExpressionList>();
@@ -121,6 +125,8 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
     /// patch-visibility window of the stage is unbounded above: a patch part created *after* this
     /// `DELETE` would be applied before its predicate is evaluated.
     mutation_command->mutation_version = command.mutation_version;
+    /// Same for the partition scope resolved on the original command.
+    mutation_command->partition_ids = command.partition_ids;
 
     return *mutation_command;
 }
@@ -233,6 +239,12 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
     }
     else if (command.type == DROP_COLUMN)
     {
+        /// `CLEAR COLUMN` of `_block_number` / `_block_offset` (see `isClearOfBlockColumns`) is applied by the
+        /// mutation alone: the reader matches pending patch parts by the stored values, so they must stay
+        /// readable until the mutation applies the patches and removes the stored values.
+        if (command.clear && (command.column_name == BlockNumberColumn::name || command.column_name == BlockOffsetColumn::name))
+            return;
+
         columns_touched_by_metadata_mutations.insert(command.column_name);
 
         /// Handle a drop after a rename: if column A was renamed to B and B is now dropped,

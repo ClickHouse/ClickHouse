@@ -1,0 +1,30 @@
+0	0	s0
+1	1	s1
+2	2	s2
+0	0	0	\N
+1	1	\N	1
+2	2	2	\N
+0	0	(0,'0')
+1	1	(1,'1')
+2	2	(2,'2')
+0	0
+1	10
+2	20
+0	0
+1	10
+2	20
+0	[10]	['11']	[20]
+1	[110]	['111']	[120]
+2	[210]	['211']	[220]
+300000
+300000
+300000
+05829_read_dynamic_type	1
+05829_read_heavy_array	1
+05829_read_heavy_tuple	1
+05829_read_heavy_unnamed	1
+05829_read_json_path	1
+05829_read_tuple_and_element	1
+05829_read_tuple_in_array	1
+05829_read_unnamed_element	1
+05829_read_unnamed_element_hint	1

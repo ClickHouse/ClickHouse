@@ -1,11 +1,13 @@
 #pragma once
 
 #include <bit>
+#include <Common/VectorWithMemoryTracking.h>
 #include <concepts>
 #include <optional>
 #include <vector>
 #include <Common/logger_useful.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 
 namespace DB
@@ -20,7 +22,7 @@ class NonEmptySubmasks
 public:
     using Bitvector = UInt;
     constexpr explicit NonEmptySubmasks(const Bitvector start_) noexcept : start(start_) {}
-    constexpr UInt getFullSet() const noexcept { return start; }
+    [[nodiscard]] constexpr UInt getFullSet() const noexcept { return start; }
     class Iterator
     {
     public:
@@ -32,6 +34,7 @@ public:
 
         constexpr UInt operator*() const noexcept { return current; }
 
+        NO_SANITIZE_UNSIGNED_OVERFLOW
         constexpr Iterator& operator++() noexcept
         {
             current = (start & (current - start));
@@ -45,6 +48,7 @@ public:
             return temp;
         }
 
+        NO_SANITIZE_UNSIGNED_OVERFLOW
         constexpr bool operator==(const Iterator& other) const noexcept
         {
             return current == other.current;
@@ -53,8 +57,9 @@ public:
         UInt start;
         UInt current;
     };
+    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW
     constexpr Iterator begin() const noexcept { return Iterator(start, start & (-start)); }
-    constexpr Iterator end() const noexcept   { return Iterator(start, start); }
+    [[nodiscard]] constexpr Iterator end() const noexcept   { return Iterator(start, start); }
 private:
     Bitvector start;
 };
@@ -68,7 +73,7 @@ class EnumCcpSub
     using UInt = TDPTable::Key;
 public:
     EnumCcpSub(UInt64 nr_relations_, LoggerPtr log_);
-    UInt64 n() const { return nr_relations; }
+    [[nodiscard]] UInt64 n() const { return nr_relations; }
     void initDPTable(Dptable & dp_table, const Graph & query_graph);
     bool isConnected(const Dptable & dp_table, UInt S1, UInt S2) const;
     void setTableNeighbor(Dptable & dp_table, UInt S1, UInt S2) const;
@@ -101,7 +106,7 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::initDPTable(TDPTable & dp_tab
 
         LOG_TEST(log, "Edge contains relations: {} edge info: {}", toString(edge_sources), edge.dump());
 
-        std::vector<UInt> relations;
+        VectorWithMemoryTracking<UInt> relations;
         relations.reserve(edge_sources.count());
 
         // Fill relations with bit positions set in edge_sources

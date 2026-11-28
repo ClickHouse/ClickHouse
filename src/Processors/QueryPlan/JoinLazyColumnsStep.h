@@ -22,12 +22,12 @@ public:
         String index_column_name_ = "__global_row_index");
     ~JoinLazyColumnsStep() override;
 
-    String getName() const override { return "JoinLazyColumnsStep"; }
+    [[nodiscard]] String getName() const override { return "JoinLazyColumnsStep"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
     void describePipeline(FormatSettings & settings) const override;
 
-    bool supportsDataflowStatisticsCollection() const override { return true; }
+    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override { return true; }
 
     void setPassThrough(bool value);
 

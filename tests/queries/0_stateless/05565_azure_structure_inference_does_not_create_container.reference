@@ -1,0 +1,28 @@
+--- INSERT INTO FUNCTION (no WRITE ON AZURE)
+container: absent
+ACCESS_DENIED
+container: absent
+--- DESCRIBE
+container: absent
+CANNOT_EXTRACT_TABLE_STRUCTURE
+container: absent
+--- DESCRIBE, format with a fixed schema
+container: absent
+line	String
+container: absent
+--- CREATE TABLE AS
+container: absent
+CANNOT_EXTRACT_TABLE_STRUCTURE
+container: absent
+--- INSERT INTO FUNCTION viewIfPermitted
+container: absent
+CANNOT_EXTRACT_TABLE_STRUCTURE
+container: absent
+--- INSERT INTO FUNCTION nested viewIfPermitted
+container: absent
+CANNOT_EXTRACT_TABLE_STRUCTURE
+container: absent
+--- INSERT INTO FUNCTION by a user with WRITE ON AZURE still creates the container
+container: absent
+m
+container: exists

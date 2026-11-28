@@ -7,6 +7,7 @@
 #if USE_AWS_S3
 
 #include <IO/S3/PocoHTTPClient.h>
+#include <IO/S3/AwsFormat.h>
 #include <IO/S3/Requests.h>
 
 #include <algorithm>
@@ -18,6 +19,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/re2.h>
+#include <Common/Silk/FiberScheduler.h>
 #include <base/sleep.h>
 #include <IO/Expect404ResponseScope.h>
 #include <IO/GCPOAuth.h>
@@ -137,14 +139,14 @@ String encodeRequestPath(const String & path)
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     std::function<ProxyConfiguration()> per_request_configuration_,
-    const String & force_region_,
+    std::string_view force_region_,
     const RemoteHostFilter & remote_host_filter_,
     unsigned int s3_max_redirects_,
     RetryStrategy retry_strategy_,
     bool s3_slow_all_threads_after_network_error_,
     bool s3_slow_all_threads_after_retryable_error_,
     bool enable_s3_requests_logging_,
-    bool for_disk_s3_,
+    HTTPConnectionGroupType group_,
     std::optional<std::string> opt_disk_name_,
     bool s3_use_adaptive_timeouts_,
     const HTTPRequestThrottler & request_throttler_,
@@ -157,7 +159,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , s3_slow_all_threads_after_network_error(s3_slow_all_threads_after_network_error_)
     , s3_slow_all_threads_after_retryable_error(s3_slow_all_threads_after_retryable_error_)
     , enable_s3_requests_logging(enable_s3_requests_logging_)
-    , for_disk_s3(for_disk_s3_)
+    , group(group_)
     , opt_disk_name(opt_disk_name_)
     , request_throttler(request_throttler_)
     , s3_use_adaptive_timeouts(s3_use_adaptive_timeouts_)
@@ -165,13 +167,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
 {
     /// This is used to identify configurations created by us.
     userAgent = std::string(VERSION_FULL) + VERSION_OFFICIAL;
-    if (retry_strategy.initial_delay_ms > retry_strategy.max_delay_ms)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initial retry delay must not exceed the maximum retry delay");
-    if (retry_strategy.jitter_factor < 0 || retry_strategy.jitter_factor > 1)
-    {
-        LOG_INFO(getLogger("PocoHTTPClientConfiguration"), "Jitter factor for the retry strategy must be within the [0, 1], clamping");
-        retry_strategy.jitter_factor = std::clamp(retry_strategy.jitter_factor, 0.0, 1.0);
-    }
+    validateRetryStrategy();
 
     /// NOTE: In some places AWS SDK expects it to be non-null.
     telemetryProvider = smithy::components::tracing::NoopTelemetryProvider::CreateProvider();
@@ -182,7 +178,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     checksumConfig.responseChecksumValidation = Aws::Client::ResponseChecksumValidation::WHEN_REQUIRED;
 
     // Make sure throttlers update DiskS3* profile events if necessary
-    if (for_disk_s3)
+    if (group == HTTPConnectionGroupType::DISK)
     {
         request_throttler.disk_get_amount = ProfileEvents::DiskS3GetRequestThrottlerCount;
         request_throttler.disk_get_blocked = ProfileEvents::DiskS3GetRequestThrottlerBlocked;
@@ -193,13 +189,24 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     }
 }
 
+void PocoHTTPClientConfiguration::validateRetryStrategy()
+{
+    if (retry_strategy.initial_delay_ms > retry_strategy.max_delay_ms)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initial retry delay must not exceed the maximum retry delay");
+    if (retry_strategy.jitter_factor < 0 || retry_strategy.jitter_factor > 1)
+    {
+        LOG_INFO(getLogger("PocoHTTPClientConfiguration"), "Jitter factor for the retry strategy must be within the [0, 1], clamping");
+        retry_strategy.jitter_factor = std::clamp(retry_strategy.jitter_factor, 0.0, 1.0);
+    }
+}
+
 void PocoHTTPClientConfiguration::updateSchemeAndRegion()
 {
     if (!endpointOverride.empty())
     {
         static const RE2 region_pattern(R"(^s3[.\-]([a-z0-9\-]+)\.amazonaws\.)");
         static const RE2 s3express_region_pattern(R"(^s3express(?:-[a-z0-9\-]+)?(?:\.dualstack)?\.([a-z0-9\-]+)\.amazonaws\.)");
-        Poco::URI uri(endpointOverride);
+        Poco::URI uri(endpointOverride.c_str());
         if (uri.getScheme() == "http")
             scheme = Aws::Http::Scheme::HTTP;
 
@@ -226,6 +233,15 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
     }
 }
 
+/// Chosen per request, so that one client and its shared credentials providers serve both fibers and threads.
+/// Amber always uses fiber-aware transport. A fiber uses it inside `Silk::ThreadModeScope` too, as Amber already does.
+static HTTPConnectionTransport getTransport(HTTPConnectionGroupType group)
+{
+    if (group == HTTPConnectionGroupType::AMBER || Silk::isInsideFiber())
+        return HTTPConnectionTransport::FiberAware;
+    return HTTPConnectionTransport::FiberUnaware;
+}
+
 static ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguration & client_configuration)
 {
     return ConnectionTimeouts()
@@ -249,7 +265,7 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , http_max_field_name_size(client_configuration.http_max_field_name_size)
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
-    , for_disk_s3(client_configuration.for_disk_s3)
+    , group(client_configuration.group)
     , publish_connection_info(client_configuration.publish_connection_info)
     , request_throttler(client_configuration.request_throttler)
     , extra_headers(client_configuration.extra_headers)
@@ -265,6 +281,38 @@ PocoHTTPClient::PocoHTTPClient(const Aws::Client::ClientConfiguration & client_c
            client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0))),
     remote_host_filter(Context::getGlobalContextInstance()->getRemoteHostFilter())
 {
+}
+
+void PocoHTTPClient::RetryRequestSleep(std::chrono::milliseconds sleep_time)
+{
+#if USE_SILK
+    if (Silk::isInsideFiber())
+    {
+        silk::FiberEvent::Future disabled;
+        request_processing_disabled.wait(&disabled);
+        std::ignore = silk::FiberFuture::waitWithTimeout(&disabled, std::chrono::nanoseconds(sleep_time).count());
+        disabled.cancel();
+        disabled.wait();
+        return;
+    }
+#endif
+    Aws::Http::HttpClient::RetryRequestSleep(sleep_time);
+}
+
+void PocoHTTPClient::DisableRequestProcessing()
+{
+    Aws::Http::HttpClient::DisableRequestProcessing();
+#if USE_SILK
+    request_processing_disabled.set();
+#endif
+}
+
+void PocoHTTPClient::EnableRequestProcessing()
+{
+#if USE_SILK
+    request_processing_disabled.reset();
+#endif
+    Aws::Http::HttpClient::EnableRequestProcessing();
 }
 
 std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
@@ -299,13 +347,18 @@ std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
 
 namespace
 {
+    bool isServerSideCopyRequest(const Aws::Http::HttpRequest & request)
+    {
+        return request.HasHeader("x-amz-copy-source") || request.HasHeader("x-goog-copy-source");
+    }
+
     /// No comments:
     /// 1) https://aws.amazon.com/premiumsupport/knowledge-center/s3-resolve-200-internalerror/
     /// 2) https://github.com/aws/aws-sdk-cpp/issues/658
     bool checkRequestCanReturn2xxAndErrorInBody(Aws::Http::HttpRequest & request)
     {
         auto query_params = request.GetQueryStringParameters();
-        if (request.HasHeader("x-amz-copy-source") || request.HasHeader("x-goog-copy-source"))
+        if (isServerSideCopyRequest(request))
         {
             /// CopyObject https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html
             if (query_params.empty())
@@ -369,7 +422,7 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
     S3MetricKind kind = getMetricKind(request);
 
     ProfileEvents::increment(events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
-    if (for_disk_s3)
+    if (group == HTTPConnectionGroupType::DISK)
         ProfileEvents::increment(disk_s3_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
 }
 
@@ -383,7 +436,7 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
         static HistogramMetrics::Metric & s3_connect_metric = HistogramMetrics::S3Connect.withLabels({});
         s3_connect_metric.observe(latency);
 
-        if (for_disk_s3)
+        if (group == HTTPConnectionGroupType::DISK)
         {
             static HistogramMetrics::Metric & disk_s3_connect_metric = HistogramMetrics::DiskS3Connect.withLabels({});
             disk_s3_connect_metric.observe(latency);
@@ -423,19 +476,23 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
     HistogramMetrics::observe(
         HistogramMetrics::S3FirstByte, first_byte_label_values, latency);
 
-    if (for_disk_s3)
+    if (group == HTTPConnectionGroupType::DISK)
     {
         HistogramMetrics::observe(
             HistogramMetrics::DiskS3FirstByte, first_byte_label_values, latency);
     }
 }
 
-ConnectionTimeouts PocoHTTPClient::getTimeouts(const String & method, bool first_attempt, bool first_byte) const
+ConnectionTimeouts PocoHTTPClient::getTimeouts(const String & method, bool first_attempt, bool first_byte, bool server_side_copy) const
 {
     if (!s3_use_adaptive_timeouts)
         return timeouts;
 
-    return timeouts.getAdaptiveTimeouts(method, first_attempt, first_byte);
+    auto result = timeouts.getAdaptiveTimeouts(method, first_attempt, first_byte);
+    /// S3 answers a server-side copy only after copying the data, so the wait for its response grows with the copied size.
+    if (server_side_copy && !first_byte)
+        result.withReceiveTimeout(timeouts.receive_timeout);
+    return result;
 }
 
 void PocoHTTPClient::makeRequestInternal(
@@ -500,6 +557,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
     auto sdk_attempt = getSDKAttemptNumber(request);
     auto ch_attempt = getClickHouseAttemptNumber(request);
     bool first_attempt = ch_attempt == 1 && sdk_attempt == 1;
+    const bool server_side_copy = isServerSideCopyRequest(request);
 
     if (!first_attempt)
         LOG_DEBUG(
@@ -559,7 +617,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
         response->SetClientErrorType(code);
         auto with_stacktrace = code != Aws::Client::CoreErrors::NETWORK_CONNECTION;
-        response->SetClientErrorMessage(getCurrentExceptionMessage(with_stacktrace));
+        response->SetClientErrorMessage(Aws::String(getCurrentExceptionMessage(with_stacktrace)));
     };
 
     try
@@ -575,12 +633,10 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
         for (size_t attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
-            Poco::URI target_uri(uri);
+            Poco::URI target_uri(uri.c_str());
 
             if (enable_s3_requests_logging && !proxy_configuration.isEmpty())
                 LOG_TEST(log, "Due to reverse proxy host name ({}) won't be resolved on ClickHouse side", uri);
-
-            auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
 
             /// Reset times, as this may be a next session after a redirect
             connect_time = first_byte_time = 0;
@@ -593,12 +649,13 @@ void PocoHTTPClient::makeRequestInternalImpl(
             auto session = makeHTTPSession(
                 group,
                 target_uri,
-                getTimeouts(method, first_attempt, /*first_byte*/ true),
+                getTimeouts(method, first_attempt, /*first_byte*/ true, server_side_copy),
                 proxy_configuration,
-                &connect_time);
+                &connect_time,
+                getTransport(group));
 
             /// In case of error this address will be written to logs
-            request.SetResolvedRemoteHost(session->getResolvedAddress());
+            request.SetResolvedRemoteHost(Aws::String(session->getResolvedAddress()));
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
@@ -613,7 +670,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
               */
 
             std::string path_and_query = encodeRequestPath(target_uri.getPath());
-            const std::string & query = target_uri.getRawQuery();
+            std::string_view query = target_uri.getRawQuery();
 
             if (!query.empty())
             {
@@ -631,28 +688,39 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
             /// Headers coming from SDK are lower-cased.
             for (const auto & [header_name, header_value] : request.GetHeaders())
-                poco_request.set(boost::algorithm::to_lower_copy(header_name), header_value);
-            for (const auto & [header_name, header_value] : extra_headers)
+            {
+                std::string lower_name(header_name);
+                boost::algorithm::to_lower(lower_name);
+                poco_request.set(lower_name, std::string(header_value));
+            }
+            for (const auto & header : extra_headers)
             {
                 // AWS S3 canonical headers must include `Host`, `Content-Type` and any `x-amz-*`.
                 // These headers will be signed. Custom S3 headers specified in ClickHouse storage conf are added in `extra_headers`.
                 // At this point in the stack trace, request has already been signed and any `x-amz-*` extra headers was already added
                 // to the canonical headers list. Therefore, we should not add them again to the request.
                 // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
-                if (!header_name.starts_with("x-amz-"))
+                if (!header.name.starts_with("x-amz-"))
                 {
-                    poco_request.set(boost::algorithm::to_lower_copy(header_name), header_value);
+                    poco_request.set(boost::algorithm::to_lower_copy(header.name), String(header.value));
                 }
             }
 
+            const Poco::Net::HTTPHeaderLimits response_header_limits{
+                .fields = static_cast<int>(http_max_fields),
+                .name_length = static_cast<int>(http_max_field_name_size),
+                .value_length = static_cast<int>(http_max_field_value_size)};
+
+            /// The limits of the response are used only by `receiveEarlyHTTPResponse`.
             Poco::Net::HTTPResponse poco_response;
-            poco_response.setFieldLimit(static_cast<int>(http_max_fields));
-            poco_response.setNameLengthLimit(static_cast<int>(http_max_field_name_size));
-            poco_response.setValueLengthLimit(static_cast<int>(http_max_field_value_size));
+            poco_response.setFieldLimit(response_header_limits.fields);
+            poco_response.setNameLengthLimit(response_header_limits.name_length);
+            poco_response.setValueLengthLimit(response_header_limits.value_length);
 
             Stopwatch watch;
 
-            auto request_body = sendHTTPRequest(*session, poco_request, DBMS_DEFAULT_BUFFER_SIZE, &connect_time, &first_byte_time);
+            auto request_body = sendHTTPRequest(
+                *session, poco_request, DBMS_DEFAULT_BUFFER_SIZE, &connect_time, &first_byte_time, response_header_limits);
             /// We record connect time here and not earlier, so that if an exception occurs while sending a request,
             /// we won't record the same latency twice.
             observeLatency(request, S3LatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
@@ -673,7 +741,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 request.GetContentBody()->clear();
                 request.GetContentBody()->seekg(0);
 
-                setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
+                setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false, server_side_copy));
                 try
                 {
                     auto size = copyFromIStreamToWriteBuffer(*request.GetContentBody(), *request_body);
@@ -699,7 +767,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             {
                 request_body->finalize();
 
-                setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
+                setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false, server_side_copy));
 
                 /// Test-only slow-S3 simulation: delay each request after sending and before receiving its response.
                 fiu_do_on(FailPoints::s3_slow_response, { sleepForMilliseconds(simulated_network_latency_ms); });
@@ -753,15 +821,15 @@ void PocoHTTPClient::makeRequestInternalImpl(
             }
 
             response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(status_code));
-            response->SetContentType(poco_response.getContentType());
+            response->SetContentType(Aws::String(poco_response.getContentType()));
 
             /// GCS answers in its own spelling and the SDK parses only the `x-amz-` one, so add
             /// that alongside for the headers the request side renames. The original is kept too.
             const auto add_response_header = [&](const std::string & name, const std::string & value)
             {
-                response->AddHeader(name, value);
+                response->AddHeader(Aws::String(name), Aws::String(value));
                 if (auto amz_name = translateHeaderNameFromGCS(name))
-                    response->AddHeader(*amz_name, value);
+                    response->AddHeader(Aws::String(*amz_name), Aws::String(value));
             };
 
             if (enable_s3_requests_logging)
@@ -908,6 +976,7 @@ PocoHTTPClientGCPOAuth::PocoHTTPClientGCPOAuth(const PocoHTTPClientConfiguration
     , google_adc_client_id(client_configuration.google_adc_client_id)
     , google_adc_client_secret(client_configuration.google_adc_client_secret)
     , google_adc_refresh_token(client_configuration.google_adc_refresh_token)
+    , google_service_account_key(client_configuration.google_service_account_key)
 {
     const bool has_client_id = !google_adc_client_id.empty();
     const bool has_client_secret = !google_adc_client_secret.empty();
@@ -920,6 +989,11 @@ PocoHTTPClientGCPOAuth::PocoHTTPClientGCPOAuth(const PocoHTTPClientConfiguration
                 "GCP OAuth ADC credentials must be specified together: "
                 "google_adc_client_id, google_adc_client_secret, and google_adc_refresh_token "
                 "must all be set or all be empty");
+
+        if (!google_service_account_key.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "GCP OAuth credentials are ambiguous: specify either the ADC triple or google_service_account_key, not both");
     }
 }
 
@@ -929,22 +1003,19 @@ void PocoHTTPClientGCPOAuth::makeRequestInternal(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
-    {
-        std::lock_guard lock(mutex);
-        if (!bearer_token || std::chrono::system_clock::now() > bearer_token->is_valid_to)
-            bearer_token = requestBearerToken();
-
-        request.SetHeaderValue("Authorization", fmt::format("Bearer {}", bearer_token->token));
-    }
-
+    request.SetHeaderValue("Authorization", awsFormat("Bearer {}", getBearerToken()));
     PocoHTTPClient::makeRequestInternal(request, response, readLimiter, writeLimiter);
 }
 
-std::string PocoHTTPClientGCPOAuth::getBearerToken() const
+SecretString PocoHTTPClientGCPOAuth::getBearerToken() const
 {
     std::lock_guard lock(mutex);
     if (!bearer_token || std::chrono::system_clock::now() > bearer_token->is_valid_to)
+    {
+        /// `postTokenRequest`, used for the ADC triple and the service account key, keeps fiber-unaware transport.
+        Silk::ThreadModeScope thread_mode;
         bearer_token = requestBearerToken();
+    }
 
     return bearer_token->token;
 }
@@ -956,6 +1027,9 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
 
     if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
         return requestBearerTokenFromADC();
+
+    if (!google_service_account_key.empty())
+        return requestBearerTokenFromServiceAccountKey();
 
     chassert(!request_token_path.empty());
     chassert(!metadata_service.empty());
@@ -973,8 +1047,7 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
     if (enable_s3_requests_logging)
         LOG_TEST(log, "Make request to: {}", url.toString());
 
-    auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
-    auto session = makeHTTPSession(group, url, getCredentialAcquisitionTimeouts(timeouts));
+    auto session = makeHTTPSession(group, url, getCredentialAcquisitionTimeouts(timeouts), {}, nullptr, getTransport(group));
     sendHTTPRequest(*session, request)->finalize();
 
     Poco::Net::HTTPResponse response;
@@ -1006,16 +1079,29 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
 
     return
     {
-        .token = std::move(token),
+        .token = SecretString(token),
         .is_valid_to = std::chrono::system_clock::now() + std::chrono::seconds(object->getValue<Int64>("expires_in"))
     };
 }
 
 PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerTokenFromADC() const
 {
-    auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
     auto result = fetchGCPOAuthToken(
         google_adc_client_id, google_adc_client_secret, google_adc_refresh_token, getCredentialAcquisitionTimeouts(timeouts), group);
+    return
+    {
+        .token = std::move(result.access_token),
+        .is_valid_to = std::chrono::system_clock::now() + std::chrono::seconds(result.expires_in * 9 / 10)
+    };
+}
+
+PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerTokenFromServiceAccountKey() const
+{
+    auto [assertion, token_endpoint] = makeGCPServiceAccountAssertion(google_service_account_key, GCP_CLOUD_PLATFORM_OAUTH_SCOPE);
+    /// The token endpoint comes from the user-provided key, validate it against the allowed hosts.
+    remote_host_filter.checkURL(Poco::URI(token_endpoint));
+
+    auto result = fetchGCPOAuthTokenWithJWTAssertion(assertion, token_endpoint, getCredentialAcquisitionTimeouts(timeouts), group);
     return
     {
         .token = std::move(result.access_token),

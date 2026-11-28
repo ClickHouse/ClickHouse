@@ -48,6 +48,7 @@ TEST(DatabaseMemory, CreateTableRefusesDetachedName)
     auto short_attach = make_intrusive<ASTCreateQuery>();
     short_attach->attach = true;
     short_attach->attach_short_syntax = true;
+    short_attach->setTable(table_name);
     database->createTable(context, table_name, make_storage(), short_attach);
     EXPECT_TRUE(database->isTableExist(table_name, context));
 }

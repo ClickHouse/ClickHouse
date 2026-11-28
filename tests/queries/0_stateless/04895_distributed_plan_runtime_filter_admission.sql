@@ -37,7 +37,7 @@ SELECT
     (
         SELECT count() > 0 FROM system.text_log
         WHERE logger_name = 'joinRuntimeFilter' AND message LIKE '%refused at%'
-            AND event_date >= yesterday() AND query_id IN (
+            AND event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
                 SELECT query_id FROM system.query_log
                 WHERE type = 'QueryFinish' AND is_initial_query AND log_comment = '04895_refused'
                     AND current_database = currentDatabase() AND event_date >= yesterday())
@@ -79,7 +79,7 @@ SELECT countIf(startsWith(message, 'Registered runtime filter')) >= 1
        AND toUInt64OrZero(extract(message, 'blocks processed (\\d+)'))
            + toUInt64OrZero(extract(message, 'blocks skipped (\\d+)')) > 0) >= 1
 FROM system.text_log
-WHERE event_date >= yesterday() AND logger_name = 'RuntimeFilter'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'RuntimeFilter'
   AND query_id IN (
       SELECT query_id FROM system.query_log
       WHERE type = 'QueryFinish' AND event_date >= yesterday()
@@ -93,7 +93,7 @@ SELECT
     (
         SELECT count() > 0 FROM system.text_log
         WHERE logger_name = 'joinRuntimeFilter' AND message LIKE '%admitted at%'
-            AND event_date >= yesterday() AND query_id IN (
+            AND event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
                 SELECT query_id FROM system.query_log
                 WHERE type = 'QueryFinish' AND is_initial_query AND log_comment = '04895_admitted'
                     AND current_database = currentDatabase() AND event_date >= yesterday())

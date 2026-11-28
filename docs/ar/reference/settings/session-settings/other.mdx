@@ -17,6 +17,16 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 تتوفّر هذه الإعدادات في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## adaptive_aggregator_disable_thaw {#adaptive_aggregator_disable_thaw}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد لإبقاء الجداول المحلية للمُجمِّع التكيّفي مجمّدة مهما تكررت المفاتيح المُجهّزة، مع تجاهل قرار إذابة التجميد المحفوظ في إحصاءات جدول التجزئة."}]}]} />
+
+يعطّل آلية الحماية الخاصة بإذابة التجميد على مستوى كل خيط تنفيذ في المُجمِّع التكيّفي (راجع `enable_adaptive_aggregator`). افتراضيًا، يمكن لخيط التنفيذ الذي تتكرر في سجلاته المرحلية المفاتيحُ نفسها باستمرار أن يُذيب تجميد جدوله ويستأنف التجميع العادي. وعندما يُذيب نصف خيوط التنفيذ المجمّدة على الأقل تجميد جداولها، يُحفظ هذا القرار في إحصاءات جدول التجزئة (`collect_hash_table_stats_during_aggregation`)، فلا تستخدم عمليات التشغيل اللاحقة للاستعلام المُجمِّعَ التكيّفي. أما الاستعلام الذي يأتي على الصيغة `GROUP BY ... ORDER BY count() DESC LIMIT n` فلا يدمج إلا المجموعات القادرة على بلوغ المراتب العليا (استبعاد top-K)، ويحفظ قراره بمعزل عن التجميع نفسه من دون `LIMIT`. وإذا كانت `count()` هي دالة التجميع الوحيدة فيه، فإن خيط التنفيذ يُبقي جدوله مجمّدًا أيضًا ما دام يُتوقَّع أن يستبعد الاستبعادُ معظم الصفوف التي يُجهّزها الجدول.
+
+عند تفعيل هذا الإعداد، لا يؤدي تكرار المفاتيح المُجهّزة إلى إذابة تجميد الجدول، ويُتجاهَل أي قرار محفوظ. ومع ذلك، تظل إعدادات التجميع الخارجي تسمح بكتابة الجدول المجمّد المتنامي إلى القرص واستبداله بجدول تعلّم جديد.
+
 ## adaptive_aggregator_freeze_threshold {#adaptive_aggregator_freeze_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
@@ -29,15 +39,25 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "إعداد جديد يقيّد حجم الجداول المحلية المجمّدة للمُجمِّع التكيفي بالبايتات؛ يُطبَّق الحد الذي يُبلَغ أولًا بين هذا الحد وعتبة عدد المفاتيح؛ وتؤدي القيمة 0 إلى تعطيل حد البايتات."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "إعداد جديد يقيّد حجم الجداول المحلية المجمّدة للمُجمِّع التكيفي بالبايتات؛ يُطبَّق الحد الذي يُبلَغ أولًا بين هذا الحد وعتبة عدد المفاتيح؛ وتؤدي القيمة 0 إلى تعطيل حد البايتات."}]}]} />
 
-حجم الذاكرة الذي عنده يُجمِّد المُجمِّع التكيفي جدول التجزئة المحلي لخيط (انظر `enable_adaptive_aggregator`). يُجمَّد الجدول عند بلوغ أيٍّ من هذه القيمة و`adaptive_aggregator_freeze_threshold` أولًا. الحجم هو عدد البايتات التي خصصها الجدول المحلي نفسه (مخزن جدول التجزئة وساحاته)، ويُتحقق منه بين الكتل. يصبح حد البايتات مهمًا عندما تكون المفاتيح أو حالات التجميع عريضة، إذ إن عتبة عدد المفاتيح وحدها قد تسمح لهذه الجداول بتجاوز سعة ذاكرات التخزين المؤقت في CPU. عند القيمة الافتراضية، تستمر الجداول ذات عروض المفاتيح والحالات العادية في التجميد وفقًا لعدد المفاتيح. تعطل القيمة 0 حد البايتات، لذا تحدد عتبة عدد المفاتيح وحدها وقت التجميد.
+حجم الذاكرة الذي عنده يُجمِّد المُجمِّع التكيفي جدول التجزئة المحلي لخيط تنفيذ (انظر `enable_adaptive_aggregator`). يُجمَّد الجدول عند بلوغ أيٍّ من هذه القيمة و`adaptive_aggregator_freeze_threshold` أولًا. الحجم هو حجم الذاكرة المؤقتة لجدول التجزئة الخاص بالجدول المحلي، ويُتحقق منه بين الكتل: أي الخلايا التي يمر عليها كل بحث، والتي تحتوي على المفاتيح (مراجع إلى بايتات مفاتيح string) ومؤشرات إلى حالات التجميع، أو الحالات نفسها حين تكون مخزَّنة بشكل مضمّن. يصبح حد البايتات مهمًا عندما تكون الخلايا عريضة، إذ إن عتبة عدد المفاتيح وحدها قد تسمح لهذه الجداول بتجاوز سعة ذاكرات التخزين المؤقت في CPU. لا تُحتسب ذاكرة حالات التجميع، لأنها تنمو عبر المفاتيح الموجودة أصلًا في الجدول، وهو نمو لا يوقفه التجميد. عند القيمة الافتراضية، تستمر الجداول ذات عروض المفاتيح العادية في التجميد وفقًا لعدد المفاتيح. تعطل القيمة 0 حد البايتات، لذا تحدد عتبة عدد المفاتيح وقت التجميد.
 
 ## add_http_cors_header {#add_http_cors_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 كتابة ترويسة CORS لـ HTTP.
+
+## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد يتيح لشرط واحد تقييد عدة أعمدة مفتاح أثناء تحليل الفهرس."}]}]} />
+
+يتيح لشرط ذرّي واحد في تعبير `WHERE`/`PREWHERE` (كمقارنة واحدة، أو `IN`، أو `has`، وغيرها) تقييد عدة أعمدة مفتاح أثناء تحليل الفهرس.
+
+على سبيل المثال، إذا كان للجدول `ORDER BY (toDate(ts), ts)` وتضمّن الاستعلام `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42`، فإن الشرط الأول منهما يقيّد عمودَي المفتاح كليهما، إذ يُحلَّل كما لو كُتب `toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'`. أما عند تعطيل هذا الإعداد، فلا يقيّد هذا المسند سوى `ts`. ومع ذلك، تظل مسندات العضوية في Tuple، مثل `(a, b) IN ((1, 2), (3, 4))`، قادرة على تقييد عدة أعمدة مفتاح.
 
 ## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
@@ -138,6 +158,14 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 المهلة الزمنية بالثواني لطلب Arrow Flight الواحد. وتسري هذه المهلة على الطلب بأكمله: ففي عمليات القراءة، تشمل دفق النتائج كاملًا، لا مجرد فترة انتظار أول دفعة من السجلات. وتعني القيمة 0 عدم وجود مهلة زمنية، وفي هذه الحالة يظل الاستعلام معلّقًا إذا قبل خادم Flight طلبًا ولم يرد عليه أبدًا، وذلك إلى أن يُغلق الاتصال.
 
+## backup_s3_expired_token_retry_timeout_ms {#backup_s3_expired_token_retry_timeout_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="120000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "إعادة محاولة طلبات النسخ الاحتياطي والاستعادة إلى S3 بعد انتهاء صلاحية الرمز المميز؛ وتعيد القيمة 0 السلوك السابق."}]}]} />
+
+الحد الأقصى للمدة، بالمللي ثانية، لإعادة محاولة طلب S3 تشير استجابته إلى `ExpiredToken` أثناء النسخ الاحتياطي أو الاستعادة. وتتوقف إعادة المحاولة كذلك عند بلوغ الحد المحدد في `backup_restore_s3_retry_attempts`. وتؤدي القيمة صفر إلى تعطيل إعادة المحاولة هذه. ونظرًا إلى أن استجابات `HEAD` في AWS S3 لا تُظهر سوى رمز حالة HTTP عام، فإن إعادة المحاولة هذه لا تشمل طلبات البيانات الوصفية من نوع `HEAD`.
+
 ## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -191,9 +219,9 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "إعداد جديد لتطبيق ضغط عام على جسم الاستجابة."}]}]} />
 
-يطبّق ضغطًا عامًا على جسم الاستجابة، مثل `compression=gz`. لاحظ أن هذا مستقل عن `Content-Encoding` (ضغط HTTP) وعن المعلمة القديمة `compress` (ضغط ClickHouse الأصلي). ويعادل ذلك تحديد امتداد ملف مضغوط في مسار URL.
+يطبّق ضغطًا عامًا على جسم الاستجابة، مثل `compression=gz`. لاحظ أن هذا مستقل عن `Content-Encoding` (ضغط HTTP) وعن المعلمة القديمة `compress` (ضغط ClickHouse الأصلي). وفي طلبات المسار التي تُنتج استجابة، يعادل ذلك تحديد امتداد ملف مضغوط في مسار URL. أما في عمليات التحميل عبر HTTP `PUT` المستندة إلى المسار، فتصف لاحقة الضغط جسم الطلب بدلًا من ذلك، إذ يُفَكّ ضغطه قبل الإدراج.
 
-هذا إعداد لتشكيل الاستجابة ضمن واجهة HTTP: يُطبَّق قبل تنفيذ الاستعلام (إذ تُعَدّ مخازن الاستجابة المؤقتة مسبقًا)، لذا يجب توفيره عبر معلمة HTTP URL، أو امتداد الملف في مسار URL، أو ملف تعريف المستخدم، وليس عبر عبارة `SETTINGS` داخل الاستعلام (إذ لا يكون لها أي تأثير ويُرفَض استخدامها).
+هذا إعداد لتشكيل الاستجابة ضمن واجهة HTTP: يُطبَّق قبل تنفيذ الاستعلام (إذ تُعَدّ ذاكرات الاستجابة المؤقتة مسبقًا)، لذا يجب توفيره عبر معلمة HTTP URL، أو امتداد الملف في مسار URL، أو ملف تعريف المستخدم، وليس عبر عبارة `SETTINGS` داخل الاستعلام (إذ لا يكون لها أي تأثير ويُرفَض استخدامها).
 
 ## connection_pool_max_wait_ms {#connection_pool_max_wait_ms}
 
@@ -233,9 +261,9 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-عند ضبطه على `true`، سيُحوَّل استعلام `SELECT` إلى الصيغة العادية الاقترانية (CNF). في بعض الحالات، قد يؤدي إعادة كتابة الاستعلام بصيغة CNF إلى تنفيذ أسرع (راجع [مشكلة Github](https://github.com/ClickHouse/ClickHouse/issues/11749) للاطلاع على الشرح).
+عند ضبطه على `true`، سيُحوَّل استعلام `SELECT` إلى الصيغة العادية الاقترانية (CNF). في بعض الحالات، قد يؤدي إعادة كتابة الاستعلام بصيغة CNF إلى تنفيذ أسرع (راجع [مشكلة Github](https://github.com/ClickHouse/ClickHouse/issues/11749) للاطلاع على الشرح).
 
-على سبيل المثال، لاحظ كيف لا يُعدَّل استعلام `SELECT` التالي (وهو السلوك الافتراضي):
+على سبيل المثال، لاحظ كيف لا يُعدَّل استعلام `SELECT` التالي (وهو السلوك الافتراضي):
 
 ```sql
 EXPLAIN SYNTAX
@@ -315,7 +343,8 @@ SETTINGS convert_query_to_cnf = true;
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-يسمح بأن تكون أنواع البيانات في تعريفات الأعمدة التي لا تتضمن مُعدِّلات صريحة [NULL or NOT NULL](/ar/reference/statements/create/table#null-or-not-null-modifiers) من النوع [Nullable](/ar/reference/data-types/nullable).
+يسمح بأن تكون أنواع البيانات في تعريفات الأعمدة التي لا تتضمن مُعدِّلات صريحة [NULL or NOT NULL](/ar/reference/statements/create/table#null-or-not-null-modifiers) من النوع [Nullable](/ar/reference/data-types/nullable).
+ينطبق ذلك على `CREATE TABLE` و`ALTER TABLE ... ADD COLUMN` و`ALTER TABLE ... MODIFY COLUMN`.
 
 القيم الممكنة:
 
@@ -389,13 +418,13 @@ SETTINGS convert_query_to_cnf = true;
 القيم المدعومة:
 
 * `clickhouse` (افتراضي) — ClickHouse SQL القياسية.
-* `kusto` — Kusto Query Language. يتطلب الإعداد التجريبي `allow_experimental_kusto_dialect`.
-* `prql` — PRQL. يتطلب الإعداد التجريبي `allow_experimental_prql_dialect`.
-* `polyglot` — يترجم SQL من لهجات أخرى، مثل MySQL وPostgreSQL، إلى ClickHouse SQL. يتطلب الإعداد التجريبي `allow_experimental_polyglot_dialect`.
+* `kusto` — Kusto Query Language. يتطلب الإعداد التجريبي (Beta) `enable_kusto_dialect`.
+* `prql` — PRQL. يتطلب الإعداد التجريبي `enable_prql_dialect`.
+* `polyglot` — يترجم SQL من لهجات أخرى، مثل MySQL وPostgreSQL، إلى ClickHouse SQL. يتطلب الإعداد التجريبي `enable_polyglot_dialect`.
 * `promql` — PromQL (لغة استعلام Prometheus)، ويُقيَّم على جدول TimeSeries ويُضبط من خلال الإعدادات `promql_database` و`promql_table` و`promql_evaluation_time`.
 * `clickhouse_json` — بدلًا من نص SQL، يُفسَّر الاستعلام على أنه JSON AST (ناتج `parseQueryToJSON`). يظل استعلام `SET` معروفًا بصيغته العادية، بحيث يمكن التبديل مجددًا إلى لهجة أخرى. يتطلب الإعداد التجريبي `enable_json_ast_dialect`.
 * `logsql` — LogsQL، لغة استعلام السجلات في VictoriaLogs، وتُترجَم إلى استعلامات `SELECT` على جدول السجلات المُهيَّأ عبر الإعدادين `logsql_database` و`logsql_table`. يتطلب الإعداد التجريبي `enable_logsql_dialect`.
-* `trino` — Trino SQL: يترجم صياغة Trino (`ARRAY[...]` و`TRY_CAST` و`UNNEST` وغيرها) ويطابق أسماء دوال Trino مع نظيراتها في ClickHouse. يتطلب الإعداد التجريبي `enable_trino_dialect`.
+* `trino` — Trino SQL: يترجم صياغة Trino (`ARRAY[...]` و`TRY_CAST` و`UNNEST` وغيرها) ويطابق أسماء دوال Trino مع نظيراتها في ClickHouse. يتطلب الإعداد التجريبي (Beta) `enable_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
 
@@ -589,6 +618,8 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 <SettingsInfoBlock type="UInt64" default_value="200" />
 
 الحد الأقصى لعمليات الجلب المسبق. يشير الصفر إلى عدم وجود حد. ويُوصى باستخدام الإعداد `filesystem_prefetches_max_memory_usage` بدلًا من ذلك إذا كنت تريد تقييد عدد عمليات الجلب المسبق
+
+ينطبق هذا الإعداد أيضًا على عمليات الدمج والتعديل.
 
 ## filter {#filter}
 
@@ -811,14 +842,14 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 ## get_zookeeper_lock_acquire_timeout_ms {#get_zookeeper_lock_acquire_timeout_ms}
 
-<SettingsInfoBlock type="Milliseconds" default_value="120000" />
+<SettingsInfoBlock type="مللي ثانية" default_value="120000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "New setting"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "إعداد جديد"}]}]} />
 
-يحدد مدة الانتظار بالمللي ثانية التي يقضيها عميل Keeper لحجز mutex الخاص بـ `Context` المقابل قبل أن يفشل.
+يحدد مدة الانتظار بالمللي ثانية التي يقضيها الاستعلام في انتظار عميل Keeper: سواء لحجز mutex الخاص بـ `Context` للعميل، أو لمحاولة اتصال يُجريها خيط تنفيذ آخر لصالحه. وعند تجاوز هذه المدة، يفشل الاستعلام مع الخطأ `TIMEOUT_EXCEEDED`. كما يتوقف الاستعلام عن الانتظار عند إلغائه.
 
-تُؤخذ القيمة من `Context` الذي يُجري عملية الحجز. ولا يسري التجاوز على مستوى الاستعلام إلا عندما تستخدم العملية سياق الاستعلام، مثل عمليات القراءة من `system.zookeeper`، و`zookeeperSessionUptime`، و`SYSTEM RECONNECT ZOOKEEPER`، والوصول إلى Keeper المساعد ضمن سياق الاستعلام.
-أما العمليات التي تستخدم سياقًا عامًا أو سياق خلفية، بما في ذلك تنسيق `BACKUP` و`RESTORE` ونشاط قاعدة البيانات `Replicated`، فتعتمد على قيمة ذلك السياق، ويصلها انتهاء المهلة على هيئة error من Keeper (`ZOPERATIONTIMEOUT`) تتعامل معه كما تتعامل مع سائر أخطاء Keeper.
+تُؤخذ القيمة من سياق الاستعلام، ولذا فهي تسري على العمليات التي تستخدمه، مثل عمليات القراءة من `system.zookeeper`، و`zookeeperSessionUptime`، و`SYSTEM RECONNECT ZOOKEEPER`، والوصول إلى Keeper المساعد ضمن سياق الاستعلام.
+أما العمليات التي تستخدم سياقًا عامًا أو سياق خلفية، بما في ذلك تنسيق `BACKUP` و`RESTORE` ونشاط قاعدة البيانات `Replicated`، فتنتظر حتى تنتهي محاولة الاتصال، ثم تحصل إما على العميل الناتج عنها أو على error من Keeper.
 ولا يشمل هذا الإعداد `SYSTEM RELOAD CONFIG` و`SYSTEM RELOAD ASYNCHRONOUS METRICS`، لأنهما تستخدمان مسارات إعادة تحميل متسلسلة بشكل مستقل.
 
 القيم الممكنة:
@@ -847,6 +878,29 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 <SettingsInfoBlock type="مللي ثانية" default_value="10000" />
 
 مهلة الانتظار بالمللي ثانية لاستلام حزمة Hello من النسخ المتماثلة أثناء المصافحة.
+
+## hash_join_layout {#hash_join_layout}
+
+<SettingsInfoBlock type="HashJoinLayout" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "auto"},{"label": "إعداد جديد لفرض تخطيط الربط بالتجزئة. مع القيمة `auto` يستمر اختيار التخطيط بواسطة `parallel_hash_join_threshold`."}]}]} />
+
+يحدد كيفية بناء جدول التجزئة في الربط بالتجزئة من نوع `INNER` أو `LEFT` أو `RIGHT` أو `FULL`.
+تتيح القيمة الافتراضية `auto` لمخطط الاستعلامات اختيار التخطيط بواسطة `parallel_hash_join_threshold`؛ اضبط الإعداد على `serial` أو `parallel` لفرض أحدهما.
+
+القيم الممكنة:
+
+* `auto` — يتولى `parallel_hash_join_threshold` اتخاذ القرار استنادًا إلى العدد التقديري للصفوف في الجدول الأيمن. راجع ذلك الإعداد لمعرفة السلوك في حالة الربط الذي لا يتوفر له تقدير.
+* `serial` — يتكون جدول التجزئة من جزء واحد يملؤه خيط تنفيذ واحد، بصرف النظر عن التقدير.
+* `parallel` — يُقسَّم جدول التجزئة إلى أجزاء يملؤها في الوقت نفسه عدد من خيوط التنفيذ يصل إلى `max_threads` (خيط تنفيذ واحد عند `max_threads = 1`)، بصرف النظر عن التقدير.
+
+بعض عمليات الربط تبني دائمًا جزءًا واحدًا، أيًّا كانت القيمة:
+
+* عمليات الربط من الأنواع الأخرى، مثل `CROSS`؛
+* الربط الذي يكون على جانبه الأيمن جدول `Join` أو تخزين مفتاح-قيمة؛
+* كل حاوية في الربط بالتجزئة بأسلوب Grace؛
+* الربط بالتجزئة الذي يبدأ به `join_algorithm = 'auto'` عندما يتعذر على الربط الكتابة إلى القرص (على سبيل المثال عندما تكون قيمة كلٍّ من `max_bytes_before_external_join` و`max_bytes_ratio_before_external_join` تساوي `0`)، ويمكنه عندئذٍ التحول إلى الربط بالدمج الجزئي بدلًا منه؛
+* كل عملية ربط على مستوى المقطع في `query_plan_join_shard_by_pk_ranges`.
 
 ## hedged_connection_timeout_ms {#hedged_connection_timeout_ms}
 
@@ -898,9 +952,9 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
-إذا كان مُمكّنًا، فسيُدرج &#39;ORDER BY rand()&#39; في استعلامات SELECT التي لا تحتوي على بند ORDER BY.
-يُطبَّق هذا فقط عندما يكون عمق الاستعلام الفرعي = 0. ولا تتأثر الاستعلامات الفرعية ولا INSERT INTO ... SELECT.
-إذا كان التركيب على المستوى الأعلى هو UNION، فسيُدرج &#39;ORDER BY rand()&#39; في جميع الفروع بشكل مستقل.
+إذا كان مفعّلًا، فسيُدرج `SHUFFLE` في استعلامات SELECT التي لا تحتوي على عبارة ORDER BY.
+يُطبَّق هذا فقط عندما يكون عمق الاستعلام الفرعي = 0. ولا تتأثر الاستعلامات الفرعية ولا INSERT INTO ... SELECT.
+إذا كان التركيب على المستوى الأعلى هو UNION، فسيُدرج `SHUFFLE` في جميع الفروع بشكل مستقل.
 هذا مفيد فقط لأغراض الاختبار والتطوير (إذ إن غياب ORDER BY يُعدّ مصدرًا لنتائج استعلام غير حتمية).
 
 ## input_format {#input_format}
@@ -921,15 +975,37 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 يُعيّن الوضع الافتراضي في استعلام INTERSECT. القيم الممكنة: سلسلة فارغة، &#39;ALL&#39;، &#39;DISTINCT&#39;. إذا كانت القيمة فارغة، فسيؤدي الاستعلام بدون وضع إلى إثارة استثناء.
 
-## kill_throw_if_noop {#kill_throw_if_noop}
+## json_extract_named_tuples_as_objects {#json_extract_named_tuples_as_objects}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد يجعل عائلة `JSONExtract` تملأ قيم Tuple المسمّاة من كائنات JSON فقط، بدلاً من الملء الموضعي المعتاد سابقاً من المصفوفات. تُملأ قيم Tuple غير المسمّاة دائماً بشكل موضعي، ولا يتأثر الاستخراج من عمود من نوع البيانات `JSON`."}]}]} />
+
+يملأ قيم Tuple المسمّاة من كائنات JSON فقط، ضمن عائلة دوال `JSONExtract`. عند تعطيل هذا الإعداد، تملأ مصفوفة JSON الـ Tuple المسمّى بشكل موضعي (وهو السلوك المعتاد سابقاً)، ومن ثَمّ يتوقف الحقل المسمّى الذي يستقر فيه كل عنصر مصفوفة على ترتيب التصريح عن الـ Tuple. أما قيم Tuple غير المسمّاة فتُملأ دائماً بشكل موضعي من المصفوفات بغض النظر عن هذا الإعداد.
+
+ينطبق هذا الإعداد على JSON المُمرَّر على هيئة string. ولا يتأثر به الاستخراج من عمود من نوع البيانات `JSON`، سواء أكانت المسارات محددة النوع أم غير محددة النوع: إذ يقرأ الاستخراج الأعمدة الفرعية للعمود بدلاً من إجراء التحليل النحوي لمستند JSON، ولذلك لا يبلغ أبداً الشيفرة التي يتحكم فيها هذا الإعداد. أما *أعمدة* Tuple المسمّاة في تنسيقات إدخال JSON فيتحكم فيها إعداد مستقل هو [input&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects](/ar/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects)؛ في حين يقتصر هذا الإعداد على دوال الاستخراج فقط.
+
+معطّل افتراضياً.
+
+## json_extract_use_cast_string_to_date_time_mode {#json_extract_use_cast_string_to_date_time_mode}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "تحلّل `JSONExtract` قيم `DateTime` وفقًا لـ `cast_string_to_date_time_mode` بدلًا من `date_time_input_format`. ويؤدي ضبط `compatibility` على إصدار أقدم من 26.8 إلى استعادة السلوك السابق."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "1"},{"label": "إعداد جديد لتحديد ما إذا كانت عائلة `JSONExtract` تحلّل قيم `DateTime` وفقًا لـ `cast_string_to_date_time_mode` (منذ 26.8) أو وفقًا لـ `date_time_input_format` (قبل 26.8)."}]}]} />
+
+يحدّد الإعداد الذي تعتمد عليه عائلة دوال `JSONExtract` عند التحليل النحوي لقيمة سلسلة نصية بتنسيق JSON وتحويلها إلى `DateTime` أو `DateTime64`. عندما يكون مفعّلًا، يُستمد وضع التحليل النحوي من [cast&#95;string&#95;to&#95;date&#95;time&#95;mode](/ar/reference/settings/session-settings/cast-string#cast_string_to_date_time_mode)، بما يتسق مع سلوك `CAST`. وعند تعطيله، يُستمد من [date&#95;time&#95;input&#95;format](/ar/reference/settings/formats/date-time#date_time_input_format)، كما كان الحال قبل الإصدار 26.8.
+
+إذا تعذّر على المحلل النحوي المختار قراءة القيمة، تُعيد الدالة القيمة الافتراضية للنوع (`1970-01-01 00:00:00`) دون إطلاق error، ولذلك فإن أي تعارض بين الإعدادين يغيّر القيم المستخرجة دون أي تنبيه.
+
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "تمكين `kill_throw_if_noop` افتراضيًا كي تُبلغ `KILL QUERY` و`KILL MUTATION` عن حالات عدم وجود أي تطابق."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
 يتحكم هذا الإعداد فيما إذا كانت العبارتان [`KILL QUERY`](/ar/reference/statements/kill#kill-query) و[`KILL MUTATION`](/ar/reference/statements/kill#kill-mutation) ترفعان استثناءً عندما لا تطابق عبارات `WHERE` الخاصة بهما أي صفوف.
 
-عند ضبطه على true، ترفع `KILL QUERY` استثناءً إذا لم توجد صفوف مؤهلة في `system.processes` بعد استبعاد عبارة `KILL` الحالية، وترفع `KILL MUTATION` استثناءً إذا لم يتطابق أي صف في `system.mutations`. أما افتراضيًا، فتنتهي العبارة دون رفع استثناء عند عدم وجود أي تطابق. ولا يرفع التنفيذ باستخدام `ON CLUSTER` استثناءً عند عدم وجود تطابقات، لأن نتائج المطابقة لا تُجمَّع عبر المضيفين.
+مفعّل افتراضيًا. ترفع `KILL QUERY` استثناءً إذا لم توجد صفوف مؤهلة في `system.processes` بعد استبعاد عبارة `KILL` الحالية، وترفع `KILL MUTATION` استثناءً إذا لم يتطابق أي صف في `system.mutations`. اضبطه على `false` لكي تنتهي العبارة دون رفع استثناء عند عدم وجود أي تطابق. أما عمليات التشغيل التجريبية باستخدام `TEST` فتُعيد معاينة فارغة دون رفع استثناء. ولا يرفع التنفيذ باستخدام `ON CLUSTER` استثناءً عند عدم وجود تطابقات، لأن نتائج المطابقة لا تُجمَّع عبر المضيفين.
 
 القيم الممكنة:
 
@@ -1010,7 +1086,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 يحدّد عدد الثواني التي ينتظرها طلب القفل قبل أن يفشل.
 
-تُستخدم مهلة القفل للحماية من حالات التوقف المتبادل أثناء تنفيذ عمليات القراءة والكتابة على الجداول. وعند انتهاء المهلة وفشل طلب القفل، يرفع خادم ClickHouse الاستثناء &quot;Locking attempt timed out! Possible deadlock avoided. Client should retry.&quot; مع رمز الخطأ `DEADLOCK_AVOIDED`.
+تُستخدم مهلة القفل للحماية من حالات التوقف المتبادل أثناء تنفيذ عمليات القراءة والكتابة على الجداول. وعند انتهاء المهلة وفشل طلب القفل، يرفع خادم ClickHouse الاستثناء &quot;Locking attempt timed out. Possible deadlock avoided. Client should retry.&quot; مع رمز الخطأ `DEADLOCK_AVOIDED`.
 
 القيم الممكنة:
 
@@ -1074,6 +1150,14 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.3"},{"label": "1"},{"label": "تطبيع أسماء الدوال إلى صيغها القياسية، وكان ذلك مطلوبًا لتوجيه استعلامات projection"}]}]} />
 
 تطبيع أسماء الدوال إلى صيغها القياسية
+
+## obfuscate_seed {#obfuscate_seed}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "إعداد جديد: سلسلة seed لدالة الجدول obfuscate."}]}]} />
+
+قيمة seed لدالة الجدول `obfuscate`. وهي سلسلة نصية اختيارية، تُشتق منها ومن اسم العمود قيمةُ seed الخاصة بكل عمود، ولذلك تُنتج قيمة seed نفسها التمويهَ ذاته دائمًا. أما السلسلة الفارغة فتعني توليد بذرة توليد عشوائي جديدة لكل استعلام.
+
+قيمة seed إعداد عادي وليست secret، إذ تُخزَّن قيمتها وتُعرض نصًا صريحًا شأنها شأن أي إعداد آخر، كما في `system.query_log` و`system.settings` مثلًا. لا تستخدم كلمة مرور أو أي secret آخر قيمةً لـ seed. وإذا كان يجب ألا تكون المخرجات المموّهة لاستعلامات مختلفة قابلةً للربط فيما بينها، فأبقِ القيمة الافتراضية الفارغة (بذرة توليد عشوائي جديدة لكل استعلام) بدلًا من تعيين قيمة seed ثابتة.
 
 ## offset {#offset}
 
@@ -1278,6 +1362,18 @@ priority الاستعلام. 1 هي الأعلى، وكلما زادت القي�
 
 افتراضيًا، يحتفظ المتجه المرجعي بدقته الكاملة عند الدقة 1، ولا يُختزَل إلى إشارات سوى المتجه المخزَّن (مسافة غير متناظرة). المسافة المتناظرة أسرع بعدة أضعاف، لكنها تتجاهل مقادير عناصر المتجه المرجعي، إذ يكون للبُعد الذي تكون فيه قيمة المرجع كبيرة الوزن نفسه الذي يكون للبُعد الذي تقترب فيه من الصفر.
 
+## query_condition_cache_time_condition_grid_factor {#query_condition_cache_time_condition_grid_factor}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Float" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد تجريبي جديد: خطوة الشبكة المستخدمة عند اشتقاق شروط حتمية من الشروط التي تتضمن الوقت الحالي في ذاكرة التخزين المؤقت لشروط الاستعلام، معبَّرًا عنها كنسبة من المسافة بين الثابت الزمني والوقت الحالي."}]}]} />
+
+بالنسبة إلى الشروط التي تتضمن الوقت الحالي في [ذاكرة التخزين المؤقت لشروط الاستعلام](/ar/concepts/features/performance/caches/query-condition-cache) لجداول `MergeTree` (راجع [`use_query_condition_cache_for_time_conditions`](/ar/reference/settings/session-settings/use-query#use_query_condition_cache_for_time_conditions))، يحدد هذا الإعداد حجم الشبكة التي تُقرَّب إليها الثوابت الزمنية، معبَّرًا عنه كنسبة من المسافة بين الثابت والوقت الحالي. على سبيل المثال، عند استخدام المعامل الافتراضي 1.0، يُقرَّب الثابت في `WHERE time >= now() - INTERVAL 10 DAY` إلى شبكة بخطوة يوم واحد (بحد أقصى يوم واحد)، بينما يُقرَّب الثابت في `WHERE time >= now() - INTERVAL 1 HOUR` إلى شبكة بخطوة ساعة واحدة.
+
+تُبقي القيم الأصغر الشرط المشتق أقرب إلى الشرط الأصلي (مع تقليل over-read بالقرب من الحدود)، لكن ذلك يأتي على حساب تغيُّر مفتاح ذاكرة التخزين المؤقت بوتيرة أعلى. تُقيَّد خطوة الشبكة بحد أدنى قدره ثانية واحدة، لذا فإن المعامل الصغير يجعل الشرط المشتق يقترب من الشرط الأصلي بدلاً من تعطيله. أما القيم الأقل من 0 أو المساوية له فتعطّل عملية الاشتقاق كليًا.
+
 ## query_metric_log_interval {#query_metric_log_interval}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
@@ -1468,7 +1564,7 @@ FORMAT Null;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد لتشغيل استعلام في الخلفية، منفصلًا عن الاتصال الذي أرسله، مع تجاهل النتيجة."}]}]} />
 
-عند تفعيله، يجدول الخادم الاستعلام في الخلفية، ويُرجع فورًا نتيجة نجاح فارغة، ثم يشغّل الاستعلام حتى اكتماله بغض النظر عما يحدث للاتصال.
+عند تفعيله، يجدول الخادم الاستعلام في الخلفية، وينتظر حتى يجتاز الاستعلام عمليات الفحص (كالتحقق مثلًا من وجود الجداول ومن امتلاك المستخدم للأذونات المطلوبة) ويوشك على بدء عمله الرئيسي، ثم يُرجع نتيجة نجاح فارغة، ويشغّل الاستعلام حتى اكتماله بغض النظر عما يحدث للاتصال. أي خطأ يُثار قبل تلك المرحلة يُعاد إلى العميل، أما الخطأ الذي يقع بعدها فلا يُسجَّل إلا في `system.query_log`.
 
 لا يستمر الاستعلام الذي يعمل في الخلفية بعد إعادة تشغيل الخادم. وعند إيقاف التشغيل، تنطبق عليه إعدادات الخادم نفسها المطبقة على الاستعلامات التي تعمل في المقدمة: يحدد `shutdown_wait_unfinished_queries` ما إذا كان سيُلغى أو سيُنتظر حتى اكتماله (وتُهمل الإدخالات الموجودة في قائمة الانتظار في كلتا الحالتين، من دون إدخال في `system.query_log`)، بينما يحد `shutdown_wait_unfinished` المدة التي ينتظرها الخادم.
 
@@ -1738,57 +1834,73 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 * `0` - لن تُضمَّن السلسلة المتبقية في العنصر الأخير من مصفوفة النتيجة.
 * `1` - ستُضمَّن السلسلة المتبقية في العنصر الأخير من مصفوفة النتيجة. هذا هو سلوك الدالة [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) في Spark والطريقة [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) في بايثون.
 
+## sql_compatible_division_for_integers {#sql_compatible_division_for_integers}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "استخدام الاسم المتوافق مع SQL لإعداد قسمة الأعداد الصحيحة."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد لتمكين القسمة الصحيحة الدقيقة في `\/` و`divide`."}]}]} />
+
+يجعل `/` و`divide` تُعيدان عددًا صحيحًا عندما يكون كلا المعاملين من أنواع الأعداد الصحيحة، بما في ذلك `Int128` و`UInt128` و`Int256` و`UInt256`.
+يُقتطع خارج القسمة باتجاه الصفر. ويكون عرض النتيجة مساويًا لعرض المعامل الأول، وتكون ذات إشارة إذا كان أيٌّ من المعاملين ذا إشارة.
+تؤدي القسمة على صفر، أو تجاوز خارج القسمة نطاقَ نوع النتيجة، إلى رفع استثناء. أما المعاملات من النوع `Nullable` فتنقل القيمة `NULL` إلى النتيجة.
+
+افتراضيًا، تُعيد قسمة عددين صحيحين قيمة من النوع `Float64`. ولا يؤثر هذا الإعداد في القسمة التي تتضمن معاملات من النوع `Decimal` أو معاملات ذات فاصلة عائمة،
+ولا في الدوال الصريحة `intDiv` و`divideDecimal` و`divideOrNull`.
+
+يُسجَّل هذا الاختيار في استعلامات SQL المُرسلة حديثًا قبل تخزين التعبيرات في البيانات الوصفية للجداول، أو في العروض، أو دوال SQL، أو عمليات التعديل.
+أما التعريفات الموجودة مسبقًا واستعلامات `ATTACH` فتحتفظ بدلالات القسمة الأصلية الخاصة بها، بصرف النظر عن هذا الإعداد.
+
 ## statistics_max_set_size_for_exact_selectivity_estimation {#statistics_max_set_size_for_exact_selectivity_estimation}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 <VersionHistory
   rows={[
-{
-  id: "row-1",
-  items: [
-    { label: "26.9" },
-    { label: "10000" },
-    {
-      label:
-        "يظل الحد المفروض على تكلفة تقدير انتقائية `IN` عند استخدام مجموعة كبيرة قائمًا مع استخدام `compatibility` مع إصدار أقدم: القيمة السابقة مساوية عمدًا للقيمة الجديدة، بحيث لا يُستعاد التقدير غير المقيّد الذي قد يضيف مئات المللي ثانية إلى تخطيط استعلام واحد."
-    }
-  ]
-},
-{
-  id: "row-2",
-  items: [
-    { label: "26.8" },
-    { label: "10000" },
-    {
-      label:
-        "إعداد جديد للحد من تكلفة تقدير انتقائية `IN` عند استخدام مجموعة كبيرة: فوق هذا الحد، يستخدم المقدِّر حجم المجموعة ونطاقها الحدي بدلًا من النطاقات الدقيقة. القيمة السابقة مساوية عمدًا للقيمة الجديدة، بحيث يحافظ استخدام `compatibility` مع إصدار أقدم على هذا الحد بدلًا من استعادة التقدير غير المقيّد الذي قد يضيف مئات المللي ثانية إلى تخطيط استعلام واحد."
-    }
-  ]
-},
-{
-  id: "row-3",
-  items: [
-    { label: "26.7" },
-    { label: "10000" },
-    {
-      label:
-        "يظل الحد المفروض على تكلفة تقدير انتقائية `IN` عند استخدام مجموعة كبيرة قائمًا مع استخدام `compatibility` مع إصدار أقدم: القيمة السابقة مساوية عمدًا للقيمة الجديدة، بحيث لا يُستعاد التقدير غير المقيّد الذي قد يضيف مئات المللي ثانية إلى تخطيط استعلام واحد."
-    }
-  ]
-},
-{
-  id: "row-4",
-  items: [
-    { label: "26.6" },
-    { label: "10000" },
-    {
-      label:
-        "يظل الحد المفروض على تكلفة تقدير انتقائية `IN` عند استخدام مجموعة كبيرة قائمًا مع استخدام `compatibility` مع إصدار أقدم: القيمة السابقة مساوية عمدًا للقيمة الجديدة، بحيث لا يُستعاد التقدير غير المقيّد الذي قد يضيف مئات المللي ثانية إلى تخطيط استعلام واحد."
-    }
-  ]
-}
-]}
+  {
+    id: "row-1",
+    items: [
+      { label: "26.9" },
+      { label: "10000" },
+      {
+        label:
+          "يظل الحد المفروض على تكلفة تقدير انتقائية `IN` عند استخدام مجموعة كبيرة قائمًا مع استخدام `compatibility` مع إصدار أقدم: القيمة السابقة مساوية عمدًا للقيمة الجديدة، بحيث لا يُستعاد التقدير غير المقيّد الذي قد يضيف مئات المللي ثانية إلى تخطيط استعلام واحد."
+      }
+    ]
+  },
+  {
+    id: "row-2",
+    items: [
+      { label: "26.8" },
+      { label: "10000" },
+      {
+        label:
+          "إعداد جديد للحد من تكلفة تقدير انتقائية `IN` عند استخدام مجموعة كبيرة: فوق هذا الحد، يستخدم المقدِّر حجم المجموعة ونطاقها الحدي بدلًا من النطاقات الدقيقة. القيمة السابقة مساوية عمدًا للقيمة الجديدة، بحيث يحافظ استخدام `compatibility` مع إصدار أقدم على هذا الحد بدلًا من استعادة التقدير غير المقيّد الذي قد يضيف مئات المللي ثانية إلى تخطيط استعلام واحد."
+      }
+    ]
+  },
+  {
+    id: "row-3",
+    items: [
+      { label: "26.7" },
+      { label: "10000" },
+      {
+        label:
+          "يظل الحد المفروض على تكلفة تقدير انتقائية `IN` عند استخدام مجموعة كبيرة قائمًا مع استخدام `compatibility` مع إصدار أقدم: القيمة السابقة مساوية عمدًا للقيمة الجديدة، بحيث لا يُستعاد التقدير غير المقيّد الذي قد يضيف مئات المللي ثانية إلى تخطيط استعلام واحد."
+      }
+    ]
+  },
+  {
+    id: "row-4",
+    items: [
+      { label: "26.6" },
+      { label: "10000" },
+      {
+        label:
+          "يظل الحد المفروض على تكلفة تقدير انتقائية `IN` عند استخدام مجموعة كبيرة قائمًا مع استخدام `compatibility` مع إصدار أقدم: القيمة السابقة مساوية عمدًا للقيمة الجديدة، بحيث لا يُستعاد التقدير غير المقيّد الذي قد يضيف مئات المللي ثانية إلى تخطيط استعلام واحد."
+      }
+    ]
+  }
+  ]}
 />
 
 الحد الأقصى لحجم المجموعة في الطرف الأيمن من عامل التشغيل `IN` الذي يمكن لمقدِّر الانتقائية عنده اشتقاق النطاقات الدقيقة التي تغطيها المجموعة. يتطلب اشتقاق هذه النطاقات `Field` لكل عنصر، وفرزًا، ومسبار إحصاءات واحدًا لكل عنصر، وهي تكلفة تهيمن على تخطيط الاستعلام عند استخدام مجموعة كبيرة. فوق هذا الحد، يستمد المقدِّر الانتقائية من حجم المجموعة ونطاقها الحدي بدلًا من ذلك، وذلك بتمرير خطي واحد على المجموعة دون فرز أو مسابير إحصاءات لكل عنصر. يشير الصفر إلى عدم وجود حد.
@@ -1837,6 +1949,25 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 
 يتحقق من أن سرعة التنفيذ ليست منخفضة جدًا (أي لا تقل عن `min_execution_speed`)،
 وذلك بعد انقضاء الوقت المحدد بالثواني.
+
+عند ضبطه على `0`، يجري التحقق من حدود سرعة التنفيذ منذ بدء الاستعلام،
+لكن لا يجري التحقق من [`max_estimated_execution_time`](/ar/reference/settings/session-settings/max#max_estimated_execution_time)
+إطلاقًا.
+
+## to_start_of_interval_preserves_argument_type {#to_start_of_interval_preserves_argument_type}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "تُعيد الدالة `toStartOfInterval` قيمة من نوع وسيطتها نفسه بدلاً من نوع تحدده وحدة الفاصل الزمني، وهو ما كان يؤدي إلى التفاف القيم الواقعة خارج نطاق النوع الأضيق"}]}]} />
+
+يجعل الدالة `toStartOfInterval` (واسميها البديلين `time_bucket` و`date_bin`) تُعيد قيمة من نوع وسيطتها الأولى نفسه:
+`Date` لـ `Date`، و`Date32` لـ `Date32`، و`DateTime` لـ `DateTime`، و`DateTime64` بعدد المنازل العشرية نفسه لـ `DateTime64`، بصرف النظر عن وحدة الفاصل الزمني.
+والاستثناء الوحيد هو وحدة أصغر من الثانية تكون أدق من عدد المنازل العشرية لوسيطة من النوع `DateTime64`، مثل `INTERVAL 1500 MILLISECOND` مع `DateTime64(0)`: إذ تأخذ النتيجة عدد المنازل العشرية الخاص بالوحدة، لأن عدد المنازل العشرية للوسيطة لا يكفي لتمثيل حدود الحاويات.
+
+القيم الممكنة:
+
+* `1` — تأخذ النتيجة نوع الوسيطة الأولى، ولا يؤثر الإعداد `enable_extended_results_for_datetime_functions` في الدالة.
+* `0` — السلوك القديم: يتوقف نوع النتيجة على وحدة الفاصل الزمني؛ فالوحدة `WEEK` وما هو أطول منها تُنتج `Date`، والوحدات من `DAY` إلى `SECOND` تُنتج `DateTime`، والوحدات الأصغر من الثانية تُنتج `DateTime64` بعدد المنازل العشرية الخاص بالوحدة (أما مع وسيطات `Date32` و`DateTime64`، فيكون الناتج `Date32` و`DateTime64` بدلاً من `Date` و`DateTime` عند ضبط `enable_extended_results_for_datetime_functions = 1`). وأي قيمة تتجاوز نطاق نوع النتيجة الأضيق تلتف: فمثلاً، يُعيد `toStartOfInterval(toDate32('1900-01-01'), INTERVAL 1 DAY)` القيمة `2036-02-07 06:28:16`. ويخص هذا الوصف الصيغة التي لا تتضمن `origin`. أما الصيغة التي تتضمن `origin` فتحافظ على نوع الوسيطة حتى في السلوك القديم، باستثناء حالة الوسيطة من النوع `DateTime64` مع وحدة أصغر من الثانية، إذ تأخذ النتيجة حينها عدد المنازل العشرية الخاص بالوحدة.
 
 ## transfer_overflow_mode {#transfer_overflow_mode}
 
@@ -1952,7 +2083,23 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 <SettingsInfoBlock type="TransactionsWaitCSNMode" default_value="wait_unknown" />
 
-انتظر حتى تصبح التغييرات التي تم تثبيتها مرئية فعليًا في أحدث لقطة
+يحدد هذا الإعداد ما ينتظره `COMMIT`:
+
+* `wait_commit`: ينتظر طلب التثبيت فقط. وإذا كانت نتيجته غير معروفة (بسبب انقطاع الاتصال بـ Keeper)، يُطلق `COMMIT` الاستثناء `UNKNOWN_STATUS_OF_TRANSACTION`.
+* `wait_unknown`: ينتظر أيضًا نتيجة التثبيت الذي تكون حالته غير معروفة.
+* `wait_visible`: ينتظر أيضًا حتى ترى معاملة جديدة على هذه النسخة المتماثلة التغييرات، لمدة أقصاها `wait_changes_become_visible_timeout_ms`؛ وبعدها يُطلق `COMMIT` الاستثناء `TIMEOUT_EXCEEDED`، رغم أن المعاملة تكون قد ثُبِّتت بالفعل.
+
+## wait_changes_become_visible_timeout_ms {#wait_changes_become_visible_timeout_ms}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "10000"},{"label": "إعداد جديد يحدّد أقصى مدة تنتظرها `SYSTEM SYNC TRANSACTION LOG` و`BACKUP` و`COMMIT` حتى تصبح عمليات التثبيت مرئية على هذه النسخة المتماثلة."}]}]} />
+
+يحدد المدة التي تنتظرها `SYSTEM SYNC TRANSACTION LOG`، و`BACKUP` لجدول يتضمن معاملات، و`COMMIT` عند ضبط
+`wait_changes_become_visible_after_commit_mode = 'wait_visible'`، حتى تصبح عمليات التثبيت مرئية لأي
+معاملة جديدة على هذه النسخة المتماثلة. وعند انقضاء هذه المدة، ترفع استثناء `TIMEOUT_EXCEEDED`.
 
 ## weight {#weight}
 
@@ -2007,7 +2154,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
 
-يكتب المسارات الكاملة (بما في ذلك s3://) في ملفات البيانات الوصفية لـ Iceberg.
+يكتب المسارات الكاملة (بما في ذلك s3://) في ملفات البيانات الوصفية لـ Iceberg. أما الجداول المُنشأة في قاعدة بيانات `DataLakeCatalog` فتُكتب مساراتها كاملةً دائمًا.
 
 ## zstd_window_log_max {#zstd_window_log_max}
 

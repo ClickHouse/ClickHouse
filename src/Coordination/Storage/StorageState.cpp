@@ -7,6 +7,7 @@
 #include <base/getMemoryAmount.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
@@ -66,6 +67,11 @@ namespace ProfileEvents
     extern const Event KeeperLSMTNodeCacheEntriesUpdated;
     extern const Event KeeperLSMTListNamesFromMemtables;
     extern const Event KeeperLSMTListNamesFromFiles;
+}
+
+namespace DB::FailPoints
+{
+    extern const char keeper_lsmt_get_committed_node_after_repointing[];
 }
 
 namespace Coordination::Storage
@@ -246,6 +252,7 @@ NodeRef StorageState::getCommittedNode(const NodePathWithHash & path) const
     NodeRef ref{.action = NodeAction::Create, .offset = 0, .block = block};
     std::string path_buf;
     size_t entries_updated = 0;
+    std::optional<uint32_t> target_offset;
     for (uint32_t offset = block->entries_start; offset < block->size;)
     {
         ref.offset = offset;
@@ -254,7 +261,11 @@ NodeRef StorageState::getCommittedNode(const NodePathWithHash & path) const
         NodeAction action = NodeAction::Remove;
         ref.readPath(node_path, path_buf, serialized_size, action);
 
-        if (const auto * node_info = node_cache.findEntry(node_path.calculateHash()))
+        const NodePathHash node_hash = node_path.calculateHash();
+        if (node_hash == path.hash)
+            target_offset = offset;
+
+        if (const auto * node_info = node_cache.findEntry(node_hash))
         {
             /// Don't touch entries whose latest update is in a newer sorted run or memtable.
             if (run.max_file_seqno >= node_info->file_seqno)
@@ -273,14 +284,18 @@ NodeRef StorageState::getCommittedNode(const NodePathWithHash & path) const
     ProfileEvents::increment(ProfileEvents::KeeperLSMTGetCommittedNodeLoadedBlock);
     ProfileEvents::increment(ProfileEvents::KeeperLSMTNodeCacheEntriesUpdated, entries_updated);
 
-    /// `info` is still valid: the loop above only updated existing `node_cache` entries.
-    std::lock_guard guard(info->block);
-    BlockPtr loaded = info->block.get();
-    if (!loaded)
+    /// Lets a test re-point the node's entry, like a concurrent reader would, before we return.
+    DB::FailPointInjection::pauseFailPoint(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing);
+
+    /// Return the node from our own copy of the block, not by reading `info->block` back: a concurrent
+    /// reader may have re-pointed the entry at its own copy, loaded at the same time, and released it
+    /// since (nothing else keeps it alive if the block cache doesn't), so the entry's weak pointer may
+    /// already be expired.
+    if (!target_offset)
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR, "Node (file_seqno {}) not found in the expected block of sorted run covering {}-{}",
             seqno, run.min_file_seqno, run.max_file_seqno);
-    return NodeRef{.action = NodeAction::Create, .offset = info->node_offset, .block = std::move(loaded)};
+    return NodeRef{.action = NodeAction::Create, .offset = *target_offset, .block = std::move(block)};
 }
 
 NodeRef StorageState::getUncommittedNode(const NodePathWithHash & path)

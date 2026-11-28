@@ -61,7 +61,7 @@ WITH
     (
         SELECT groupUniqArrayArray(extractAll(extract(message, 'output exchange streams: \\[([^\\]]*)\\]'), '(exchange_\\d+)__'))
         FROM system.text_log
-        WHERE event_date >= yesterday() AND logger_name = 'executeDistributedQuery'
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'executeDistributedQuery'
           AND startsWith(message, 'Task \'rf_merge_')
           AND query_id IN (
               SELECT query_id FROM system.query_log
@@ -76,7 +76,7 @@ SELECT length(filter_exchanges) = 2 AND count() >= 1
    AND uniqExact(extract(message, '^Task \'(stage_\\d+)_')) = 1
    AND min(arraySort(arrayDistinct(input_exchanges)) = arraySort(filter_exchanges))
 FROM system.text_log
-WHERE event_date >= yesterday() AND logger_name = 'executeDistributedQuery'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'executeDistributedQuery'
   AND startsWith(message, 'Task \'stage_')
   AND hasAny(input_exchanges, filter_exchanges)
   AND query_id IN (

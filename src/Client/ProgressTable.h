@@ -44,10 +44,10 @@ private:
         explicit MetricInfo(ProfileEvents::Type t);
 
         void updateValue(Int64 new_value, double new_time);
-        double calculateRecentProgress(double time_now) const;
-        double calculateAverageProgress(double time_now) const;
-        double getValue() const;
-        double updateTime() const { return update_time; }
+        [[nodiscard]] double calculateRecentProgress(double time_now) const;
+        [[nodiscard]] double calculateAverageProgress(double time_now) const;
+        [[nodiscard]] double getValue() const;
+        [[nodiscard]] double updateTime() const { return update_time; }
 
     private:
         const ProfileEvents::Type type;
@@ -76,12 +76,12 @@ private:
         using HostName = String;
 
         void updateHostValue(const HostName & host, ProfileEvents::Type type, Int64 new_value, double new_time);
-        double getSummaryValue() const;
+        [[nodiscard]] double getSummaryValue() const;
         double getSummaryRecentProgress(double time_now);
-        double getSummaryAverageProgress(double time_now) const;
-        double getMaxProgress() const;
-        double updateTime() const;
-        int getDisplayPriority() const { return display_priority; }
+        [[nodiscard]] double getSummaryAverageProgress(double time_now) const;
+        [[nodiscard]] double getMaxProgress() const;
+        [[nodiscard]] double updateTime() const;
+        [[nodiscard]] int getDisplayPriority() const { return display_priority; }
         void increaseDisplayPriority() { ++display_priority; }
 
     private:
@@ -90,7 +90,7 @@ private:
         int display_priority = 0;
     };
 
-    size_t getColumnDocumentationWidth(size_t terminal_width) const;
+    [[nodiscard]] size_t getColumnDocumentationWidth(size_t terminal_width) const;
 
     using MetricName = String;
     using Metric = std::pair<MetricName, MetricInfoPerHost>;

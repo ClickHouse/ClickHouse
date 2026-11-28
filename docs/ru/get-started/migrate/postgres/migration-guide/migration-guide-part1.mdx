@@ -8,17 +8,17 @@ sidebarTitle: 'Часть 1'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 > Это **часть 1** руководства по миграции с PostgreSQL на ClickHouse. На практическом примере показано, как эффективно выполнить миграцию с помощью репликации в реальном времени (CDC). Многие из рассмотренных здесь концепций также применимы к ручному массовому переносу данных из PostgreSQL в ClickHouse.
 
-<div id="dataset">
-  ## Набор данных
-</div>
+## Набор данных {#dataset}
 
 В качестве примера, демонстрирующего типичную миграцию из Postgres в ClickHouse, мы используем набор данных Stack Overflow, описанный [здесь](/ru/get-started/sample-datasets/stackoverflow). Он содержит все `post`, `vote`, `user`, `comment` и `badge`, появившиеся на Stack Overflow с 2008 года по апрель 2024 года. Схема PostgreSQL для этих данных показана ниже:
 
-<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="Схема Stack Overflow в PostgreSQL" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Схема Stack Overflow в PostgreSQL](/images/migrations/postgres-stackoverflow-schema.webp)
+  </Frame>
+</div>
 
 *DDL-команды для создания таблиц в PostgreSQL доступны [здесь](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==).*
 
@@ -70,11 +70,11 @@ psql < postlinks.sql
 > Хотя в нашем примере для демонстрации разницы в производительности между Postgres и ClickHouse используются результаты на полном наборе данных, все описанные ниже шаги работают точно так же и для меньшего подмножества. Если вы хотите загрузить в Postgres полный набор данных, см. [здесь](https://pastila.nl/?00d47a08/1c5224c0b61beb480539f15ac375619d#XNj5vX3a7ZjkdiX7In8wqA==). Из-за ограничений внешних ключей, задаваемых приведённой выше схемой, полный набор данных для PostgreSQL включает только строки, удовлетворяющие требованиям ссылочной целостности. При необходимости [версию в формате Parquet](/ru/get-started/sample-datasets/stackoverflow) без таких ограничений можно легко загрузить напрямую в ClickHouse.
 
 <div id="migrating-data">
-  ## Миграция данных
+  ## Миграция данных {#migrating-data}
 </div>
 
 <div id="real-time-replication-or-cdc">
-  ### Репликация в реальном времени (CDC)
+  ### Репликация в реальном времени (CDC) {#real-time-replication-or-cdc}
 </div>
 
 Обратитесь к этому [руководству](/ru/integrations/clickpipes/postgres/index), чтобы настроить ClickPipes для PostgreSQL. В нем рассматриваются различные типы исходных экземпляров Postgres.
@@ -111,9 +111,7 @@ ORDER BY id;
 
 После настройки ClickPipes начинает переносить все данные из PostgreSQL в ClickHouse. В зависимости от сети и размера развертываний перенос набора данных Stack Overflow должен занять всего несколько минут.
 
-<div id="initial-bulk-load-with-periodic-updates">
-  ### Ручная массовая загрузка с периодическими обновлениями
-</div>
+### Ручная массовая загрузка с периодическими обновлениями {#initial-bulk-load-with-periodic-updates}
 
 При ручном подходе начальную массовую загрузку набора данных можно выполнить следующими способами:
 
@@ -164,7 +162,7 @@ ORDER BY tuple()
 COMMENT 'Optimized types'
 ```
 
-Это можно заполнить с помощью простого `INSERT INTO SELECT`, считывая данные из PostgresSQL и вставляя их в ClickHouse:
+Это можно заполнить с помощью простого `INSERT INTO SELECT`, считывая данные из PostgreSQL и вставляя их в ClickHouse:
 
 ```sql title="Query"
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>:<port>', 'postgres', 'posts', '<username>', '<password>')
@@ -174,12 +172,12 @@ INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>:<port>', 'postg
 0 rows in set. Elapsed: 146.471 sec. Processed 59.82 million rows, 83.82 GB (408.40 thousand rows/s., 572.25 MB/s.)
 ```
 
-Инкрементальные загрузки, в свою очередь, можно запускать по расписанию. Если в таблицу Postgres выполняются только вставки и есть увеличивающийся id или временная метка, можно использовать описанный выше подход с table function для загрузки инкрементальных данных, то есть к `SELECT` можно применить условие `WHERE`. Этот подход также можно использовать для поддержки обновлений, если гарантируется, что они изменяют один и тот же столбец. Однако для поддержки удалений потребуется полная перезагрузка, что по мере роста таблицы может быть сложно реализовать.
+Инкрементальные загрузки, в свою очередь, можно запускать по расписанию. Если в таблицу Postgres выполняются только вставки и есть увеличивающийся id или временная метка, можно использовать описанный выше подход с табличной функцией для загрузки инкрементальных данных, то есть к `SELECT` можно применить предложение `WHERE`. Этот подход также можно использовать для поддержки обновлений, если гарантируется, что они изменяют один и тот же столбец. Однако для поддержки удалений потребуется полная перезагрузка, что по мере роста таблицы может быть сложно реализовать.
 
 Мы покажем начальную и инкрементальную загрузку с использованием `CreationDate` (предполагается, что это значение обновляется при обновлении строк)..
 
 ```sql
--- начальная загрузка
+-- initial load
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password')
 
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password') WHERE CreationDate > ( SELECT (max(CreationDate) FROM stackoverflow.posts)

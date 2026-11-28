@@ -485,7 +485,16 @@ void readArchivedCompletionTimes(
 
         RelativePathWithMetadata file(history_path + file_name);
         auto buf = createReadBuffer(file, object_storage, context, log, read_settings);
-        auto input = FormatFactory::instance().getInput("Parquet", *buf, header, context, DEFAULT_BLOCK_SIZE, format_settings);
+        auto input = FormatFactory::instance().getInput(
+            "Parquet",
+            *buf,
+            header,
+            context,
+            DEFAULT_BLOCK_SIZE,
+            format_settings,
+            /*parser_shared_resources=*/nullptr,
+            /*format_filter_info=*/nullptr,
+            object_storage->isRemote());
         QueryPipeline pipeline(std::move(input));
         PullingPipelineExecutor executor(pipeline);
         Block block;
@@ -631,6 +640,11 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
             const String & key = object.relative_path;
             /// Nothing under `.hoodie/` is a data file of the table.
             if (key.starts_with(table_path) && std::string_view(key).substr(table_path.size()).starts_with(".hoodie/"))
+                return false;
+            /// Hudi names the partition metafile `.hoodie_partition_metadata` (`hoodie` is Hudi's original name and is
+            /// still part of its on-disk names). With `hoodie.partition.metafile.use.base.format=true` it gets the base
+            /// file extension, but it holds no table rows.
+            if (object.getFileName().starts_with(".hoodie_partition_metadata"))
                 return false;
             return key.ends_with(data_file_suffix) || parseLogFileName(object.getFileName());
         });
