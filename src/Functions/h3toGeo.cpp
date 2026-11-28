@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
@@ -19,6 +20,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool functions_h3_default_if_invalid;
     extern const SettingsBool h3togeo_lon_lat_result_order;
 }
 
@@ -38,6 +40,8 @@ class FunctionH3ToGeo final : public IFunction
     H3Validator validator;
 public:
     static constexpr auto name = "h3ToGeo";
+
+    static constexpr FunctionResultSetting result_settings[] = {Setting::h3togeo_lon_lat_result_order, Setting::functions_h3_default_if_invalid};
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToGeo>(context); }
 

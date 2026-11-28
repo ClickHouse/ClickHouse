@@ -159,6 +159,9 @@ class SplitByRegexpOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "splitByRegexp";
+
+    static constexpr FunctionResultSetting result_settings[] = {Setting::splitby_max_substrings_includes_remaining_string};
+
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<SplitByRegexpOverloadResolver>(context); }
 
     explicit SplitByRegexpOverloadResolver(ContextPtr context_)

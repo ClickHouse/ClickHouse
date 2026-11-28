@@ -1,4 +1,5 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
 #include <Core/Settings.h>
@@ -23,6 +24,7 @@ namespace
 class FunctionToTypeName final : public IFunction
 {
 public:
+    static constexpr FunctionResultSetting result_settings[] = {Setting::print_pretty_type_names};
     explicit FunctionToTypeName(bool print_pretty_type_names_) : print_pretty_type_names(print_pretty_type_names_)
     {
     }

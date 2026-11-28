@@ -2,6 +2,13 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <DataTypes/TypeTree.h>
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -11,6 +18,9 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Common/quoteString.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSubquery.h>
@@ -29,6 +39,140 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+using NodesByName = UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *>;
+
+NodesByName getNodesByName(const ActionsDAG & dag)
+{
+    NodesByName nodes;
+    for (const auto & node : dag.getNodes())
+        nodes.emplace(node.result_name, &node);
+    return nodes;
+}
+
+/// The body of the lambda that `node`, an argument of a higher-order function, stands for: a `FunctionCapture`, or a
+/// `ColumnFunction` if constant folding turned it into one.
+const ActionsDAG * tryGetLambdaBody(const ActionsDAG::Node & node)
+{
+    const IFunctionBase * function = nullptr;
+    if (node.type == ActionsDAG::ActionType::FUNCTION)
+    {
+        function = node.function_base.get();
+    }
+    else if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
+    {
+        const IColumn * column = node.column.get();
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+            column = &column_const->getDataColumn();
+        if (const auto * column_function = typeid_cast<const ColumnFunction *>(column))
+            function = column_function->getFunction().get();
+    }
+
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(function))
+        return &capture->getAcionsDAG();
+    if (const auto * expression = typeid_cast<const FunctionExpression *>(function))
+        return &expression->getAcionsDAG();
+    return nullptr;
+}
+
+}
+
+void collectResultSettings(
+    const IAST & ast, const ActionsDAG & dag, const Settings & settings, std::vector<ResultSettingsOfExpression> & result_settings)
+{
+    const NodesByName nodes = getNodesByName(dag);
+
+    VectorWithMemoryTracking<const ActionsDAG::Node *> enclosing;
+    /// `lambda_body`: the nodes of the body of the lambda around `ast_node`, if any. A call there has no node in `dag`.
+    auto visit = [&](this auto & self, const IAST & ast_node, const NodesByName * lambda_body) -> void
+    {
+        const auto * function = ast_node.as<ASTFunction>();
+        const ActionsDAG::Node * call = nullptr;
+        if (function)
+        {
+            const NodesByName & scope = lambda_body ? *lambda_body : nodes;
+            if (auto it = scope.find(function->getColumnName()); it != scope.end())
+                call = it->second;
+        }
+        const ActionsDAG::Node * node = lambda_body ? nullptr : call;
+        if (node)
+            enclosing.push_back(node);
+
+        if (function && !enclosing.empty())
+        {
+            if (const auto * registered = FunctionFactory::instance().tryGetResultSettings(function->name))
+            {
+                /// A call folded into a constant has no node to ask, so all its declared settings count.
+                const IFunctionBase * built = call && call->type == ActionsDAG::ActionType::FUNCTION ? call->function_base.get() : nullptr;
+                const String & expression = enclosing.back()->result_name;
+                auto entry = std::ranges::find(result_settings, expression, &ResultSettingsOfExpression::expression);
+                for (size_t i = 0; i < registered->settings.size(); ++i)
+                {
+                    if (built && !built->resultDependsOnSetting(registered->settings[i]))
+                        continue;
+                    if (entry == result_settings.end())
+                    {
+                        result_settings.push_back({expression, {}});
+                        entry = std::prev(result_settings.end());
+                    }
+                    if (!entry->settings.tryGet(registered->names[i]))
+                        entry->settings.emplace_back(registered->names[i], settings.getByIndex(registered->indices[i]));
+                }
+            }
+        }
+
+        if (function && function->arguments)
+        {
+            const auto & arguments = function->arguments->children;
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                const auto * argument = arguments[i]->as<ASTFunction>();
+                if (argument && argument->name == "lambda")
+                {
+                    /// The body of each lambda is in the node of the higher-order function's argument, e.g. `x -> toString(x)` in
+                    /// two calls of `arrayMap` with arguments of other types are different functions. Without it all settings count.
+                    const ActionsDAG * body = call && call->type == ActionsDAG::ActionType::FUNCTION && i < call->children.size()
+                        ? tryGetLambdaBody(*call->children[i])
+                        : nullptr;
+                    const NodesByName body_nodes = body ? getNodesByName(*body) : NodesByName{};
+                    if (argument->arguments && argument->arguments->children.size() == 2)
+                        self(*argument->arguments->children[1], &body_nodes);
+                }
+                else
+                {
+                    self(*arguments[i], lambda_body);
+                }
+            }
+        }
+        else
+        {
+            for (const auto & child : ast_node.children)
+                self(*child, lambda_body);
+        }
+
+        if (node)
+            enclosing.pop_back();
+    };
+    visit(ast, nullptr);
+}
+
+void collectResultSettings(const IAST & ast, const ActionsDAG & dag, const Settings & settings, SettingsChanges & result_settings)
+{
+    std::vector<ResultSettingsOfExpression> of_expressions;
+    collectResultSettings(ast, dag, settings, of_expressions);
+    for (const auto & entry : of_expressions)
+        for (const auto & change : entry.settings)
+            if (!result_settings.tryGet(change.name))
+                result_settings.push_back(change);
+}
+
+bool resultSettingsChanged(const SettingsChanges & result_settings, const Settings & settings)
+{
+    return std::ranges::any_of(result_settings, [&](const auto & change) { return settings.get(change.name) != change.value; });
+}
+
 KeyDescription::KeyDescription(const KeyDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
@@ -37,6 +181,7 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , reverse_flags(other.reverse_flags)
     , data_types(other.data_types)
     , additional_columns(other.additional_columns)
+    , result_settings(other.result_settings)
     , sort_order_id(other.sort_order_id)
 {
     if (other.expression)
@@ -72,6 +217,7 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong key assignment, losing additional_columns");
 
     additional_columns = other.additional_columns;
+    result_settings = other.result_settings;
     sort_order_id = other.sort_order_id;
     return *this;
 }
@@ -192,6 +338,9 @@ KeyDescription KeyDescription::getKeyFromAST(
         result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
         /// In sample block we use just key columns
         result.sample_block = ExpressionAnalyzer(expr, syntax_result, context).getActions(true)->getSampleBlock();
+
+        /// Collected from the analyzed AST: user-defined functions are expanded there, and no call is erased by constant folding yet.
+        collectResultSettings(*expr, result.expression->getActionsDAG(), context->getSettingsRef(), result.result_settings);
     }
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)
@@ -214,6 +363,43 @@ KeyDescription KeyDescription::getKeyFromAST(
         forEachInTypeTree(*result.data_types.back(), check);
     }
 
+    return result;
+}
+
+NameSet KeyDescription::getExpressionsWithChangedResultSettings(const Settings & settings) const
+{
+    NameSet changed;
+    for (const auto & entry : result_settings)
+        if (resultSettingsChanged(entry.settings, settings))
+            changed.insert(entry.expression);
+    if (changed.empty())
+        return {};
+
+    /// The expressions computed from a changed one are changed too.
+    const auto & dag = expression->getActionsDAG();
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, VectorWithMemoryTracking<const ActionsDAG::Node *>> parents;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack;
+    for (const auto & node : dag.getNodes())
+    {
+        for (const auto * child : node.children)
+            parents[child].push_back(&node);
+        if (changed.contains(node.result_name))
+            stack.push_back(&node);
+    }
+
+    NameSet result;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            result.insert(node->result_name);
+        if (auto it = parents.find(node); it != parents.end())
+            stack.insert(stack.end(), it->second.begin(), it->second.end());
+    }
     return result;
 }
 

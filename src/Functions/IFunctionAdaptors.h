@@ -72,7 +72,12 @@ public:
         return true;
     }
 
-    void updateHash(SipHash & hash) const override { function->updateHash(hash); }
+    void updateHashImpl(SipHash & hash) const override { function->updateHash(hash); }
+
+    [[nodiscard]] bool resultDependsOnSetting(const FunctionResultSetting & setting) const override
+    {
+        return function->resultDependsOnSetting(setting, arguments, result_type);
+    }
 
     const DataTypes & getArgumentTypes() const override { return arguments; }
     const DataTypePtr & getResultType() const override { return result_type; }

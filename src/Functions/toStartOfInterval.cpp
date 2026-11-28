@@ -742,6 +742,9 @@ class FunctionToStartOfIntervalOverloadResolver final : public IFunctionOverload
 public:
     static constexpr auto name = "toStartOfInterval";
 
+    static constexpr FunctionResultSetting result_settings[]
+        = {Setting::to_start_of_interval_preserves_argument_type, Setting::enable_extended_results_for_datetime_functions};
+
     static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<FunctionToStartOfIntervalOverloadResolver>(context_); }
 
     explicit FunctionToStartOfIntervalOverloadResolver(ContextPtr context_)

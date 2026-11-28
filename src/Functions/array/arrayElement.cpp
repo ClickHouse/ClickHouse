@@ -115,6 +115,14 @@ public:
     [[nodiscard]] String getName() const override;
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+
+    /// The `JSON` settings apply only to a `JSON` or `Dynamic` value, e.g. not to `x[1]` of an `Array(UInt64)`.
+    [[nodiscard]] bool resultDependsOnSetting(
+        const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type) const override
+    {
+        return std::ranges::any_of(
+            arguments, [&](const DataTypePtr & type) { return conversionResultDependsOnSetting(setting, type, result_type); });
+    }
     /// A lazily replicated array argument is consumed by gathering from the compact nested column.
     /// When true it materializes the compacted representation to a full column.
     [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const override { return false; }
@@ -3745,7 +3753,10 @@ The first argument may also be:
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionArrayElement<ArrayElementExceptionMode::Zero>>>(documentation);
+    static constexpr FunctionResultSetting result_settings[] = {Setting::json_type_escape_dots_in_keys};
+    using FunctionArrayElementZero = FunctionWithLowCardinalityFastPath<FunctionArrayElement<ArrayElementExceptionMode::Zero>>;
+    factory.registerFunction(
+        FunctionArrayElementZero::name, &FunctionArrayElementZero::create, documentation, FunctionFactory::Case::Sensitive, result_settings);
 
     FunctionDocumentation::Description description_null = R"(
 Gets the element of the provided array with index `n` where `n` can be any integer type.
@@ -3783,6 +3794,8 @@ The first argument may also be a [`Map`](/reference/data-types/map): an absent k
     FunctionDocumentation::Category category_null = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_null = {description_null, syntax_null, arguments_null, {}, returned_value_null, examples_null, introduced_in_null, category_null};
 
-    factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionArrayElement<ArrayElementExceptionMode::Null>>>(documentation_null);
+    using FunctionArrayElementNull = FunctionWithLowCardinalityFastPath<FunctionArrayElement<ArrayElementExceptionMode::Null>>;
+    factory.registerFunction(
+        FunctionArrayElementNull::name, &FunctionArrayElementNull::create, documentation_null, FunctionFactory::Case::Sensitive, result_settings);
 }
 }

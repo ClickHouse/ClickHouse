@@ -33,6 +33,13 @@ namespace DB
 {
 
 class Field;
+struct FunctionResultSetting;
+struct RegisteredResultSettings;
+
+/// The values of the result settings of a function captured when it was created, see `FunctionResultSetting`.
+struct CapturedResultSettings;
+using CapturedResultSettingsPtr = std::shared_ptr<const CapturedResultSettings>;
+
 struct FieldInterval;
 using FieldIntervalPtr = std::shared_ptr<FieldInterval>;
 
@@ -219,8 +226,20 @@ public:
       * function that does not is keyed by its name and types alone, and two sessions that differ in
       * the setting it captured share one key (the query condition cache still tells them apart by
       * `queryConditionCacheSettingsSalt`, the statistics cache does not).
+      * A result setting of the function (see `FunctionResultSetting`) is hashed here for every function, so the function
+      * does not need to override `updateHashImpl` for it.
       */
-    virtual void updateHash(SipHash &) const {}
+    void updateHash(SipHash & hash) const;
+
+    /// The hash of the values of the result settings (see `FunctionResultSetting`) that apply to this function, captured when
+    /// the function was created, or 0 when there is nothing to hash: none applies, or it is constructed outside the factory.
+    UInt128 getResultSettingsHash() const { return result_settings_hash; }
+    void setResultSettingsHash(UInt128 hash) const { result_settings_hash = hash; }
+
+    /// Whether a declared result setting changes the result for the argument types this function was built for, as
+    /// `getMonotonicityForRange` answers for its types. E.g. `session_timezone` changes `toDateTime` of a `String`, but not of
+    /// a `DateTime64`, whose time zone is part of its type.
+    [[nodiscard]] virtual bool resultDependsOnSetting(const FunctionResultSetting & /*setting*/) const { return true; }
 
     const Array & getParameters() const final;
 
@@ -452,8 +471,14 @@ public:
     const FunctionCreator * getFactoryHandle() const { return factory_handle; }
     void setFactoryHandle(const FunctionCreator * h) const { factory_handle = h; }
 
+protected:
+    /// The state other than the result settings, see `updateHash`.
+    virtual void updateHashImpl(SipHash &) const {}
+
 private:
     mutable const FunctionCreator * factory_handle = nullptr;
+    /// Set after construction like `factory_handle`: the factory creates the function through the creator of its class.
+    mutable UInt128 result_settings_hash = 0;
 };
 
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
@@ -576,7 +601,13 @@ public:
     const FunctionCreator * getFactoryHandle() const { return factory_handle; }
     void setFactoryHandle(const FunctionCreator * h) const { factory_handle = h; }
 
+    /// Set by `FunctionFactory`; every function this builds hashes the values of the settings that apply to it, see
+    /// `IFunctionBase::getResultSettingsHash`.
+    void setCapturedResultSettings(CapturedResultSettingsPtr captured) const { captured_result_settings = std::move(captured); }
+
 protected:
+    /// Gives `base` the hash of the captured result settings that apply to it. `build` does it; an override of `build` must too.
+    void attachResultSettings(const FunctionBasePtr & base) const;
 
     virtual FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const;
 
@@ -654,6 +685,7 @@ private:
 
     /// mutable beacuse it's set after construction by FunctionFactory, resolvers themselves are otherwise immutable
     mutable const FunctionCreator * factory_handle = nullptr;
+    mutable CapturedResultSettingsPtr captured_result_settings;
 };
 
 /// Old function interface. Check documentation in IFunction.h.
@@ -672,6 +704,13 @@ public:
     /// See the comment for the same method in `IFunctionBase`: the adaptor that wraps this interface
     /// into one forwards to this.
     virtual void updateHash(SipHash &) const {}
+
+    /// See `IFunctionBase::resultDependsOnSetting`: the adaptor that wraps this interface into one forwards to this.
+    [[nodiscard]] virtual bool resultDependsOnSetting(
+        const FunctionResultSetting & /*setting*/, const DataTypes & /*arguments*/, const DataTypePtr & /*result_type*/) const
+    {
+        return true;
+    }
 
     /// (Does `result_type` always come from a corresponding `getReturnTypeImpl` call?
     ///  No: FunctionCast::prepareRemoveNullable does something complicated and ends up not respecting

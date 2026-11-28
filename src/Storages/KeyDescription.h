@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Core/Names.h>
+#include <Common/SettingsChanges.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -13,8 +14,31 @@ namespace DB
 {
 
 class ColumnsDescription;
+struct Settings;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
+class IAST;
+class ActionsDAG;
+
+/// The result settings (see `FunctionResultSetting`) that apply to a subexpression of a key, with the values the key was built with.
+struct ResultSettingsOfExpression
+{
+    /// The name of the subexpression in the key expression: the function that declares the settings, or, if it has no node there
+    /// (folded into a constant, or inside a lambda), the closest expression around it that has one.
+    String expression;
+    SettingsChanges settings;
+};
+
+/// Adds the result settings that apply to the functions called in `ast`, the expression of `dag`, with their values in `settings`.
+void collectResultSettings(
+    const IAST & ast, const ActionsDAG & dag, const Settings & settings, std::vector<ResultSettingsOfExpression> & result_settings);
+
+/// The same, merged for the whole expression.
+void collectResultSettings(const IAST & ast, const ActionsDAG & dag, const Settings & settings, SettingsChanges & result_settings);
+
+/// Whether `settings` sets any of `result_settings` to another value.
+bool resultSettingsChanged(const SettingsChanges & result_settings, const Settings & settings);
 
 /// Common structure for primary, partition and other storage keys
 struct KeyDescription
@@ -47,6 +71,9 @@ struct KeyDescription
     /// initialization with non empty value. Not stored in definition_ast,
     /// but added to expression_list_ast and all its derivatives.
     NamesAndTypesList additional_columns;
+
+    /// The result settings of the subexpressions of the key, see `ResultSettingsOfExpression`.
+    std::vector<ResultSettingsOfExpression> result_settings;
 
     /// ID of this specific order by key, make sense for engines which allow to change sorting key
     /// for example Iceberg.
@@ -104,6 +131,11 @@ struct KeyDescription
         const std::optional<Names> & hint_columns = {});
 
     [[nodiscard]] ASTPtr getOriginalExpressionList() const;
+
+    /// The subexpressions of the key for which `settings` sets a result setting to another value than the key was built with, and
+    /// the subexpressions computed from them. A query computes them differently than the stored values, so they must not be
+    /// matched by name. Other subexpressions, e.g. `lower(s)` shared by another key column, stay usable.
+    [[nodiscard]] NameSet getExpressionsWithChangedResultSettings(const Settings & settings) const;
 
     KeyDescription() = default;
 

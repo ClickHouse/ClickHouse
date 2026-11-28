@@ -9,6 +9,7 @@
 #include <Formats/FormatSettings.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/toStartOfInterval.h>
@@ -27,7 +28,9 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool enable_extended_results_for_datetime_functions;
     extern const SettingsUInt64 function_date_trunc_return_type_behavior;
+    extern const SettingsTimezone session_timezone;
 }
 
 namespace
@@ -58,6 +61,13 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
+
+    /// A `Date` truncated to a time becomes a time in `session_timezone`, e.g. `dateTrunc('day', d)`.
+    [[nodiscard]] bool resultDependsOnSetting(
+        const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type) const override
+    {
+        return arguments.size() < 2 || conversionResultDependsOnSetting(setting, arguments[1], result_type, /*creates_result_type=*/ false);
+    }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -98,6 +108,10 @@ class FunctionDateTruncOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "dateTrunc";
+
+    static constexpr FunctionResultSetting result_settings[]
+        = {Setting::function_date_trunc_return_type_behavior, Setting::enable_extended_results_for_datetime_functions,
+           Setting::session_timezone};
 
     explicit FunctionDateTruncOverloadResolver(ContextPtr context)
         /// `dateTrunc` has its own result type, and its results must not depend on `to_start_of_interval_preserves_argument_type`,

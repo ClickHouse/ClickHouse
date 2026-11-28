@@ -2172,7 +2172,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         !query_info.row_level_filter &&
         !query_info.prewhere_info &&
         !reader_settings.use_query_condition_cache && /// the query condition cache produces incorrect results with intersecting ranges
-        !isVectorColumnReplaced()) /// Vector search optimization needs ranges & offsets to be stable
+        !isVectorColumnReplaced() && /// Vector search optimization needs ranges & offsets to be stable
+        /// The ranges are filtered by the sorting key computed by the query, which must match the stored one.
+        storage_snapshot->metadata->getSortingKey().getExpressionsWithChangedResultSettings(settings).empty())
     {
         NameSet column_names_set(column_names.begin(), column_names.end());
         Names in_order_column_names_to_read(column_names);
@@ -3662,6 +3664,10 @@ void ReadFromMergeTree::buildOffsetAndSkipIndexConditions(
     for (const auto & index : all_indexes)
     {
         if (ignored_index_names.contains(index.name))
+            continue;
+
+        /// The query computes the index expression differently than the stored index values.
+        if (resultSettingsChanged(index.result_settings, settings))
             continue;
 
         auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, data_settings);
@@ -6396,6 +6402,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 if (ignored_index_names.contains(index.name))
                     continue;
                 if (index.type != "minmax" && index.type != "set" && index.type != "bloom_filter")
+                    continue;
+                if (resultSettingsChanged(index.result_settings, context->getSettingsRef()))
                     continue;
                 if (std::find(index.column_names.begin(), index.column_names.end(), descr.key_column_name) == index.column_names.end())
                     continue;

@@ -93,6 +93,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 /** List of settings: type, name, default value, description, flags
@@ -12846,6 +12847,11 @@ Field Settings::get(std::string_view name) const
     return impl->get(name);
 }
 
+Field Settings::getByIndex(size_t index) const
+{
+    return SettingsTraits::Accessor::instance().getValue(*impl, index);
+}
+
 void Settings::set(std::string_view name, const Field & value)
 {
     impl->set(name, value);
@@ -13239,6 +13245,19 @@ Field Settings::stringToValueUtil(std::string_view name, const String & str)
 bool Settings::hasBuiltin(std::string_view name)
 {
     return SettingsImpl::hasBuiltin(name);
+}
+
+size_t Settings::getIndexOfBuiltinByOffset(size_t offset)
+{
+    size_t index = SettingsTraits::Accessor::instance().findByOffset(offset);
+    if (index == static_cast<size_t>(-1))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no setting with the offset {}", offset);
+    return index;
+}
+
+std::string_view Settings::getNameOfBuiltin(size_t index)
+{
+    return SettingsTraits::Accessor::instance().getName(index);
 }
 
 std::optional<SettingsTierType> Settings::tryGetTierOfBuiltin(std::string_view name)

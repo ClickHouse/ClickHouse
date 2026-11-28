@@ -7,6 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
@@ -41,6 +42,8 @@ class FunctionGeoToH3 final : public IFunction
     GeoToH3ArgumentOrder geotoh3_argument_order;
 public:
     static constexpr auto name = "geoToH3";
+
+    static constexpr FunctionResultSetting result_settings[] = {Setting::geotoh3_argument_order};
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGeoToH3>(context); }
 

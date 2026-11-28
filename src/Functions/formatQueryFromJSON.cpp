@@ -244,6 +244,12 @@ class FunctionFormatQueryFromJSON : public IFunction
 {
 public:
     static constexpr auto name = "formatQueryFromJSON";
+
+    static constexpr FunctionResultSetting result_settings[] = {Setting::implicit_select,
+                                                                Setting::allow_settings_after_format_in_insert,
+                                                                Setting::max_query_size,
+                                                                Setting::max_parser_depth,
+                                                                Setting::max_parser_backtracks};
     static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionFormatQueryFromJSON>(context);

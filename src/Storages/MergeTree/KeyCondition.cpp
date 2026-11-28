@@ -1856,7 +1856,8 @@ KeyCondition::KeyCondition(
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
     bool skip_analysis_,
-    bool require_ready_sets_)
+    bool require_ready_sets_,
+    const NameSet & unusable_key_expressions_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
@@ -1867,7 +1868,9 @@ KeyCondition::KeyCondition(
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
     {
-        key_columns.try_emplace(name, key_index);
+        /// A key column the query computes differently than the stored values matches nothing, also by transforming a predicate.
+        if (!unusable_key_expressions_.contains(name))
+            key_columns.try_emplace(name, key_index);
         ++key_index;
     }
 
@@ -1883,9 +1886,13 @@ KeyCondition::KeyCondition(
         return;
     }
 
+    NameSet key_subexpr_names = getAllSubexpressionNames(*key_expr_);
+    for (const auto & name : unusable_key_expressions_)
+        key_subexpr_names.erase(name);
+
     auto info = BuildInfo {
         .key_expr = key_expr_,
-        .key_subexpr_names = getAllSubexpressionNames(*key_expr_),
+        .key_subexpr_names = std::move(key_subexpr_names),
         .columns_named_like_key_expressions = getColumnsNamedLikeKeyExpressions(filter_dag, *key_expr_),
         .require_ready_sets = require_ready_sets_};
 
@@ -1932,7 +1939,9 @@ KeyCondition::KeyCondition(
     const KeyDescription & key_description,
     bool single_point_,
     bool skip_analysis_)
-    : KeyCondition(filter_dag, context, key_description.column_names, key_description.expression, single_point_, skip_analysis_)
+    : KeyCondition(
+          filter_dag, context, key_description.column_names, key_description.expression, single_point_, skip_analysis_,
+          /*require_ready_sets_=*/ false, key_description.getExpressionsWithChangedResultSettings(context->getSettingsRef()))
 {
     key_order = KeyOrder(key_description.reverse_flags);
 

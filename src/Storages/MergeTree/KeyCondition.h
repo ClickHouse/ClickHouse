@@ -81,7 +81,10 @@ public:
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
         bool skip_analysis_ = false, /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
-        bool require_ready_sets_ = false); /// Analyse only already-built `IN` sets; never execute a subquery.
+        bool require_ready_sets_ = false, /// Analyse only already-built `IN` sets; never execute a subquery.
+        /// Subexpressions of the key that a filter expression must not match by name, see
+        /// `KeyDescription::getExpressionsWithChangedResultSettings`.
+        const NameSet & unusable_key_expressions_ = {});
 
     /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
     /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).

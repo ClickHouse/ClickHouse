@@ -4,6 +4,8 @@
 #include <optional>
 #include <Interpreters/Context_fwd.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/Names.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 
@@ -65,5 +67,19 @@ std::optional<VectorWithMemoryTracking<std::optional<size_t>>> tryGetTupleCastEl
     const DataTypeTuple & from, const DataTypeTuple & to, TupleElementsMatching matching = TupleElementsMatching::Default);
 
 FunctionOverloadResolverPtr createCastOverloadResolver(ContextPtr context, CastType cast_type, std::optional<CastDiagnostic> diagnostic);
+
+enum class ConversionResultKind : uint8_t
+{
+    OverflowOnly,
+    Float,
+    DateTime,
+    DateTimeBestEffort,
+    IPAddress,
+    String,
+    Cast,
+};
+
+/// The settings that change what a conversion function returns, by the type it converts to.
+FunctionResultSettings getConversionResultSettings(ConversionResultKind kind);
 
 }

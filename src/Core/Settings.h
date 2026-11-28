@@ -162,6 +162,8 @@ struct Settings
 
     bool tryGet(std::string_view name, Field & value) const;
     [[nodiscard]] Field get(std::string_view name) const;
+    /// Reads a built-in setting by the index from `getIndexOfBuiltin`, without looking up its name.
+    [[nodiscard]] Field getByIndex(size_t index) const;
 
     void set(std::string_view name, const Field & value);
     /// Forcibly store `name` as a custom (string-valued) field, even when it collides with a
@@ -222,6 +224,9 @@ struct Settings
     static String valueToStringUtil(std::string_view name, const Field & value);
     static Field stringToValueUtil(std::string_view name, const String & str);
     static bool hasBuiltin(std::string_view name);
+    /// The index for `getByIndex` of the built-in setting with this offset (`SettingIndex::offset`). Throws if there is none.
+    static size_t getIndexOfBuiltinByOffset(size_t offset);
+    static std::string_view getNameOfBuiltin(size_t index);
     static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);

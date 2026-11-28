@@ -37,6 +37,7 @@ class FunctionCountMatches final : public IFunction
 
 public:
     static constexpr auto name = CountMatchesBase::name;
+    static constexpr FunctionResultSetting result_settings[] = {Setting::count_matches_stop_at_empty_match};
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionCountMatches<CountMatchesBase>>(context); }
 
     explicit FunctionCountMatches(ContextPtr context)

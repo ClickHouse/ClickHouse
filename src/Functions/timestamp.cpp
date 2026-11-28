@@ -1,4 +1,5 @@
 #include <Functions/FunctionFactory.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnConst.h>
@@ -10,6 +11,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsTimezone session_timezone;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -29,6 +35,7 @@ public:
     static constexpr UInt32 DATETIME_SCALE = 6;
 
     static constexpr auto name = "timestamp";
+    static constexpr FunctionResultSetting result_settings[] = {Setting::session_timezone};
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimestamp>(); }
 

@@ -1,4 +1,6 @@
 #include <Storages/MergeTree/PartitionPruner.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -19,7 +21,8 @@ PartitionPruner::PartitionPruner(
           partition_key.expression,
           true /* single_point */,
           skip_analysis,
-          require_ready_sets)
+          require_ready_sets,
+          partition_key.getExpressionsWithChangedResultSettings(context->getSettingsRef()))
     , useless((strict && partition_condition.isRelaxed()) || partition_condition.alwaysUnknownOrTrue())
 {
 }

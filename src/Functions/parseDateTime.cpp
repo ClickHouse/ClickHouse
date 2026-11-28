@@ -37,6 +37,7 @@ namespace Setting
     extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
     extern const SettingsBool parsedatetime_parse_without_leading_zeros;
     extern const SettingsBool parsedatetime_e_requires_space_padding;
+    extern const SettingsTimezone session_timezone;
 }
 
 namespace ErrorCodes
@@ -648,6 +649,15 @@ namespace
 
         static constexpr auto name = Name::name;
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
+
+        static constexpr FunctionResultSetting mysql_result_settings[]
+            = {Setting::formatdatetime_parsedatetime_m_is_month_name,
+               Setting::parsedatetime_parse_without_leading_zeros,
+               Setting::parsedatetime_e_requires_space_padding,
+               Setting::session_timezone};
+        static constexpr FunctionResultSetting joda_result_settings[] = {Setting::session_timezone};
+        static constexpr FunctionResultSettings result_settings
+            = parse_syntax == ParseSyntax::MySQL ? FunctionResultSettings(mysql_result_settings) : FunctionResultSettings(joda_result_settings);
 
         explicit FunctionParseDateTimeImpl(ContextPtr context)
             : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])

@@ -3,6 +3,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -158,6 +159,14 @@ namespace
             res_columns[i++]->insertDefault();
         }
         res_columns[i++]->insert(signature);
+
+        Array result_settings;
+        if constexpr (std::is_same_v<Factory, FunctionFactory>)
+        {
+            if (const auto * registered = factory.tryGetResultSettings(name))
+                result_settings.assign(registered->names.begin(), registered->names.end());
+        }
+        res_columns[i++]->insert(result_settings);
     }
 
 }
@@ -196,7 +205,9 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
             "Whether the function returns the same result for the same arguments. NULL when unknown (e.g. aggregate or user-defined functions)."},
         {"higher_order", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
             "Whether the function is higher-order — i.e. accepts at least one lambda expression as an argument (e.g. arrayMap, arrayFilter, mapApply). NULL when unknown."},
-        {"signature", std::make_shared<DataTypeString>(), "Declarative signature of the function, when available."}
+        {"signature", std::make_shared<DataTypeString>(), "Declarative signature of the function, when available."},
+        {"result_settings", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "The settings that change the result of the function for the same arguments."}
     };
 }
 
@@ -275,6 +286,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[i++]->insertDefault(); // is_deterministic
             res_columns[i++]->insert(UInt8{0}); // higher_order
             res_columns[i++]->insertDefault(); // signature
+            res_columns[i++]->insertDefault(); // result_settings
             continue;
         }
 
@@ -347,6 +359,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insertDefault(); // is_deterministic
         res_columns[i++]->insert(UInt8{0}); // higher_order
         res_columns[i++]->insertDefault(); // signature
+        res_columns[i++]->insertDefault(); // result_settings
     }
 }
 

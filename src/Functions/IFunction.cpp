@@ -17,9 +17,11 @@
 #include <DataTypes/FunctionSignature.h>
 #include <DataTypes/Native.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
+#include <Common/FieldVisitorHash.h>
 #include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -938,6 +940,13 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
     return getReturnTypeWithoutLowCardinality(arguments);
 }
 
+void IFunctionBase::updateHash(SipHash & hash) const
+{
+    if (result_settings_hash)
+        hash.update(result_settings_hash);
+    updateHashImpl(hash);
+}
+
 FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & arguments) const
 {
     checkAccessOnBuild();
@@ -992,8 +1001,31 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
 
     if (base && factory_handle)
         base->setFactoryHandle(factory_handle);
+    if (base)
+        attachResultSettings(base);
 
     return base;
+}
+
+void IFunctionOverloadResolver::attachResultSettings(const FunctionBasePtr & base) const
+{
+    if (!captured_result_settings)
+        return;
+
+    const auto & registered = *captured_result_settings->registered;
+    SipHash hash;
+    bool any_applies = false;
+    for (size_t i = 0; i < registered.settings.size(); ++i)
+    {
+        if (base->resultDependsOnSetting(registered.settings[i]))
+        {
+            hash.update(i);
+            applyVisitor(FieldVisitorHash(hash), captured_result_settings->values[i]);
+            any_applies = true;
+        }
+    }
+    if (any_applies)
+        base->setResultSettingsHash(hash.get128());
 }
 
 void IFunctionOverloadResolver::getLambdaArgumentTypes(DataTypes & arguments [[maybe_unused]]) const

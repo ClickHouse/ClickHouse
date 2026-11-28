@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -43,6 +44,7 @@ namespace Setting
     extern const SettingsBool formatdatetime_format_without_leading_zeros;
     extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
     extern const SettingsBool formatdatetime_e_with_space_padding;
+    extern const SettingsTimezone session_timezone;
 }
 
 namespace ErrorCodes
@@ -967,6 +969,31 @@ private:
 
 public:
     static constexpr auto name = Name::name;
+
+    static constexpr FunctionResultSetting mysql_result_settings[]
+        = {Setting::formatdatetime_parsedatetime_m_is_month_name,
+           Setting::formatdatetime_f_prints_single_zero,
+           Setting::formatdatetime_f_prints_scale_number_of_digits,
+           Setting::formatdatetime_format_without_leading_zeros,
+           Setting::formatdatetime_e_with_space_padding,
+           Setting::session_timezone};
+    static constexpr FunctionResultSetting joda_result_settings[] = {Setting::session_timezone};
+    static constexpr FunctionResultSettings result_settings
+        = format_syntax == FormatSyntax::MySQL ? FunctionResultSettings(mysql_result_settings) : FunctionResultSettings(joda_result_settings);
+
+    /// Without a time zone argument, a number or a time without an explicit time zone is formatted in `session_timezone`.
+    [[nodiscard]] bool resultDependsOnSetting(
+        const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & /*result_type*/) const override
+    {
+        if (!(setting == FunctionResultSetting(Setting::session_timezone)))
+            return true;
+        if (arguments.empty())
+            return true;
+        if (arguments.size() > 2)
+            return false;
+        const auto * time_zone = dynamic_cast<const TimezoneMixin *>(removeLowCardinalityAndNullable(arguments[0]).get());
+        return !time_zone || !time_zone->hasExplicitTimeZone();
+    }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFormatDateTimeImpl>(context); }
 

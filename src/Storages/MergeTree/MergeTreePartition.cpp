@@ -540,7 +540,9 @@ KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr &
     /// calculated according to previous version - `moduloLegacy`.
     if (KeyDescription::moduloToModuloLegacyRecursive(ast_copy))
     {
-        auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, metadata_snapshot->virtuals, context);
+        /// Built like the table's key, in the global context: the session may set the result settings of its functions differently.
+        auto adjusted_partition_key = KeyDescription::getKeyFromAST(
+            ast_copy, metadata_snapshot->columns, metadata_snapshot->virtuals, context->getGlobalContext());
         return adjusted_partition_key;
     }
 

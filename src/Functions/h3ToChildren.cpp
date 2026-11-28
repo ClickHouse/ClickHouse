@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Settings.h>
+#include <Functions/FunctionResultSetting.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -18,6 +20,11 @@ static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool functions_h3_default_if_invalid;
+}
+
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -32,6 +39,8 @@ class FunctionH3ToChildren final : public IFunction
 {
 public:
     static constexpr auto name = "h3ToChildren";
+
+    static constexpr FunctionResultSetting result_settings[] = {Setting::functions_h3_default_if_invalid};
 
     H3Validator validator;
 

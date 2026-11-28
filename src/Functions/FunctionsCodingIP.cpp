@@ -253,6 +253,11 @@ public:
         ? "IPv6StringToNum"
         : (exception_mode == IPStringToNumExceptionMode::Default ? "IPv6StringToNumOrDefault" : "IPv6StringToNumOrNull");
 
+    static constexpr FunctionResultSetting throw_result_settings[] = {Setting::cast_ipv4_ipv6_default_on_conversion_error};
+    static constexpr FunctionResultSettings result_settings = exception_mode == IPStringToNumExceptionMode::Throw
+        ? FunctionResultSettings(throw_result_settings)
+        : FunctionResultSettings();
+
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionIPv6StringToNum>(context); }
 
     explicit FunctionIPv6StringToNum(ContextPtr context)
@@ -415,6 +420,11 @@ public:
     static constexpr auto name = exception_mode == IPStringToNumExceptionMode::Throw
         ? "IPv4StringToNum"
         : (exception_mode == IPStringToNumExceptionMode::Default ? "IPv4StringToNumOrDefault" : "IPv4StringToNumOrNull");
+
+    static constexpr FunctionResultSetting throw_result_settings[] = {Setting::cast_ipv4_ipv6_default_on_conversion_error};
+    static constexpr FunctionResultSettings result_settings = exception_mode == IPStringToNumExceptionMode::Throw
+        ? FunctionResultSettings(throw_result_settings)
+        : FunctionResultSettings();
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionIPv4StringToNum>(context); }
 

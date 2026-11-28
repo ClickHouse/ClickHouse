@@ -115,6 +115,7 @@ struct NameArrayCount { static constexpr auto name = "arrayCount"; };
 struct ArrayCountFunctionChooser
 {
     static constexpr auto name = NameArrayCount::name;
+    static constexpr FunctionResultSetting result_settings[] = {Setting::array_count_legacy_uint32_result};
 
     static FunctionPtr create(ContextPtr context)
     {
