@@ -106,6 +106,8 @@ void ActiveDispatcher::run()
 
 void ActiveDispatcher::stop()
 {
+	if (!_thread.isRunning())
+		return;
 	_queue.clear();
 	_queue.wakeUpAll();
 	_queue.enqueueNotification(new StopNotification);
