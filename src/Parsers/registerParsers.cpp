@@ -24,6 +24,7 @@
 #include <Parsers/ParserCreateResourceQuery.h>
 #include <Parsers/ParserCreateWorkloadQuery.h>
 #include <Parsers/ParserDeleteQuery.h>
+#include <Parsers/ParserDescribeCacheQuery.h>
 #include <Parsers/ParserDescribeTableQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserExplainQuery.h>
@@ -80,6 +81,7 @@ void registerParsers()
     registry.registerParser<ParserCreateUserQuery>();
     registry.registerParser<ParserCreateWorkloadQuery>();
     registry.registerParser<ParserDeleteQuery>();
+    registry.registerParser<ParserDescribeCacheQuery>();
     registry.registerParser<ParserDescribeTableQuery>();
     registry.registerParser<ParserDropQuery>();
     registry.registerParser([]() -> std::unique_ptr<IParserBase> { return std::make_unique<ParserExecuteAsQuery>(dummy_subquery_parser); });
