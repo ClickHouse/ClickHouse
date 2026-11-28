@@ -1,0 +1,8 @@
+localhost	9000	0		0	0
+localhost	9000	0		0	0
+id	UInt64					
+s	String	DEFAULT	toString(id)			new comment
+new comment
+1
+new comment
+localhost	9000	0		0	0
