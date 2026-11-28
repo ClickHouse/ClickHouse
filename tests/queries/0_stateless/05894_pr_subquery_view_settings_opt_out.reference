@@ -1,0 +1,27 @@
+-- subqueries
+300	44850
+300	44850
+300	44850
+300	44850
+300	44850
+300	44850
+-- views
+300	44850
+300	44850
+300	44850
+300	44850
+300	44850
+300	44850
+300	44850
+-- shipped to replicas
+sub_plain	1
+sub_off	0
+sub_mpr1	0
+sub_join_off	0
+v_on	1
+v_off	0
+v_mpr1	0
+v_ck	0
+v_off_sub	0
+v_off_nested	0
+v_off_over_leaf	0
