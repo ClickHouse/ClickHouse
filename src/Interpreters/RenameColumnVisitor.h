@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 
 namespace DB
@@ -12,21 +13,27 @@ class ColumnsDescription;
 /// name column_name to rename_to
 struct RenameColumnData
 {
-    using TypeToVisit = ASTIdentifier;
-
     String column_name;
     String rename_to;
-    /// Also rename the column in a reference to its subcolumn, such as `column_name.x`. This is for the key expressions of
-    /// a table: a column that holds a subcolumn of a key cannot be renamed in `MergeTree`, but can in a data lake (`Iceberg`),
-    /// which refers to the key fields by id.
-    bool rename_subcolumns = false;
-    /// With `rename_subcolumns`: the columns of the table. A name `column_name.x` is renamed only if it is not a column of
-    /// the table itself or a subcolumn of one.
-    const ColumnsDescription * columns = nullptr;
+    /// The columns of the table before and after the rename. A reference such as `column_name.x` is renamed too if it refers
+    /// to a subcolumn of `column_name` before the rename. With `columns_after`, a renamed reference must not refer to another
+    /// column or to a lambda parameter after the rename.
+    const ColumnsDescription * columns_before = nullptr;
+    const ColumnsDescription * columns_after = nullptr;
+    /// The parameters of the lambdas around the visited node. A reference to one of them is not renamed.
+    Names lambda_parameters;
 
     void visit(ASTIdentifier & identifier, ASTPtr & ast) const;
 };
 
-using RenameColumnMatcher = OneTypeMatcher<RenameColumnData>;
+class RenameColumnMatcher
+{
+public:
+    using Data = RenameColumnData;
+
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
+    static void visit(ASTPtr & ast, Data & data);
+};
+
 using RenameColumnVisitor = InDepthNodeVisitor<RenameColumnMatcher, true>;
 }
