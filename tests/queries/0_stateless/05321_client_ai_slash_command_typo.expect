@@ -1,0 +1,74 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest
+# no-fasttest: the AI agent of the client is not compiled in the fast test build.
+
+# In the AI-chat (`:?`) mode a misspelled `/`-command is reported by the client, as in the SQL mode,
+# instead of being sent to the agent as a question, and the session goes on. No AI provider is
+# configured here, so a line that reached the agent would be answered with a complaint about the
+# provider instead.
+#
+# The client runs with `--multiline`, where Enter on an inline `? ...` line (one that does not start
+# with the `?` itself, so the line editor stays in the SQL mode) must still submit it: it is a
+# question, not SQL, and has no SQL delimiter to wait for.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; unset OPENAI_API_KEY ANTHROPIC_API_KEY ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --multiline --history_file=$history_file"
+expect ":) "
+
+# A leading `?` switches the line editor into the AI-chat mode instead of being inserted.
+# (`-ex`: a `?` in a glob pattern would match any character.)
+send -- "?"
+expect -ex ":?"
+# The input is typed and awaited in its echo before it is submitted, so that the `\r` arrives in a
+# read of its own and is taken as a submission.
+send -- "/hepl"
+expect -ex "/hepl"
+send -- "\r"
+expect -ex {Unknown command `/hepl`. Maybe you meant: ['/help']}
+# The session survives the error, still in the AI-chat mode, where a valid command runs.
+expect -ex ":?"
+send -- "/help"
+expect -ex "/help"
+send -- "\r"
+expect "Usage: help <name>"
+expect -ex ":?"
+
+# Leave the AI-chat mode: a backspace on the empty `:?` line restores the SQL prompt.
+send -- "\177"
+expect ":) "
+# An inline AI-chat line, after a space so that the `?` does not switch the mode.
+# The echo is awaited by its end alone: the `?` is colored by the highlighter.
+send -- " ? /help"
+expect -ex "/help"
+send -- "\r"
+expect "Usage: help <name>"
+
+# Quit: `Ctrl-C` abandons the line, and `Ctrl-D` then exits from the empty prompt it redraws (the
+# echo of the `^C` separates that prompt from the earlier ones).
+send -- "\3"
+expect {
+    eof      {}
+    -ex "^C" {
+        expect {
+            eof          {}
+            -re {:[)?]}  { send -- "\4" ; expect eof }
+        }
+    }
+}

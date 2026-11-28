@@ -1,0 +1,6 @@
+requests_after_first_question: 1
+cleared: True
+requests_after_clear: 1
+requests_after_second_question: 2
+second_question_sent: True
+old_conversation_sent: False

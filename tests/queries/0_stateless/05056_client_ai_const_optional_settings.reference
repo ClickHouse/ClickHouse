@@ -1,0 +1,5 @@
+read_query_log_offered: no
+list_databases: OK
+list_tables: OK
+consult_documentation: OK
+show_create_table: BLOCKED

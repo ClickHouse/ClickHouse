@@ -385,6 +385,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             out->setAsyncCallback(async_callback);
         }
         connected = true;
+        ++number_of_established_connections;
         setDescription();
 
         sendHello();
@@ -1024,6 +1025,46 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 }
 
 
+void Connection::reconnectIfNeeded(const ConnectionTimeouts & timeouts)
+{
+    reconnectIfNeededImpl(timeouts, /*reconnect_allowed=*/ true);
+}
+
+void Connection::reconnectIfNeededImpl(const ConnectionTimeouts & timeouts, bool reconnect_allowed)
+{
+#if USE_JWT_CPP && USE_SSL
+    if (jwt_provider && !jwt.empty())
+    {
+        if (JWTProvider::getJwtExpiry(jwt) < (Poco::Timestamp() + Poco::Timespan(30, 0)))
+        {
+            String new_jwt = jwt_provider->getJWT();
+            if (!new_jwt.empty())
+            {
+                jwt = new_jwt;
+                // We have a new token, so we need to reconnect.
+                // The current connection is still using the old token.
+                disconnect();
+            }
+        }
+    }
+#endif
+
+    if (connected)
+        return;
+
+    /// The caller checked the query against the session of the connection that is gone now (it was
+    /// closed, or the renewed token above closed it), and a new connection is another session,
+    /// possibly on another server. It stays closed, for the owner to connect again and to see it.
+    if (!reconnect_allowed)
+        throw Exception(
+            ErrorCodes::NETWORK_ERROR,
+            "The connection to {} has to be established again before the query can be sent, "
+            "and the query was to be sent only on the connection that already existed",
+            getDescription());
+
+    connect(timeouts);
+}
+
 void Connection::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,
@@ -1057,25 +1098,7 @@ void Connection::sendQuery(
         client_info = &new_client_info;
     }
 
-#if USE_JWT_CPP && USE_SSL
-    if (jwt_provider && !jwt.empty())
-    {
-        if (JWTProvider::getJwtExpiry(jwt) < (Poco::Timestamp() + Poco::Timespan(30, 0)))
-        {
-            String new_jwt = jwt_provider->getJWT();
-            if (!new_jwt.empty())
-            {
-                jwt = new_jwt;
-                // We have a new token, so we need to reconnect.
-                // The current connection is still using the old token.
-                disconnect();
-            }
-        }
-    }
-#endif
-
-    if (!connected)
-        connect(timeouts);
+    reconnectIfNeededImpl(timeouts, reconnect_in_send_query_allowed);
 
     /// Query is not executed within sendQuery() function.
     ///
@@ -1133,6 +1156,11 @@ void Connection::sendQuery(
             modified_settings.emplace(*settings);
             for (const SettingChange & change : settings_from_server)
             {
+                /// The caller relies on this value being in force for the query, and the session
+                /// may hold another one by now - see `setSettingsAlwaysSent`.
+                if (settings_always_sent.contains(change.name))
+                    continue;
+
                 Field value;
                 if (settings->tryGet(change.name, value) && value == change.value)
                 {
