@@ -14,6 +14,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool write_marks_for_substreams_in_compact_parts;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+    extern const MergeTreeSettingsUInt64 parquet_row_group_granularity_rows;
+    extern const MergeTreeSettingsUInt64 parquet_row_group_granularity_bytes;
 }
 
 namespace ErrorCodes
@@ -61,6 +63,11 @@ MarkType::MarkType(std::string_view extension)
         with_substreams = true;
         part_type = MergeTreeDataPartType::Compact;
     }
+    else if (extension == "5")
+    {
+        adaptive = true;
+        part_type = MergeTreeDataPartType::Parquet;
+    }
     else
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Unknown mark file extension: '{}'", extension);
 }
@@ -96,6 +103,8 @@ std::string MarkType::getFileExtension() const
             return res + "2";
         case MergeTreeDataPartType::Compact:
             return res + (with_substreams ? "4" : "3");
+        case MergeTreeDataPartType::Parquet:
+            return res + "5";
         case MergeTreeDataPartType::Unknown:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown data part type");
     }
@@ -119,19 +128,28 @@ MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(
     const MergeTreeData & storage, const MergeTreeSettings & storage_settings, MergeTreeDataPartType type_)
     : MergeTreeIndexGranularityInfo(
           storage_settings,
-          {/// Only Wide parts can be non-adaptive; a Compact part is always adaptive (MarkType ctor).
+          {/// Only Wide parts can be non-adaptive; Compact and Parquet parts are always adaptive (MarkType ctor).
            storage.canUseAdaptiveGranularity() || type_ != MergeTreeDataPartType::Wide,
            storage_settings[MergeTreeSetting::compress_marks],
-           storage_settings[MergeTreeSetting::write_marks_for_substreams_in_compact_parts],
+           type_ == MergeTreeDataPartType::Compact && storage_settings[MergeTreeSetting::write_marks_for_substreams_in_compact_parts],
            type_.getValue()})
 {
 }
 
 MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeSettings & storage_settings, MarkType mark_type_)
     : mark_type(mark_type_)
-    , fixed_index_granularity(storage_settings[MergeTreeSetting::index_granularity])
-    , index_granularity_bytes(storage_settings[MergeTreeSetting::index_granularity_bytes])
 {
+    /// The granules of a Parquet part are the row groups of its Parquet file, which have their own size limits.
+    if (mark_type.part_type == MergeTreeDataPartType::Parquet)
+    {
+        fixed_index_granularity = storage_settings[MergeTreeSetting::parquet_row_group_granularity_rows];
+        index_granularity_bytes = storage_settings[MergeTreeSetting::parquet_row_group_granularity_bytes];
+    }
+    else
+    {
+        fixed_index_granularity = storage_settings[MergeTreeSetting::index_granularity];
+        index_granularity_bytes = storage_settings[MergeTreeSetting::index_granularity_bytes];
+    }
 }
 
 void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const IDataPartStorage & data_part_storage)
@@ -148,7 +166,8 @@ size_t MergeTreeIndexGranularityInfo::getMarkSizeInBytes(size_t columns_num) con
 {
     if (mark_type.part_type == MergeTreeDataPartType::Wide)
         return mark_type.adaptive ? getAdaptiveMrkSizeWide() : getNonAdaptiveMrkSizeWide();
-    if (mark_type.part_type == MergeTreeDataPartType::Compact)
+    /// A mark of a Parquet part has the same layout as a mark of a Compact part.
+    if (mark_type.part_type == MergeTreeDataPartType::Compact || mark_type.part_type == MergeTreeDataPartType::Parquet)
         return getAdaptiveMrkSizeCompact(columns_num);
     throw Exception(ErrorCodes::UNKNOWN_PART_TYPE, "Unknown part type");
 }

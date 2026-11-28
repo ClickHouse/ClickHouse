@@ -1,0 +1,6 @@
+CREATE TABLE t1 (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS min_rows_for_parquet_part = 1: refused
+CREATE TABLE t1 (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_parquet_part = 1: refused
+CREATE TABLE t1 (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS min_level_for_parquet_part = 1: refused
+ALTER TABLE t MODIFY SETTING min_rows_for_parquet_part = 1: refused
+ALTER TABLE t ADD PROJECTION p (SELECT k ORDER BY k) WITH SETTINGS (min_rows_for_parquet_part = 1): refused
+CREATE TABLE t1 (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS parquet_row_group_granularity_rows = 1000: ok

@@ -1,0 +1,8 @@
+1	привет	FFFE8000	D0	['61','FF']	FF
+2	мир	62	BF	['62']	63
+invalid	None
+k	Int(bitWidth=64, isSigned=false)
+lc	None
+nested.list.element	None
+split	None
+valid	String

@@ -245,7 +245,7 @@ void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod
                                 getMethodName(Method), arguments->children.size());
         }
         return std::make_shared<CompressionCodecEncrypted>(Method);
-    });
+    }, {.is_encryption = true});
 }
 
 String unhexKey(const String & hex)
@@ -590,7 +590,7 @@ void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod
 {
     auto throw_no_ssl = [](const ASTPtr &) -> CompressionCodecPtr { throw Exception(ErrorCodes::OPENSSL_ERROR, "Server was built without SSL support. Encryption is disabled."); };
     const auto method_code = getMethodCode(Method); /// Codec need to know its code
-    factory.registerCompressionCodec(getMethodName(Method), method_code, throw_no_ssl);
+    factory.registerCompressionCodec(getMethodName(Method), method_code, throw_no_ssl, {.is_encryption = true});
 }
 
 }

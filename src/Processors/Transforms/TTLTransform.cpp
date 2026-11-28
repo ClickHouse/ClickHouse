@@ -303,7 +303,8 @@ TTLTransform::TTLTransform(
             name,
             default_expression,
             default_column_name,
-            isCompactPart(data_part),
+            /// The columns of Compact and Parquet parts are stored in one file and are not removed when expired.
+            isCompactPart(data_part) || isParquetPart(data_part),
             physical_column && shares_nested_offsets(*physical_column)));
     };
 

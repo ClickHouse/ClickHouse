@@ -22,6 +22,10 @@ public:
         /// Data of all columns is stored in one file. Marks are also stored in single file.
         Compact,
 
+        /// Data of all columns is stored in one file in the Parquet format (`data.parquet`).
+        /// Granules are the row groups of the Parquet file. Marks are stored in single file.
+        Parquet,
+
         Unknown,
     };
 

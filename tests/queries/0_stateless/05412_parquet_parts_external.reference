@@ -1,0 +1,26 @@
+data in the file
+1000	499500	2890	1498500	71357.143	2000
+0	0	0	[0,1]	['a','b']
+1	1	3	[1,2]	['a','b']
+2	2	6	[2,3]	['a','b']
+row groups
+3	1000
+300
+300
+400
+compression and encodings
+key	INT64	LZ4	0	0
+s	BYTE_ARRAY	ZSTD	0	0
+x	INT64	LZ4	1	0
+f	DOUBLE	UNCOMPRESSED	0	1
+v	BYTE_ARRAY	LZ4	0	0
+n.a.list.element	INT32	LZ4	0	0
+n.b.list.element	BYTE_ARRAY	LZ4	0	0
+columns metadata
+"encoding":"parquet"
+"encoding":"parquet"
+"encoding":"parquet"
+"encoding":"parquet"
+"encoding":"binary"
+"encoding":"parquet"
+"encoding":"parquet"

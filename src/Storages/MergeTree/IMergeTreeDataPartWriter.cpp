@@ -173,6 +173,22 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
         const MergeTreeWriterSettings & writer_settings,
         MergeTreeIndexGranularityPtr computed_index_granularity);
 
+MergeTreeDataPartWriterPtr createMergeTreeDataPartParquetWriter(
+        const String & data_part_name_,
+        const String & logger_name_,
+        const SerializationByName & serializations_,
+        MutableDataPartStoragePtr data_part_storage_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
+        const MergeTreeSettingsPtr & storage_settings_,
+        const NamesAndTypesList & columns_list,
+        const ColumnPositions & column_positions,
+        const StorageMetadataPtr & metadata_snapshot,
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const String & marks_file_extension_,
+        const CompressionCodecPtr & default_codec_,
+        const MergeTreeWriterSettings & writer_settings,
+        MergeTreeIndexGranularityPtr computed_index_granularity);
+
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
         const String & data_part_name_,
         const String & logger_name_,
@@ -209,6 +225,22 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
 {
     if (part_type == MergeTreeDataPartType::Compact)
         return createMergeTreeDataPartCompactWriter(
+            data_part_name_,
+            logger_name_,
+            serializations_,
+            data_part_storage_,
+            index_granularity_info_,
+            storage_settings_,
+            columns_list,
+            column_positions,
+            metadata_snapshot,
+            indices_to_recalc,
+            marks_file_extension_,
+            default_codec_,
+            writer_settings,
+            std::move(computed_index_granularity));
+    if (part_type == MergeTreeDataPartType::Parquet)
+        return createMergeTreeDataPartParquetWriter(
             data_part_name_,
             logger_name_,
             serializations_,

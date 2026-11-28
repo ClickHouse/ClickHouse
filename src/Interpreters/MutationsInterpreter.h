@@ -217,6 +217,7 @@ public:
         [[nodiscard]] bool hasBrokenProjection(const String & name) const;
         [[nodiscard]] bool hasUnloadedProjection(const String & name) const;
         [[nodiscard]] bool isCompactPart() const;
+        [[nodiscard]] bool isParquetPart() const;
 
         void read(
             Stage & first_stage,
