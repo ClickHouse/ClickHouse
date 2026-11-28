@@ -1,0 +1,21 @@
+part >=	11
+part =	1
+Condition: (toDate(dt) in [19723, +Inf))
+part = Date	1
+Condition: (toDate(dt) in [19724, 19724])
+part = DateTime64	1
+Condition: (toDate(dt) in [19723, 19723])
+pk =	1
+pk <	2
+mm =	1
+Condition: (toStartOfHour(dt) in [1704153600, 1704153600])
+hash =	1
+hash <=>	1
+qcc UTC	76
+qcc Asia/Tokyo	85
+hex !=	4
+Condition: (hex(dt) not in [\'65935200\', \'65935200\'])
+tuple =	1
+d32 part =	1
+Condition: (toYYYYMM(d) in [202402, 202402])
+d32 hash =	1
