@@ -142,6 +142,9 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
 
 ASTPtr parseAdditionalResultFilter(const Settings & settings);
 
+/// The `additional_table_filters` entry for a table expression that reads `storage` under the alias `table_expression_alias`.
+std::optional<String> getAdditionalTableFilter(const IStorage & storage, const String & table_expression_alias, const ContextPtr & context);
+
 using UsefulSets = std::unordered_set<FutureSetPtr>;
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 
