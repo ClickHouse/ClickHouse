@@ -3838,7 +3838,6 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         /// `JSON` accepts only objects, a `Variant` infers an alternative from the spelling (`CAST('42',
         /// 'Variant(Date)')` throws), and a `Dynamic` does so under `cast_string_to_dynamic_use_inference` -
         /// so the full scan may match another spelling or raise a conversion error that pruning would hide.
-        /// Canonical text of the element values, as checked by `isTextOfElementValues`, keeps the index.
         if (membership_compares_carriers)
         {
             const DataTypePtr predicate_column_type
