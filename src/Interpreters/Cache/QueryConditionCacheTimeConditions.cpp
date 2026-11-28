@@ -176,7 +176,9 @@ std::optional<Field> roundTimeConstant(const IDataType & type, const Field & val
             Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
             Int64 ticks = decimal.getValue().value;
             Int64 whole_seconds = *seconds;
-            Int64 fraction = ticks - whole_seconds * multiplier; /// In [0, multiplier).
+            Int64 fraction = ticks % multiplier; /// In [0, multiplier).
+            if (fraction < 0)
+                fraction += multiplier;
 
             Int64 rounded_seconds = 0;
             if (round_up)
