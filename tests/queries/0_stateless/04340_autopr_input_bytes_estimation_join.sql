@@ -1,3 +1,7 @@
+-- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
+-- With granules of a few rows `ReadCompressedBytes` also counts per-granule reads (e.g. loading the marks) that the
+-- estimate does not model.
+
 -- Input-byte autopr statistics for JOIN queries. A JoinStep never reads itself, but the JOIN-specific
 -- logic in `findReadingStep` decides WHICH reading step gets instrumented: the parallelized side
 -- (child 0, or child 1 for RIGHT), i.e. the table read across replicas. This test checks that the
@@ -65,7 +69,9 @@ CREATE TABLE ij_small (key UInt64) ENGINE = MergeTree ORDER BY key
 AS SELECT number FROM numbers(200000);
 
 -- INNER JOIN: the big left side is parallelized; selecting its payload makes the read substantial.
-SELECT t1.payload FROM ij_big AS t1 INNER JOIN ij_small AS t2 USING (key) FORMAT Null SETTINGS log_comment='04340_join_inner';
+-- One stream: the join filter keeps a fifth of a read whose tasks were cut for the whole table, and with small
+-- granules a parallel read of that slice decompresses much more than it returns, which the estimate does not model.
+SELECT t1.payload FROM ij_big AS t1 INNER JOIN ij_small AS t2 USING (key) FORMAT Null SETTINGS log_comment='04340_join_inner', max_threads=1;
 
 -- LEFT JOIN: the big left side is parallelized.
 SELECT t1.payload FROM ij_big AS t1 LEFT JOIN ij_small AS t2 USING (key) FORMAT Null SETTINGS log_comment='04340_join_left';
