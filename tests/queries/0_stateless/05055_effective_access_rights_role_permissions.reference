@@ -1,0 +1,7 @@
+initial: 0000
+grant_a: 1101
+revoke_a: 0000
+grant_b: 0011
+revoke_b: 0000
+user_grant: 1111
+user_revoke: 0000
