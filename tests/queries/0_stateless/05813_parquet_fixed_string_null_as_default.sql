@@ -1,4 +1,6 @@
 -- A NULL of a nullable Parquet column decoded as FixedString is read as the default with input_format_null_as_default.
+-- Read as `String`, it is the default of `String`: the value of a NULL row is not converted, the row gets the default of the requested type.
+-- The other rows keep the bytes of the `FixedString` values.
 
 SET engine_file_truncate_on_insert = 1;
 

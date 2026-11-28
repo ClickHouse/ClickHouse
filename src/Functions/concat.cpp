@@ -5,6 +5,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/CastOverloadResolver.h>
+#include <Functions/IFunctionWithFixedStringToStringMode.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Sources.h>
@@ -195,7 +197,7 @@ private:
 
 /// Works with arrays via `arrayConcat`, maps via `mapConcat`, and tuples via `tupleConcat`.
 /// Additionally, allows concatenation of arbitrary types that can be cast to string using the corresponding default serialization.
-class ConcatOverloadResolver final : public IFunctionOverloadResolver
+class ConcatOverloadResolver final : public IFunctionOverloadResolver, public IFunctionWithFixedStringToStringMode
 {
 public:
     static constexpr auto name = "concat";
@@ -212,6 +214,16 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
+
+    /// The function built for a single argument is the `toString` created from the context, which captures its settings.
+    /// The adaptors for `Dynamic` and `Variant` arguments hash this resolver instead of the function it builds.
+    void updateHash(SipHash & hash) const override { to_string->updateHash(hash); }
+
+    /// A single argument is converted by the `toString` created from the context, which captures this setting.
+    [[nodiscard]] std::optional<bool> getFixedStringToStringStripTrailingZeros() const override
+    {
+        return DB::getFixedStringToStringStripTrailingZeros(*to_string);
+    }
 
     bool isInjective(const ColumnsWithTypeAndName & arguments) const override
     {

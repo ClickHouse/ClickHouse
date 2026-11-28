@@ -91,4 +91,29 @@ void getAggregateFunctionNameAndParametersArray(
     aggregate_function_parameters = getAggregateFunctionParametersArray(args_ast, error_context, context);
 }
 
+
+void CachedAggregateFunctionNameAndParameters::get(
+    const std::string & aggregate_function_name_with_params,
+    std::string & aggregate_function_name,
+    Array & aggregate_function_parameters,
+    const std::string & error_context,
+    const std::function<ContextPtr()> & get_context) const
+{
+    {
+        std::lock_guard lock(mutex);
+        if (parsed && parsed->name_with_params == aggregate_function_name_with_params)
+        {
+            aggregate_function_name = parsed->name;
+            aggregate_function_parameters = parsed->parameters;
+            return;
+        }
+    }
+
+    getAggregateFunctionNameAndParametersArray(
+        aggregate_function_name_with_params, aggregate_function_name, aggregate_function_parameters, error_context, get_context());
+
+    std::lock_guard lock(mutex);
+    parsed = Parsed{aggregate_function_name_with_params, aggregate_function_name, aggregate_function_parameters};
+}
+
 }

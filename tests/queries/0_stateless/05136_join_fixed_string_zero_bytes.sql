@@ -105,7 +105,7 @@ SELECT countIf(l.t <=> r.t), countIf(isDistinctFrom(l.t, r.t)) FROM (SELECT CAST
 SELECT count() FROM (SELECT CAST((x, ()), 'Nullable(Tuple(FixedString(3), Tuple()))') AS t FROM fs UNION ALL SELECT NULL) AS l JOIN (SELECT CAST((y, ()), 'Nullable(Tuple(String, Tuple()))') AS t FROM s UNION ALL SELECT NULL) AS r ON l.t <=> r.t SETTINGS join_algorithm = 'hash';
 SELECT countIf((x, ()) <=> (y, ())), countIf(isDistinctFrom((x, ()), (y, ()))) FROM fs, s;
 
-SELECT '-- arrays are compared after the cast to the common type, by the operator and by the join';
+SELECT '-- arrays are compared element by element, zero-padded like the scalars, by the operator and by the join';
 SELECT countIf([x] = [y]), countIf(tuple([x]) = tuple([y])) FROM fs, s;
 SELECT count() FROM fs JOIN s ON [fs.x] = [s.y] SETTINGS join_algorithm = 'hash';
 SELECT count() FROM fs JOIN s ON tuple([fs.x]) = tuple([s.y]) SETTINGS join_algorithm = 'hash';

@@ -134,12 +134,12 @@ SELECT val, hex(val), base32Encode(val) as enc_res, hex(base32Decode(enc_res)) a
     toFixedString('foobar', 6),
     toFixedString('Hello world!', 12),
     toFixedString('Hold my beer', 12),
-    toFixedString('Hold another beer', 18),
+    toFixedString('Hold another beer', 17),
     toFixedString('And a wine', 10),
-    toFixedString('And another wine', 17),
+    toFixedString('And another wine', 16),
     toFixedString('And a lemonade', 14),
     toFixedString('t1Zv2yaZ', 8),
-    toFixedString('And another wine', 17)
+    toFixedString('And another wine', 16)
     ]) val);
 
 SELECT 'Part 6 - FixedString decoding + encoding';
@@ -164,7 +164,7 @@ SELECT val, base32Decode(val) as dec_res, hex(dec_res), base32Encode(dec_res) as
     toFixedString('AERUKZ4J', 8),
     toFixedString('VPG66AJD', 8),
     toFixedString('GEZDGNBVGY3TQOJQ', 16),
-    toFixedString('KRUGKIDROVUWG2ZAMJZG653OEBTG66BANJ2W24DTEBXXMZLSEB2GQZJANRQXU6JAMRXWO===', 96),
+    toFixedString('KRUGKIDROVUWG2ZAMJZG653OEBTG66BANJ2W24DTEBXXMZLSEB2GQZJANRQXU6JAMRXWO===', 72),
     toFixedString('ME======', 8),
     toFixedString('MFRA====', 8),
     toFixedString('MFRGG===', 8),

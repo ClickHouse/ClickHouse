@@ -353,7 +353,9 @@ INSERT INTO tab_array VALUES (1, ['hello']), (2, ['world']), (3, ['hello']);
 INSERT INTO tab_array_ngrambf VALUES (1, ['hello']), (2, ['world']), (3, ['hello']);
 INSERT INTO tab_map VALUES (1, map('hello', 'world')), (2, map('foo', 'bar')), (3, map('hello', 'world'));
 
-SELECT '-- hasAny and hasAll ignore the padding';
+-- `hasAny` and `hasAll` cast the needle to `String`, which keeps its padding, so the padded needle
+-- matches nothing, while the unpadded one still matches.
+SELECT '-- hasAny and hasAll keep the padding';
 SELECT count() FROM tab_array WHERE hasAny(arr, [toFixedString('hello', 10)]);
 SELECT count() FROM tab_array WHERE hasAny(arr, [toFixedString('hello', 10)]) SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
 SELECT count() FROM tab_array WHERE hasAll(arr, [toFixedString('hello', 10)]);
@@ -362,6 +364,10 @@ SELECT count() FROM tab_array_ngrambf WHERE hasAny(arr, [toFixedString('hello', 
 SELECT count() FROM tab_array_ngrambf WHERE hasAny(arr, [toFixedString('hello', 10)]) SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab_array_ngrambf WHERE hasAll(arr, [toFixedString('hello', 10)]);
 SELECT count() FROM tab_array_ngrambf WHERE hasAll(arr, [toFixedString('hello', 10)]) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab_array WHERE hasAny(arr, [toFixedString('hello', 5)]);
+SELECT count() FROM tab_array WHERE hasAny(arr, [toFixedString('hello', 5)]) SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab_array_ngrambf WHERE hasAll(arr, [toFixedString('hello', 5)]);
+SELECT count() FROM tab_array_ngrambf WHERE hasAll(arr, [toFixedString('hello', 5)]) SETTINGS use_skip_indexes = 0;
 
 -- The functions below compare the raw padded bytes, so their terms must keep the padding.
 -- `text(tokenizer = array)` answers them by exact direct read, where a stripped term would return

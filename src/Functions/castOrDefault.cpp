@@ -19,6 +19,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
+#include <Functions/IFunctionWithFixedStringToStringMode.h>
+#include <Common/SipHash.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NullableUtils.h>
@@ -28,6 +30,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool cast_keep_nullable;
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
 }
 
 namespace ErrorCodes
@@ -37,7 +40,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-class FunctionCastOrDefault final : public IFunction
+class FunctionCastOrDefault final : public IFunction, public IFunctionWithFixedStringToStringMode
 {
 public:
     static constexpr auto name = "accurateCastOrDefault";
@@ -50,10 +53,16 @@ public:
     explicit FunctionCastOrDefault(ContextPtr context_)
         : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable])
         , cast_or_null_resolver(createCastOverloadResolver(context_, CastType::accurateOrNull, {}))
+        , cast_fixed_string_to_string_strip_trailing_zeros(context_->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros])
     {
     }
 
     [[nodiscard]] String getName() const override { return name; }
+
+    /// The cast resolver created from the context follows this setting for a `FixedString` converted to `String`.
+    void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
+
+    [[nodiscard]] std::optional<bool> getFixedStringToStringStripTrailingZeros() const override { return cast_fixed_string_to_string_strip_trailing_zeros; }
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] bool isVariadic() const override { return true; }
@@ -236,9 +245,10 @@ public:
 private:
     bool keep_nullable;
     FunctionOverloadResolverPtr cast_or_null_resolver;
+    bool cast_fixed_string_to_string_strip_trailing_zeros = false;
 };
 
-class FunctionCastOrDefaultTyped final : public IFunction
+class FunctionCastOrDefaultTyped final : public IFunction, public IFunctionWithFixedStringToStringMode
 {
 public:
     explicit FunctionCastOrDefaultTyped(ContextPtr context_, String name_, DataTypePtr type_)
@@ -247,6 +257,10 @@ public:
     }
 
     [[nodiscard]] String getName() const override { return name; }
+
+    void updateHash(SipHash & hash) const override { impl.updateHash(hash); }
+
+    [[nodiscard]] std::optional<bool> getFixedStringToStringStripTrailingZeros() const override { return impl.getFixedStringToStringStripTrailingZeros(); }
 
 private:
     FunctionCastOrDefault impl;

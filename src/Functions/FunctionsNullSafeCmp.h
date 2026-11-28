@@ -6,8 +6,11 @@
 #include <Functions/FunctionsComparison.h>
 #include <Common/quoteString.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 namespace DB
@@ -196,29 +199,41 @@ public:
     /// `Nullable(UInt64)` vs `Nullable(Int64)`).
     [[nodiscard]] ColumnPtr executeNullableWithoutSupertype(const ColumnsWithTypeAndName & columns_with_type_and_name, size_t input_rows_count) const
     {
-        auto extract_nested_column_info = [](const ColumnWithTypeAndName & arg, ColumnPtr & null_map, ColumnWithTypeAndName & nested)
+        /// A constant operand stays a constant, so that a large value is not replicated for every row:
+        /// its nested value is a constant again, and `is_null_constant` tells whether it is NULL.
+        auto extract_nested_column_info = [](
+            const ColumnWithTypeAndName & arg, ColumnPtr & null_map, bool & is_null_constant, ColumnWithTypeAndName & nested)
         {
-            ColumnPtr full_column = arg.column->convertToFullColumnIfConst();
-            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(full_column.get()))
+            null_map = nullptr;
+            is_null_constant = false;
+            nested.column = arg.column;
+            nested.type = arg.type;
+
+            if (const auto * column_const = checkAndGetColumn<ColumnConst>(arg.column.get()))
+            {
+                if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&column_const->getDataColumn()))
+                {
+                    is_null_constant = nullable->isNullAt(0);
+                    nested.column = ColumnConst::create(nullable->getNestedColumnPtr(), column_const->size());
+                    nested.type = removeNullable(arg.type);
+                }
+            }
+            else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(arg.column.get()))
             {
                 null_map = nullable->getNullMapColumnPtr();
                 nested.column = nullable->getNestedColumnPtr();
                 nested.type = removeNullable(arg.type);
             }
-            else
-            {
-                null_map = nullptr;
-                nested.column = full_column;
-                nested.type = arg.type;
-            }
         };
 
         ColumnPtr left_null_map;
         ColumnPtr right_null_map;
+        bool left_is_null_constant = false;
+        bool right_is_null_constant = false;
         ColumnWithTypeAndName left_nested;
         ColumnWithTypeAndName right_nested;
-        extract_nested_column_info(columns_with_type_and_name[0], left_null_map, left_nested);
-        extract_nested_column_info(columns_with_type_and_name[1], right_null_map, right_nested);
+        extract_nested_column_info(columns_with_type_and_name[0], left_null_map, left_is_null_constant, left_nested);
+        extract_nested_column_info(columns_with_type_and_name[1], right_null_map, right_is_null_constant, right_nested);
 
         /// Accurate value comparison of the non-Nullable nested columns (always yields UInt8).
         FunctionOverloadResolverPtr comparator = std::make_unique<FunctionToOverloadResolverAdaptor>(
@@ -239,8 +254,8 @@ public:
         auto & res_data = res->getData();
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const bool left_is_null = left_nulls && (*left_nulls)[i];
-            const bool right_is_null = right_nulls && (*right_nulls)[i];
+            const bool left_is_null = left_is_null_constant || (left_nulls && (*left_nulls)[i]);
+            const bool right_is_null = right_is_null_constant || (right_nulls && (*right_nulls)[i]);
 
             if (left_is_null && right_is_null)
                 res_data[i] = is_equal_mode ? 1 : 0;
@@ -248,6 +263,127 @@ public:
                 res_data[i] = is_equal_mode ? 0 : 1;
             else
                 res_data[i] = value_data[i];
+        }
+        return res;
+    }
+
+    [[nodiscard]] static bool hasFixedString(const DataTypePtr & type)
+    {
+        return anyInTypeTree(*type, [](const IDataType & t) { return isFixedString(t); });
+    }
+
+    /// Returns 1 for the rows where the values of `left` and `right` are not distinct, the types have the common type and
+    /// no `LowCardinality`. A `FixedString` is compared with a `String` zero-padded, while its cast to the common type keeps
+    /// the padding. So the elements of tuples that contain a `FixedString` are compared with the comparison of their types,
+    /// and the other elements are compared in the common type with `compareAt`, as without a `FixedString`.
+    /// The constant operands are not converted to full columns, so that a large constant is not replicated for every row.
+    [[nodiscard]] ColumnPtr executeNotDistinctWithFixedString(const ColumnWithTypeAndName & left, const ColumnWithTypeAndName & right, size_t input_rows_count) const
+    {
+        auto res = ColumnUInt8::create(input_rows_count);
+        auto & res_data = res->getData();
+
+        /// An untyped `NULL` (such as a tuple element `NULL`) has no nested values to compare: only both `NULL` are not distinct.
+        if (left.type->onlyNull() || right.type->onlyNull())
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+                res_data[i] = left.column->isNullAt(i) && right.column->isNullAt(i);
+            return res;
+        }
+
+        /// The values of a constant are in its data column, in the row 0.
+        auto unwrap_const = [](ColumnPtr & column)
+        {
+            const auto * column_const = checkAndGetColumn<ColumnConst>(column.get());
+            if (column_const)
+                column = column_const->getDataColumnPtr();
+            return column_const != nullptr;
+        };
+
+        if (left.type->equals(*right.type) || (!hasFixedString(left.type) && !hasFixedString(right.type)))
+        {
+            DataTypePtr common_type = getLeastSupertype(DataTypes{left.type, right.type});
+            ColumnPtr left_converted = castColumn(left, common_type);
+            ColumnPtr right_converted = castColumn(right, common_type);
+            const bool left_is_const = unwrap_const(left_converted);
+            const bool right_is_const = unwrap_const(right_converted);
+            for (size_t i = 0; i < input_rows_count; ++i)
+                res_data[i] = left_converted->compareAt(left_is_const ? 0 : i, right_is_const ? 0 : i, *right_converted, 1) == 0;
+            return res;
+        }
+
+        const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(left.type).get());
+        const auto * right_tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(right.type).get());
+        if (!left_tuple_type || !right_tuple_type || left_tuple_type->getElements().size() != right_tuple_type->getElements().size())
+        {
+            ColumnPtr value_cmp = executeNullableWithoutSupertype({left, right}, input_rows_count);
+            const auto & value_data = assert_cast<const ColumnUInt8 &>(*value_cmp).getData();
+            /// `executeNullableWithoutSupertype` takes the NULLs only from a `ColumnNullable`, while a `Dynamic` or a `Variant`
+            /// element of a tuple keeps its own NULLs. So take the NULLs of both operands into account here.
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const bool left_is_null = left.column->isNullAt(i);
+                const bool right_is_null = right.column->isNullAt(i);
+                if (left_is_null || right_is_null)
+                    res_data[i] = left_is_null && right_is_null;
+                else
+                    res_data[i] = is_equal_mode ? value_data[i] : !value_data[i];
+            }
+            return res;
+        }
+
+        /// The elements of a constant tuple are compared as constants.
+        struct TupleOperand
+        {
+            ColumnPtr column;
+            const ColumnTuple * tuple = nullptr;
+            const NullMap * null_map = nullptr;
+            bool is_const = false;
+        };
+
+        auto split_tuple = [&](const ColumnWithTypeAndName & arg)
+        {
+            TupleOperand operand;
+            operand.column = arg.column;
+            operand.is_const = unwrap_const(operand.column);
+            const IColumn * column = operand.column.get();
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(column))
+            {
+                operand.null_map = &nullable->getNullMapData();
+                column = &nullable->getNestedColumn();
+            }
+            operand.tuple = &assert_cast<const ColumnTuple &>(*column);
+            return operand;
+        };
+
+        auto get_element = [&](const TupleOperand & operand, size_t element) -> ColumnPtr
+        {
+            const auto & column = operand.tuple->getColumnPtr(element);
+            if (operand.is_const)
+                return ColumnConst::create(column, input_rows_count);
+            return column;
+        };
+
+        const TupleOperand left_tuple = split_tuple(left);
+        const TupleOperand right_tuple = split_tuple(right);
+
+        std::fill(res_data.begin(), res_data.end(), 1);
+        for (size_t element = 0; element < left_tuple.tuple->tupleSize(); ++element)
+        {
+            ColumnPtr element_res = executeNotDistinctWithFixedString(
+                {get_element(left_tuple, element), left_tuple_type->getElement(element), ""},
+                {get_element(right_tuple, element), right_tuple_type->getElement(element), ""},
+                input_rows_count);
+            const auto & element_data = assert_cast<const ColumnUInt8 &>(*element_res).getData();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                res_data[i] &= element_data[i];
+        }
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const bool left_is_null = left_tuple.null_map && (*left_tuple.null_map)[left_tuple.is_const ? 0 : i];
+            const bool right_is_null = right_tuple.null_map && (*right_tuple.null_map)[right_tuple.is_const ? 0 : i];
+            if (left_is_null || right_is_null)
+                res_data[i] = left_is_null && right_is_null;
         }
         return res;
     }
@@ -302,6 +438,29 @@ public:
         auto right_nested_type = removeLowCardinalityAndNullable(arguments[1].type);
         // an aligned string-vs-non-string element cannot take the no-supertype nested path below
         bool has_string_vs_non_string = hasAlignedStringVsNonStringElement(left_nested_type, right_nested_type);
+        // A `FixedString` is compared with a `String` zero-padded, while its cast to `String` keeps the padding.
+        // So compare the non-NULL values with the comparison of the nested types and combine the null maps separately.
+        // The same holds for a `FixedString` inside a composite type, such as `Nullable(Tuple(FixedString(N)))`,
+        // where the other elements of a tuple are still compared as in the common type.
+        /// A bare `NULL` has no nested values to compare, so it takes the generic path below.
+        if (common_type && common_type->isNullable()
+            && !arguments[0].type->onlyNull() && !arguments[1].type->onlyNull()
+            && !recursiveRemoveLowCardinality(left_nested_type)->equals(*recursiveRemoveLowCardinality(right_nested_type))
+            && (hasFixedString(left_nested_type) || hasFixedString(right_nested_type)))
+        {
+            ColumnPtr res = executeNotDistinctWithFixedString(
+                {recursiveRemoveLowCardinality(arguments[0].column), recursiveRemoveLowCardinality(arguments[0].type), arguments[0].name},
+                {recursiveRemoveLowCardinality(arguments[1].column), recursiveRemoveLowCardinality(arguments[1].type), arguments[1].name},
+                input_rows_count);
+            if (!is_equal_mode)
+            {
+                auto & res_data = assert_cast<ColumnUInt8 &>(res->assumeMutableRef()).getData();
+                for (auto & value : res_data)
+                    value = !value;
+            }
+            return res;
+        }
+
         if (common_type)
         {
             // To address: Nullable vs Nullable

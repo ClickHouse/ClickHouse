@@ -24,9 +24,9 @@ LowCardinality matching pairs still match
 1	1	1
 2	0	0
 LowCardinality strings keep their padding semantics
+0
 1
-1
-1
+0
 LowCardinality lossy casts outside the numeric domain
 0	0
 0	0

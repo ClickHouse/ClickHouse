@@ -1,0 +1,16 @@
+-- array order: other tuple fields are compared as in arrays of the same type
+1	1
+1	1
+1
+1
+1	1
+-- CASE with compound keys
+1	1	1
+1	1
+-- coalesce in the primary key analysis
+1001
+1001
+1001
+-- runtime filter index analysis over a LowCardinality(FixedString) key
+2
+2

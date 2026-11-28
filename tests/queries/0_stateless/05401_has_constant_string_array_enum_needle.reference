@@ -8,6 +8,7 @@ Nullable
 1	1	1	0
 FixedString elements
 1	2
+0	0
 constant map
 1	0	1
 arrayExists rewritten to has
@@ -24,6 +25,8 @@ bloom_filter index
 0
 2
 2
+0
+0
 Parts: 1 | Granules: 1
 Granules: 3/3
 Name: bf

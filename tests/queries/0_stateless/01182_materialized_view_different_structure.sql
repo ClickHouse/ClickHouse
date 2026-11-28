@@ -29,7 +29,7 @@ INSERT INTO mv SELECT toString(number + 1000) FROM numbers(1000); -- { serverErr
 INSERT INTO mv SELECT arrayJoin(['42', 'test']); -- { serverError TYPE_MISMATCH }
 
 SELECT count(), sum(n), sum(toInt64(s)), max(n), min(n) FROM src;
-SELECT count(), sum(n), sum(toInt64(s)), max(n), min(n) FROM dst;
+SELECT count(), sum(n), sum(toInt64(toStringCutToZero(s))), max(n), min(n) FROM dst; -- `s` keeps the zero padding of `FixedString(16)`
 SELECT count(), sum(toInt64(n)), max(n), min(n) FROM mv;
 SELECT count(), sum(toInt64(n)), max(n), min(n) FROM dist; -- { serverError CANNOT_CONVERT_TYPE }
 SELECT count(), sum(toInt64(n)), max(toUInt32(n)), min(toInt128(n)) FROM dist;
