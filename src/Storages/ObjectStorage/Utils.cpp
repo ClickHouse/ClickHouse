@@ -2,6 +2,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Macros.h>
+#include <Common/parseGlobs.h>
+#include <Common/re2.h>
 #include <Core/UUID.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Core/LogsLevel.h>
@@ -36,6 +38,7 @@ namespace ErrorCodes
 {
     extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_COMPILE_REGEXP;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -148,6 +151,29 @@ void validateSupportedColumns(
             "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for {} storage.",
             configuration.getTypeName());
     }
+}
+
+std::optional<String> tryGetHivePartitioningSamplePathOfFileNameGlobs(const StorageObjectStorageConfiguration & configuration)
+{
+    const auto path = configuration.getRawPath();
+    if (configuration.isArchive() || configuration.getType() == ObjectStorageType::Web
+        || path.hasPartitionWildcard() || path.hasSchemaHashWildcard() || containsOnlyEnumGlobs(path.path))
+        return std::nullopt;
+
+    const size_t first_glob_pos = path.path.find_first_of("*?{");
+    if (first_glob_pos == std::string::npos || path.path.find('/', first_glob_pos) != std::string::npos)
+        return std::nullopt;
+
+    /// In `makeRegexpPatternFromGlobs` a `*` that follows another `*`, with only `?` between them, matches '/'.
+    String file_name_globs = path.path.substr(first_glob_pos);
+    std::erase(file_name_globs, '?');
+    if (file_name_globs.contains("**"))
+        return std::nullopt;
+
+    re2::RE2 matcher(makeRegexpPatternFromGlobs(path.path));
+    if (!matcher.ok())
+        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", path.path, matcher.error());
+    return path.path;
 }
 
 void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name)
