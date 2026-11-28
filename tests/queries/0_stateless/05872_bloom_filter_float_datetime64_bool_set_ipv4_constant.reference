@@ -1,0 +1,32 @@
+DateTime64 with a Float64 constant
+2
+2
+2
+2
+2
+Bool set over integer map values
+2
+2
+2
+2
+Bool set over an integer column
+2
+2
+2
+Bool set over a Bool column holding the byte 2
+2
+2
+1
+1
+IPv4 constant with integer map values
+1
+1
+1
+Granules: 1/2
+IPv4 constant with integer columns
+1
+1
+1
+1
+0
+0
