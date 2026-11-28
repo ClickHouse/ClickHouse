@@ -46,6 +46,51 @@ def get_clusters_hosts(node, expected):
     return hosts
 
 
+def test_dynamic_cluster_root_without_shards(start_cluster):
+    expected_initial_clusters = [
+        ["test_auto_cluster1", "node0"],
+        ["test_auto_cluster1", "node1"],
+        ["test_auto_cluster2", "node2"],
+        ["test_auto_cluster3", "node3"],
+    ]
+    for node in nodes.values():
+        assert get_clusters_hosts(node, len(expected_initial_clusters)) == expected_initial_clusters
+
+    zk = cluster.get_kazoo_client("zoo1")
+    discovery_path = "/clickhouse/discovery/test_zk_only_cluster"
+
+    try:
+        if zk.exists(discovery_path):
+            zk.delete(discovery_path, recursive=True)
+        zk.ensure_path(discovery_path)
+
+        for _ in range(30):
+            if zk.exists(f"{discovery_path}/shards"):
+                break
+            time.sleep(1)
+        else:
+            pytest.fail("ClusterDiscovery did not create the missing /shards path")
+
+        zk.create(
+            f"{discovery_path}/shards/node0",
+            b'{"version":1,"address":"node0:9000","shard_id":1}',
+        )
+
+        for _ in range(30):
+            count = nodes["node_observer"].query(
+                "SELECT count() FROM system.clusters "
+                "WHERE cluster = 'test_zk_only_cluster'"
+            )
+            if count.strip() == "1":
+                break
+            time.sleep(1)
+        else:
+            pytest.fail("The dynamically discovered cluster did not become available")
+    finally:
+        if zk.exists(discovery_path):
+            zk.delete(discovery_path, recursive=True)
+
+
 def test_cluster_discovery_startup_and_stop(start_cluster):
     """
     Start cluster, check nodes count in system.clusters,
