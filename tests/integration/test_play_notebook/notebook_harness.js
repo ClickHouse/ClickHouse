@@ -849,6 +849,39 @@ async function main() {
               out.cell_html !== null && !dangerous.test(out.cell_html)
               && out.cell_html.includes('&lt;img') && out.cell_html.includes('&lt;script&gt;'),
               out.cell_html);
+        /// A code span is stashed before the image and link rules run, so its quotes must still be
+        /// escaped when it ends up inside one of their attribute values - as must the quotes of an
+        /// image placed in a link target.
+        const in_attribute = evalJSON(r.sandbox, `
+            const cases = {
+                image_alt: '![x\\u0060" onerror=alert(1) x="\\u0060](missing.png)',
+                image_url: '![x](a.png\\u0060"onerror=alert(1)//\\u0060)',
+                link_url: '[x](https://e.com/\\u0060"onmouseover=alert(1) x="\\u0060)',
+                image_in_link_url: '[x](![y](onmouseover=alert\\u00601\\u0060))',
+                code_in_alt: '![the \\u0060foo\\u0060 fn](pic.png)',
+            };
+            const rendered = {};
+            for (const [k, v] of Object.entries(cases)) rendered[k] = renderMarkdown(v);
+            return rendered;
+        `);
+        check(scenario, 'a code span in an image alt cannot break out of the attribute',
+              in_attribute.image_alt
+              === '<p><img src="missing.png" alt="x<code>&quot; onerror=alert(1) x=&quot;</code>"></p>',
+              in_attribute.image_alt);
+        check(scenario, 'a code span in an image target cannot break out of the attribute',
+              in_attribute.image_url === '<p><img src="a.png<code>&quot;onerror=alert(1)//</code>" alt="x"></p>',
+              in_attribute.image_url);
+        check(scenario, 'a code span in a link target cannot break out of the attribute',
+              in_attribute.link_url === '<p><a href="https://e.com/<code>&quot;onmouseover=alert(1) x=&quot;</code>"'
+              + ' target="_blank" rel="noopener noreferrer">x</a></p>',
+              in_attribute.link_url);
+        check(scenario, 'an image in a link target cannot break out of the attribute',
+              in_attribute.image_in_link_url === '<p><a href="<img src=&quot;onmouseover=alert<code>1</code>&quot;'
+              + ' alt=&quot;y&quot;>" target="_blank" rel="noopener noreferrer">x</a></p>',
+              in_attribute.image_in_link_url);
+        check(scenario, 'an image whose alt holds a code span still renders',
+              in_attribute.code_in_alt === '<p><img src="pic.png" alt="the <code>foo</code> fn"></p>',
+              in_attribute.code_in_alt);
     }
 
     /// Contract 3a: block structure of the Markdown renderer. A block quote ends at the first
