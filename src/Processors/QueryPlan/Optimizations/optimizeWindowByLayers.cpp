@@ -90,6 +90,41 @@ size_t primaryKeyPrefixDeterminedByKeys(
     return prefix_size;
 }
 
+/// The length of the prefix of the primary key by which the reading below the window sorting can be split into
+/// ranges that hold whole window partitions, or 0. Checks everything that does not depend on the order in which the
+/// reading is requested to read.
+size_t windowLayersPrefixSize(const SortingStep & sorting, const ReadFromMergeTree & reading, const ActionsDAG & dag, bool & in_reverse_order)
+{
+    /// The same restrictions as for the join by primary key ranges (`optimizeJoinByShards`).
+    if (reading.isQueryWithFinal() || reading.isParallelReadingEnabled() || reading.isParallelReadingFromReplicas()
+        || reading.getDistributedReadBucketCount() > 0 || reading.willOutputEachPartitionThroughSeparatePort())
+        return 0;
+
+    if (reading.getNumStreams() <= 1)
+        return 0;
+
+    if (dag.hasStatefulFunctions() || dag.hasNonDeterministic())
+        return 0;
+
+    /// Only the `PARTITION BY` columns that are columns of the table are used to prove that a window partition lies in
+    /// one layer. A function of the query is matched with a function of the key by its name, arguments and type, which
+    /// does not compare the settings captured by the function: `formatDateTime(dt, '%M')` is a month name or minutes
+    /// depending on `formatdatetime_parsedatetime_m_is_month_name`, so the stored key could be another calculation.
+    Names table_column_keys;
+    for (const auto & name : sorting.getPartitionByColumnNames())
+    {
+        const auto * key_node = dag.tryFindInOutputs(name);
+        while (key_node && key_node->type == ActionsDAG::ActionType::ALIAS)
+            key_node = key_node->children.front();
+        if (key_node && key_node->type == ActionsDAG::ActionType::INPUT)
+            table_column_keys.push_back(name);
+    }
+    if (table_column_keys.empty())
+        return 0;
+
+    return primaryKeyPrefixDeterminedByKeys(reading, dag, table_column_keys, in_reverse_order);
+}
+
 void tryReadWindowByLayers(QueryPlan::Node & node)
 {
     if (node.children.size() != 1)
@@ -106,36 +141,8 @@ void tryReadWindowByLayers(QueryPlan::Node & node)
     if (!reading || !reading->getInputOrder() || reading->getInputOrder()->direction != 1)
         return;
 
-    /// The same restrictions as for the join by primary key ranges (`optimizeJoinByShards`).
-    if (reading->isQueryWithFinal() || reading->isParallelReadingEnabled() || reading->isParallelReadingFromReplicas()
-        || reading->getDistributedReadBucketCount() > 0 || reading->willOutputEachPartitionThroughSeparatePort())
-        return;
-
-    const size_t num_layers = reading->getNumStreams();
-    if (num_layers <= 1)
-        return;
-
-    if (dag->hasStatefulFunctions() || dag->hasNonDeterministic())
-        return;
-
-    /// Only the `PARTITION BY` columns that are columns of the table are used to prove that a window partition lies in
-    /// one layer. A function of the query is matched with a function of the key by its name, arguments and type, which
-    /// does not compare the settings captured by the function: `formatDateTime(dt, '%M')` is a month name or minutes
-    /// depending on `formatdatetime_parsedatetime_m_is_month_name`, so the stored key could be another calculation.
-    Names table_column_keys;
-    for (const auto & name : sorting->getPartitionByColumnNames())
-    {
-        const auto * key_node = dag->tryFindInOutputs(name);
-        while (key_node && key_node->type == ActionsDAG::ActionType::ALIAS)
-            key_node = key_node->children.front();
-        if (key_node && key_node->type == ActionsDAG::ActionType::INPUT)
-            table_column_keys.push_back(name);
-    }
-    if (table_column_keys.empty())
-        return;
-
     bool in_reverse_order = false;
-    size_t prefix_size = primaryKeyPrefixDeterminedByKeys(*reading, *dag, table_column_keys, in_reverse_order);
+    size_t prefix_size = windowLayersPrefixSize(*sorting, *reading, *dag, in_reverse_order);
 
     /// Every layer is merged by the prefix of the sorting key that is read in order, and its range filter relies on
     /// the merged stream being sorted by the columns it compares (`FilterSortedStreamByRange` checks the first and
@@ -143,6 +150,8 @@ void tryReadWindowByLayers(QueryPlan::Node & node)
     prefix_size = std::min(prefix_size, reading->getInputOrder()->used_prefix_of_sorting_key_size);
     if (prefix_size == 0)
         return;
+
+    const size_t num_layers = reading->getNumStreams();
 
     auto analysis_result = reading->getOrCreateAnalyzedResult();
     if (!analysis_result->split_parts.layers.empty())
@@ -157,6 +166,31 @@ void tryReadWindowByLayers(QueryPlan::Node & node)
     sorting->convertToPartitionedFinishSorting();
 }
 
+}
+
+bool canReadWindowInOrderWithoutSingleMerge(QueryPlan::Node & node, size_t max_threads)
+{
+    /// A single stream is merged in one thread anyway.
+    if (max_threads <= 1)
+        return true;
+
+    if (node.children.size() != 1)
+        return false;
+
+    const auto * sorting = typeid_cast<const SortingStep *>(node.step.get());
+    if (!sorting || !sorting->hasPartitions())
+        return false;
+
+    std::optional<ActionsDAG> dag;
+    const auto * reading = findReading(*node.children.front(), dag);
+    if (!reading)
+        return false;
+
+    if (reading->getNumStreams() <= 1)
+        return true;
+
+    bool in_reverse_order = false;
+    return windowLayersPrefixSize(*sorting, *reading, *dag, in_reverse_order) > 0;
 }
 
 void optimizeWindowByLayers(QueryPlan::Node & root)
