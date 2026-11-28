@@ -1,4 +1,5 @@
 #include <Coordination/KeeperReconfiguration.h>
+#include <algorithm>
 #include <IO/ReadHelpers.h>
 #include <unordered_set>
 #include <base/find_symbols.h>
@@ -44,8 +45,6 @@ ClusterUpdateActions leavingToClusterUpdates(const ClusterConfigPtr & cfg, std::
 {
     std::vector<std::string_view> leaving_arr;
     splitInto<','>(leaving_arr, leaving);
-    if (leaving_arr.size() >= cfg->get_servers().size())
-        return {};
 
     std::unordered_set<int32_t> remove_ids;
     ClusterUpdateActions out;
@@ -67,7 +66,54 @@ ClusterUpdateActions leavingToClusterUpdates(const ClusterConfigPtr & cfg, std::
         remove_ids.emplace(id);
     }
 
+    if (out.size() >= cfg->get_servers().size())
+        return {};
+
     return out;
+}
+
+bool isValidClusterUpdate(const ClusterConfigPtr & cfg, const ClusterUpdateActions & updates)
+{
+    auto is_removed = [&updates](int32_t id)
+    {
+        return std::ranges::any_of(
+            updates,
+            [id](const ClusterUpdateAction & update)
+            {
+                const auto * remove = std::get_if<RemoveRaftServer>(&update);
+                return remove && remove->id == id;
+            });
+    };
+
+    for (const auto & update : updates)
+        if (const auto * change = std::get_if<UpdateRaftServerPriority>(&update); change && is_removed(change->id))
+            return false;
+
+    bool participant_left = false;
+    bool leader_candidate_left = false;
+    bool leader_candidate_removed = false;
+    for (const auto & server : cfg->get_servers())
+    {
+        if (server->is_learner())
+            continue;
+
+        int priority = server->get_priority();
+        for (const auto & update : updates)
+            if (const auto * change = std::get_if<UpdateRaftServerPriority>(&update); change && change->id == server->get_id())
+                priority = change->priority;
+
+        if (is_removed(server->get_id()))
+        {
+            leader_candidate_removed |= priority > 0;
+        }
+        else
+        {
+            participant_left = true;
+            leader_candidate_left |= priority > 0;
+        }
+    }
+
+    return participant_left && (leader_candidate_left || !leader_candidate_removed);
 }
 
 String serializeClusterConfig(const ClusterConfigPtr & cfg, const ClusterUpdateActions & updates)

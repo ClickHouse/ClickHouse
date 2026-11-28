@@ -1414,6 +1414,9 @@ KeeperResponseForSession KeeperStateMachine::processReconfiguration(
             return bad_request();
     }
 
+    if (!isValidClusterUpdate(config, updates))
+        return bad_request();
+
     auto response = std::make_shared<Coordination::ZooKeeperReconfigResponse>();
     response->xid = request.xid;
     response->zxid = zxid;

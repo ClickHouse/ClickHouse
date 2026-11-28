@@ -8,5 +8,9 @@ namespace DB
 ClusterUpdateActions joiningToClusterUpdates(const ClusterConfigPtr & cfg, std::string_view joining);
 
 ClusterUpdateActions leavingToClusterUpdates(const ClusterConfigPtr & cfg, std::string_view leaving);
+
+/// False if `updates` both change and remove a server, leave no current participant, or remove the last current participant with a non-zero priority.
+bool isValidClusterUpdate(const ClusterConfigPtr & cfg, const ClusterUpdateActions & updates);
+
 String serializeClusterConfig(const ClusterConfigPtr & cfg, const ClusterUpdateActions & updates = {});
 }

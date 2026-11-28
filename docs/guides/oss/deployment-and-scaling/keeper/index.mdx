@@ -1441,6 +1441,15 @@ Server host, port, and type must be equal to existing server configuration.
 Servers are added and removed in order of appearance in `joining` and `leaving`.
 All updates from `joining` are processed before updates from `leaving`.
 
+A request is declined if it lists the same server in both `joining` and `leaving`, or if it would remove:
+
+- every current server
+- every current participant
+- the last current participant with a non-zero priority
+
+Servers in `joining` don't count as current, because they may never join.
+To replace the last participant with a non-zero priority, add the new server in one request and remove the old one in the next.
+
 There are some caveats in Keeper reconfiguration implementation:
 
 - Only incremental reconfiguration is supported. Requests with non-empty `new_members` are declined.
