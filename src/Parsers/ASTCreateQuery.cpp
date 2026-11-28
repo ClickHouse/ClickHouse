@@ -1147,14 +1147,20 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         ostr << " CLONE";
     };
 
-    if (!as_table.empty())
+    /// A query SETTINGS right after the storage (or its last TimeSeries target engine) is parsed back as that storage's,
+    /// so then `AS table` goes after the storage and its targets, the other place the parser accepts it.
+    const bool as_table_after_storage = storage && !comment && frame.parent_has_trailing_settings;
+    auto write_as_table = [&]
     {
         add_empty_if_needed();
         add_clone_if_needed();
         ostr
             << " AS "
             << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
-    }
+    };
+
+    if (!as_table.empty() && !as_table_after_storage)
+        write_as_table();
 
     if (as_table_function)
     {
@@ -1227,6 +1233,9 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
                 ASTViewTargets::formatTarget(target, ostr, settings, state, frame, time_series_version);
         }
     }
+
+    if (!as_table.empty() && as_table_after_storage)
+        write_as_table();
 
     if (dictionary)
         dictionary->format(ostr, settings, state, frame);
