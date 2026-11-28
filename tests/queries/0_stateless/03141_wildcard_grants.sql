@@ -19,8 +19,8 @@ REVOKE SELECT ON team*.* FROM user_03141;
 SHOW GRANTS FOR user_03141;
 SELECT '---';
 
-GRANT SELECT(bar) ON foo.test* TO user_03141; -- { clientError SYNTAX_ERROR }
-GRANT SELECT(bar) ON foo.* TO user_03141; -- { clientError SYNTAX_ERROR }
-GRANT SELECT(bar) ON *.* TO user_03141; -- { clientError SYNTAX_ERROR }
+GRANT SELECT(bar) ON foo.test* TO user_03141; -- { clientError INVALID_GRANT }
+GRANT SELECT(bar) ON foo.* TO user_03141; -- { clientError INVALID_GRANT }
+GRANT SELECT(bar) ON *.* TO user_03141; -- { clientError INVALID_GRANT }
 
 DROP USER user_03141;

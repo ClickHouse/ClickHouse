@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int INVALID_GRANT;
 }
 
 namespace
@@ -190,6 +191,18 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (!is_revoke && !attach_mode)
         elements.throwIfNotGrantable();
+
+    /// Also for `REVOKE` and `ATTACH`, which skip `throwIfNotGrantable`: columns on a wildcard would be dropped,
+    /// and `REVOKE SELECT(a) ON db.*` would revoke `SELECT` on the whole `db`.
+    for (const auto & element : elements)
+    {
+        if (!element.anyColumn() && (element.anyTable() || element.wildcard))
+            throw Exception(
+                ErrorCodes::INVALID_GRANT,
+                "{} on wildcards cannot be {} on the column level",
+                element.access_flags.toString(),
+                is_revoke ? "revoked" : "granted");
+    }
 
     auto query = make_intrusive<ASTGrantQuery>();
     node = query;
