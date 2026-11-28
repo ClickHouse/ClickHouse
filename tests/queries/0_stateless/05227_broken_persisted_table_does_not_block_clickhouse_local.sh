@@ -38,6 +38,10 @@ local_default --query "SELECT * FROM good"
 # A query that uses the broken table fails with its load error.
 local_default --query "SELECT * FROM broken" 2>&1 | grep -o -m1 'ASYNC_LOAD_WAIT_FAILED'
 
+# So do the queries that wait for the table to load in the default database, which combines several databases.
+local_default --query "EXISTS TABLE broken" 2>&1 | grep -o -m1 'ASYNC_LOAD_WAIT_FAILED'
+local_default --query "RENAME TABLE broken TO renamed" 2>&1 | grep -o -m1 'ASYNC_LOAD_WAIT_FAILED'
+
 # The other table is untouched by all of this.
 local_default --query "SELECT count() FROM good"
 
