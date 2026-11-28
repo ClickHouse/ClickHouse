@@ -9,11 +9,13 @@ from helpers.test_tools import assert_eq_with_retry
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
+    main_configs=["configs/fail_points.xml"],
     stay_alive=True,
     with_zookeeper=True,
 )
 
 FAILPOINT = "replicated_merge_tree_pause_after_alter_metadata_zk_commit"
+FAILPOINT_CONFIG = "/etc/clickhouse-server/config.d/fail_points.xml"
 
 
 @pytest.fixture(scope="module")
@@ -109,7 +111,27 @@ def test_columns_delta_recovers(start_cluster):
         == "0"
     )
 
-    node.restart_clickhouse(kill=True)
+    # Enabled from the config for this restart, the failpoint parks the queue's replay of the entry after
+    # its Keeper commit and before it writes the local metadata file. A new column visible there can only
+    # have been published by the attach.
+    node.replace_in_config(
+        FAILPOINT_CONFIG, f"<{FAILPOINT}>false<", f"<{FAILPOINT}>true<"
+    )
+    try:
+        node.restart_clickhouse(kill=True)
+        node.query(f"SYSTEM WAIT FAILPOINT {FAILPOINT} PAUSE", timeout=120)
+        assert count_queue_entries(table) >= 1
+        assert (
+            node.query(
+                f"SELECT count() FROM system.columns WHERE table = '{table}' AND name = 'y'"
+            ).strip()
+            == "1"
+        )
+    finally:
+        node.replace_in_config(
+            FAILPOINT_CONFIG, f"<{FAILPOINT}>true<", f"<{FAILPOINT}>false<"
+        )
+        node.query(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}")
 
     assert_eq_with_retry(
         node, f"SELECT is_readonly FROM system.replicas WHERE table = '{table}'", "0\n"
@@ -219,8 +241,8 @@ def test_projections_delta_recovers(start_cluster):
 
 
 def test_no_pending_entry_still_refuses(start_cluster):
-    """Without an unexecuted ALTER_METADATA entry there is nothing that authorises adopting the
-    Keeper metadata, so the replica must refuse exactly as it did before."""
+    """Without a queued ALTER_METADATA entry there is nothing that authorises adopting the Keeper
+    metadata, so the replica must refuse exactly as it did before."""
     table = "no_pending_entry"
     node.query(
         f"""
@@ -261,7 +283,7 @@ def test_no_pending_entry_still_refuses(start_cluster):
 def test_entry_version_mismatch_still_refuses(start_cluster):
     """The pending entry has to account for the metadata_version this replica committed. If it does not,
     the entry says nothing about the metadata that is actually in Keeper, so the replica must refuse even
-    though an unexecuted ALTER_METADATA entry is sitting in its queue."""
+    though an ALTER_METADATA entry is still queued."""
     table = "entry_version_mismatch"
     node.query(
         f"""
@@ -301,8 +323,8 @@ def test_entry_version_mismatch_still_refuses(start_cluster):
 
 def test_entry_payload_mismatch_still_refuses(start_cluster):
     """The pending entry has to carry byte-for-byte the columns this replica committed. With the
-    committed columns rewritten behind the entry's back the entry describes different metadata, so the
-    replica must refuse and must not publish the entry's columns."""
+    committed columns rewritten behind the entry's back, even to an equal structure, the entry is not the
+    one that committed them, so the replica must refuse and must not publish the entry's columns."""
     table = "entry_payload_mismatch"
     node.query(
         f"""
@@ -320,10 +342,10 @@ def test_entry_payload_mismatch_still_refuses(start_cluster):
     zk = cluster.get_kazoo_client("zoo1")
     columns_path = f"{replica_path(table)}/columns"
     old_columns = zk.get(columns_path)[0]
-    # Still parseable, and matches neither the local table nor the entry, so the byte comparison against
-    # the entry is the only thing that can make the replica refuse. The queue and metadata_version stay
-    # untouched.
-    new_columns = old_columns.replace(b"`y` UInt32", b"`y2` UInt32")
+    # The same columns spelled differently (`INT UNSIGNED` is an alias of `UInt32`), so the structure check
+    # would accept the entry's columns and only the byte comparison against the entry can make the replica
+    # refuse. The queue and metadata_version stay untouched.
+    new_columns = old_columns.replace(b"`y` UInt32", b"`y` INT UNSIGNED")
     assert new_columns != old_columns, "the columns znode was not rewritten"
     zk.set(columns_path, new_columns)
     assert count_queue_entries(table) >= 1
@@ -333,8 +355,6 @@ def test_entry_payload_mismatch_still_refuses(start_cluster):
     assert_eq_with_retry(
         node, f"SELECT is_readonly FROM system.replicas WHERE table = '{table}'", "1\n"
     )
-    # Adoption publishes the entry's columns in memory before the structure check runs, so an adopted
-    # column would show up here even though startup fails either way.
     assert (
         node.query(
             f"SELECT count() FROM system.columns WHERE table = '{table}' AND name = 'y'"
@@ -348,8 +368,9 @@ def test_entry_payload_mismatch_still_refuses(start_cluster):
 
 def test_entry_metadata_mismatch_still_refuses(start_cluster):
     """The pending entry has to carry byte-for-byte the metadata this replica committed, not only the
-    columns. With the committed metadata rewritten behind the entry's back the entry describes different
-    metadata, so the replica must refuse and must not publish the entry's columns."""
+    columns. With the committed metadata rewritten behind the entry's back, even to an equal structure,
+    the entry is not the one that committed it, so the replica must refuse and must not publish the
+    entry's columns."""
     table = "entry_metadata_mismatch"
     node.query(
         f"""
@@ -367,18 +388,11 @@ def test_entry_metadata_mismatch_still_refuses(start_cluster):
     zk = cluster.get_kazoo_client("zoo1")
     metadata_path = f"{replica_path(table)}/metadata"
     old_metadata = zk.get(metadata_path)[0]
-    # A field a metadata ALTER may change, so the comparison reports inequality instead of throwing, and
-    # one that parses against both the local columns and the entry's, so the replica cannot refuse for
-    # the unrelated reason of a metadata parse error. The queue, columns and metadata_version stay
-    # untouched, which leaves the metadata byte comparison as the only thing that can refuse here.
-    new_metadata, n = re.subn(
-        rb"granularity bytes: (\d+)",
-        lambda m: b"granularity bytes: " + str(int(m.group(1)) * 2).encode(),
-        old_metadata,
-    )
-    assert (
-        n == 1
-    ), f"expected one granularity-bytes line, got {n}: {old_metadata!r}"
+    # The same primary key written differently, so the structure check would accept the entry's metadata
+    # and only the metadata byte comparison against the entry can make the replica refuse. The queue,
+    # columns and metadata_version stay untouched.
+    new_metadata, n = re.subn(rb"^primary key: x$", b"primary key: (x)", old_metadata, flags=re.M)
+    assert n == 1, f"expected one primary key line, got {n}: {old_metadata!r}"
     zk.set(metadata_path, new_metadata)
     assert count_queue_entries(table) >= 1
 
@@ -387,15 +401,67 @@ def test_entry_metadata_mismatch_still_refuses(start_cluster):
     assert_eq_with_retry(
         node, f"SELECT is_readonly FROM system.replicas WHERE table = '{table}'", "1\n"
     )
-    # As in the payload arm, this is what distinguishes "refused" from "adopted, then refused anyway".
     assert (
         node.query(
             f"SELECT count() FROM system.columns WHERE table = '{table}' AND name = 'y'"
         ).strip()
         == "0"
     )
-    # 342, not 122: checkTableStructureAttempt compares the metadata before the columns, and
-    # handleTableMetadataMismatch throws METADATA_MISMATCH under strict_check.
     assert wait_readonly_failure_lines(
-        table, error="Code: 342"
-    ), "expected a readonly initialization failure with Code: 342 for this table"
+        table
+    ), "expected a readonly initialization failure with Code: 122 for this table"
+
+
+def test_later_attach_failure_keeps_local_metadata(start_cluster):
+    """An attach that fails after the structure check passed leaves the table readonly with its queue never
+    loaded, so nothing applies the queued ALTER's conversions to the parts. The adopted metadata must not be
+    published in that case: the parts are still read with the local metadata they were written with."""
+    table = "attach_failure_after_adoption"
+    node.query(
+        f"""
+        DROP TABLE IF EXISTS {table} SYNC;
+        CREATE TABLE {table} (x UInt32, y UInt32)
+        ENGINE = ReplicatedMergeTree('/clickhouse/{table}', 'r1') ORDER BY x;
+        SYSTEM STOP MERGES {table};
+        INSERT INTO {table} VALUES (1, 10);
+        INSERT INTO {table} VALUES (2, 20), (3, 30);
+        """
+    )
+
+    interrupt_alter(table, f"ALTER TABLE {table} RENAME COLUMN y TO z")
+
+    assert read_metadata_version(table) == 1
+    assert count_queue_entries(table) >= 1
+    assert (
+        node.query(
+            f"SELECT name FROM system.columns WHERE table = '{table}' ORDER BY position"
+        )
+        == "x\ny\n"
+    )
+
+    # The 2-row part becomes unexpected for this replica. That is more than half of its rows, so checkParts
+    # refuses to start the table, after the structure check has already accepted the adopted metadata.
+    unexpected_part = node.query(
+        f"SELECT name FROM system.parts WHERE table = '{table}' AND active AND rows = 2"
+    ).strip()
+    assert unexpected_part, "expected the 2-row part to be active"
+    zk = cluster.get_kazoo_client("zoo1")
+    zk.delete(f"{replica_path(table)}/parts/{unexpected_part}", recursive=True)
+
+    node.restart_clickhouse(kill=True)
+
+    assert_eq_with_retry(
+        node, f"SELECT is_readonly FROM system.replicas WHERE table = '{table}'", "1\n"
+    )
+    assert wait_readonly_failure_lines(
+        table, error="Code: 231"
+    ), "expected a readonly initialization failure with Code: 231 for this table"
+    assert (
+        node.query(
+            f"SELECT name FROM system.columns WHERE table = '{table}' ORDER BY position"
+        )
+        == "x\ny\n"
+    )
+    # With the adopted metadata published, this part would be read as if it already had the column `z`,
+    # which it does not, and every value would come back as the default 0.
+    assert node.query(f"SELECT x, y FROM {table} ORDER BY x") == "1\t10\n"

@@ -1,0 +1,5 @@
+<clickhouse>
+    <fail_points_active>
+        <replicated_merge_tree_pause_after_alter_metadata_zk_commit>false</replicated_merge_tree_pause_after_alter_metadata_zk_commit>
+    </fail_points_active>
+</clickhouse>

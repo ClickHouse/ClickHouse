@@ -1942,7 +1942,7 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
         "{}\nZookeeper columns:\n{}", old_columns.toString(true), columns_from_zk.toString(true));
 }
 
-StorageInMemoryMetadata StorageReplicatedMergeTree::applyMetadataInMemory(const ContextPtr & local_context,
+StorageInMemoryMetadata StorageReplicatedMergeTree::getAlteredMetadata(const ContextPtr & local_context,
     const StorageInMemoryMetadata & old_metadata, ColumnsDescription new_columns,
     const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff, int32_t new_metadata_version)
 {
@@ -1955,10 +1955,7 @@ StorageInMemoryMetadata StorageReplicatedMergeTree::applyMetadataInMemory(const 
     auto [auto_stats_types, _] = getNewImplicitStatisticsTypes(new_metadata, *settings);
     addImplicitStatistics(new_metadata.columns, auto_stats_types);
 
-    /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
-    /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
-    setPropertiesAndResetSerializationHints(new_metadata, old_metadata);
 
     return new_metadata;
 }
@@ -1970,7 +1967,11 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
 
     StorageInMemoryMetadata new_metadata
-        = applyMetadataInMemory(local_context, old_metadata, std::move(new_columns), metadata_diff, new_metadata_version);
+        = getAlteredMetadata(local_context, old_metadata, std::move(new_columns), metadata_diff, new_metadata_version);
+
+    /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
+    /// because primary/partition key column types might have changed.
+    setPropertiesAndResetSerializationHints(new_metadata, old_metadata);
 
     try
     {
@@ -1987,15 +1988,15 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
 }
 
 
-void StorageReplicatedMergeTree::adoptCommittedMetadataFromPendingAlter(const zkutil::ZooKeeperPtr & zookeeper)
+StorageMetadataPtr StorageReplicatedMergeTree::getMetadataCommittedByPendingAlter(
+    const zkutil::ZooKeeperPtr & zookeeper, const StorageMetadataPtr & current_metadata)
 {
     /// A Replicated database sets these three znodes inside the DDL transaction that
     /// executeMetadataAlter needs to replay the entry, so adopting here would have to reconstruct that
     /// transaction. That engine keeps the window; recovering it is a separate change.
     if (DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getEngineName() == "Replicated")
-        return;
+        return nullptr;
 
-    auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
     const fs::path replica_path_fs(replica_path);
 
     const String zk_columns = zookeeper->get(replica_path_fs / "columns");
@@ -2018,12 +2019,12 @@ void StorageReplicatedMergeTree::adoptCommittedMetadataFromPendingAlter(const zk
                 .checkEquals(metadata_from_zk, current_metadata->columns, current_metadata->virtuals,
                              getStorageID().getNameForLogs(), getContext(), /*check_index_granularity*/ true,
                              /*strict_check*/ false, /*logger*/ nullptr))
-            return;
+            return nullptr;
     }
 
     String replica_metadata_version_str;
     if (!zookeeper->tryGet(replica_path_fs / "metadata_version", replica_metadata_version_str))
-        return;
+        return nullptr;
     const Int32 replica_metadata_version = parse<Int32>(replica_metadata_version_str);
 
     /// Look for an entry that the queue has not acknowledged yet and that accounts for exactly the metadata
@@ -2049,11 +2050,11 @@ void StorageReplicatedMergeTree::adoptCommittedMetadataFromPendingAlter(const zk
     }
 
     if (!pending_alter)
-        return;
+        return nullptr;
 
     LOG_WARNING(log, "Local table metadata does not match the metadata committed in {}, and queue entry {} "
                 "(ALTER_METADATA, alter_version {}) is still queued (not acknowledged). Applying that metadata in "
-                "memory so that startup can proceed; the queue will persist it.",
+                "memory once the attach checks pass, so that startup can proceed; the queue will persist it.",
                 replica_path, pending_alter->znode_name, pending_alter->alter_version);
 
     auto columns_from_entry = ColumnsDescription::parse(pending_alter->columns_str);
@@ -2063,16 +2064,20 @@ void StorageReplicatedMergeTree::adoptCommittedMetadataFromPendingAlter(const zk
         current_metadata->add_minmax_index_for_string_columns,
         getContext());
 
-    {
-        auto alter_lock_holder = lockForAlter((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
-        const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
-        auto metadata_diff = table_metadata.checkAndFindDiff(
-            metadata_from_entry, current_metadata->columns, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
-        /// Not pending_alter->alter_version: cloneMetadataIfNeeded skips the ALTER_METADATA entry it
-        /// creates for a lost replica once the in-memory version already equals the source's.
-        applyMetadataInMemory(
-            getContext(), *current_metadata, std::move(columns_from_entry), metadata_diff, current_metadata->getMetadataVersion());
-    }
+    const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
+    auto metadata_diff = table_metadata.checkAndFindDiff(
+        metadata_from_entry, current_metadata->columns, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
+    /// Not pending_alter->alter_version: cloneMetadataIfNeeded skips the ALTER_METADATA entry it
+    /// creates for a lost replica once the in-memory version already equals the source's.
+    return std::make_shared<StorageInMemoryMetadata>(getAlteredMetadata(
+        getContext(), *current_metadata, std::move(columns_from_entry), metadata_diff, current_metadata->getMetadataVersion()));
+}
+
+void StorageReplicatedMergeTree::adoptCommittedMetadata(
+    const StorageInMemoryMetadata & current_metadata, const StorageInMemoryMetadata & committed_metadata)
+{
+    auto alter_lock_holder = lockForAlter((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+    setPropertiesAndResetSerializationHints(committed_metadata, current_metadata);
 }
 
 

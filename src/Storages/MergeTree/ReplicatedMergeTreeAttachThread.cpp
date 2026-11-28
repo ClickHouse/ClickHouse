@@ -201,6 +201,8 @@ void ReplicatedMergeTreeAttachThread::runImpl()
         return;
     }
 
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+
     const auto & replica_path = storage.replica_path;
     /// May it be ZK lost not the whole root, so the upper check passed, but only the /replicas/replica
     /// folder.
@@ -231,12 +233,10 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     /// A metadata ALTER commits to Keeper and to the local metadata file in two separate steps, so an
     /// interrupted one leaves this replica's znodes ahead of the local file. The check below cannot be
     /// reached a second time, so the divergence has to be resolved here rather than after startup.
-    storage.adoptCommittedMetadataFromPendingAlter(zookeeper);
-
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    auto committed_metadata = storage.getMetadataCommittedByPendingAlter(zookeeper, metadata_snapshot);
 
     /// Here `zookeeper_retries_info = {}` because the attach thread has its own retries (see ReplicatedMergeTreeAttachThread::run()).
-    storage.checkTableStructure(replica_path, metadata_snapshot, /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {});
+    storage.checkTableStructure(replica_path, committed_metadata ? committed_metadata : StorageMetadataPtr(metadata_snapshot), /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {});
     storage.checkParts(skip_sanity_checks);
 
     /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
@@ -246,8 +246,15 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     storage.createNewZooKeeperNodes(/* zookeeper_retries_info = */ {});
     storage.syncPinnedPartUUIDs(/* zookeeper_retries_info = */ {});
 
-    std::lock_guard lock(storage.table_shared_id_mutex);
-    storage.createTableSharedID(/* zookeeper_retries_info = */ {});
+    {
+        std::lock_guard lock(storage.table_shared_id_mutex);
+        storage.createTableSharedID(/* zookeeper_retries_info = */ {});
+    }
+
+    /// Only after every check above: a failure before this point leaves the table readonly with its queue
+    /// never loaded, so its parts must keep being read with the local metadata they match.
+    if (committed_metadata)
+        storage.adoptCommittedMetadata(*metadata_snapshot, *committed_metadata);
 };
 
 void ReplicatedMergeTreeAttachThread::finalizeInitialization() TSA_NO_THREAD_SAFETY_ANALYSIS
