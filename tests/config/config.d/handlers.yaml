@@ -5,4 +5,26 @@ http_handlers:
         handler:
             type: redirect
             location: "/?query=SELECT+'Pepyaka'"
+    rule_escaped:
+        url: '/upyachka_escaped'
+        empty_query_string:
+        handler:
+            type: redirect
+            location: "/upyachka/%2e%2e/?query=SELECT+'Pepyaka'"
+    rule_head_split_head:
+        url: '/upyachka_head'
+        methods: 'HEAD'
+        handler:
+            type: static
+            status: 200
+            response_content: ''
+            http_response_headers:
+                Last-Modified: 'Thu, 01 Jan 2015 00:00:00 GMT'
+    rule_head_split_get:
+        url: '/upyachka_head'
+        methods: 'GET'
+        empty_query_string:
+        handler:
+            type: redirect
+            location: "/?query=SELECT+'Pepyaka'"
     defaults:

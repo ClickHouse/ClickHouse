@@ -29,26 +29,23 @@ public:
         return std::make_shared<FunctionGenerateUUIDv7>();
     }
 
-    String getName() const final {  return name; }
-    size_t getNumberOfArguments() const final { return 0; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const final { return false; }
-    bool useDefaultImplementationForNulls() const final { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
-    bool isVariadic() const final { return true; }
+    [[nodiscard]] String getName() const final {  return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const final { return 0; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const final { return false; }
+    /// The optional argument only defeats common subexpression elimination; `executeImpl` never reads it.
+    [[nodiscard]] bool useDefaultImplementationForSparseColumns() const final { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const final { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const final { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
+    [[nodiscard]] bool isVariadic() const final { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args;
-        FunctionArgumentDescriptors optional_args{
-            {"expr", nullptr, nullptr, "Arbitrary expression"}
-        };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeUUID>();
+        return "([Any]) -> UUID";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_res = ColumnVector<UUID>::create();
         typename ColumnVector<UUID>::Container & vec_to = col_res->getData();
@@ -72,6 +69,8 @@ public:
         return col_res;
     }
 };
+
+}
 
 REGISTER_FUNCTION(GenerateUUIDv7)
 {
@@ -117,6 +116,5 @@ SELECT generateUUIDv7(1), generateUUIDv7(1);
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionGenerateUUIDv7>(documentation);
-}
 }
 }

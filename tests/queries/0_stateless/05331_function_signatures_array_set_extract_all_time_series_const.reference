@@ -1,0 +1,12 @@
+[1,2,3]	Array(UInt8)
+[2]	Array(UInt8)
+[1,3]	Array(UInt8)
+extractAll	(String, const String) -> Array(String)
+timeSeriesCopyTag	(UInt64, UInt64, const String) -> UInt64
+timeSeriesCopyTags	(UInt64, UInt64, const Array(String | IsNothing)) -> UInt64
+timeSeriesExtractTag	(UInt64, const String) -> Nullable(String)
+timeSeriesJoinTags	(UInt64, const String, const String, const Array(String | IsNothing)) -> UInt64
+timeSeriesRemoveAllTagsExcept	(UInt64, const Array(String | IsNothing)) -> UInt64
+timeSeriesRemoveTag	(UInt64, const String) -> UInt64
+timeSeriesRemoveTags	(UInt64, const Array(String | IsNothing)) -> UInt64
+timeSeriesReplaceTag	(UInt64, const String, const String, const String, const String) -> UInt64

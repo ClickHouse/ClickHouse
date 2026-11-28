@@ -1,5 +1,4 @@
 -- Accessing the json.d subcolumn requires the analyzer.
-SET enable_analyzer = 1;
 
 -- Test that accurateCastOrDefault respects format settings like input_format_try_infer_dates
 SELECT 'accurateCastOrDefault with input_format_try_infer_dates=0';

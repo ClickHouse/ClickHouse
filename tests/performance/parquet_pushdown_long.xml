@@ -1,0 +1,132 @@
+<!--
+    Row group and page pruning of the Parquet reader on one large file, each mechanism on and off: min/max statistics
+    (sorted `id`, page index off: 200 of 1000 row groups kept), page index (a 6250-id set hits 6-7 of the 13 `id` pages
+    of every row group), bloom filter (50 hashed `url`s, 4 row groups each; the reader skips it above 100 values),
+    dictionary pages (`category = 'rare'`: every 1000th row of every 5th row group; bloom filter off, it would prune the
+    same; the setting is a byte limit, 0 disables it), PREWHERE (a 1/500 filter before the wide columns); then
+    `Nullable(Tuple)`, `Map` and whole-file reads. Unlike `parquet_dictionary_filter.xml` (one mechanism,
+    `max_threads = 1`), all threads and several column kinds; the index work on one file takes a few ms, so every pruned
+    query also reads a wide column of about a fifth of the row groups.
+    Layout: 100 M rows from the generator view `pd_gen`, written as one stream of 100 K-row blocks, so the file is the same
+    on every run: 1000 row groups of 100 K rows, 64 KiB pages; the 256 KiB dictionary cap keeps `id` and the hashed
+    columns PLAIN, `category` is fully dictionary-encoded.
+    The setup runs every timed variant once against `pd_gen` (no Parquet involved) and checks in `system.query_log` that
+    each pruning variant reads fewer pages when on, and that PREWHERE filters rows in the reader.
+    Per server and invocation: each query reads the 3.1 GB file (pruned parts skipped); 3.1 GB written into `user_files`
+    by the setup; no S3.
+-->
+<test run_all_queries="1" max_query_seconds="30">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+</settings>
+
+<substitutions>
+    <substitution>
+        <name>on</name>
+        <values>
+            <value>0</value>
+            <value>1</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>dict_limit</name>
+        <values>
+            <value>0</value>
+            <value>1048576</value>
+        </values>
+    </substitution>
+</substitutions>
+
+<create_query><![CDATA[
+CREATE VIEW pd_gen AS SELECT
+    number AS id,
+    intHash64(number) % 50000000 AS user_id,
+    toDateTime('2026-01-01 00:00:00', 'UTC') + intDiv(number, 100) AS event_time,
+    multiIf(number % 64 = 0, '', number % 64 = 1, 'zzzz', number % 1000 = 0 AND number % 500000 < 100000, 'rare', concat('cat_', toString(number % 500))) AS category,
+    concat('https://example.com/', toString(intHash64(number % 25000000) % 20000000), '/page?x=', toString((number % 25000000) % 977)) AS url,
+    toDecimal64(intHash32(number) % 1000000, 2) AS price,
+    if(number % 10 = 0, NULL, tuple(toUInt32(number % 100000), concat('v', toString(number % 3000))))::Nullable(Tuple(a UInt32, b String)) AS t,
+    map(concat('k', toString(number % 7)), number % 1000, concat('k', toString(number % 11 + 7)), number % 333) AS m
+FROM numbers(100000000)
+]]></create_query>
+
+<fill_query><![CDATA[
+INSERT INTO FUNCTION file('parquet_pushdown_long/pd.parquet', Parquet) SELECT * FROM pd_gen
+SETTINGS max_threads = 1, max_block_size = 100000, preferred_block_size_bytes = 0, max_insert_block_size = 100000,
+    min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, output_format_parquet_row_group_size = 100000,
+    output_format_parquet_max_dictionary_size = 262144, output_format_parquet_data_page_size = 65536,
+    engine_file_truncate_on_insert = 1
+]]></fill_query>
+<fill_query>SELECT throwIf(num_rows != 100000000 OR num_row_groups != 1000 OR arrayExists(r -> r.3 != 100000, row_groups)) FROM file('parquet_pushdown_long/pd.parquet', ParquetMetadata)</fill_query>
+<fill_query>SELECT throwIf(arrayExists(r -> arrayFirst(c -> c.1 = 'url', r.6).7 &lt;= 0, row_groups)) FROM file('parquet_pushdown_long/pd.parquet', ParquetMetadata)</fill_query>
+<fill_query>SELECT throwIf(arrayFirst(c -> c.1 = 'category', columns).11 != ['PLAIN', 'RLE_DICTIONARY'] OR arrayFirst(c -> c.1 = 'id', columns).11 != ['PLAIN']) FROM file('parquet_pushdown_long/pd.parquet', ParquetMetadata)</fill_query>
+
+<fill_query><![CDATA[
+SELECT throwIf(sum(length(url)) != (SELECT sum(length(url)) FROM pd_gen WHERE id BETWEEN 40000000 AND 59999999))
+FROM file('parquet_pushdown_long/pd.parquet') WHERE id BETWEEN 40000000 AND 59999999
+SETTINGS input_format_parquet_filter_push_down = {on}, input_format_parquet_page_filter_push_down = 0, log_comment = 'parquet_pushdown_long.minmax.{on}'
+]]></fill_query>
+<fill_query><![CDATA[
+SELECT throwIf(sum(length(url)) != (SELECT sum(length(url)) FROM pd_gen WHERE id IN (SELECT number * 16000 + 12345 FROM numbers(6250))))
+FROM file('parquet_pushdown_long/pd.parquet') WHERE id IN (SELECT number * 16000 + 12345 FROM numbers(6250))
+SETTINGS input_format_parquet_page_filter_push_down = {on}, input_format_parquet_bloom_filter_push_down = 0, log_comment = 'parquet_pushdown_long.page.{on}'
+]]></fill_query>
+<fill_query><![CDATA[
+SELECT throwIf(count() != (SELECT count() FROM pd_gen WHERE url IN (SELECT concat('https://example.com/', toString(intHash64(n) % 20000000), '/page?x=', toString(n % 977)) FROM (SELECT number * 500003 AS n FROM numbers(50)))))
+FROM file('parquet_pushdown_long/pd.parquet') WHERE url IN (SELECT concat('https://example.com/', toString(intHash64(n) % 20000000), '/page?x=', toString(n % 977)) FROM (SELECT number * 500003 AS n FROM numbers(50)))
+SETTINGS input_format_parquet_bloom_filter_push_down = {on}, log_comment = 'parquet_pushdown_long.bloom.{on}'
+]]></fill_query>
+<fill_query><![CDATA[
+SELECT throwIf((count(), sum(cityHash64(url, ifNull(toString(t), ''), m))) != (SELECT count(), sum(cityHash64(url, ifNull(toString(t), ''), m)) FROM pd_gen WHERE category = 'rare'))
+FROM (SELECT url, t, m FROM file('parquet_pushdown_long/pd.parquet') WHERE category = 'rare')
+SETTINGS input_format_parquet_bloom_filter_push_down = 0, input_format_parquet_dictionary_filter_push_down = {dict_limit}, log_comment = 'parquet_pushdown_long.dict.{dict_limit}'
+]]></fill_query>
+<fill_query><![CDATA[
+SELECT throwIf((count(), sum(cityHash64(url, ifNull(toString(t), ''), m))) != (SELECT count(), sum(cityHash64(url, ifNull(toString(t), ''), m)) FROM pd_gen WHERE category = 'cat_7'))
+FROM (SELECT url, t, m FROM file('parquet_pushdown_long/pd.parquet') WHERE category = 'cat_7')
+SETTINGS optimize_move_to_prewhere = {on}, log_comment = 'parquet_pushdown_long.prewhere.{on}'
+]]></fill_query>
+<fill_query><![CDATA[
+SELECT throwIf(ifNull((sum(t.a), countIf(t IS NULL), sum(m['k3'])) != (SELECT sum(t.a), countIf(t IS NULL), sum(m['k3']) FROM pd_gen), 1))
+FROM file('parquet_pushdown_long/pd.parquet')
+]]></fill_query>
+<fill_query><![CDATA[
+SELECT throwIf((count(), sum(cityHash64(id, user_id, toDateTime(event_time), category, url, price, ifNull(toString(t), ''), m)))
+    != (SELECT count(), sum(cityHash64(id, user_id, event_time, category, url, price, ifNull(toString(t), ''), m)) FROM pd_gen))
+FROM file('parquet_pushdown_long/pd.parquet')
+]]></fill_query>
+<fill_query>SYSTEM FLUSH LOGS query_log</fill_query>
+<fill_query><![CDATA[
+SELECT throwIf(groupArray((m, n, ok)) != [('bloom', 2, 1), ('dict', 2, 1), ('minmax', 2, 1), ('page', 2, 1), ('prewhere', 2, 1)])
+FROM
+(
+    SELECT splitByChar('.', log_comment)[2] AS m, count() AS n,
+        if(m = 'prewhere',
+            sumIf(ProfileEvents['ParquetRowsFilterExpression'], on) > 0 AND sumIf(ProfileEvents['ParquetRowsFilterExpression'], NOT on) = 0,
+            sumIf(ProfileEvents['ParquetReadPages'], on) < sumIf(ProfileEvents['ParquetReadPages'], NOT on)) AS ok
+    FROM
+    (
+        SELECT log_comment, splitByChar('.', log_comment)[3] != '0' AS on, ProfileEvents FROM system.query_log
+        WHERE type = 'QueryFinish' AND log_comment LIKE 'parquet_pushdown_long.%'
+            AND event_time >= (SELECT metadata_modification_time FROM system.tables WHERE database = currentDatabase() AND name = 'pd_gen')
+    )
+    GROUP BY m ORDER BY m
+)
+]]></fill_query>
+
+<query>SELECT sum(length(url)) FROM file('parquet_pushdown_long/pd.parquet') WHERE id BETWEEN 40000000 AND 59999999 SETTINGS input_format_parquet_filter_push_down = {on}, input_format_parquet_page_filter_push_down = 0</query>
+<query>SELECT sum(length(url)) FROM file('parquet_pushdown_long/pd.parquet') WHERE id IN (SELECT number * 16000 + 12345 FROM numbers(6250)) SETTINGS input_format_parquet_page_filter_push_down = {on}, input_format_parquet_bloom_filter_push_down = 0</query>
+<query>SELECT count() FROM file('parquet_pushdown_long/pd.parquet') WHERE url IN (SELECT concat('https://example.com/', toString(intHash64(n) % 20000000), '/page?x=', toString(n % 977)) FROM (SELECT number * 500003 AS n FROM numbers(50))) SETTINGS input_format_parquet_bloom_filter_push_down = {on}</query>
+<query>SELECT url, t, m FROM file('parquet_pushdown_long/pd.parquet') WHERE category = 'rare' FORMAT Null SETTINGS input_format_parquet_bloom_filter_push_down = 0, input_format_parquet_dictionary_filter_push_down = {dict_limit}</query>
+<query>SELECT url, t, m FROM file('parquet_pushdown_long/pd.parquet') WHERE category = 'cat_7' FORMAT Null SETTINGS optimize_move_to_prewhere = {on}</query>
+<query>SELECT sum(t.a), countIf(t IS NULL) FROM file('parquet_pushdown_long/pd.parquet')</query>
+<query>SELECT sum(m['k3']) FROM file('parquet_pushdown_long/pd.parquet')</query>
+<query>SELECT * FROM file('parquet_pushdown_long/pd.parquet') FORMAT Null</query>
+
+<drop_query>INSERT INTO FUNCTION file('parquet_pushdown_long/pd.parquet', RawBLOB) SELECT '' SETTINGS engine_file_truncate_on_insert = 1</drop_query>
+<drop_query>DROP TABLE IF EXISTS pd_gen SYNC</drop_query>
+
+</test>

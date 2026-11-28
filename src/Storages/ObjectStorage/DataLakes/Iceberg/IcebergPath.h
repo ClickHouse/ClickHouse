@@ -3,7 +3,9 @@
 #include <base/types.h>
 #include <fmt/format.h>
 
+#include <optional>
 #include <string_view>
+#include <vector>
 
 namespace DB
 {
@@ -38,9 +40,9 @@ public:
 
     /// Extract the raw path string for writing into Iceberg metadata files,
     /// serialization, cache keys, virtual column values, etc.
-    const String & serialize() const { return raw_path; }
+    [[nodiscard]] const String & serialize() const { return raw_path; }
 
-    bool empty() const { return raw_path.empty(); }
+    [[nodiscard]] bool empty() const { return raw_path.empty(); }
 
     auto operator<=>(const IcebergPathFromMetadata & other) const { return raw_path <=> other.raw_path; }
     auto operator==(const IcebergPathFromMetadata & other) const { return raw_path == other.raw_path; }
@@ -56,6 +58,20 @@ private:
     String raw_path;
 };
 
+/// The URI scheme to write for a ClickHouse object storage backend. A local disk is spelled
+/// `file`: `local` is ClickHouse's storage type token, not a filesystem URI scheme, and no
+/// Iceberg implementation resolves it. Every other backend keeps its token, which an external
+/// reader resolves only for `s3`.
+String toIcebergURIScheme(const String & storage_type_name);
+
+/// Build a `<scheme>://<authority><path>` URI for an Iceberg metadata document.
+/// A non-empty authority is always followed by a separator, so a leading `/` stays part of the
+/// object name. An empty authority contributes none: such a path is already absolute.
+String makeIcebergLocationURI(const String & storage_type_name, const String & authority, const String & path);
+
+/// Whether `path` starts with `<scheme>:/`. Hadoop writes `file:/x`, which has no `//`.
+bool hasIcebergURIScheme(std::string_view path);
+
 struct BlobStorageDescription
 {
     String type_name;
@@ -63,6 +79,23 @@ struct BlobStorageDescription
     bool allow_foreign_namespaces;
 
     static BlobStorageDescription fromConfiguration(const DB::StorageObjectStorageConfiguration & configuration);
+
+    [[nodiscard]] bool isFilesystem() const { return type_name == "local" || type_name == "hdfs"; }
+};
+
+/// Which part of a position delete file applies to one data file.
+enum class PositionDeleteScope
+{
+    None,     /// No row of the delete file can name the data file.
+    Range,    /// Rows for several data files, with no bound spelled otherwise: pruned by the data file path's prefix.
+    ThisFile, /// Attach without row-group pruning by the raw data file path: it may be spelled differently in the rows.
+};
+
+/// The parts of a path that `IcebergPathResolver::matchPositionDeleteBounds` compares, computed once per path.
+struct PositionDeleteMatchKey
+{
+    std::optional<String> identity;
+    std::optional<String> canonical_prefix;
 };
 
 /// Converts Iceberg metadata paths to actual object storage paths.
@@ -94,32 +127,36 @@ public:
     static TableRootDerivation
     deriveTableRoot(const String & table_location, const String & queried_path, const String & metadata_file_key);
 
-    IcebergPathResolver(String table_location_, String table_root_, BlobStorageDescription blob_storage_)
-        : table_location(std::move(table_location_))
-        , table_root(std::move(table_root_))
-        , blob_storage(std::move(blob_storage_))
-    {
-        auto trim_backward_slashes = [](String & str)
-        {
-            while (!str.empty() && str.back() == '/')
-                str.pop_back();
-        };
-        trim_backward_slashes(table_root);
-        trim_backward_slashes(table_location);
-
-        /// Normalize: non-URI table_location should start with '/'
-        if (!table_location.empty() && !table_location.contains("://") && table_location[0] != '/')
-            table_location = "/" + table_location;
-
-        table_location_namespace = parseNamespace(table_location);
-    }
+    IcebergPathResolver(String table_location_, String table_root_, BlobStorageDescription blob_storage_);
 
     /// Convert a metadata path to an actual storage path for I/O operations.
-    String resolve(const IcebergPathFromMetadata & metadata_path) const;
+    /// Throws `BAD_ARGUMENTS` for a path that names no file of the configured storage.
+    [[nodiscard]] String resolve(const IcebergPathFromMetadata & metadata_path) const;
+
+    /// A key for the storage object that `resolve(metadata_path)` addresses, the same for paths the storage treats alike.
+    [[nodiscard]] String storageIdentity(const IcebergPathFromMetadata & metadata_path) const;
+    /// `std::nullopt` instead of the exception of `resolve`.
+    [[nodiscard]] std::optional<String> tryStorageIdentity(const IcebergPathFromMetadata & metadata_path) const;
+
+    /// The text in front of the first component of `path` (scheme and authority, or `/`) if no component is empty, `.` or `..`.
+    /// Another spelling of the same file continues it with a byte other than `/` only if it has such a component.
+    static std::optional<std::string_view> canonicalPrefix(std::string_view path);
+
+    [[nodiscard]] PositionDeleteMatchKey positionDeleteMatchKey(const IcebergPathFromMetadata & path) const;
+
+    /// Which rows of a position delete file with these manifest bounds of `file_path` can name `data_file_path`.
+    /// The keys are `positionDeleteMatchKey` of the paths, default-constructed for an absent bound.
+    [[nodiscard]] PositionDeleteScope matchPositionDeleteBounds(
+        const std::optional<IcebergPathFromMetadata> & lower,
+        const PositionDeleteMatchKey & lower_key,
+        const std::optional<IcebergPathFromMetadata> & upper,
+        const PositionDeleteMatchKey & upper_key,
+        const IcebergPathFromMetadata & data_file_path,
+        const PositionDeleteMatchKey & data_file_key) const;
 
     static String parseNamespace(std::string_view path);
 
-    IcebergPathFromMetadata reverseResolve(const String & storage_path) const
+    [[nodiscard]] IcebergPathFromMetadata reverseResolve(const String & storage_path) const
     {
         if (storage_path.size() > table_root.size()
             && storage_path.starts_with(table_root))
@@ -129,24 +166,49 @@ public:
 
     /// Convert a metadata path to a catalog-compatible path.
     /// Done this way because backward compatibility reasons.
-    String resolveForCatalog(const IcebergPathFromMetadata & metadata_path) const
+    [[nodiscard]] String resolveForCatalog(const IcebergPathFromMetadata & metadata_path) const
     {
         String catalog_filename = metadata_path.serialize();
-        if (!catalog_filename.starts_with(blob_storage.type_name))
-            catalog_filename = blob_storage.type_name + "://" + blob_storage.namespace_name + "/" + catalog_filename;
+        if (!hasIcebergURIScheme(catalog_filename))
+            catalog_filename = makeIcebergLocationURI(blob_storage.type_name, blob_storage.namespace_name, catalog_filename);
         return catalog_filename;
     }
 
-    const String & getTableLocation() const { return table_location; }
-    const String & getTableRoot() const { return table_root; }
+    [[nodiscard]] const String & getTableLocation() const { return table_location; }
+    [[nodiscard]] const String & getTableRoot() const { return table_root; }
+
+    /// A path split into what names a file: the storage it is in and its components.
+    struct ParsedPath
+    {
+        bool has_scheme = false;
+        /// `file:` or no scheme.
+        bool is_local = true;
+        /// For a non-local scheme: the storage family, or the scheme itself if it is not a known storage.
+        String family;
+        String authority;
+        /// Where the path below the scheme and authority starts.
+        size_t path_begin = 0;
+        /// `[begin, end)` offsets of the components in the parsed string.
+        std::vector<std::pair<size_t, size_t>> components;
+    };
 
 private:
-    bool isInForeignNamespace(const String & raw_path) const;
+    [[nodiscard]] bool isInForeignNamespace(const String & raw_path) const;
+    [[nodiscard]] ParsedPath parse(std::string_view path) const;
+    [[nodiscard]] std::optional<String> resolveImpl(const String & raw_path) const;
+    [[noreturn]] void throwUnresolvable(const IcebergPathFromMetadata & metadata_path) const;
 
     String table_location;
     String table_root;
     BlobStorageDescription blob_storage;
     String table_location_namespace;
+
+    ParsedPath parsed_location;
+    std::vector<std::pair<size_t, size_t>> table_root_components;
+    bool table_root_is_absolute = false;
+    /// `location` is a relative path whose components are not the last components of `table_root`: then a relative
+    /// path from the metadata is relative to the same base as the queried path, not to the table root.
+    bool relative_location_not_under_root = false;
 };
 
 }

@@ -24,7 +24,7 @@ public:
         return invoker(ctx, func_decl.getName(), compartment, args);
     }
 
-    const WasmFunctionDeclaration & getFunctionDeclaration() const { return func_decl; }
+    [[nodiscard]] const WasmFunctionDeclaration & getFunctionDeclaration() const { return func_decl; }
 
 private:
     WasmFunctionDeclaration func_decl;

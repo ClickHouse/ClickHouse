@@ -12,12 +12,10 @@ doc_type: 'reference'
 | -- | -- | -- |
 | ✗  | ✔  |    |
 
-<div id="description">
-  ## 描述
-</div>
+## 描述 {#description}
 
 `ODBCDriver2` 格式是一种仅输出的二进制格式，用于通过 HTTP 将查询结果传输给
-[ClickHouse `ODBC` 驱动程序](/zh/concepts/features/interfaces/odbc)。该驱动程序会通过将 `default_format` 设置为
+[ClickHouse `ODBC` 驱动程序](/zh/concepts/features/interfaces/odbc/index)。该驱动程序会通过将 `default_format` 设置为
 `ODBCDriver2` 来请求此格式；用户通常不会直接选择该格式。
 
 stream 中的所有整数均为按小端字节序编码的有符号 32 位值。字符串编码由其字节
@@ -33,9 +31,7 @@ stream 中的所有整数均为按小端字节序编码的有符号 32 位值。
 `NULL` 值的编码长度为 `-1`；非 NULL 空字符串的长度为 `0`。总计行 (如有) 使用
 相同的行编码，并位于普通行之后。
 
-<div id="example-usage">
-  ## 使用示例
-</div>
+## 使用示例 {#example-usage}
 
 以下查询展示了该格式测试所涵盖的值：
 
@@ -58,9 +54,7 @@ clickhouse-client --query \
 
 正常情况下，驱动程序会在 HTTP 请求中添加 `default_format=ODBCDriver2`，并对响应进行解码。
 
-<div id="format-settings">
-  ## 格式设置
-</div>
+## 格式设置 {#format-settings}
 
 `ODBCDriver2` 对单个值采用标准的文本序列化设置。它没有格式本身特有的设置。
 

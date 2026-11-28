@@ -36,8 +36,30 @@ public:
         return result;
     }
 
+    /// Use `amount` tokens on all throttlers, telling them that the data came from the OS page cache
+    bool throttleOSPageCacheRead(size_t amount, size_t max_block_ns) override
+    {
+        bool result = false;
+        for (const auto & throttler : throttlers)
+        {
+            bool blocked = throttler->throttleOSPageCacheRead(amount, max_block_ns);
+            result = result || blocked;
+        }
+        return result;
+    }
+
+    [[nodiscard]] bool ignoresOSPageCacheReads() const override
+    {
+        for (const auto & throttler : throttlers)
+        {
+            if (throttler->ignoresOSPageCacheReads())
+                return true;
+        }
+        return false;
+    }
+
     /// Check if any throttler is currently throttling
-    bool isThrottling() const override
+    [[nodiscard]] bool isThrottling() const override
     {
         for (const auto & throttler : throttlers)
         {
@@ -57,7 +79,7 @@ public:
     }
 
     /// Returns the minimum speed among all throttlers (the most restrictive one)
-    UInt64 getMaxSpeed() const override
+    [[nodiscard]] UInt64 getMaxSpeed() const override
     {
         UInt64 min_speed = std::numeric_limits<UInt64>::max();
         for (const auto & throttler : throttlers)
@@ -70,7 +92,7 @@ public:
     }
 
     /// Returns the minimum burst size among all throttlers (the most restrictive one)
-    UInt64 getMaxBurst() const override
+    [[nodiscard]] UInt64 getMaxBurst() const override
     {
         UInt64 min_burst = std::numeric_limits<UInt64>::max();
         for (const auto & throttler : throttlers)

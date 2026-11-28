@@ -4,6 +4,8 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Storages/IStorage.h>
 
 namespace DB
@@ -72,6 +74,56 @@ ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number
     }
 
     return nullptr;
+}
+
+bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
+{
+    if (query.group_by_with_totals)
+        return true;
+
+    /** NOTE You can also check that the table in the subquery is distributed, and that it only looks at one shard.
+     * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
+     */
+    if (auto query_table = extractTableExpression(query, 0))
+    {
+        if (const auto * ast_union = query_table->as<ASTSelectWithUnionQuery>())
+        {
+            /** NOTE
+            * 1. For ASTSelectWithUnionQuery after normalization for union child node the height of the AST tree is at most 2.
+            * 2. For ASTSelectIntersectExceptQuery after normalization in case there are intersect or except nodes,
+            * the height of the AST tree can have any depth (each intersect/except adds a level), but the
+            * number of children in those nodes is always 2.
+            */
+            std::function<bool(ASTPtr)> traverse_recursively = [&](ASTPtr child_ast) -> bool
+            {
+                if (const auto * select_child = child_ast->as<ASTSelectQuery>())
+                {
+                    if (hasWithTotalsInAnySubqueryInFromClause(select_child->as<ASTSelectQuery &>()))
+                        return true;
+                }
+                else if (const auto * union_child = child_ast->as<ASTSelectWithUnionQuery>())
+                {
+                    for (const auto & subchild : union_child->list_of_selects->children)
+                        if (traverse_recursively(subchild))
+                            return true;
+                }
+                else if (const auto * intersect_child = child_ast->as<ASTSelectIntersectExceptQuery>())
+                {
+                    auto selects = intersect_child->getListOfSelects();
+                    for (const auto & subchild : selects)
+                        if (traverse_recursively(subchild))
+                            return true;
+                }
+                return false;
+            };
+
+            for (const auto & elem : ast_union->list_of_selects->children)
+                if (traverse_recursively(elem))
+                    return true;
+        }
+    }
+
+    return false;
 }
 
 /// The parameter is_create_parameterized_view is used in getSampleBlock of the subquery.

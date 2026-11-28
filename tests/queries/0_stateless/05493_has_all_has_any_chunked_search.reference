@@ -1,0 +1,8 @@
+Int32	Nullable	7600	7026	0	7026	0	0	0
+Int32	not Nullable	3800	3784	0	3784	0	0	0
+UInt32	Nullable	7600	7026	0	7026	0	0	0
+UInt32	not Nullable	3800	3784	0	3784	0	0	0
+Int64	Nullable	7600	7026	0	7026	0	0	0
+Int64	not Nullable	3800	3784	0	3784	0	0	0
+UInt64	Nullable	7600	7026	0	7026	0	0	0
+UInt64	not Nullable	3800	3784	0	3784	0	0	0

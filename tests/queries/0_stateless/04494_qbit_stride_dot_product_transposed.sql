@@ -2,8 +2,6 @@
 -- A strided dot product over the first D dims must equal a non-strided dot product over a QBit holding only those D dims.
 -- Companion to 04491_qbit_stride_distance (L2 / cosine) and 04489_dot_product_transposed_partial_reads_pass.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS qbit_strided;
 DROP TABLE IF EXISTS qbit_plain;
 CREATE TABLE qbit_strided (id UInt32, vec QBit(Float32, 16, 8)) ENGINE = Memory;

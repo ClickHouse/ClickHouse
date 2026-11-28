@@ -1,0 +1,5 @@
+<clickhouse>
+    <replicated_merge_tree>
+        <table_readonly>1</table_readonly>
+    </replicated_merge_tree>
+</clickhouse>

@@ -4,8 +4,6 @@
 -- instance to the outer projection.
 -- https://github.com/ClickHouse/ClickHouse/issues/117753
 
-SET enable_analyzer = 1;
-
 CREATE TABLE dict_src (id UInt64, attr String) ENGINE = MergeTree ORDER BY id AS SELECT 1, '1';
 CREATE DICTIONARY d (id UInt64, attr String) PRIMARY KEY id
     SOURCE(CLICKHOUSE(TABLE 'dict_src')) LIFETIME(0) LAYOUT(HASHED());

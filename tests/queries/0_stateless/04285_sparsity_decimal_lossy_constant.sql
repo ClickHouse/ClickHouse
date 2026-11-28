@@ -1,5 +1,4 @@
--- Tags: no-parallel-replicas, no-old-analyzer
--- no-old-analyzer: Not supported
+-- Tags: no-parallel-replicas
 
 -- A constant whose conversion to the column type is lossy must not be classified
 -- as matching the column default. For `d Decimal(9, 2)` the predicate

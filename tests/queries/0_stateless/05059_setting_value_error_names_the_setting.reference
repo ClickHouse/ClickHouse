@@ -1,0 +1,29 @@
+=== a value of the wrong type or out of range names the setting and the value
+--- SELECT 1 SETTINGS max_threads = 'abc'
+Code: 27. Cannot parse input: expected 'eof' before: 'abc': while setting 'max_threads' to value 'abc'. (CANNOT_PARSE_INPUT_ASSERTION_FAILED)
+--- SELECT 1 SETTINGS max_threads = -1
+Code: 70. Field value -1 is out of range of unsigned long type: while setting 'max_threads' to value -1. (CANNOT_CONVERT_TYPE)
+--- SELECT 1 SETTINGS max_block_size = 0
+Code: 36. A setting's value has to be greater than 0: while setting 'max_block_size' to value 0. (BAD_ARGUMENTS)
+--- SELECT 1 SETTINGS max_memory_usage = '10 elephants'
+Code: 27. Cannot parse input: expected 'eof' before: ' elephants': while setting 'max_memory_usage' to value '10 elephants'. (CANNOT_PARSE_INPUT_ASSERTION_FAILED)
+--- SET max_threads = 'abc'
+Code: 27. Cannot parse input: expected 'eof' before: 'abc': while setting 'max_threads' to value 'abc'. (CANNOT_PARSE_INPUT_ASSERTION_FAILED)
+
+=== a malformed URI is rejected the same way: it names the setting, and a password in the value is masked
+--- SELECT 1 SETTINGS format_avro_schema_registry_url = 'http://['
+Code: 36. Cannot parse URI: Bad URI syntax: unterminated IPv6 address: while setting 'format_avro_schema_registry_url' to value 'http://['. (BAD_ARGUMENTS)
+--- SET format_avro_schema_registry_url = 'http://['
+Code: 36. Cannot parse URI: Bad URI syntax: unterminated IPv6 address: while setting 'format_avro_schema_registry_url' to value 'http://['. (BAD_ARGUMENTS)
+--- SELECT 1 SETTINGS format_avro_schema_registry_url = 'http://user:s3cret@['
+Code: 36. Cannot parse URI: Bad URI syntax: unterminated IPv6 address: while setting 'format_avro_schema_registry_url' to value 'http://user:[HIDDEN]@['. (BAD_ARGUMENTS)
+password echoed: 0
+
+=== an unknown setting keeps the message it had, with no context appended
+code: UNKNOWN_SETTING
+hint: Maybe you meant ['max_threads']
+context appended: 0
+
+=== values that are fine still work
+1
+1

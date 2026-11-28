@@ -35,7 +35,6 @@ SELECT countIf(explain LIKE '%ReadFromMergeTree (%t_plain)%') >= 1
    AND countIf(explain LIKE '%code in [''5'', ''5'']%') = countIf(explain LIKE '%ReadFromMergeTree%')
 FROM (EXPLAIN indexes = 1, distributed = 1 SELECT * FROM v_91641 WHERE code = '5')
 SETTINGS
-    enable_analyzer = 1,
     enable_parallel_replicas = 0,
     serialize_query_plan = 0,
     query_plan_enable_optimizations = 1,

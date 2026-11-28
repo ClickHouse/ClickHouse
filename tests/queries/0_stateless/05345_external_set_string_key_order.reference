@@ -1,0 +1,6 @@
+String	100	100
+FixedString(40)	100	100
+edge values	3	0
+String	1
+FixedString(40)	1
+edge values	1

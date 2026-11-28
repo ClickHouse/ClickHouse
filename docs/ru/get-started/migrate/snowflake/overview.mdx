@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 > В этом документе приводится краткое введение в миграцию данных из Snowflake в ClickHouse.
 
 Snowflake — это облачное хранилище данных, в первую очередь ориентированное на перенос устаревших рабочих нагрузок хранилищ данных из собственной инфраструктуры
@@ -21,14 +19,12 @@ Snowflake — это облачное хранилище данных, в пер
 Real-time аналитики, такая как ClickHouse.
 
 <div id="comparison">
-  ## Сравнение
+  ## Сравнение {#comparison}
 </div>
 
 В этом разделе мы сравним основные возможности ClickHouse и Snowflake.
 
-<div id="similarities">
-  ### Сходства
-</div>
+### Сходства {#similarities}
 
 Snowflake — это облачная платформа хранилища данных, которая предоставляет масштабируемое
 и эффективное решение для хранения, обработки и анализа больших объемов
@@ -52,7 +48,11 @@ shared-disk и масштабируемость архитектуры shared-no
 Изображение ниже с [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/intro-key-concepts)
 показывает эту архитектуру:
 
-<Image img="/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp" size="md" alt="Архитектура Snowflake" />
+<div className="ch-image-md">
+  <Frame>
+    ![Архитектура Snowflake](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
+  </Frame>
+</div>
 
 В отличие от Snowflake, ClickHouse как продукт с открытым исходным кодом и облачным размещением можно развернуть
 как в архитектуре shared-disk, так и в архитектуре shared-nothing. Последняя типична для
@@ -68,13 +68,17 @@ shared-disk и масштабируемость архитектуры shared-no
 масштабировать, чтобы при необходимости добавлять ресурсы CPU и памяти. Как и в Snowflake,
 свойства масштабируемости S3 устраняют классическое ограничение архитектур
 shared-disk (узкие места дискового ввода-вывода и сети), гарантируя, что пропускная способность ввода-вывода,
-доступная текущим узлам в cluster, не снижается при добавлении новых
+доступная текущим узлам в кластере, не снижается при добавлении новых
 узлов.
 
-<Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="Архитектура ClickHouse Cloud" />
+<div className="ch-image-md">
+  <Frame>
+    ![Архитектура ClickHouse Cloud](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
+  </Frame>
+</div>
 
 <div id="differences">
-  ### Различия
+  ### Различия {#differences}
 </div>
 
 Помимо форматов нижележащего хранилища и движков выполнения запросов, эти архитектуры
@@ -129,7 +133,7 @@ shared-disk (узкие места дискового ввода-вывода и
   преимущество перед другими системами.
 
 <div id="real-time-analytics">
-  ### Real-time аналитика
+  ### Real-time аналитика {#real-time-analytics}
 </div>
 
 Согласно общедоступным данным [бенчмарка](https://benchmark.clickhouse.com/#system=+%E2%98%81w|%EF%B8%8Fr|C%20c|nfe\&type=-\&machine=-ca2|gl|6ax|6ale|3al\&cluster_size=-\&opensource=-\&tuned=+n\&metric=hot\&queries=-),

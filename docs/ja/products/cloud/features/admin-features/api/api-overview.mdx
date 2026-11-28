@@ -7,9 +7,7 @@ doc_type: 'reference'
 keywords: ['ClickHouse Cloud', 'API の概要', 'クラウド API', 'REST API', 'プログラムによるアクセス']
 ---
 
-<div id="overview">
-  ## 概要
-</div>
+## 概要 {#overview}
 
 ClickHouse Cloud API は、開発者が ClickHouse Cloud 上の
 組織やサービスを簡単に管理できるように設計された REST API です。Cloud API を使用すると、
@@ -18,9 +16,7 @@ ClickHouse Cloud API は、開発者が ClickHouse Cloud 上の
 
 [最初の API キーを作成して ClickHouse Cloud API の利用を開始する方法をご覧ください。](/ja/products/cloud/features/admin-features/api/openapi)
 
-<div id="swagger-openapi-endpoint-and-ui">
-  ## Swagger (OpenAPI) エンドポイントと UI
-</div>
+## Swagger (OpenAPI) エンドポイントと UI {#swagger-openapi-endpoint-and-ui}
 
 ClickHouse Cloud API は、クライアント側で一貫して利用できるよう、オープンソースの [OpenAPI specification](https://www.openapis.org/)
 に基づいて構築されています。ClickHouse Cloud API のドキュメントをプログラムから
@@ -35,18 +31,14 @@ ClickHouse Cloud API は、クライアント側で一貫して利用できる�
   この変更は、`POST`、`GET`、および `PATCH` の各サービスリクエストで返されるオブジェクトに影響します。そのため、これらの API を利用するコードは、この変更に対応できるよう調整が必要になる場合があります。
 </Note>
 
-<div id="rate-limits">
-  ## レート制限
-</div>
+## レート制限 {#rate-limits}
 
 開発者が作成できる API キーは、組織ごとに 100 個までです。各 API キーでは、
 10 秒間あたり 10 リクエストまでという制限があります。組織で利用できる
 API キー数、または 10 秒間あたりのリクエスト数の上限を増やしたい場合は、
 support@clickhouse.com までお問い合わせください
 
-<div id="terraform-provider">
-  ## Terraform プロバイダー
-</div>
+## Terraform プロバイダー {#terraform-provider}
 
 公式の ClickHouse Terraform プロバイダーを使用すると、[Infrastructure as Code](https://www.redhat.com/en/topics/automation/what-is-infrastructure-as-code-iac)
 によって、予測可能でバージョン管理された構成を作成でき、デプロイ時の
@@ -63,15 +55,11 @@ ClickHouse Terraform プロバイダーへのコントリビュートをご希�
   また、サービスリソースのプロパティとして `num_replicas` フィールドも指定できるようになります。
 </Note>
 
-<div id="terraform-provider-releases">
-  ## Terraform プロバイダーのリリース
-</div>
+## Terraform プロバイダーのリリース {#terraform-provider-releases}
 
 ClickHouse は 2 つの公式 Terraform プロバイダーを提供しています。1 つはクラウドインフラストラクチャ向けの ClickHouse Cloud プロバイダー、もう 1 つはデータベースレベルのオブジェクト向けの DBops プロバイダーです。どちらも同じリリースモデルに従っています。
 
-<div id="ga-vs-beta-resources">
-  ### GA とベータのリソース
-</div>
+### GA とベータのリソース {#ga-vs-beta-resources}
 
 各リリースは、すべてのリソースを含む単一のビルドです。まだ一般提供に至っていない機能のリソースは、GA のリソースとともに **ベータ** としてマークされて提供されます。これらを使用するための別個のビルドや固定する対象はありません。
 
@@ -86,30 +74,22 @@ ClickHouse は 2 つの公式 Terraform プロバイダーを提供していま�
   v3.25.2 より前では、provider はこれらのリソースを *ベータ* ではなく *alpha* としてマークしており、plan 実行時の警告は `Alpha Resource` でした。変更されたのは表現のみであり、スキーマ、動作、状態移行は関係しません。ただし、plan 出力から `Alpha Resource` を grep するツールは、警告なく一致しなくなります。以前のリリースでは、別個の alpha ビルドも公開されていました。
 </Note>
 
-<div id="versioning">
-  ### バージョニング
-</div>
+### バージョニング {#versioning}
 
 両方のプロバイダーは、セマンティック バージョニング (MAJOR.MINOR.PATCH) を採用しています。メジャーバージョンは互換性のない変更がある場合、マイナーバージョンは新機能またはリソースが追加された場合、パッチバージョンはバグ修正が行われた場合に、それぞれ増分されます。リリースは固定スケジュールではなく、必要に応じて作成されます。
 
 `-alphaN` 接尾辞が付いたバージョン (例: `3.15.0-alpha3`) は、単一ビルドモデルの導入以前のものです。引き続き利用できますが、新たに作成されることはありません。
 
-<div id="promotion">
-  ### ベータからGAへの移行
-</div>
+### ベータからGAへの移行 {#promotion}
 
 機能が一般提供に達すると、次回のproviderリリースで該当リソースからベータマーカーが外れます。plan 実行時の警告は表示されなくなり、ドキュメントのコールアウトも削除されます。それ以外に変更はありません。configurationの編集、状態移行、ビルド間の切り替えは不要です。
 
-<div id="terraform-and-openapi-new-pricing---replica-settings-explained">
-  ## Terraform と OpenAPI の新料金体系: レプリカ設定の説明
-</div>
+## Terraform と OpenAPI の新料金体系: レプリカ設定の説明 {#terraform-and-openapi-new-pricing---replica-settings-explained}
 
 各サービスの作成時に設定されるデフォルトのレプリカ数は、Scale tier と Enterprise tier では 3、Basic tier では 1 です。
 Scale tier と Enterprise tier では、サービス作成リクエストで `numReplicas` フィールドを指定することで、この数を調整できます。
-ウェアハウス内の最初のサービスでは、`numReplicas` フィールドの値は 2 ～ 20 である必要があります。既存のウェアハウス内に作成するサービスでは、レプリカ数を 1 まで下げることができます。
+ウェアハウス内の最初のサービスでは、`numReplicas` フィールドの値は最低でも 2 である必要があります。既存のウェアハウス内に作成するサービスでは、レプリカ数を 1 まで下げることができます。レプリカ数の上限については、[使用制限](/ja/cloud/bestpractices/usage-limits)を参照してください。
 
-<div id="support">
-  ## サポート
-</div>
+## サポート {#support}
 
 迅速にサポートを受けるには、まず [Slack チャンネル](https://clickhouse.com/slack) をご確認いただくことをおすすめします。API とその機能について、さらにサポートが必要な場合や詳しい情報をご希望の場合は、https://console.clickhouse.cloud/support から ClickHouse Support までお問い合わせください

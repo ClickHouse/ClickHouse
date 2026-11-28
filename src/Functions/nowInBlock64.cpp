@@ -27,36 +27,24 @@ public:
     static constexpr auto name = "nowInBlock64";
     static FunctionPtr create(ContextPtr /*context*/) { return std::make_shared<FunctionNowInBlock64>(); }
 
-    String getName() const override { return name; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool isVariadic() const override { return true; } /// Optional timezone argument.
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return true; } /// Optional timezone argument.
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), isColumnConst, "const (U)Int*"},
-            {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        if (arguments.empty())
-            return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale);
-
-        auto scale = static_cast<UInt32>(arguments[0].column->get64(0));
-
-        if (arguments.size() == 1)
-            return std::make_shared<DataTypeDateTime64>(scale);
-
-        return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 1, false));
+        /// Note: when scale is provided as a constant argument, the DSL uses the
+        /// runtime value of the constant column to construct DateTime64(scale).
+        return
+            "() -> DateTime64(3)"
+            " OR (const scale Integer) -> DateTime64(scale)"
+            " OR (const scale Integer, const tz StringOrFixedString) -> DateTime64(scale, tz)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & type, size_t input_rows_count) const override
     {
         const auto * data_type_datetime64 = checkAndGetDataType<DataTypeDateTime64>(type.get());
 

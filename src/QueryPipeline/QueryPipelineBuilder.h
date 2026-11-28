@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Processors/IProcessor_fwd.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -9,6 +10,9 @@
 
 namespace DB
 {
+
+class StepProfiler;
+using StepProfilerPtr = std::shared_ptr<StepProfiler>;
 
 class QueryPipelineProcessorsCollector;
 
@@ -26,6 +30,8 @@ struct SizeLimits;
 struct ExpressionActionsSettings;
 
 class IJoin;
+class FillingRightJoinSideTransform;
+using FillingRightJoinSideTransformRawPtrs = std::vector<FillingRightJoinSideTransform *>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 using JoinPtr = std::shared_ptr<IJoin>;
 class TableJoin;
 
@@ -34,6 +40,7 @@ using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 struct SetAndKey;
 using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
+struct SetSpillSettings;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
@@ -78,6 +85,25 @@ public:
     /// Transform pipeline in general way.
     void transform(const Transformer & transformer, bool check_ports = true);
 
+    /// Connect all pending seal inputs of the gated reads in the probe pipeline (see
+    /// SealGatedReadTransform) to the build completion seal of the given filling transforms
+    /// (exactly one of them emits; many ports are collapsed with a resize, many gates are fed
+    /// through one copy). The seal carries the completed runtime filter with the given key as
+    /// an optional payload. Called for joins marked as gating their probe side; unmarked
+    /// joins carry the pending inputs upward. No-op without pending seal inputs.
+    static void wireSealGatedReading(
+        QueryPipelineBuilder & probe,
+        QueryPipelineBuilder & build,
+        const FillingRightJoinSideTransformRawPtrs & filling_transforms,
+        const String & runtime_filter_key,
+        Processors * collected_processors);
+
+    /// Feed the pending seal inputs from null sources: the gated reads then proceed without
+    /// the runtime filter (fail-open). Used when the gates cannot or must not be wired, e.g.
+    /// for a gated read which ended up on the build side of a join (wiring it would deadlock)
+    /// or in a pipeline which does not support gating.
+    static void terminatePendingSealInputs(QueryPipelineBuilder & builder, Processors * collected_processors);
+
     /// Add TotalsHavingTransform. Resize pipeline to single input. Adds totals port.
     void addTotalsHavingTransform(ProcessorPtr transform);
     /// Add transform which calculates extremes. This transform adds extremes port and doesn't change inputs number.
@@ -91,6 +117,13 @@ public:
 
     /// Forget about current totals and extremes. It is needed before aggregation, cause they will be calculated again.
     void dropTotalsAndExtremes();
+    /// Forget about current extremes, keeping totals. Needed before a join, whose inputs' extremes
+    /// say nothing about the join result; they are recalculated above the join if they are wanted.
+    void dropExtremes();
+    /// Take the extremes out of the pipeline, so that the following transforms do not process them,
+    /// and put them back with `attachExtremes`, converted to the header the pipeline has then.
+    void detachExtremes();
+    void attachExtremes();
 
     void addMergingAggregatedMemoryEfficientTransform(
         AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number);
@@ -138,7 +171,8 @@ public:
         size_t min_block_size_bytes,
         size_t max_streams,
         IQueryPlanStep * join_step,
-        bool keep_left_read_in_order,
+        bool keep_left_pipeline_layout,
+        const std::optional<String> & seal_gate = std::nullopt,
         Processors * collected_processors = nullptr);
 
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesByShards(
@@ -177,6 +211,18 @@ public:
         IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
+    /// Join N pipelines sorted by their keys with one transform per stream, created by `create_transform`.
+    /// With `by_shards` the streams of all pipelines are shards with the same borders, otherwise every
+    /// pipeline is merged into one sorted stream.
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesMultiwayMerge(
+        VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines,
+        const VectorWithMemoryTracking<Names> & key_names,
+        bool by_shards,
+        std::function<ProcessorPtr(const SharedHeaders &)> create_transform,
+        size_t max_block_size,
+        IQueryPlanStep * join_step,
+        Processors * collected_processors = nullptr);
+
     /// Add other pipeline and execute it before current one.
     /// Pipeline must have empty header, it should not generate any chunk.
     /// This is used for CreatingSets.
@@ -186,7 +232,9 @@ public:
         SharedHeader res_header,
         SetAndKeyPtr set_and_key,
         const SizeLimits & limits,
-        PreparedSetsCachePtr prepared_sets_cache);
+        PreparedSetsCachePtr prepared_sets_cache,
+        SetSpillSettings spill_settings,
+        bool recoverable_build = false);
 
     void addMaterializingCTETransform(
         SharedHeader res_header,
@@ -204,6 +252,9 @@ public:
 
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(ProgressCallback callback);
+
+    /// Carried only so that `getPipeline` can hand it to the pipeline, which owns it from then on.
+    void setStepProfiler(StepProfilerPtr step_profiler_) { step_profiler = std::move(step_profiler_); }
 
     /// Recommend number of threads for pipeline execution.
     size_t getNumThreads() const
@@ -243,6 +294,8 @@ public:
     bool getReadStreamCountWasReduced() const { return read_stream_count_was_reduced; }
 
     void addResources(const QueryPlanResourceHolder & resources_) { resources.append(resources_); }
+    /// Read access to what this pipeline keeps alive, e.g. to tell whether it reads a given table.
+    const QueryPlanResourceHolder & getResources() const { return resources; }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
     void addContext(ContextPtr context) { resources.interpreter_context.emplace_back(std::move(context)); }
 
@@ -264,12 +317,17 @@ private:
     bool read_stream_count_was_reduced = false;
 
     QueryStatusPtr process_list_element;
+    StepProfilerPtr step_profiler;
     ProgressCallback progress_callback = nullptr;
 
     void checkInitialized();
     void checkInitializedAndNotCompleted();
 
     void setCollectedProcessors(Processors * processors);
+
+    /// Merges the streams, sorted by the keys, into one sorted stream.
+    static void mergeToSingleSortedStream(
+        QueryPipelineBuilder & pipeline, const Names & key_names, size_t max_block_size, Processors * collected_processors);
 
     friend class QueryPipelineProcessorsCollector;
 };

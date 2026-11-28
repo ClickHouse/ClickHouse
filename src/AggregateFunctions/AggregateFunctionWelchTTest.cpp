@@ -21,12 +21,12 @@ struct WelchTTestData : public TTestMoments<Float64>
 {
     static constexpr auto name = "welchTTest";
 
-    bool hasEnoughObservations() const
+    [[nodiscard]] bool hasEnoughObservations() const
     {
         return nx > 1 && ny > 1;
     }
 
-    Float64 getDegreesOfFreedom() const
+    [[nodiscard]] Float64 getDegreesOfFreedom() const
     {
         Float64 mean_x = getMeanX();
         Float64 mean_y = getMeanY();
@@ -51,7 +51,7 @@ struct WelchTTestData : public TTestMoments<Float64>
         return result;
     }
 
-    std::tuple<Float64, Float64> getResult() const
+    [[nodiscard]] std::tuple<Float64, Float64> getResult() const
     {
         Float64 mean_x = getMeanX();
         Float64 mean_y = getMeanY();
@@ -126,8 +126,9 @@ SELECT welchTTest(sample_data, sample_index) FROM welch_ttest;
         )",
         R"(
 ┌─welchTTest(sample_data, sample_index)────┐
-│ (2.7988719532211235,0.05180736034858523) │
-└──────────────────────────────────────────┘
+├────────t_statistic─┬─────────────p_value─┤
+│ 2.7988719532211235 │ 0.05180736034858519 │
+└────────────────────┴─────────────────────┘
         )"
     },
     {
@@ -136,9 +137,10 @@ SELECT welchTTest(sample_data, sample_index) FROM welch_ttest;
 SELECT welchTTest(0.95)(sample_data, sample_index) FROM welch_ttest;
         )",
         R"(
-┌─welchTTest(0.95)(sample_data, sample_index)──────────────────────────────────────┐
-│ (2.7988719532211235,0.05180736034858523,-0.026294346671631885,4.092961013338302) │
-└──────────────────────────────────────────────────────────────────────────────────┘
+┌─welchTTest(0.95)(sample_data, sample_index)───────────────────────────────────────────────────┐
+├────────t_statistic─┬─────────────p_value─┬─confidence_interval_low─┬─confidence_interval_high─┤
+│ 2.7988719532211235 │ 0.05180736034858519 │   -0.026294346671631885 │        4.092961013338302 │
+└────────────────────┴─────────────────────┴─────────────────────────┴──────────────────────────┘
         )"
     }
     };

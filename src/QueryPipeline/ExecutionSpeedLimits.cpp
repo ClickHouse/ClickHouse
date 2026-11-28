@@ -48,9 +48,12 @@ void ExecutionSpeedLimits::throttle(
     size_t total_rows_to_read, UInt64 total_elapsed_microseconds,
     OverflowMode timeout_overflow_mode) const
 {
+    const bool check_estimated_time = timeout_overflow_mode == OverflowMode::THROW && max_estimated_execution_time != 0
+        && timeout_before_checking_execution_speed != 0 && total_rows_to_read != 0;
+
     if ((min_execution_rps != 0 || max_execution_rps != 0
          || min_execution_bps != 0 || max_execution_bps != 0
-         || (total_rows_to_read != 0 && timeout_before_checking_execution_speed != 0))
+         || check_estimated_time)
         && (static_cast<Int64>(total_elapsed_microseconds) > timeout_before_checking_execution_speed.totalMicroseconds()))
     {
         /// Do not count sleeps in throttlers
@@ -79,22 +82,24 @@ void ExecutionSpeedLimits::throttle(
                     min_execution_bps);
 
             /// If the predicted execution time is longer than `max_estimated_execution_time`.
-            if (timeout_overflow_mode == OverflowMode::THROW && max_estimated_execution_time != 0 && total_rows_to_read && read_rows)
+            if (check_estimated_time && read_rows)
             {
                 /// We impose additional constraints to make estimation more reliable.
                 /// At least 1% of the rows must be read, or at least 1% of the time must be spent.
                 const auto rows_threshold = total_rows_to_read / 100;
-                const double time_threshold = max_estimated_execution_time.totalSeconds() / 100.0;
+                /// Not `totalSeconds`: it truncates to whole seconds and overflows `int` for huge values.
+                const double max_estimated_seconds = static_cast<double>(max_estimated_execution_time.totalMicroseconds()) / 1000000.0;
+                const double time_threshold = max_estimated_seconds / 100.0;
                 if (read_rows > rows_threshold || elapsed_seconds > time_threshold)
                 {
                     double estimated_execution_time_seconds = elapsed_seconds * (static_cast<double>(total_rows_to_read) / static_cast<double>(read_rows));
 
-                    if (estimated_execution_time_seconds > max_estimated_execution_time.totalSeconds())
+                    if (estimated_execution_time_seconds > max_estimated_seconds)
                         throw Exception(
                             ErrorCodes::TOO_SLOW,
-                            "Estimated query execution time ({:.3f} seconds) is too long. Maximum: {}. Estimated rows to process: {} ({} read in {:.3f} seconds).",
+                            "Estimated query execution time ({:.3f} seconds) is too long. Maximum: {:.3f} seconds. Estimated rows to process: {} ({} read in {:.3f} seconds).",
                             estimated_execution_time_seconds,
-                            max_estimated_execution_time.totalSeconds(),
+                            max_estimated_seconds,
                             total_rows_to_read,
                             read_rows,
                             elapsed_seconds);

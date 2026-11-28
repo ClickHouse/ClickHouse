@@ -57,18 +57,25 @@ class FunctionArrayShuffleImpl final : public IFunction
 public:
     static constexpr auto name = Traits::name;
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return Traits::getArgumentsThatAreAlwaysConstant(); }
-    bool useDefaultImplementationForConstants() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return Traits::getArgumentsThatAreAlwaysConstant(); }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayShuffleImpl<Traits>>(); }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
+    {
+        if constexpr (Traits::has_limit)
+            return "(Array(T), [const Integer], [const Integer]) -> Array(T)";
+        return "(Array(T), [const Integer]) -> Array(T)";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() > Traits::max_num_params || arguments.empty())
         {
@@ -101,7 +108,7 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override;
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override;
 
 private:
     static ColumnPtr executeGeneric(const ColumnArray & array, pcg64_fast & rng, size_t limit);
@@ -179,9 +186,9 @@ REGISTER_FUNCTION(ArrayShuffle)
 Returns an array of the same size as the original array containing the elements in shuffled order.
 Elements are reordered in such a way that each possible permutation of those elements has equal probability of appearance.
 
-:::note
+<Note>
 This function will not materialize constants.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "arrayShuffle(arr [, seed])";
     FunctionDocumentation::Arguments arguments = {
@@ -204,11 +211,11 @@ Returns an array of the same size as the original array where elements in range 
 subset of the original array. Remaining `(limit..n]` shall contain the elements not in `[1..limit]` range in undefined order.
 Value of limit shall be in range `[1..n]`. Values outside of that range are equivalent to performing full `arrayShuffle`:
 
-:::note
+<Note>
 This function will not materialize constants.
 
 The value of `limit` should be in the range `[1..N]`. Values outside of that range are equivalent to performing full [`arrayShuffle`](#arrayShuffle).
-:::
+</Note>
     )";
     syntax = "arrayPartialShuffle(arr [, limit[, seed]])";
     arguments = {

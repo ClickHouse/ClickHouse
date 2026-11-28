@@ -1,0 +1,39 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- The references require fixed key descriptions and selected granules.
+
+SET explain_query_plan_default = 'legacy';
+SET use_query_condition_cache = 0;
+SET optimize_trivial_count_query = 0;
+SET optimize_trivial_count_with_sparsity_filter = 0;
+SET optimize_move_to_prewhere = 0;
+
+-- Bare-column predicates form a group with exact checks and a relaxed `plus` check. Its description
+-- must intersect the reliable mask components under negation and when combined by `AND` or `OR`.
+CREATE TABLE atom_group_description (x UInt16) ENGINE = MergeTree ORDER BY (x, x + 1, negate(x))
+SETTINGS index_granularity = 4, index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0,
+    add_minmax_index_for_numeric_columns = 0;
+INSERT INTO atom_group_description SELECT number FROM numbers(64);
+
+{% macro check(predicate) -%}
+SELECT '{{ predicate }}',
+    (SELECT count() FROM atom_group_description WHERE {{ predicate }}),
+    (SELECT count() FROM atom_group_description WHERE {{ predicate }} SETTINGS use_primary_key = 0),
+    (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ')
+     FROM (EXPLAIN indexes = 1 SELECT 1 FROM atom_group_description WHERE {{ predicate }})
+     WHERE match(trimLeft(explain), '^(Condition:|Granules:)'))
+FORMAT TSVRaw;
+{%- endmacro %}
+
+SET analyze_index_with_multiple_key_columns_per_condition = 1;
+{{ check('x') }}
+{{ check('NOT x') }}
+{{ check('NOT NOT x') }}
+{{ check('NOT x OR x = 9') }}
+{{ check('NOT x AND x < 8') }}
+
+-- Disabling multi-atom analysis keeps the ordinary single-key description and the same matching rows.
+SET analyze_index_with_multiple_key_columns_per_condition = 0;
+{{ check('NOT x') }}
+
+DROP TABLE atom_group_description;

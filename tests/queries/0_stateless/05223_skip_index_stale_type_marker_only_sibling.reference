@@ -1,0 +1,26 @@
+-- 33b. a sibling index rebuilt by MODIFY COLUMN of a marker-only column does not keep the column absent
+1
+1
+1
+1
+1
+2
+1
+1
+0
+0
+64
+64
+-- 34b. a sibling index rebuilt by CLEAR COLUMN of a marker-only column does not keep the column absent
+1
+1
+1
+1
+1
+1
+2
+1
+0
+0
+64
+64

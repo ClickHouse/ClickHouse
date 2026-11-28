@@ -49,3 +49,8 @@ SELECT pointInPolygon((6., 6.), [[[(0., 0.), (3., 0.), (3., 3.), (0., 3.)]], [[(
 SELECT sum(pointInPolygon((number % 10, intDiv(number, 10) % 10), [(0.5, 0.5), (8.5, 0.5), (8.5, 8.5), (0.5, 8.5)]))
 FROM numbers_mt(1000000)
 SETTINGS max_threads = 8, max_block_size = 4096;
+
+-- Two 150-vertex polygons that differ in one vertex in the middle must be cached independently:
+-- the flat one does not contain (100, -1), the one with a notch at vertex 100 does.
+SELECT pointInPolygon((100., -1.), arrayConcat(arrayMap(i -> (toFloat64(i), 0.), range(148)), [(147., 10.), (0., 10.)]));
+SELECT pointInPolygon((100., -1.), arrayConcat(arrayMap(i -> (toFloat64(i), if(i = 100, -5., 0.)), range(148)), [(147., 10.), (0., 10.)]));

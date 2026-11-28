@@ -1,0 +1,7 @@
+pk_read	16
+pk_seal	16
+date	1440
+skip_minmax	16
+subquery	16
+single_cast	16
+single_cast_pruned	1

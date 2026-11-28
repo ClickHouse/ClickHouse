@@ -1,0 +1,22 @@
+nullable_json_untyped
+1	Dynamic	0	1	1
+\N	Dynamic	1	\N	\N
+x	Dynamic	0	x	x
+1
+nullable_json_chain
+5
+\N
+\N
+nullable_json_typed
+1	Nullable(UInt32)	1	[1,2]	Array(UInt32)	[1,2]
+\N	Nullable(UInt32)	\N	[]	Array(UInt32)	[]
+nullable_json_const
+{"a":1}	1	Dynamic
+\N	\N
+chain_over_scalar_path
+\N
+1
+\N
+1
+\N
+1

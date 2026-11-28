@@ -1,6 +1,5 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/84318
 -- This query previously caused a logical error with recursive CTEs referencing other CTEs.
-SET enable_analyzer = 1;
 WITH RECURSIVE
     subquery1 AS
     (

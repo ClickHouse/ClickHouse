@@ -1,0 +1,55 @@
+0	b	Nullable(String)	2
+1	a	Nullable(String)	2
+2	a	Nullable(String)	2
+3	a	Nullable(String)	2
+\N	a	Nullable(String)	6
+\N	b	Nullable(String)	2
+\N	\N	Nullable(String)	8
+0	Nullable(UInt8)	2
+1	Nullable(UInt8)	6
+\N	Nullable(UInt8)	2
+\N	Nullable(UInt8)	2
+\N	Nullable(UInt8)	2
+\N	Nullable(UInt8)	2
+0	c	Nullable(String)	2
+0	\N	Nullable(String)	2
+1	a	Nullable(String)	2
+1	\N	Nullable(String)	2
+2	b	Nullable(String)	2
+2	\N	Nullable(String)	2
+3	c	Nullable(String)	2
+3	\N	Nullable(String)	2
+\N	a	Nullable(String)	2
+\N	b	Nullable(String)	2
+\N	c	Nullable(String)	4
+\N	\N	Nullable(String)	8
+0	b	Nullable(String)	2
+1	a	Nullable(String)	2
+2	a	Nullable(String)	2
+3	b	Nullable(String)	2
+\N	a	Nullable(String)	4
+\N	b	Nullable(String)	4
+\N	\N	Nullable(String)	8
+1	a	2
+2	a	2
+\N	a	4
+\N	\N	8
+0	1	b	Nullable(String)	2
+1	2	a	Nullable(String)	2
+2	3	a	Nullable(String)	2
+3	4	b	Nullable(String)	2
+\N	\N	a	Nullable(String)	4
+\N	\N	b	Nullable(String)	4
+\N	\N	\N	Nullable(String)	8
+0	0	c	Nullable(String)	2
+1	1	a	Nullable(String)	2
+2	0	b	Nullable(String)	2
+3	0	c	Nullable(String)	2
+\N	0	b	Nullable(String)	2
+\N	0	c	Nullable(String)	4
+\N	1	a	Nullable(String)	2
+\N	\N	a	Nullable(String)	2
+\N	\N	b	Nullable(String)	2
+\N	\N	c	Nullable(String)	4
+\N	\N	\N	Nullable(String)	8
+1	4	7

@@ -15,7 +15,6 @@
 -- discards the part wrongly, which is the unrelated defect of
 -- https://github.com/ClickHouse/ClickHouse/issues/111759.
 
-SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;
 SET query_plan_join_swap_table = 'false';
 SET enable_join_runtime_filters = 0;

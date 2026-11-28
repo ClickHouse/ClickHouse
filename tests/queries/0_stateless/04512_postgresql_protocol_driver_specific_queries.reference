@@ -13,7 +13,7 @@ connection_is_still_usable
 (1 row)
 unsupported 'LISTEN some_channel' not silently accepted
 unsupported 'NOTIFY some_channel' not silently accepted
-multi-statement packet not silently accepted
+multi-statement packet executes the trailing query
 malformed 'DISCARD FOO' not silently accepted
 malformed 'DISCARD' not silently accepted
 malformed 'RESET' not silently accepted

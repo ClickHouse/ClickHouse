@@ -10,7 +10,15 @@ The new setting allow_asynchronous_read_from_io_pool_for_merge_tree allows the n
 
 Normally the [max_threads](/reference/settings/session-settings/max-threads#max_threads) setting [controls](https://clickhouse.com/company/events/query-performance-introspection) the number of parallel reading threads and parallel query processing threads:
 
-<Image img={sync_read} size="md" alt="Synchronous data reading diagram" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Synchronous data reading diagram](/images/knowledgebase/sync_read.webp)
+
+</Frame>
+
+</div>
 
 The data is read 'in order', column after column, from disk.
 
@@ -18,7 +26,15 @@ The data is read 'in order', column after column, from disk.
 The new setting [allow_asynchronous_read_from_io_pool_for_merge_tree](https://github.com/ClickHouse/ClickHouse/pull/43260) allows the number of reading threads (streams) to be higher than the number of threads in the rest of the query execution pipeline to **speed up cold queries on low-CPU ClickHouse Cloud services**, and to **increase performance for I/O bound queries**.
 When the setting is enabled, then the amount of reading threads is controlled by the [max_streams_for_merge_tree_reading](https://github.com/ClickHouse/ClickHouse/pull/43260) setting:
 
-<Image img={async_read} size="md" alt="Asynchronous data reading diagram" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Asynchronous data reading diagram](/images/knowledgebase/async_read.webp)
+
+</Frame>
+
+</div>
 
 The data is read asynchronously, in parallel from different columns.
 
@@ -28,7 +44,15 @@ Note that there is also the [max_streams_to_max_threads_ratio](https://github.co
 
 With the [optimize_read_in_order optimization](/reference/statements/select/order-by#optimization-of-data-reading), ClickHouse can [skip](https://clickhouse.com/blog/clickhouse-faster-queries-with-projections-and-primary-indexes) resorting data in memory if the queries sort order reflects the physical order of data on disk, **but that requires reading the data in order (in contrast to asynchronous reading)**:
 
-<Image img={optimize_read} size="md" alt="Optimize read in order diagram" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Optimize read in order diagram](/images/knowledgebase/optimize_read.webp)
+
+</Frame>
+
+</div>
 
 ### optimize_read_in_order has precedence over asynchronous reading
 

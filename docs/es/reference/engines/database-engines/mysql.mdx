@@ -23,9 +23,7 @@ No se pueden realizar las siguientes consultas:
 * `CREATE TABLE`
 * `ALTER`
 
-<div id="creating-a-database">
-  ## Creación de una base de datos
-</div>
+## Creación de una base de datos {#creating-a-database}
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
@@ -35,16 +33,14 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **Parámetros del motor**
 
-* `host:port` — Dirección del servidor MySQL.
+* `host:port` — Dirección del servidor MySQL. El host debe ser simplemente un nombre de host o una dirección IP, y se accede a él mediante TCP en el puerto indicado, también en el caso de `localhost`: los sockets Unix no son compatibles. Se rechaza cualquier otra sintaxis de host de la biblioteca cliente de MySQL, como las cadenas de conexión o las listas de hosts separadas por comas.
 * `database` — Nombre de la base de datos remota.
 * `user` — Usuario de MySQL.
 * `password` — Contraseña del usuario.
 
 **Configuración**
 
-<div id="enable-compression">
-  ### `enable_compression`
-</div>
+### `enable_compression` {#enable-compression}
 
 Habilita la compresión zlib para la conexión del protocolo MySQL. Cuando se establece en `1`, ClickHouse solicita al servidor MySQL compresión a nivel de protocolo.
 
@@ -58,27 +54,30 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+### `connection_auto_close` {#connection-auto-close}
+
+Permite cerrar automáticamente la conexión tras la ejecución de la consulta, es decir, desactivar la reutilización de conexiones. Si se establece en `0`, cada table de la base de datos conserva sus conexiones en su propio grupo para la siguiente consulta.
+
+Valor predeterminado: `1`.
+
+## TLS/SSL {#tls-ssl}
 
 Las credenciales de una conexión cifrada a MySQL se proporcionan como claves de una [colección con nombre](/es/concepts/features/configuration/server-config/named-collections) (o como argumentos de clave-valor):
 
-| Parámetro      | Descripción                                                                               |
-| -------------- | ----------------------------------------------------------------------------------------- |
-| `ssl_ca_pem`   | Contenido del certificado de CA con el que se verifica el certificado del servidor MySQL. |
-| `ssl_cert_pem` | Contenido del certificado de client para la autenticación basada en certificados.         |
-| `ssl_key_pem`  | Contenido de la clave privada asociada a `ssl_cert_pem`.                                  |
+| Parámetro            | Descripción                                                                               |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| `ssl_ca_pem`         | Contenido del certificado de CA con el que se verifica el certificado del servidor MySQL. |
+| `ssl_cert_pem`       | Contenido del certificado de client para la autenticación basada en certificados.         |
+| `ssl_key_pem`        | Contenido de la clave privada asociada a `ssl_cert_pem`.                                  |
+| `ssl_key_passphrase` | Frase de contraseña de una `ssl_key` / `ssl_key_pem` cifrada. Opcional.                   |
 
-Los valores corresponden al contenido de los archivos PEM respectivos, que se puede copiar en una colección con nombre o en una consulta. Se enmascaran en los registros y en las consultas `SHOW`, al igual que las contraseñas.
+Los valores corresponden al contenido de los archivos PEM respectivos (y a la frase de contraseña de la clave), que se puede copiar en una colección con nombre o en una consulta. Se enmascaran en los registros y en las consultas `SHOW`, al igual que las contraseñas.
 
 Las mismas credenciales también se pueden proporcionar como rutas de archivos en el servidor, mediante `ssl_ca`, `ssl_cert` y `ssl_key`, pero **solo en una colección con nombre definida en el archivo de configuración del servidor**; dicho valor no se puede sobrescribir en una consulta. El servidor abre esos archivos con sus propios privilegios, por lo que aceptar una ruta desde SQL permitiría a cualquier usuario que pueda definir una fuente MySQL explorar el sistema de archivos local y autenticarse con un certificado y una clave que no tiene permiso de leer.
 
 <a id="data_types-support" />
 
-<div id="data-types-support">
-  ## Compatibilidad de tipos de datos
-</div>
+## Compatibilidad de tipos de datos {#data-types-support}
 
 | MySQL                            | ClickHouse                                                   |
 | -------------------------------- | ------------------------------------------------------------ |
@@ -107,9 +106,7 @@ La conversión de los tipos espaciales (excepto `POINT`, que siempre se conviert
 
 Se admite [Nullable](/es/reference/data-types/nullable). Una columna espacial se asigna a `String` (`Nullable(String)` si admite valores nulos) en tres casos: se declara como `GEOMETRYCOLLECTION`; el indicador `geometry` está deshabilitado y el tipo no es `POINT`; o la columna admite valores nulos y el tipo no es `POINT`, ya que `Point` es el único tipo geométrico que puede anidarse dentro de `Nullable`. En los tres casos, la cadena contiene el valor exactamente como lo devuelve MySQL: un prefijo SRID de 4 bytes seguido de la carga útil WKB, por lo que debe eliminar esos 4 bytes iniciales antes de pasarlo a un decodificador WKB.
 
-<div id="global-variables-support">
-  ## Compatibilidad con las variables globales
-</div>
+## Compatibilidad con las variables globales {#global-variables-support}
 
 Para mejorar la compatibilidad, puede hacer referencia a las variables globales al estilo de MySQL, como `@@identifier`.
 
@@ -128,9 +125,7 @@ Ejemplo:
 SELECT @@version;
 ```
 
-<div id="examples-of-use">
-  ## Ejemplos de uso
-</div>
+## Ejemplos de uso {#examples-of-use}
 
 Tabla en MySQL:
 

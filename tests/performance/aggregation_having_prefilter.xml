@@ -1,0 +1,27 @@
+<test>
+    <!-- The HAVING pre-filter (query_plan_aggregation_having_prefilter) removes a group's key
+         materialization from the final two-level conversion, so its effect scales with how many
+         groups the bound rejects and with how wide the keys are.
+
+         Query 1 is the shape it targets, sized to the reported case: three Nullable keys (a 30-byte
+         String, an Int64 and a Date, so the `serialized` method), 3.9M groups, and a bound that
+         keeps 10007 of them (0.25%).
+
+         Queries 2 and 3 measure the TAX rather than the win: every group's count is exactly 2 under
+         a `> 1` bound, so nothing is skipped and the per-group count test is pure overhead. The pass
+         fires on the plan shape alone and has no selectivity estimate, so the tax has to be measured
+         too. Query 2 keeps query 1's wide keys; query 3 is the tightest case there is, a single
+         UInt64 key whose lone `count()` state is the mapped value itself, where the added test is
+         the largest fraction of the conversion.
+
+         Query 4 is the realistic ClickBench shape, a regression guard only.
+
+         The queries deliberately do NOT pin query_plan_aggregation_having_prefilter: perf.py opens
+         every connection with settings_is_important=True, and the reference binary of this PR does
+         not have that setting, so naming it would degrade the run to a single binary. -->
+
+    <query>SELECT toNullable(concat('key-padding-to-thirty-bytes--', toString(g))) AS a, toNullable(toInt64(g)) AS b, toNullable(toDate('2020-01-01') + g % 30) AS c, count() AS cnt FROM (SELECT if(number % 64 = 0, number % 10007, 10007 + ((number * 2654435761) % 4000000)) AS g FROM numbers_mt(10000000)) GROUP BY a, b, c HAVING cnt > 6 SETTINGS query_plan_enable_optimizations = 1, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000, automatic_parallel_replicas_mode = 0 FORMAT Null</query>
+    <query>SELECT toNullable(concat('key-padding-to-thirty-bytes--', toString(g))) AS a, toNullable(toInt64(g)) AS b, toNullable(toDate('2020-01-01') + g % 30) AS c, count() AS cnt FROM (SELECT intDiv(number, 2) AS g FROM numbers_mt(10000000)) GROUP BY a, b, c HAVING cnt > 1 SETTINGS query_plan_enable_optimizations = 1, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000, automatic_parallel_replicas_mode = 0 FORMAT Null</query>
+    <query>SELECT intDiv(number, 2) AS g, count() AS cnt FROM numbers_mt(10000000) GROUP BY g HAVING cnt > 1 SETTINGS query_plan_enable_optimizations = 1, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000, automatic_parallel_replicas_mode = 0 FORMAT Null</query>
+    <query>SELECT URL, count() AS c FROM hits_10m_single GROUP BY URL HAVING c > 100 SETTINGS query_plan_enable_optimizations = 1, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000, automatic_parallel_replicas_mode = 0 FORMAT Null</query>
+</test>

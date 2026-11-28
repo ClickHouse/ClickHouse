@@ -1,25 +1,32 @@
 ---
 slug: /use-cases/observability/clickstack/monitoring-aws-cloudwatch-logs
-title: 'Monitorización de logs de AWS CloudWatch con Managed ClickStack'
-description: 'Reenvíe los logs de AWS CloudWatch a Managed ClickStack mediante el receptor CloudWatch de OpenTelemetry'
+title: 'Monitorización de logs de AWS CloudWatch con ClickHouse Observability'
+sidebarTitle: 'Monitorizar logs de AWS CloudWatch'
+description: 'Reenvíe logs de AWS CloudWatch a ClickHouse Observability en la versión autogestionada mediante el receptor de CloudWatch de OpenTelemetry'
 doc_type: 'guide'
-keywords: ['clickstack', 'aws', 'cloudwatch', 'logs', 'managed', 'observabilidad', 'otel']
+keywords: ['clickstack', 'aws', 'cloudwatch', 'logs', 'self-managed', 'ClickHouse Observability', 'otel']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
-Esta guía te muestra cómo reenviar logs de AWS CloudWatch a Managed ClickStack mediante el [`awscloudwatch` receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver) de OpenTelemetry y luego verlos en la UI de ClickStack.
+<Note>
+  **Está en la ruta autogestionada**
 
-Ejecutaremos un collector independiente que consulta CloudWatch a través de la API de AWS y reenvía los eventos a tu ClickStack collector mediante OTLP. Mantén este collector en la misma cuenta y región de AWS que los grupos de logs para minimizar la latencia y el coste de la API.
+  Ha optado por configurar ClickHouse Observability por su cuenta, mediante la [experiencia autogestionada](/es/clickstack/self-configured/overview). En esta ruta, usted ejecuta el recolector de OpenTelemetry, gestiona la ingestión en su servicio de ClickHouse Cloud, ajusta el esquema y separa los workloads de ingestión y de consulta mediante almacenes. Consulte [Recolector de OpenTelemetry](/es/clickstack/self-configured/ingesting-data/collector), [Optimización del rendimiento](/es/clickstack/self-configured/managing/performance-tuning) y [Aislamiento de workloads de lectura y escritura](/es/clickstack/self-configured/managing/isolating-read-write).
 
-Esta guía asume que ya has completado [la configuración de tu OpenTelemetry Collector](/es/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) y que tienes un ClickStack collector en ejecución.
+  ¿Prefiere una experiencia sin servidor en la que ClickHouse gestione por usted la ingestión, los esquemas y la capacidad de cómputo? En ese caso, utilice la experiencia predeterminada de ClickHouse Observability y siga la guía [Recopilación de logs de AWS CloudWatch con OpenTelemetry](/es/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless).
+</Note>
 
-El ClickStack collector puede desplegarse como un **contenedor de Docker** (consulta [la configuración de tu OpenTelemetry Collector](/es/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)) o como un **release de Helm** en Kubernetes mediante el gráfico de Helm oficial de OpenTelemetry con la imagen del ClickStack collector (consulta [Despliegue del collector](/es/clickstack/ingesting-data/collector#configuring-the-collector)). **Asegúrate de haber anotado su endpoint de OTLP** y el `OTLP_AUTH_TOKEN` que configuraste al desplegarlo.
+Esta guía explica cómo reenviar logs de AWS CloudWatch a ClickHouse Observability mediante el [receptor `awscloudwatch`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver) de OpenTelemetry y, después, visualizarlos en la UI de ClickStack.
+
+Ejecutaremos un recolector independiente que sondea CloudWatch a través de la API de AWS y reenvía los eventos a su recopilador de ClickStack mediante OTLP. Despliegue este recolector en la misma cuenta de AWS y región que los grupos de registros para minimizar la latencia y el coste de las llamadas a la API.
+
+Esta guía presupone que ya ha completado [Configuración de su recopilador de OpenTelemetry](/es/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector) y que tiene un recopilador de ClickStack en ejecución.
+
+El recopilador de ClickStack puede desplegarse como un **contenedor de Docker** (consulte [Configuración de su recopilador de OpenTelemetry](/es/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector)) o como una **release de Helm** en Kubernetes mediante el gráfico de Helm upstream de OpenTelemetry con la imagen del recopilador de ClickStack (consulte [Implementación del recolector](/es/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured)). **Asegúrese de tener a mano su endpoint OTLP** y el `OTLP_AUTH_TOKEN` que definió al desplegarlo.
 
 <Steps>
   <Step title="Reúne los requisitos previos" id="gather-prerequisites">
@@ -58,12 +65,15 @@ El ClickStack collector puede desplegarse como un **contenedor de Docker** (cons
       "Version": "2012-10-17",
       "Statement": [
         {
+          "Sid": "CloudWatchLogsList",
+          "Effect": "Allow",
+          "Action": "logs:DescribeLogGroups",
+          "Resource": "*"
+        },
+        {
           "Sid": "CloudWatchLogsRead",
           "Effect": "Allow",
-          "Action": [
-            "logs:DescribeLogGroups",
-            "logs:FilterLogEvents"
-          ],
+          "Action": "logs:FilterLogEvents",
           "Resource": "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:*"
         }
       ]
@@ -257,11 +267,19 @@ El ClickStack collector puede desplegarse como un **contenedor de Docker** (cons
   <Step title="Confirma en la UI de ClickStack" id="confirm-in-ui">
     Abre tu servicio en la [consola de ClickHouse Cloud](https://console.clickhouse.cloud) y selecciona **ClickStack** en el menú de la izquierda.
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="Iniciar ClickStack" border />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Iniciar ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+      </Frame>
+    </div>
 
     En la vista de **Búsqueda**, cambia la fuente a `Logs` y establece el rango de tiempo en **Últimos 15 minutos**. Los eventos de CloudWatch deberían aparecer tras un par de intervalos de sondeo.
 
-    <Image img="/images/clickstack/cloudwatch/log-search-view-clickstack.webp" size="lg" alt="Vista de Búsqueda de ClickStack con logs de CloudWatch" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Vista de Búsqueda de ClickStack con logs de CloudWatch](/images/clickstack/cloudwatch/log-search-view-clickstack.webp)
+      </Frame>
+    </div>
 
     Cada evento incluye el grupo y el stream de origen como atributos de recurso:
 
@@ -272,11 +290,19 @@ El ClickStack collector puede desplegarse como un **contenedor de Docker** (cons
 
     Modifica la búsqueda a `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body` para incluir estos atributos:
 
-    <Image img="/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp" size="lg" alt="Vista de Búsqueda de ClickStack con logs y atributos de CloudWatch" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Vista de Búsqueda de ClickStack con logs y atributos de CloudWatch](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
+      </Frame>
+    </div>
 
     Selecciona una entrada de log para inspeccionar sus metadatos:
 
-    <Image img="/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp" size="lg" alt="Atributos de CloudWatch en la vista detallada del log" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Atributos de CloudWatch en la vista detallada del log](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
+      </Frame>
+    </div>
 
     Si no aparece nada:
 
@@ -291,17 +317,25 @@ El ClickStack collector puede desplegarse como un **contenedor de Docker** (cons
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Descarga `cloudwatch-logs-dashboard.json`</TrackedLink>; luego, en la UI de ClickStack, ve a **Dashboards** y haz clic en **Import**.
 
-    <Image img="/images/clickstack/clickstack-import-dashboard.webp" size="lg" alt="Botón para importar dashboard" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Botón para importar dashboard](/images/clickstack/clickstack-import-dashboard.webp)
+      </Frame>
+    </div>
 
     Sube el archivo JSON y haz clic en **Finish Import**.
 
-    <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="Diálogo Finish Import" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Diálogo Finish Import](/images/clickstack/cloudwatch/finish-clickstack-import.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Lecturas adicionales" id="further-reading">
-    * [Referencia de la integración con AWS CloudWatch Logs](/es/clickstack/integration-examples/cloudwatch) para el conjunto de datos de demostración, la guía completa de solución de problemas y las opciones de ajuste.
-    * [Protección del collector](/es/clickstack/ingesting-data/collector#securing-the-collector) con TLS en el endpoint OTLP y usuarios de ingestión con el mínimo privilegio necesario.
-    * [Procesamiento, filtrado y enriquecimiento](/es/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) de eventos en el collector.
-    * [Pasar a producción](/es/clickstack/managing/production) para obtener recomendaciones de cara al paso a producción.
+    * [Referencia de la integración con AWS CloudWatch Logs](/es/clickstack/observability/integration-examples/cloudwatch#self-managed) para el conjunto de datos de demostración, la guía completa de solución de problemas y las opciones de ajuste.
+    * [Protección del collector](/es/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) con TLS en el endpoint OTLP y usuarios de ingestión con el mínimo privilegio necesario.
+    * [Procesamiento, filtrado y enriquecimiento](/es/clickstack/self-configured/ingesting-data/collector#processing-filtering-transforming-enriching-self-configured) de eventos en el collector.
+    * [Pasar a producción](/es/clickstack/self-configured/managing/production) para obtener recomendaciones de cara al paso a producción.
   </Step>
 </Steps>

@@ -78,7 +78,7 @@ URI::URI(const std::string& scheme, const std::string& authority, const std::str
 URI::URI(const std::string& scheme, const std::string& authority, const std::string& path, const std::string& query):
 	_scheme(scheme),
 	_path(path),
-	_query(query)
+	_query(query.begin(), query.end())
 {
 	toLowerInPlace(_scheme);
 	std::string::const_iterator beg = authority.begin();
@@ -90,7 +90,7 @@ URI::URI(const std::string& scheme, const std::string& authority, const std::str
 URI::URI(const std::string& scheme, const std::string& authority, const std::string& path, const std::string& query, const std::string& fragment):
 	_scheme(scheme),
 	_path(path),
-	_query(query),
+	_query(query.begin(), query.end()),
 	_fragment(fragment)
 {
 	toLowerInPlace(_scheme);
@@ -231,7 +231,7 @@ std::string URI::toString() const
 	if (!_query.empty())
 	{
 		uri += '?';
-		uri.append(_query);
+		uri.append(getRawQuery());
 	}
 	if (!_fragment.empty())
 	{
@@ -253,8 +253,9 @@ void URI::setScheme(const std::string& scheme)
 	
 void URI::setUserInfo(const std::string& userInfo)
 {
-	_userInfo.clear();
-	decode(userInfo, _userInfo);
+	std::string decodedUserInfo;
+	decode(userInfo, decodedUserInfo);
+	_userInfo.assign(decodedUserInfo.begin(), decodedUserInfo.end());
 }
 
 	
@@ -284,7 +285,7 @@ std::string URI::getAuthority() const
 	std::string auth;
 	if (!_userInfo.empty())
 	{
-		auth.append(_userInfo);
+		auth.append(getUserInfo());
 		auth += '@';
 	}
 	if (_host.find(':') != std::string::npos)
@@ -321,32 +322,35 @@ void URI::setPath(const std::string& path)
 }
 
 	
-void URI::setRawQuery(const std::string& query)
+void URI::setRawQuery(std::string_view query)
 {
-	_query = query;
+	_query.assign(query.begin(), query.end());
 }
 
 
 void URI::setQuery(const std::string& query)
 {
-	_query.clear();
-	encode(query, RESERVED_QUERY, _query);
+	std::string encodedQuery;
+	encode(query, RESERVED_QUERY, encodedQuery);
+	_query.assign(encodedQuery.begin(), encodedQuery.end());
 }
 
 
 void URI::addQueryParameter(const std::string& param, const std::string& val)
 {
-	if (!_query.empty()) _query += '&';
-	encode(param, RESERVED_QUERY_PARAM, _query);
-	_query += '=';
-	encode(val, RESERVED_QUERY_PARAM, _query);
+	std::string query(getRawQuery());
+	if (!query.empty()) query += '&';
+	encode(param, RESERVED_QUERY_PARAM, query);
+	query += '=';
+	encode(val, RESERVED_QUERY_PARAM, query);
+	_query.assign(query.begin(), query.end());
 }
 
 
 std::string URI::getQuery() const
 {
 	std::string query;
-	decode(_query, query);
+	decode(getRawQuery(), query);
 	return query;
 }
 
@@ -354,8 +358,9 @@ std::string URI::getQuery() const
 URI::QueryParameters URI::getQueryParameters() const
 {
 	QueryParameters result;
-	std::string::const_iterator it(_query.begin());
-	std::string::const_iterator end(_query.end());
+	std::string_view query(getRawQuery());
+	std::string_view::const_iterator it(query.begin());
+	std::string_view::const_iterator end(query.end());
 	while (it != end)
 	{
 		std::string name;
@@ -426,7 +431,7 @@ std::string URI::getPathEtc() const
 	if (!_query.empty())
 	{
 		pathEtc += '?';
-		pathEtc += _query;
+		pathEtc += getRawQuery();
 	}
 	if (!_fragment.empty())
 	{
@@ -444,7 +449,7 @@ std::string URI::getPathAndQuery() const
 	if (!_query.empty())
 	{
 		pathAndQuery += '?';
-		pathAndQuery += _query;
+		pathAndQuery += getRawQuery();
 	}
 	return pathAndQuery;
 }
@@ -625,11 +630,10 @@ void URI::getPathSegments(const std::string& path, std::vector<std::string>& seg
 }
 
 
-void URI::encode(const std::string& str, const std::string& reserved, std::string& encodedStr)
+void URI::encode(std::string_view str, std::string_view reserved, std::string& encodedStr)
 {
-	for (std::string::const_iterator it = str.begin(); it != str.end(); ++it)
+	for (char c : str)
 	{
-		char c = *it;
 		if ((c >= 'a' && c <= 'z') ||
 		    (c >= 'A' && c <= 'Z') ||
 		    (c >= '0' && c <= '9') ||
@@ -648,11 +652,11 @@ void URI::encode(const std::string& str, const std::string& reserved, std::strin
 }
 
 	
-void URI::decode(const std::string& str, std::string& decodedStr, bool plusAsSpace)
+void URI::decode(std::string_view str, std::string& decodedStr, bool plusAsSpace)
 {
 	bool inQuery = false;
-	std::string::const_iterator it  = str.begin();
-	std::string::const_iterator end = str.end();
+	std::string_view::const_iterator it  = str.begin();
+	std::string_view::const_iterator end = str.end();
 	while (it != end)
 	{
 		char c = *it++;
@@ -661,9 +665,9 @@ void URI::decode(const std::string& str, std::string& decodedStr, bool plusAsSpa
 		if (inQuery && plusAsSpace && c == '+') c = ' ';
 		else if (c == '%')
 		{
-			if (it == end) throw URISyntaxException("URI encoding: no hex digit following percent sign", str);
+			if (it == end) throw URISyntaxException("URI encoding: no hex digit following percent sign", std::string(str));
 			char hi = *it++;
-			if (it == end) throw URISyntaxException("URI encoding: two hex digits must follow percent sign", str);
+			if (it == end) throw URISyntaxException("URI encoding: two hex digits must follow percent sign", std::string(str));
 			char lo = *it++;
 			if (hi >= '0' && hi <= '9')
 				c = hi - '0';
@@ -794,7 +798,7 @@ void URI::parseAuthority(std::string::const_iterator& it, const std::string::con
 	std::string::const_iterator pbeg = part.begin();
 	std::string::const_iterator pend = part.end();
 	parseHostAndPort(pbeg, pend);
-	_userInfo = userInfo;
+	_userInfo.assign(userInfo.begin(), userInfo.end());
 }
 
 
@@ -864,7 +868,7 @@ void URI::parsePathEtc(std::string::const_iterator& it, const std::string::const
 void URI::parseQuery(std::string::const_iterator& it, const std::string::const_iterator& end)
 {
 	_query.clear();
-	while (it != end && *it != '#') _query += *it++;
+	while (it != end && *it != '#') _query.push_back(*it++);
 }
 
 

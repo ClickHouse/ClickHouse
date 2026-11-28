@@ -64,6 +64,7 @@ private:
     std::string data_path;
     bool no_system_tables = false;
     bool symbolize = false;
+    bool initialize_mark_caches = true;
 
     /// Server context
     std::unique_ptr<SharedContextHolder> shared_context;

@@ -9,6 +9,8 @@
 #include <base/defines.h>
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <functional>
+#include <limits>
 #include <optional>
 
 namespace DB
@@ -42,7 +44,9 @@ struct KeeperSnapshotStatus
 class KeeperStateMachine : public nuraft::state_machine
 {
 public:
-    using CommitCallback = std::function<void(uint64_t, const KeeperRequestForSession &)>;
+    /// Called for every committed request: (log idx, request, dispatcher_server_id of its batch).
+    /// dispatcher_server_id is -1 if the server that produced the request is unknown (legacy entry).
+    using CommitCallback = std::function<void(uint64_t, const KeeperRequestForSession &, int32_t)>;
 
     KeeperStateMachine(
         KeeperResponseCallback response_callback_,
@@ -60,30 +64,66 @@ public:
 
     enum ZooKeeperLogSerializationVersion
     {
+        /// Versions of the legacy single-request format, sniffed from the buffer length by
+        /// `parseRequestInOldFormat`. New entries use `REQUEST_BATCH` if
+        /// `write_log_entry_version` is at least 1, otherwise the legacy format.
         INITIAL = 0,
         WITH_TIME = 1,
         WITH_ZXID_DIGEST = 2,
         WITH_XID_64 = 3,
         WITH_OPTIONAL_TRACING_CONTEXT = 4,
+        /// Format where one log entry contains a batch of keeper requests.
+        REQUEST_BATCH = 5,
     };
 
-    /// lifetime of a parsed request is:
+    /// A batch entry of format version `v` starts with the int64 `BATCH_ENTRY_MARKER_BASE + v`.
+    /// The first `BATCH_ENTRY_VERSION_RANGE` values are reserved for it. Legacy entries start with
+    /// a session id, which is never in this range.
+    ///
+    /// Rules for changing the batch format:
+    /// 1. A field that an older reader may ignore can be appended to the header (skipped via
+    ///    `header_size`) or after a request body (skipped via the request size).
+    /// 2. Any other change needs a new version and a new `write_log_entry_version` value.
+    ///    Older readers throw `UNKNOWN_FORMAT_VERSION`.
+    /// 3. Bytes 0 to 36 keep their layout in all versions, because a leader patches entries
+    ///    serialized by other servers.
+    static constexpr int64_t BATCH_ENTRY_MARKER_BASE = std::numeric_limits<int64_t>::min();
+    static constexpr int64_t BATCH_ENTRY_VERSION_RANGE = 1 << 16;
+    static constexpr size_t BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET = sizeof(int64_t) + sizeof(uint32_t);
+
+    /// Serialize the batch according to `write_log_entry_version`.
+    /// 0: one legacy entry per request. 1: one batch entry. Other values throw `LOGICAL_ERROR`.
+    static std::vector<nuraft::ptr<nuraft::buffer>> serializeRequestBatch(const KeeperRequestBatch & batch, uint64_t log_entry_version);
+
+    /// Overwrite the leader-assigned fields (zxid, digest, and for batch entries also
+    /// committed_log_idx) of a log entry produced by serializeRequestBatch, in either format.
+    /// serialization_version and patched_fields_offset come from parseRequestBatch.
+    static void patchSerializedRequestBatch(nuraft::buffer & data, ZooKeeperLogSerializationVersion serialization_version, size_t patched_fields_offset, const KeeperRequestBatch & batch);
+
+    /// Parses both a batch entry and a legacy single-request entry (returned as a batch of one).
+    ///
+    /// Lifetime of a parsed batch is:
     /// [preprocess/PreAppendLog -> commit]
     /// [preprocess/PreAppendLog -> rollback]
-    /// on events like commit and rollback we can remove the parsed request to keep the memory usage at minimum
-    /// request cache is also cleaned on session close in case something strange happened
-    ///
-    /// final - whether it's the final time we will fetch the request so we can safely remove it from cache
-    /// serialization_version - information about which fields were parsed from the buffer so we can modify the buffer accordingly
-    std::shared_ptr<KeeperRequestForSession> parseRequest(
+    /// on events like commit and rollback we can remove the parsed batch from cache to keep the
+    /// memory usage at minimum; the cache is also cleaned on session close in case something
+    /// strange happened.
+    /// final - whether it's the final time we will fetch the batch so we can safely remove it from cache
+    /// serialization_version - which format/fields were parsed from the buffer so we can modify the buffer accordingly
+    /// patched_fields_offset - where the leader-patched fields live: for batch entries it is
+    /// BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET; for legacy entries it is the request end position
+    /// (which of the fields are present there follows from `serialization_version`).
+    KeeperRequestBatchPtr parseRequestBatch(
         nuraft::buffer & data,
         bool final,
         ZooKeeperLogSerializationVersion * serialization_version = nullptr,
-        size_t * request_end_position = nullptr);
+        size_t * patched_fields_offset = nullptr);
 
-    static nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session);
-
-    std::optional<KeeperDigest> preprocess(const KeeperRequestForSession & request_for_session, bool lock_mutex);
+    /// Preprocess all requests of the batch in order. The batch must have first_zxid assigned.
+    /// Returns the digest after the last request, or nullopt if the storage is finalized.
+    /// Idempotent on the leader: if the batch was already preprocessed (in the PreAppendLogLeader
+    /// callback), only stamps batch.log_idx on its transactions.
+    std::optional<KeeperDigest> preprocessBatch(const KeeperRequestBatch & batch, bool lock_mutex);
 
     nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;
 
@@ -93,11 +133,25 @@ public:
 
     void rollback(uint64_t log_idx, nuraft::buffer & data) override;
 
-    // allow_missing - whether the transaction we want to rollback can be missing from storage
+    // Roll back the batch's requests in reverse zxid order.
+    // allow_missing - whether the transactions we want to rollback can be missing from storage
     // (can happen in case of exception during preprocessing)
-    void rollbackRequest(const KeeperRequestForSession & request_for_session, bool allow_missing);
+    void rollbackRequestBatch(const KeeperRequestBatch & batch, bool allow_missing);
 
     uint64_t last_commit_index() override { return keeper_context->lastCommittedIndex(); }
+
+    /// Decides whether the leader should be asked to stop sending log entries.
+    void setAppendEntriesPauseCondition(std::function<bool()> condition)
+    {
+        append_entries_pause_condition = std::move(condition);
+    }
+
+    /// -1 makes the leader fall back to heartbeats instead of resending entries.
+    ///  0 means any batch size is welcome.
+    int64_t get_next_batch_size_hint_in_bytes() override
+    {
+        return append_entries_pause_condition && append_entries_pause_condition() ? -1 : 0;
+    }
 
     nuraft::ptr<nuraft::snapshot> last_snapshot() override;
 
@@ -175,7 +229,44 @@ public:
     /// Does preprocessRequest on log entries to populate storage's UncommittedState.
     void preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, bool lock_mutex);
 
+    /// Why a local log entry above the snapshot cannot be replayed after orphaned nodes were removed.
+    struct OrphanLogTailConflict
+    {
+        uint64_t log_idx = 0;
+        /// Empty when the entry could not be parsed at all.
+        std::string op_num;
+        /// Empty when the request's paths could not be determined.
+        std::string request_path;
+        /// Empty when the entry itself could not be verified rather than a specific path conflicting.
+        std::string subtree_root;
+        std::string reason;
+    };
+
+    /// Startup-only, called from `KeeperServer::startup` once the log store is available.
+    ///
+    /// After `init()` removed orphaned nodes from the snapshot, verify that no local log entry in
+    /// `[start_idx, end_idx)` references the damaged region of the tree. Those entries are
+    /// re-preprocessed and committed right after startup, and with digest checking disabled (which
+    /// orphan removal requires) a reference to a removed path would silently resolve differently --
+    /// e.g. `Create`/`Set` returning `ZNONODE` and parent `cversion`/`numChildren` bumps disappearing --
+    /// instead of being caught.
+    ///
+    /// Fails closed: anything that cannot be verified (missing log store, truncated log range,
+    /// unparseable entry, unrecognised request type) is reported as a conflict.
+    ///
+    /// Returns `nullopt` when nothing was removed or when the tail is provably clean. In the latter
+    /// case, persists the repaired snapshot before clearing the recorded roots. A write failure
+    /// propagates to abort startup; a second successful call is a no-op.
+    std::optional<OrphanLogTailConflict> findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end_idx);
+
+    /// Non-empty only between `init()` and `findOrphanConflictInLogTail()`. For tests/introspection.
+    const std::vector<std::string> & getRemovedOrphanSubtreeRoots() const { return removed_orphan_subtree_roots; }
+    const std::vector<int64_t> & getRemovedOrphanEphemeralSessions() const { return removed_orphan_ephemeral_sessions; }
+
 private:
+    /// Persist the repaired tree at the loaded snapshot's index before Raft can serve it to peers.
+    void persistRepairedSnapshot();
+
     /// Advance the mark (no-op if older; LOGICAL_ERROR backstop on equal index with a
     /// different term) and re-point retention protection at its backing snapshot file.
     void advanceLatestSnapshotMeta(const SnapshotMetadataPtr & candidate) TSA_REQUIRES(snapshots_lock);
@@ -237,10 +328,25 @@ private:
     /// for request.
     mutable std::mutex process_and_responses_lock;
 
-    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, std::shared_ptr<KeeperRequestForSession>>> parsed_request_cache;
+    static nuraft::ptr<nuraft::buffer> serializeRequestInOldFormat(const KeeperRequestForSession & request_for_session);
+
+    KeeperRequestBatchPtr parseRequestInOldFormat(
+        nuraft::buffer & data,
+        bool final,
+        ZooKeeperLogSerializationVersion * serialization_version,
+        size_t * patched_fields_offset);
+
+    /// Whether a parsed log entry should go through parsed_batch_cache;
+    /// (session_id, xid) are of the entry's first request.
+    bool shouldCacheParsedEntry(int64_t session_id, int64_t xid, size_t entry_size) const;
+
+    /// Cache of parsed batch log entries, keyed by (session_id, xid) of the batch's first request.
+    /// Entries of closed sessions are erased on Close commit in case something strange happened.
+    /// TODO: Replace this cache by plumbing the parsed batch through nuraft as an opaque pointer attached to the log entry, instead of re-parsing (and caching) the exact buffer we serialized microseconds earlier in the same process.
+    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestBatchPtr>> parsed_batch_cache;
     uint64_t min_request_size_to_cache{0};
     /// we only need to protect the access to the map itself
-    /// requests can be modified from anywhere without lock because a single request
+    /// batches can be modified from anywhere without lock because a single batch
     /// can be processed only in 1 thread at any point
     std::mutex request_cache_mutex;
 
@@ -258,9 +364,19 @@ private:
 
     KeeperContextPtr keeper_context;
 
+    /// Set once, before the Raft server starts, and only read afterwards.
+    std::function<bool()> append_entries_pause_condition;
+
     KeeperSnapshotManagerS3 * snapshot_manager_s3;
 
     KeeperLogStore * log_store = nullptr;
+
+    /// Written by `init()` when orphaned nodes were removed from the snapshot, consumed and cleared by
+    /// `findOrphanConflictInLogTail()`. Both run single-threaded from `KeeperServer::startup` before the
+    /// raft server is launched, so no synchronisation is needed.
+    std::vector<std::string> removed_orphan_subtree_roots;
+    /// Sessions that owned a removed ephemeral node; same lifecycle as `removed_orphan_subtree_roots`.
+    std::vector<int64_t> removed_orphan_ephemeral_sessions;
 
     struct DetachedSnapshotReceiveFiles
     {

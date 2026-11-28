@@ -1,5 +1,6 @@
 #include <IO/S3Common.h>
 
+#include <Common/Config/ConfigurationWithUsageTracking.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
@@ -50,6 +51,21 @@ bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error)
         || error.GetExceptionName() == "InvalidPartOrder";
 }
 
+namespace S3
+{
+
+Aws::Map<Aws::String, Aws::String> objectAttributesToAwsMap(const ObjectAttributes & attributes)
+{
+    return {attributes.begin(), attributes.end()};
+}
+
+ObjectAttributes objectAttributesFromAwsMap(const Aws::Map<Aws::String, Aws::String> & map)
+{
+    return {map.begin(), map.end()};
+}
+
+}
+
 }
 
 #endif
@@ -77,6 +93,10 @@ HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Ut
     HTTPHeaderEntries headers;
     Poco::Util::AbstractConfiguration::Keys subconfig_keys;
     config.keys(config_elem, subconfig_keys);
+    /// The headers are picked by a prefix of their names. Look up the prefix, so that a configuration
+    /// tracking the read keys (`ConfigurationWithUsageTracking`, used for a definition of a disk) knows that
+    /// the elements with such names are read even when they are absent.
+    config.has(ConfigurationWithUsageTracking::getNamePrefixKey(config_elem + "." + header_key));
     for (const std::string & subkey : subconfig_keys)
     {
         if (subkey.starts_with(header_key))

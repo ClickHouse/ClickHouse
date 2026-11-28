@@ -1,0 +1,18 @@
+--- no grants
+SELECT predictXGBoost('model', 1.0, 2.0)
+ACCESS_DENIED
+NOT_LOADED
+SELECT predictXGBoost('db.model', 1.0, 2.0)
+ACCESS_DENIED
+NOT_LOADED
+SELECT predictXGBoost('model', toFloat64(number), toFloat64(number)) FROM numbers(0)
+ACCESS_DENIED
+NOT_LOADED
+SELECT predictXGBoost('no_such_model', 1.0, 2.0)
+ACCESS_DENIED
+--- dictGet
+SELECT isFinite(predictXGBoost('model', 1.0, 2.0))
+1
+LOADED
+SELECT predictXGBoost('no_such_model', 1.0, 2.0)
+not found

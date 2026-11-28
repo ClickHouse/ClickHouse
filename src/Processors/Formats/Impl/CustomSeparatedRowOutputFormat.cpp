@@ -23,7 +23,7 @@ CustomSeparatedRowOutputFormat::CustomSeparatedRowOutputFormat(
 {
 }
 
-void CustomSeparatedRowOutputFormat::writeLine(const std::vector<String> & values)
+void CustomSeparatedRowOutputFormat::writeLine(std::span<const String> values)
 {
     writeRowStartDelimiter();
     for (size_t i = 0; i != values.size(); ++i)
@@ -117,7 +117,7 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
 
         factory.registerAppendSupportChecker(format_name, [](const FormatSettings & settings)
         {
-            return settings.custom.result_after_delimiter.empty();
+            return settings.custom.result_after_delimiter.empty() && settings.custom.row_between_delimiter.empty();
         });
 
         /// With the `Raw` escaping rule the fields are written verbatim (like `TSVRaw`), so the output

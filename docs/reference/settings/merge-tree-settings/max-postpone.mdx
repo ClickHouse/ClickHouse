@@ -16,19 +16,19 @@ These settings are available in [system.merge_tree_settings](/reference/system-t
 ## max_postpone_time_for_failed_mutations_ms {#max_postpone_time_for_failed_mutations_ms}
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 
-The maximum postpone time for failed mutations.
+Maximum exponential backoff, in milliseconds, before retrying a failed mutation on the same data part. The delay increases after repeated failures and is capped by this value. Set to `0` to retry without postponement.
 
 ## max_postpone_time_for_failed_replicated_fetches_ms {#max_postpone_time_for_failed_replicated_fetches_ms}
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "Added new setting to enable postponing fetch tasks in the replication queue."}]}]}/>
 
-The maximum postpone time for failed replicated fetches.
+Maximum exponential backoff, in milliseconds, before retrying a failed `GET_PART` task in a `ReplicatedMergeTree` replication queue. The delay increases after repeated failures and is capped by this value. Set to `0` to disable postponement.
 
 ## max_postpone_time_for_failed_replicated_merges_ms {#max_postpone_time_for_failed_replicated_merges_ms}
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "Added new setting to enable postponing merge tasks in the replication queue."}]}]}/>
 
-The maximum postpone time for failed replicated merges.
+Maximum exponential backoff, in milliseconds, before retrying a failed `MERGE_PARTS` task in a `ReplicatedMergeTree` replication queue. The delay increases after repeated failures and is capped by this value. Set to `0` to disable postponement.
 
 ## max_postpone_time_for_failed_replicated_tasks_ms {#max_postpone_time_for_failed_replicated_tasks_ms}
 <SettingsInfoBlock type="UInt64" default_value="300000" />

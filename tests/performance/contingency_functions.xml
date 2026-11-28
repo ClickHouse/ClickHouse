@@ -58,4 +58,16 @@
             FROM numbers(10_000)
         ) FORMAT NULL;
     </query>
+
+    <query>
+        SELECT theilsU(toNullable(number), number) OVER (ORDER BY number) FROM numbers(1_000_000) FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT cramersV(toNullable(number % 100), intDiv(number, 7) % 100) OVER (ORDER BY number) FROM numbers(6_000_000) FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT cramersVIf(number % 100, intDiv(number, 7) % 100, number % 2 = 0) OVER (ORDER BY number) FROM numbers(10_000_000) FORMAT NULL;
+    </query>
 </test>

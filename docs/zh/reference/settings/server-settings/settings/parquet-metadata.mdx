@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，由 ClickHouse 源代码自动生成。
 
-<div id="parquet_metadata_cache_max_entries">
-  ## parquet_metadata_cache_max_entries
-</div>
+## parquet_metadata_cache_max_entries {#parquet_metadata_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="No" />Parquet 元数据文件缓存的最大条目数。设为 0 表示禁用。
 
-<div id="parquet_metadata_cache_policy">
-  ## parquet_metadata_cache_policy
-</div>
+## parquet_metadata_cache_policy {#parquet_metadata_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Parquet 元数据缓存策略名称。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Parquet 元数据缓存淘汰策略名称。可选值：`LRU`、`SLRU`、`SIEVE`。
 
-<div id="parquet_metadata_cache_size">
-  ## parquet_metadata_cache_size
-</div>
+## parquet_metadata_cache_size {#parquet_metadata_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" changeable_without_restart="Yes" />Parquet 元数据缓存的最大大小 (以字节为单位) 。0 表示禁用。
 
-<div id="parquet_metadata_cache_size_ratio">
-  ## parquet_metadata_cache_size_ratio
-</div>
+## parquet_metadata_cache_size_ratio {#parquet_metadata_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />Parquet 元数据缓存中受保护队列 (在 SLRU policy 下) 大小占缓存总大小的比例。
 

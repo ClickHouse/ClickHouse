@@ -111,10 +111,10 @@ Like [`initcap`](#initcap), `initcapUTF8` converts the first letter of each word
 Assumes that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
 
-:::note
+<Note>
 This function does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax = "initcapUTF8(s)";
     FunctionDocumentation::Arguments arguments = {

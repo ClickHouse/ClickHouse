@@ -1,0 +1,92 @@
+<!--
+    Mutations on a 100 M-row table (16 columns of `hits_100m_single`, 8 partitions of one part each): heavy `ALTER TABLE ...
+    DELETE` / `UPDATE`, lightweight `DELETE FROM` in both modes and lightweight `UPDATE` (patch parts).
+    Every run starts from the pristine copy `mut_src`. A heavy mutation is one `ALTER` that restores and then mutates
+    (`DROP PARTITION ALL, ATTACH PARTITION ALL FROM mut_src, ...`: the segments run in order, the attach hard-links, about
+    30 ms) with `mutations_sync = 2`, so the query time is the mutation time. Lightweight statements recreate `mut_lw` with
+    `CREATE TABLE ... CLONE AS mut_src` (hard links, about 60 ms), as `DROP PARTITION ALL` and `TRUNCATE` leave patch parts
+    behind. All timed statements are shell queries.
+    The heavy `DELETE` matches 2 of the 8 partitions and rewrites all their columns (about 2 GB), so that the
+    writeback of one run does not slow the next. 8 partitions: a part mutation starts only while 20 of the 32 background
+    pool entries are free. `old_parts_lifetime = 0` removes the replaced parts at once.
+    The setup runs every timed statement once and checks its result against values computed from `mut_src`.
+    Per server and invocation: 50 GB written by the setup, about 4.7 GB per run of all seven statements (about 30 GB); no S3.
+-->
+<test run_all_queries="1" max_query_seconds="120">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+</settings>
+
+<create_query>
+    CREATE TABLE mut_src
+    (
+        WatchID UInt64, EventTime DateTime, EventDate Date, CounterID UInt32, UserID UInt64, RegionID UInt32,
+        ResolutionWidth UInt16, ResolutionHeight UInt16, IsMobile UInt8, TraficSourceID Int8, SearchEngineID UInt16, AdvEngineID UInt8,
+        URL String, Title String, Referer String, SearchPhrase String
+    )
+    ENGINE = MergeTree PARTITION BY intHash32(UserID) % 8 ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime)
+    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, old_parts_lifetime = 0
+</create_query>
+<create_query>CREATE TABLE mut AS mut_src</create_query>
+
+<fill_query>INSERT INTO mut_src SELECT WatchID, EventTime, EventDate, CounterID, UserID, RegionID, ResolutionWidth, ResolutionHeight, IsMobile, TraficSourceID, SearchEngineID, AdvEngineID, URL, Title, Referer, SearchPhrase FROM hits_100m_single SETTINGS max_insert_threads = 16, max_partitions_per_insert_block = 0</fill_query>
+<fill_query>ALTER TABLE mut_src MODIFY SETTING lock_acquire_timeout_for_background_operations = 600</fill_query>
+<fill_query>OPTIMIZE TABLE mut_src FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1</fill_query>
+<fill_query>SYSTEM STOP MERGES mut_src</fill_query>
+<fill_query>SELECT throwIf(count() != 8) FROM system.parts WHERE database = 'default' AND table = 'mut_src' AND active</fill_query>
+<fill_query>SELECT throwIf((count(), countIf(IsMobile = 1), countIf(AdvEngineID != 0), countIf(SearchEngineID = 0), countIf(URL = 'http://no.such.host/zqxjkvwy'), countIf(AdvEngineID != 0 AND Title != upper(Title))) != (100000000, 10172637, 630535, 84857038, 0, 223701)) FROM mut_src</fill_query>
+
+<fill_query>ALTER TABLE mut DROP PARTITION ALL, ATTACH PARTITION ALL FROM mut_src, DELETE WHERE IsMobile = 1 AND intHash32(UserID) % 8 &lt; 2 SETTINGS mutations_sync = 2</fill_query>
+<fill_query>
+    SELECT throwIf((count(), sum(cityHash64(WatchID)))
+        != (SELECT countIf(NOT (IsMobile = 1 AND intHash32(UserID) % 8 &lt; 2)), sumIf(cityHash64(WatchID), NOT (IsMobile = 1 AND intHash32(UserID) % 8 &lt; 2)) FROM mut_src))
+    FROM mut
+</fill_query>
+<fill_query>ALTER TABLE mut DROP PARTITION ALL, ATTACH PARTITION ALL FROM mut_src, DELETE WHERE URL = 'http://no.such.host/zqxjkvwy' SETTINGS mutations_sync = 2</fill_query>
+<fill_query>SELECT throwIf((count(), sum(cityHash64(URL))) != (SELECT count(), sum(cityHash64(URL)) FROM mut_src)) FROM mut</fill_query>
+<fill_query>ALTER TABLE mut DROP PARTITION ALL, ATTACH PARTITION ALL FROM mut_src, UPDATE ResolutionWidth = ResolutionWidth + 1 WHERE SearchEngineID = 0 SETTINGS mutations_sync = 2</fill_query>
+<fill_query>SELECT throwIf(sum(ResolutionWidth) != (SELECT sum(ResolutionWidth) + 84857038 FROM mut_src)) FROM mut</fill_query>
+<fill_query>ALTER TABLE mut DROP PARTITION ALL, ATTACH PARTITION ALL FROM mut_src, UPDATE Title = upper(Title) WHERE AdvEngineID != 0 SETTINGS mutations_sync = 2</fill_query>
+<fill_query>SELECT throwIf(sum(cityHash64(Title)) != (SELECT sum(cityHash64(if(AdvEngineID != 0, upper(Title), Title))) FROM mut_src)) FROM mut</fill_query>
+<fill_query>CREATE TABLE mut_lw CLONE AS mut_src</fill_query>
+<fill_query>DELETE FROM mut_lw WHERE IsMobile = 1 SETTINGS lightweight_delete_mode = 'alter_update', lightweight_deletes_sync = 2</fill_query>
+<fill_query>SELECT throwIf((count(), countIf(IsMobile = 1)) != (89827363, 0)) FROM mut_lw</fill_query>
+<fill_query>DROP TABLE mut_lw SYNC</fill_query>
+<fill_query>CREATE TABLE mut_lw CLONE AS mut_src</fill_query>
+<fill_query>DELETE FROM mut_lw WHERE IsMobile = 1 SETTINGS lightweight_delete_mode = 'lightweight_update_force'</fill_query>
+<fill_query>SELECT throwIf((count(), countIf(IsMobile = 1)) != (89827363, 0)) FROM mut_lw</fill_query>
+<fill_query>DROP TABLE mut_lw SYNC</fill_query>
+<fill_query>CREATE TABLE mut_lw CLONE AS mut_src</fill_query>
+<fill_query>UPDATE mut_lw SET Title = upper(Title) WHERE AdvEngineID != 0</fill_query>
+<fill_query>SELECT throwIf(sum(cityHash64(Title)) != (SELECT sum(cityHash64(if(AdvEngineID != 0, upper(Title), Title))) FROM mut_src)) FROM mut_lw</fill_query>
+<fill_query>DROP TABLE mut_lw SYNC</fill_query>
+
+<query type="shell"><![CDATA[
+    ${CLICKHOUSE_CLIENT} --mutations_sync 2 --query "ALTER TABLE mut DROP PARTITION ALL, ATTACH PARTITION ALL FROM mut_src, DELETE WHERE IsMobile = 1 AND intHash32(UserID) % 8 < 2"
+]]></query>
+<query type="shell"><![CDATA[
+    ${CLICKHOUSE_CLIENT} --mutations_sync 2 --query "ALTER TABLE mut DROP PARTITION ALL, ATTACH PARTITION ALL FROM mut_src, DELETE WHERE URL = 'http://no.such.host/zqxjkvwy'"
+]]></query>
+<query type="shell"><![CDATA[
+    ${CLICKHOUSE_CLIENT} --mutations_sync 2 --query "ALTER TABLE mut DROP PARTITION ALL, ATTACH PARTITION ALL FROM mut_src, UPDATE ResolutionWidth = ResolutionWidth + 1 WHERE SearchEngineID = 0"
+]]></query>
+<query type="shell"><![CDATA[
+    ${CLICKHOUSE_CLIENT} --mutations_sync 2 --query "ALTER TABLE mut DROP PARTITION ALL, ATTACH PARTITION ALL FROM mut_src, UPDATE Title = upper(Title) WHERE AdvEngineID != 0"
+]]></query>
+
+<query type="shell"><![CDATA[
+    ${CLICKHOUSE_CLIENT} --lightweight_delete_mode alter_update --lightweight_deletes_sync 2 --query "DROP TABLE IF EXISTS mut_lw SYNC; CREATE TABLE mut_lw CLONE AS mut_src; DELETE FROM mut_lw WHERE IsMobile = 1"
+]]></query>
+<query type="shell"><![CDATA[
+    ${CLICKHOUSE_CLIENT} --lightweight_delete_mode lightweight_update_force --query "DROP TABLE IF EXISTS mut_lw SYNC; CREATE TABLE mut_lw CLONE AS mut_src; DELETE FROM mut_lw WHERE IsMobile = 1"
+]]></query>
+<query type="shell"><![CDATA[
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS mut_lw SYNC; CREATE TABLE mut_lw CLONE AS mut_src; UPDATE mut_lw SET Title = upper(Title) WHERE AdvEngineID != 0"
+]]></query>
+
+<drop_query>DROP TABLE IF EXISTS mut_lw, mut, mut_src SYNC</drop_query>
+
+</test>

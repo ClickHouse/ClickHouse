@@ -1,16 +1,14 @@
 ---
 slug: /optimize/skipping-indexes
 sidebarTitle: 'Índices de omisión de datos'
-description: 'Los índices de omisión permiten a ClickHouse evitar leer grandes fragmentos de datos que con certeza no contienen valores coincidentes.'
+description: 'Los índices de omisión de datos permiten a ClickHouse evitar leer grandes fragmentos de datos que con certeza no contienen valores coincidentes.'
 title: 'Comprender los índices de omisión de datos de ClickHouse'
 doc_type: 'guide'
 keywords: ['índices de omisión de datos', 'omisión de datos', 'rendimiento', 'indexación', 'prácticas recomendadas']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="introduction">
-  ## Introducción
+  ## Introducción {#introduction}
 </div>
 
 Muchos factores afectan al rendimiento de las consultas en ClickHouse. El elemento crítico en la mayoría de los escenarios es si ClickHouse puede usar la clave primaria al evaluar la condición de la cláusula WHERE de la consulta. En consecuencia, seleccionar una clave primaria que se ajuste a los patrones de consulta más comunes es esencial para un diseño eficaz de la tabla.
@@ -21,9 +19,7 @@ En una base de datos relacional tradicional, una forma de abordar este problema 
 
 En su lugar, ClickHouse proporciona un tipo distinto de índice que, en circunstancias específicas, puede mejorar significativamente la velocidad de las consultas. Estas estructuras se denominan índices de omisión porque permiten a ClickHouse omitir la lectura de fragmentos significativos de datos que con certeza no contienen valores coincidentes.
 
-<div id="basic-operation">
-  ## Funcionamiento básico
-</div>
+## Funcionamiento básico {#basic-operation}
 
 Los índices de omisión de datos solo pueden usarse en la familia de tablas MergeTree. Cada índice de omisión de datos tiene cuatro argumentos principales:
 
@@ -104,7 +100,11 @@ En lugar de procesar 100 millones de filas de 800 megabytes, ClickHouse solo ley
 De forma más visual, así es como se leyeron y seleccionaron las 4096 filas con un `my_value` de 125, y cómo las filas siguientes
 se omitieron sin leer del disco:
 
-<Image img="/images/guides/best-practices/simple_skip.webp" size="md" alt="Omisión simple" />
+<div className="ch-image-md">
+  <Frame>
+    ![Omisión simple](/images/guides/best-practices/simple_skip.webp)
+  </Frame>
+</div>
 
 Puede acceder a información detallada sobre el uso del índice de omisión de datos habilitando la traza al ejecutar consultas.  Desde
 clickhouse-client, establezca `send_logs_level`:
@@ -121,13 +121,13 @@ anterior, el registro de depuración muestra que el índice de omisión de datos
 ```
 
 <div id="skip-index-types">
-  ## Tipos de índices de omisión
+  ## Tipos de índices de omisión {#skip-index-types}
 </div>
 
 {/* vale off */}
 
 <div id="minmax">
-  ### minmax
+  ### minmax {#minmax}
 </div>
 
 {/* vale on */}
@@ -141,7 +141,7 @@ Este tipo de índice solo funciona correctamente con una expresión escalar o de
 {/* vale off */}
 
 <div id="set">
-  ### set
+  ### set {#set}
 </div>
 
 {/* vale on */}
@@ -154,7 +154,7 @@ El costo, el rendimiento y la eficacia de este índice dependen de la cardinalid
 {/* vale off */}
 
 <div id="text">
-  ### texto
+  ### texto {#text}
 </div>
 
 {/* vale on */}
@@ -165,7 +165,7 @@ El índice de texto admite búsquedas de texto completo eficientes y búsquedas 
 Consulte la documentación del índice de texto para obtener más detalles [aquí](/es/reference/engines/table-engines/mergetree-family/textindexes).
 
 <div id="bloom-filter-types">
-  ### Tipos de filtros Bloom
+  ### Tipos de filtros Bloom {#bloom-filter-types}
 </div>
 
 Un *filtro Bloom* es una estructura de datos que permite comprobar la pertenencia a un conjunto de forma eficiente en cuanto a espacio, a costa de una pequeña probabilidad de falsos positivos. Un falso positivo no supone un problema importante en el caso de los índices de omisión, porque la única desventaja es leer algunos bloques innecesarios. Sin embargo, la posibilidad de falsos positivos sí implica que cabe esperar que la expresión indexada sea verdadera; de lo contrario, podrían omitirse datos válidos.
@@ -190,7 +190,7 @@ Este índice también puede ser útil para búsquedas de texto, en particular en
 > El índice de texto proporciona un verdadero índice invertido con mejor rendimiento de búsqueda, un comportamiento más predecible y mayor flexibilidad y rendimiento en comparación con los índices de filtro Bloom basados en tokens.
 
 <div id="skip-index-functions">
-  ## Funciones de los índices de omisión
+  ## Funciones de los índices de omisión {#skip-index-functions}
 </div>
 
 El propósito principal de los índices de omisión de datos es limitar la cantidad de datos que analizan las consultas más habituales. Dada la naturaleza analítica de los datos en ClickHouse, el patrón de esas consultas incluye, en la mayoría de los casos, expresiones funcionales. En consecuencia, para ser eficientes, los índices de omisión deben interactuar correctamente con las funciones más comunes. Esto puede ocurrir cuando:
@@ -202,7 +202,7 @@ Cada tipo de índice de omisión funciona con un subconjunto de las funciones de
 [aquí](/es/reference/engines/table-engines/mergetree-family/mergetree#functions-support). En general, los índices Set y los índices basados en bloom filter (otro tipo de índice Set) no están ordenados y, por tanto, no funcionan con rangos. En cambio, los índices minmax funcionan especialmente bien con rangos, ya que determinar si estos se intersectan es muy rápido. La eficacia de las funciones de coincidencia parcial LIKE, startsWith, endsWith y hasToken depende del tipo de índice utilizado, de la expresión del índice y de la estructura concreta de los datos.
 
 <div id="skip-index-settings">
-  ## Configuración de los índices de omisión
+  ## Configuración de los índices de omisión {#skip-index-settings}
 </div>
 
 Hay dos configuraciones disponibles que se aplican a los índices de omisión.
@@ -215,15 +215,17 @@ Hay dos configuraciones disponibles que se aplican a los índices de omisión.
   índice hará que se devuelva una excepción para cualquier consulta que no use el índice indicado en la lista.  Esto evitaría que consultas mal escritas
   consuman recursos del servidor.
 
-<div id="skip-best-practices">
-  ## Prácticas recomendadas para los índices de omisión
-</div>
+## Prácticas recomendadas para los índices de omisión de datos {#skip-best-practices}
 
-Los índices de omisión no son intuitivos, especialmente para quienes están acostumbrados a los índices secundarios basados en filas del mundo de los RDBMS o a los índices invertidos de los almacenes de documentos. Para obtener algún beneficio, al aplicar un índice de omisión de datos de ClickHouse se deben evitar suficientes lecturas de gránulos como para compensar el coste de calcular el índice. Y, lo que es más importante, si un valor aparece хотя бы una vez en un bloque indexado, eso significa que hay que leer en memoria y evaluar todo el bloque, por lo que se habrá incurrido en el coste del índice innecesariamente.
+Los índices de omisión de datos no son intuitivos, especialmente para quienes están acostumbrados a los índices secundarios basados en filas del mundo de los RDBMS o a los índices invertidos de los almacenes de documentos. Para obtener algún beneficio, al aplicar un índice de omisión de datos de ClickHouse se deben evitar suficientes lecturas de gránulos como para compensar el coste de calcular el índice. Y, lo que es más importante, si un valor aparece aunque sea una vez en un bloque indexado, eso significa que hay que leer en memoria y evaluar todo el bloque, por lo que se habrá incurrido en el coste del índice innecesariamente.
 
 Considere la siguiente distribución de datos:
 
-<Image img="/images/guides/best-practices/bad_skip.webp" size="md" alt="Omisión deficiente" />
+<div className="ch-image-md">
+  <Frame>
+    ![Omisión deficiente](/images/guides/best-practices/bad_skip.webp)
+  </Frame>
+</div>
 
 Suponga que la clave primaria/ORDER BY es `timestamp` y que hay un índice sobre `visitor_id`. Considere la siguiente consulta:
 
@@ -234,24 +236,24 @@ SELECT timestamp, url FROM table WHERE visitor_id = 1001`
 Un índice secundario tradicional sería muy ventajoso con este tipo de distribución de datos.  En lugar de leer las 32768 filas para encontrar
 las 5 filas con el visitor&#95;id solicitado, el índice secundario incluiría solo cinco ubicaciones de filas, y solo esas cinco filas se
 leerían del disco.  Con un índice de omisión de datos de ClickHouse ocurre exactamente lo contrario.  Se comprobarán los 32768 valores de la columna `visitor_id`
-independientemente del tipo de índice de omisión.
+independientemente del tipo de índice de omisión de datos.
 
 En consecuencia, el impulso natural de intentar acelerar las consultas de ClickHouse simplemente añadiendo un índice a las
 columnas clave suele ser erróneo.  Esta funcionalidad avanzada solo debe usarse después de estudiar otras alternativas, como modificar la clave primaria (consulte [Cómo elegir una clave primaria](/es/guides/clickhouse/data-modelling/sparse-primary-indexes)), usar proyecciones o usar vistas materializadas. Incluso cuando un índice de omisión de datos sea apropiado, a menudo será necesario ajustar cuidadosamente tanto el índice como la tabla.
 
-En la mayoría de los casos, un índice de omisión útil requiere una fuerte correlación entre la clave primaria y la columna o expresión objetivo que no forma parte de la clave primaria.
+En la mayoría de los casos, un índice de omisión de datos útil requiere una fuerte correlación entre la clave primaria y la columna o expresión objetivo que no forma parte de la clave primaria.
 Si no existe correlación (como en el diagrama anterior), es muy probable que al menos una de las filas del
 bloque de varios miles de valores cumpla la condición de filtrado, y se omitirán pocos bloques.  En cambio, si un rango de valores de la clave primaria (como la hora del
 día) está estrechamente asociado con los valores de la posible columna del índice (como las edades de los televidentes), entonces es probable que un índice de tipo minmax
 resulte beneficioso.  Tenga en cuenta que puede ser posible aumentar esta correlación al insertar datos, ya sea incluyendo columnas adicionales
 en la clave de ordenación/ORDER BY, o agrupando las inserciones de modo que los valores asociados con la clave primaria queden agrupados durante la inserción.  Por
-ejemplo, todos los eventos de un `site_id` concreto podrían agruparse e insertarse juntos mediante el proceso de ingesta, incluso si la clave primaria
+ejemplo, todos los eventos de un site&#95;id concreto podrían agruparse e insertarse juntos mediante el proceso de ingesta, incluso si la clave primaria
 es un timestamp que contiene eventos de un gran número de sitios.  Esto dará lugar a muchos gránulos que contienen solo unos pocos site ids, por lo que muchos
-bloques podrían omitirse al buscar un valor específico de `site_id`.
+bloques podrían omitirse al buscar un valor específico de site&#95;id.
 
-Otro buen candidato para un índice de omisión son las expresiones de alta cardinalidad en las que cualquier valor individual está relativamente disperso en los datos.  Un ejemplo
+Otro buen candidato para un índice de omisión de datos son las expresiones de alta cardinalidad en las que cualquier valor individual está relativamente disperso en los datos.  Un ejemplo
 podría ser una plataforma de observabilidad que rastrea códigos de error en solicitudes de API.  Determinados códigos de error, aunque son poco frecuentes en los datos, podrían ser particularmente
-importantes para las búsquedas.  Un índice de omisión de tipo set en la columna error&#95;code permitiría omitir la gran mayoría de los bloques que no contienen
+importantes para las búsquedas.  Un índice de omisión de datos de tipo set en la columna error&#95;code permitiría omitir la gran mayoría de los bloques que no contienen
 errores y, por tanto, mejorar significativamente las consultas centradas en errores.
 
 Por último, la mejor práctica fundamental es probar, probar y probar. De nuevo, a diferencia de los índices secundarios b-tree o de los índices invertidos para buscar documentos,
@@ -260,11 +262,9 @@ que, por cualquier motivo, no se benefician del índice. Siempre deben probarse 
 incluir variaciones del tipo, el tamaño de granularidad y otros parámetros. Las pruebas a menudo revelan patrones y obstáculos que no resultan evidentes con
 experimentos mentales únicamente.
 
-<div id="related-docs">
-  ## Documentación relacionada
-</div>
+## Documentación relacionada {#related-docs}
 
 * [Guía de buenas prácticas](/es/concepts/best-practices/using-data-skipping-indices)
 * [Ejemplos de índices de omisión de datos](/es/concepts/features/performance/skip-indexes/skipping-indexes-examples)
-* [Administración de índices de omisión de datos](/es/reference/statements/alter/skipping-index)
-* [Información sobre la tabla del sistema](/es/reference/system-tables/data_skipping_indices)
+* [Gestión de índices de omisión de datos](/es/reference/statements/alter/skipping-index)
+* [Información de la tabla del sistema](/es/reference/system-tables/data_skipping_indices)

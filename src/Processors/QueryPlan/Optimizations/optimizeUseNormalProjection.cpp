@@ -1,7 +1,10 @@
 #include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/quoteString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -17,6 +20,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
@@ -27,7 +31,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST.h>
+#include <Storages/MergeTree/WhatIf/HypotheticalProjection.h>
 
+#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -36,7 +43,14 @@ namespace Setting
 {
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool force_optimize_projection;
+    extern const SettingsBool prefer_optimize_projection;
     extern const SettingsBool optimize_use_projection_filtering;
+    extern const SettingsFloat optimize_projection_skip_index_ratio;
+}
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace FailPoints
@@ -51,7 +65,7 @@ namespace DB::QueryPlanOptimizations
 
 /// Extract AND-connected conjuncts from an AST expression tree.
 /// For example, (a = 1 AND b = 2 AND c = 3) yields {a = 1, b = 2, c = 3}.
-static void extractConjunctsFromAST(const ASTPtr & expr, std::vector<ASTPtr> & result)
+static void extractConjunctsFromAST(const ASTPtr & expr, VectorWithMemoryTracking<ASTPtr> & result)
 {
     if (const auto * func = expr->as<ASTFunction>(); func && func->name == "and" && func->arguments)
     {
@@ -256,7 +270,7 @@ static bool doesQueryFilterImplyProjectionWhere(
     }
 
     /// Extract projection's WHERE conjuncts from the AST.
-    std::vector<ASTPtr> proj_conjuncts;
+    VectorWithMemoryTracking<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);
 
     /// Unwrap a leading ALIAS wrapper before splitting conjuncts. `QueryDAG::build` wraps the
@@ -305,7 +319,7 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
     if (proj_header.columns() != num_columns)
         return {};
 
-    std::vector<size_t> const_positions;
+    VectorWithMemoryTracking<size_t> const_positions;
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto col_proj = proj_header.getByPosition(i).column;
@@ -333,19 +347,52 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
     return dag;
 }
 
-std::optional<String> optimizeUseNormalProjections(
+UseProjectionsResult optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
     const QueryPlanOptimizationSettings & optimization_settings)
 {
+    UseProjectionsResult result;
     const auto & frame = stack.back();
 
     auto * reading = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
     if (!reading)
-        return {};
+        return result;
 
-    if (!canUseProjectionForReadingStep(reading))
-        return {};
+    const auto metadata = reading->getStorageMetadata();
+    const auto & projections = metadata->projections;
+
+    VectorWithMemoryTracking<const ProjectionDescription *> normal_projections;
+    for (const auto & projection : projections)
+        if (projection.type == ProjectionDescription::Type::Normal)
+            normal_projections.push_back(&projection);
+    /// the optimization of aggregate projections weighs a hypothetical aggregate projection
+    auto hypothetical = reading->getHypotheticalProjection();
+    if (hypothetical && hypothetical->projection.type != ProjectionDescription::Type::Normal)
+        hypothetical = nullptr;
+    if (hypothetical)
+    {
+        normal_projections.push_back(&hypothetical->projection);
+        hypothetical->outcome = {};
+        hypothetical->outcome.weighed = true;
+    }
+
+    auto reject_all = [&](const String & reason)
+    {
+        rejectProjections(result.projection_reject_reasons, normal_projections, {}, reason);
+        if (hypothetical)
+        {
+            hypothetical->outcome.rejected_for_query = true;
+            recordHypotheticalOutcome(*hypothetical, result, nullptr, false);
+        }
+        return std::move(result);
+    };
+
+    if (normal_projections.empty())
+        return result;
+
+    if (auto can_use = canUseProjectionForReadingStep(reading); !can_use)
+        return reject_all(can_use.error());
 
     /// Test hook: make a parallel-replicas follower skip the projection short-circuit (see the same
     /// failpoint in optimizeUseAggregateProjections). Gated on the follower predicate so it never
@@ -353,7 +400,7 @@ std::optional<String> optimizeUseNormalProjections(
     fiu_do_on(FailPoints::parallel_replicas_skip_aggregate_projection_on_follower,
     {
         if (reading->isParallelReplicasLocalPlanForFollower())
-            return {};
+            return reject_all("skipped on a parallel replicas follower by a failpoint");
     });
 
     auto iter = stack.rbegin();
@@ -367,7 +414,7 @@ std::optional<String> optimizeUseNormalProjections(
 
     /// Dangling query plan node. This might be generated by StorageMerge.
     if (iter->node->step.get() == reading)
-        return {};
+        return reject_all("the read is a dangling node of a Merge table");
 
     /// Projection can be usable if it will satisfy requested order by.
     const SortingStep * outer_sorting_step = nullptr;
@@ -375,30 +422,10 @@ std::optional<String> optimizeUseNormalProjections(
         if (sort->getType() == SortingStep::Type::Full)
             outer_sorting_step = sort;
 
-    const auto metadata = reading->getStorageMetadata();
-    const auto & projections = metadata->projections;
-
-    std::vector<const ProjectionDescription *> normal_projections;
-    for (const auto & projection : projections)
-        if (projection.type == ProjectionDescription::Type::Normal)
-            normal_projections.push_back(&projection);
-
-    if (normal_projections.empty())
-        return {};
-
     ContextPtr context = reading->getContext();
-    auto it = std::find_if(
-        normal_projections.begin(),
-        normal_projections.end(),
-        [&](const auto * projection)
-        { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
-
-    if (it != normal_projections.end())
-    {
-        const ProjectionDescription * preferred_projection = *it;
-        normal_projections.clear();
-        normal_projections.push_back(preferred_projection);
-    }
+    const auto all_normal_projections = normal_projections;
+    filterProjectionCandidates(normal_projections, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
+    rejectProjections(result.projection_reject_reasons, all_normal_projections, normal_projections, "the setting preferred_optimize_projection_name names another projection");
 
     Names required_columns = reading->getAllColumnNames();
 
@@ -426,7 +453,7 @@ std::optional<String> optimizeUseNormalProjections(
     {
         auto & child = iter->node->children[iter->next_child - 1];
         if (!query.build(*child))
-            return {};
+            return reject_all("the steps between the read and its consumer cannot be rewritten onto a projection");
 
         if (need_parent_part_offset)
         {
@@ -445,55 +472,33 @@ std::optional<String> optimizeUseNormalProjections(
             query.dag->removeUnusedActions();
     }
 
-    bool force_optimize_projection = context->getSettingsRef()[Setting::force_optimize_projection];
+    const bool relax_projection_checks = context->getSettingsRef()[Setting::force_optimize_projection] || context->getSettingsRef()[Setting::prefer_optimize_projection];
 
-    if (!force_optimize_projection)
-    {
-        /// A normal projection can help in two ways:
-        ///     1. Pruning rows via a filter
-        ///     2. Providing data already in the order required by an outer ORDER BY (read-in-order).
-        bool has_filter = query.dag && query.filter_node;
-        bool can_use_sort_order = outer_sorting_step && optimization_settings.read_in_order;
-        if (!has_filter && !can_use_sort_order)
-            return {};
-    }
+    /// A normal projection can help in two ways:
+    ///     1. Pruning rows via a filter
+    ///     2. Providing data already in the order required by an outer ORDER BY (read-in-order).
+    const bool has_filter = query.dag && query.filter_node;
+    const bool can_use_sort_order = outer_sorting_step && optimization_settings.read_in_order;
+    const bool helps_nothing = !has_filter && !can_use_sort_order;
+    if (hypothetical)
+        hypothetical->outcome.nothing_to_serve = helps_nothing;
+    if (!relax_projection_checks && helps_nothing)
+        return reject_all("the query has neither a filter nor an ORDER BY a projection could serve");
 
-    std::list<NormalProjectionCandidate> candidates;
+    ListWithMemoryTracking<NormalProjectionCandidate> candidates;
     NormalProjectionCandidate * best_candidate = nullptr;
 
     const auto & query_info = reading->getQueryInfo();
+    /// Even over the row limit, this is the analysis the read executes with: the projections below prune it, not a copy of it.
     auto parent_reading_select_result = reading->getAnalyzedResult();
     if (!parent_reading_select_result)
         parent_reading_select_result = reading->selectRangesToRead();
 
-    /// parent parts (non-projection result) exceeded limits
-    /// construct a base AnalysisResult with all parts to analyze projection candidates
-    if (!parent_reading_select_result->isUsable())
-    {
-        const auto & parts = reading->getParts();
-
-        parent_reading_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>();
-        parent_reading_select_result->parts_with_ranges = parts;
-        parent_reading_select_result->selected_parts = parts.size();
-        parent_reading_select_result->exceeded_row_limits = true;
-
-        size_t total_marks = 0;
-        size_t total_rows = 0;
-        for (const auto & part : parts)
-        {
-            total_marks += part.data_part->getMarksCount();
-            total_rows += part.data_part->rows_count;
-        }
-        parent_reading_select_result->selected_marks = total_marks;
-        parent_reading_select_result->selected_rows = total_rows;
-        parent_reading_select_result->selected_ranges = parts.size();
-    }
-
-    if (!force_optimize_projection)
+    if (!relax_projection_checks)
     {
         /// /// Nothing to read. Ignore projections.
         if (parent_reading_select_result->parts_with_ranges.empty())
-            return {};
+            return reject_all("the read selects no parts");
     }
 
     PartitionIdToMaxBlockPtr max_added_blocks = getMaxAddedBlocks(reading);
@@ -511,6 +516,18 @@ std::optional<String> optimizeUseNormalProjections(
         return true;
     };
 
+    /// A lazy read reads more columns of the rows of the read by their part offsets. Read from a projection instead, the
+    /// rows of a part are addressed by the offsets in the parent part where the projection has them, and else by the
+    /// offsets in the projection part, which the lazy read then reads its columns from. See `LazyMaterializingRows`.
+    auto can_serve_lazy_read = [&](const ProjectionDescription * projection)
+    {
+        if (!reading->hasLazilyReadColumns() || (need_parent_part_offset && projection->with_parent_part_offset))
+            return true;
+
+        return std::ranges::all_of(
+            reading->getColumnsReadLazily(), [&](const auto & column) { return projection->sample_block.findColumnOrSubcolumnByName(column).has_value(); });
+    };
+
     auto projection_sort_order_useful = [&](const ProjectionDescription * projection)
     {
         if (!outer_sorting_step)
@@ -519,10 +536,11 @@ std::optional<String> optimizeUseNormalProjections(
         if (!optimization_settings.read_in_order)
             return false;
 
-        return wouldReadInOrderBeUseful(
-            *outer_sorting_step,
-            projection->metadata->getSortingKey(),
-            *iter->node->children[iter->next_child - 1]);
+        return getInputOrderIfReadInOrderIsUseful(
+                   *outer_sorting_step,
+                   projection->metadata->getSortingKey(),
+                   *iter->node->children[iter->next_child - 1])
+            != nullptr;
     };
 
     bool optimize_use_projection_filtering = context->getSettingsRef()[Setting::optimize_use_projection_filtering];
@@ -535,7 +553,46 @@ std::optional<String> optimizeUseNormalProjections(
     projection_query_info.row_level_filter = nullptr;
     if (query.dag && query.filter_node)
         projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(query.dag->clone());
+
+    /// Derive the projection `PREWHERE` before candidate analysis, not only for the winning candidate
+    /// below. `analyzeProjectionCandidate` and `filterPartsAndCollectProjectionCandidates` consult the
+    /// query condition cache (through `estimateNumMarksToRead`), and the entries a projection read
+    /// writes are keyed by the condition of its `PREWHERE` - so without a `PREWHERE` here the analysis
+    /// probes the plain `WHERE` key only, and a warm query (in particular a repeated
+    /// `ORDER BY ... LIMIT n` whose granules the TopK read already excluded) cannot reuse them and
+    /// picks its plan from cold mark counts.
+    ///
+    /// The split depends only on `query.dag` and `query.filter_node`, which are the same for every
+    /// candidate, so the condition hash computed here is exactly the one the winning read is built
+    /// with below. It is derived from a *clone* because `splitAndFillPrewhereInfo` consumes the DAG,
+    /// while `query.dag` and `query.filter_node` must stay intact for the candidate loop (and for the
+    /// real split below, whose result is what the read actually executes).
+    if (query.dag && query.filter_node)
+    {
+        ActionsDAG::NodeMapping old_to_new_nodes;
+        auto filter_dag_clone = query.dag->clone(old_to_new_nodes);
+        const auto * filter_node_clone = old_to_new_nodes.at(query.filter_node);
+        auto analysis_prewhere_info = std::make_shared<PrewhereInfo>();
+        QueryPlanOptimizations::splitAndFillPrewhereInfo(
+            analysis_prewhere_info,
+            true, /// Always remove since this filter node is generated for projection reading
+            std::move(filter_dag_clone),
+            filter_node_clone->result_name,
+            {filter_node_clone},
+            {filter_node_clone});
+        projection_query_info.prewhere_info = std::move(analysis_prewhere_info);
+    }
+
     auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
+
+    auto ratio = static_cast<double>(context->getSettingsRef()[Setting::optimize_projection_skip_index_ratio]);
+    if (ratio < 0 || ratio > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting optimize_projection_skip_index_ratio should be >= 0 and <= 1 ({})", ratio);
+
+    /// Phase 1: analyze every viable projection candidate. We do not yet compare any candidate
+    /// against the base-table read cost; that comparison is deferred until after the best candidate
+    /// is chosen so the (potentially expensive) skip-index refinement of the parent runs at most
+    /// once and only when it can actually change the decision.
     for (const auto * projection : normal_projections)
     {
         /// Skip projections whose WHERE condition is not implied by the query's filter (Issue #74234).
@@ -545,15 +602,23 @@ std::optional<String> optimizeUseNormalProjections(
         {
             if (!doesQueryFilterImplyProjectionWhere(query.filter_node, projection->where_clause_ast, projection->query_ast, context))
             {
-                LOG_DEBUG(logger,
-                    "Projection {} skipped: query WHERE does not imply projection WHERE",
-                    projection->name);
+                LOG_DEBUG(logger, "Projection {} skipped: query WHERE does not imply projection WHERE", projection->name);
+                result.projection_reject_reasons.try_emplace(projection->name, "the query WHERE does not imply the projection WHERE");
+                /// the query alone decides it, so WHATIF does not read data for this projection
+                if (hypothetical && projection == &hypothetical->projection)
+                    hypothetical->outcome.rejected_for_query = true;
                 continue;
             }
         }
 
-        if (!has_all_required_columns(projection))
+        const bool has_columns = has_all_required_columns(projection);
+        if (!has_columns || !can_serve_lazy_read(projection))
         {
+            result.projection_reject_reasons.try_emplace(projection->name,
+                has_columns ? "some columns of the read are read lazily by their part offsets, and the projection has neither those "
+                              "columns nor the offsets of the parent part"
+                            : "the projection does not contain all columns required by the query");
+
             /// Check if projection can be used to filter parts or building projection index filters
             if (query.filter_node && optimize_use_projection_filtering)
             {
@@ -575,20 +640,33 @@ std::optional<String> optimizeUseNormalProjections(
         auto & candidate = candidates.emplace_back();
         candidate.projection = projection;
 
+        /// A lazy read made before reads its columns from the projection parts, unless it reads the parent parts by the
+        /// offsets the projection stores, see `can_serve_lazy_read`.
+        const bool lazy_read_from_projection_parts
+            = reading->hasLazilyReadColumns() && !(need_parent_part_offset && projection->with_parent_part_offset);
+
         MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), projection);
         bool analyzed = analyzeProjectionCandidate(
             candidate,
             reader,
+            reading->getMutationsSnapshot(),
             empty_mutations_snapshot,
             required_columns,
             metadata,
             *parent_reading_select_result,
             projection_query_info,
             reading->getTopKFilterInfo(),
-            context);
+            reading->isQueryConditionCacheAllowed(),
+            reading->isTopKPrewhereQueryConditionCacheAllowed(),
+            context,
+            hypothetical.get(),
+            lazy_read_from_projection_parts ? reading->getColumnsReadLazily() : Names{});
 
         if (!analyzed)
+        {
+            result.projection_reject_reasons.try_emplace(projection->name, "no selected part has the projection materialized, or its analysis exceeded the read limits");
             continue;
+        }
 
         auto & stat = parent_reading_select_result->projection_stats.emplace_back();
         stat.name = candidate.projection->name;
@@ -607,72 +685,281 @@ std::optional<String> optimizeUseNormalProjections(
         stat.filtered_parts = candidate.filtered_parts;
         candidate.stat = &stat;
 
-        size_t parent_reading_marks = parent_reading_select_result->selected_marks;
-        bool sort_order_helps = projection_sort_order_useful(projection);
+        LOG_DEBUG(logger, "Projection {} analyzed: {} marks, projection condition {}",
+            candidate.projection->name, candidate.sum_marks, stat.condition);
 
-        /// Consider projections with equal read cost only if:
-        /// - `force_optimize_projection` is enabled, or
-        /// - the parent reading's `selected_marks` becomes zero, or
-        /// - the projection's sort order matches the query's ORDER BY,
-        if (candidate.sum_marks > parent_reading_marks)
+        /// `forced` matters only with `relax_projection_checks`, which disables the skip-index pass below,
+        /// so the primary-key-only parent estimate is the final one here.
+        if (hypothetical && projection == &hypothetical->projection)
         {
-            stat.description = fmt::format(
-                "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
-                candidate.projection->name,
-                candidate.sum_marks,
-                parent_reading_marks);
-
-            LOG_DEBUG(logger, "{}", stat.description);
-            continue;
+            const size_t parent_reading_marks = parent_reading_select_result->selected_marks;
+            const bool sort_order_helps = projection_sort_order_useful(projection);
+            const bool worse_by_cost = candidate.sum_marks > parent_reading_marks
+                || (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !sort_order_helps);
+            hypothetical->outcome.forced = relax_projection_checks && (helps_nothing || worse_by_cost);
+            hypothetical->outcome.serves_order = sort_order_helps;
         }
-        else if (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !force_optimize_projection && !sort_order_helps)
-        {
-            stat.description = fmt::format(
-                "Projection {} is usable but requires reading {} marks and does not help with sorting, which is not better than the original table",
-                candidate.projection->name,
-                candidate.sum_marks);
-
-            LOG_DEBUG(logger, "{}", stat.description);
-            continue;
-        }
-
-        if (best_candidate == nullptr
-            || candidate.sum_marks < best_candidate->sum_marks
-            || (candidate.sum_marks == best_candidate->sum_marks && sort_order_helps && !projection_sort_order_useful(best_candidate->projection)))
-            best_candidate = &candidate;
-
-        /// All parts has been filtered out; no need to analyze further projections.
-        if (parent_reading_marks == 0)
-            break;
     }
 
-    if (!best_candidate)
-        return {};
+    /// `analyzeProjectionCandidate` removes from the parent read the parts whose projection ranges are
+    /// empty, so a candidate analyzed earlier can still count such parts in `sum_marks` when it is not
+    /// materialized on them (`parent_parts`). The chosen projection reads only the surviving parent
+    /// parts (see `filterPartsByProjection` below), so recompute every candidate's parent contribution
+    /// from the surviving ranges before the candidates are compared with each other. Otherwise the
+    /// ranking depends on the declaration order of the projections.
+    auto refresh_candidate_costs = [&]
+    {
+        UnorderedMapWithMemoryTracking<const IMergeTreeDataPart *, size_t> parent_marks_by_part;
+        for (const auto & part : parent_reading_select_result->parts_with_ranges)
+            parent_marks_by_part[part.data_part.get()] = part.getMarksCount();
 
-    /// Identify projections selected as the best candidates and update their stat descriptions with appropriate logging
+        for (auto & candidate : candidates)
+        {
+            if (!candidate.stat || candidate.parent_parts.empty())
+                continue;
+
+            candidate.sum_marks = candidate.merge_tree_projection_select_result_ptr->selected_marks;
+            for (const auto * part : candidate.parent_parts)
+            {
+                if (auto it = parent_marks_by_part.find(part); it != parent_marks_by_part.end())
+                    candidate.sum_marks += it->second;
+            }
+        }
+    };
+
+    /// Phase 2: pick the candidate with the smallest sum_marks. Break ties by preferring a
+    /// candidate whose sort order matches the query's ORDER BY.
+    auto choose_best_candidate = [&]
+    {
+        best_candidate = nullptr;
+        for (auto & candidate : candidates)
+        {
+            if (!candidate.stat)
+                continue;
+
+            bool sort_order_helps = projection_sort_order_useful(candidate.projection);
+            if (best_candidate == nullptr
+                || candidate.sum_marks < best_candidate->sum_marks
+                || (candidate.sum_marks == best_candidate->sum_marks && sort_order_helps && !projection_sort_order_useful(best_candidate->projection)))
+                best_candidate = &candidate;
+        }
+    };
+    refresh_candidate_costs();
+    choose_best_candidate();
+
+    if (!best_candidate)
+    {
+        if (hypothetical)
+            recordHypotheticalOutcome(*hypothetical, result, findCandidate(candidates, &hypothetical->projection), false);
+        return result;
+    }
+
+    /// Phase 3: compare the best candidate against the parent's primary-key-only read estimate.
+    /// When use_skip_indexes_on_data_read is enabled, the parent's mark count was estimated by
+    /// primary-key analysis only — skip indexes are deferred to data-read time. If the best
+    /// candidate's sum_marks is greater than optimize_projection_skip_index_ratio times the
+    /// parent's mark count, refine the parent estimate by applying skip-index filtering now so
+    /// the comparison reflects the marks that will actually be read from the parent.
+    size_t parent_reading_marks = parent_reading_select_result->selected_marks;
+    LOG_DEBUG(logger, "Best projection {} has marks {}, parent marks {}, ratio {}, projection condition {}",
+        best_candidate->projection->name, best_candidate->sum_marks, parent_reading_marks, ratio, best_candidate->stat->condition);
+
+    /// Whether phase 4 accepts a candidate against the parent estimate, see the criteria there.
+    auto beats_parent = [&](const NormalProjectionCandidate & candidate)
+    {
+        return candidate.sum_marks < parent_reading_marks
+            || (candidate.sum_marks == parent_reading_marks && (parent_reading_marks == 0 || projection_sort_order_useful(candidate.projection)));
+    };
+
+    /// The pass is driven only by the base table's deferred skip indexes and the ratio: a projection
+    /// can win against the primary-key-only estimate because of its sort order or its granularity
+    /// even when its own primary key does not help with the filter.
+    ///
+    /// The pass can only lower the parent estimate, so it is pointless for a candidate that the
+    /// primary-key-only estimate already rejects: it would only cost the index analysis at planning
+    /// time and a second evaluation of the skip indexes at data-read time. In particular, with
+    /// `optimize_projection_skip_index_ratio = 1` (the value `compatibility` with versions before 26.10
+    /// sets) the pass never runs and the decision is the primary-key-only comparison.
+    ///
+    /// The setting `use_skip_indexes_on_data_read` alone does not mean the parent deferred its skip
+    /// indexes: `supportsSkipIndexesOnDataRead` turns the deferral off for JOINs, `max_rows_to_read`
+    /// with `read_overflow_mode = 'throw'`, pending mutations and vector similarity indexes, and then
+    /// the parent analysis has already applied the skip indexes. Check the flag the analysis recorded,
+    /// so that such reads do not run the skip indexes a second time.
+    if (!relax_projection_checks
+        && beats_parent(*best_candidate)
+        && static_cast<double>(best_candidate->sum_marks) > static_cast<double>(parent_reading_marks) * ratio
+        && query.filter_node != nullptr)
+    {
+        const auto * parent_indexes = reading->getIndexes() ? &*reading->getIndexes() : nullptr;
+        if (parent_indexes != nullptr
+            && parent_indexes->use_skip_indexes
+            && parent_indexes->use_skip_indexes_on_data_read
+            && !parent_indexes->skip_indexes.useful_indices.empty())
+        {
+            /// Copy the parent's Indexes and disable the data-read deferral so that
+            /// filterPartsByPrimaryKeyAndSkipIndexes applies the skip indexes immediately.
+            /// PK filtering has already been done, hence pass use_primary_key = false.
+            ReadFromMergeTree::Indexes indexes_for_skip_pass = *parent_indexes;
+            indexes_for_skip_pass.use_skip_indexes_on_data_read = false;
+
+            ReadFromMergeTree::AnalysisResult tmp_result;
+            ReadFromMergeTree::IndexStats tmp_index_stats;
+            const std::optional<TopKFilterInfo> no_top_k;
+            const auto reader_settings = MergeTreeReaderSettings::createFromContext(context);
+
+            MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
+            {
+                .metadata_snapshot = reading->getStorageMetadata(),
+                .mutations_snapshot = reading->getMutationsSnapshot(),
+                .query_info = query_info,
+                .context = context,
+                .indexes = indexes_for_skip_pass,
+                .top_k_filter_info = no_top_k,
+                .reader_settings = reader_settings,
+                .log = logger,
+                .num_streams = reading->getNumStreams(),
+                .find_exact_ranges = false,
+                .is_parallel_reading_from_replicas = false,
+                /// With `has_projections`, exceeding the row limits does not throw but sets `tmp_result.exceeded_row_limits`.
+                .has_projections = true,
+                .check_row_limits = true,
+                .use_primary_key = false,
+                .result = tmp_result,
+            };
+
+            auto filtered_parts = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
+                filter_context,
+                parent_reading_select_result->parts_with_ranges,
+                tmp_index_stats);
+
+            size_t total_marks_after_skip = 0;
+            size_t total_ranges_after_skip = 0;
+            size_t total_rows_after_skip = 0;
+            for (const auto & part : filtered_parts)
+            {
+                total_marks_after_skip += part.ranges.getNumberOfMarks();
+                total_ranges_after_skip += part.ranges.size();
+                total_rows_after_skip += part.getRowsCount();
+            }
+
+            /// A parent read that still exceeds `max_rows_to_read` after the skip indexes is unusable,
+            /// so it cannot beat the projection: keep the primary-key-only estimate.
+            if (tmp_result.exceeded_row_limits)
+            {
+                LOG_DEBUG(logger,
+                    "Parent read still exceeds the row limits after skip index filtering; "
+                    "keeping the primary-key-only estimate of {} marks for projection candidate comparison",
+                    parent_reading_marks);
+            }
+            else if (total_marks_after_skip < parent_reading_marks)
+            {
+                LOG_DEBUG(logger,
+                    "Parent marks reduced from {} to {} after skip index filtering; "
+                    "using refined count for projection candidate comparison",
+                    parent_reading_marks, total_marks_after_skip);
+                size_t filtered_parts_count = filtered_parts.size();
+                /// The next line is the key - it updates "in-place" the parts + ranges after skip index filtering
+                parent_reading_select_result->parts_with_ranges = std::move(filtered_parts);
+                parent_reading_select_result->selected_parts = filtered_parts_count;
+                parent_reading_select_result->selected_ranges = total_ranges_after_skip;
+                parent_reading_select_result->selected_marks = total_marks_after_skip;
+                parent_reading_select_result->selected_rows = total_rows_after_skip;
+                parent_reading_marks = total_marks_after_skip;
+
+                /// A partially materialized projection also reads the parts that lack it from the
+                /// parent, and its sum_marks counted them with the primary-key-only estimate.
+                /// Recompute these costs from the refined ranges and choose the best candidate again.
+                refresh_candidate_costs();
+                choose_best_candidate();
+            }
+        }
+    }
+
+    bool best_sort_order_helps = projection_sort_order_useful(best_candidate->projection);
+
+    /// Phase 4: apply the rejection criteria with the (possibly refined) parent mark count.
+    /// Consider projections with equal read cost only if:
+    /// - `force_optimize_projection` or `prefer_optimize_projection` is enabled, or
+    /// - the parent reading's `selected_marks` becomes zero, or
+    /// - the projection's sort order matches the query's ORDER BY,
+    bool best_rejected = false;
+    if (!relax_projection_checks && best_candidate->sum_marks > parent_reading_marks)
+    {
+        auto message = PreformattedMessage::create(
+            "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
+            best_candidate->projection->name,
+            best_candidate->sum_marks,
+            parent_reading_marks);
+        best_candidate->stat->description = message.text;
+        result.projection_reject_reasons.try_emplace(best_candidate->projection->name, best_candidate->stat->description);
+        LOG_DEBUG(logger, message);
+        best_rejected = true;
+    }
+    else if (best_candidate->sum_marks == parent_reading_marks && parent_reading_marks > 0
+        && !relax_projection_checks && !best_sort_order_helps)
+    {
+        auto message = PreformattedMessage::create(
+            "Projection {} is usable but requires reading {} marks and does not help with sorting, which is not better than the original table",
+            best_candidate->projection->name,
+            best_candidate->sum_marks);
+        best_candidate->stat->description = message.text;
+        result.projection_reject_reasons.try_emplace(best_candidate->projection->name, best_candidate->stat->description);
+        LOG_DEBUG(logger, message);
+        best_rejected = true;
+    }
+
+    /// Update stat descriptions for the remaining candidates so EXPLAIN PROJECTIONS = 1 has full info.
+    /// When the best candidate is rejected, every other analyzed candidate has sum_marks >= best
+    /// and is rejected for the same "not better than original" reason.
     for (const auto & candidate : candidates)
     {
         if (&candidate == best_candidate)
-        {
-            chassert(candidate.stat);
-            chassert(candidate.stat->description.empty());
-            candidate.stat->description = fmt::format(
-                "Projection {} is selected as the best with {} marks to read, while the original table requires scanning {} marks",
+            continue;
+        if (!candidate.stat || !candidate.stat->description.empty())
+            continue;
+
+        auto message = best_rejected
+            ? PreformattedMessage::create(
+                "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
                 candidate.projection->name,
                 candidate.sum_marks,
-                parent_reading_select_result->selected_marks);
-            LOG_DEBUG(logger, "{}", candidate.stat->description);
-        }
-        else if (candidate.stat && candidate.stat->description.empty())
-        {
-            candidate.stat->description = fmt::format(
+                parent_reading_marks)
+            : PreformattedMessage::create(
                 "Projection {} is usable but requires reading {} marks, which is less efficient than projection {} with {} marks",
                 candidate.projection->name,
                 candidate.sum_marks,
                 best_candidate->projection->name,
                 best_candidate->sum_marks);
-            LOG_DEBUG(logger, "{}", candidate.stat->description);
-        }
+        candidate.stat->description = message.text;
+        result.projection_reject_reasons.try_emplace(candidate.projection->name, candidate.stat->description);
+        LOG_DEBUG(logger, message);
+    }
+
+    if (best_rejected)
+    {
+        if (hypothetical)
+            recordHypotheticalOutcome(*hypothetical, result, findCandidate(candidates, &hypothetical->projection), false);
+        return result;
+    }
+
+    chassert(best_candidate->stat);
+    chassert(best_candidate->stat->description.empty());
+    auto selected_message = PreformattedMessage::create(
+        "Projection {} is selected as the best with {} marks to read, while the original table requires scanning {} marks",
+        best_candidate->projection->name,
+        best_candidate->sum_marks,
+        parent_reading_select_result->selected_marks);
+    best_candidate->stat->description = selected_message.text;
+    LOG_DEBUG(logger, selected_message);
+
+    if (hypothetical)
+    {
+        const auto * own = findCandidate(candidates, &hypothetical->projection);
+        recordHypotheticalOutcome(*hypothetical, result, own, own == best_candidate);
+        /// never read a hypothetical projection
+        if (best_candidate->projection == &hypothetical->projection)
+            return result;
     }
 
     auto storage_snapshot = reading->getStorageSnapshot();
@@ -681,6 +968,8 @@ std::optional<String> optimizeUseNormalProjections(
     /// Enables PREWHERE on projections to improve read efficiency and leverage query condition cache.
     if (query.dag && query.filter_node)
     {
+        /// Replace the analysis-only `PREWHERE` built above (same shape, but derived from a clone of
+        /// the filter DAG) with the one the read executes, which owns the nodes of `query.dag`.
         projection_query_info.prewhere_info = std::make_shared<PrewhereInfo>();
         query.dag = QueryPlanOptimizations::splitAndFillPrewhereInfo(
             projection_query_info.prewhere_info,
@@ -715,17 +1004,36 @@ std::optional<String> optimizeUseNormalProjections(
     /// parts, and the projection parts are in one-to-one correspondence with them, so the copied value
     /// discriminates projection entries equally well. (The analysis-side consult is gated separately,
     /// by passing the stamp into `analyzeProjectionCandidate` above.)
+    ///
+    /// Likewise, `registerLeftSideIndexAnalysisSecondPass` has already attached the join runtime filter
+    /// descriptors for the second-pass granule pruning to the replaced read. Carry them over as well,
+    /// otherwise a JOIN whose left side is served from a normal projection would silently lose the
+    /// pruning that `enable_join_runtime_filters_index_analysis` asks for. Each descriptor is re-checked
+    /// against the projection's own primary key and skip indexes and dropped if it cannot prune there.
     if (projection_reading)
+    {
         if (auto * projection_reading_step = typeid_cast<ReadFromMergeTree *>(projection_reading.get()))
+        {
             projection_reading_step->copyTopKFilterInfoAndQueryConditionCacheGate(*reading);
+            projection_reading_step->copyJoinRuntimeFilterIndexAnalysisDescriptors(*reading);
+            /// The projection parts keep the numbering of their parent parts, so the lazy read of the read reads their rows.
+            /// The lazy read made before addresses them by `_part_offset`, which the projection gives as the offsets of the
+            /// parent part where it stores them, see above. A lazy read made after this has the offsets of the projection.
+            projection_reading_step->shareLazyReadOf(*reading);
+            if (const auto & lazy_read_rows = reading->getLazyReadRows();
+                lazy_read_rows && need_parent_part_offset && best_candidate->projection->with_parent_part_offset)
+                lazy_read_rows->projection_parts_by_parent_part_offsets = true;
+        }
+    }
 
-    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
-    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
+    /// The parent read keeps all its parts until the projection read is wired in below, so that a rejection reads them all.
+    const auto & parent_parts_with_ranges = parent_reading_select_result->parts_with_ranges;
+    bool has_parent_parts = std::any_of(parent_parts_with_ranges.begin(), parent_parts_with_ranges.end(),
+        [&](const auto & part) { return best_candidate->parent_parts.contains(part.data_part.get()); });
 
     /// Only the initiator should read the projection to avoid potential data duplication.
-    bool has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
-    bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !optimization_settings.is_parallel_replicas_initiator_with_projection_support
-        && has_parent_parts;
+    const bool is_local_plan_for_initiator = reading->isParallelReplicasLocalPlanForInitiator();
+    bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !is_local_plan_for_initiator && has_parent_parts;
     /// True when the projection read is replaced by a prepared source that does not announce the
     /// base-table stream itself. See the announcement call below.
     bool projection_replaced_with_prepared_source = false;
@@ -749,22 +1057,13 @@ std::optional<String> optimizeUseNormalProjections(
         projection_replaced_with_prepared_source = true;
     }
 
-    if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
+    if (has_parent_parts && is_local_plan_for_initiator)
         fallbackToLocalProjectionReading(projection_reading);
 
     /// `reading` is detached below without running initializePipeline(), so announce its empty read
     /// set here instead (same guard as optimizeUseAggregateProjections; issue #110518).
     if (projection_replaced_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
         reading->announceEmptyReadRangesToCoordinatorIfInitiator();
-
-    if (!query_info.is_internal && context->hasQueryContext())
-    {
-        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
-        {
-            .storage_id = reading->getMergeTreeData().getStorageID(),
-            .projection_name = best_candidate->projection->name,
-        });
-    }
 
     projection_reading->setStepDescription(best_candidate->projection->name, optimization_settings.max_step_description_length);
 
@@ -779,7 +1078,7 @@ std::optional<String> optimizeUseNormalProjections(
         next_node = &expr_or_filter_node;
     }
 
-    if (parent_reading_select_result->parts_with_ranges.empty())
+    if (!has_parent_parts)
     {
         /// All parts are taken from projection
         iter->node->children[iter->next_child - 1] = next_node;
@@ -803,7 +1102,10 @@ std::optional<String> optimizeUseNormalProjections(
         /// If they differ (e.g., different columns due to different query DAGs being applied),
         /// skip this optimization to avoid "Block structure mismatch" errors.
         if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
-            return {};
+        {
+            result.projection_reject_reasons.try_emplace(best_candidate->projection->name, "the projection stream and the table stream have different headers");
+            return result;
+        }
 
         auto & union_node = nodes.emplace_back();
         SharedHeaders input_headers = {main_stream, *proj_stream};
@@ -812,9 +1114,22 @@ std::optional<String> optimizeUseNormalProjections(
         iter->node->children[iter->next_child - 1] = &union_node;
     }
 
+    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
+    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
+
+    if (!query_info.is_internal && context->hasQueryContext())
+    {
+        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
+        {
+            .storage_id = reading->getMergeTreeData().getStorageID(),
+            .projection_name = best_candidate->projection->name,
+        });
+    }
+
     /// Here we remove last steps from stack to be able to optimize again.
     stack.resize(iter.base() - stack.begin());
-    return best_candidate->projection->name;
+    result.applied_projection = best_candidate->projection->name;
+    return result;
 }
 
 }

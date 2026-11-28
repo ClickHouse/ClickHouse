@@ -12,7 +12,6 @@ integration:
   - website: 'https://streamkap.com/'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -24,7 +23,7 @@ Streamkap 支持将 PostgreSQL、MySQL、SQL Server、MongoDB 等源数据库中
 这使其非常适合为实时分析仪表盘和运营分析提供支持，并为机器学习模型提供实时数据。
 
 <div id="key-features">
-  ## 主要特性
+  ## 主要特性 {#key-features}
 </div>
 
 * **实时流式 CDC：** Streamkap 直接从数据库日志中捕获变更，确保 ClickHouse 中的数据是源端数据的实时副本。
@@ -39,13 +38,13 @@ Streamkap 支持将 PostgreSQL、MySQL、SQL Server、MongoDB 等源数据库中
 * **可靠交付：** 该平台提供至少一次投递保证，确保源端与 ClickHouse 之间的数据一致性。对于 upsert 操作，它会基于主键执行去重。
 
 <div id="started">
-  ## 入门
+  ## 入门 {#started}
 </div>
 
 本指南简要介绍如何设置 Streamkap 管道，将数据导入 ClickHouse。
 
 <div id="prerequisites">
-  ### 前置条件
+  ### 前置条件 {#prerequisites}
 </div>
 
 * 一个 <a href="https://app.streamkap.com/account/sign-up" target="_blank">Streamkap 账户</a>。
@@ -91,13 +90,13 @@ Streamkap 支持将 PostgreSQL、MySQL、SQL Server、MongoDB 等源数据库中
 </Steps>
 
 <div id="how-it-works-with-clickhouse">
-  ## 与 ClickHouse 的工作方式
+  ## 与 ClickHouse 的工作方式 {#how-it-works-with-clickhouse}
 </div>
 
 Streamkap 的集成专为在 ClickHouse 中高效处理 CDC (变更数据捕获) 数据而设计。
 
 <div id="table-engine-data-handling">
-  ### 表引擎与数据处理
+  ### 表引擎与数据处理 {#table-engine-data-handling}
 </div>
 
 默认情况下，Streamkap 使用 upsert 摄取模式。当它在 ClickHouse 中创建表时，会使用 ReplacingMergeTree 引擎。该引擎非常适合处理 CDC 事件：
@@ -110,7 +109,7 @@ Streamkap 的集成专为在 ClickHouse 中高效处理 CDC (变更数据捕获)
   * 也可以选择将已删除的记录保留在 ClickHouse 中，以用于分析
 
 <div id="metadata-columns">
-  ### 元数据列
+  ### 元数据列 {#metadata-columns}
 </div>
 
 Streamkap 会为每个表添加几个元数据列，用于管理数据状态：
@@ -123,7 +122,7 @@ Streamkap 会为每个表添加几个元数据列，用于管理数据状态：
 | `_STREAMKAP_OFFSET`       | 来自 Streamkap 内部日志的偏移量，可用于排序和调试。      |
 
 <div id="query-latest-data">
-  ### 查询最新数据
+  ### 查询最新数据 {#query-latest-data}
 </div>
 
 由于 ReplacingMergeTree 会在后台处理更新和删除，因此在合并完成前，简单的 SELECT * 查询可能会显示历史行或已删除的行。要获取数据的最新状态，必须过滤掉已删除的记录，并只选择每一行的最新版本。
@@ -152,7 +151,7 @@ GROUP BY key;
 对于生产环境以及需要并发处理终端用户周期性查询的场景，可以使用 Materialized Views 对数据进行建模，以更好地适应下游访问模式。
 
 <div id="further-reading">
-  ## 延伸阅读
+  ## 延伸阅读 {#further-reading}
 </div>
 
 * <a href="https://streamkap.com/" target="_blank">Streamkap 网站</a>
