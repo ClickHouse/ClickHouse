@@ -28,6 +28,7 @@ CONFIG_TEMPLATE = """<clickhouse>
                         {location_extra}
                     </main>
                 </locations>
+                <persistent_removal_log>true</persistent_removal_log>
             </locations_disk>
             <encrypted_disk>
                 <type>encrypted</type>
@@ -43,6 +44,7 @@ CONFIG_TEMPLATE = """<clickhouse>
                 <metadata_path>/var/lib/clickhouse/disks/s3_disk_metadata/</metadata_path>
                 <skip_access_check>1</skip_access_check>
                 {s3_extra}
+                <persistent_removal_log>true</persistent_removal_log>
             </s3_disk>
         </disks>
     </storage_configuration>

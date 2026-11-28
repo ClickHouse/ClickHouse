@@ -354,6 +354,7 @@ using Stack = VectorWithMemoryTracking<Frame>;
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 /// Register the applied `__applyFilter` conjuncts on the reading step at the top of the stack.
 void collectAppliedJoinRuntimeFilters(const Stack & stack);
+void collectDeliveredJoinRuntimeFilters(QueryPlan::Node & root, const NameSet & delivered_filter_ids);
 void processAndOptimizeTextIndexFunctions(
     const Stack & stack,
     QueryPlan::Nodes & nodes,
@@ -365,6 +366,8 @@ void optimizeReadInOrder(
 /// A full sorting without LIMIT or PARTITION BY merges all its streams in one thread, so a small read all of whose streams
 /// reach it keeps its default stream count.
 void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node);
+/// Compiling the expressions of a step cannot pay off when its input has at most one row.
+void disableCompilationOverAtMostOneRow(QueryPlan::Node & node);
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
 void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &, bool before_projections);
@@ -380,6 +383,8 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 bool optimizeLazyMaterialization3(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings);
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+/// Replace a subtree of `full_sorting_merge` inner joins on one key by one merge join of all its inputs.
+void optimizeMultiwayMergeJoin(QueryPlan::Node & root);
 void optimizeJoinByShards(QueryPlan::Node & root);
 /// Mark hash joins with a probe-side MergeTree read prunable by the join's runtime filter:
 /// the reading is then gated on the build completion seal which delivers the filter for
@@ -432,7 +437,8 @@ UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> calculateHashTab
 void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
 /// Populates two maps in lock-step:
-///   raw_hashes[N]  = bottom-up hash of the sub-plan rooted at N, independent of N's parent.
+///   raw_hashes[N]  = bottom-up hash of the sub-plan rooted at N, independent of N's parent,
+///                    or zero if the sub-plan reads query-local data and gets no `HashTablesStatistics` entry.
 ///   cache_keys[N]  = raw_hashes[N] XOR (the per-side contribution of N's parent join step).
 /// `raw_hashes` is what the join reorder pass needs to derive cache keys for sub-join nodes
 /// it builds itself; `cache_keys` matches the value `HashTablesStatistics` is keyed by.
@@ -450,6 +456,9 @@ bool convertLogicalJoinToPhysical(
     const QueryPlanOptimizationSettings & optimization_settings);
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+
+/// Skip the deduplication of the `DISTINCT` after `EXCEPT DISTINCT` executed as RIGHT ANTI. Needs the physical join.
+void skipDeduplicationAfterSetOperationJoin(QueryPlan::Node & node);
 
 /// Convert an OUTER join whose null-extended rows cannot survive above it, when the proof comes from
 /// arbitrarily higher in the plan (a filter, or the conditions of an enclosing INNER/SEMI join).

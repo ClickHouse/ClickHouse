@@ -51,6 +51,7 @@
 #include <Common/ListWithMemoryTracking.h>
 #include <Common/StackWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
@@ -449,12 +450,15 @@ void appendFixedColumnsFromFilterExpression(
     const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns, ColumnsFixedToSets * columns_fixed_to_sets = nullptr)
 {
     StackWithMemoryTracking<const ActionsDAG::Node *> stack;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     stack.push(&filter_expression);
 
     while (!stack.empty())
     {
         const auto * node = stack.top();
         stack.pop();
+        if (!visited.insert(node).second)
+            continue;
         if (node->type == ActionsDAG::ActionType::ALIAS)
             stack.push(node->children.front());
         else if (node->type == ActionsDAG::ActionType::FUNCTION)

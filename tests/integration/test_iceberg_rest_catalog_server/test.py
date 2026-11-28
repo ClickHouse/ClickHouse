@@ -71,7 +71,7 @@ CATALOG_PORT = 8182
 CATALOG_SECURE_PORT = 8183
 KEEPER_PARENT = "/clickhouse/iceberg_rest_catalog"
 KEEPER_ROOT = f"{KEEPER_PARENT}/my_warehouse"
-FORMAT_VERSION = 3
+FORMAT_VERSION = 4
 BUCKET = "warehouse"
 BASE_LOCATION = f"s3://{BUCKET}/my_warehouse"
 ROLE_SESSION_NAME = "miniorole"
@@ -278,6 +278,17 @@ def drop_table(ns, table, expected_code=204, auth=None):
     )
 
 
+def location_node(location):
+    # Every table location has one node under `locations`. Create adds it, drop removes it.
+    # A Keeper node name cannot contain `/`, so the server encodes the location first.
+    # Same rule as `escapeForFileName`: ASCII letters, digits and `_` stay, every other byte becomes `%XX`.
+    escaped_location = "".join(
+        chr(b) if (b < 128 and chr(b).isalnum()) or b == ord("_") else f"%{b:02X}"
+        for b in location.encode()
+    )
+    return f"{keeper_store_root()}/locations/{escaped_location}"
+
+
 def rename_table(source_ns, source, dest_ns, dest, expected_code=204, auth=None):
     body = {
         "source": {"namespace": source_ns, "name": source},
@@ -457,7 +468,7 @@ def test_namespaces(started_cluster):
     ns = f"sales_{uuid.uuid4().hex[:8]}"
 
     # The location must be inside the warehouse bucket.
-    location = f"s3://{BUCKET}/sales/"
+    location = f"{BASE_LOCATION}/sales/"
     response = create_namespace([ns], properties={"location": location})
     result = response.json()
     assert result["namespace"] == [ns]
@@ -584,7 +595,7 @@ def test_update_namespace_properties(started_cluster):
         assert_error_shape(response, "BadRequestException")
     assert load_namespace_properties([ns]) == {"b": "2", "owner": "bob"}
 
-    location = f"s3://{BUCKET}/props/"
+    location = f"{BASE_LOCATION}/props/"
     update_namespace_properties([ns], updates={"location": location})
     assert load_namespace_properties([ns])["location"] == location
 
@@ -840,7 +851,7 @@ def test_clickhouse_rest_catalog_client(started_cluster):
     create_namespace([ns])
     create_table(ns, "events")
     level = "a b?#%41+/é&:;=@"
-    create_namespace([ns, level], properties={"location": f"s3://{BUCKET}/{ns}_special"})
+    create_namespace([ns, level], properties={"location": f"{BASE_LOCATION}/{ns}_special"})
     create_table(f"{ns}%1F{quote(level, safe='')}", "events")
     create_table(ns, "t?#x")
 
@@ -877,10 +888,10 @@ def test_clickhouse_rest_catalog_client_location_not_a_uri(started_cluster):
         f"client_location_q_{suffix}": "q?x%41y",
     }
     for ns, directory in directories.items():
-        create_namespace([ns], properties={"location": f"s3://{BUCKET}/custom/{ns}/{directory}"})
+        create_namespace([ns], properties={"location": f"{BASE_LOCATION}/custom/{ns}/{directory}"})
         create_table(ns, "events")
     encoded_ns = f"client_location_e_{suffix}"
-    create_namespace([encoded_ns], properties={"location": f"s3://{BUCKET}/custom/{encoded_ns}/a%20b"})
+    create_namespace([encoded_ns], properties={"location": f"{BASE_LOCATION}/custom/{encoded_ns}/a%20b"})
     create_table(encoded_ns, "events")
 
     node.query(f"""
@@ -986,6 +997,7 @@ def test_keeper_layout(started_cluster):
     stored = stored_warehouse_definition("my_warehouse")
     assert stored == warehouse_definition(BASE_LOCATION, stored["uuid"])
     store_root = keeper_store_root()
+    assert sorted(zk.get_children(store_root)) == ["locations", "namespaces", "tables_by_uuid"]
 
     # Levels are escaped like file names, so the tree stays walkable with a Keeper client.
     escaped = ns.replace("-", "%2D")
@@ -999,10 +1011,13 @@ def test_keeper_layout(started_cluster):
     # The guard child binds the name to the uuid, so a drop or rename cannot act on a table re-created under the same name.
     table_path = f"{child_path}/tables/my%2Etable"
     table_uuid = result["metadata"]["table-uuid"]
+    location = result["metadata"]["location"]
     assert zk.get_children(f"{child_path}/tables") == ["my%2Etable"]
-    assert zk.get(table_path)[0] == table_uuid.encode()
+    assert json.loads(zk.get(table_path)[0]) == {"uuid": table_uuid, "location": location}
     assert zk.get_children(table_path) == [table_uuid]
     assert zk.get(f"{store_root}/tables_by_uuid/{table_uuid}")[0] == result["metadata-location"].encode()
+
+    assert zk.exists(location_node(location))
 
     assert list_namespaces(parent=ns) == [[ns, "eu-west"]]
     assert list_tables(f"{ns}\x1feu-west") == ["my.table"]
@@ -1099,7 +1114,7 @@ def test_partition_spec_field_ids(started_cluster):
 
 def test_table_location(started_cluster):
     ns = f"location_{uuid.uuid4().hex[:8]}"
-    ns_location = f"s3://{BUCKET}/custom/{ns}"
+    ns_location = f"{BASE_LOCATION}/custom/{ns}"
     create_namespace([ns], properties={"location": ns_location + "/"})
 
     result = create_table(ns, "events").json()
@@ -1107,10 +1122,110 @@ def test_table_location(started_cluster):
     assert result["metadata"]["location"] == f"{ns_location}/events-{table_uuid}"
     cluster.minio_client.stat_object(BUCKET, metadata_key(result["metadata-location"]))
 
-    # The catalog chooses every table path, so a client-chosen location is refused.
-    response = create_table(ns, "explicit", location=f"s3://{BUCKET}/explicit/{ns}", expected_code=400)
+    # A client-chosen location is used as given, without the trailing slash.
+    explicit_location = f"{BASE_LOCATION}/explicit/{ns}"
+    result = create_table(ns, "explicit", location=explicit_location + "/").json()
+    assert result["metadata"]["location"] == explicit_location
+    assert result["metadata-location"].startswith(explicit_location + "/metadata/")
+    cluster.minio_client.stat_object(BUCKET, metadata_key(result["metadata-location"]))
+
+    # Creating the same table again reports the name conflict, not the overlap with its own location.
+    response = create_table(ns, "explicit", location=explicit_location, expected_code=409)
+    assert_error_shape(response, "TableAlreadyExistsException")
+
+    # The overlap check covers client-chosen locations too.
+    response = create_table(ns, "inside", location=f"{explicit_location}/data", expected_code=400)
     assert_error_shape(response, "BadRequestException")
-    assert not table_exists(ns, "explicit")
+    assert "overlaps location" in response.json()["error"]["message"]
+    assert not table_exists(ns, "inside")
+
+    # The server has credentials for one bucket only.
+    response = create_table(ns, "foreign", location=f"s3://other-bucket/{ns}", expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+    assert not table_exists(ns, "foreign")
+
+    # A table stays inside the base location of its warehouse.
+    response = create_table(ns, "outside", location=f"s3://{BUCKET}/outside/{ns}", expected_code=400)
+    assert "is outside base location" in response.json()["error"]["message"]
+
+
+def test_table_location_overlap(started_cluster):
+    ns = f"overlap_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    outer = create_table(ns, "outer").json()["metadata"]["location"]
+    parent = outer.rsplit("/", 1)[0]
+
+    def assert_refused(table, location):
+        response = create_table(ns, table, location=location, expected_code=400)
+        assert_error_shape(response, "BadRequestException")
+        assert f"Location {location} overlaps location {outer}" in response.json()["error"]["message"]
+        assert not table_exists(ns, table)
+
+    # Inside `outer`.
+    assert_refused("inner", f"{outer}/data")
+
+    # Equal to `outer`.
+    assert_refused("twin", outer)
+
+    # Above `outer`.
+    assert_refused("above", parent)
+
+    # The refused tables wrote nothing.
+    assert list(cluster.minio_client.list_objects(BUCKET, metadata_key(outer) + "/data/")) == []
+    assert list(cluster.minio_client.list_objects(BUCKET, metadata_key(parent) + "/metadata/")) == []
+
+    # Next to `outer`, under the same parent. Allowed.
+    create_table(ns, "sibling", location=f"{parent}/sibling")
+
+    # Same string prefix as `outer`, but another directory. Allowed.
+    create_table(ns, "same_prefix", location=f"{outer}_x")
+
+    # Other spellings of `outer` for clients that normalize paths.
+    name = outer.rsplit("/", 1)[1]
+
+    def assert_bad_segment(table, location):
+        response = create_table(ns, table, location=location, expected_code=400)
+        assert_error_shape(response, "BadRequestException")
+        assert "path segment" in response.json()["error"]["message"]
+
+    assert_bad_segment("double_slash", f"{parent}//{name}/data")
+    assert_bad_segment("dot", f"{parent}/./{name}")
+    assert_bad_segment("dot_dot", f"{parent}/x/../{name}")
+
+
+def test_table_location_overlap_concurrent(started_cluster):
+    ns = f"overlap_concurrent_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    parent = create_table(ns, "anchor").json()["metadata"]["location"].rsplit("/", 1)[0]
+    locations = {"outer": f"{parent}/race", "inner": f"{parent}/race/inner"}
+
+    # Both creates pass the overlap scan when they start together. One wins the Keeper transaction.
+    # The other hits the version check on `locations`, scans again, and is refused.
+    def create(table):
+        return requests.post(
+            catalog_url(tables_url(ns)),
+            json={"name": table, "schema": DEFAULT_SCHEMA, "location": locations[table]},
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = dict(zip(locations, executor.map(create, locations)))
+    codes = {table: response.status_code for table, response in responses.items()}
+    assert sorted(codes.values()) == [200, 400], codes
+
+    winner = next(table for table, code in codes.items() if code == 200)
+    loser = next(table for table, code in codes.items() if code == 400)
+    assert_error_shape(responses[loser], "BadRequestException")
+    assert f"overlaps location {locations[winner]}" in responses[loser].json()["error"]["message"]
+
+    assert sorted(list_tables(ns)) == sorted(["anchor", winner])
+    zk = get_keeper()
+    assert zk.exists(location_node(locations[winner]))
+    assert not zk.exists(location_node(locations[loser]))
+
+    # Only the winner's metadata file is left under the shared root.
+    objects = cluster.minio_client.list_objects(BUCKET, metadata_key(locations["outer"]) + "/", recursive=True)
+    keys = [obj.object_name for obj in objects]
+    assert keys and all(key.startswith(metadata_key(locations[winner]) + "/metadata/") for key in keys), keys
 
 
 def test_metadata_compression(started_cluster):
@@ -1168,6 +1283,8 @@ def test_list_and_exists_and_drop(started_cluster):
     assert list_tables(ns) == ["b_table"]
     # Files stay on object storage.
     cluster.minio_client.stat_object(BUCKET, metadata_key(result["metadata-location"]))
+    # Drop frees the location for other tables.
+    assert not get_keeper().exists(location_node(result["metadata"]["location"]))
 
     response = catalog_request("GET", tables_url(ns, "a_table"), expected_code=404)
     assert_error_shape(response, "NoSuchTableException")
@@ -1200,7 +1317,7 @@ def test_malformed_create_table(started_cluster):
         {"name": "t", "schema": numeric_type},
         {"name": "t", "schema": bad_element_type},
         {"name": "t", "schema": optional_identifier},
-        {"name": "t", "schema": DEFAULT_SCHEMA, "location": f"s3://{BUCKET}/explicit/t"},
+        {"name": "t", "schema": DEFAULT_SCHEMA, "location": 42},
         {"name": "t", "schema": DEFAULT_SCHEMA, "partition-spec": bad_spec},
         {"name": "t", "schema": DEFAULT_SCHEMA, "partition-spec": {"fields": [{"source-id": 1}]}},
         {"name": "t", "schema": DEFAULT_SCHEMA, "write-order": {"fields": [{"source-id": 1}]}},
@@ -1295,7 +1412,7 @@ def test_rename_keeps_commit_version(started_cluster):
     rename_table([ns], "a", [ns], "b")
     rename_table([ns], "b", [ns], "a")
     assert get_keeper().get(uuid_path)[1].version == 1
-    assert get_keeper().get(f"{store_root}/namespaces/{ns}/tables/a")[0] == table_uuid.encode()
+    assert json.loads(get_keeper().get(f"{store_root}/namespaces/{ns}/tables/a")[0])["uuid"] == table_uuid
 
     committed = commit_table(ns, "a", assert_main_at(100), append_updates(fake_snapshot(200, 2))).json()
     assert committed["metadata"]["current-snapshot-id"] == 200
@@ -1472,6 +1589,10 @@ def test_warehouse_management_crud(started_cluster):
 
     response = create_warehouse(warehouse, base_location, expected_code=409)
     assert_error_shape(response, "AlreadyExistsException")
+
+    # Base locations of two warehouses do not overlap.
+    response = create_warehouse(f"{warehouse}_inner", f"{base_location}/inner", expected_code=400)
+    assert "overlaps base location" in response.json()["error"]["message"]
 
     delete_warehouse(warehouse)
     response = catalog_request("GET", f"{WAREHOUSES_URL}/{warehouse}", expected_code=404)
@@ -1969,6 +2090,107 @@ def test_clickhouse_insert(started_cluster):
         node.query("DROP DATABASE IF EXISTS rest_tables_db")
 
 
+def test_commit_remove_snapshots(started_cluster):
+    ns = f"commit_remove_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "events")
+    for snapshot_id, sequence_number in [(100, 1), (200, 2), (300, 3)]:
+        commit_table(ns, "events", [], append_updates(fake_snapshot(snapshot_id, sequence_number)))
+    tag = {"action": "set-snapshot-ref", "ref-name": "v1", "type": "tag", "snapshot-id": 200}
+    commit_table(ns, "events", [], [tag])
+
+    # A ref keeps its snapshot.
+    for snapshot_id in [200, 300]:
+        update = {"action": "remove-snapshots", "snapshot-ids": [100, snapshot_id]}
+        response = commit_table(ns, "events", [], [update], expected_code=400)
+        assert_error_shape(response, "BadRequestException")
+    response = commit_table(ns, "events", [], [{"action": "remove-snapshots", "snapshot-ids": ["100"]}], expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+
+    # The ref goes first, in the same commit, as expiration sends it. Snapshot 999 does not exist.
+    metadata = commit_table(
+        ns,
+        "events",
+        assert_main_at(300),
+        [
+            {"action": "remove-snapshot-ref", "ref-name": "v1"},
+            {"action": "remove-snapshots", "snapshot-ids": [200]},
+            {"action": "remove-snapshots", "snapshot-ids": [999]},
+        ],
+    ).json()["metadata"]
+    assert [s["snapshot-id"] for s in metadata["snapshots"]] == [100, 300]
+    assert metadata["refs"] == {"main": {"type": "branch", "snapshot-id": 300}}
+    assert metadata["current-snapshot-id"] == 300
+    assert metadata["last-sequence-number"] == 3
+    # History before the removed snapshot goes too.
+    assert [e["snapshot-id"] for e in metadata["snapshot-log"]] == [300]
+
+    # A commit can append and remove the previous snapshots at once.
+    updates = append_updates(fake_snapshot(400, 4)) + [{"action": "remove-snapshots", "snapshot-ids": [100, 300]}]
+    metadata = commit_table(ns, "events", assert_main_at(300), updates).json()["metadata"]
+    assert [s["snapshot-id"] for s in metadata["snapshots"]] == [400]
+    assert [e["snapshot-id"] for e in metadata["snapshot-log"]] == [400]
+    assert metadata["current-snapshot-id"] == 400
+
+
+def test_clickhouse_expire_snapshots(started_cluster):
+    ns = f"chexpire_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "events")
+    table = f"rest_tables_db.`{ns}.events`"
+
+    node.query(create_database_query())
+    try:
+        for _ in range(3):
+            node.query(f"INSERT INTO {table} SETTINGS allow_insert_into_iceberg = 1 VALUES (1, 'a')")
+        snapshots = load_table(ns, "events")["metadata"]["snapshots"]
+        assert len(snapshots) == 3
+
+        expired = ", ".join(str(s["snapshot-id"]) for s in snapshots[:2])
+        node.query(
+            f"ALTER TABLE {table} EXECUTE expire_snapshots(snapshot_ids = [{expired}])",
+            settings={"allow_insert_into_iceberg": 1, "allow_expire_snapshots": 1},
+        )
+
+        metadata = load_table(ns, "events")["metadata"]
+        assert [s["snapshot-id"] for s in metadata["snapshots"]] == [snapshots[2]["snapshot-id"]]
+        assert metadata["current-snapshot-id"] == snapshots[2]["snapshot-id"]
+        assert node.query(f"SELECT count() FROM {table}") == "3\n"
+    finally:
+        node.query("DROP DATABASE IF EXISTS rest_tables_db")
+
+
+def test_clickhouse_create_table(started_cluster):
+    ns = f"chcreate_{uuid.uuid4().hex[:8]}"
+    ns_location = f"{BASE_LOCATION}/{ns}"
+    # The ClickHouse client sends no location. The catalog builds it from the namespace location.
+    create_namespace([ns], properties={"location": ns_location})
+    table = f"rest_tables_db.`{ns}.events`"
+
+    node.query(create_database_query())
+    try:
+        node.query(
+            f"CREATE TABLE {table} (id Int64, name String) ENGINE = Iceberg",
+            settings={"allow_experimental_database_iceberg": 1},
+        )
+        metadata = catalog_request("GET", tables_url(ns, "events")).json()["metadata"]
+        location = metadata["location"]
+        assert location == f"{ns_location}/events-{metadata['table-uuid']}"
+        zk = get_keeper()
+        assert zk.exists(location_node(location))
+
+        node.query(f"INSERT INTO {table} SETTINGS allow_insert_into_iceberg = 1 VALUES (1, 'a'), (2, 'b')")
+        assert node.query(f"SELECT * FROM {table} ORDER BY id") == "1\ta\n2\tb\n"
+        pyiceberg_table = load_pyiceberg_catalog().load_table(f"{ns}.events")
+        assert pyiceberg_table.scan().to_arrow().num_rows == 2
+
+        node.query(f"DROP TABLE {table}")
+        assert not table_exists(ns, "events")
+        assert not zk.exists(location_node(location))
+    finally:
+        node.query("DROP DATABASE IF EXISTS rest_tables_db")
+
+
 def test_secure_port(started_cluster):
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     path = "/v1/config?warehouse=my_warehouse"
@@ -2115,6 +2337,31 @@ def test_stage_create_conflicts(started_cluster):
     # No failed commit created the table.
     assert not table_exists(ns, "t")
     assert list_metadata_files(staged["location"]) == []
+
+
+def test_stage_create_location(started_cluster):
+    ns = f"staged_location_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+
+    # Stage with a client-chosen location. It is used as given, without the trailing slash.
+    location = f"{BASE_LOCATION}/explicit/{ns}"
+    staged = stage_create_table(ns, "events", location=location + "/").json()["metadata"]
+    assert staged["location"] == location
+
+    # The commit creates the table at that location.
+    committed = commit_table(ns, "events", ASSERT_CREATE, create_updates_from_metadata(staged)).json()
+    assert committed["metadata"]["location"] == location
+    assert committed["metadata-location"].startswith(f"{location}/metadata/v1-")
+    assert get_keeper().exists(location_node(location))
+
+    # Staging stores nothing, so the overlap is found at the commit.
+    inner = f"{location}/data"
+    staged_inner = stage_create_table(ns, "inner", location=inner).json()["metadata"]
+    response = commit_table(ns, "inner", ASSERT_CREATE, create_updates_from_metadata(staged_inner), expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+    assert f"Location {inner} overlaps location {location}" in response.json()["error"]["message"]
+    assert not table_exists(ns, "inner")
+    assert list_metadata_files(inner) == []
 
 
 def test_pyiceberg_create_table_transaction(started_cluster):
