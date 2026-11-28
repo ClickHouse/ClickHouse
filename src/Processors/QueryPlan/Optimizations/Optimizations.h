@@ -454,7 +454,10 @@ bool convertLogicalJoinToPhysical(
     QueryPlan::Nodes &,
     const QueryPlanOptimizationSettings & optimization_settings);
 
-void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+/// Whether this LIMIT keeps descendant joins on row-based costing before lazy materialization.
+bool shouldPreserveJoinBuildSideForLazyMaterialization(const QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings);
+
+void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &, bool allow_input_width_estimation);
 
 /// Skip the deduplication of the `DISTINCT` after `EXCEPT DISTINCT` executed as RIGHT ANTI. Needs the physical join.
 void skipDeduplicationAfterSetOperationJoin(QueryPlan::Node & node);

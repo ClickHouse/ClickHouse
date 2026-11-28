@@ -396,10 +396,20 @@ void optimizeTreeSecondPass(
     /// Join runtime filters are registered and found in the lookup of the thread's query context, so they need a query.
     const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && CurrentThread::tryGetQueryContext();
     bool join_runtime_filters_were_added = false;
+    const bool join_lazy_materialization_enabled = optimization_settings.optimize_lazy_materialization
+        && optimization_settings.lazy_materialization_for_join && !optimization_settings.make_distributed_plan;
+    const bool can_apply_join_lazy_materialization
+        = join_lazy_materialization_enabled && !optimization_settings.enable_parallel_replicas;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
-            optimizeJoinLogical(frame_node, nodes, optimization_settings);
+            /// Lazy materialization can remove output-only columns after join reordering.
+            /// Keep row-based build-side selection beneath a LIMIT eligible for that pass.
+            const bool under_lazy_limit = std::ranges::any_of(stack, [&](const auto & frame)
+            {
+                return shouldPreserveJoinBuildSideForLazyMaterialization(*frame.node, optimization_settings);
+            });
+            optimizeJoinLogical(frame_node, nodes, optimization_settings, !under_lazy_limit);
             optimizeJoinLegacy(frame_node, nodes, optimization_settings);
             useMemoryBufferForCommonSubplanResult(frame_node, optimization_settings);
         },
@@ -520,8 +530,7 @@ void optimizeTreeSecondPass(
     /// the setting rather than of this pass, as the other lazy materialization does: a plan that has its exchanges
     /// already, optimized again, is still distributed, and its lazy steps could not be sent to the workers.
     bool lazy_materialization_applied = false;
-    if (optimization_settings.optimize_lazy_materialization && optimization_settings.lazy_materialization_for_join
-        && !optimization_settings.enable_parallel_replicas && !optimization_settings.make_distributed_plan)
+    if (can_apply_join_lazy_materialization)
     {
         chassert(stack.empty());
         stack.push_back({.node = &root});
