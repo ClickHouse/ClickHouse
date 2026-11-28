@@ -8,6 +8,7 @@ namespace DB::PrometheusQueryToSQL
 {
 
 struct ConverterContext;
+struct ScalarAST;
 
 /// A range function whose range-vector argument carries a fixed @ modifier, e.g. `rate(v[5m] @ 1600000000)`, is
 /// step-invariant: PromQL evaluates it once for the window frozen at the fixed timestamp and repeats the result at
@@ -22,6 +23,15 @@ struct ConverterContext;
 /// Returns the fixed @ modifier directly applied to a range-vector argument, or nullptr if the argument is not a range
 /// vector or has no fixed @ modifier. This relies on `applyOffset` keeping the `Offset` node as the node of a range-vector piece.
 const PrometheusQueryTree::Offset * getFixedAtModifier(const SQLQueryPiece & argument);
+
+/// Throws `NOT_IMPLEMENTED` if the range vector has a fixed @ modifier and `scalar_argument` varies with the evaluation
+/// time. `function_node` and `argument_description` are named in the message.
+void checkNoTimeVaryingArgumentWithFixedAt(
+    const PrometheusQueryTree::Node * function_node,
+    const SQLQueryPiece & range_argument,
+    const ScalarAST & scalar_argument,
+    std::string_view argument_description,
+    const ConverterContext & context);
 
 /// Returns the grid a range function is aggregated on: its own evaluation range, the single point at a fixed @ timestamp,
 /// or its own evaluation range shifted back by an offset, because an offset keeps the timestamps of the samples.

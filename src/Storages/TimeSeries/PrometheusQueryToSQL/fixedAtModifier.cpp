@@ -3,8 +3,16 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
+#include <Common/Exception.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/scalarToAST.h>
 #include <base/defines.h>
+
+
+namespace DB::ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 
 namespace DB::PrometheusQueryToSQL
@@ -17,6 +25,28 @@ const PrometheusQueryTree::Offset * getFixedAtModifier(const SQLQueryPiece & arg
 
     const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(argument.node);
     return offset_node->hasAtModifier() ? offset_node : nullptr;
+}
+
+
+void checkNoTimeVaryingArgumentWithFixedAt(
+    const PrometheusQueryTree::Node * function_node,
+    const SQLQueryPiece & range_argument,
+    const ScalarAST & scalar_argument,
+    std::string_view argument_description,
+    const ConverterContext & context)
+{
+    /// A fixed @ freezes the samples but not such an argument, so PromQL still evaluates per step, while a
+    /// `timeSeries*ToGrid` aggregate function derives its window from each grid point and cannot apply one frozen
+    /// window with a value per grid point.
+    if (!scalar_argument.is_constant && getFixedAtModifier(range_argument))
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "{} does not support a time-varying {} together with a fixed @ modifier on the range vector {}",
+            function_node->getTypeAndName(),
+            argument_description,
+            getPromQLText(range_argument, context));
+    }
 }
 
 
