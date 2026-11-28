@@ -134,7 +134,12 @@ public:
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override { getTargetTable()->checkMutationIsPossible(commands, settings); }
 
-    void checkInsertIsAllowed(ContextPtr local_context) const override { getTargetTable()->checkInsertIsAllowed(local_context); }
+    /// `write` checks the grant on the target table. With asynchronous inserts, the sink is created in a background flush,
+    /// so the check is repeated here, before the data is queued.
+    void checkInsertIsAllowed(ContextPtr local_context) const override
+    {
+        getTargetTable(TargetAccess{local_context, AccessType::INSERT})->checkInsertIsAllowed(local_context);
+    }
 
     /// Mutate target table
     void mutate(
