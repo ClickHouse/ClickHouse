@@ -1,0 +1,12 @@
+-- a duplicate on a join group the left side does not have is not reported
+[('dc','a'),('env','prod'),('host','h1')]	1970-01-01 00:01:50.000	20
+[('dc','a'),('env','prod'),('host','h2')]	1970-01-01 00:01:50.000	40
+[('dc','a'),('env','prod'),('host','h1')]	1970-01-01 00:01:50.000	20
+[('dc','a'),('env','prod'),('host','h2')]	1970-01-01 00:01:50.000	40
+[('dc','a'),('env','prod'),('host','h1')]	1970-01-01 00:01:50.000	20
+[('dc','a'),('env','prod'),('host','h2')]	1970-01-01 00:01:50.000	40
+[('dc','a'),('dc2','a'),('env','prod'),('host','h1')]	1970-01-01 00:01:50.000	20
+[('dc','a'),('dc2','a'),('env','prod'),('host','h2')]	1970-01-01 00:01:50.000	40
+-- with an empty left side the duplicate is not reported, as in Prometheus
+-- a left side whose series have no value left after a filter is empty too
+-- a duplicate on a matched join group is still reported
