@@ -145,7 +145,8 @@ struct ConnectedDistinct
 
     RunProcessors attachRun()
     {
-        auto update = transform.updatePipeline();
+        IProcessor::PipelineUpdate update;
+        transform.updatePipeline(update);
         RunProcessors run;
         for (const auto & processor : update.to_add)
         {
@@ -162,7 +163,8 @@ struct ConnectedDistinct
 void readFirstSpillRun(ExternalDistinctTransform & transform, Blocks & blocks)
 {
     ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
-    auto update = transform.updatePipeline();
+    IProcessor::PipelineUpdate update;
+    transform.updatePipeline(update);
     auto sink_it = std::ranges::find_if(update.to_add, [](const auto & processor)
     {
         return typeid_cast<BufferingToFileSink *>(processor.get());

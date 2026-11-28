@@ -294,12 +294,10 @@ std::tuple<int, uint32_t, Int64> MergeTreeCommitOrderSource::scheduleForEvent()
     return {subscription->fd(), EPOLLIN | EPOLLERR, read_state.calculateTimeToNextIdle(stream_settings)};
 }
 
-IProcessor::PipelineUpdate MergeTreeCommitOrderSource::updatePipeline()
+void MergeTreeCommitOrderSource::updatePipeline(PipelineUpdate & update)
 {
     chassert(finished_round.has_value() || pending_round.has_value());
     chassert(!current_round.has_value());
-
-    PipelineUpdate update;
 
     /// Tear down the finished read round sub-pipeline.
     if (finished_round.has_value())
@@ -338,8 +336,6 @@ IProcessor::PipelineUpdate MergeTreeCommitOrderSource::updatePipeline()
 
         update.to_add = pipe.getProcessors();
     }
-
-    return update;
 }
 
 void MergeTreeCommitOrderSource::onUpdatePorts()

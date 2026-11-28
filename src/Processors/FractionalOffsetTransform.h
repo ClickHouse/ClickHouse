@@ -1,6 +1,7 @@
 #pragma once
 
-#include <deque>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
@@ -48,7 +49,7 @@ private:
         bool is_input_port_finished = false;
     };
 
-    std::vector<PortsData> ports_data;
+    VectorWithMemoryTracking<PortsData> ports_data;
     size_t num_finished_input_ports = 0;
 
     /// Inputs are not requested before an output asks for data.
@@ -59,7 +60,7 @@ private:
 
     size_t next_output_port = 0;
 
-    std::deque<Chunk> chunks_cache;
+    DequeWithMemoryTracking<Chunk> chunks_cache;
 
     /// Compute remaining integral offset once total rows_cnt is known.
     void finalizeOffset();

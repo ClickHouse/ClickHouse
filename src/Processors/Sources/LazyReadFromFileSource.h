@@ -26,7 +26,7 @@ public:
 
     String getName() const override { return "LazyReadFromFileSource"; }
     Status prepare() override;
-    PipelineUpdate updatePipeline() override;
+    void updatePipeline(PipelineUpdate & update) override;
 
 private:
     std::shared_ptr<StorageFile> storage;

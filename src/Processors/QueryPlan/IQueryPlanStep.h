@@ -2,6 +2,7 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/ListWithMemoryTracking.h>
+#include <Processors/IProcessor_fwd.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <base/types.h>
@@ -13,7 +14,6 @@
 #include <span>
 #include <string_view>
 #include <variant>
-#include <list>
 
 namespace DB
 {
@@ -23,10 +23,6 @@ class ActionsDAG;
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 using QueryPipelineBuilders = VectorWithMemoryTracking<QueryPipelineBuilderPtr>;
-
-class IProcessor;
-using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- must match `Processors` in `IProcessor_fwd.h`
 
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;

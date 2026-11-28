@@ -98,9 +98,8 @@ public:
         return Status::PortFull;
     }
 
-    PipelineUpdate updatePipeline() override
+    void updatePipeline(PipelineUpdate & update) override
     {
-        PipelineUpdate update;
 
         if (current_source)
         {
@@ -132,8 +131,6 @@ public:
 
         current_source = new_source;
         update.to_add.push_back(std::move(new_source));
-
-        return update;
     }
 
     size_t totalSourcesCreated() const { return source_history.size(); }
@@ -190,9 +187,8 @@ public:
         return Status::NeedData;
     }
 
-    PipelineUpdate updatePipeline() override
+    void updatePipeline(PipelineUpdate & update) override
     {
-        PipelineUpdate update;
 
         if (!source_added)
         {
@@ -205,7 +201,7 @@ public:
             }
             update.to_add.push_back(source);
             source_added = true;
-            return update;
+            return;
         }
 
         for (auto & input : inputs)
@@ -214,7 +210,6 @@ public:
         update.to_remove.push_back(source);
         source.reset();
         outputs.front().finish();
-        return update;
     }
 
 private:
@@ -331,9 +326,8 @@ public:
         return Status::PortFull;
     }
 
-    PipelineUpdate updatePipeline() override
+    void updatePipeline(PipelineUpdate & update) override
     {
-        PipelineUpdate update;
 
         if (!inputs.empty())
         {
@@ -348,7 +342,7 @@ public:
         if (batches_started == total_batches)
         {
             outputs.front().finish();
-            return update;
+            return;
         }
 
         auto source = std::make_shared<SingleValueSource>(header, static_cast<UInt8>(batches_started));
@@ -370,8 +364,6 @@ public:
         update.to_add = current_batch;
         batch_history.append_range(current_batch);
         ++batches_started;
-
-        return update;
     }
 
     const std::vector<std::weak_ptr<IProcessor>> & batchHistory() const { return batch_history; }

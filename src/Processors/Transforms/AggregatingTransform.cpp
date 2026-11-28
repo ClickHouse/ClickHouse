@@ -869,9 +869,11 @@ public:
         }
     }
 
-    PipelineUpdate updatePipeline() override
+    void updatePipeline(PipelineUpdate & update) override
     {
-        for (auto & source : processors)
+        update.to_add = std::move(processors);
+
+        for (auto & source : update.to_add)
         {
             auto & out = source->getOutputs().front();
             inputs.emplace_back(out.getHeader(), this);
@@ -879,8 +881,6 @@ public:
             inputs.back().setNeeded();
             source->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
         }
-
-        return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
     }
 
     IProcessor::Status prepare() override
@@ -1752,18 +1752,18 @@ void AggregatingTransform::work()
     }
 }
 
-IProcessor::PipelineUpdate AggregatingTransform::updatePipeline()
+void AggregatingTransform::updatePipeline(PipelineUpdate & update)
 {
     if (processors.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not updatePipeline in AggregatingTransform. This is a bug.");
-    auto & out = processors.back()->getOutputs().front();
+    update.to_add = std::move(processors);
+
+    auto & out = update.to_add.back()->getOutputs().front();
     inputs.emplace_back(out.getHeader(), this);
     connect(out, inputs.back());
     is_pipeline_created = true;
-    for (auto & proc : processors)
+    for (auto & proc : update.to_add)
         proc->inheritQueryPlanStepFromParent(*this, getGeneratingStepGroup());
-
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
 void AggregatingTransform::consume(Chunk chunk)

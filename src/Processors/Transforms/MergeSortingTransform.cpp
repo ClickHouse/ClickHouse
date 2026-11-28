@@ -53,24 +53,27 @@ MergeSortingTransform::MergeSortingTransform(
     chassert(merge_mode == MergeSorter::Mode::PreserveRows || limit_ == 0);
 }
 
-IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
+void MergeSortingTransform::updatePipeline(PipelineUpdate & update)
 {
+    auto & processors_to_add = update.to_add;
+    processors_to_add = std::move(processors);
+
     if (inputs.size() == 1)
     {
         /// Add external_merging_sorted.
+        processors_to_add.emplace_back(external_merging_sorted);
         inputs.emplace_back(header_without_constants, this);
         connect(external_merging_sorted->getOutputs().front(), inputs.back());
-        processors.emplace_back(external_merging_sorted);
     }
 
-    auto & source = processors.front();
+    auto & source = processors_to_add.front();
 
     external_merging_sorted->addInput(header_without_constants);
     connect(source->getOutputs().back(), external_merging_sorted->getInputs().back());
 
     if (stage == Stage::Serialize)
     {
-        auto & sink = *std::next(processors.begin());
+        auto & sink = *std::next(processors_to_add.begin());
         /// Serialize
         outputs.emplace_back(header_without_constants, this);
         connect(sink->getOutputs().front(), source->getInputs().front());
@@ -79,16 +82,14 @@ IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
 
     for (auto & spilled_source : spilled_sources)
     {
+        processors_to_add.emplace_back(spilled_source);
         external_merging_sorted->addInput(header_without_constants);
         connect(spilled_source->getOutputs().front(), external_merging_sorted->getInputs().back());
-        processors.emplace_back(std::move(spilled_source));
     }
     spilled_sources.clear();
 
     if (stage == Stage::Generate)
         external_merging_sorted->setHaveAllInputs();
-
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
 void MergeSortingTransform::consume(Chunk chunk)

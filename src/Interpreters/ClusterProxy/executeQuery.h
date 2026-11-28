@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/ListWithMemoryTracking.h>
 #include <Client/ConnectionPool_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
@@ -38,7 +39,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct StorageID;
 
 struct StorageLimits;
-using StorageLimitsList = std::list<StorageLimits>;
+using StorageLimitsList = ListWithMemoryTracking<StorageLimits>;
 
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;

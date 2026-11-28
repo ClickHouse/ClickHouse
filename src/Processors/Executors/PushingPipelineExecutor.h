@@ -1,5 +1,5 @@
 #pragma once
-#include <list>
+#include <Processors/IProcessor_fwd.h>
 #include <memory>
 #include <atomic>
 #include <vector>
@@ -14,10 +14,6 @@ class PushingSource;
 
 class IExecutor;
 using ExecutorPtr = std::shared_ptr<IExecutor>;
-
-class IProcessor;
-using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// Pushing executor for Chain of processors. Always executed in single thread.
 /// Typical usage is:

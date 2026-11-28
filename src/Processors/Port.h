@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/IProcessor_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <atomic>
 #include <cstdint>
@@ -494,10 +495,6 @@ public:
         return *input_port;
     }
 };
-
-
-using InputPorts = std::list<InputPort>;
-using OutputPorts = std::list<OutputPort>;
 
 
 void connect(OutputPort & output, InputPort & input, bool reconnect = false);

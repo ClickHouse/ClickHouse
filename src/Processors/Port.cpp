@@ -21,10 +21,12 @@ void connect(OutputPort & output, InputPort & input, bool reconnect)
 
     assertCompatibleHeader(output.getHeader(), input.getHeader(), fmt::format("function connect between {} and {}", out_name, in_name));
 
+    /// Allocate before linking the ports, so that a failed allocation leaves them disconnected.
+    auto state = std::make_shared<Port::State>();
     input.output_port = &output;
     output.input_port = &input;
-    input.state = std::make_shared<Port::State>();
-    output.state = input.state;
+    input.state = state;
+    output.state = std::move(state);
 }
 
 void disconnect(OutputPort & output, InputPort & input)

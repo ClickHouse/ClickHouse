@@ -1,6 +1,6 @@
 #pragma once
 
-#include <list>
+#include <Common/ListWithMemoryTracking.h>
 #include <memory>
 
 namespace DB
@@ -8,11 +8,11 @@ namespace DB
 
 class InputPort;
 class OutputPort;
-using InputPorts = std::list<InputPort>;
-using OutputPorts = std::list<OutputPort>;
+using InputPorts = ListWithMemoryTracking<InputPort>;
+using OutputPorts = ListWithMemoryTracking<OutputPort>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>;
+using Processors = ListWithMemoryTracking<ProcessorPtr>;
 
 }

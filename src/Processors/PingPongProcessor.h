@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/IProcessor.h>
 #include <base/unit.h>
 #include <Processors/Chunk.h>
@@ -64,7 +65,7 @@ protected:
     void finishPair(PortsPair & pair);
     Status processRegularPorts();
 
-    std::vector<PortsPair> port_pairs;
+    VectorWithMemoryTracking<PortsPair> port_pairs;
     size_t num_finished_pairs = 0;
 
     InputPort & aux_in_port;
