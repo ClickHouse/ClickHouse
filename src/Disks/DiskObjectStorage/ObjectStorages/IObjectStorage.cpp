@@ -21,6 +21,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+ObjectMetadata ObjectMetadata::fromTableRecords(std::optional<UInt64> size, String immutable_content_id)
+{
+    ObjectMetadata metadata;
+    metadata.size_bytes = size.value_or(0);
+    metadata.is_size_known = size.has_value();
+    metadata.is_fetched = false;
+    metadata.is_from_table_records = true;
+    metadata.is_last_modified_known = false;
+    metadata.immutable_content_id = std::move(immutable_content_id);
+    return metadata;
+}
+
 bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
     RelativePathsWithMetadata files;
@@ -31,6 +43,17 @@ bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
 void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata &, size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjects() is not supported");
+}
+
+ObjectStorageListResult IObjectStorage::listObjectsSingleLevel(
+    const std::string &, const std::string &, size_t, bool, const std::string &, const std::string &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjectsSingleLevel() is not supported");
+}
+
+size_t IObjectStorage::getListedObjectPayloadBytesUpperBound(bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getListedObjectPayloadBytesUpperBound() is not supported");
 }
 
 /// Read single object

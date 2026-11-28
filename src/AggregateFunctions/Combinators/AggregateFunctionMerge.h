@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/typeid_cast.h>
@@ -9,6 +10,11 @@
 namespace DB
 {
 struct Settings;
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 
 /** Not an aggregate function, but an adapter of aggregate functions,
@@ -21,11 +27,18 @@ class AggregateFunctionMerge final : public IAggregateFunctionHelper<AggregateFu
 {
 private:
     AggregateFunctionPtr nested_func;
-    AggregateFunctionPtr argument_func;
-    bool merge_state_from_different_variant = false;
 
 public:
-    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_);
+    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_)
+        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, params_, createResultType(nested_))
+        , nested_func(nested_)
+    {
+        const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(argument.get());
+
+        if (!data_type || !nested_func->haveSameStateRepresentation(*data_type->getFunction()))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, "
+                            "expected {} or equivalent type", argument->getName(), getName(), getStateType()->getName());
+    }
 
     String getName() const override
     {
@@ -57,6 +70,9 @@ public:
       */
     size_t getVersionFromRevision(size_t revision) const override
     {
+        /// Older servers write `-Merge` states at version 0 and do not announce it.
+        if (revision < DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION)
+            return 0;
         return nested_func->getVersionFromRevision(revision);
     }
 
@@ -108,6 +124,13 @@ public:
     }
 
     bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
+    bool isParallelizeMergePrepareNeeded() const override { return nested_func->isParallelizeMergePrepareNeeded(); }
+    size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override { return nested_func->getEstimatedMergeWork(place); }
+
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
+    {
+        return nested_func->isLargeMergePair(place, rhs);
+    }
     bool canOptimizeEqualKeysRanges() const override { return nested_func->canOptimizeEqualKeysRanges(); }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override

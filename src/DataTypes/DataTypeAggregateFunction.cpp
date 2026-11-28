@@ -3,12 +3,12 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Core/ProtocolDefines.h>
 
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
-#include <Common/FieldVisitorToString.h>
 
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -90,12 +90,10 @@ bool DataTypeAggregateFunction::isVersioned() const
     return function->isVersioned();
 }
 
-String DataTypeAggregateFunction::formatParameters(const IAggregateFunction & function, const Array & parameters)
+String DataTypeAggregateFunction::formatParameters(const Array & parameters)
 {
     if (parameters.empty())
         return {};
-
-    const bool with_types = function.shouldPrintParametersWithTypes();
 
     WriteBufferFromOwnString stream;
     stream << '(';
@@ -103,10 +101,7 @@ String DataTypeAggregateFunction::formatParameters(const IAggregateFunction & fu
     {
         if (i)
             stream << ", ";
-        if (with_types)
-            stream << applyVisitor(FieldVisitorToCastedLiteral(), parameters[i]);
-        else
-            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+        stream << applyVisitor(FieldVisitorToCastedLiteral(), parameters[i]);
     }
     stream << ')';
     return stream.str();
@@ -122,7 +117,7 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
     if (with_version && data_type_version)
         stream << data_type_version << ", ";
     stream << function->getName();
-    stream << formatParameters(*function, parameters);
+    stream << formatParameters(parameters);
 
     for (const auto & argument_type : argument_types)
         stream << ", " << argument_type->getName();
@@ -165,15 +160,12 @@ Field DataTypeAggregateFunction::getDefault() const
     return field;
 }
 
-bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant)
+bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type)
 {
     const auto * lhs_state = typeid_cast<const DataTypeAggregateFunction *>(lhs_state_type.get());
     const auto * rhs_state = typeid_cast<const DataTypeAggregateFunction *>(rhs_state_type.get());
 
     if (!lhs_state || !rhs_state)
-        return false;
-
-    if (!ignore_variant && lhs_state->function->getStateVariant() != rhs_state->function->getStateVariant())
         return false;
 
     if (lhs_state->function->getName() != rhs_state->function->getName())
@@ -214,14 +206,6 @@ bool DataTypeAggregateFunction::nameMatchesState(const String & state_type_name,
     return strictEquals(aggregate_state_type->function->getNormalizedStateType(), function->getNormalizedStateType());
 }
 
-void DataTypeAggregateFunction::checkSupportedFunctions(const AggregateFunctionPtr & function)
-{
-    if (function->isOnlyWindowFunction())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "The function '{}' can only be used as a window function, not as an aggregate function, "
-                        "so its state cannot be used as a data type", function->getName());
-}
-
 void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const
 {
     hash.update(getFunctionName());
@@ -233,18 +217,6 @@ void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const
         arg_type->updateHash(hash);
     if (version)
         hash.update(*version);
-    hash.update(static_cast<UInt8>(function->getStateVariant()));
-}
-
-bool DataTypeAggregateFunction::equalsIgnoringVariant(const IDataType & rhs) const
-{
-    if (typeid(rhs) != typeid(*this))
-        return false;
-
-    auto lhs_state_type = function->getNormalizedStateType();
-    auto rhs_state_type = typeid_cast<const DataTypeAggregateFunction &>(rhs).function->getNormalizedStateType();
-
-    return strictEquals(lhs_state_type, rhs_state_type, /*ignore_variant=*/ true);
 }
 
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
@@ -354,7 +326,6 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     AggregateFunctionProperties properties;
     AggregateFunctionPtr function = AggregateFunctionFactory::instance().get(function_name, action, argument_types, params_row, properties);
-    DataTypeAggregateFunction::checkSupportedFunctions(function);
 
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
@@ -448,7 +419,7 @@ void registerDataTypeAggregateFunction(DataTypeFactory & factory)
             .description = R"DOCS_MD(
 ## Description {#description}
 
-All [Aggregate functions](/reference/functions/aggregate-functions) in ClickHouse have
+All [Aggregate functions](/reference/functions/aggregate-functions/index) in ClickHouse have
 an implementation-specific intermediate state that can be serialized to an
 `AggregateFunction` data type and stored in a table. This is usually done by
 means of a [materialized view](/reference/statements/create/view).
@@ -588,6 +559,10 @@ ColumnPtr relabelAggregateStateVersions(const ColumnPtr & column, const DataType
 {
     if (const auto * const_column = typeid_cast<const ColumnConst *>(column.get()))
         return ColumnConst::create(relabelAggregateStateVersions(const_column->getDataColumnPtr(), type), column->size());
+
+    if (const auto * replicated_column = typeid_cast<const ColumnReplicated *>(column.get()))
+        return ColumnReplicated::create(
+            relabelAggregateStateVersions(replicated_column->getNestedColumn(), type), replicated_column->getIndexesColumn());
 
     auto relabelled_column = type->createColumn();
     relabelled_column->insertRangeFrom(*recursiveRemoveSparse(column), 0, column->size());

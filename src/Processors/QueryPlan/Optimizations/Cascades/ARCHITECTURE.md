@@ -124,7 +124,17 @@ Each physical expression has **properties** describing what it produces:
   - `{4 nodes, by custkey}` — data hash-partitioned by `custkey` across 4 nodes
   - `{4 nodes, replicated}` — full copy on every node
 
-- **Sorting**: Whether the output is sorted and by which columns.
+- **Sorting**: Whether the output is sorted and by which columns. The sorting describes
+  each stream on its own; with one stream per node it is the node's total order.
+
+- **Stream layout**: How one node's streams relate to each other. `Unknown` — several
+  streams with no relation (reads, joins, exchange receive sides). `Single` — one stream
+  per node (a plain full sort, a sorted gather). `Disjoint` on a column set — rows equal
+  on those columns share a stream (a sort partitioned by the columns), so an operator
+  that works per group, such as a `PARTITION BY` window, can run on every stream at once.
+  One stream keeps every group whole, so `Single` satisfies every requirement; `Disjoint`
+  on a subset of the required columns satisfies a `Disjoint` requirement (a coarser split
+  never tears a required group apart).
 
 A parent step **requires** specific properties from its child. For example, a
 `ShuffleHashJoin` on `custkey` requires both inputs to be distributed `{4 nodes, by custkey}`.
@@ -166,23 +176,36 @@ creates a `GatherExchange` that collects data from 4 nodes to 1.
 
 Enforcers are **self-referential**: a `GatherExchange` in Group G has its input pointing
 back to Group G itself, but with relaxed required properties (the input asks for
-`{4 nodes}` while the output provides `{1 node}`). Left unchecked this can form a real
-cycle, because a relaxed requirement acts as a wildcard: an empty required sort is
-satisfied by any sorted expression, and empty required distribution columns are satisfied
-by any keyed expression — including the enforcer itself or a sibling enforcer.
+`{4 nodes}` while the output provides `{1 node}`). A relaxed requirement is satisfied by
+more expressions than the ones it is meant for: an empty required sort is satisfied by any
+sorted expression, and empty required distribution columns are satisfied by any keyed
+expression, including the enforcer itself or a sibling enforcer.
 
-Two invariants keep enforcer self-reference acyclic:
+Two rules prevent a cycle in a plan:
 
-- Every enforcer expression carries an **enforcer axis** (`Sorting` or `Distribution`).
-  When resolving a self-referential enforcer input, an enforcer candidate that satisfies a
-  wildcard axis only by over-providing on it is not eligible (a sorted enforcer cannot
-  fill an empty-sort slot; a keyed exchange cannot fill an empty-columns slot). Productive
-  compositions stay eligible: `Sort` feeding a sorted `GatherExchange`, a `GatherExchange`
-  feeding a `Sort` or a `BroadcastExchange`.
-- Plan extraction (`buildBestPlan`) tracks the single-input expressions on the current
-  chain and resolves each input through the same eligibility rule, scanning the group's
-  costed physical expressions as a fallback when the best-implementation cache holds only
-  expressions already on the chain.
+- **An enforcer answers only the required properties that it was made for.** An enforcer adds
+  an operator to get some properties. It satisfies weaker required properties too, but the plan
+  below it is the answer to those. Each enforcer expression records the required properties that
+  enforcer rules made it for (`GroupExpression::enforced_for`), and the group selects it only
+  for these, or for required properties equal to its own properties
+  (`GroupExpression::answers`). The second case is an enforcer that was made as a step towards
+  other required properties, for example a gather below a sort. So a sort is not an answer to
+  its own unsorted input, and a keyed exchange is not an answer to its own input without
+  columns. Other expressions answer all required properties that their properties satisfy.
+- **Plan extraction excludes the expressions of the chain that it builds.** Enforcers of one
+  group can still lead to each other through different required properties: a gather takes
+  `{4 nodes}`, a scatter takes `{1 node}`. With the default costs such a pair is not cheaper
+  than the plan below it, because each exchange adds to the cost. This is not a guarantee: a
+  cost configuration can make an exchange free, and a very large cost can absorb a small
+  addition. So `buildBestPlan` tracks the single-input expressions on the current chain and
+  does not select them again. If no other answer is left, it throws an exception; it does not
+  go back to select another expression higher in the chain.
+
+The first rule does not depend on costs. The second one makes plan extraction end, with a plan
+or with an exception. A plan exists because an enforcer never removes another implementation
+from the best implementations (see the `best_implementations` section), so the implementation
+that a chain of enforcers starts from stays available. Costing does not exclude a chain: an
+enforcer is priced on the best answer to its input, which cannot be the enforcer itself.
 
 ### Two-Phase Aggregation
 
@@ -208,7 +231,7 @@ four stages:
 - **Stage 1 — Explore**: Fire transformation rules (`JoinCommutativity`,
   `TwoStageAggregation`, `TwoStageTopN`) to generate logically equivalent expressions.
 - **Stage 2 — Implement**: Fire implementation rules (`HashJoinImplementation`,
-  `AggregationImplementation`, `LocalReadImplementation`, `ParallelReadImplementation`,
+  `AggregationImplementation`, `DistinctImplementation`, `LocalReadImplementation`, `ParallelReadImplementation`,
   `ReplicatedReadImplementation`, `ReplicatedSubplanImplementation`, `TopNImplementation`,
   `DefaultImplementation`, `DistributionPassthrough`) to generate physical expressions
   with concrete properties.
@@ -237,8 +260,8 @@ Each rule carries a static **promise** (a priority). The rules applicable to an
 expression are sorted by promise and pushed on the LIFO stack, so the highest-promise
 rule runs first. Promise does not change which plans are considered — every applicable
 rule is eventually applied — but it orders their generation, which breaks ties among
-equal-cost alternatives (the first-found best is kept and a later equal-cost candidate is
-pruned). Enforcer rules are scheduled by the Stage-3 fixed-point loop, so their promise
+equal-cost alternatives (the first-found best is kept and a later equal-cost candidate
+does not replace it). Enforcer rules are scheduled by the Stage-3 fixed-point loop, so their promise
 is not consulted.
 
 **Key files**: `Task.h/cpp`, `Optimizer.h/cpp`, `CascadesParams.h/cpp`, `OptimizerContext.h`
@@ -406,17 +429,23 @@ logs of one `EXPLAIN` run.
 Best implementations per group are stored in an
 `unordered_map<UInt64, vector<GroupExpressionPtr>>` keyed by distribution shape
 `(node_count, is_replicated)`. This gives O(1) bucket lookup followed by a linear scan
-of the non-dominated alternatives for that distribution shape.
+of the entries for that distribution shape.
 
 An expression whose input has no implementation for its required properties is never
-recorded (see `ExpressionCost::buildable`), so plan extraction cannot walk into a
-missing subtree.
+recorded (see `ExpressionCost::buildable`): each recorded expression had an implementation
+for each input when it got its cost.
 
-A Pareto frontier is maintained: when a new implementation is added, dominated entries
-(same or broader properties at higher cost) are removed. One exception protects plan
-extraction: an enforcer never suppresses or evicts a non-enforcer implementation with
-strictly weaker properties, so the acyclic base alternative stays reachable even when a
-cheaper enforcer covers its requirement.
+Among the expressions that are not enforcers a Pareto frontier is maintained: when a new
+implementation is added, dominated entries (same or broader properties at higher cost) are
+removed. Such an expression also removes a dominated enforcer. An enforcer does not suppress
+or evict another entry, because it answers only the required properties that it was made for,
+and the other entry can be the only answer to different ones or the only one that is not on
+the chain that plan extraction builds. So all costed enforcers that no other expression
+dominates stay in the list, and the list is longer than a frontier of all expressions would
+be. The number of optimizer tasks does not depend on it.
+
+Every buildable expression keeps its cost, also when a cheaper implementation keeps it out of
+the list.
 
 ### Rules
 
@@ -443,6 +472,10 @@ The lists below use class names; `getName` log names may omit the `Implementatio
   single-key alternatives for multi-key `GROUP BY`) and implements the partial
   aggregations; shuffle is not created for global aggregation, grouping sets, overflow
   rows, or `max_rows_to_group_by`
+- `DistinctImplementation` — creates local and shuffle final `DISTINCT` (shuffle by all
+  `DISTINCT` columns and, for several columns, by each single one); a `DISTINCT` that keeps
+  its input order stays local. The preliminary `DISTINCT` below it is a passthrough step,
+  so before a gather it runs on every node and the gather moves the distinct rows only
 - `LocalReadImplementation` — single-node read
 - `ParallelReadImplementation` — parallel N-way read across nodes
 - `ReplicatedReadImplementation` — full table read on each node (shared storage)
@@ -452,10 +485,16 @@ The lists below use class names; `getName` log names may omit the `Implementatio
   `ANY`/`RightAny` joins are not replication-safe: with duplicate build-side keys the
   kept row depends on the parallel build order, so nodes could produce different rows
 - `TopNImplementation` — bounded sort at one node, or per node for the top-N partial
+- `WindowImplementation` — a window on a single node, or on each node for a `PARTITION BY`
+  window: the input is required hashed by the partition keys, sorted on each node, and
+  with streams disjoint on the partition keys, so the enforcers add the keyed shuffle and
+  a per-node sort partitioned by the keys, and every node runs the window on several
+  streams at once with each partition whole in one stream
 - `DefaultImplementation` — wraps otherwise-unhandled steps at `{1 node}`; operators
   with dedicated rules above are excluded
-- `DistributionPassthrough` — propagates distribution through stateless per-row steps
-  (`ExpressionStep`, `FilterStep`, `BuildRuntimeFilterStep`), translating distribution
+- `DistributionPassthrough` — propagates distribution through steps that run on any split
+  of their input (`ExpressionStep`, `FilterStep`, `BuildRuntimeFilterStep`, a preliminary
+  `DistinctStep`), translating distribution
   and sort columns through the step's `ActionsDAG` and creating sorted passthrough
   variants; expressions with per-block or non-deterministic functions stay single-node
 
@@ -464,7 +503,10 @@ The lists below use class names; `getName` log names may omit the `Implementatio
   `ShuffleExchange`, `ScatterExchange` (keyed, or column-less round-robin for a
   multi-node requirement with no partitioning constraint). Produces both regular
   and sorted-merge gather variants.
-- `SortingEnforcer` — adds `SortingStep` with required sort description.
+- `SortingEnforcer` — adds `SortingStep` with the required sort description. It also
+  closes stream-layout gaps: for a `Disjoint` requirement whose columns cover a prefix of
+  the sort it builds the sort partitioned by those columns (streams stay split per
+  partition), otherwise a plain sort whose single merged stream satisfies every layout.
 
 **Key files**: `Rules/*.cpp`, `DagNameTranslation.h/cpp`
 
@@ -559,27 +601,22 @@ branch-and-bound pruning as the primary bound.
 1. **Decouple statistics** from pre-Cascades code.
 2. **Convergence detection and sound branch-and-bound pruning** instead of relying on
    the fail-closed task budget alone.
-3. **Pruned expressions keep no cost**: same-group best-cost pruning drops an
-   expression before its cost is recorded, but plan extraction considers only costed
-   expressions as acyclic fallbacks for self-referential enforcers. A cheaper
-   over-providing enforcer can therefore prune the only fallback a later composition
-   needs. Recording the cost before the early return closes the gap.
 
 ### Cost Model
 
-4. **Range selectivity over aggregate results**: a `HAVING` range predicate
+3. **Range selectivity over aggregate results**: a `HAVING` range predicate
    (`sum(x) > c`) gets the same default factor as a base-column range, which can
    overestimate it by orders of magnitude; no statistics can exist for an aggregate
    output.
-5. **`arrayJoin` fan-out**: an `ExpressionStep` with `arrayJoin` grows the row count,
+4. **`arrayJoin` fan-out**: an `ExpressionStep` with `arrayJoin` grows the row count,
    which is not estimated yet.
-6. **Build-side choice of a shuffle join is a near-tie**: with the build priced as
+5. **Build-side choice of a shuffle join is a near-tie**: with the build priced as
    parallel work, the two orientations of a shuffle join differ by well under a
    percent, so the chosen build side is effectively arbitrary. Measured plans show the
    orientations perform alike, but the choice can flip between runs and builds, which
    makes plan-shape tests fragile. A size-aware hash cost (a table beyond the cache
    costs more per row) would restore a principled asymmetry.
-7. **Scan-volume refinements**: the scan estimate charges every touched column at
+6. **Scan-volume refinements**: the scan estimate charges every touched column at
    granule volume. Measured scans show three bounded deviations: a size-only string
    predicate (`s <> ''`) reads only the string sizes; a scattered point-key selection
    decompresses whole compression blocks per granule; and a lazily materialized
@@ -587,29 +624,26 @@ branch-and-bound pruning as the primary bound.
 
 ### Optimizer Features
 
-8. **`ReplicatedRead` validation and gating**: the rule assumes every worker sees the
+7. **`ReplicatedRead` validation and gating**: the rule assumes every worker sees the
    same complete table (shared storage) and has no hard size gate; an oversized
    replicated read loses only on cost.
-9. **Runtime bloom filter placement in Cascades**: the pre-Cascades pass may add
+8. **Runtime bloom filter placement in Cascades**: the pre-Cascades pass may add
    `BuildRuntimeFilterStep` and Cascades passes it through, but Cascades does not
    create or cost runtime-filter alternatives. The single biggest gap vs StarRocks.
-10. **Join ordering in Cascades**: the pre-Cascades join orderer already offers `dphyp`
+9. **Join ordering in Cascades**: the pre-Cascades join orderer already offers `dphyp`
    (inner joins) alongside `dpsub`, `dpsize`, and `greedy`; in an algorithm chain such as
    `dphyp,greedy`, unsupported cases fall through to the next algorithm. Cascades still
    receives a single fixed order; feeding the top k orders into the memo (the hybrid TOP-K
    of Gretscher & Dittrich, PVLDB 2025) is future work.
-11. **Window function distribution**: `WindowStep` currently goes through
-   `DefaultImplementation` at `{1 node}`. Needs a `WindowImplementation` rule
-   that sets distribution by PARTITION BY key.
-12. **CTE / common subplan sharing**: Detect `CommonSubplanReferenceStep` and
+10. **CTE / common subplan sharing**: Detect `CommonSubplanReferenceStep` and
    map to existing groups instead of cloning.
-13. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
+11. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
    functional dependencies from MergeTree keys.
-14. **Width through same-type value-changing functions**: a deterministic `String` ->
+12. **Width through same-type value-changing functions**: a deterministic `String` ->
    `String` function (`substring`, `hex`) keeps the source column's average width even
    though the bytes change; width preservation needs a value-pass-through rule separate
    from the NDV rule.
-15. **Reads from remote shards**: a read from a `Distributed` table (or the `remote`/
+13. **Reads from remote shards**: a read from a `Distributed` table (or the `remote`/
    `cluster` table functions) with genuinely remote shards is rejected up front
    (`checkStepSupportedByCascades`); localhost shards are inlined and planned normally.
    Supporting it as a coordinator-pinned single-task source is future work.

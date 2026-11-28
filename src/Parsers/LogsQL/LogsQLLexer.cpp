@@ -5,7 +5,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Poco/String.h>
 
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 #include <cstring>
 

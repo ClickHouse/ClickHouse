@@ -4,21 +4,18 @@ title: 'Gestion du TTL'
 sidebarTitle: 'Gestion du TTL'
 description: 'Gestion du TTL avec ClickStack'
 doc_type: 'guide'
-keywords: ['clickstack', 'ttl', 'rétention des données', 'cycle de vie', 'gestion du stockage']
+keywords: ['clickstack', 'ttl', 'conservation des données', 'cycle de vie', 'gestion du stockage']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import OtelLogsSchema from '/snippets/fr/clickstack/_schema_otel_logs.mdx';
 
-<div id="ttl-clickstack">
-  ## TTL dans ClickStack
-</div>
+## TTL dans ClickStack {#ttl-clickstack}
 
-Le time-to-live (TTL) est une fonctionnalité essentielle de ClickStack pour assurer une rétention et une gestion efficaces des données, en particulier compte tenu des volumes considérables de données générées en continu. Le TTL permet l’expiration et la suppression automatiques des données les plus anciennes, garantissant une utilisation optimale du stockage et le maintien des performances sans intervention manuelle. Cette capacité est essentielle pour alléger la base de données, réduire les coûts de stockage et garantir des requêtes rapides et efficaces en se concentrant sur les données les plus pertinentes et les plus récentes. De plus, elle aide à respecter les politiques de rétention des données en gérant systématiquement leur cycle de vie, ce qui renforce la durabilité et la scalabilité globales de la solution d’observability.
+Le time-to-live (TTL) est une fonctionnalité essentielle de ClickStack pour assurer une conservation et une gestion efficaces des données, en particulier compte tenu des volumes considérables de données générées en continu. Le TTL permet l’expiration et la suppression automatiques des données les plus anciennes, garantissant une utilisation optimale du stockage et le maintien des performances sans intervention manuelle. Cette capacité est essentielle pour alléger la base de données, réduire les coûts de stockage et garantir des requêtes rapides et efficaces en se concentrant sur les données les plus pertinentes et les plus récentes. De plus, elle aide à respecter les politiques de conservation des données en gérant systématiquement leur cycle de vie, ce qui renforce la durabilité et la scalabilité globales de la solution d’observability.
 
-**Par défaut, ClickStack conserve les données pendant 3 jours. Pour modifier ce paramètre, voir [&quot;Modification du TTL&quot;](#modifying-ttl).**
+**Par défaut, ClickStack conserve les données pendant 30 jours. Pour modifier ce paramètre, voir [&quot;Modification du TTL&quot;](#modifying-ttl).**
 
-Le TTL est contrôlé au niveau de la table dans ClickHouse. Par exemple, le schéma par défaut des logs est présenté ci-dessous ; `${TABLES_TTL}` est remplacé par la durée de rétention configurée (3 jours sauf modification) lorsque le collector crée la table :
+Le TTL est contrôlé au niveau de la table dans ClickHouse. Par exemple, le schéma par défaut des logs est présenté ci-dessous ; `${LOGS_TTL}` est remplacé par la durée de conservation configurée (30 jours sauf modification) lorsque le collector crée la table. Définissez `HYPERDX_OTEL_EXPORTER_TABLES_TTL` pour configurer la conservation commune à toutes les tables, ou remplacez-la pour certains signaux avec `HYPERDX_OTEL_EXPORTER_LOGS_TTL`, `HYPERDX_OTEL_EXPORTER_TRACES_TTL`, `HYPERDX_OTEL_EXPORTER_METRICS_TTL` et `HYPERDX_OTEL_EXPORTER_SESSIONS_TTL`. Lorsqu’un paramètre propre à un signal n’est pas défini, la conservation commune des tables s’applique.
 
 <OtelLogsSchema />
 
@@ -26,9 +23,13 @@ Le partitionnement dans ClickHouse permet de séparer logiquement les données s
 
 Comme le montre l’exemple ci-dessus, le partitionnement est spécifié sur une table lors de sa définition initiale via la clause `PARTITION BY`. Cette clause peut contenir une expression SQL sur une ou plusieurs colonnes, dont le résultat détermine vers quelle partition une ligne est envoyée. Les données sont ainsi logiquement associées (via un préfixe commun de nom de dossier) à chaque partition sur le disque, qui peut ensuite être interrogée isolément. Dans l’exemple ci-dessus, le schéma `otel_logs` par défaut partitionne les données par jour à l’aide de l’expression `toDate(Timestamp)`. À mesure que des lignes sont insérées dans ClickHouse, cette expression est évaluée pour chaque ligne et celle-ci est dirigée vers la partition correspondante si elle existe (si la ligne est la première d’une journée, la partition sera créée). Pour plus de détails sur le partitionnement et ses autres applications, voir [&quot;Partitions de table&quot;](/fr/concepts/core-concepts/partitions).
 
-<Image img="/images/use-cases/observability/observability-14.webp" alt="Partitions" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Partitions](/images/use-cases/observability/observability-14.webp)
+  </Frame>
+</div>
 
-Le schéma de la table inclut également `TTL toDateTime(Timestamp) + ${TABLES_TTL}` et le paramètre `ttl_only_drop_parts = 1`. La première clause garantit que les données seront supprimées une fois qu’elles dépassent le TTL configuré (3 jours par défaut). Le paramètre `ttl_only_drop_parts = 1` fait en sorte que seules les data parts dont toutes les données ont expiré soient supprimées (au lieu de tenter une suppression partielle des lignes). Comme le partitionnement garantit que les données de jours distincts ne sont jamais « fusionnées », elles peuvent ainsi être supprimées efficacement.
+Le schéma de la table inclut également `TTL toDateTime(Timestamp) + ${LOGS_TTL}` et le paramètre `ttl_only_drop_parts = 1`. La première clause garantit que les données seront supprimées une fois qu’elles dépassent le TTL configuré (30 jours par défaut). Le paramètre `ttl_only_drop_parts = 1` fait en sorte que seules les data parts dont toutes les données ont expiré soient supprimées (au lieu de tenter une suppression partielle des lignes). Comme le partitionnement garantit que les données de jours distincts ne sont jamais « fusionnées », elles peuvent ainsi être supprimées efficacement.
 
 <Warning>
   **`ttl_only_drop_parts`**
@@ -41,11 +42,11 @@ Par défaut, les données dont le TTL a expiré sont supprimées lorsque ClickHo
 <Info>
   **Planification du TTL**
 
-  Les TTL ne sont pas appliqués immédiatement, mais selon une planification, comme indiqué ci-dessus. Le paramètre de table MergeTree `merge_with_ttl_timeout` définit le délai minimal, en secondes, avant de répéter une fusion avec suppression TTL. La valeur par défaut est de 14400 secondes (4 heures). Mais il ne s’agit que du délai minimal ; le déclenchement d’une fusion TTL peut prendre plus de temps. Si la valeur est trop faible, cela entraînera de nombreuses fusions hors planification susceptibles de consommer beaucoup de ressources. Une expiration TTL peut être forcée à l’aide de la commande `ALTER TABLE my_table MATERIALIZE TTL`.
+  Les TTL ne sont pas appliqués immédiatement, mais selon une planification, comme indiqué ci-dessus. Le paramètre de table MergeTree `merge_with_ttl_timeout` définit le délai minimal, en secondes, avant de répéter une fusion avec suppression TTL. La valeur par défaut est de 14400 secondes (4 heures). Mais il ne s’agit que du délai minimal ; le déclenchement d’une fusion TTL peut prendre plus de temps. Si la valeur est trop faible, cela entraînera de nombreuses fusions hors planification susceptibles de consommer beaucoup de ressources. Une expiration TTL peut être forcée à l’aide de la commande `ALTER TABLE my_table MATERIALIZE TTL`.
 </Info>
 
 <div id="modifying-ttl">
-  ## Modification du TTL
+  ## Modification du TTL {#modifying-ttl}
 </div>
 
 Pour modifier le TTL, vous avez deux possibilités :
@@ -67,7 +68,7 @@ exporters:
 ```
 
 <div id="column-level-ttl">
-  ### TTL au niveau de la colonne
+  ### TTL au niveau de la colonne {#column-level-ttl}
 </div>
 
 Les exemples ci-dessus appliquent l’expiration des données au niveau de la table. Vous pouvez également définir une expiration au niveau de la colonne. À mesure que les données vieillissent, cela permet de supprimer les colonnes dont l’utilité dans les analyses ne justifie plus les ressources nécessaires à leur conservation. Par exemple, nous recommandons de conserver la colonne `Body` au cas où de nouvelles métadonnées dynamiques seraient ajoutées sans avoir été extraites au moment de l’insertion, par exemple un nouveau label Kubernetes. Après un certain temps, par exemple 1 mois, il peut devenir évident que ces métadonnées supplémentaires ne sont pas utiles, ce qui réduit l’intérêt de conserver la colonne `Body`.

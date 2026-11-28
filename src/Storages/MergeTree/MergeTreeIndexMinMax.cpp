@@ -3,6 +3,10 @@
 
 #include <Interpreters/ExpressionAnalyzer.h>
 
+#include <base/arithmeticOverflow.h>
+
+#include <limits>
+
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
@@ -226,6 +230,7 @@ bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
          KeyCondition::RPNElement::FUNCTION_NOT_IN_SET,
          KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE,
          KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON,
+         KeyCondition::RPNElement::FUNCTION_ATOM_GROUP,
          KeyCondition::RPNElement::FUNCTION_IS_NULL,
          KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL,
          KeyCondition::RPNElement::ALWAYS_FALSE});
@@ -270,21 +275,6 @@ MergeTreeIndexFormat MergeTreeIndexMinMax::getPhysicalFormat(
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
 
     return {0 /* unknown */, {}};
-}
-
-MergeTreeIndexSubstreams MergeTreeIndexMinMax::getAllSubstreamsInPart(
-    const MergeTreeDataPartChecksums & checksums,
-    const std::string & relative_path_prefix,
-    const IDataPartStorage * storage) const
-{
-    /// minmax format changed `.idx` (v1) -> `.idx2` (v2); a part may carry both. Return every
-    /// extension present, not just the preferred one, so cleanup does not miss the stale file.
-    MergeTreeIndexSubstreams substreams;
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
-        substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx2"});
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
-        substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx"});
-    return substreams;
 }
 
 MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_,
@@ -383,7 +373,11 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMax
     }
     else
     {
-        auto min_granules_to_select = n * index_granularity;
+        /// The product is a lower bound on how many granules to keep, so it saturates instead of wrapping.
+        size_t min_granules_to_select = 0;
+        if (common::mulOverflow(n, index_granularity, min_granules_to_select))
+            min_granules_to_select = std::numeric_limits<size_t>::max();
+
         auto threshold = queue.top();
         for (size_t i = 0; i < min_granules_to_select && !queue.empty(); ++i)
         {
@@ -459,7 +453,11 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
     }
     else
     {
-        auto min_granules_to_select = n * index_granularity;
+        /// The product is a lower bound on how many granules to keep, so it saturates instead of wrapping.
+        size_t min_granules_to_select = 0;
+        if (common::mulOverflow(n, index_granularity, min_granules_to_select))
+            min_granules_to_select = std::numeric_limits<size_t>::max();
+
         auto threshold = queue.top();
         for (size_t i = 0; i < min_granules_to_select && !queue.empty(); ++i)
         {

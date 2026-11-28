@@ -61,6 +61,7 @@
     {"prefix":"jemalloc_profile","mode":"token","target":"/reference/settings/session-settings/jemalloc-profile"},
     {"prefix":"local_filesystem","mode":"token","target":"/reference/settings/session-settings/local-filesystem"},
     {"prefix":"max_memory_usage","mode":"token","target":"/reference/settings/session-settings/max-memory-usage"},
+    {"prefix":"obfuscate_markov","mode":"token","target":"/reference/settings/session-settings/obfuscate-markov"},
     {"prefix":"optimize_rewrite","mode":"token","target":"/reference/settings/session-settings/optimize-rewrite"},
     {"prefix":"optimize_trivial","mode":"token","target":"/reference/settings/session-settings/optimize-trivial"},
     {"prefix":"schema_inference","mode":"token","target":"/reference/settings/session-settings/schema-inference"},

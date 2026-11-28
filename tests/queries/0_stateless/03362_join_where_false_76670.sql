@@ -7,7 +7,6 @@ CREATE TABLE t1(x Int) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t0 SELECT number FROM numbers(10);
 INSERT INTO t1 SELECT number + 2 FROM numbers(10);
 
-SET enable_analyzer = 1;
 SET query_plan_convert_outer_join_to_inner_join = 1; -- CI may inject False; WHERE false on RIGHT JOIN not converted before ON expression validation → INVALID_JOIN_ON_EXPRESSION on first query which should succeed
 
 SELECT * FROM t1

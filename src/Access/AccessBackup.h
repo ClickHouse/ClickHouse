@@ -11,7 +11,7 @@ class AccessControl;
 enum class AccessEntityType : uint8_t;
 struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
-class AccessRightsElements;
+class AccessRights;
 class IAccessStorage;
 class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
@@ -69,9 +69,9 @@ public:
     /// Loads access entities from the backup.
     void loadFromBackup();
 
-    /// Checks that the current user can do restoring.
-    /// Function loadFromBackup() must be called before that.
-    AccessRightsElements getRequiredAccess() const;
+    /// Returns the access required to restore the loaded entities.
+    /// `loadFromBackup` must be called first.
+    [[nodiscard]] AccessRights getRequiredAccess() const;
 
     /// Generates random IDs for access entities we're restoring to insert them into an access storage;
     /// and finds IDs of existing access entities which are used as dependencies.
@@ -79,9 +79,19 @@ public:
 
     /// Returns access entities loaded from backup and prepared for insertion into an access storage.
     /// Both functions loadFromBackup() and generateRandomIDsAndResolveDependencies() must be called before that.
-    AccessEntitiesToRestore getEntitiesToRestore(const String & data_path_in_backup) const;
+    [[nodiscard]] AccessEntitiesToRestore getEntitiesToRestore(const String & data_path_in_backup) const;
+
+    /// Returns every access entity selected from the backup, including the ones not restored because they exist,
+    /// with dependencies resolved. generateRandomIDsAndResolveDependencies() must be called before that.
+    [[nodiscard]] std::vector<std::pair<UUID, AccessEntityPtr>> getEntitiesFromBackup() const;
+
+    /// Returns a copy which resolves without throwing on existing or missing entities. Call after loadFromBackup(), before resolving.
+    [[nodiscard]] AccessRestorerFromBackup makeCopyForChecking() const;
 
 private:
+    AccessRestorerFromBackup(
+        const AccessRestorerFromBackup & src, RestoreAccessCreationMode creation_mode_, bool skip_unresolved_dependencies_);
+
     const BackupPtr backup;
     const RestoreAccessCreationMode creation_mode;
     const bool skip_unresolved_dependencies;
@@ -127,6 +137,10 @@ private:
         /// `CREATE USER user1 DEFAULT ROLE role1`, then `is_dependent=true` for `user1`.
         /// This flags is set by generateRandomIDsAndResolveDependencies().
         bool is_dependent = false;
+
+        /// Whether this entity was loaded to be restored but is not restored because it exists already.
+        /// This flag is set by generateRandomIDsAndResolveDependencies().
+        bool exists = false;
 
         /// New UUID for this entity - either randomly generated or copied from an existing entity.
         /// This UUID is assigned by generateRandomIDsAndResolveDependencies().

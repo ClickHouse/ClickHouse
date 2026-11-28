@@ -8,8 +8,6 @@
 -- planner either falls back to another enabled algorithm or reports it cleanly as a
 -- query exception.
 
-SET enable_analyzer = 1;
-
 -- full_sorting_merge is the only enabled algorithm and cannot do SEMI/ANTI. Assert via
 -- EXPLAIN: the fix declines at planning time so EXPLAIN already errors, while the unfixed
 -- server builds the plan and only errors later at execution (so its EXPLAIN succeeds).

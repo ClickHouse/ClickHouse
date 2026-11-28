@@ -39,6 +39,11 @@ else ()
     set (SNAPPY_HAVE_NEON 0)
 endif ()
 
+# The RISC-V vector paths require a vector-enabled target (-march=rv64gcv), which the
+# riscv64 build does not use.
+set (SNAPPY_RVV_1 0)
+set (SNAPPY_RVV_0_7 0)
+
 configure_file(
   "${SOURCE_DIR}/cmake/config.h.in"
   "${CMAKE_CURRENT_BINARY_DIR}/config.h")

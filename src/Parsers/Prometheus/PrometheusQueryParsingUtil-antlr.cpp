@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/checkStackSize.h>
 #include <Common/isValidUTF8.h>
 
 #include "config.h"
@@ -70,9 +71,9 @@ namespace
             }
         }
 
-        bool hasError() const { return !error_message.empty(); }
-        size_t getErrorPos() const { return error_pos; }
-        const String & getErrorMessage() const { return error_message; }
+        [[nodiscard]] bool hasError() const { return !error_message.empty(); }
+        [[nodiscard]] size_t getErrorPos() const { return error_pos; }
+        [[nodiscard]] const String & getErrorMessage() const { return error_message; }
 
     protected:
         void syntaxError(antlr4::Recognizer * /* recognizer */, antlr4::Token * offending_symbol,
@@ -101,7 +102,7 @@ namespace
 
         /// ANTLR4's lexer returns the position of an error as a line number and a position in that line;
         /// we need to convert them to a byte offset.
-        size_t convertLineAndPositionInLine(size_t line, size_t position_in_line) const
+        [[nodiscard]] size_t convertLineAndPositionInLine(size_t line, size_t position_in_line) const
         {
             size_t char_index = 0;
             if (line != 1)
@@ -135,75 +136,104 @@ namespace
     /// byte. Only the first error is ever reported and a parse with a recorded error always fails,
     /// so lexing the remainder is wasted work - a megabyte of NUL bytes used to keep a thread busy
     /// for minutes, uncancellable because parsing happens during query analysis.
-    /// It also validates multiline STRING tokens as they are emitted, before a later lexer or parser
-    /// error can hide an earlier invalid quoted string.
     class PromQLLexerBailingOutOnError : public antlr4_grammars::PromQLLexer
     {
     public:
-        explicit PromQLLexerBailingOutOnError(
-            antlr4::CharStream * input_, std::string_view promql_query_, ErrorListener & error_listener_)
-            : PromQLLexer(input_), promql_query(promql_query_), error_listener(error_listener_) {}
-
-        std::unique_ptr<antlr4::Token> nextToken() override
-        {
-            auto next_token = PromQLLexer::nextToken();
-            if (next_token->getType() == METRIC_NAME)
-            {
-                const auto token_text = next_token->getText();
-                if (token_text == "min_of" || token_text == "max_of")
-                    static_cast<antlr4::WritableToken *>(next_token.get())->setType(FUNCTION);
-            }
-
-            if (!error_listener.hasError() && next_token->getType() == STRING && next_token->getLine() != getLine())
-            {
-                const String token_text = next_token->getText();
-                if (!token_text.starts_with('`'))
-                {
-                    String parsed_string;
-                    String error_message;
-                    size_t error_pos = 0;
-                    if (!PrometheusQueryParsingUtil::tryParseStringLiteral(
-                            token_text, parsed_string, &error_message, &error_pos))
-                    {
-                        const size_t token_pos = convertCodePointPositionToByteOffset(promql_query, next_token->getStartIndex());
-                        error_listener.setError(error_message, token_pos + error_pos);
-                        stopLexing();
-                    }
-                }
-            }
-            if (!error_listener.hasError() && next_token->getType() == SL_COMMENT)
-            {
-                const String token_text = next_token->getText();
-                const bool terminated_by_line_end
-                    = !token_text.empty() && (token_text.back() == '\r' || token_text.back() == '\n');
-                if (!terminated_by_line_end
-                    && (token_text.size() < 2 || (token_text[1] != ' ' && token_text[1] != '!')))
-                {
-                    const size_t token_pos = convertCodePointPositionToByteOffset(promql_query, next_token->getStartIndex());
-                    error_listener.setError("PromQL line comment at end of input must start with '# ' or '#!'", token_pos);
-                    stopLexing();
-                }
-            }
-
-            return next_token;
-        }
+        using antlr4_grammars::PromQLLexer::PromQLLexer;
 
         void recover(const antlr4::LexerNoViableAltException &) override
         {
             /// Pretend the input ended here, so that the lexer emits EOF and stops.
-            stopLexing();
-        }
-
-    private:
-        void stopLexing()
-        {
             antlr4::CharStream * stream = getInputStream();
             stream->seek(stream->size());
             hitEOF = true;
         }
+    };
 
-        std::string_view promql_query;
-        ErrorListener & error_listener;
+    /// A simulator that throws `TOO_DEEP_RECURSION` instead of overflowing the stack while it looks ahead to choose an alternative.
+    class ParserATNSimulatorCheckingStackSize : public antlr4::atn::ParserATNSimulator
+    {
+    public:
+        using antlr4::atn::ParserATNSimulator::ParserATNSimulator;
+
+    protected:
+        void closureCheckingStopState(
+            const std::shared_ptr<antlr4::atn::ATNConfig> & config,
+            antlr4::atn::ATNConfigSet * configs,
+            antlr4::atn::ATNConfig::Set & closure_busy,
+            bool collect_predicates,
+            bool full_ctx,
+            int depth,
+            bool treat_eof_as_epsilon) override
+        {
+            /// The lookahead leaves the rules ending at the same token one by one, each in a nested call, and it
+            /// does so before the parser enters any of those rules, so the checks of the parser don't help.
+            /// The grammar has no decision that looks ahead through nested rules; this guards against adding one.
+            checkStackSize();
+            antlr4::atn::ParserATNSimulator::closureCheckingStopState(
+                config, configs, closure_busy, collect_predicates, full_ctx, depth, treat_eof_as_epsilon);
+        }
+    };
+
+    /// An error strategy that reports a syntax error as the stock one does, and then stops the parser instead of recovering.
+    /// Any syntax error fails the parse and only the first one is reported, so the recovery is wasted work. And it is
+    /// quadratic in the nesting depth: for every rule it leaves, the stock strategy walks all the enclosing rules,
+    /// e.g. once per unclosed parenthesis of `((...((1`.
+    class ErrorStrategyBailingOutOnError : public antlr4::DefaultErrorStrategy
+    {
+    public:
+        void reportError(antlr4::Parser * recognizer, const antlr4::RecognitionException & e) override
+        {
+            antlr4::DefaultErrorStrategy::reportError(recognizer, e);
+            throw antlr4::ParseCancellationException();
+        }
+
+    protected:
+        void reportUnwantedToken(antlr4::Parser * recognizer) override
+        {
+            antlr4::DefaultErrorStrategy::reportUnwantedToken(recognizer);
+            throw antlr4::ParseCancellationException();
+        }
+
+        bool singleTokenInsertion(antlr4::Parser * /* recognizer */) override
+        {
+            /// The stock function finds the tokens which can follow the missing one before it reports anything, and for that
+            /// it leaves the enclosing rules one by one, each in a nested call, in a function that has no place for a stack
+            /// check. So `---...---(1` overflowed the stack there, though the parser itself had passed its checks.
+            return false;
+        }
+    };
+
+    /// A parser that throws `TOO_DEEP_RECURSION` on a deeply nested query instead of overflowing the stack.
+    class PromQLParserCheckingStackSize : public antlr4_grammars::PromQLParser
+    {
+    public:
+        explicit PromQLParserCheckingStackSize(antlr4::TokenStream * input) : antlr4_grammars::PromQLParser(input)
+        {
+            setErrorHandler(std::make_shared<ErrorStrategyBailingOutOnError>());
+
+            /// The new simulator works on the same automaton and caches as the stock one:
+            /// they belong to the grammar, and `setInterpreter` destroys only the stock simulator.
+            const auto * const stock_simulator = getInterpreter<antlr4::atn::ParserATNSimulator>();
+            setInterpreter(new ParserATNSimulatorCheckingStackSize(
+                this, stock_simulator->atn, stock_simulator->decisionToDFA, stock_simulator->getSharedContextCache()));
+        }
+
+        using antlr4_grammars::PromQLParser::enterRecursionRule;
+
+        /// The generated code enters every rule through one of these two functions,
+        /// so any recursion of the parser on nested rules passes a check.
+        void enterRule(antlr4::ParserRuleContext * localctx, size_t state, size_t rule_index) override
+        {
+            checkStackSize();
+            antlr4_grammars::PromQLParser::enterRule(localctx, state, rule_index);
+        }
+
+        void enterRecursionRule(antlr4::ParserRuleContext * localctx, size_t state, size_t rule_index, int precedence) override
+        {
+            checkStackSize();
+            antlr4_grammars::PromQLParser::enterRecursionRule(localctx, state, rule_index, precedence);
+        }
     };
 
     [[noreturn]] void throwInconsistentSchema(std::string_view context_name, std::string_view token)
@@ -513,7 +543,7 @@ namespace
             return matcher;
         }
 
-        bool matcherMatchesEmptyString(const Matcher & matcher) const
+        [[nodiscard]] bool matcherMatchesEmptyString(const Matcher & matcher) const
         {
             switch (matcher.matcher_type)
             {
@@ -880,19 +910,32 @@ namespace
 
         Node * makeFunction(antlr4_grammars::PromQLParser::Function_Context * ctx, const std::vector<Node *> & arguments)
         {
-            auto * function_name_ctx = ctx->FUNCTION();
-            if (!function_name_ctx)
-                throwInconsistentSchema("Function", ctx->getText());
-
-            auto function_name = getText(function_name_ctx);
-            return makeFunction(function_name, arguments);
+            if (auto * function_name_ctx = ctx->FUNCTION())
+            {
+                const auto function_name = getText(function_name_ctx);
+                if ((function_name == "step" || function_name == "range") && !arguments.empty())
+                {
+                    error_listener.setError(
+                        fmt::format("Function '{}' expects no arguments", function_name),
+                        getStartPos(function_name_ctx));
+                    return nullptr;
+                }
+                return makeFunction(function_name, arguments);
+            }
+            if (ctx->START())
+                return makeFunction("start", arguments);
+            if (ctx->END())
+                return makeFunction("end", arguments);
+            throwInconsistentSchema("Function", ctx->getText());
         }
 
         /// Returns the result type of a function.
         ResultType getFunctionResultType(std::string_view function_name)
         {
             if (function_name == "scalar" || function_name == "time" || function_name == "pi"
-                || function_name == "min_of" || function_name == "max_of")
+                || function_name == "min_of" || function_name == "max_of"
+                || function_name == "start" || function_name == "end"
+                || function_name == "step" || function_name == "range")
                 return ResultType::SCALAR;
             else
                 return ResultType::INSTANT_VECTOR;
@@ -942,6 +985,22 @@ namespace
         }
 
         /// ANTLR visitors:
+
+        /// The check in the parser doesn't limit the depth of the parse tree: a chain of left-associative
+        /// operators like `1+1+...+1` is parsed in a loop, and its tree is as deep as the chain is long.
+        /// A visitor descends into a child through one of these two functions.
+        std::any visit(antlr4::tree::ParseTree * tree) override
+        {
+            checkStackSize();
+            return antlr4_grammars::PromQLParserBaseVisitor::visit(tree);
+        }
+
+        std::any visitChildren(antlr4::tree::ParseTree * node) override
+        {
+            checkStackSize();
+            return antlr4_grammars::PromQLParserBaseVisitor::visitChildren(node);
+        }
+
         std::any visitLiteral(antlr4_grammars::PromQLParser::LiteralContext * ctx) override
         {
             if (auto * number_ctx = ctx->NUMBER())
@@ -975,7 +1034,7 @@ namespace
             if (!res_node)
             {
                 chassert(error_listener.hasError());
-                return nullptr;
+                return {};
             }
 
             auto * offset_op_ctx = ctx->offsetOp();
@@ -1154,19 +1213,34 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
     ErrorListener error_listener{input};
     antlr4::ANTLRInputStream input_stream{input};
 
-    PromQLLexerBailingOutOnError promql_lexer{&input_stream, input, error_listener};
+    PromQLLexerBailingOutOnError promql_lexer{&input_stream};
     promql_lexer.removeErrorListeners();
     promql_lexer.addErrorListener(&error_listener);
 
     antlr4::CommonTokenStream token_stream{&promql_lexer};
 
-    antlr4_grammars::PromQLParser promql_parser{&token_stream};
+    PromQLParserCheckingStackSize promql_parser{&token_stream};
     promql_parser.removeErrorListeners();
     promql_parser.addErrorListener(&error_listener);
 
     antlr4_grammars::PromQLParser::ExpressionContext * expression = nullptr;
     if (!error_listener.hasError())
-        expression = promql_parser.expression();
+    {
+        try
+        {
+            expression = promql_parser.expression();
+        }
+        catch (const antlr4::ParseCancellationException &)
+        {
+            /// The parser stopped at a syntax error, which `error_listener` has already recorded.
+            chassert(error_listener.hasError());
+            if (error_message)
+                *error_message = error_listener.getErrorMessage();
+            if (error_pos)
+                *error_pos = error_listener.getErrorPos();
+            return false;
+        }
+    }
 
     if (!expression)
         error_listener.setError("Couldn't get an expression after parsing promql query", 0);

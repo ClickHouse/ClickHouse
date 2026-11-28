@@ -173,7 +173,7 @@ void registerInputFormatProtobuf(FormatFactory & factory)
                     settings.protobuf.input_flatten_google_wrappers,
                     settings.protobuf.oneof_presence,
                     settings.protobuf.google_protos_path);
-            });
+            }, /*supports_reset_parser=*/ true);
         factory.markFormatSupportsSubsetOfColumns(with_length_delimiter ? "Protobuf" : "ProtobufSingle");
     }
 
@@ -213,7 +213,7 @@ message MessageType {
 
 ClickHouse tries to find a column named `x.y.z` (or `x_y_z` or `X.y_Z` and so on).
 
-Nested messages are suitable for input or output of a [nested data structures](/reference/data-types/nested-data-structures).
+Nested messages are suitable for input or output of a [nested data structures](/reference/data-types/nested-data-structures/index).
 
 For **mapped** fields that are missing on the wire:
 
@@ -300,9 +300,7 @@ message MessageType {
 };
 ```
 
-<details>
-<summary>Generating the binary file</summary>
-
+<Accordion title="Generating the binary file">
 If you already know how to serialize and deserialize data in the `Protobuf` format, you can skip this step.
 
 We'll use Python to serialize some data into `protobuf_message.bin` and read it into ClickHouse.
@@ -413,8 +411,7 @@ Run the script to generate the binary file:
 ```bash
 python generate_protobuf_data.py
 ```
-
-</details>
+</Accordion>
 
 Create a ClickHouse table matching the schema:
 
@@ -516,7 +513,7 @@ TRUNCATE TABLE test.protobuf_messages;
 ```
 
 Insert the data into ClickHouse Cloud, specifying the schema as a query to run.
-Send this insert over the [HTTP interface](/concepts/features/interfaces/http#insert-protobuf), where the server parses the data and runs the schema query: `clickhouse client` parses input data on the client side, where the schema query fails.
+Send this insert over the [HTTP interface](/concepts/features/connect-to-clickhouse/protocols/http#insert-protobuf), where the server parses the data and runs the schema query: `clickhouse client` parses input data on the client side, where the schema query fails.
 curl's `--url-query` option (curl 7.87 and later) URL-encodes each parameter, so the query and the schema query can be written as they are:
 
 ```bash
@@ -581,8 +578,6 @@ SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
 
     factory.setDocumentation("ProtobufSingle", Documentation{
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 <CloudNotSupportedBadge/>
 
 | Input | Output | Alias |

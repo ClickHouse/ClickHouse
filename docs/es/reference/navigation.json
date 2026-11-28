@@ -1,18 +1,17 @@
 {
-  "icon": "/images/icons/icon-reference.svg",
-  "item": "Referencia",
+  "item": "Reference",
   "pages": [
     "es/reference/home",
     {
       "expandable": true,
       "expanded": true,
-      "group": "Referencia de SQL",
+      "group": "SQL Reference",
       "pages": [
         "es/reference/syntax",
         {
           "expandable": true,
           "expanded": false,
-          "group": "Sentencias",
+          "group": "Statements",
           "pages": [
             "es/reference/statements/index",
             {
@@ -26,6 +25,7 @@
                 "es/reference/statements/alter/comment",
                 "es/reference/statements/alter/constraint",
                 "es/reference/statements/alter/database-comment",
+                "es/reference/statements/alter/database-setting",
                 "es/reference/statements/alter/delete",
                 "es/reference/statements/alter/named-collection",
                 "es/reference/statements/alter/order-by",
@@ -66,7 +66,7 @@
                     "es/reference/statements/create/dictionary/lifetime",
                     {
                       "expanded": false,
-                      "group": "Diseños",
+                      "group": "Layouts",
                       "pages": [
                         "es/reference/statements/create/dictionary/layouts/overview",
                         "es/reference/statements/create/dictionary/layouts/flat",
@@ -78,6 +78,7 @@
                         "es/reference/statements/create/dictionary/layouts/range-hashed",
                         "es/reference/statements/create/dictionary/layouts/hierarchical",
                         "es/reference/statements/create/dictionary/layouts/naive-bayes",
+                        "es/reference/statements/create/dictionary/layouts/xgboost",
                         "es/reference/statements/create/dictionary/layouts/polygon",
                         "es/reference/statements/create/dictionary/layouts/ip-trie",
                         "es/reference/statements/create/dictionary/layouts/regexp-tree"
@@ -85,7 +86,7 @@
                     },
                     {
                       "expanded": false,
-                      "group": "Fuentes",
+                      "group": "Sources",
                       "pages": [
                         "es/reference/statements/create/dictionary/sources/overview",
                         "es/reference/statements/create/dictionary/sources/local-file",
@@ -176,6 +177,7 @@
                 "es/reference/statements/select/qualify",
                 "es/reference/statements/select/replace_modifier",
                 "es/reference/statements/select/sample",
+                "es/reference/statements/select/shuffle",
                 "es/reference/statements/select/union",
                 "es/reference/statements/select/where",
                 "es/reference/statements/select/with"
@@ -185,6 +187,7 @@
             "es/reference/statements/set",
             "es/reference/statements/show",
             "es/reference/statements/system",
+            "es/reference/statements/transactions",
             "es/reference/statements/truncate",
             "es/reference/statements/undrop",
             "es/reference/statements/update",
@@ -194,11 +197,9 @@
         {
           "expandable": true,
           "expanded": false,
-          "group": "Operadores",
+          "group": "Operators",
           "pages": [
-            "es/reference/operators/index",
-            "es/reference/operators/exists",
-            "es/reference/operators/distributed-ddl"
+            "es/reference/operators/index"
           ]
         }
       ]
@@ -206,12 +207,12 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Tipos de datos",
+      "group": "Data Types",
       "pages": [
         "es/reference/data-types/index",
         {
           "expanded": false,
-          "group": "Tipos numéricos",
+          "group": "Numeric types",
           "pages": [
             "es/reference/data-types/int-uint",
             "es/reference/data-types/float",
@@ -221,7 +222,7 @@
         },
         {
           "expanded": false,
-          "group": "Tipos de cadena",
+          "group": "String types",
           "pages": [
             "es/reference/data-types/string",
             "es/reference/data-types/fixedstring"
@@ -229,7 +230,7 @@
         },
         {
           "expanded": false,
-          "group": "Tipos de fecha y hora",
+          "group": "Date and time types",
           "pages": [
             "es/reference/data-types/date",
             "es/reference/data-types/date32",
@@ -241,7 +242,7 @@
         },
         {
           "expanded": false,
-          "group": "Tipos de red",
+          "group": "Network types",
           "pages": [
             "es/reference/data-types/ipv4",
             "es/reference/data-types/ipv6"
@@ -249,7 +250,7 @@
         },
         {
           "expanded": false,
-          "group": "Tipos compuestos",
+          "group": "Composite types",
           "pages": [
             "es/reference/data-types/array",
             "es/reference/data-types/tuple",
@@ -259,7 +260,7 @@
         },
         {
           "expanded": false,
-          "group": "Tipos semiestructurados",
+          "group": "Semi-structured types",
           "pages": [
             "es/reference/data-types/newjson",
             "es/reference/data-types/dynamic",
@@ -268,7 +269,7 @@
         },
         {
           "expanded": false,
-          "group": "Tipos que admiten valores nulos y tipos opcionales",
+          "group": "Nullable and optional types",
           "pages": [
             "es/reference/data-types/nullable",
             "es/reference/data-types/lowcardinality"
@@ -276,7 +277,7 @@
         },
         {
           "expanded": false,
-          "group": "Tipos especializados",
+          "group": "Specialized types",
           "pages": [
             "es/reference/data-types/uuid",
             "es/reference/data-types/enum",
@@ -287,7 +288,7 @@
         },
         {
           "expanded": false,
-          "group": "Tipos de funciones de agregación",
+          "group": "Aggregate function types",
           "pages": [
             "es/reference/data-types/aggregatefunction",
             "es/reference/data-types/simpleaggregatefunction"
@@ -295,7 +296,7 @@
         },
         {
           "expanded": false,
-          "group": "Tipos de datos especiales",
+          "group": "Special Data Types",
           "pages": [
             "es/reference/data-types/special-data-types/index",
             "es/reference/data-types/special-data-types/expression",
@@ -305,7 +306,7 @@
           ]
         },
         {
-          "group": "Codificación binaria",
+          "group": "Binary encoding",
           "pages": [
             "es/reference/data-types/data-types-binary-encoding"
           ]
@@ -315,17 +316,17 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Motores",
+      "group": "Engines",
       "pages": [
         "es/reference/engines/engines",
         {
           "expanded": false,
-          "group": "Motores de tabla",
+          "group": "Table Engines",
           "pages": [
             "es/reference/engines/table-engines/index",
             {
               "expanded": false,
-              "group": "Integraciones",
+              "group": "Integrations",
               "pages": [
                 "es/reference/engines/table-engines/integrations/index",
                 "es/reference/engines/table-engines/integrations/arrowflight",
@@ -333,6 +334,7 @@
                 "es/reference/engines/table-engines/integrations/azureBlobStorage",
                 "es/reference/engines/table-engines/integrations/bigquery",
                 "es/reference/engines/table-engines/integrations/deltalake",
+                "es/reference/engines/table-engines/integrations/elasticsearch",
                 "es/reference/engines/table-engines/integrations/embedded-rocksdb",
                 "es/reference/engines/table-engines/integrations/ExternalDistributed",
                 "es/reference/engines/table-engines/integrations/hdfs",
@@ -359,7 +361,7 @@
             },
             {
               "expanded": false,
-              "group": "Familia Log",
+              "group": "Log Family",
               "pages": [
                 "es/reference/engines/table-engines/log-family/index",
                 "es/reference/engines/table-engines/log-family/log",
@@ -369,7 +371,7 @@
             },
             {
               "expanded": false,
-              "group": "Familia MergeTree",
+              "group": "MergeTree Family",
               "pages": [
                 "es/reference/engines/table-engines/mergetree-family/index",
                 "es/reference/engines/table-engines/mergetree-family/mergetree",
@@ -388,7 +390,7 @@
             },
             {
               "expanded": false,
-              "group": "Especiales",
+              "group": "Special",
               "pages": [
                 "es/reference/engines/table-engines/special/index",
                 "es/reference/engines/table-engines/special/alias",
@@ -415,11 +417,12 @@
         },
         {
           "expanded": false,
-          "group": "Motores de base de datos",
+          "group": "Database Engines",
           "pages": [
             "es/reference/engines/database-engines/index",
             "es/reference/engines/database-engines/atomic",
             "es/reference/engines/database-engines/backup",
+            "es/reference/engines/database-engines/cluster",
             "es/reference/engines/database-engines/datalake",
             "es/reference/engines/database-engines/dictionary",
             "es/reference/engines/database-engines/filesystem",
@@ -428,6 +431,7 @@
             "es/reference/engines/database-engines/memory",
             "es/reference/engines/database-engines/mysql",
             "es/reference/engines/database-engines/ordinary",
+            "es/reference/engines/database-engines/overlay",
             "es/reference/engines/database-engines/postgresql",
             "es/reference/engines/database-engines/remote",
             "es/reference/engines/database-engines/replicated",
@@ -442,12 +446,12 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Funciones",
+      "group": "Functions",
       "pages": [
         "es/reference/functions/index",
         {
           "expanded": false,
-          "group": "Funciones convencionales",
+          "group": "Regular functions",
           "pages": [
             "es/reference/functions/regular-functions/overview",
             "es/reference/functions/regular-functions/ai-functions",
@@ -469,7 +473,7 @@
             "es/reference/functions/regular-functions/functions-for-nulls",
             {
               "expanded": false,
-              "group": "Geoespacial",
+              "group": "Geo",
               "pages": [
                 "es/reference/functions/regular-functions/geo/index",
                 "es/reference/functions/regular-functions/geo/coordinates",
@@ -513,7 +517,7 @@
         },
         {
           "expanded": false,
-          "group": "Funciones de agregación",
+          "group": "Aggregate Functions",
           "pages": [
             "es/reference/functions/aggregate-functions/index",
             "es/reference/functions/aggregate-functions/combinators",
@@ -521,7 +525,7 @@
             "es/reference/functions/aggregate-functions/parametric-functions",
             {
               "expanded": false,
-              "group": "Referencia",
+              "group": "Reference",
               "pages": [
                 "es/reference/functions/aggregate-functions/reference-index",
                 "es/reference/functions/aggregate-functions/aggThrow",
@@ -598,6 +602,7 @@
                 "es/reference/functions/aggregate-functions/maxIntersectionsPosition",
                 "es/reference/functions/aggregate-functions/maxMap",
                 "es/reference/functions/aggregate-functions/meanZTest",
+                "es/reference/functions/aggregate-functions/mergedJSONPatch",
                 "es/reference/functions/aggregate-functions/median",
                 "es/reference/functions/aggregate-functions/min",
                 "es/reference/functions/aggregate-functions/minMap",
@@ -639,6 +644,15 @@
                 "es/reference/functions/aggregate-functions/quantileTimingWeighted",
                 "es/reference/functions/aggregate-functions/quantilesTimingWeighted",
                 "es/reference/functions/aggregate-functions/rankCorr",
+                "es/reference/functions/aggregate-functions/regr_avgx",
+                "es/reference/functions/aggregate-functions/regr_avgy",
+                "es/reference/functions/aggregate-functions/regr_count",
+                "es/reference/functions/aggregate-functions/regr_intercept",
+                "es/reference/functions/aggregate-functions/regr_r2",
+                "es/reference/functions/aggregate-functions/regr_slope",
+                "es/reference/functions/aggregate-functions/regr_sxx",
+                "es/reference/functions/aggregate-functions/regr_sxy",
+                "es/reference/functions/aggregate-functions/regr_syy",
                 "es/reference/functions/aggregate-functions/simpleLinearRegression",
                 "es/reference/functions/aggregate-functions/singleValueOrNull",
                 "es/reference/functions/aggregate-functions/skewPop",
@@ -659,17 +673,38 @@
                 "es/reference/functions/aggregate-functions/sumMapWithOverflow",
                 "es/reference/functions/aggregate-functions/sumWithOverflow",
                 "es/reference/functions/aggregate-functions/theilsU",
+                "es/reference/functions/aggregate-functions/timeSeriesAvgToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesBottomKMasks",
                 "es/reference/functions/aggregate-functions/timeSeriesChangesToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesCountToGrid",
                 "es/reference/functions/aggregate-functions/timeSeriesDeltaToGrid",
                 "es/reference/functions/aggregate-functions/timeSeriesDerivToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesFirstToGrid",
                 "es/reference/functions/aggregate-functions/timeSeriesGroupArray",
+                "es/reference/functions/aggregate-functions/timeSeriesIncreaseToGrid",
                 "es/reference/functions/aggregate-functions/timeSeriesInstantDeltaToGrid",
                 "es/reference/functions/aggregate-functions/timeSeriesInstantRateToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesLastToGrid",
                 "es/reference/functions/aggregate-functions/timeSeriesLastTwoSamples",
+                "es/reference/functions/aggregate-functions/timeSeriesLimitKMasks",
+                "es/reference/functions/aggregate-functions/timeSeriesLinearRegressionToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesMadToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesMaxToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesMinToGrid",
                 "es/reference/functions/aggregate-functions/timeSeriesPredictLinearToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesPresentToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesQuantileToGrid",
                 "es/reference/functions/aggregate-functions/timeSeriesRateToGrid",
                 "es/reference/functions/aggregate-functions/timeSeriesResampleToGridWithStaleness",
                 "es/reference/functions/aggregate-functions/timeSeriesResetsToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesStddevToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesStdvarToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesSumToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesTimestampOfFirstToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesTimestampOfLastToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesTimestampOfMaxToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesTimestampOfMinToGrid",
+                "es/reference/functions/aggregate-functions/timeSeriesTopKMasks",
                 "es/reference/functions/aggregate-functions/topK",
                 "es/reference/functions/aggregate-functions/topKWeighted",
                 "es/reference/functions/aggregate-functions/uniq",
@@ -689,7 +724,7 @@
         },
         {
           "expanded": false,
-          "group": "Funciones de tabla",
+          "group": "Table functions",
           "pages": [
             "es/reference/functions/table-functions/index",
             "es/reference/functions/table-functions/arrowflight",
@@ -700,6 +735,7 @@
             "es/reference/functions/table-functions/deltalake",
             "es/reference/functions/table-functions/deltalakeCluster",
             "es/reference/functions/table-functions/dictionary",
+            "es/reference/functions/table-functions/elasticsearch",
             "es/reference/functions/table-functions/executable",
             "es/reference/functions/table-functions/eval",
             "es/reference/functions/table-functions/file",
@@ -746,6 +782,7 @@
             "es/reference/functions/table-functions/timeSeriesSamples",
             "es/reference/functions/table-functions/timeSeriesSelector",
             "es/reference/functions/table-functions/timeSeriesTags",
+            "es/reference/functions/table-functions/timeSeriesTimeRanges",
             "es/reference/functions/table-functions/url",
             "es/reference/functions/table-functions/urlCluster",
             "es/reference/functions/table-functions/values",
@@ -756,7 +793,7 @@
         },
         {
           "expanded": false,
-          "group": "Funciones de ventana",
+          "group": "Window functions",
           "pages": [
             "es/reference/functions/window-functions/index",
             "es/reference/functions/window-functions/cume_dist",
@@ -776,7 +813,7 @@
           ]
         },
         {
-          "group": "Funciones definidas por el usuario",
+          "group": "User Defined Functions",
           "pages": [
             "es/reference/functions/regular-functions/udf",
             "es/reference/functions/regular-functions/wasm_udf"
@@ -787,7 +824,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Formatos",
+      "group": "Formats",
       "pages": [
         "es/reference/formats/index",
         {
@@ -945,6 +982,7 @@
           ]
         },
         "es/reference/formats/SQLInsert",
+        "es/reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -968,13 +1006,14 @@
         },
         "es/reference/formats/Values",
         "es/reference/formats/Vertical",
+        "es/reference/formats/Vortex",
         "es/reference/formats/XML"
       ]
     },
     {
       "expandable": true,
       "expanded": false,
-      "group": "Configuración",
+      "group": "Settings",
       "pages": [
         "es/reference/settings/index",
         {
@@ -995,7 +1034,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Tablas del sistema",
+      "group": "System Tables",
       "pages": [
         "es/reference/system-tables/overview",
         "es/reference/system-tables/aggregate_function_combinators",
@@ -1020,9 +1059,11 @@
         "es/reference/system-tables/codecs",
         "es/reference/system-tables/collations",
         "es/reference/system-tables/columns",
+        "es/reference/system-tables/columns_cache",
         "es/reference/system-tables/completions",
         "es/reference/system-tables/constraints",
         "es/reference/system-tables/contributors",
+        "es/reference/system-tables/connections",
         "es/reference/system-tables/crash_log",
         "es/reference/system-tables/current_roles",
         "es/reference/system-tables/dashboards",
@@ -1070,6 +1111,7 @@
         "es/reference/system-tables/iceberg_files",
         "es/reference/system-tables/iceberg_history",
         "es/reference/system-tables/iceberg_metadata_log",
+        "es/reference/system-tables/iceberg_metadata_log_entries",
         "es/reference/system-tables/information_schema",
         "es/reference/system-tables/instrumentation",
         "es/reference/system-tables/jemalloc_arena_bins",
@@ -1178,7 +1220,7 @@
       ]
     },
     {
-      "group": "Lagos de datos",
+      "group": "Data Lakes",
       "pages": [
         "es/reference/datalakes"
       ]

@@ -15,7 +15,7 @@ doc_type: 'guide'
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-## 설명
+## 설명 {#description}
 
 `Protobuf` 형식은 [Protocol Buffers](https://protobuf.dev/) 형식입니다.
 
@@ -109,9 +109,9 @@ Enum(및 Enum8 또는 Enum16)에는 없음을 나타내는 0과 대상 테이블
 ClickHouse는 protobuf 메시지를 `length-delimited` 길이 구분 형식으로 입력하고 출력합니다.
 즉, 각 메시지 앞에 해당 메시지의 길이를 [가변 길이 정수(varint)](https://developers.google.com/protocol-buffers/docs/encoding#varints)로 기록해야 합니다.
 
-## 사용 예시
+## 사용 예시 {#example-usage}
 
-### 데이터 읽기 및 쓰기
+### 데이터 읽기 및 쓰기 {#basic-examples}
 
 <Note title="예시 파일">
   이 예시에서 사용하는 파일은 [examples 리포지토리](https://github.com/ClickHouse/formats/ProtoBuf)에서 확인할 수 있습니다.
@@ -274,9 +274,9 @@ SELECT * FROM test.protobuf_messages INTO OUTFILE 'protobuf_message_from_clickho
 
 Protobuf 스키마를 사용하면 이제 ClickHouse에서 파일 `protobuf_message_from_clickhouse.bin`에 기록된 데이터를 역직렬화할 수 있습니다.
 
-### ClickHouse Cloud에서 데이터 읽기 및 쓰기
+### ClickHouse Cloud에서 데이터 읽기 및 쓰기 {#basic-examples-cloud}
 
-ClickHouse Cloud에서는 Protobuf 스키마 파일을 업로드할 수 없습니다. 하지만 `format_protobuf_schema`
+ClickHouse Cloud에서는 Protobuf 스키마 파일을 업로드할 수 없습니다. 하지만 `format_schema_source`
 설정을 사용해 쿼리에서 스키마를 지정할 수 있습니다. 이 예시에서는 로컬
 머신에서 직렬화된 데이터를 읽어 ClickHouse Cloud의 테이블에 삽입하는 방법을 보여줍니다.
 
@@ -302,18 +302,18 @@ ORDER BY tuple()
 * &#39;string&#39;: `format_schema`는 스키마(schema)의 리터럴 내용입니다.
 * &#39;query&#39;: `format_schema`는 스키마(schema)를 가져오기 위한 쿼리입니다.
 
-### `format_schema_source='string'`
+### `format_schema_source='string'` {#format-schema-source-string}
 
 스키마를 문자열로 지정해 ClickHouse Cloud에 데이터를 삽입하려면 다음을 실행하십시오:
 
 ```bash
-cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO testing.protobuf_messages SETTINGS format_schema_source='syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};', format_schema='schemafile:MessageType' FORMAT Protobuf"
+cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO test.protobuf_messages SETTINGS format_schema_source='string', format_schema='syntax = \"proto3\";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};', format_schema_message_name='MessageType' FORMAT Protobuf"
 ```
 
 테이블에 삽입된 데이터를 조회하세요:
 
 ```bash
-clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
+clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM test.protobuf_messages"
 ```
 
 ```response
@@ -322,14 +322,14 @@ Javier Rodriguez 20001015 ['(555) 891-2046','(555) 738-5129']
 Mei Ling 19980616 ['(555) 956-1834','(555) 403-7682']
 ```
 
-### `format_schema_source='query'`
+### `format_schema_source='query'` {#format-schema-source-query}
 
-Protobuf 스키마를 테이블(table)에 저장할 수도 있습니다.
+Protobuf 스키마를 테이블에 저장할 수도 있습니다.
 
-데이터를 삽입할 ClickHouse Cloud 테이블을 생성합니다:
+ClickHouse Cloud에 데이터를 삽입할 테이블을 생성하십시오.
 
 ```sql
-CREATE TABLE testing.protobuf_schema (
+CREATE TABLE test.protobuf_schema (
   schema String
 )
 ENGINE = MergeTree()
@@ -337,19 +337,32 @@ ORDER BY tuple();
 ```
 
 ```sql
-INSERT INTO testing.protobuf_schema VALUES ('syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};');
+INSERT INTO test.protobuf_schema VALUES ('syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};');
 ```
 
-데이터를 ClickHouse Cloud에 삽입할 때 실행할 쿼리에서 스키마를 지정하세요:
+이전 예시를 실행했다면 아래 결과가 동일하게 나오도록 먼저 테이블을 비우십시오.
 
-```bash
-cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO testing.protobuf_messages SETTINGS format_schema_source='SELECT schema FROM testing.protobuf_schema', format_schema='schemafile:MessageType' FORMAT Protobuf"
+```sql
+TRUNCATE TABLE test.protobuf_messages;
 ```
 
-테이블에 삽입된 데이터를 조회하세요:
+스키마를 실행할 쿼리로 지정하여 데이터를 ClickHouse Cloud에 삽입합니다.
+이 삽입은 [HTTP 인터페이스](/ko/concepts/features/interfaces/http#insert-protobuf)를 통해 전송하십시오. HTTP 인터페이스에서는 서버가 데이터를 파싱하고 스키마 쿼리를 실행합니다. 반면 `clickhouse client`는 입력 데이터를 클라이언트 측에서 파싱하므로 스키마 쿼리가 실패합니다.
+curl의 `--url-query` 옵션(curl 7.87 이상)은 각 매개변수를 URL 인코딩하므로 쿼리와 스키마 쿼리를 그대로 작성하면 됩니다.
 
 ```bash
-clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
+curl 'https://<hostname>:8443/' --user 'default:<password>' \
+    --url-query 'query=INSERT INTO test.protobuf_messages FORMAT Protobuf' \
+    --url-query 'format_schema_source=query' \
+    --url-query 'format_schema=SELECT schema FROM test.protobuf_schema' \
+    --url-query 'format_schema_message_name=MessageType' \
+    --data-binary @protobuf_messages.bin
+```
+
+테이블에 삽입된 데이터를 조회합니다:
+
+```bash
+clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM test.protobuf_messages"
 ```
 
 ```response
@@ -358,7 +371,7 @@ Javier Rodriguez 20001015 ['(555) 891-2046','(555) 738-5129']
 Mei Ling 19980616 ['(555) 956-1834','(555) 403-7682']
 ```
 
-### 자동 생성된 스키마 사용
+### 자동 생성된 스키마 사용 {#using-autogenerated-protobuf-schema}
 
 데이터용 외부 Protobuf 스키마가 없더라도 자동 생성된 스키마를 사용해 데이터를 형식으로 출력하거나 입력할 수 있습니다. 이를 위해 `format_protobuf_use_autogenerated_schema` 설정을 사용합니다.
 
@@ -386,7 +399,7 @@ SELECT * FROM test.hits format Protobuf SETTINGS format_protobuf_use_autogenerat
 
 이 경우 자동 생성된 Protobuf 스키마가 `path/to/schema/schema.capnp` 파일에 저장됩니다.
 
-### Protobuf 캐시 삭제
+### Protobuf 캐시 삭제 {#drop-protobuf-cache}
 
 [`format_schema_path`](/ko/reference/settings/server-settings/settings/format#format_schema_path)에서 로드된 Protobuf 스키마를 다시 로드하려면 [`SYSTEM DROP ... FORMAT CACHE`](/ko/reference/statements/system#system-drop-schema-format) SQL 문을 사용하십시오.
 

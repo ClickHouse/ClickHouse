@@ -29,5 +29,9 @@
     <query tag='IPv4NumToStringClassC+IPv4StringToNum'>SELECT count() FROM ips_v4 WHERE NOT ignore(IPv4NumToStringClassC(IPv4StringToNum(materialize(ip)))) SETTINGS max_threads=1</query>
     <query tag='IPv4ToIPv6+IPv4StringToNum'>SELECT count() FROM ips_v4 WHERE NOT ignore(IPv4ToIPv6(IPv4StringToNum(materialize(ip)))) SETTINGS max_threads=1</query>
 
+    <query tag='toIPv4'>SELECT count() FROM ips_v4 WHERE NOT ignore(toIPv4(materialize(ip))) SETTINGS max_threads=1</query>
+    <query tag='toIPv4OrNull'>SELECT count() FROM ips_v4 WHERE NOT ignore(toIPv4OrNull(materialize(ip))) SETTINGS max_threads=1</query>
+    <query tag='toIPv4OrZero'>SELECT count() FROM ips_v4 WHERE NOT ignore(toIPv4OrZero(materialize(ip))) SETTINGS max_threads=1</query>
+
     <drop_query>DROP TABLE IF EXISTS ips_v4</drop_query>
 </test>

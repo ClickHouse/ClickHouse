@@ -5,7 +5,6 @@
 -- subcolumn in a join carrying the whole column: `NOT_FOUND_COLUMN_IN_BLOCK`.
 
 -- Correlated subqueries are supported by the analyzer only, so do not take the randomized value.
-SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 -- The bug needs the optimization that rewrites the function into a subcolumn read, and the last
 -- assertion below reads its plan, so pin it rather than take the randomized value.
@@ -51,7 +50,6 @@ DROP TABLE t_correlated_tuple;
 -- The same invariant for the chained rewrite of a JSON array element: the outer column of a
 -- correlated subquery keeps its whole-column read, while the same access to a column of the
 -- subquery's own table is still rewritten into the subcolumn.
-SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS t_correlated_json;
 CREATE TABLE t_correlated_json (json JSON) ENGINE = MergeTree ORDER BY tuple();

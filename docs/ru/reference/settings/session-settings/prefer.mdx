@@ -14,7 +14,7 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## prefer_column_name_to_alias
+## prefer_column_name_to_alias {#prefer_column_name_to_alias}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -74,15 +74,17 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 └────────┴─────────────┘
 ```
 
-## prefer_external_sort_block_bytes
+## prefer_external_sort_block_bytes {#prefer_external_sort_block_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "16744704"},{"label": "Предпочитать максимальный размер блока в байтах для внешней сортировки, чтобы уменьшить использование памяти при слиянии."}]}]} />
 
-Предпочитать максимальный размер блока в байтах для внешней сортировки, чтобы уменьшить использование памяти при слиянии.
+Предпочтительный размер блока в байтах для файлов сброса данных на диск, создаваемых внешними операциями `ORDER BY` и `DISTINCT`. Чем меньше блоки, тем ниже использование памяти при слиянии этих файлов.
 
-## prefer_global_in_and_join
+Размер блока оценивается по среднему размеру строки, поэтому блоки с необычно большими строками могут превышать это целевое значение. Установите `0`, чтобы размер блоков определялся только ограничением на количество строк.
+
+## prefer_global_in_and_join {#prefer_global_in_and_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -105,7 +107,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 * [Распределённые подзапросы](/ru/reference/statements/in#distributed-subqueries) — дополнительная информация об использовании `GLOBAL IN`/`GLOBAL JOIN`
 
-## prefer_localhost_replica
+## prefer_localhost_replica {#prefer_localhost_replica}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,7 +124,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
   Если она используется в кластере с одним сегментом и несколькими репликами, отключение этой настройки приведёт к нежелательным последствиям.
 </Note>
 
-## prefer_optimize_projection
+## prefer_optimize_projection {#prefer_optimize_projection}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -137,7 +139,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 * 0 — проекции выбираются по их оценочной стоимости.
 * 1 — подходящая проекция выбирается независимо от её оценочной стоимости.
 
-## prefer_warmed_unmerged_parts_seconds
+## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
 
 <CloudOnlyBadge />
 

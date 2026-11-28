@@ -4,6 +4,7 @@
 
 # A table over a named collection with `format = 'auto' NOT OVERRIDABLE` stores the inferred format as an override.
 # Loading the stored definition again accepts it; a definition the user writes keeps the lock.
+# A stored table that fails to load does not stop `clickhouse-local`, so the refusal on load is checked by a query to the table.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -63,7 +64,7 @@ ${CLICKHOUSE_LOCAL} --path="$dir/locked_value" --query "
     ALTER NAMED COLLECTION nv SET format = 'CSV' NOT OVERRIDABLE;
     SELECT 'created', count() FROM system.tables WHERE database = 'd';
 " < /dev/null
-expect_locked "$dir/locked_value" format "SELECT 'loaded'"
+expect_locked "$dir/locked_value" format "SELECT * FROM d.t"
 
 echo "-- a locked 'auto' of another key stays locked on load"
 ${CLICKHOUSE_LOCAL} --path="$dir/locked_key" --query "
@@ -73,7 +74,7 @@ ${CLICKHOUSE_LOCAL} --path="$dir/locked_key" --query "
     ALTER NAMED COLLECTION nk SET compression_method = 'auto' NOT OVERRIDABLE;
     SELECT 'created', count() FROM system.tables WHERE database = 'd';
 " < /dev/null
-expect_locked "$dir/locked_key" compression_method "SELECT 'loaded'"
+expect_locked "$dir/locked_key" compression_method "SELECT * FROM d.t"
 
 echo "-- 'structure' locked after the CREATE"
 ${CLICKHOUSE_LOCAL} --path="$dir/structure" --query "

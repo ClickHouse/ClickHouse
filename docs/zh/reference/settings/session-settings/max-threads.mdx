@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源文件](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="max_threads">
-  ## max_threads
-</div>
+## max_threads {#max_threads}
 
 <SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
@@ -36,17 +34,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 对于 ClickHouse Cloud 用户，默认值会显示为 `auto(N)`，其中 N 与你的服务的 vCPU 规格相匹配，例如 2vCPU/8GiB、4vCPU/16GiB 等。
 有关所有服务规格的列表，请参阅 Cloud Console 中的 Settings 选项卡。
 
-<div id="max_threads_for_indexes">
-  ## max_threads_for_indexes
-</div>
+## max_threads_for_indexes {#max_threads_for_indexes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 用于处理索引的最大线程数。
 
-<div id="max_threads_min_free_memory_per_thread">
-  ## max_threads_min_free_memory_per_thread
-</div>
+## max_threads_min_free_memory_per_thread {#max_threads_min_free_memory_per_thread}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -54,7 +48,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 当服务器处于内存压力下时，会降低 `max_threads`，以避免启动高度并行、且很可能触及内存限制的查询。
 
-空闲内存按服务器的 `max_server_memory_usage` 减去当前由全局 memory tracker 跟踪的内存来计算。如果该空闲内存小于 `max_threads` 与此值的乘积，则会将 `max_threads` 降低为满足 `N * value <= free_memory` 的最大 N，且最小值为 `1`。
+空闲内存按服务器的 `max_server_memory_usage` 减去当前由全局 memory tracker 跟踪的内存来计算。如果该空闲内存小于 `max_threads` 与此值的乘积，则会将 `max_threads` 降低为满足 `N * value <= free_memory` 的最大 N，且最小值为 `1`。每个查询仅在构建其执行计划时获取一次空闲内存，从而确保查询的各个部分都按相同的线程数进行规划。
 
 将其设为 `0` 可禁用此限制。
 

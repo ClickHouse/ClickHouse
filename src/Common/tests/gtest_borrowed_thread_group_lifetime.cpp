@@ -1,4 +1,5 @@
 #include <future>
+#include <stdexcept>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -42,6 +43,30 @@ std::unique_ptr<ThreadPool> makeSingleThreadPool()
         /*queue_size=*/ 10);
 }
 
+/// Its moved-from shell blocks in the destructor on any thread but `waiter`: the pool worker destroys that shell with the
+/// finished task, after the future became ready, so this holds open the window in which the task still exists.
+struct HoldTaskDestruction
+{
+    std::shared_future<void> release;
+    std::thread::id waiter;
+    bool moved_from = false;
+
+    HoldTaskDestruction(std::shared_future<void> release_, std::thread::id waiter_)
+        : release(std::move(release_)), waiter(waiter_) {}
+    HoldTaskDestruction(HoldTaskDestruction && other) noexcept
+        : release(other.release) // NOLINT(performance-move-constructor-init,cert-oop11-cpp): the shell keeps waiting on it
+        , waiter(other.waiter)
+    {
+        other.moved_from = true;
+    }
+    void operator()() {}
+    ~HoldTaskDestruction()
+    {
+        if (moved_from && std::this_thread::get_id() != waiter)
+            release.wait();
+    }
+};
+
 }
 
 /// The group is captured when a task is enqueued, on the scheduling thread - not when the runner
@@ -77,6 +102,230 @@ TEST(ThreadPoolCallbackRunner, UnsafeRunnerCapturesGroupAtEnqueueTime)
         creation_group.reset();
         EXPECT_TRUE(creation_group_weak.expired())
             << "a runner object must not keep the group current at its creation alive";
+    });
+    t.join();
+}
+
+/// A waiter woken by the future may end the query and free the trackers its group's tracker points to (the user's, in
+/// `ProcessList`), so the task must drop the group before the future is ready, not when the pool destroys the task.
+TEST(ThreadPoolCallbackRunner, UnsafeRunnerReleasesGroupBeforeFutureIsReady)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto pool = makeSingleThreadPool();
+
+        auto group = std::make_shared<ThreadGroup>(context, 0);
+        std::weak_ptr<ThreadGroup> group_weak = group;
+        std::promise<void> release;
+
+        CurrentThread::attachToGroupIfDetached(group);
+        auto runner = threadPoolCallbackRunnerUnsafe<void, HoldTaskDestruction>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto future = runner(HoldTaskDestruction(release.get_future().share(), std::this_thread::get_id()), Priority{});
+        CurrentThread::detachFromGroupIfNotDetached();
+        group.reset();
+
+        future.get();
+        const bool released_before_ready = group_weak.expired();
+        release.set_value();
+        pool->wait();
+
+        EXPECT_TRUE(released_before_ready) << "the task must drop its group before the future is ready";
+    });
+    t.join();
+}
+
+/// Same for a task the pool drops unrun on shutdown: it satisfies the promise from its destructor.
+TEST(ThreadPoolCallbackRunner, UnsafeRunnerDroppedTaskReleasesGroupBeforeFutureIsReady)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto pool = makeSingleThreadPool();
+
+        /// Occupy the only worker; when it throws, the pool shuts down and the worker drops the queued task unrun.
+        std::promise<void> blocker_started;
+        std::promise<void> unblock;
+        auto unblock_future = unblock.get_future().share();
+        pool->scheduleOrThrowOnError([&blocker_started, unblock_future]
+        {
+            blocker_started.set_value();
+            unblock_future.wait();
+            throw std::runtime_error("shut the pool down");
+        });
+        blocker_started.get_future().wait();
+
+        auto group = std::make_shared<ThreadGroup>(context, 0);
+        std::weak_ptr<ThreadGroup> group_weak = group;
+        std::promise<void> release;
+
+        CurrentThread::attachToGroupIfDetached(group);
+        auto runner = threadPoolCallbackRunnerUnsafe<void, HoldTaskDestruction>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto future = runner(HoldTaskDestruction(release.get_future().share(), std::this_thread::get_id()), Priority{});
+        CurrentThread::detachFromGroupIfNotDetached();
+        group.reset();
+
+        unblock.set_value();
+        EXPECT_THROW(future.get(), Exception);
+        const bool released_before_ready = group_weak.expired();
+        release.set_value();
+        EXPECT_THROW(pool->wait(), std::runtime_error);
+
+        EXPECT_TRUE(released_before_ready) << "a dropped task must drop its group before the future is ready";
+    });
+    t.join();
+}
+
+/// The runner's own state is allocated on the scheduling thread and usually freed by a detached pool thread, so it must
+/// not be charged to the query, or every task leaves its size charged to the query until the query ends.
+TEST(ThreadPoolCallbackRunner, UnsafeRunnerStateIsNotChargedToQuery)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto pool = makeSingleThreadPool();
+
+        auto group = std::make_shared<ThreadGroup>(context, 0);
+        constexpr size_t num_tasks = 100000;
+
+        CurrentThread::attachToGroupIfDetached(group);
+        auto runner = threadPoolCallbackRunnerUnsafe<void>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        for (size_t i = 0; i < num_tasks; ++i)
+            runner([] {}, Priority{}).get();
+        pool->wait();
+        /// Detaching flushes the untracked memory of this thread to the group.
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        const Int64 charged = group->memory_tracker.get();
+        EXPECT_LT(std::abs(charged), 1 << 17) << "the query is left charged " << charged << " bytes after " << num_tasks << " tasks";
+    });
+    t.join();
+}
+
+TEST(ThreadPoolCallbackRunner, LocalRunnerStateIsNotChargedToQuery)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto pool = makeSingleThreadPool();
+
+        auto group = std::make_shared<ThreadGroup>(context, 0);
+        constexpr size_t num_tasks = 100000;
+
+        CurrentThread::attachToGroupIfDetached(group);
+        {
+            ThreadPoolCallbackRunnerLocal<void> runner(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+            for (size_t i = 0; i < num_tasks; ++i)
+            {
+                runner.enqueueAndKeepTrack([] {});
+                runner.waitForAllToFinishAndRethrowFirstError();
+            }
+        }
+        pool->wait();
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        const Int64 charged = group->memory_tracker.get();
+        EXPECT_LT(std::abs(charged), 1 << 17) << "the query is left charged " << charged << " bytes after " << num_tasks << " tasks";
+    });
+    t.join();
+}
+
+/// What a throwing callback captured is the query's, so it must be released before the pool thread detaches.
+TEST(ThreadPoolCallbackRunner, LocalRunnerReleasesThrowingCallbackInQuery)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto pool = makeSingleThreadPool();
+
+        auto group = std::make_shared<ThreadGroup>(context, 0);
+
+        CurrentThread::attachToGroupIfDetached(group);
+        {
+            ThreadPoolCallbackRunnerLocal<void> runner(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+            runner.enqueueAndKeepTrack([buffer = std::vector<char>(8 << 20, 'x')] { throw std::runtime_error("callback failed"); });
+            EXPECT_THROW(runner.waitForAllToFinishAndRethrowFirstError(), std::runtime_error);
+        }
+        pool->wait();
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        const Int64 charged = group->memory_tracker.get();
+        EXPECT_LT(std::abs(charged), 1 << 20) << "the query is left charged " << charged << " bytes";
+    });
+    t.join();
+}
+
+/// A cancelled task never runs, but what its callback captured is still the query's.
+TEST(ThreadPoolCallbackRunner, LocalRunnerReleasesCancelledCallbackInQuery)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto pool = makeSingleThreadPool();
+        auto group = std::make_shared<ThreadGroup>(context, 0);
+
+        std::promise<void> started;
+        std::promise<void> unblock;
+        auto unblock_future = unblock.get_future().share();
+
+        CurrentThread::attachToGroupIfDetached(group);
+        {
+            ThreadPoolCallbackRunnerLocal<void> runner(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+            runner.enqueueAndKeepTrack([&started, unblock_future]
+            {
+                started.set_value();
+                unblock_future.wait();
+            });
+            started.get_future().wait();
+            auto task = runner.enqueueAndGiveOwnership([buffer = std::vector<char>(8 << 20, 'x')] {});
+
+            /// Cancel it while the worker is busy, like `cancelScheduledTasks` does (`SCHEDULED` is 0, `CANCELLED` is 3).
+            using TaskState = decltype(task->state.load());
+            auto expected = static_cast<TaskState>(0);
+            EXPECT_TRUE(task->state.compare_exchange_strong(expected, static_cast<TaskState>(3)));
+
+            unblock.set_value();
+            pool->wait();
+        }
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        const Int64 charged = group->memory_tracker.get();
+        EXPECT_LT(std::abs(charged), 1 << 20) << "the query is left charged " << charged << " bytes";
+    });
+    t.join();
+}
+
+/// A task the pool drops on shutdown reports an ordinary error, not a broken promise.
+TEST(ThreadPoolCallbackRunner, LocalRunnerDroppedTaskReportsCannotSchedule)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto pool = makeSingleThreadPool();
+
+        std::promise<void> started;
+        std::promise<void> unblock;
+        auto unblock_future = unblock.get_future().share();
+        pool->scheduleOrThrowOnError([&started, unblock_future]
+        {
+            started.set_value();
+            unblock_future.wait();
+            throw std::runtime_error("shut the pool down");
+        });
+        started.get_future().wait();
+
+        ThreadPoolCallbackRunnerLocal<void> runner(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto task = runner.enqueueAndGiveOwnership([] {});
+
+        unblock.set_value();
+        EXPECT_THROW(pool->wait(), std::runtime_error);
+        EXPECT_THROW(task->future.get(), Exception);
     });
     t.join();
 }

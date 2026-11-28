@@ -20,7 +20,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 * 내결함성 스토리지를 구성합니다.
 * 스트림이 준비되는 즉시 처리합니다.
 
-## 테이블 생성하기
+## 테이블 생성하기 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -62,10 +62,12 @@ SETTINGS
 
 필수 매개변수:
 
-* `kafka_broker_list` — 쉼표로 구분된 broker 목록입니다(예: `localhost:9092`).
+* `kafka_broker_list` — 쉼표로 구분된 브로커 목록입니다(예: `localhost:9092`).
 * `kafka_topic_list` — Kafka 토픽 목록입니다.
-* `kafka_group_name` — Kafka 컨슈머 그룹입니다. 읽기 오프셋은 각 그룹별로 개별 추적됩니다. 클러스터에서 메시지 중복을 원하지 않으면 모든 곳에서 동일한 그룹 이름을 사용하십시오.
+* `kafka_group_name` — Kafka 컨슈머 그룹입니다. 읽기 오프셋은 각 그룹별로 개별 추적됩니다. 클러스터에서 메시지 중복을 원하지 않으면 모든 곳에서 동일한 그룹 이름을 사용하십시오. 매크로 확장(예: `'consumers_{replica}'`)을 지원하므로, 각 레플리카가 자체 컨슈머 그룹을 사용해 모든 메시지를 읽도록 할 수 있습니다.
 * `kafka_format` — 메시지 포맷입니다. `JSONEachRow`와 같이 SQL `FORMAT` 함수와 동일한 표기법을 사용합니다. 자세한 내용은 [포맷](/ko/reference/formats/index) 섹션을 참조하십시오.
+
+`kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_client_id`, `kafka_schema`의 값은 매크로 확장을 지원합니다. `{database}`와 `{table}`은 해당 테이블의 데이터베이스 이름과 테이블 이름으로 대체되며, `{shard}`, `{replica}` 등 그 밖의 매크로는 서버의 `macros` 구성에서 가져옵니다.
 
 선택 매개변수:
 
@@ -105,6 +107,72 @@ SETTINGS
 * `kafka_map_virtual_columns_on_write` — 활성화하면 테이블 스키마에서 특수 이름 `_key`, `_timestamp`, `_headers.name`, `_headers.value`를 가진 컬럼이 해당 Kafka 메시지 메타데이터에 매핑되고, `INSERT` 시 메시지 페이로드에서 제외됩니다. 자세한 내용은 [컬럼을 Kafka 메시지 메타데이터에 매핑하기](#mapping-columns-to-kafka-message-metadata)를 참조하십시오. 기본값: `false`.
 * `kafka_partition_shard_num` — 정적 파티션-세그먼트 연결을 위한 현재 세그먼트 번호입니다. 1 이상 `kafka_shard_count` 이하여야 합니다. 파티션은 `partition_id % kafka_shard_count == kafka_partition_shard_num - 1` 수식으로 할당됩니다. 매크로 확장을 지원합니다(예: `'{shard}'`). `kafka_shard_count`와 함께 사용해야 합니다. StorageKafka2에서만 지원됩니다(`kafka_keeper_path` 및 `kafka_replica_name` 필요). 기본값: `''`(비활성화됨).
 * `kafka_shard_count` — 소비에 참여하는 총 세그먼트 수입니다. `kafka_partition_shard_num`과 함께 사용하여 파티션을 정적으로 할당합니다. `kafka_partition_shard_num`과 함께 사용해야 합니다. StorageKafka2에서만 지원됩니다. 기본값: `0`(비활성화됨).
+
+## 이름이 지정된 컬렉션을 사용한 TLS 및 SASL {#kafka-tls-sasl-named-collections}
+
+Kafka 테이블 엔진은 [librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) 설정 중 일부만 테이블 수준의 `kafka_*` 매개변수(예: `kafka_security_protocol`, `kafka_sasl_mechanism`, `kafka_sasl_username`, `kafka_sasl_password`)로 제공합니다. **TLS 인증서 경로, 개인 키, 키 비밀번호는 테이블 설정(table settings)이 아닙니다**. 이러한 항목은 확장 `librdkafka` 속성으로 구성하십시오.
+
+`ENGINE = Kafka(named_collection)`을 사용할 때는 다음과 같습니다.
+
+* 이름이 지정된 컬렉션의 최상위 `kafka_*` 키는 Kafka 테이블 엔진 설정(브로커, 토픽, 포맷 및 위에 나열된 프로토콜/SASL 설정)입니다.
+* `CREATE NAMED COLLECTION`에서 `kafka.` 접두사가 붙은 키나 XML에서 `<kafka>` 아래에 중첩된 키는 `librdkafka`로 전달됩니다. 이때 키 이름의 밑줄은 점으로 변환됩니다(예: `kafka.ssl_ca_location` → `ssl.ca.location`, 또는 `<kafka>` 아래의 `<ssl_ca_location>` → `ssl.ca.location`).
+
+이름이 지정된 컬렉션을 사용하면 **`config.xml`에 있는 서버 전역 `<kafka>` 블록은 머지되지 않습니다**. 따라서 각 컬렉션에는 테이블에 필요한 모든 확장 속성이 포함되어야 합니다. 여기에는 TLS 파일과, 비어 있지 않은 테이블 `SETTINGS`로 지정하지 않은 경우의 `security.protocol`도 포함됩니다.
+
+클라이언트 인증서를 사용하는 `SASL_SSL`의 일반적인 레이아웃(layout)은 다음과 같습니다. TLS 경로와 `ssl.key.password`는 이름이 지정된 컬렉션에 저장하고, `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format` 및 필요에 따라 `kafka_sasl_username` / `kafka_sasl_password`는 테이블의 `SETTINGS` 절에서 설정합니다. `kafka.security_protocol`과 `kafka_security_protocol`은 모두 `security.protocol`을 설정하며, 비어 있지 않은 테이블 설정이 우선 적용됩니다. 컬렉션에 해당 속성이 이미 저장되어 있으면 테이블 설정은 이름이 지정된 컬렉션 재정의로 처리됩니다. 이 경우 해당 컬렉션에 대한 `SHOW NAMED COLLECTIONS SECRETS` 권한이 필요하며, 키가 `NOT OVERRIDABLE`이면 `Override not allowed` 오류가 발생합니다. `kafka_sasl_mechanism`, `kafka_sasl_username`, `kafka_sasl_password`에도 동일한 규칙이 적용됩니다.
+
+예시(인증서 경로는 해당 테이블의 컨슈머를 실행하는 모든 ClickHouse 서버에 존재해야 합니다):
+
+```sql
+CREATE NAMED COLLECTION kafka_mtls AS
+    kafka.security_protocol = 'SASL_SSL',
+    kafka.sasl_mechanism = 'PLAIN',
+    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
+    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
+    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_key_password = 'secret';
+
+CREATE TABLE queue (
+    id UInt64,
+    payload String
+) ENGINE = Kafka(kafka_mtls)
+SETTINGS
+    kafka_broker_list = 'broker:9092',
+    kafka_topic_list = 'topic',
+    kafka_group_name = 'group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_username = 'user',
+    kafka_sasl_password = 'password';
+```
+
+XML로 정의한 이름이 지정된 컬렉션(named collection)에서 동일한 확장 설정을 지정하는 예시는 다음과 같습니다.
+
+```xml
+<clickhouse>
+    <named_collections>
+        <kafka_mtls>
+            <kafka>
+                <security_protocol>SASL_SSL</security_protocol>
+                <sasl_mechanism>PLAIN</sasl_mechanism>
+                <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
+                <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
+                <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
+                <ssl_key_password>secret</ssl_key_password>
+            </kafka>
+        </kafka_mtls>
+    </named_collections>
+</clickhouse>
+```
+
+TLS 관련 속성 전체 목록은 [librdkafka 구성 참고 문서](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)를 참조하십시오. 이름이 지정된 컬렉션을 사용하지 않고 서버 전체 기본값을 설정하려면 아래의 [구성](#configuration) 섹션을 참조하십시오.
+
+## OAUTHBEARER/OIDC 인증 {#oauthbearer-oidc-authentication}
+
+`OAUTHBEARER` 인증에는 [librdkafka 구성 속성](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)이 사용됩니다. OIDC 클라이언트 자격 증명 흐름을 사용하려면 `sasl.oauthbearer.method`, `sasl.oauthbearer.client.id`, `sasl.oauthbearer.client.secret`, `sasl.oauthbearer.token.endpoint.url`, `sasl.oauthbearer.scope`를 구성하십시오.
+
+ClickHouse XML에서 이러한 속성을 정의할 때는 마침표를 밑줄로 바꾸십시오. 예를 들어 `sasl.oauthbearer.client.id`에는 `<sasl_oauthbearer_client_id>`를 사용합니다.
+
+`ENGINE = Kafka(named_collection)`에서는 확장 `librdkafka` 설정(OIDC 포함)에도 [이름이 지정된 컬렉션을 사용한 TLS 및 SASL](#kafka-tls-sasl-named-collections)에서 설명한 것과 동일한 `kafka.` / `<kafka>` 네임스페이스를 사용합니다. 이름이 지정된 컬렉션을 사용하면 서버의 전역 `<kafka>` 구성은 머지되지 않습니다. 따라서 각 컬렉션에 필요한 OIDC 속성을 모두 포함해야 합니다. 전체 예시는 [Kafka 이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication)을 참조하십시오.
 
 예시:
 
@@ -153,7 +221,7 @@ CREATE TABLE queue3 (
   Kafka 테이블 엔진은 [기본값](/ko/reference/statements/create/table#default_values)이 있는 컬럼을 지원하지 않습니다. 기본값이 있는 컬럼이 필요하다면 materialized view 수준에서 추가할 수 있습니다(아래 참조).
 </Info>
 
-## 설명
+## 설명 {#description}
 
 전달된 메시지는 자동으로 추적되므로 그룹 내 각 메시지는 한 번만 집계됩니다. 데이터를 두 번 가져오려면 다른 그룹 이름으로 테이블 복사본을 만드십시오.
 
@@ -211,7 +279,7 @@ ATTACH TABLE consumer;
 
 `ALTER`를 사용해 대상 테이블을 변경하려는 경우, 대상 테이블과 뷰에서 들어오는 데이터 사이에 불일치가 생기지 않도록 materialized view를 비활성화하는 것이 좋습니다.
 
-## 구성
+## 구성 {#configuration}
 
 GraphiteMergeTree와 마찬가지로 Kafka 엔진은 ClickHouse 구성 파일을 사용한 확장 구성을 지원합니다. 사용할 수 있는 구성은 두 가지입니다. 전역 수준(global, `<kafka>` 아래)과 토픽 수준(topic-level, `<kafka><kafka_topic>` 아래)입니다. 먼저 전역 구성이 적용되고, 그다음 토픽 수준 구성이 적용됩니다(있는 경우).
 
@@ -257,7 +325,7 @@ GraphiteMergeTree와 마찬가지로 Kafka 엔진은 ClickHouse 구성 파일을
 
 사용 가능한 구성 옵션 목록은 [librdkafka 구성 참고](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)를 참조하십시오. ClickHouse 구성에서는 점(`.`) 대신 밑줄(`_`)을 사용하십시오. 예를 들어 `check.crcs=true`는 `<check_crcs>true</check_crcs>`로 작성됩니다.
 
-### AWS MSK IAM 인증
+### AWS MSK IAM 인증 {#kafka-aws-msk-iam}
 
 <Note>
   AWS MSK IAM 인증을 사용하려면 ClickHouse가 AWS S3 지원이 활성화된 상태로 빌드되어 있어야 합니다.
@@ -283,7 +351,7 @@ SETTINGS
     kafka_sasl_mechanism = 'AWS_MSK_IAM';
 ```
 
-AWS 리전은 패턴 매칭을 사용해 broker endpoint에서 자동으로 추출됩니다:
+AWS 리전은 패턴 매칭을 사용해 브로커 endpoint에서 자동으로 추출됩니다:
 
 * Provisioned MSK: `b-X.cluster.kafka.<region>.amazonaws.com:9098`
 * Serverless MSK: `boot-X.kafka-serverless.<region>.amazonaws.com:9098`
@@ -291,7 +359,7 @@ AWS 리전은 패턴 매칭을 사용해 broker endpoint에서 자동으로 추�
 
 **AWS 자격 증명:**
 
-자격 증명은 해당 파일이 있으면 항상 `~/.aws/credentials` 및 `~/.aws/config`(AWS profile 파일)에서 로드됩니다. EC2 instance profile, 환경 변수(`AWS_ACCESS_KEY_ID` 등), ECS 작업 역할 및 기타 자동 자격 증명 소스도 사용하도록 설정하려면 서버 구성에 다음을 추가하십시오:
+기본적으로 서버는 `AWS_MSK_IAM`에 사용할 AWS 자격 증명을 확인하지 않으므로, `AWS credentials are empty or expired` 오류와 함께 인증이 실패합니다. 서버가 실행 환경에서 자동으로 제공되는 AWS 아이덴티티로 인증하도록 하려면 서버 구성에 다음을 추가하십시오:
 
 ```xml
 <kafka>
@@ -299,7 +367,15 @@ AWS 리전은 패턴 매칭을 사용해 broker endpoint에서 자동으로 추�
 </kafka>
 ```
 
+실행 환경에서 자동으로 제공되는 자격 증명 소스는 환경 변수(`AWS_ACCESS_KEY_ID` 등), EC2 인스턴스 프로파일(IMDS), 서비스 계정용 IAM 역할(IRSA), ECS 작업 역할, SSO, 그리고 `~/.aws/credentials` 및 `~/.aws/config` 프로필 파일입니다.
+
 이 설정은 서버 관리자만 설정할 수 있습니다. 기본값: `false`.
+
+<Warning>
+  이 설정은 안전하지 않습니다. 이 설정을 활성화하면 `KAFKA` 소스 권한과 `CREATE TABLE` 권한을 가진 모든 사용자가 테이블 설정(table settings)에서 `AWS_MSK_IAM` 메커니즘, 브로커 목록, AWS 리전을 지정할 수 있습니다. 그러면 서버는 자신의 AWS 아이덴티티로 `kafka-cluster:Connect` 토큰에 서명한 뒤, 이 토큰을 사용자가 지정한 브로커로 전송합니다. 토큰에는 AWS 액세스 키 ID와 전체 STS 세션 토큰이 포함되어 있으므로, 토큰을 수신한 호스트는 이를 재사용해 서버를 가장하여 해당 리전의 MSK 클러스터에 접근할 수 있습니다.
+
+  Kafka 테이블을 생성할 수 있는 모든 사용자에게 서버의 AWS 아이덴티티를 맡길 수 있을 만큼 신뢰하는 경우에만 이 설정을 활성화하십시오. 또한 [remote&#95;url&#95;allow&#95;hosts](/ko/reference/settings/server-settings/settings/remote#remote_url_allow_hosts)를 사용해 Kafka 테이블이 연결할 수 있는 호스트를 제한하십시오. 이 설정은 기본적으로 비어 있으며, 이 경우 모든 호스트가 허용됩니다.
+</Warning>
 
 **PrivateLink 및 사용자 지정 DNS:**
 
@@ -365,7 +441,7 @@ SETTINGS
 }
 ```
 
-### Kerberos 지원
+### Kerberos 지원 {#kafka-kerberos-support}
 
 Kerberos를 사용하는 Kafka를 처리하려면 `security_protocol` 하위 요소를 `sasl_plaintext` 값으로 추가합니다. Kerberos 티켓 부여 티켓(TGT)을 OS 기능을 통해 획득해 캐시해 두면 충분합니다.
 ClickHouse는 keytab 파일을 사용해 Kerberos 자격 증명을 유지할 수 있습니다. `sasl_kerberos_service_name`, `sasl_kerberos_keytab`, `sasl_kerberos_principal` 하위 요소를 사용하십시오.
@@ -381,7 +457,7 @@ ClickHouse는 keytab 파일을 사용해 Kerberos 자격 증명을 유지할 수
 </kafka>
 ```
 
-## 가상 컬럼
+## 가상 컬럼 {#virtual-columns}
 
 * `_topic` — Kafka 토픽입니다. 데이터 타입: `LowCardinality(String)`.
 * `_key` — 메시지 키입니다. 데이터 타입: `String`.
@@ -399,7 +475,7 @@ ClickHouse는 keytab 파일을 사용해 Kerberos 자격 증명을 유지할 수
 
 참고: `_raw_message` 및 `_error` 가상 컬럼은 파싱 중 예외가 발생한 경우에만 채워지며, 메시지가 성공적으로 파싱된 경우에는 항상 비어 있습니다.
 
-## 컬럼을 Kafka 메시지 메타데이터에 매핑하기
+## 컬럼을 Kafka 메시지 메타데이터에 매핑하기 {#mapping-columns-to-kafka-message-metadata}
 
 `INSERT INTO`로 메시지를 생성할 때 Kafka 엔진은 테이블에 해당 컬럼이 있으면 항상 `_key`라는 이름의 컬럼(타입 `String`)을 Kafka 메시지 키로 사용하고, `_timestamp`라는 이름의 컬럼(타입 `DateTime`)을 Kafka 메시지 타임스탬프로 사용합니다. 기본적으로 이 컬럼들은 다른 컬럼과 함께 생성된 메시지 페이로드에도 포함됩니다.
 
@@ -436,7 +512,7 @@ INSERT INTO kafka_out VALUES
 
 생성된 Kafka 메시지에는 페이로드 `{"event_json":"{\"a\":1}"}`, 키 `session-42`, 현재 타임스탬프, 그리고 두 개의 header `source=api` 및 `trace_id=abc-123`가 포함됩니다.
 
-## 데이터 포맷 지원
+## 데이터 포맷 지원 {#data-formats-support}
 
 Kafka 엔진은 ClickHouse에서 지원하는 모든 [포맷](/ko/reference/formats/index)을 지원합니다.
 하나의 Kafka 메시지에 포함되는 행 수는 해당 포맷이 행 기반인지 블록 기반인지에 따라 달라집니다.
@@ -444,7 +520,7 @@ Kafka 엔진은 ClickHouse에서 지원하는 모든 [포맷](/ko/reference/form
 * 행 기반 포맷에서는 하나의 Kafka 메시지에 포함되는 행 수를 `kafka_max_rows_per_message` 설정으로 제어할 수 있습니다.
 * 블록 기반 포맷에서는 블록을 더 작은 파트로 나눌 수는 없지만, 하나의 블록에 포함되는 행 수는 일반 설정인 [max&#95;block&#95;size](/ko/reference/settings/session-settings/max#max_block_size)로 제어할 수 있습니다.
 
-## ClickHouse Keeper에 커밋된 오프셋을 저장하는 엔진
+## ClickHouse Keeper에 커밋된 오프셋을 저장하는 엔진 {#engine-to-store-committed-offsets-in-clickhouse-keeper}
 
 <ExperimentalBadge />
 
@@ -455,7 +531,7 @@ Kafka 엔진은 ClickHouse에서 지원하는 모든 [포맷](/ko/reference/form
 
 이 두 설정은 모두 지정하거나 둘 다 지정하지 않아야 합니다. 두 설정이 모두 지정되면 새로운 실험적 Kafka 엔진이 사용됩니다. 이 새 엔진은 커밋된 오프셋을 Kafka에 저장하는 방식에 의존하지 않고, 이를 ClickHouse Keeper에 저장합니다. 여전히 오프셋을 Kafka에 commit하려고 시도하지만, 해당 오프셋에 의존하는 것은 테이블이 생성될 때뿐입니다. 그 밖의 경우(테이블이 재시작되거나 오류 후 복구되는 경우)에는 ClickHouse Keeper에 저장된 오프셋을 기준으로 메시지 소비를 이어갑니다. 또한 커밋된 오프셋 외에 마지막 배치에서 소비한 메시지 수까지 저장하므로, 삽입이 실패하더라도 동일한 수의 메시지를 다시 소비할 수 있어 필요할 경우 중복 제거가 가능합니다.
 
-### 정적 파티션-세그먼트 친화성
+### 정적 파티션-세그먼트 친화성 {#static-partition-to-shard-affinity}
 
 `StorageKafka2`를 사용할 때 `kafka_partition_shard_num`과 `kafka_shard_count`를 지정하면 정적 파티션-세그먼트 친화성을 선택적으로 활성화할 수 있습니다. 이를 통해 여러 ClickHouse 인스턴스(세그먼트)가 동일한 Kafka 토픽에서 데이터를 소비할 수 있으며, 각 세그먼트는 다음 수식에 따라 결정론적으로 정해진 파티션 부분 집합만 처리합니다.
 
@@ -504,7 +580,7 @@ kafka_replica_name = '{replica}'
 SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 ```
 
-### 알려진 제한 사항
+### 알려진 제한 사항 {#known-limitations}
 
 이 새 엔진은 아직 실험적 기능이므로 프로덕션 환경에서 사용할 준비가 되어 있지 않습니다. 현재 구현에는 몇 가지 알려진 제한 사항이 있습니다.
 
@@ -512,7 +588,7 @@ SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 * 반복 가능한 읽기를 보장하려면 단일 스레드에서 여러 파티션의 메시지를 소비할 수 없습니다. 반면 Kafka 컨슈머를 계속 활성 상태로 유지하려면 정기적으로 폴링해야 합니다. 이러한 두 가지 요구 사항 때문에 `kafka_thread_per_consumer`가 enabled된 경우에만 여러 컨슈머를 생성할 수 있도록 했습니다. 그렇지 않으면 컨슈머를 정기적으로 폴링할 때 발생할 수 있는 문제를 피하기가 너무 복잡합니다.
 * 파티션 친화성을 사용할 때는 모든 세그먼트에서 동일한 `kafka_shard_count`를 사용해야 합니다. 그렇지 않으면 일부 파티션이 여러 세그먼트에서 소비되거나 소비되지 않은 상태로 남을 수 있습니다.
 
-## 데이터 내구성
+## 데이터 내구성 {#data-durability}
 
 `Kafka` 엔진은 삽입된 데이터가 디스크에 기록되기 전에 OS 페이지 캐시가 폐기되면 이미 소비한 행을 아무런 알림 없이 유실할 수 있습니다. 배치가 종속 materialized view로 전달되고 나면 소비한 오프셋이 커밋되며(broker에 커밋되거나, `kafka_keeper_path`가 설정된 경우 ClickHouse Keeper에 커밋됨), 이에 따라 컨슈머는 해당 메시지 이후 지점부터 처리를 재개합니다. 그러나 삽입된 행은 대상 파트가 fsync된 후에야 내구성을 갖는데, 이 작업은 기본적으로 동기적으로 수행되지 않습니다(`fsync_after_insert = 0`). 오프셋이 커밋된 후 대상 파트가 fsync되기 전에 페이지 캐시가 소실되면, 컨슈머는 재시작 시 해당 메시지 이후 지점부터 재개하므로 오류 없이 행이 유실되고 `count()` 값만 작아집니다. 단순한 프로세스 종료로는 이 문제가 드러나지 않습니다. 커널이 페이지 캐시를 유지하다가 결국 디스크에 기록하기 때문입니다. 반면 페이지 캐시가 소실되면 이 문제가 드러나며, 장치 수준의 전원 손실이나 비정상적인 호스트 또는 커널 리셋이 그 예입니다.
 

@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: the Arrow format is not available in fasttest builds
-
 -- The Arrow spec leaves the value bytes of a null slot undefined, so a value hidden under a null
 -- slot must not fail value-level validation on read; it decodes as the type default. ClickHouse
 -- itself produces such files: Date32 arithmetic can push the raw day number past the type's

@@ -15,15 +15,15 @@ namespace ErrorCodes
 
 /// Mirrors IMergeTreeDataPart::getFileSizeOrZeroResolved: the on-disk name (original or hashed)
 /// comes from checksums, and a stream with no checksums entry is sized via the storage.
-static size_t getIndexStreamFileSize(
-    const MergeTreeDataPartInfoForReaderPtr & data_part_info,
+size_t getIndexStreamFileSize(
+    const IMergeTreeDataPartInfoForReader & data_part_info,
     const String & stream_name,
     const String & extension)
 {
-    if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, data_part_info->getChecksums()))
-        return data_part_info->getFileSizeOrZero(*actual + extension);
+    if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, data_part_info.getChecksums()))
+        return data_part_info.getFileSizeOrZero(*actual + extension);
 
-    const auto & part_storage = *data_part_info->getDataPartStorage();
+    const auto & part_storage = *data_part_info.getDataPartStorage();
     const String file_name = stream_name + extension;
     return part_storage.existsFile(file_name) ? part_storage.getFileSize(file_name) : 0;
 }
@@ -41,7 +41,7 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     MergeTreeReaderSettings settings,
     bool interruptible_marks_read)
 {
-    auto file_size = getIndexStreamFileSize(data_part_info, stream_name, extension);
+    auto file_size = getIndexStreamFileSize(*data_part_info, stream_name, extension);
 
     if (marks_count == 1)
     {
@@ -185,7 +185,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             .part_info = *data_part_info,
             .index = *index,
             .readable_ranges = readable_ranges,
-            .skip_postings_deserialization = false,
+            .text_index_read_postings = true,
             .reader_settings = settings,
         };
 
@@ -201,13 +201,13 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
     /// would create too much lock contention in the cache (this was learned the hard way).
     /// Don't populate the cache for parts which are not Active (e.g. Outdated after a mutation).
     /// Such parts will be removed soon and caching them is wasteful.
-    /// Also note that the cache key must use `getRelativePathOfActivePart` (not `getFullPath`) to match
-    /// the key used during eviction in `IMergeTreeDataPart::removeFromVectorIndexCache`.
+    /// Also note that the cache key must use `getPathForCacheKey` (not `getFullPath`) to match the key used during eviction in
+    /// `IMergeTreeDataPart::removeFromVectorIndexCache` and `MergeTreeData::clearVectorSimilarityIndexCache`.
     /// The cache key needs the part itself; without one the granule is loaded directly.
     auto concrete_part = data_part_info->getDataPart();
     if (index->isVectorSimilarityIndex() && concrete_part && concrete_part->getState() == MergeTreeDataPartState::Active)
     {
-        VectorSimilarityIndexCacheKey key{concrete_part->getDataPartStorage().getDiskName() + ":" + concrete_part->getRelativePathOfActivePart(),
+        VectorSimilarityIndexCacheKey key{concrete_part->getPathForCacheKey(),
                                           index->getFileName(),
                                           mark};
 

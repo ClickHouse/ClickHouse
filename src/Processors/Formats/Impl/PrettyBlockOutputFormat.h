@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -48,7 +50,7 @@ protected:
     FormatSettings format_settings;
 
     using Widths = PODArray<size_t>;
-    using WidthsPerColumn = std::vector<Widths>;
+    using WidthsPerColumn = VectorWithMemoryTracking<Widths>;
 
     void write(Chunk chunk, PortKind port_kind);
     void writeChunk(const Chunk & chunk, PortKind port_kind);
@@ -65,7 +67,7 @@ protected:
     /// recalculate the widths after the columns have been widened to fit the names of the Tuple groups,
     /// because the visible width of a value containing a tab depends on the position where the value starts.
     void calculateWidths(
-        const Block & header, const Chunk & chunk, bool split_by_lines, size_t value_width_limit,
+        const ColumnsWithTypeAndName & header, const Chunk & chunk, bool split_by_lines, size_t value_width_limit,
         const Widths & min_widths, bool & out_has_newlines,
         WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names);
 
@@ -122,6 +124,7 @@ private:
     std::atomic_bool has_background_exception{false};
     void writingThread();
     void stopThread();
+    void onCancel() noexcept override;
     void rethrowBackgroundExceptionIfAny();
 };
 

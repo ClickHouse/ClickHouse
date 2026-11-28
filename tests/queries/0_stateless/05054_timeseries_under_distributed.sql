@@ -50,12 +50,12 @@ SELECT sum(arraySum(arrayMap(x -> x.2, samples))) FROM ts_dist;
 SELECT '--- the TimeSeries table functions need a real TimeSeries table, not a Distributed one ---';
 SELECT count() > 0 FROM timeSeriesData('shard_0', 'ts_local');
 SELECT count() FROM timeSeriesData(currentDatabase(), 'ts_dist'); -- { serverError UNEXPECTED_TABLE_ENGINE }
-SELECT count() FROM timeSeriesSelector(currentDatabase(), 'ts_dist', 'up', 0, 0); -- { serverError UNEXPECTED_TABLE_ENGINE }
+SELECT count() FROM timeSeriesSelector(currentDatabase(), 'ts_dist', 'up', 0, 0, 'samples'); -- { serverError UNEXPECTED_TABLE_ENGINE }
 
 -- The identifier spelling resolves the table id in its own branch, so a regression there
 -- would leave the two assertions above green.
 SELECT count() FROM timeSeriesData(ts_dist); -- { serverError UNEXPECTED_TABLE_ENGINE }
-SELECT count() FROM timeSeriesSelector(ts_dist, 'up', 0, 0); -- { serverError UNEXPECTED_TABLE_ENGINE }
+SELECT count() FROM timeSeriesSelector(ts_dist, 'up', 0, 0, 'samples'); -- { serverError UNEXPECTED_TABLE_ENGINE }
 
 DROP TABLE ts_dist;
 DROP DATABASE shard_0;

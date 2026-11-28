@@ -1,22 +1,24 @@
 #pragma once
 
 #include <base/types.h>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
-
-class IQueryPlanStep;
 
 struct WorkInterval
 {
     UInt64 start_of_interval_ns;
     UInt64 duration_of_interval_ns;
-    const IQueryPlanStep * step;
+
+    /// `IQueryPlanStep::getStepIndex` of the step the processor belongs to. The intervals are read
+    /// once the query has run, by which time the plan may be gone.
+    /// `PlanStepIndex::NONE` for the processors that belong to no step.
+    UInt64 step_id;
 };
 
-using WorkIntervals = std::vector<WorkInterval>;
+using WorkIntervals = VectorWithMemoryTracking<WorkInterval>;
 
-using WorkIntervalsPerThread = std::vector<WorkIntervals>;
+using WorkIntervalsPerThread = VectorWithMemoryTracking<WorkIntervals>;
 
 }

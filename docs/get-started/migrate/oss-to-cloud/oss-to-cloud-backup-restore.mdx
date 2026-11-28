@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['migration', 'ClickHouse Cloud', 'OSS', 'Migrate self-managed to Cloud', 'BACKUP', 'RESTORE']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Overview {#overview-migration-approaches}
 
 There are two primary methods to migrate data from self-managed ClickHouse (OSS) to ClickHouse Cloud:
@@ -267,19 +265,43 @@ Go to [https://console.clickhouse.cloud/](https://console.clickhouse.cloud/)
 </Step>
 <Step title="Create a new service" id="create-new-service">
 
-<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="create a new service"/> 
+<div className="ch-image-md">
+
+<Frame>
+
+![create a new service](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Configure and create a service" id="configure-and-create">
 
 Choose your desired region and configuration, then click `Create service`
 
-<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="setup service preferences"/> 
+<div className="ch-image-md">
+
+<Frame>
+
+![setup service preferences](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Create an access role" id="create-an-access-role">
 
 Open SQL console
 
-<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="setup service preferences"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![setup service preferences](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
+
+</Frame>
+
+</div>
 
 ### Set up S3 access {#set-up-s3-access}
 
@@ -378,7 +400,15 @@ TO S3(
 
 If you check your previously empty S3 bucket you will now see some folders have appeared:
 
-<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp" size="md" alt="backup, data and metadata"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![backup, data and metadata](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
+
+</Frame>
+
+</div>
 
 If you're performing a full migration then you can run the following command to backup the entire server:
 

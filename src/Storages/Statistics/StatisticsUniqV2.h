@@ -18,13 +18,14 @@ public:
     void build(const ColumnPtr & column) override;
     void merge(const StatisticsPtr & other_stats) override;
 
-    void serialize(WriteBuffer & buf) override;
+    void serialize(WriteBuffer & buf, StatisticsFileVersion version) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
 
     UInt64 estimateCardinality() const override;
     bool isCompatibleWith(const IStatistics & other) const override;
 
     String getNameForLogs() const override { return "UniqV2 : " + std::to_string(estimateCardinality()); }
+    size_t allocatedBytes() const override;
 
 private:
     std::unique_ptr<Arena> arena;

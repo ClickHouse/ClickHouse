@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A `logs_to_keep` above `UINT32_MAX` is rejected in a definition the user supplies now: a fresh
+# A `logs_to_keep` above the maximum (`2147483647`) is rejected in a definition the user supplies now: a fresh
 # `CREATE` and, equally, a full-syntax `ATTACH`, which carries a user-written definition. It is
 # clamped only on the paths that replay a value an older server already accepted:
 #   1. The metadata file, replayed on server startup and by the short-syntax `ATTACH DATABASE db`.

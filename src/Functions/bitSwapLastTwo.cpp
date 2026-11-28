@@ -20,6 +20,7 @@ struct BitSwapLastTwoImpl
 {
     using ResultType = UInt8;
     static constexpr const bool allow_string_or_fixed_string = false;
+    static constexpr auto signature = "(UInt8) -> UInt8";
 
     static ResultType NO_SANITIZE_UNDEFINED apply([[maybe_unused]] A a)
     {
@@ -59,7 +60,7 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionBitSwapLastTwo>(context_); }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }

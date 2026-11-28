@@ -5,6 +5,10 @@
 
 #include <fmt/format.h>
 
+#include <array>
+#include <tuple>
+#include <utility>
+
 using namespace DB;
 
 namespace
@@ -84,9 +88,12 @@ TEST(PromQLParser, ReservedKeywordMetricNames)
          {"and", "or", "unless", "atan2", "by", "without", "on", "ignoring", "group_left", "group_right", "offset", "bool"})
     {
         expectRoundTrip(fmt::format(R"({{"{}"}})", keyword), fmt::format(R"({{"{}"}})", keyword));
-        expectRoundTrip(fmt::format(R"({}{{job="x"}})", keyword), fmt::format(R"({{"{}",job="x"}})", keyword));
         expectRoundTrip(fmt::format(R"(up * {{"{}"}})", keyword), fmt::format(R"(up * {{"{}"}})", keyword));
     }
+
+    /// As in Prometheus, only these keywords can also be written as a bare metric name.
+    for (const auto * const keyword : {"and", "or", "unless", "by", "without", "offset"})
+        expectRoundTrip(fmt::format(R"({}{{job="x"}})", keyword), fmt::format(R"({{"{}",job="x"}})", keyword));
 }
 
 
@@ -171,6 +178,34 @@ TEST(PromQLParser, SelectorRequiresNonEmptyMatcher)
         EXPECT_FALSE(query_tree.tryParse(R"({__name__=~".+", job=~"(.*"})", 3, &error_message, &error_pos));
         EXPECT_NE(error_message.find("invalid regular expression in label matcher"), String::npos);
     }
+}
+
+TEST(PromQLParser, RejectedSelectorWithOffset)
+{
+    /// A selector followed by `offset` or `@` is parsed by its own visitor, which must report the error of the selector as a parse error.
+    constexpr std::array<std::tuple<const char *, const char *, size_t>, 5> queries = {{
+        {R"({job=~".*"} offset 5m)", "vector selector must contain at least one non-empty matcher", 0},
+        {R"({job=~".*"} @ 100)", "vector selector must contain at least one non-empty matcher", 0},
+        {R"(rate({job!="a"}[5m] offset 1m))", "vector selector must contain at least one non-empty matcher", 5},
+        {R"(up{job=~"("} offset 5m)", "invalid regular expression in label matcher", 3},
+        {R"(up{__name__="x"} offset 5m)", "metric name must not be set twice", 3},
+    }};
+
+    for (const auto & [query, expected_error, expected_error_pos] : queries)
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_pos, expected_error_pos) << query << ": " << error_message;
+        EXPECT_NE(error_message.find(expected_error), String::npos) << query << ": " << error_message;
+    }
+
+    /// `tryParse` sets `error_message` and `error_pos` only on failure, so only the result is checked here.
+    PrometheusQueryTree valid_query_tree;
+    String error_message;
+    size_t error_pos = 0;
+    EXPECT_TRUE(valid_query_tree.tryParse(R"(up{job=~".*"} offset 5m)", 3, &error_message, &error_pos)) << error_message;
 }
 
 
@@ -851,7 +886,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("sum without(job) (demo_memory_usage_bytes) / on(instance, type) group_left demo_memory_usage_bytes"), R"(
-sum without (job) (demo_memory_usage_bytes) / on(instance, type) group_left demo_memory_usage_bytes
+sum without (job) (demo_memory_usage_bytes) / on(instance, type) group_left() demo_memory_usage_bytes
 
 PrometheusQueryTree(INSTANT_VECTOR):
     BinaryOperator(/)
@@ -881,7 +916,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("demo_memory_usage_bytes / on(instance, job) group_left demo_num_cpus"), R"(
-demo_memory_usage_bytes / on(instance, job) group_left demo_num_cpus
+demo_memory_usage_bytes / on(instance, job) group_left() demo_num_cpus
 
 PrometheusQueryTree(INSTANT_VECTOR):
     BinaryOperator(/)
@@ -1755,6 +1790,60 @@ TEST(PromQLParser, TrailingCommasInGroupingLabelLists)
 }
 
 
+TEST(PromQLParser, ParenthesisAfterGroupModifier)
+{
+    /// As in Prometheus, `(` after `group_left` or `group_right` always starts the label list,
+    /// so `(b)` is not the right operand here, and the operand is missing at the end of the query.
+    for (const std::string_view query : {"a * on(x) group_left (b)", "a * on(x) group_right (b)"})
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_pos, query.size()) << query << ": " << error_message;
+    }
+}
+
+
+TEST(PromQLParser, CommentAfterGroupModifier)
+{
+    for (const std::string_view modifier : {"group_left", "group_right"})
+    {
+        /// The lexer makes one token of the modifier and the `(` of its label list, a comment between them included.
+        expectRoundTrip(fmt::format("a * on(x) {} # comment\n (b) c", modifier), fmt::format("a * on(x) {}(b) c", modifier));
+
+        /// `(` inside a comment is not the `(` of the label list, whether the list follows the comment or not.
+        expectRoundTrip(fmt::format("a * on(x) {} # (c)\n (b) c", modifier), fmt::format("a * on(x) {}(b) c", modifier));
+        expectRoundTrip(fmt::format("a * on(x) {} # (b)\n c", modifier), fmt::format("a * on(x) {}() c", modifier));
+
+        /// The comment runs to the end of the query, so the right operand is missing there.
+        const auto query = fmt::format("a * on(x) {} # (b) c", modifier);
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_pos, query.size()) << query << ": " << error_message;
+    }
+}
+
+
+TEST(PromQLParser, EmptyGroupLabelListRoundTrip)
+{
+    for (const std::string_view modifier : {"group_left", "group_right"})
+    {
+        expectRoundTrip(fmt::format("a * on(x) {} b", modifier), fmt::format("a * on(x) {}() b", modifier));
+        expectRoundTrip(fmt::format("a * on(x) {} -b", modifier), fmt::format("a * on(x) {}() (-b)", modifier));
+        for (const std::string_view operand : {"b", "(b + c)", "(b * c)"})
+        {
+            const auto query = fmt::format("a * on(x) {}() {}", modifier, operand);
+            expectRoundTrip(query, query);
+        }
+    }
+}
+
+
 TEST(PromQLParser, DurationUnitOrder)
 {
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
@@ -1785,6 +1874,8 @@ TEST(PromQLParser, LineComments)
              "up # comment\r",
              "up # comment\r\n",
              "up #!comment",
+             "up #comment",
+             "up #",
          })
         EXPECT_NO_THROW(PrometheusQueryTree{query}) << query;
 
@@ -1794,15 +1885,6 @@ TEST(PromQLParser, LineComments)
 
     EXPECT_FALSE(query_tree.tryParse("# comment", 3, &error_message, &error_pos));
     EXPECT_EQ(error_pos, 9);
-
-    /// EOF comments use the same `# ` / `#!` prefix contract as the shared SQL lexer.
-    for (const auto * const query : {"up #", "up #comment"})
-    {
-        error_message.clear();
-        error_pos = String::npos;
-        EXPECT_FALSE(query_tree.tryParse(query, 0, &error_message, &error_pos)) << query;
-        EXPECT_EQ(error_pos, 3) << query;
-    }
 }
 
 
@@ -1831,10 +1913,6 @@ TEST(PromQLParser, InvalidStringQuoteEscapes)
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
              {R"(up{label="a\'b"})", 11},
              {R"(up{label='a\"b'})", 11},
-             {R"("hello\
-world")", 6},
-             {R"("hello\x
-world")", 6},
          })
     {
         PrometheusQueryTree query_tree;
@@ -1850,12 +1928,18 @@ world")", 6},
 
 TEST(PromQLParser, RejectLiteralLFInQuotedStrings)
 {
+    /// The error for a quoted string containing a line feed is reported at its opening quote, even if
+    /// the string also has an invalid escape sequence or is followed by a syntax error.
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
              {R"("hello
 world")", 0},
              {R"('hello
 world')", 0},
+             {R"("hello\
+world")", 0},
              {R"("hello\\
+world")", 0},
+             {R"("hello\x
 world")", 0},
              {"\"hello\r\nworld\"", 0},
              {R"("hello
@@ -1873,7 +1957,7 @@ world" $)", 0},
         size_t error_pos = String::npos;
 
         EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
-        EXPECT_EQ(error_message, "unterminated quoted string") << query;
+        EXPECT_NE(error_message.find("token recognition error"), String::npos) << query;
         EXPECT_EQ(error_pos, expected_error_pos) << query;
     }
 
@@ -2021,4 +2105,111 @@ TEST(PromQLParser, RejectUnicodeSurrogateEscapes)
     EXPECT_EQ(parseStringLiteral(R"("\uE000")"), "\xEE\x80\x80");
     EXPECT_EQ(parseStringLiteral(R"("\U00010000")"), "\xF0\x90\x80\x80");
     EXPECT_EQ(parseStringLiteral(R"("\U0010FFFF")"), "\xF4\x8F\xBF\xBF");
+}
+
+TEST(PromQLParser, UnimplementedCalls)
+{
+    EXPECT_EQ(parse("start()"), R"(
+start()
+
+PrometheusQueryTree(SCALAR):
+    Function(start)
+)");
+
+    EXPECT_EQ(parse("end()"), R"(
+end()
+
+PrometheusQueryTree(SCALAR):
+    Function(end)
+)");
+
+    EXPECT_EQ(parse("step()"), R"(
+step()
+
+PrometheusQueryTree(SCALAR):
+    Function(step)
+)");
+
+    EXPECT_EQ(parse("range()"), R"(
+range()
+
+PrometheusQueryTree(SCALAR):
+    Function(range)
+)");
+
+    EXPECT_EQ(parse(R"(sort_by_label(up, "job"))"), R"(
+sort_by_label(up, "job")
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(sort_by_label):
+        InstantSelector:
+            __name__ EQ 'up'
+        StringLiteral('job')
+)");
+
+    EXPECT_EQ(parse(R"(sort_by_label_desc(up, "job"))"), R"(
+sort_by_label_desc(up, "job")
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(sort_by_label_desc):
+        InstantSelector:
+            __name__ EQ 'up'
+        StringLiteral('job')
+)");
+
+    EXPECT_EQ(parse("double_exponential_smoothing(up[5m], 0.01, 0.1)"), R"(
+double_exponential_smoothing(up[5m], 0.01, 0.1)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(double_exponential_smoothing):
+        RangeSelector:
+            range: 300
+            InstantSelector:
+                __name__ EQ 'up'
+        Scalar(0.01)
+        Scalar(0.1)
+)");
+
+    EXPECT_EQ(parse("limit_ratio(0.5, up)"), R"(
+limit_ratio(0.5, up)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    AggregationOperator(limit_ratio)
+        Scalar(0.5)
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+}
+
+
+TEST(PromQLParser, StandaloneStepRangeFunctions)
+{
+    for (const auto * query :
+         {"step()", "range()", "range() - step()", "step\n()", "range # comment\r()", "step # comment\n()"})
+    {
+        PrometheusQueryTree tree{query};
+        EXPECT_EQ(tree.getResultType(), PrometheusQueryTree::ResultType::SCALAR) << query;
+        expectRoundTrip(query, tree.toString());
+    }
+
+    /// These names remain valid metric names when they are not called as functions.
+    for (const auto * query : {"step", "range", R"(step{job="x"})", R"(range{job="x"})", R"(up{step="x",range="y"})"})
+    {
+        PrometheusQueryTree tree{query};
+        EXPECT_EQ(tree.getResultType(), PrometheusQueryTree::ResultType::INSTANT_VECTOR) << query;
+        expectRoundTrip(query, tree.toString());
+    }
+}
+
+
+TEST(PromQLParser, InvalidStandaloneStepRangeFunctions)
+{
+    for (const auto * query : {"step(1)", "range(1)", "step(1, 2)", "STEP()", "RANGE()"})
+    {
+        PrometheusQueryTree tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_FALSE(error_message.empty()) << query;
+    }
 }

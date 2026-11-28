@@ -12,7 +12,6 @@
 -- `ReplacingMergeTree` can read in reverse order with FINAL when it is enabled
 -- (see 05193_top_k_through_join_final_reverse_order).
 
-SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
 
 DROP TABLE IF EXISTS t_l_final;

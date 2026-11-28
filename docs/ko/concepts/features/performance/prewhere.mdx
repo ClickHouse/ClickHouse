@@ -7,19 +7,19 @@ doc_type: 'guide'
 keywords: ['prewhere', 'query optimization', 'performance', 'filtering', 'best practices']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 [PREWHERE 절](/ko/reference/statements/select/prewhere)은 ClickHouse의 쿼리 실행 최적화 기능입니다. 불필요한 데이터 읽기를 피하고, 디스크에서 필터에 사용되지 않는 컬럼을 읽기 전에 관련 없는 데이터를 걸러내 I/O를 줄이고 쿼리 속도를 높입니다.
 
 이 가이드에서는 PREWHERE의 작동 방식, 영향을 측정하는 방법, 그리고 최상의 성능을 위해 조정하는 방법을 설명합니다.
 
-<div id="query-processing-without-prewhere-optimization">
-  ## PREWHERE 최적화 없이 쿼리가 처리되는 방식
-</div>
+## PREWHERE 최적화 없이 쿼리가 처리되는 방식 {#query-processing-without-prewhere-optimization}
 
 먼저 [uk&#95;price&#95;paid&#95;simple](/ko/concepts/core-concepts/parts) 테이블에 대한 쿼리가 PREWHERE를 사용하지 않을 때 어떻게 처리되는지 살펴보겠습니다:
 
-<Image img="/images/guides/best-practices/prewhere_01.webp" size="md" alt="PREWHERE 최적화 없이 쿼리 처리" />
+<div className="ch-image-md">
+  <Frame>
+    ![PREWHERE 최적화 없이 쿼리 처리](/images/guides/best-practices/prewhere_01.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -29,23 +29,25 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 ② 쿼리 속도를 높이기 위해 ClickHouse는 테이블의 프라이머리 인덱스를 메모리에 로드합니다.
 
-③ 인덱스 엔트리를 스캔해 `town` 컬럼의 그래뉼 중 프레디케이트와 일치하는 행을 포함할 가능성이 있는 그래뉼을 식별합니다.
+③ 인덱스 엔트리를 스캔해 town 컬럼의 그래뉼 중 프레디케이트와 일치하는 행을 포함할 가능성이 있는 그래뉼을 식별합니다.
 
-④ 이렇게 관련 있을 가능성이 있는 그래뉼을 메모리에 로드하고, 쿼리에 필요한 다른 컬럼에서도 같은 위치에 정렬된 그래뉼을 함께 로드합니다.
+④ 이렇게 관련 있을 가능성이 있는 그래뉼을 메모리에 로드하고, 쿼리에 필요한 다른 컬럼에서도 위치 기준으로 정렬된 그래뉼을 함께 로드합니다.
 
 ⑤ 그런 다음 쿼리 실행 중에 나머지 필터를 적용합니다.
 
 보시는 것처럼 PREWHERE가 없으면 실제로 일치하는 행이 몇 개 되지 않더라도 필터링 전에 관련 있을 가능성이 있는 모든 컬럼을 먼저 로드합니다.
 
-<div id="how-prewhere-improves-query-efficiency">
-  ## PREWHERE가 쿼리 효율을 개선하는 방식
-</div>
+## PREWHERE가 쿼리 효율을 개선하는 방식 {#how-prewhere-improves-query-efficiency}
 
 다음 애니메이션은 위의 쿼리에서 모든 쿌리 프레디케이트에 PREWHERE 절을 적용했을 때 쿼리가 어떻게 처리되는지 보여줍니다.
 
 처음 세 단계는 앞서와 동일합니다:
 
-<Image img="/images/guides/best-practices/prewhere_02.webp" size="md" alt="PREWHERE 최적화가 적용된 쿼리 처리" />
+<div className="ch-image-md">
+  <Frame>
+    ![PREWHERE 최적화가 적용된 쿼리 처리](/images/guides/best-practices/prewhere_02.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -64,9 +66,13 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 **1단계: town으로 필터링**<br />
 ClickHouse는 ① `town` 컬럼에서 선택된 그래뉼을 읽고, 그중 실제로 `London`과 일치하는 행이 들어 있는 그래뉼을 확인하는 것으로 PREWHERE 처리를 시작합니다.
 
-이 예시에서는 선택된 모든 그래뉼이 일치하므로, ② 다음 필터 컬럼인 `date`에서 위치상 대응되는 그래뉼이 처리 대상으로 선택됩니다:
+이 예시에서는 선택된 모든 그래뉼이 일치하므로, ② 다음 필터 컬럼인 `date`에서 위치 기준으로 정렬된 그래뉼이 처리 대상으로 선택됩니다:
 
-<Image img="/images/guides/best-practices/prewhere_03.webp" size="md" alt="1단계: town으로 필터링" />
+<div className="ch-image-md">
+  <Frame>
+    ![1단계: town으로 필터링](/images/guides/best-practices/prewhere_03.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -75,9 +81,13 @@ ClickHouse는 ① `town` 컬럼에서 선택된 그래뉼을 읽고, 그중 실�
 **2단계: date로 필터링**<br />
 다음으로 ClickHouse는 ① 선택된 `date` 컬럼 그래뉼을 읽어 `date > '2024-12-31'` 필터를 평가합니다.
 
-이 경우 3개의 그래뉼 중 2개에 일치하는 행이 포함되어 있으므로, ② 다음 필터 컬럼인 `price`에서 위치상 대응되는 그래뉼만 후속 처리 대상으로 선택됩니다:
+이 경우 3개의 그래뉼 중 2개에 일치하는 행이 포함되어 있으므로, ② 다음 필터 컬럼인 `price`에서 위치 기준으로 정렬된 그래뉼만 후속 처리 대상으로 선택됩니다:
 
-<Image img="/images/guides/best-practices/prewhere_04.webp" size="md" alt="2단계: date로 필터링" />
+<div className="ch-image-md">
+  <Frame>
+    ![2단계: date로 필터링](/images/guides/best-practices/prewhere_04.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -86,9 +96,13 @@ ClickHouse는 ① `town` 컬럼에서 선택된 그래뉼을 읽고, 그중 실�
 **3단계: price로 필터링**<br />
 마지막으로 ClickHouse는 ① `price` 컬럼에서 선택된 2개의 그래뉼을 읽어 마지막 필터 `price > 10_000`을 평가합니다.
 
-2개의 그래뉼 중 1개에만 일치하는 행이 포함되어 있으므로, ② `SELECT` 컬럼인 `street`에서 위치상 대응되는 그래뉼만 추가 처리를 위해 로드하면 됩니다:
+2개의 그래뉼 중 1개에만 일치하는 행이 포함되어 있으므로, ② `SELECT` 컬럼인 `street`에서 위치 기준으로 정렬된 그래뉼만 추가 처리를 위해 로드하면 됩니다:
 
-<Image img="/images/guides/best-practices/prewhere_05.webp" size="md" alt="2단계: price로 필터링" />
+<div className="ch-image-md">
+  <Frame>
+    ![2단계: price로 필터링](/images/guides/best-practices/prewhere_05.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -103,7 +117,7 @@ ClickHouse는 ① `town` 컬럼에서 선택된 그래뉼을 읽고, 그중 실�
 </Info>
 
 <div id="prewhere-optimization-is-automatically-applied">
-  ## PREWHERE 최적화는 자동으로 적용됩니다
+  ## PREWHERE 최적화는 자동으로 적용됩니다 {#prewhere-optimization-is-automatically-applied}
 </div>
 
 위 예시와 같이 PREWHERE 절은 수동으로 추가할 수 있습니다. 하지만 PREWHERE를 직접 작성할 필요는 없습니다. [`optimize_move_to_prewhere`](/ko/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) 설정이 활성화되면(기본값은 true) ClickHouse는 WHERE의 필터 조건을 PREWHERE로 자동 이동하며, 읽기량을 가장 크게 줄일 수 있는 조건을 우선적으로 선택합니다.
@@ -115,7 +129,7 @@ ClickHouse는 버전 [23.2](https://clickhouse.com/blog/clickhouse-release-23-02
 버전 [23.11](https://clickhouse.com/blog/clickhouse-release-23-11#column-statistics-for-prewhere)부터는 선택적 컬럼 통계(column statistics)를 사용해 단순히 컬럼 크기뿐 아니라 실제 데이터 선택도를 기준으로 필터 처리 순서를 정함으로써 이를 더욱 개선할 수 있습니다.
 
 <div id="how-to-measure-prewhere-impact">
-  ## PREWHERE 영향 측정 방법
+  ## PREWHERE 영향 측정 방법 {#how-to-measure-prewhere-impact}
 </div>
 
 PREWHERE가 쿼리에 도움이 되는지 확인하려면 `optimize_move_to_prewhere` 설정을 활성화했을 때와 비활성화했을 때의 쿼리 성능을 비교하면 됩니다.
@@ -222,7 +236,7 @@ SETTINGS send_logs_level = 'test';
 ```
 
 <div id="key-takeaways">
-  ## 핵심 사항
+  ## 핵심 사항 {#key-takeaways}
 </div>
 
 * PREWHERE는 나중에 필터링으로 제외될 컬럼 데이터를 미리 읽지 않아 I/O와 메모리를 절약합니다.

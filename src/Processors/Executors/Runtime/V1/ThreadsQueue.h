@@ -1,4 +1,5 @@
 #pragma once
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Exception.h>
 #include <base/defines.h>
 namespace DB
@@ -32,9 +33,9 @@ struct ThreadsQueue
         }
     }
 
-    bool has(size_t thread) const { return thread_pos_in_stack[thread] < stack_size; }
-    size_t size() const { return stack_size; }
-    bool empty() const { return stack_size == 0; }
+    [[nodiscard]] bool has(size_t thread) const { return thread_pos_in_stack[thread] < stack_size; }
+    [[nodiscard]] size_t size() const { return stack_size; }
+    [[nodiscard]] bool empty() const { return stack_size == 0; }
 
     void push(size_t thread)
     {
@@ -64,8 +65,8 @@ struct ThreadsQueue
     }
 
 private:
-    std::vector<size_t> stack;
-    std::vector<size_t> thread_pos_in_stack;
+    VectorWithMemoryTracking<size_t> stack;
+    VectorWithMemoryTracking<size_t> thread_pos_in_stack;
     size_t stack_size = 0;
 
     void swapThreads(size_t first, size_t second)

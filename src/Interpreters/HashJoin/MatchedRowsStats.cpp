@@ -54,6 +54,12 @@ void MatchedRowsStats::collectNonJoined(UInt64 non_joined_rows)
     non_joined_right_rows.fetch_add(non_joined_rows);
 }
 
+void MatchedRowsStats::finishNonJoinedStream(size_t num_streams)
+{
+    if (finished_non_joined_streams.fetch_add(1) + 1 == num_streams)
+        non_joined_finished.store(true);
+}
+
 void MatchedRowsStats::markRightMatched(UInt64 ref_word)
 {
     for (const UInt64 word : refsOf(ref_word))
@@ -77,6 +83,11 @@ std::optional<UInt64> MatchedRowsStats::getMatchedRight(UInt64 right_rows_total)
                 return right_rows_flags->countMatched();
             return std::nullopt;
         case RightMatchedSource::NonJoinedComplement:
+            /// `getNonJoinedBlocks` opens no stream for an empty right side
+            if (right_rows_total == 0)
+                return 0;
+            if (!non_joined_finished.load(std::memory_order_relaxed))
+                return std::nullopt;
             return right_rows_total - non_joined_right_rows.load(std::memory_order_relaxed);
         case RightMatchedSource::Unsupported:
             return std::nullopt;

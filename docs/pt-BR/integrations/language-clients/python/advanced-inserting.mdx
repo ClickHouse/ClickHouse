@@ -11,9 +11,11 @@ doc_type: 'reference'
 
 ### InsertContexts {#insertcontexts}
 
-O ClickHouse Connect executa inserções no formato Native, pelos métodos `insert` e `insert_df`, em um `InsertContext`. Os métodos `insert_arrow`, `insert_df_arrow` e `raw_insert` enviam seus payloads diretamente e não usam um `InsertContext`. O `InsertContext` inclui todos os valores enviados como argumentos para o método `insert` do cliente. Além disso, quando um `InsertContext` é criado pela primeira vez, o ClickHouse Connect recupera os tipos de dados das colunas de inserção necessários para inserções eficientes no formato Native. Ao reutilizar o `InsertContext` em várias inserções, essa &quot;pré-consulta&quot; é evitada, e as inserções são executadas com mais rapidez e eficiência.
+O ClickHouse Connect executa inserts no formato Native, pelos métodos `insert` e `insert_df`, em um `InsertContext`. Os métodos `insert_arrow`, `insert_df_arrow` e `raw_insert` enviam suas cargas úteis diretamente e não usam um `InsertContext`. O `InsertContext` inclui todos os valores enviados como argumentos para o método `insert` do cliente. Além disso, quando um `InsertContext` é criado pela primeira vez, o ClickHouse Connect recupera os tipos de dados das colunas de insert necessários para inserts eficientes no formato Native. Ao reutilizar o `InsertContext` em vários inserts, essa &quot;pré-consulta&quot; é evitada, e os inserts são executados com mais rapidez e eficiência.
 
-Um `InsertContext` pode ser obtido usando o método `create_insert_context` do cliente. O método recebe os mesmos argumentos que a função `insert`, exceto o próprio `context`. Observe que, para reutilização, apenas a propriedade `data` dos `InsertContext`s deve ser modificada. Isso está de acordo com seu propósito de fornecer um objeto reutilizável para inserções repetidas de novos dados na mesma tabela.
+O `DESCRIBE TABLE` interno usa seu próprio ID de consulta gerado pelo servidor, enquanto o `INSERT` mantém o `query_id` definido nas configurações de cada insert ou nos padrões do cliente.
+
+Um `InsertContext` pode ser obtido usando o método `create_insert_context` do cliente. O método recebe os mesmos argumentos que a função `insert`, exceto o próprio `context`. Observe que, para reutilização, apenas a propriedade `data` dos `InsertContext`s deve ser modificada. Isso está de acordo com seu propósito de fornecer um objeto reutilizável para inserts repetidos de novos dados na mesma tabela.
 
 ```python
 test_data = [[13, "v1", "v2"], [79, "v3", "v4"]]
@@ -31,11 +33,23 @@ assert qr.first_row[0] == 113
 
 `InsertContext`s incluem estado mutável que é atualizado durante o processo de insert, portanto não são thread-safe.
 
+### Retentativas de insert e desduplicação {#insert-retries-and-deduplication}
+
+Ambos os clientes HTTP podem tentar novamente `insert` e `insert_df` uma vez após certos fechamentos de conexão remota. O cliente reconstrói os dados do insert Native para a nova tentativa. Uma carga útil do tipo string ou bytes passada para `raw_insert` também pode ser retentada da mesma forma. Já um gerador ou um arquivo aberto não é reenviado. Essas retentativas de insert não usam `query_retries` e não se aplicam a respostas HTTP 429, 503 ou 504.
+
+As retentativas de insert têm semântica at-least-once (pelo menos uma vez). Se a primeira tentativa fizer commit, mas a resposta for perdida, a nova tentativa pode inserir as mesmas linhas novamente. Uma exceção também pode ocorrer depois do commit da primeira tentativa. O cliente não garante inserção exactly-once (exatamente uma vez).
+
+A desduplicação depende do motor de tabela, da versão do servidor e das configurações. Para tabelas MergeTree simples, defina a configuração de tabela `non_replicated_deduplication_window` com um valor diferente de zero e grande o suficiente para cobrir as retentativas. O valor padrão, `0`, desabilita a desduplicação. As variantes Replicated e Shared MergeTree oferecem suporte à desduplicação de insert, mas verifique as configurações efetivas antes de contar com ela. Em especial, inserts assíncronos no lado do servidor não são desduplicados por padrão em versões anteriores ao ClickHouse 26.2 ou com configurações de compatibilidade mais antigas. A desduplicação protege apenas os inserts dentro da janela de desduplicação configurada.
+
+Instruções SQL `INSERT` enviadas pelos métodos query ou command seguem uma [política de retentativa HTTP](/pt-BR/integrations/language-clients/python/driver-api#http-retries) própria.
+
 ### Formatos de escrita {#write-formats}
 
 Os formatos de escrita são implementados para um número limitado de tipos. Na maioria dos casos, o ClickHouse Connect determina automaticamente o formato de escrita correto para uma coluna com base no primeiro valor de dados não nulo. Por exemplo, quando o primeiro valor de uma coluna `DateTime` é um inteiro, o cliente o trata como um segundo desde a epoch.
 
 Normalmente, não é necessário substituir um formato de escrita, mas os métodos em `clickhouse_connect.datatypes.format` podem definir um globalmente. Wrappers de contêiner, como `Array`, `Nullable` e `LowCardinality`, preservam o comportamento de formatação do tipo do elemento.
+
+Inserts diretos em colunas de inteiros de 8 a 64 bits rejeitam NaN e infinito de ponto flutuante com `DataError`, inclusive em colunas que aceitam nulos e em valores aninhados. Use `None` para representar o NULL do SQL em uma coluna de inteiros anulável. Uma coluna de inteiros não anulável rejeita `None`. O `insert_df` grava valores ausentes como NULL em uma coluna de inteiros anulável e como 0 em uma não anulável, com qualquer um dos dois codecs.
 
 #### Opções de formato de escrita {#write-format-options}
 
@@ -51,7 +65,7 @@ Normalmente, não é necessário substituir um formato de escrita, mas os métod
 | Interval*             | int                                |                     | Os valores são contagens de 64 bits com sinal na unidade do tipo interval.                                                                                                                                                                      |
 | String                | str or bytes                       |                     | Uma coluna deve conter texto ou bytes de forma consistente.                                                                                                                                                                                     |
 | FixedString           | bytes                              | string              | Valores String são preenchidos com bytes zero. Bytes vazios são gravados como bytes todos zero.                                                                                                                                                 |
-| Enum[8,16]            | str or int                         |                     | Insira labels como strings ou seus valores inteiros subjacentes.                                                                                                                                                                                |
+| Enum[8,16]            | str or int                         |                     | Insira labels como strings ou como códigos inteiros. Labels e códigos podem ser usados juntos na mesma coluna.                                                                                                                                  |
 | Date                  | datetime.date or datetime.datetime | int                 | Valores inteiros são interpretados como dias desde 1970-01-01.                                                                                                                                                                                  |
 | Date32                | datetime.date or datetime.datetime | int                 | Valores inteiros são interpretados como deslocamentos de dias com sinal.                                                                                                                                                                        |
 | DateTime              | datetime.datetime                  | int                 | Valores inteiros são interpretados como segundos desde a epoch.                                                                                                                                                                                 |
@@ -70,6 +84,12 @@ Normalmente, não é necessário substituir um formato de escrita, mas os métod
 | MultiPoint            | Sequence[tuple]                    |                     | Cada ponto é uma tupla de 2 elementos. A inserção de valores MultiPoint exige o ClickHouse 26.8 ou posterior.                                                                                                                                   |
 | Geometry              | tuple or list                      |                     | Valores Point são tuplas de 2 elementos. Envolva valores baseados em lista, incluindo MultiPoint, com `typed_variant` para selecionar um membro de geometria.                                                                                   |
 | QBit                  | Sequence[float]                    |                     | O NumPy é usado automaticamente para uma transposição de bits mais rápida quando instalado.                                                                                                                                                     |
+
+#### Valores de Enum {#enum-values}
+
+Labels de string desconhecidos lançam `clickhouse_connect.driver.exceptions.DataError`, informando o nome da coluna e o label inválido. Isso também vale para valores dentro de `Array` e `Tuple` e para DataFrames do Pandas. Uma string vazia só é válida se for um label declarado.
+
+Inserts a partir de listas Python aceitam `None` apenas para `Nullable(Enum8(...))` ou `Nullable(Enum16(...))`. Em colunas Enum não anuláveis, `insert_df` converte valores ausentes no inteiro zero antes da serialização.
 
 #### Valores Date e Date32 {#date-and-date32-values}
 
@@ -223,6 +243,8 @@ A configuração global `naive_datetime_insert` controla inserções nativas de 
 * `"local"` é o padrão na versão 1.x. O Python interpreta o valor no fuso horário do processo quando `.timestamp()` é chamado. Isso preserva o comportamento atual.
 * `"server"` interpreta o valor como hora do relógio no fuso horário declarado pela coluna `DateTime` ou `DateTime64`. Se a coluna não tiver fuso horário, usa o fuso horário do servidor informado quando o cliente se conectou.
 
+Com o codec Python no modo `"local"`, se `.timestamp()` lançar `OSError` próximo ao epoch ou antes dele no Windows, o driver tenta novamente com o fuso horário local detectado associado ao valor. Instale `tzlocal` ou defina `TZ` como um nome de fuso horário IANA resolvível antes de importar o driver para fornecer regras históricas de fuso horário. Caso contrário, o fallback pode usar um deslocamento fixo que não corresponde ao horário de verão histórico.
+
 Defina a opção antes de uma inserção. Ela é lida quando cada coluna de inserção nativa que contém objetos `datetime` do Python ou strings ISO `DateTime64` é serializada; portanto, a alteração se aplica a clientes existentes e contextos de inserção reutilizáveis.
 
 ```python
@@ -238,7 +260,7 @@ client.insert("events", [[naive_time]], column_names=["event_time"])
 
 Com `"server"`, o ClickHouse Connect associa o `tzinfo` de destino antes de converter o valor em epoch. Para fusos horários IANA, segue as regras da biblioteca padrão para transições de horário de verão. Uma sobreposição no outono usa o valor `fold` do `datetime`. Por padrão, `fold=0` seleciona o deslocamento anterior à transição, enquanto `fold=1` seleciona o deslocamento posterior. Uma lacuna na primavera usa a mesma seleção de deslocamento e não é rejeitada nem normalizada.
 
-Horários de relógio inexistentes na lacuna da primavera podem não ser preservados em uma conversão de ida e volta por meio de um parâmetro de consulta no modo de relógio, pois a análise de texto do ClickHouse pode selecionar um deslocamento diferente. Use um `datetime` com fuso horário ou um horário de relógio válido quando o instante for importante.
+Horários de relógio inexistentes na lacuna da primavera podem não ser preservados em uma conversão de ida e volta por meio de um parâmetro de consulta no modo de relógio, pois o parsing de texto do ClickHouse pode selecionar um deslocamento diferente. Use um `datetime` com fuso horário ou um horário de relógio válido quando o instante for importante.
 
 A opção se aplica apenas a inserções nativas de objetos Python `datetime` e strings ISO sem fuso horário aceitas por `DateTime64`. Colunas NumPy e Pandas com dtype `datetime64` sem fuso horário mantêm a conversão existente de horário de relógio em UTC.
 

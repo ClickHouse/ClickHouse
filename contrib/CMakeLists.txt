@@ -9,7 +9,15 @@ endif ()
 
 if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
     # 3rd-party libraries usually not intended to work with UBSan.
-    add_compile_options(-fno-sanitize=undefined)
+    # `unsigned-integer-overflow` is not a part of the `undefined` group and has to be listed
+    # separately. Header-only third-party code, which is compiled as a part of our own translation
+    # units and therefore is not affected by these options, is excluded in `tests/ubsan_ignorelist.txt`.
+    # Only C/C++ (and GNU-style ASM handled by clang) understand these; scope them away from other
+    # languages such as ASM_NASM (ISA-L on amd64), whose nasm assembler reads `-fno-sanitize=undefined`
+    # as `-f no-sanitize=undefined`, an output format, and fails with `unrecognised output format`.
+    add_compile_options(
+        $<$<COMPILE_LANGUAGE:C,CXX,ASM>:-fno-sanitize=undefined>
+        $<$<COMPILE_LANGUAGE:C,CXX,ASM>:-fno-sanitize=unsigned-integer-overflow>)
 endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
@@ -69,6 +77,7 @@ option (ENABLE_PARQUET "Enable parquet" ${ENABLE_PARQUET_DEFAULT})
 add_contrib (flatbuffers-cmake flatbuffers) # builds `flatc`, which generates the Arrow IPC bindings
 add_contrib (compiler-rt-cmake llvm-project)
 add_contrib (libllvmlibc-cmake llvm-project)
+add_contrib (optimized-routines-cmake optimized-routines)
 add_contrib (llvm-project-cmake llvm-project)
 
 enable_dummy_launchers_if_needed()
@@ -96,6 +105,7 @@ add_contrib (libdivide-cmake)
 add_contrib (libmetrohash)
 add_contrib (lz4-cmake lz4)
 add_contrib (libdeflate-cmake libdeflate)
+add_contrib (gdeflate-cmake gdeflate)
 add_contrib (murmurhash)
 add_contrib (replxx-cmake replxx)
 add_contrib (capnproto-cmake capnproto)
@@ -112,7 +122,8 @@ add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
 add_contrib (thrift-cmake thrift)
 add_contrib (StringZilla-cmake StringZilla)
-# parquet/arrow/orc
+add_contrib (heks-cmake heks)
+# parquet/arrow
 add_contrib (xsimd-cmake xsimd) # required by arrow's SIMD codepaths
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion, xsimd, flatbuffers
 add_contrib (avro-cmake avro) # requires: snappy
@@ -123,6 +134,29 @@ add_contrib (libarchive-cmake libarchive)
 add_contrib (corrosion-cmake corrosion)
 add_contrib (delta-kernel-rs-cmake delta-kernel-rs)
 add_contrib (chdig-cmake chdig)
+
+# Members of the cargo workspace in `rust-contrib-workspace`
+if (ENABLE_RUST AND OS_FREEBSD)
+    # Right nix/libc requires fspacectl and it had been added only since FreeBSD14.
+    # And since sysroot has older libraries you will got undefined reference for clickhouse binary.
+    #
+    # But likely everything should work without this syscall, however it is not
+    # possible right now to gently override libraries versions for dependencies,
+    # and forking rust modules is a little bit too much for this thing.
+    #
+    # You can take a look at the details in the following issue [1].
+    #
+    #   [1]: https://github.com/rust-lang/cargo/issues/5640
+    #
+    # Update 2024-04: Now prql also requires getrandom() via std::sys::pal::unix::rand::imp::getrandom_fill_bytes
+    message(STATUS "Rust build is disabled for FreeBSD because we use old sysroot files")
+elseif (ENABLE_RUST)
+    add_contrib (prql-cmake)
+    add_contrib (polyglot-cmake)
+    add_contrib (pcodec-cmake)
+    add_contrib (vortex-cmake)
+    add_contrib (wasmtime-cmake)
+endif()
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
@@ -167,7 +201,6 @@ add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)
 add_contrib (liburing-cmake liburing)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
-add_contrib (cassandra-cmake cassandra) # requires: libuv
 add_contrib (azure-cmake azure)
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)
@@ -264,7 +297,6 @@ add_contrib (antlr4-cpp-runtime-cmake antlr4-cpp-runtime)
 
 add_contrib(simdcomp-cmake simdcomp)
 
-add_contrib (numactl-cmake numactl)
 
 # Google Cloud Cpp
 if(ENABLE_LIBRARIES AND (OS_LINUX OR OS_DARWIN OR OS_FREEBSD) AND (ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER)))
@@ -302,6 +334,8 @@ add_contrib (libcotp-cmake libcotp)
 add_contrib (sql-console-cmake sql-console)
 add_contrib (clickstack-cmake clickstack)
 
+add_contrib (ipcrypt2-cmake ipcrypt2)
+
 add_contrib (librseq-cmake librseq)
 add_contrib (silk-cmake silk)
 
@@ -323,6 +357,9 @@ add_contrib (librtcx-cmake librtcx)
 # No base folder: nvcomp is not vendored, see contrib/nvcomp-cmake/CMakeLists.txt.
 add_contrib (nvcomp-cmake)
 add_contrib (cudf-cmake cudf) # requires: everything above, plus flatbuffers, xxHash, zlib, zstd
+
+# Must come after every member of the Rust workspace.
+add_contrib (rust-contrib-workspace)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

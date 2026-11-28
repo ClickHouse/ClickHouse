@@ -84,6 +84,11 @@ void KeeperOverDispatcher::finalize(const String & /* reason */)
     callback_state->expired = true;
 }
 
+silk::FiberEvent & KeeperOverDispatcher::getExpiredEvent()
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "KeeperOverDispatcher does not support waiting for the session to expire");
+}
+
 bool KeeperOverDispatcher::isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const
 {
     return keeper_dispatcher->getKeeperContext()->getFeatureFlags().isEnabled(feature_flag);

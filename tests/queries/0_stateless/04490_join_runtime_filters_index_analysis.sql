@@ -27,7 +27,6 @@ ENGINE = MergeTree ORDER BY id;
 INSERT INTO sales1 SELECT number, ['US', 'IN', 'JP', 'ZM'][number % 4 + 1], number * 10 FROM numbers(200);
 INSERT INTO sales2 SELECT number, ['US', 'IN', 'JP', 'ZM'][number % 4 + 1], ['AMER', 'APAC', 'EMEA'][number % 3 + 1] FROM numbers(200);
 
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
 -- The asserted granule-pruning counts depend on which side builds the runtime filter, so the

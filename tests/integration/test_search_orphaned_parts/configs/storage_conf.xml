@@ -17,6 +17,7 @@
             <local_disk_2>
               <type>local_blob_storage</type>
               <path>/internal/2/</path>
+              <persistent_removal_log>true</persistent_removal_log>
             </local_disk_2>
             <!-- plain_rewritable disk is not able to start w/o S3, since it tries to load metadata at start-->
             <!-- <s3_plain_rewritable> -->

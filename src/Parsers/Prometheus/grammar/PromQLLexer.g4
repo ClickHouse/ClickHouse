@@ -63,7 +63,12 @@ fragment DURATION_FORMAT options {
 
 NUMBER: INTEGER_NUMBER | FLOATING_POINT | SCIENTIFIC_NUMBER | INF | NAN | HEXADECIMAL_NUMBER | DURATION_FORMAT;
 
-STRING: '\'' (~('\'' | '\\') | '\\' .)* '\'' | '"' (~('"' | '\\') | '\\' .)* '"' | '`' (~'`')* '`';
+// A quoted string cannot contain a line feed, while a string in backticks can.
+STRING
+    : '\'' (~('\'' | '\\' | '\n') | '\\' ~'\n')* '\''
+    | '"'  (~('"'  | '\\' | '\n') | '\\' ~'\n')* '"'
+    | '`' (~'`')* '`'
+    ;
 
 // Binary operators
 
@@ -103,6 +108,11 @@ IGNORING    : 'ignoring';
 GROUP_LEFT  : 'group_left';
 GROUP_RIGHT : 'group_right';
 
+// `group_left` or `group_right` together with the `(` of its label list, see `groupLeft` in the parser grammar.
+// Whitespace and comments are allowed before that `(` as they are between any two tokens.
+GROUP_LEFT_PAREN  : GROUP_LEFT (WS_FRAGMENT | SL_COMMENT_FRAGMENT)* LEFT_PAREN;
+GROUP_RIGHT_PAREN : GROUP_RIGHT (WS_FRAGMENT | SL_COMMENT_FRAGMENT)* LEFT_PAREN;
+
 OFFSET: 'offset';
 
 BOOL: 'bool';
@@ -124,6 +134,7 @@ AGGREGATION_OPERATOR:
     | 'topk'
     | 'quantile'
     | 'limitk'
+    | 'limit_ratio'
 ;
 
 FUNCTION options {
@@ -150,6 +161,7 @@ FUNCTION options {
     | 'histogram_fraction'
     | 'histogram_quantile'
     | 'holt_winters'
+    | 'double_exponential_smoothing'
     | 'hour'
     | 'idelta'
     | 'increase'
@@ -159,17 +171,23 @@ FUNCTION options {
     | 'ln'
     | 'log2'
     | 'log10'
+    | 'max_of'
+    | 'min_of'
     | 'minute'
     | 'month'
     | 'predict_linear'
+    | 'range'
     | 'rate'
     | 'resets'
     | 'round'
     | 'scalar'
     | 'sgn'
     | 'sort'
+    | 'sort_by_label'
+    | 'sort_by_label_desc'
     | 'sort_desc'
     | 'sqrt'
+    | 'step'
     | 'time'
     | 'timestamp'
     | 'vector'
@@ -228,10 +246,13 @@ METRIC_NAME : [a-z_:] [a-z0-9_:]*;
 LABEL_NAME  : [a-z_] [a-z0-9_]*;
 
 WS         : [\r\t\n ]+   -> channel(WHITESPACE);
-// Newline-terminated comments keep the grammar's existing behavior.
-// EOF comments are lexed here and then narrowed by PromQLLexerBailingOutOnError to the shared SQL
-// lexer's `# ` / `#!` prefix contract. A bare trailing `#` remains a lexical error.
-SL_COMMENT : '#' ( ~[\r\n]* [\r\n] | ~[\r\n]+ ) -> channel(COMMENTS);
+// A line comment ends at the end of the line or at the end of the input.
+SL_COMMENT : '#' ~[\r\n]* [\r\n]? -> channel(COMMENTS);
 
 // Whitespace as a fragment (so it can be used as a part of another token).
 fragment WS_FRAGMENT: [\r\t\n ]+;
+
+// A line comment as a fragment (so it can be used as a part of another token). Unlike `SL_COMMENT`, it must end
+// with a line break: an optional one would let the comment end before a `(` inside it, and that `(` would continue
+// the token. `SL_COMMENT` can't be defined through this fragment: a comment at the end of the input has no line break.
+fragment SL_COMMENT_FRAGMENT: '#' ~[\r\n]* [\r\n];

@@ -288,6 +288,7 @@ void IOutputFormat::onPipelineFinished()
 void IOutputFormat::setTotals(const Block & totals)
 {
     std::lock_guard lock(writing_mutex);
+    writePrefixIfNeeded();
     writeSuffixIfNeeded();
     if (framing)
     {
@@ -310,6 +311,7 @@ void IOutputFormat::setTotals(const Block & totals)
 void IOutputFormat::setExtremes(const Block & extremes)
 {
     std::lock_guard lock(writing_mutex);
+    writePrefixIfNeeded();
     writeSuffixIfNeeded();
     if (framing)
     {

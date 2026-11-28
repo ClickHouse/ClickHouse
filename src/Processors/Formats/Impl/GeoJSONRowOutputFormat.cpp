@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/GeoJSONRowOutputFormat.h>
+#include <IO/writeJSONNumber.h>
 
 #include <algorithm>
 #include <cmath>
@@ -345,7 +346,7 @@ void GeoJSONRowOutputFormat::writeCoordinates(const IColumn & column, size_t row
     const auto & array = assert_cast<const ColumnArray &>(column);
     const IColumn & nested = array.getData();
     const auto & offsets = array.getOffsets();
-    const size_t begin = row_num == 0 ? 0 : offsets[row_num - 1];
+    const size_t begin = row_num == 0 ? 0 : offsets[static_cast<ssize_t>(row_num) - 1];
     const size_t end = offsets[row_num];
     const size_t count = end - begin;
 

@@ -1,0 +1,18 @@
+   ┌─'hello world'─┐
+1. │ hello world   │
+   └───────────────┘
+Row 1:
+──────
+x:             1
+'hello world': hello world
+Row 1:
+──────
+x:             1
+'hello world': hello world
+   ┌─t t────────────────────────────┐
+   ├─first element─┬─second element─┤
+1. │             1 │ a              │
+   └───────────────┴────────────────┘
+   ┌─a lo⋯cut─┐
+1. │        1 │
+   └──────────┘

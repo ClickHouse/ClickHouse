@@ -2,7 +2,7 @@
 sidebarTitle: 'المقدمة'
 description: 'استيراد وتصدير البيانات من Postgres إلى مجموعة واسعة من تنسيقات البيانات ومخازن الكائنات.'
 slug: '/cloud/managed-postgres/extensions/chdb'
-title: 'الوثائق المرجعية لامتداد chdb'
+title: 'وثائق امتدادات chdb'
 doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'امتداد', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
@@ -80,10 +80,11 @@ COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_p
 ```
 
 يمكن أيضًا لعبارة [CREATE TABLE] أن تستمد أعمدتها وتُحمّل صفوفها من عنوان
-URL كهذا:
+URL كهذا (تنبيه: يحتوي ملف البيانات العام هذا على 41 مليون صف):
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     copy_from = 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -142,7 +143,7 @@ CREATE TABLE reviews () WITH (
 على خلاف worker الخلفي، لا يحتفظ المساعد بأي ذاكرة مشتركة خاصة بـ Postgres ولا تديره عملية postmaster. وهذا يعزل حالات الـ crash فلا تؤثر على Postgres. فالمساعد الذي يتوقف يؤدي إلى ظهور error في الـ backend الذي شغّله فقط، بينما تبقى بقية الـ sessions دون تأثر.
 
 <Important>
-  لكل استعلام، يتصل المساعد بـ database جديدة ومؤقتة من chdb على القرص لتنفيذه. ونتيجة لذلك، يعمل كل استعلام حاليًا في عزلة تامة عن جميع الـ الاستعلامات الأخرى. فلا تُنشئ table وتتوقع أن تستعلم عنها في استعلام لاحق.
+  لكل استعلام، يتصل المساعد بقاعدة بيانات جديدة ومؤقتة من chdb على القرص لتنفيذه. ونتيجة لذلك، يعمل كل استعلام حاليًا في عزلة تامة عن جميع الـ الاستعلامات الأخرى. فلا تُنشئ جدولًا وتتوقع أن تستعلم عنه في استعلام لاحق.
 </Important>
 
 ## التبعيات {#dependencies}
@@ -155,18 +156,25 @@ CREATE TABLE reviews () WITH (
 curl -sL https://lib.chdb.io | bash
 ```
 
-لتضمين [chDB] عبر التجميع الساكن (static) في التطبيق المساعد، عيّن المتغيرات التالية
+على نظام macOS، قد تحتاج إلى توقيع المكتبة قبل بناء الامتداد:
+
+```sh
+sudo install_name_tool -id /usr/local/lib/libchdb.so /usr/local/lib/libchdb.so
+sudo codesign -f -s - /usr/local/lib/libchdb.so
+```
+
+لتضمين [chDB] عبر التصريف الساكن (static) في التطبيق المساعد، عيّن المتغيرات التالية
 قبل تشغيل أوامر `make` الخاصة بـ[التثبيت](#compile-from-source).
 
 ```sh
 export BUNDLE_LIBCHDB=1 LIBCHDB_BUILD=static
 ```
 
-سيقوم `Makefile` بتنزيل مكتبة `libchdb` الثابتة (static) وترجمتها داخل التطبيق.
+سيقوم `Makefile` بتنزيل مكتبة `libchdb` الثابتة (static) وتصريفها داخل التطبيق.
 
 على Linux، يمكنك أيضاً جعل عملية التثبيت تنزّل مكتبة `libchdb` الديناميكية وتثبّتها، وذلك بتعيين `export BUNDLE_LIBCHDB=1` قبل تشغيل أوامر `make` الخاصة بـ [التثبيت](#compile-from-source).
 
-### البناء من المصدر {#compile-from-source}
+### التصريف من المصدر {#compile-from-source}
 
 لبناء chdb، نفّذ ما يلي فقط:
 
@@ -230,6 +238,12 @@ ERROR:  must be owner of database regression
 make installcheck PGUSER=postgres
 ```
 
+لتعطيل مخطط `file://` في خطاف `COPY`، عرِّف `NO_FILE_SCHEME`:
+
+```sh
+make NO_FILE_SCHEME=1
+```
+
 لتثبيت الامتداد في custom prefix على PostgreSQL 18 أو أحدث، مرّر
 الـ argument المسمى `prefix` إلى `install` (وليس إلى أي أهداف `make` أخرى):
 
@@ -276,7 +290,7 @@ dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
 
 [NYC Taxi dataset]: /get-started/sample-datasets/nyc-taxi "ClickHouse Docs: بيانات سيارات الأجرة في نيويورك"
 
-[benchmark]: https://github.com/ClickHouse/pg_chdb/tree/main/dev/benchmark "Postgres Lake Copy Benchmark"
+[benchmark]: https://github.com/ClickHouse/pg_chdb/tree/main/dev/benchmark "Postgres Lake Copy اختبار الأداء"
 
 [JSONCompact]: /reference/formats/JSON/JSONCompact "ClickHouse Docs: JSONCompact"
 

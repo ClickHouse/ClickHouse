@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: Arrow format is not available in the fasttest environment
-
 -- Reading several Arrow files under one glob infers the header from one of them and realigns the
 -- others to it, so a zero-element struct in the header meets a non-empty struct of the same name.
 -- The two files carry the shapes swapped and the check is an aggregate because the glob listing

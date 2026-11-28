@@ -228,7 +228,7 @@ ClickHouse 在 `/jemalloc` HTTP 端点提供了一个内置的 web UI，用于�
 
     * `GET /jemalloc/stats` — 原始 `malloc_stats_print` 输出
     * `GET /jemalloc/status` — 以 JSON 返回剖析状态 (`prof_enabled`、`prof_active`、`thread_active_init`、`lg_sample`)
-    * `GET /jemalloc/profile?format={collapsed|raw}` — 刷写堆内存剖析并执行 server-side 符号化，返回适合 火焰图 渲染的 collapsed stacks (默认) 或原始 jemalloc 转储
+    * `GET /jemalloc/profile?format={collapsed|raw}` — 刷写堆内存剖析并执行 server-side 符号化，返回适合 火焰图 渲染的 折叠栈 (默认) ，或与 `system.jemalloc_profile_text` 的 `raw` 格式形式一致的堆内存剖析
   </Tab>
 </Tabs>
 
@@ -256,8 +256,8 @@ SELECT * FROM system.jemalloc_profile_text
 
 输出格式由 `jemalloc_profile_text_output_format` 设置控制，它支持三个值：
 
-* `raw` — jemalloc 生成的原始堆内存剖析。
-* `symbolized` — 与 jeprof 兼容的格式，内嵌函数符号。由于符号已内嵌，`jeprof` 无需 ClickHouse 可执行文件即可分析输出。
+* `raw` — jemalloc 生成的堆内存剖析，但不公开运行时地址：ClickHouse 二进制文件内的调用栈地址会替换为其在该文件中的偏移量，其他地址 (共享库、JIT 代码) 替换为 `0`，并移除内存映射 (`MAPPED_LIBRARIES`) 。`jeprof` 需结合 ClickHouse 二进制文件进行分析：`jeprof /path/to/clickhouse profile.heap`。
+* `symbolized` — 与 jeprof 兼容的格式，内嵌函数符号。由于符号已内嵌，`jeprof` 无需 ClickHouse 二进制文件即可分析输出。
 * `collapsed` (默认) — 与 FlameGraph 兼容的折叠栈格式，每行一个调用栈，并附带字节数。
 
 例如，要获取原始剖析：
@@ -342,15 +342,15 @@ ORDER BY b.waste DESC, s.est_old_objects DESC
 SETTINGS allow_introspection_functions=1
 ```
 
-### 示例：生成碎片化火焰图 {#example-fragmentation-flamegraph}
+### 示例：生成内存碎片火焰图 {#example-fragmentation-flamegraph}
 
-同一个查询还可以按各回溯 (backtrace) 中较旧分配 (allocation) 数量的比例，将每个大小类的浪费量分摊到这些回溯上，并以 `flamegraph.pl` 所需的 collapsed 格式输出结果。存在浪费但没有足够旧的样本的大小类会被归入 `[unattributed]` 帧，因此火焰图的总量即为总浪费量。每个查询只应读取一次 `system.jemalloc_sampled_allocations`：每次读取都会刷写一份新的 profile，因此两个子查询看到的数据会不一致。
+同一个查询还可以按各调用栈 (backtrace) 中较旧分配 (allocation) 数量的比例，将每个大小类的浪费量分摊到这些调用栈上，并以 `flamegraph.pl` 所需的折叠栈格式输出结果。存在浪费但没有足够旧的样本 (samples) 的大小类会被归入 `[unattributed]` 帧，因此火焰图的总量即为总浪费量。若 jemalloc 无法展开某个样本的调用栈，该样本的 `trace` 为空，并会被归入 `[unknown]`。每个查询只应读取一次 `system.jemalloc_sampled_allocations`：每次读取都会刷写一份新的 profile，因此两个子查询看到的数据会不一致。
 
 ```sql
 WITH 60e9 AS min_age_ns
 SELECT format('{} {}',
     if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))),
-    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste))))
+    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), toFloat64(b.waste)))))
 FROM system.jemalloc_arena_bins AS b
 LEFT JOIN
 (
@@ -358,7 +358,7 @@ LEFT JOIN
         arena,
         size_class,
         sum(weight) AS est_old_objects,
-        arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
+        if(empty(trace), '[unknown]', arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';')) AS stack
     FROM system.jemalloc_sampled_allocations
     WHERE age_ns > min_age_ns
     GROUP BY arena, size_class, trace

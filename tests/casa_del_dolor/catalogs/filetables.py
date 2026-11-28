@@ -9,6 +9,8 @@ import os
 import random
 import re
 import threading
+import urllib.parse
+import urllib.request
 import zlib
 from datetime import timezone
 
@@ -17,6 +19,7 @@ import pyarrow.orc as pa_orc
 import pyarrow.parquet as pa_pq
 
 import snappy  # python-snappy: hadoop framing, like ClickHouse's `snappy` file wrapper
+import urllib3
 import zstandard
 
 import avro.schema
@@ -24,8 +27,12 @@ from avro.codecs import KNOWN_CODECS
 from avro.datafile import DataFileReader, DataFileWriter
 from avro.errors import AvroException
 from avro.io import DatumReader, DatumWriter
+from azure.core.exceptions import AzureError, ResourceNotFoundError
+from minio import Minio
+from minio.commonconfig import Tags
+from minio.error import S3Error
 
-from integration.helpers.client import Client
+from tests.integration.helpers.client import Client, QueryRuntimeException
 from pyspark.sql.pandas.types import from_arrow_type, to_arrow_type
 from pyspark.sql.types import (
     ArrayType,
@@ -82,6 +89,70 @@ _SERVER_USER_FILES = "/var/lib/clickhouse/user_files"
 # ClickHouse compression method aliases, normalized
 _COMPRESSION_ALIASES = {"auto": "none", "gz": "gzip", "lzma": "xz", "zst": "zstd"}
 
+# The methods `auto` picks from these extensions, of the ones `_compress_bytes` writes
+_EXTENSION_COMPRESSIONS = {
+    "gz": "gzip",
+    "gzip": "gzip",
+    "deflate": "deflate",
+    "xz": "xz",
+    "lzma": "xz",
+    "zst": "zstd",
+    "zstd": "zstd",
+    "bz2": "bz2",
+    "snappy": "snappy",
+}
+
+# A remote storage that does not answer, e.g. while dolor restarts or pauses MinIO, Azurite or nginx
+_STORAGE_UNAVAILABLE_ERRORS = (OSError, urllib3.exceptions.HTTPError, S3Error, AzureError)
+
+# What ClickHouse reports for the same
+_STORAGE_UNAVAILABLE_CODES = (
+    "S3_ERROR",
+    "AZURE_BLOB_STORAGE_ERROR",
+    "NETWORK_ERROR",
+    "SOCKET_TIMEOUT",
+    "CANNOT_READ_FROM_SOCKET",
+    "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER",
+    "POCO_EXCEPTION",
+)
+
+# Bounded calls to the remote storages, so a paused one does not hold the locks for minutes
+_TIMEOUT_SECONDS = 30
+_azure_call_options = {
+    "connection_timeout": 5,
+    "read_timeout": _TIMEOUT_SECONDS,
+    "retry_total": 1,
+}
+_minio_clients: dict[tuple, Minio] = {}
+
+
+def resolve_compression(path: str, compression: str) -> str:
+    """The method a data file at `path` is wrapped with, normalized: for `auto`, the one ClickHouse
+    picks from the extension."""
+    method = compression.lower()
+    if method == "auto":
+        name = path.rsplit("/", 1)[-1]
+        extension = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+        return _EXTENSION_COMPRESSIONS.get(extension, "none")
+    return _COMPRESSION_ALIASES.get(method, method)
+
+
+def _minio_client(cluster) -> Minio:
+    key = (cluster.minio_ip, cluster.minio_port)
+    if key not in _minio_clients:
+        _minio_clients[key] = Minio(
+            f"{cluster.minio_ip}:{cluster.minio_port}",
+            access_key=cluster.minio_access_key,
+            secret_key=cluster.minio_secret_key,
+            secure=cluster.minio_certs_dir is not None,
+            http_client=urllib3.PoolManager(
+                cert_reqs="CERT_NONE",
+                timeout=urllib3.Timeout(connect=5, read=_TIMEOUT_SECONDS),
+                retries=urllib3.Retry(total=1),
+            ),
+        )
+    return _minio_clients[key]
+
 # Errors a corrupt or ClickHouse-overwritten data file can raise on read
 _DATA_FILE_ERRORS = (
     pa.ArrowException,
@@ -92,11 +163,14 @@ _DATA_FILE_ERRORS = (
     lzma.LZMAError,
     zstandard.ZstdError,
     snappy.UncompressError,
+    # ClickHouse deleted the object, e.g. on TRUNCATE
+    S3Error,
+    ResourceNotFoundError,
 )
 
 
 def _compress_bytes(data: bytes, compression: str) -> bytes:
-    """Apply the whole-file compression wrapper the `File` engine declares as third argument."""
+    """Apply the whole-file compression wrapper the engine declares, or picks from the extension."""
     if compression == "none":
         return data
     if compression == "gzip":
@@ -140,8 +214,83 @@ def host_data_path(cluster, server_path: str) -> str:
     return server_path.replace(_SERVER_USER_FILES, host_root, 1)
 
 
+def data_location(cluster, storage: str, path: str) -> str:
+    """Where the data file of a table on `storage` is, seen from here, for its ClickHouse `path`."""
+    if storage == "local":
+        return host_data_path(cluster, path)
+    if storage == "url":
+        # The nginx of the cluster, through its port on the host
+        return f"http://localhost:{cluster.nginx_port}{urllib.parse.urlsplit(path).path}"
+    # The key in the bucket or container of the named collection
+    return path.lstrip("/")
+
+
+def put_data(cluster, storage: str, location: str, data: bytes, tags: dict | None = None):
+    """Write the whole object at once, so a concurrent ClickHouse read never sees part of it."""
+    if storage == "local":
+        os.makedirs(os.path.dirname(location), exist_ok=True)
+        with open(location + ".tmp", "wb") as out:
+            out.write(data)
+        os.replace(location + ".tmp", location)
+    elif storage == "url":
+        urllib.request.urlopen(
+            urllib.request.Request(location, data=data, method="PUT"),
+            timeout=_TIMEOUT_SECONDS,
+        ).close()
+    elif storage == "azure":
+        cluster.blob_service_client.get_blob_client(
+            cluster.azure_container_name, location
+        ).upload_blob(data, overwrite=True, tags=tags, **_azure_call_options)
+    else:
+        object_tags = None
+        if tags:
+            object_tags = Tags(for_object=True)
+            object_tags.update(tags)
+        _minio_client(cluster).put_object(
+            cluster.minio_bucket, location, io.BytesIO(data), len(data), tags=object_tags
+        )
+
+
+def delete_data(cluster, storage: str, location: str):
+    """Delete an object of MinIO or Azurite, if it still exists."""
+    if storage == "azure":
+        try:
+            cluster.blob_service_client.get_blob_client(
+                cluster.azure_container_name, location
+            ).delete_blob(**_azure_call_options)
+        except ResourceNotFoundError:
+            # ClickHouse moved or deleted it after processing, MinIO ignores a missing object too
+            pass
+    else:
+        _minio_client(cluster).remove_object(cluster.minio_bucket, location)
+
+
+def get_data(cluster, storage: str, location: str) -> bytes:
+    if storage == "local":
+        with open(location, "rb") as source:
+            return source.read()
+    if storage == "url":
+        with urllib.request.urlopen(location, timeout=_TIMEOUT_SECONDS) as response:
+            return response.read()
+    if storage == "azure":
+        return (
+            cluster.blob_service_client.get_blob_client(
+                cluster.azure_container_name, location
+            )
+            .download_blob(**_azure_call_options)
+            .readall()
+        )
+    response = _minio_client(cluster).get_object(cluster.minio_bucket, location)
+    try:
+        return response.read()
+    finally:
+        response.close()
+        response.release_conn()
+
+
 class FileTable:
-    """A data file written by Spark + pyarrow / Avro, read by a ClickHouse `File` engine table."""
+    """A data file written by Spark + pyarrow / Avro, read by a ClickHouse `File`, `S3`,
+    `AzureBlobStorage` or `URL` engine table."""
 
     # No lake behind this table: SparkAndClickHouseCheck then skips the engine-match
     # and snapshot / time-travel branches, which key on the lake format.
@@ -157,6 +306,7 @@ class FileTable:
         file_format: str,
         path: str,
         compression: str,
+        storage: str = "local",
     ):
         self.database_name = database_name
         self.table_name = table_name
@@ -169,8 +319,10 @@ class FileTable:
         self.deterministic = deterministic
         # "Arrow" (file format, footer at the end), "ArrowStream", "Parquet", "ORC" or "Avro"
         self.file_format = file_format
+        # "local", "s3", "azure" or "url", and `path` the location on it from `data_location`
+        self.storage = storage
         self.path = path
-        # Whole-file wrapper declared in the `File` engine, normalized ("gzip", "zstd", ...)
+        # Whole-file wrapper the engine declares or picks from the extension, normalized ("gzip", "zstd", ...)
         self.compression = compression
 
     def get_clickhouse_path(self) -> str:
@@ -320,14 +472,23 @@ def _from_avro_value(value, dtype):
     return value
 
 
-def write_data_file(table: FileTable, arrow_table) -> None:
-    """Write the data file atomically, so a concurrent ClickHouse read never sees a
-    partial file. Format-level compression and batching options are randomized to also
-    exercise ClickHouse's compressed and multi-batch reading paths, and the whole file
-    is wrapped with the compression the `File` engine declares."""
+# The setting that makes each engine read an empty data file as 0 rows
+SKIP_EMPTY_FILES_SETTINGS = {
+    "local": "engine_file_skip_empty_files",
+    "s3": "s3_skip_empty_files",
+    "azure": "azure_skip_empty_files",
+    "url": "engine_url_skip_empty_files",
+}
+
+# The formats `serialize_data_file` writes, in lowercase
+DATA_FILE_FORMATS = ("arrow", "arrowstream", "parquet", "orc", "avro")
+
+
+def serialize_data_file(table: FileTable, arrow_table) -> bytes:
+    """The data file of `table` with the rows of `arrow_table`. Format-level compression and
+    batching options are randomized to also exercise ClickHouse's compressed and multi-batch
+    reading paths."""
     fmt = table.file_format.lower()
-    tmp_path = table.path + ".tmp"
-    os.makedirs(os.path.dirname(table.path), exist_ok=True)
     if fmt in ("arrow", "arrowstream"):
         options = pa.ipc.IpcWriteOptions(
             compression=random.choice([None, None, None, "lz4", "zstd"])
@@ -399,22 +560,29 @@ def write_data_file(table: FileTable, arrow_table) -> None:
             payload = sink.getvalue()
     else:
         raise ValueError(f"Unsupported file format {table.file_format}")
-    with open(tmp_path, "wb") as out:
-        out.write(_compress_bytes(payload, table.compression))
-    os.replace(tmp_path, table.path)
+    return payload
+
+
+def write_data_file(cluster, table: FileTable, arrow_table) -> None:
+    """Write the data file, wrapped with the compression the engine declares."""
+    payload = serialize_data_file(table, arrow_table)
+    put_data(
+        cluster, table.storage, table.path, _compress_bytes(payload, table.compression)
+    )
     logger.info(
         f"Wrote {arrow_table.num_rows} rows to {table.get_clickhouse_path()} data file"
-        f" ({table.file_format}, {table.compression} compression)"
+        f" ({table.file_format}, {table.compression} compression, {table.storage} storage)"
     )
 
 
-def read_data_file(table: FileTable):
+def read_data_file(cluster, table: FileTable):
     """Read the data file back with a reader independent from ClickHouse: pyarrow for the
     arrow-family formats, the Apache Avro library for Avro. Returns a pyarrow table, or
     a list of records for Avro."""
     fmt = table.file_format.lower()
-    with open(table.path, "rb") as source:
-        payload = _decompress_bytes(source.read(), table.compression)
+    payload = _decompress_bytes(
+        get_data(cluster, table.storage, table.path), table.compression
+    )
     if fmt == "arrow":
         return pa.ipc.open_file(pa.BufferReader(payload)).read_all()
     if fmt == "arrowstream":
@@ -522,6 +690,19 @@ def _to_spark_compatible_arrow(arrow_table):
     return arrow_table, unsupported
 
 
+def _to_spark_column(mapper: ClickHouseTypeMapper, val: dict, is_avro: bool):
+    """The Spark column of the ClickHouse column `val` from BuzzHouse, None when Avro cannot hold it."""
+    mapper.increment()
+    # A table created `AS` a lake table infers `Int64` where BuzzHouse has a wide integer
+    mapper.wide_ints_as_decimal = False
+    _, nullable, spark_type = mapper.clickhouse_to_spark(
+        val["type"], False, ClickHouseMapping.Spark
+    )
+    if is_avro and not avro_compatible(spark_type, val["name"]):
+        return None
+    return SparkColumn(val["name"], spark_type, nullable, False, val["type"])
+
+
 class FileHandler:
     """Manages ClickHouse `File` engine tables whose data file is written by Spark + pyarrow."""
 
@@ -538,6 +719,26 @@ class FileHandler:
             next_session, table, random.randint(0, 100)
         )
         return df.toArrow()
+
+    def random_data_file(self, columns: list, file_format: str) -> bytes:
+        """A data file in `file_format` with random rows of the ClickHouse `columns`, e.g. the
+        payload of one message of a streaming table."""
+        mapper = ClickHouseTypeMapper()
+        mapper.reset()
+        is_avro = file_format.lower() == "avro"
+        spark_columns = {}
+        for val in columns:
+            column = _to_spark_column(mapper, val, is_avro)
+            if column is not None:
+                spark_columns[val["name"]] = column
+        if not spark_columns:
+            return b""
+        table = FileTable(
+            "", "", spark_columns, set(spark_columns), False, file_format, "", "none"
+        )
+        # No Spark session: one per message would be slow, and no check reads these files back
+        arrow_table = self.spark.data_generator.random_arrow_table(table, random.randint(0, 100))
+        return serialize_data_file(table, arrow_table)
 
     def create_table(self, cluster, data) -> bool:
         mapper = ClickHouseTypeMapper()
@@ -565,11 +766,14 @@ class FileHandler:
                 )
         first = True
         for val in file_columns:
-            mapper.increment()
-            _, nullable, spark_type = mapper.clickhouse_to_spark(
-                val["type"], False, ClickHouseMapping.Spark
-            )
-            if is_avro and not avro_compatible(spark_type, val["name"]):
+            column = _to_spark_column(mapper, val, is_avro)
+            if column is None:
+                # The engine takes format settings from its CREATE, not from the reading
+                # query, so a declared field missing from the Avro file fails every read
+                if val["name"] in ch_column_names:
+                    raise ValueError(
+                        f"Column {val['name']} of {data['database_name']}.{data['table_name']} is not representable in Avro"
+                    )
                 continue
             # Sometimes skip columns: ClickHouse fills them with defaults on read. Not
             # for Avro, where `input_format_avro_allow_missing_fields` is 0 by default,
@@ -581,15 +785,13 @@ class FileHandler:
                 and random.randint(1, 11) == 1
             ):
                 continue
-            columns[val["name"]] = SparkColumn(
-                val["name"], spark_type, nullable, False, val["type"]
-            )
+            columns[val["name"]] = column
             first = False
         if not columns:
             raise ValueError(
                 f"No Avro-compatible columns for {data['database_name']}.{data['table_name']}"
             )
-        compression = data.get("compression", "none").lower()
+        storage = data.get("storage", "local")
         next_table = FileTable(
             data["database_name"],
             data["table_name"],
@@ -597,8 +799,9 @@ class FileHandler:
             ch_column_names,
             deterministic,
             data["format"],
-            host_data_path(cluster, data["path"]),
-            _COMPRESSION_ALIASES.get(compression, compression),
+            data_location(cluster, storage, data["path"]),
+            resolve_compression(data["path"], data.get("compression", "auto")),
+            storage,
         )
         with self.spark.spark_lock:
             next_session = self.spark.get_next_session(
@@ -610,7 +813,7 @@ class FileHandler:
             )
             try:
                 write_data_file(
-                    next_table, self._random_file_df(next_session, next_table)
+                    cluster, next_table, self._random_file_df(next_session, next_table)
                 )
             finally:
                 next_session.stop()
@@ -628,7 +831,10 @@ class FileHandler:
         fmt = table.file_format.lower()
         # ClickHouse may have truncated the data file to 0 bytes (e.g. TRUNCATE) between the
         # independent read above and this query; skip empty files to read 0 rows rather than error
-        settings = ["engine_file_skip_empty_files = 1"]
+        settings = [f"{SKIP_EMPTY_FILES_SETTINGS[table.storage]} = 1"]
+        if table.storage != "local":
+            # The cached count is valid while `Last-Modified` is the same, which has seconds only
+            settings.append("use_cache_for_count_from_files = 0")
         if fmt in ("arrow", "arrowstream"):
             settings.append("input_format_arrow_allow_missing_columns = 1")
             # Prefer the new native Arrow reader, keeping some runs on the library one
@@ -652,9 +858,9 @@ class FileHandler:
         against an independent one. The count and value comparison is delegated to
         SparkAndClickHouseCheck, with the file loaded into a temp view standing in for
         the Spark-side table."""
-        # Read independently first: if ClickHouse mutated the file (INSERT appends a
-        # second file, TRUNCATE empties it), this raises and the caller regenerates it
-        data_read = read_data_file(table)
+        # Read independently first: if ClickHouse changed the file (INSERT appends to it or
+        # overwrites it, TRUNCATE empties or deletes it), this raises and the caller regenerates it
+        data_read = read_data_file(cluster, table)
         client = Client(
             host=(
                 cluster.instances["node0"].ip_address
@@ -669,15 +875,31 @@ class FileHandler:
         # settings once and reuse them for the count/hash comparison below, so a file ClickHouse
         # truncated to 0 bytes is skipped consistently instead of passing here and throwing there.
         decode_settings = self._full_decode_settings(table)
-        client.query(
-            f"SELECT * FROM {table.get_clickhouse_path()} FORMAT Null"
-            f" SETTINGS {decode_settings};"
-        )
+        try:
+            client.query(
+                f"SELECT * FROM {table.get_clickhouse_path()} FORMAT Null"
+                f" SETTINGS {decode_settings};"
+            )
+        except QueryRuntimeException as e:
+            # Not for a remote storage that went down after the read above
+            if table.storage == "local" or not any(
+                f"({code})" in str(e) for code in _STORAGE_UNAVAILABLE_CODES
+            ):
+                raise
+            self.logger.warning(
+                f"Skipping the check of {table.get_clickhouse_path()}, its storage is not available: {e}"
+            )
+            return True
         if isinstance(data_read, list):
             # Avro records: rebuild rows in the declared column order
+            # `createDataFrame` rejects char and varchar, as when the rows are inserted
             struct = StructType(
                 [
-                    StructField(c.column_name, c.spark_type, c.nullable)
+                    StructField(
+                        c.column_name,
+                        self.spark.data_generator._map_type_to_insert(c.spark_type),
+                        c.nullable,
+                    )
                     for c in table.columns.values()
                 ]
             )
@@ -714,22 +936,34 @@ class FileHandler:
         with self.file_lock:
             next_table = self.file_tables[(data["catalog_name"], data["table_name"])]
             try:
-                if random.randint(1, 10) < 8:
-                    # Rewrite the file with fresh random data (atomic replace)
-                    write_data_file(
-                        next_table, self._random_file_df(next_session, next_table)
-                    )
-                    return True
-                return self.check_table(cluster, next_session, next_table)
-            except _DATA_FILE_ERRORS as e:
-                # ClickHouse is allowed to write into the table, and appending to or
-                # truncating the data file makes it unreadable: regenerate it instead
-                # of reporting a false mismatch
+                return self._update_or_check_table(cluster, next_session, next_table)
+            except _STORAGE_UNAVAILABLE_ERRORS as e:
+                if next_table.storage == "local":
+                    raise
+                # Dolor restarts or pauses MinIO, Azurite and nginx on purpose, the next command retries
                 self.logger.warning(
-                    f"Data file of {next_table.get_clickhouse_path()} is not readable"
-                    f" anymore ({e}), regenerating it"
-                )
-                write_data_file(
-                    next_table, self._random_file_df(next_session, next_table)
+                    f"Skipping the update of {next_table.get_clickhouse_path()}, its storage is not available: {e}"
                 )
                 return True
+
+    def _update_or_check_table(self, cluster, next_session, next_table: FileTable) -> bool:
+        try:
+            if random.randint(1, 10) < 8:
+                # Rewrite the file with fresh random data, replacing it at once
+                write_data_file(
+                    cluster, next_table, self._random_file_df(next_session, next_table)
+                )
+                return True
+            return self.check_table(cluster, next_session, next_table)
+        except _DATA_FILE_ERRORS as e:
+            # ClickHouse is allowed to write into the table, and appending to, overwriting,
+            # truncating or deleting the data file makes it unreadable: regenerate it instead
+            # of reporting a false mismatch
+            self.logger.warning(
+                f"Data file of {next_table.get_clickhouse_path()} is not readable"
+                f" anymore ({e}), regenerating it"
+            )
+            write_data_file(
+                cluster, next_table, self._random_file_df(next_session, next_table)
+            )
+            return True

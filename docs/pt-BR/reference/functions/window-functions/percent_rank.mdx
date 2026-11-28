@@ -17,12 +17,12 @@ Alias: `percentRank` (diferencia maiúsculas de minúsculas)
 ```sql
 percent_rank ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+        | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
 
-A definição padrão e obrigatória do frame da janela é `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+A função sempre lê a partição inteira; um quadro de janela, se especificado, é ignorado.
 
 Para mais detalhes sobre a sintaxe das funções de janela, consulte: [Funções de janela - Sintaxe](/pt-BR/reference/functions/window-functions/index#syntax).
 

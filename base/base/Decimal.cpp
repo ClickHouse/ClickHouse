@@ -26,7 +26,7 @@ namespace DB
 /// explicitly, while paths such as digit accumulation in `readDecimalText` and running
 /// sums in aggregate functions rely on two's-complement wrap. Those operators are
 /// marked `NO_SANITIZE_UNDEFINED` so UBSan does not flag the wrap as undefined
-/// behaviour (matches `addOverflow` / `negateOverflow` below). `/=` and `%=` (and the
+/// behaviour (matches `Decimal::addOverflow` in `Decimal.h` and `negateOverflow` below). `/=` and `%=` (and the
 /// free `/`) are deliberately left instrumented so UBSan still catches divide-by-zero
 /// and `INT_MIN / -1`.
 template <typename T> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator += (const T & x) { value += x; return *this; }
@@ -34,8 +34,6 @@ template <typename T> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::opera
 template <typename T> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator *= (const T & x) { value *= x; return *this; }
 template <typename T> const Decimal<T> & Decimal<T>::operator /= (const T & x) { value /= x; return *this; }
 template <typename T> const Decimal<T> & Decimal<T>::operator %= (const T & x) { value %= x; return *this; }
-
-template <typename T> void NO_SANITIZE_UNDEFINED Decimal<T>::addOverflow(const T & x) { value += x; }
 
 /// Maybe this explicit instantiation affects performance since operators cannot be inlined.
 

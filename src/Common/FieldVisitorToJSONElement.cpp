@@ -1,4 +1,6 @@
 #include <Common/FieldVisitorToJSONElement.h>
+#include <IO/writeJSONNumber.h>
+#include <Formats/FormatSettings.h>
 #include <Common/checkStackSize.h>
 
 #include <IO/WriteHelpers.h>

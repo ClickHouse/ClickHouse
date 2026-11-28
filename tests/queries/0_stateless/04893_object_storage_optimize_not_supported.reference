@@ -1,6 +1,4 @@
--- delta, allow_delta_kernel_rs = 1
-Method `optimize` is not implemented for DeltaLake
--- delta, allow_delta_kernel_rs = 0
+-- delta
 Method `optimize` is not implemented for DeltaLake
 -- paimon
 Method `optimize` is not implemented for Paimon

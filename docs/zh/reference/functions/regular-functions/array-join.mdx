@@ -85,9 +85,32 @@ GROUP BY
 └─────────────┴──────────┴─────────┘
 ```
 
-<div id="important-note">
-  ### 最佳实践
-</div>
+### 行顺序 {#row-order}
+
+对于每个源行，`arrayJoin` 会按照元素在数组中的顺序依次生成这些元素。
+
+如果查询中包含多个参数不同的 `arrayJoin` 调用，结果会为元素的每种组合各生成一行。这些行的顺序无法保证，因为它取决于查询计划。例如，如果 `WHERE` 子句用到了其中某个调用，查询可能会先展开该调用。如需获得确定的顺序，请使用 `ORDER BY`：
+
+```sql title="Query"
+SELECT arrayJoin(['a', 'b']) AS x, arrayJoin([1, 2]) AS y
+WHERE y > 0
+ORDER BY x, y
+```
+
+```text title="Response"
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+如果没有 `ORDER BY`，此查询可能会按 `('a', 1)`、`('b', 1)`、`('a', 2)`、`('b', 2)` 的顺序返回行。
+
+如果没有 `ORDER BY`，源行的顺序无法保证。如需稳定的顺序，或需要结合 `LIMIT` 和 `OFFSET` 进行分页，请参阅 [`ARRAY JOIN`](/zh/reference/statements/select/array-join) 子句中的“行顺序与分页”一节。该节中关于 `ORDER BY` 的规则同样适用于 `arrayJoin`。
+
+### 最佳实践 {#important-note}
 
 对同一表达式多次使用 `arrayJoin`，由于公共子表达式消除，可能无法得到预期结果。
 在这种情况下，可以考虑对重复的数组表达式做一些不会影响 JOIN result 的额外处理。例如，`arrayJoin(arraySort(arr))`、`arrayJoin(arrayConcat(arr, []))`

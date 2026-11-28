@@ -13,11 +13,13 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## compatibility
+## compatibility {#compatibility}
 
 Le paramètre `compatibility` fait que ClickHouse utilise les paramètres par défaut d’une version antérieure de ClickHouse, à l’exception des modifications consignées dans l’historique des changements de paramètres.
 
 Si certains paramètres sont définis sur des valeurs autres que les valeurs par défaut, ils sont respectés (seuls les paramètres qui n’ont pas été modifiés sont affectés par le paramètre `compatibility`).
+
+Le paramètre `compatibility` n’applique jamais une valeur que l’utilisateur ne pourrait pas définir lui-même : un paramètre conserve sa valeur par défaut si la valeur par défaut de la version antérieure enfreindrait les [contraintes](/fr/concepts/features/configuration/settings/constraints-on-settings) des settings profiles de l’utilisateur, ou si le paramètre appartient à un palier que [`allow_feature_tier`](/fr/reference/settings/server-settings/settings/allow#allow_feature_tier) désactive.
 
 Les changements marqués `Ignore` dans [`system.settings_changes`](/fr/reference/system-tables/settings_changes) empêchent le rollback de ce changement ainsi que de tous les changements antérieurs portant sur le même paramètre.
 
@@ -30,7 +32,7 @@ Désactivé par défaut.
   Cependant, le paramètre `compatibility` peut être surchargé au niveau de l’utilisateur, du rôle, du profil, de la requête ou de la session à l’aide des mécanismes standard de configuration de ClickHouse, par exemple `SET compatibility = '22.3'` dans une session ou `SETTINGS compatibility = '22.3'` dans une requête.
 </Note>
 
-## compatibility_s3_presigned_url_query_in_path
+## compatibility_s3_presigned_url_query_in_path {#compatibility_s3_presigned_url_query_in_path}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

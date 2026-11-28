@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapStore.h>
 
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Interpreters/TransactionManager.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -54,10 +55,9 @@ DeleteBitmapStore::DeleteBitmapStore(const MergeTreeData & data_, DeleteBitmapCa
 {
 }
 
-DataPartPtr DeleteBitmapStore::findPart(const MergeTreePartInfo & info, const DataPartsAnyLock * lock) const
+DataPartPtr DeleteBitmapStore::findPart(const MergeTreePartInfo & info) const
 {
-    return lock ? data.getPartIfExistsUnlocked(info, RESOLVABLE_STATES, *lock)
-                : data.getPartIfExists(info, RESOLVABLE_STATES);
+    return data.getPartIfExists(info, RESOLVABLE_STATES);
 }
 
 /// ---- Reads ----
@@ -65,11 +65,18 @@ DataPartPtr DeleteBitmapStore::findPart(const MergeTreePartInfo & info, const Da
 DeleteBitmapStore::BitmapAndVersion
 DeleteBitmapStore::readBitmap(const MergeTreePartInfo & part_info, CSN snapshot_csn) const
 {
+    chassert(!partsLockHeldByCurrentThread(), fmt::format("reading the delete bitmap of {} under a parts lock", part_info.getPartNameV1()));
+
     /// We might need to consult the keeper for authoritative CSN later
     auto component_guard = Coordination::setCurrentComponent("DeleteBitmapStore::readBitmap");
 
-    const auto versions = versionsUpTo(part_info, snapshot_csn);
-    if (versions.empty())
+    /// Held for the whole read: a force-detach of the part can erase its entry meanwhile.
+    const auto entry = findEntry(part_info);
+    if (!entry)
+        return {std::make_shared<DeleteBitmap>(), 0};
+
+    const auto csns = versionsUpTo(*entry, snapshot_csn);
+    if (csns.empty())
         return {std::make_shared<DeleteBitmap>(), 0};
 
     const auto part = findPart(part_info);
@@ -80,10 +87,11 @@ DeleteBitmapStore::readBitmap(const MergeTreePartInfo & part_info, CSN snapshot_
 
     /// The newest visible version names the union: a delta is never rewritten and the set below a
     /// csn only grows by appending, so one csn identifies one union for the life of the part.
-    const CSN newest = versions.back().csn;
+    const CSN newest = csns.back();
 
     auto load = [&]
     {
+        const auto versions = pinVersions(part_info, *entry, csns);
         auto united = std::make_shared<DeleteBitmap>();
 
         if (cache && versions.size() > 1)
@@ -111,7 +119,7 @@ DeleteBitmapStore::readBitmap(const MergeTreePartInfo & part_info, CSN snapshot_
         return {load(), newest};
 
     const auto key = DeleteBitmapCache::makeKey(
-        part->getDeleteBitmapCacheIdentity(), newest, versions.size());
+        part->getDeleteBitmapCacheIdentity(), newest, csns.size());
     auto [ptr, _loaded] = cache->getOrSet(key, load);
     return {std::move(ptr), newest};
 }
@@ -186,7 +194,7 @@ void DeleteBitmapStore::dropPart(const IMergeTreeDataPart & part)
         {
             removeAllLinks(part.info, link.target);
 
-            /// A merge's late kills against its own result: the entry just erased was theirs.
+            /// A kill of the part's own rows targets the entry erased above; nothing to unlink.
             if (link.target == part.info)
                 continue;
 
@@ -242,8 +250,7 @@ void DeleteBitmapStore::addInwardLink(PartEntry & entry, const HeldBy & link)
         entry.inward.insert(at, link);
 }
 
-void DeleteBitmapStore::resolveUnknownVersions(
-    PartEntry & entry, const DataPartsAnyLock * lock, OnMissingHolder on_missing) const
+void DeleteBitmapStore::resolveUnknownVersions(PartEntry & entry) const
 {
     std::vector<MergeTreePartInfo> holders;
     {
@@ -261,16 +268,11 @@ void DeleteBitmapStore::resolveUnknownVersions(
     {
         /// With no entry mutex held: this takes the parts lock, and `grabOldParts` reaches the
         /// same entry the other way round.
-        const auto holder = findPart(holder_info, lock);
+        const auto holder = findPart(holder_info);
+        /// Not Active or Outdated: cleanup took it, or it is still loading. Its kills are carried,
+        /// at a known csn, by the merge result that replaced it.
         if (!holder)
-        {
-            if (on_missing == OnMissingHolder::Throw)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Part {} is indexed as holding a delete bitmap but is in neither Active nor "
-                    "Outdated, so the kills in that bitmap cannot be resolved",
-                    holder_info.getPartNameV1());
             continue;
-        }
 
         const auto own = resolveOwnVersion(holder);
         if (!own)
@@ -292,55 +294,57 @@ void DeleteBitmapStore::resolveUnknownVersions(
 std::optional<DeleteBitmapStore::Version>
 DeleteBitmapStore::resolveOwnVersion(const DataPartPtr & holder)
 {
+    chassert(!partsLockHeldByCurrentThread(), fmt::format("resolving the version of {} under a parts lock", holder->name));
     /// TODO(unique-key): support REPEATABLE_READ, currently we ignore the COMMITTING
-    const CSN csn = holder->version->getInfo().creation_csn;
+    /// The stored csn is set only once the transaction is finalized, while the part is visible from the
+    /// moment the transaction log knows its csn, so resolve it the way part visibility does.
+    const VersionInfo info = holder->version->getInfo();
+    const CSN csn = info.creation_csn != Tx::UnknownCSN ? info.creation_csn : TransactionManager::getCSN(info.creation_tid);
     if (!isSettledCSN(csn))
         return {};
     return Version{csn, holder, /*carried=*/false};
 }
 
-std::vector<DeleteBitmapStore::Version>
-DeleteBitmapStore::versionsUpTo(const MergeTreePartInfo & part, CSN snapshot_csn) const
+std::vector<CSN> DeleteBitmapStore::versionsUpTo(PartEntry & entry, CSN snapshot_csn) const
 {
-    const auto entry = findEntry(part);
-    if (!entry)
-        return {};
+    resolveUnknownVersions(entry);
 
-    resolveUnknownVersions(*entry, /*lock=*/nullptr, OnMissingHolder::Throw);
-
-    std::vector<HeldBy> visible;
+    std::vector<CSN> csns;
     {
-        std::lock_guard lock(entry->mutex);
-        const auto above = std::upper_bound(entry->inward.begin(), entry->inward.end(), snapshot_csn, ByCsn{});
-        visible.assign(entry->inward.begin(), above);
+        std::lock_guard lock(entry.mutex);
+        const auto end = std::upper_bound(entry.inward.begin(), entry.inward.end(), snapshot_csn, ByCsn{});
+        for (auto it = entry.inward.begin(); it != end; ++it)
+            if (csns.empty() || csns.back() != it->csn)
+                csns.push_back(it->csn);
     }
 
-    std::vector<Version> versions;
-    for (size_t i = 0; i < visible.size();)
-    {
-        /// Repeated CSNs are grouped together; any holder of the same CSN will do.
-        size_t end = i;
-        while (end < visible.size() && visible[end].csn == visible[i].csn)
-            ++end;
+    return csns;
+}
 
-        DataPartPtr holder;
-        const HeldBy * resolved = nullptr;
-        for (size_t k = i; k < end && !holder; ++k)
+std::vector<DeleteBitmapStore::Version>
+DeleteBitmapStore::pinVersions(const MergeTreePartInfo & part, PartEntry & entry, const std::vector<CSN> & csns) const
+{
+    /// The links and the parts under one lock
+    const auto parts_lock = data.readLockParts();
+    std::lock_guard lock(entry.mutex);
+    std::vector<Version> versions;
+    for (const CSN csn : csns)
+    {
+        Version version{csn, nullptr, /*carried=*/false};
+        const auto [first, last] = std::equal_range(entry.inward.begin(), entry.inward.end(), csn, ByCsn{});
+        for (auto it = first; it != last && !version.held_in; ++it)
         {
-            holder = findPart(visible[k].holder);
-            resolved = &visible[k];
+            version.held_in = data.getPartIfExistsUnlocked(it->holder, RESOLVABLE_STATES, parts_lock);
+            version.carried = it->carried;
         }
 
-        if (!holder)
+        if (!version.held_in)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Every part indexed as holding version {} of the delete bitmap of part {} is in "
                 "neither Active nor Outdated, so the kills in it cannot be resolved",
-                visible[i].csn, part.getPartNameV1());
-
-        versions.push_back(Version{resolved->csn, holder, resolved->carried});
-        i = end;
+                csn, part.getPartNameV1());
+        versions.push_back(std::move(version));
     }
-
     return versions;
 }
 
@@ -479,9 +483,7 @@ bool DeleteBitmapStore::hasPublishedInwardLink(
     if (!entry)
         return false;
 
-    /// Tolerantly: throwing here would pin a part that could never be released.
-    resolveUnknownVersions(*entry, &lock, OnMissingHolder::Skip);
-
+    /// Only carried links can match, and a carried link is registered with its csn.
     std::vector<HeldBy> carriers;
     {
         std::lock_guard entry_lock(entry->mutex);
@@ -513,7 +515,7 @@ bool DeleteBitmapStore::isPinned(const IMergeTreeDataPart & part, const DataPart
 
     for (const auto & link : getOutwardLinks(part.info))
     {
-        /// A merge's own late kills die with it, so waiting on a carrier would wait forever.
+        /// Kills of the part's own rows die with it, so waiting on a carrier would wait forever.
         if (link.target == part.info)
             continue;
 

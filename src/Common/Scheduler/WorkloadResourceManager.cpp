@@ -87,9 +87,15 @@ WorkloadResourceManager::Resource::~Resource()
 
 void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
 {
+    // The node of the root workload entity is the implicit root, which always exists. It has no parent, priority or
+    // precedence, so `updateNode` sets its settings in place.
     if (info.name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Workload must have a name in resource '{}'",
-            resource_name);
+    {
+        NodeInfo defaults = info;
+        defaults.settings = {};
+        updateNode(defaults, info);
+        return;
+    }
 
     if (info.name == info.parent)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Self-referencing workload '{}' is not allowed in resource '{}'",
@@ -117,6 +123,14 @@ void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
 
 void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
 {
+    if (info.name.empty())
+    {
+        NodeInfo defaults = info;
+        defaults.settings = {};
+        updateNode(info, defaults);
+        return;
+    }
+
     if (!node_for_workload.contains(info.name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Node for removing workload '{}' does not exist in resource '{}'",
             info.name, resource_name);
@@ -135,6 +149,10 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
     {
         // A parentless workload has parent == "", which maps to the implicit root in node_for_workload.
         node_for_workload[info.parent]->detachWorkloadChild(n);
+
+        // Fail the queue's requests while the node is fully alive: query threads may still reach the queue through
+        // older versions, and the queue's error messages read the workload's name.
+        n->purgeQueue();
 
         node_for_workload.erase(info.name);
 
@@ -580,7 +598,8 @@ void WorkloadResourceManager::topologicallySortedWorkloadsImpl(Workload * worklo
     if (!parent.empty())
     {
         auto parent_iter = workloads.find(parent);
-        chassert(parent_iter != workloads.end()); // validations check that all parents exist
+        if (parent_iter == workloads.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parent workload '{}' of workload '{}' does not exist", parent, getEntityName(workload->workload_entity));
         topologicallySortedWorkloadsImpl(parent_iter->second.get(), visited, sorted_workloads);
     }
 

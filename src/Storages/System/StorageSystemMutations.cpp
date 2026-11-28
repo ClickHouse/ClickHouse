@@ -11,13 +11,68 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
+#include <Common/HiddenSecret.h>
+#include <Core/Settings.h>
 #include <Databases/IDatabase.h>
+#include <Storages/System/extractTablesFilter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
+#include <Parsers/ParserAlterQuery.h>
+#include <Parsers/parseQuery.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
+}
+
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+    extern const int TOO_DEEP_RECURSION;
+    extern const int TOO_SLOW_PARSING;
+}
+
+/// The mutation entry keeps the real text of the command, because the mutation is executed from it
+/// (on every replica, for replicated tables). Hide the secrets on the way out instead, the way
+/// `system.distributed_ddl_queue` does. The command is formatted the same way as the stored text,
+/// so only the secrets differ from it.
+static String hideSecretsInCommand(const ContextPtr & context, const String & command)
+{
+    /// Nothing to parse, see `MutationCommand::ast`.
+    if (command.empty())
+        return command;
+
+    const auto & settings = context->getSettingsRef();
+    ParserAlterCommandList parser;
+    ASTPtr ast;
+    try
+    {
+        ast = parseQuery(parser, command, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    }
+    catch (const Exception & e)
+    {
+        /// The text may be unparseable on another server version, so hide the whole command instead of failing the table.
+        if (e.code() != ErrorCodes::SYNTAX_ERROR
+            && e.code() != ErrorCodes::TOO_DEEP_RECURSION
+            && e.code() != ErrorCodes::TOO_SLOW_PARSING)
+            throw;
+        return String(HIDDEN_SECRET);
+    }
+
+    return ast->formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/0,
+        /*one_line=*/true,
+        /*show_secrets=*/false,
+        /*print_pretty_type_names=*/false,
+        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+}
 
 
 ColumnsDescription StorageSystemMutations::getColumnsDescription()
@@ -72,22 +127,32 @@ Block StorageSystemMutations::getFilterSampleBlock() const
     };
 }
 
-void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
+void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
+    const bool show_secrets = canDisplaySecrets(context);
 
     /// Collect a set of *MergeTree tables.
     std::map<String, std::map<String, StoragePtr>> merge_tree_tables;
+    /// Conditions on `database` and `table` act like an index: they keep the enumeration below
+    /// from resolving every table of every database just to throw the rows away afterwards.
+    const auto database_name_filter = extractNameFilter(predicate, "database", context);
+    const auto table_name_filter = extractNameFilter(predicate, "table", context);
+
     for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
+        if (database_name_filter && !database_name_filter(db.first))
+            continue;
+
         /// Check if database can contain MergeTree tables
         if (db.second->isExternal())
             continue;
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
 
-        for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+        auto iterator = db.second->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
+        for (; iterator->isValid(); iterator->next())
         {
             auto table = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip);
             if (!table)
@@ -176,26 +241,45 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
                 parts_postpone_reasons_map.emplace_back(std::move(key_value));
             }
 
-            size_t col_num = 0;
-            res_columns[col_num++]->insert(database);
-            res_columns[col_num++]->insert(table);
-
-            res_columns[col_num++]->insert(status.id);
-            res_columns[col_num++]->insert(status.command);
-            res_columns[col_num++]->insert(UInt64(status.create_time));
-            res_columns[col_num++]->insert(UInt64(status.finish_time));
-            res_columns[col_num++]->insert(block_partition_ids);
-            res_columns[col_num++]->insert(block_numbers);
-            res_columns[col_num++]->insert(parts_in_progress_names);
-            res_columns[col_num++]->insert(parts_to_do_names);
-            res_columns[col_num++]->insert(parts_to_do_names.size());
-            res_columns[col_num++]->insert(parts_postpone_reasons_map);
-            res_columns[col_num++]->insert(status.is_done);
-            res_columns[col_num++]->insert(status.is_killed);
-            res_columns[col_num++]->insert(status.latest_failed_part);
-            res_columns[col_num++]->insert(UInt64(status.latest_fail_time));
-            res_columns[col_num++]->insert(status.latest_fail_reason);
-            res_columns[col_num++]->insert(status.latest_fail_error_code_name);
+            size_t src_index = 0;
+            size_t res_index = 0;
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(database);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(table);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(status.id);
+            /// Parsing the command costs much more than everything else here, so it is done only when the column is queried.
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(show_secrets ? status.command : hideSecretsInCommand(context, status.command));
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(UInt64(status.create_time));
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(UInt64(status.finish_time));
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(block_partition_ids);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(block_numbers);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(parts_in_progress_names);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(parts_to_do_names);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(parts_to_do_names.size());
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(parts_postpone_reasons_map);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(status.is_done);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(status.is_killed);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(status.latest_failed_part);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(UInt64(status.latest_fail_time));
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(status.latest_fail_reason);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(status.latest_fail_error_code_name);
         }
     }
 }

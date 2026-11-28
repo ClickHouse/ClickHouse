@@ -10,15 +10,16 @@ doc_type: 'reference'
 
 根据给定的 schema 生成随机数据。
 可用这些数据填充测试表。
-并非支持所有类型。
+支持所有可存储在表中的数据类型，包括 `JSON`、`Dynamic`、`Variant`、`BFloat16`、`Time` 和 `Time64`。
+不支持 `AggregateFunction`、`Interval`、`Nothing` 和 `QBit` 类型。
 
-## 语法
+## 语法 {#syntax}
 
 ```sql
-generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]])
+generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]][, SETTINGS setting = value[, ...]])
 ```
 
-## 参数
+## 参数 {#arguments}
 
 | 参数                  | 说明                                     |
 | ------------------- | -------------------------------------- |
@@ -28,11 +29,37 @@ generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_str
 | `max_string_length` | 所有生成字符串的最大长度。默认为 `10`。                 |
 | `max_array_length`  | 所有生成数组或 Map 的最大元素个数。默认为 `10`。          |
 
-## 返回值
+## 设置 {#settings}
+
+`SETTINGS` 是调用时的最后一个参数，用于控制 `Nullable`、`Variant`、`Dynamic` 和 `JSON` 值的生成方式。
+
+| 设置                         | 类型       | 默认值      | 描述                                                                                                       |
+| -------------------------- | -------- | -------- | -------------------------------------------------------------------------------------------------------- |
+| `null_ratio`               | `Float`  | `0.0625` | `Nullable`、`Variant` 或 `Dynamic` 值为 `NULL` 的概率，也是某行中缺少某个 `JSON` 键的基础概率；少数稀疏键的缺失概率会高出数倍。必须在 `[0, 1]` 范围内。 |
+| `max_json_depth`           | `UInt64` | `3`      | 生成的 `JSON` 对象的最大嵌套深度：`1` 表示无嵌套的对象，数组中的对象也算一层。必须在 `[1, 32]` 范围内。                                          |
+| `max_json_keys_per_object` | `UInt64` | `8`      | 生成的 `JSON` 对象每一层最多包含的键数；根对象的键数至少为该值的一半。`0` 表示仅生成类型化路径。不得超过 `1000`。                                       |
+
+```sql
+SELECT * FROM generateRandom('x JSON', 3, 4, 2, SETTINGS max_json_depth = 1, max_json_keys_per_object = 3) LIMIT 3 FORMAT JSONEachRow;
+```
+
+```text
+{"x":{"cursor":"","id":[],"parent":-3723905664592977020}}
+{"x":{"cursor":"","id":[7037090064212902336]}}
+{"x":{"id":[287913403506346525],"parent":-4417942528676528098}}
+```
+
+`SETTINGS` 也可以是唯一的参数，此时会沿用目标表的结构：
+
+```sql
+INSERT INTO test_table SELECT * FROM generateRandom(SETTINGS null_ratio = 0.5) LIMIT 10;
+```
+
+## 返回值 {#returned-value}
 
 具有所请求 schema 的表对象。
 
-## 使用示例
+## 使用示例 {#usage-example}
 
 ```sql
 SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2) LIMIT 3;
@@ -105,7 +132,31 @@ SELECT * FROM generateRandom(11) LIMIT 3;
   如果 `max_array_length` 设置得足够大，`generateRandom(generateRandomStructure(), [random seed], max_string_length, max_array_length)` 可能会生成极其庞大的输出，因为复杂类型 (`Array`、`Tuple`、`Map`、`Nested`) 的嵌套深度可能很大 (最高可达 16) 。
 </Note>
 
-## 相关内容
+## 生成 JSON {#generating-json}
+
+生成的 `JSON` 列读起来就像一串遵循同一 schema 的文档：键的集合以及每个键的类型均由随机种子决定，并在整列中保持不变；而值、缺失的键以及数组长度则逐行变化。对象的深度受 `max_json_depth` 限制，单层中的键数量受 `max_json_keys_per_object` 限制，某个键在一行中缺失的概率为 `null_ratio`。叶子节点的类型与 JSON 解析器对真实文档推断出的类型一致：`Int64`、`UInt64`、`Float64`、`Bool`、`String`、`Date`、`DateTime`、上述类型的数组、对象数组以及混合数组；与从应用程序中采集的数据类似，少数键会在一小部分行中呈现不同的类型。
+
+类型声明决定了所生成 schema 的形态：类型化路径始终存在，且采用其声明的类型；被 `SKIP` 和 `SKIP REGEXP` 排除的路径永远不会生成；同时 `max_dynamic_paths` 和 `max_dynamic_types` 的限制均会得到遵守，因此超出 `max_dynamic_paths` 的路径最终会存入该列的共享数据中。
+
+```sql
+SELECT * FROM generateRandom('x JSON', 1) LIMIT 3 FORMAT JSONEachRow;
+```
+
+```text
+{"x":{"product_id":"2050-12-17 01:46:35","stage":"g|(&Ql","started":{"group":-80611897324989285}}}
+{"x":{"product_id":"2013-10-17 22:35:26","stage":"^ipx|,=a5N","started":{"group":-1326235429680389454}}}
+{"x":{"product_id":"1974-11-17 22:22:46","stage":"(U]p'l`","started":{"group":-344141642787805595}}}
+```
+
+也可以使用目标插入表的结构，这样向包含 `JSON`、`Dynamic` 或 `Variant` 列的表中
+填充数据会更方便：
+
+```sql
+CREATE TABLE t (x JSON) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t SELECT * FROM generateRandom() LIMIT 10;
+```
+
+## 相关内容 {#related-content}
 
 * 博客：[在 ClickHouse 中生成随机测试数据](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)
 

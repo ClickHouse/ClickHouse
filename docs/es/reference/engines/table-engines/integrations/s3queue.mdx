@@ -199,6 +199,8 @@ Valor predeterminado: cadena vacía.
 
 URI del bucket de S3 al que se moverán los archivos procesados correctamente, si el destino es otro bucket de S3.
 
+Configurarlo implica el mismo flujo de datos que `INSERT INTO FUNCTION s3('<destination>') SELECT * FROM <table>`, por lo que requiere el permiso `WRITE` sobre la fuente `S3`. Un permiso restringido mediante un filtro de URL no es suficiente, ya que el movimiento escribe claves que se construyen a partir de `after_processing_move_prefix` y de las claves de origen, no a partir del URI. `ALTER TABLE ... MODIFY SETTING` también requiere `SELECT` sobre la table. El destino debe estar permitido en `remote_url_allow_hosts`. El movimiento siempre analiza el URI con detección automática del estilo, tal como lo hace la función de table `s3` con el valor predeterminado de `s3_uri_style`, por lo que ni el ajuste del servidor `uri_style` ni el ajuste de consulta `s3_uri_style` se aplican en este caso.
+
 Valores posibles:
 
 * String.
@@ -440,12 +442,12 @@ Para obtener más información sobre las columnas virtuales, consulte [aquí](/e
 
 ## Comodines en la ruta {#wildcards-in-path}
 
-El argumento `path` puede especificar varios archivos usando comodines similares a los de bash. Para que un archivo se procese, debe existir y coincidir con el patrón completo de la ruta. La lista de archivos se determina durante `SELECT` (no en el momento de `CREATE`).
+El argumento `path` puede especificar varios archivos usando comodines similares a los de bash. Para que un archivo se procese, debe existir y coincidir con el patrón completo de la ruta. La enumeración de archivos se determina durante `SELECT` (no en el momento de `CREATE`).
 
 * `*` — Sustituye cualquier cantidad de caracteres, excepto `/`, incluida la cadena vacía.
 * `**` — Sustituye cualquier cantidad de caracteres, incluido `/`, incluida la cadena vacía.
 * `?` — Sustituye cualquier carácter individual.
-* `{some_string,another_string,yet_another_one}` — Sustituye cualquiera de las cadenas `'some_string', 'another_string', 'yet_another_one'`.
+* `{some_string,another_string,yet_another_one}` — Sustituye cualquiera de las cadenas `'some_string', 'another_string', 'yet_another_one'`. Cada cadena puede contener a su vez los comodines `*` y `?`, de modo que `{csv,csv.*}` coincide tanto con `.csv` como con `.csv.gz`.
 * `{N..M}` — Sustituye cualquier número dentro del rango de N a M, incluidos ambos extremos. N y M pueden tener ceros a la izquierda; por ejemplo, `000..078`.
 
 Las construcciones con `{}` son similares a la función de tabla [remote](/es/reference/functions/table-functions/remote).
@@ -508,7 +510,7 @@ rows_processed:        5068534
 status:                Processed
 processing_start_time: 2023-10-13 13:09:48
 processing_end_time:   2023-10-13 13:10:31
-ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5068534,'SelectedBytes':198132283,'ContextLock':1,'S3QueueSetFileProcessingMicroseconds':2480,'S3QueueSetFileProcessedMicroseconds':9985,'S3QueuePullMicroseconds':273776,'LogTest':17}
+ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5068534,'SelectedBytes':198132283,'ContextLock':1,'S3QueuePullMicroseconds':273776,'LogTest':17}
 exception:
 ```
 
@@ -584,7 +586,7 @@ rows_processed:        5112621
 status:                Processed
 processing_start_time: 2023-10-13 13:09:48
 processing_end_time:   2023-10-13 13:10:12
-ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5112621,'SelectedBytes':198577687,'ContextLock':1,'S3QueueSetFileProcessingMicroseconds':1934,'S3QueueSetFileProcessedMicroseconds':17063,'S3QueuePullMicroseconds':5841972,'LogTest':17}
+ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5112621,'SelectedBytes':198577687,'ContextLock':1,'S3QueuePullMicroseconds':5841972,'LogTest':17}
 exception:
 ```
 

@@ -36,6 +36,11 @@ struct RenderedCreateQuery
     String create_table_query;
     String engine_full;
     String as_select;
+
+    /// Whether the rendered query is a `CREATE DICTIONARY`. A reader that authorized the
+    /// rendering with `SHOW DICTIONARIES` must confirm this before emitting it, because the
+    /// rendering resolves the name again and the name may now hold a different object.
+    bool is_dictionary = false;
 };
 
 using RenderedCreateQueryPtr = std::shared_ptr<const RenderedCreateQuery>;

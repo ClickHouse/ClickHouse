@@ -19,6 +19,8 @@
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/parseGlobs.h>
+#include <Common/StringUtils.h>
 #include <Formats/FormatFactory.h>
 
 #include <filesystem>
@@ -58,6 +60,26 @@ std::pair<String, String> splitToArchiveParts(const String & table_path, const C
     return splitToArchivePathAndPathInArchive(table_path);
 }
 
+/// Whether `table_path`, already normalized, stays inside `directory`. The `file` table function
+/// expands `{a,b}` groups before it walks the filesystem and does not normalize the result, so an
+/// alternative carrying a `..` is refused instead of being resolved against a possible symlink.
+bool isInsideDirectory(const String & table_path, const String & directory)
+{
+    if (!containsGlobs(table_path))
+        return fileOrSymlinkPathStartsWith(table_path, directory);
+
+    for (const auto & expanded_path : expandSelectionGlob(table_path))
+    {
+        for (const auto & component : fs::path(expanded_path))
+            if (component == "..")
+                return false;
+
+        if (!fileOrSymlinkPathStartsWith(expanded_path, directory))
+            return false;
+    }
+    return true;
+}
+
 /// The path to the archive a name resolves to through the archive path syntax, or an empty string
 /// if the name is a plain path in this context.
 String getPathToArchive(const String & table_path, const ContextPtr & context)
@@ -81,21 +103,34 @@ DatabaseFilesystem::DatabaseFilesystem(
 
     path = fs::absolute(path).lexically_normal();
 
-    if (!is_local && !pathStartsWith(fs::path(path), user_files_path))
+    /// `ec` is set only if stat fails for a reason other than a missing path, e.g. a symlink loop.
+    std::error_code ec;
+    const bool path_exists = fs::exists(path, ec);
+
+    /// Where a path stat fails on leads cannot be resolved, so it is not checked here. A user statement over it is
+    /// refused below, and each table resolution checks its own path before touching a file.
+    if (!is_local && !ec && !pathStartsWith(fs::path(path), user_files_path))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Path must be inside user-files path: {}", user_files_path.string());
     }
 
-    if (!fs::exists(path))
+    if (!path_exists)
     {
         /// Metadata loading stops at the first exception, so refusing the server's own startup replay here
         /// would make a directory removed since then enough to stop the server from starting. Tables resolve
         /// their file on access, so an unreachable path costs only the tables; the database still drops.
         if (!is_internal_metadata_replay)
+        {
+            if (ec)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot access path {}: {}", path, ec.message());
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
+        }
 
-        LOG_WARNING(log, "Path does not exist: {}. The database has no tables until it reappears", path);
+        if (ec)
+            LOG_WARNING(log, "Cannot access path {}: {}. The database has no tables until it becomes accessible", path, ec.message());
+        else
+            LOG_WARNING(log, "Path does not exist: {}. The database has no tables until it reappears", path);
     }
 }
 
@@ -129,6 +164,10 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
         /// Access denied is thrown regardless of 'throw_on_error'
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside {}", user_files_path);
     }
+
+    /// A table of this database is a file under its own directory, not anywhere in `user_files`.
+    if (check_path && !isInsideDirectory(path_to_probe, path))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside the database directory {}", path);
 
     if (!containsGlobs(path_to_probe))
     {
@@ -300,7 +339,7 @@ bool DatabaseFilesystem::empty() const
 ASTPtr DatabaseFilesystem::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem('{}')", backQuoteIfNeed(database_name), path);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem({})", backQuoteIfNeed(database_name), quoteString(path));
 
     ParserCreateQuery parser;
     ASTPtr ast
@@ -412,7 +451,7 @@ The database owns no table definitions: tables are created when their files are 
 
 ## Access control {#access-control}
 
-On ClickHouse server, the database directory and every resolved file must be inside [`user_files_path`](/reference/settings/server-settings/settings#user_files_path); this restriction also applies after following symlinks. `clickhouse-local` is not restricted to `user_files_path`.
+On ClickHouse server, the database directory and every resolved file must be inside [`user_files_path`](/reference/settings/server-settings/settings#user_files_path); this restriction also applies after following symlinks. Every resolved file must also be inside the database directory, so a table name cannot point outside it with `..` or an absolute path. `clickhouse-local` is not restricted to `user_files_path`.
 
 Creating this database requires `READ` and `WRITE` source grants on `FILE`, regardless of [`table_engines_require_grant`](/reference/settings/server-settings/settings/other#table_engines_require_grant). Grant them with, for example:
 

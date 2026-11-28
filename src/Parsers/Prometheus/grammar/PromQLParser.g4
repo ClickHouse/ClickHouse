@@ -160,11 +160,14 @@ selectorWithOffset
 
 function_
     : FUNCTION LEFT_PAREN (parameter (COMMA parameter)*)? RIGHT_PAREN
+    | START LEFT_PAREN RIGHT_PAREN
+    | END LEFT_PAREN RIGHT_PAREN
     ;
 
+// A literal is a `vectorOperation` too, so a separate `literal` alternative would give a literal argument
+// two parses, and the parser would resolve that with full-context prediction on every such argument.
 parameter
-    : literal
-    | vectorOperation
+    : vectorOperation
     ;
 
 parameterList
@@ -173,18 +176,18 @@ parameterList
 
 // Aggregations
 
+// `by` and `without` are factored out so that no two alternatives start with the same `parameterList`:
+// to choose between such alternatives the parser would look ahead through the whole list.
 aggregation
-    : AGGREGATION_OPERATOR parameterList
-    | AGGREGATION_OPERATOR (by | without) parameterList
-    | AGGREGATION_OPERATOR parameterList ( by | without)
+    : AGGREGATION_OPERATOR ((by | without) parameterList | parameterList (by | without)?)
     ;
 
 by
-    : BY labelNameList
+    : BY LEFT_PAREN labelNameList RIGHT_PAREN
     ;
 
 without
-    : WITHOUT labelNameList
+    : WITHOUT LEFT_PAREN labelNameList RIGHT_PAREN
     ;
 
 // Vector one-to-one/one-to-many joins
@@ -194,19 +197,24 @@ grouping
     ;
 
 on_
-    : ON labelNameList
+    : ON LEFT_PAREN labelNameList RIGHT_PAREN
     ;
 
 ignoring
-    : IGNORING labelNameList
+    : IGNORING LEFT_PAREN labelNameList RIGHT_PAREN
     ;
 
+// `(` after `group_left` or `group_right` could also start the right operand. As in Prometheus, it always starts
+// the label list: the lexer makes one token of the keyword and that `(`, so the alternatives start with different
+// tokens and the parser doesn't look ahead to choose between them.
 groupLeft
-    : GROUP_LEFT labelNameList?
+    : GROUP_LEFT_PAREN labelNameList RIGHT_PAREN
+    | GROUP_LEFT
     ;
 
 groupRight
-    : GROUP_RIGHT labelNameList?
+    : GROUP_RIGHT_PAREN labelNameList RIGHT_PAREN
+    | GROUP_RIGHT
     ;
 
 // Label names
@@ -219,12 +227,28 @@ labelName
     ;
 
 labelNameList
-    : LEFT_PAREN (labelName (COMMA labelName)* COMMA?)? RIGHT_PAREN
+    : (labelName (COMMA labelName)* COMMA?)?
     ;
 
 metricName
     : METRIC_NAME
-    | keyword
+    | metricNameKeyword
+    ;
+
+// Unlike a label name, a metric name can't be `bool`, `on`, `ignoring`, `group_left`, `group_right` or `atan2`,
+// as in Prometheus. Otherwise `1 == bool -abs(up)` would have two parses, `bool` being a modifier or a metric,
+// and to choose between them the parser would look ahead through the whole operand, however deeply it is nested.
+metricNameKeyword
+    : AND
+    | OR
+    | UNLESS
+    | BY
+    | WITHOUT
+    | OFFSET
+    | START
+    | END
+    | AGGREGATION_OPERATOR
+    | FUNCTION
     ;
 
 keyword

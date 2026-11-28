@@ -74,7 +74,11 @@ with client.query_row_block_stream(
 
 Ten en cuenta que intentar usar un `StreamContext` sin una sentencia `with` generará un error. El uso de un contexto de Python garantiza que el stream (en este caso, una respuesta HTTP en streaming) se cierre correctamente aunque no se consuman todos los datos y/o se produzca una excepción durante el procesamiento. Además, los `StreamContext` solo pueden usarse una vez para consumir el stream. Intentar usar un `StreamContext` después de haber salido de él producirá un `StreamClosedError`.
 
-Si la conexión falla mientras se está leyendo un resultado, se genera un `StreamFailureError` en lugar de devolver silenciosamente un resultado truncado. Su mensaje sigue la configuración `show_clickhouse_errors` del client.
+En los streams HTTP síncronos en formato Native, al salir del contexto se espera a que termine cualquier lectura activa y, después, se lee y se descarta el resto de la respuesta. Esto se aplica a los streams de filas, columnas, NumPy y Pandas, tanto con el códec de Python como con el de Rust. Una consulta lenta puede retrasar la limpieza. `send_receive_timeout` limita cada lectura del socket, por lo que no fija un plazo máximo para la salida del contexto.
+
+En los streams de `AsyncClient` que usan el códec de Rust, la salida de `async with` espera a que termine la limpieza de la respuesta. Si se cancela la tarea que consume el stream, la limpieza se completa antes de que se vuelva a lanzar la cancelación.
+
+Si la conexión falla mientras se está leyendo un resultado, se genera un `StreamFailureError` en lugar de devolver silenciosamente un resultado truncado. Su mensaje sigue la configuración `show_clickhouse_errors` del Client.
 
 Puedes usar la propiedad `source` del `StreamContext` para acceder al objeto de resultado padre, que incluye los nombres de las columnas y los tipos. Para la mayoría de los streams, este es un `QueryResult`; los métodos `query_np_stream` y `query_df_stream` exponen un `NumpyResult` en su lugar.
 

@@ -51,7 +51,7 @@ $CLICKHOUSE_CLIENT -q "CREATE DATABASE ${CLICKHOUSE_DATABASE}_ordinary Engine=Or
 # only after INSERT finished, it is unlikely, but it happens few times in
 # debug build on CI, so if this will happen, then DROP query will be
 # finished instantly, and to avoid flakiness we will retry in this case
-while :; do
+while clickhouse_test_time_left; do
     $CLICKHOUSE_CLIENT -m -q "
         DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}_ordinary.data_02352;
         CREATE TABLE ${CLICKHOUSE_DATABASE}_ordinary.data_02352 (key Int) Engine=Null();

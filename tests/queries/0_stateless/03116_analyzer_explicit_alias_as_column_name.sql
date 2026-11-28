@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/39923
-SET enable_analyzer=1;
 
 SELECT
     errors.name AS labels,

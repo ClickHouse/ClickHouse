@@ -50,6 +50,8 @@ This table can be used for monitoring. The table contains a row for every schedu
 - `throttling_us` ([Nullable(Int64)](/reference/data-types/nullable)) — For `bandwidth_limit` nodes only. Total number of microseconds this node was in throttling state.
 - `tokens` ([Nullable(Float64)](/reference/data-types/nullable)) — For `bandwidth_limit` nodes only. Number of tokens currently available in token-bucket throttler.
 - `allocated` ([Nullable(Int64)](/reference/data-types/nullable)) — For space-shared nodes only. The currently allocated amount of resource under this node.
+- `reclaimable` ([Nullable(Int64)](/reference/data-types/nullable)) — For space-shared nodes only. Memory available for new spill requests under this node. For each allocation, outstanding requests are subtracted from its reported reclaimable memory and the result is clamped at zero before summing.
+- `reclaiming` ([Nullable(Int64)](/reference/data-types/nullable)) — For space-shared nodes only. Memory requested for spilling but not yet settled under this node, including requests that have not started executing. Settlement retires the requested amount independently of the amount actually freed.
 - `allocations` ([Nullable(UInt64)](/reference/data-types/nullable)) — For space-shared nodes only. The current number of running resource allocations under this node.
 - `updates` ([Nullable(UInt64)](/reference/data-types/nullable)) — For space-shared nodes only. The total number of updates propagated through this node.
 - `increases` ([Nullable(UInt64)](/reference/data-types/nullable)) — For space-shared nodes only. The total number of increase requests approved by this node.
@@ -58,6 +60,8 @@ This table can be used for monitoring. The table contains a row for every schedu
 - `removes` ([Nullable(UInt64)](/reference/data-types/nullable)) — For space-shared nodes only. The total number of allocations removed from this node.
 - `killers` ([Nullable(UInt64)](/reference/data-types/nullable)) — For space-shared nodes only. The total number of evictions initiated due to increase requests by this node.
 - `victims` ([Nullable(UInt64)](/reference/data-types/nullable)) — For space-shared nodes only. The total number of allocations that were evicted from this node.
+- `spills` ([Nullable(UInt64)](/reference/data-types/nullable)) — For space-shared nodes only. The total number of spill requests issued by this node due to its soft memory limit being exceeded.
+- `soft_limit` ([Nullable(Int64)](/reference/data-types/nullable)) — For `allocation_limit` nodes only. The effective soft memory limit above which reclaimable allocations are asked to spill (the smaller of `max_memory_before_spill` and `max_memory_to_spill_ratio * max_memory`). Values not below the hard limit mean spilling is disabled.
 - `rejects` ([Nullable(UInt64)](/reference/data-types/nullable)) — For `allocation_queue` nodes only. The total number of resource allocations rejected from this node.
 - `pending` ([Nullable(UInt64)](/reference/data-types/nullable)) — For `allocation_queue` nodes only. The current number of pending resource allocations in this node.
 

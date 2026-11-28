@@ -44,13 +44,14 @@ public:
 
     double getSLRUSizeRatio() const override { return size_ratio; }
 
-    EvictionInfoPtr collectEvictionInfo(
+    EvictionInfoPtr collectEvictionInfo( /// NOLINT
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
         const IFileCachePriority::OriginInfo & origin_info,
-        const CacheStateGuard::Lock &) override;
+        const CacheStateGuard::Lock &,
+        QueueEntryType reservee_queue_type = QueueEntryType::None) override;
 
     bool canFit( /// NOLINT
         size_t size,
@@ -83,7 +84,7 @@ public:
         protected_queue.sealStructure();
     }
 
-    bool collectCandidatesForEviction(
+    bool collectCandidatesForEviction( /// NOLINT
         EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
@@ -92,7 +93,8 @@ public:
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
-        CacheStateGuard &) override;
+        CacheStateGuard &,
+        QueueEntryType reservee_queue_type = QueueEntryType::None) override;
 
     void iterate(IterateFunc func, FileCacheReserveStat & stat) override;
 
@@ -161,9 +163,12 @@ private:
     LRUFileCachePriority protected_queue;
     LRUFileCachePriority probationary_queue;
     LoggerPtr log;
+    SharedEvictionCursor promotion_cursor{EvictionCursor::Promotion};
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::WriteLock & lock);
 
+    /// With `wait_for_priority_lock` false, returns false as soon as a walk finds a writer
+    /// holding or waiting for the priority guard, instead of queueing behind it.
     bool collectCandidatesForEvictionInProtected(
         EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
@@ -173,7 +178,8 @@ private:
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
-        CacheStateGuard & state_guard);
+        CacheStateGuard & state_guard,
+        bool wait_for_priority_lock);
 
     LRUFileCachePriority::LRUIterator addOrThrow(
         EntryPtr entry,

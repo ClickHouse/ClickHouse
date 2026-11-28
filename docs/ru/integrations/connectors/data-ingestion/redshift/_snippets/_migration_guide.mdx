@@ -2,38 +2,40 @@
 title: Руководство по миграции
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
-<div id="introduction">
-  ## Введение
-</div>
+## Введение {#introduction}
 
 [Amazon Redshift](https://aws.amazon.com/redshift/) — популярное решение для облачного хранилища данных, входящее в линейку сервисов Amazon Web Services. В этом руководстве представлены различные подходы к миграции данных из экземпляра Redshift в ClickHouse. Мы рассмотрим три варианта:
 
-<Image img="/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp" size="md" alt="Варианты миграции из Redshift в ClickHouse" />
+<div className="ch-image-md">
+  <Frame>
+    ![Варианты миграции из Redshift в ClickHouse](/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp)
+  </Frame>
+</div>
 
 С точки зрения экземпляра ClickHouse вы можете:
 
-1. **[PUSH](#push-data-from-redshift-to-clickhouse)** отправлять данные в ClickHouse с помощью стороннего ETL/ELT-инструмента или сервиса
+1. **[Отправка](#push-data-from-redshift-to-clickhouse)** отправлять данные в ClickHouse с помощью стороннего ETL/ELT-инструмента или сервиса
 
-2. **[PULL](#pull-data-from-redshift-to-clickhouse)** забирать данные из Redshift через ClickHouse JDBC Bridge
+2. **[ИЗВЛЕЧЕНИЕ](#pull-data-from-redshift-to-clickhouse)** забирать данные из Redshift через ClickHouse JDBC Bridge
 
-3. **[PIVOT](#pivot-data-from-redshift-to-clickhouse-using-s3)** использовать объектное хранилище S3 по схеме «сначала выгрузка, затем загрузка»
+3. **[ПЕРЕНОС ЧЕРЕЗ ПРОМЕЖУТОЧНОЕ ХРАНИЛИЩЕ](#pivot-data-from-redshift-to-clickhouse-using-s3)** использовать объектное хранилище S3 по схеме «сначала выгрузка, затем загрузка»
 
 <Note>
   В этом руководстве Redshift используется как источник данных. Однако представленные здесь подходы к миграции применимы не только к Redshift — аналогичные шаги можно использовать для любого совместимого источника данных.
 </Note>
 
-<div id="push-data-from-redshift-to-clickhouse">
-  ## Передача данных из Redshift в ClickHouse
+## Отправка данных из Redshift в ClickHouse {#push-data-from-redshift-to-clickhouse}
+
+В сценарии отправки используется сторонний инструмент или сервис — либо собственный код, либо [ETL/ELT](https://en.wikipedia.org/wiki/Extract,_transform,_load#ETL_vs._ELT) — для отправки данных в ваш экземпляр ClickHouse. Например, можно использовать такое ПО, как [Airbyte](https://www.airbyte.com/), чтобы переносить данные из вашего экземпляра Redshift (в качестве источника) в ClickHouse в качестве пункта назначения ([см. наше руководство по интеграции с Airbyte](/ru/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse))
+
+<div className="ch-image-md">
+  <Frame>
+    ![Отправка из Redshift в ClickHouse](/images/integrations/data-ingestion/redshift/push.webp)
+  </Frame>
 </div>
 
-В сценарии push используется сторонний инструмент или сервис — либо собственный код, либо [ETL/ELT](https://en.wikipedia.org/wiki/Extract,_transform,_load#ETL_vs._ELT) — для отправки данных в ваш экземпляр ClickHouse. Например, можно использовать такое ПО, как [Airbyte](https://www.airbyte.com/), чтобы переносить данные из вашего экземпляра Redshift (в качестве источника) в ClickHouse в качестве пункта назначения ([см. наше руководство по интеграции с Airbyte](/ru/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse))
-
-<Image img="/images/integrations/data-ingestion/redshift/push.webp" size="md" alt="Передача из Redshift в ClickHouse" />
-
 <div id="pros">
-  ### Преимущества
+  ### Преимущества {#pros}
 </div>
 
 * Можно использовать существующий каталог коннекторов ETL/ELT-решения.
@@ -41,29 +43,31 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 * Поддерживает сценарии преобразования данных (например, см. наше [руководство по интеграции с dbt](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/index)).
 
 <div id="cons">
-  ### Минусы
+  ### Минусы {#cons}
 </div>
 
 * Вам потребуется настроить и поддерживать инфраструктуру ETL/ELT.
 * В архитектуре появляется сторонний компонент, который может стать потенциальным узким местом с точки зрения масштабируемости.
 
-<div id="pull-data-from-redshift-to-clickhouse">
-  ## Перенос данных из Redshift в ClickHouse по схеме Pull
+## Перенос данных из Redshift в ClickHouse по схеме ИЗВЛЕЧЕНИЯ {#pull-data-from-redshift-to-clickhouse}
+
+В сценарии ИЗВЛЕЧЕНИЯ используется ClickHouse JDBC Bridge: он позволяет напрямую подключаться к кластеру Redshift из экземпляра ClickHouse и выполнять запросы `INSERT INTO ... SELECT`:
+
+<div className="ch-image-md">
+  <Frame>
+    ![ИЗВЛЕЧЕНИЕ данных из Redshift в ClickHouse](/images/integrations/data-ingestion/redshift/pull.webp)
+  </Frame>
 </div>
 
-В сценарии Pull используется ClickHouse JDBC Bridge: он позволяет напрямую подключаться к кластеру Redshift из экземпляра ClickHouse и выполнять запросы `INSERT INTO ... SELECT`:
-
-<Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="PULL из Redshift в ClickHouse" />
-
 <div id="pros">
-  ### Преимущества
+  ### Преимущества {#pros-1}
 </div>
 
 * Подходит для всех инструментов с поддержкой JDBC
 * Элегантное решение, позволяющее выполнять запросы к нескольким внешним источникам данных прямо из ClickHouse
 
 <div id="cons-1">
-  ### Недостатки
+  ### Недостатки {#cons-1}
 </div>
 
 * Требуется экземпляр ClickHouse JDBC Bridge, который может стать потенциальным узким местом при масштабировании
@@ -73,7 +77,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </Note>
 
 <div id="tutorial">
-  ### Руководство
+  ### Руководство {#tutorial}
 </div>
 
 Чтобы использовать этот вариант, необходимо настроить ClickHouse JDBC Bridge. ClickHouse JDBC Bridge — это автономное Java-приложение, которое обеспечивает подключение по JDBC и выступает в роли прокси между экземпляром ClickHouse и источниками данных. В этом руководстве мы использовали предварительно заполненный экземпляр Redshift с [тестовой базой данных](https://docs.aws.amazon.com/redshift/latest/dg/c_sampledb.html).
@@ -185,16 +189,18 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="pivot-data-from-redshift-to-clickhouse-using-s3">
-  ## Перенос данных из Redshift в ClickHouse через S3 по схеме Pivot
+## Перенос данных из Redshift в ClickHouse через S3 по схеме ПЕРЕНОСА ЧЕРЕЗ ПРОМЕЖУТОЧНОЕ ХРАНИЛИЩЕ {#pivot-data-from-redshift-to-clickhouse-using-s3}
+
+В этом сценарии мы экспортируем данные в S3 в промежуточном формате, а затем, на втором этапе, загружаем их из S3 в ClickHouse.
+
+<div className="ch-image-md">
+  <Frame>
+    ![Перенос через промежуточное хранилище из Redshift с использованием S3](/images/integrations/data-ingestion/redshift/pivot.webp)
+  </Frame>
 </div>
 
-В этом сценарии мы экспортируем данные в S3 в промежуточном формате Pivot, а затем, на втором этапе, загружаем их из S3 в ClickHouse.
-
-<Image img="/images/integrations/data-ingestion/redshift/pivot.webp" size="md" alt="PIVOT из Redshift через S3" />
-
 <div id="pros">
-  ### Преимущества
+  ### Преимущества {#pros-2}
 </div>
 
 * И Redshift, и ClickHouse предоставляют широкие возможности интеграции с S3.
@@ -203,24 +209,30 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 * Можно использовать эффективные сжатые форматы, такие как Apache Parquet.
 
 <div id="cons-1">
-  ### Недостатки
+  ### Недостатки {#cons-2}
 </div>
 
 * Два этапа процесса (выгрузка из Redshift, затем загрузка в ClickHouse).
 
-<div id="tutorial">
-  ### Руководство
-</div>
+### Руководство {#tutorial-1}
 
 <Steps>
   <Step title="Экспортируйте данные в S3 бакет с помощью UNLOAD" id="export-data-into-an-s3-bucket-using-unload">
     С помощью возможности [UNLOAD](https://docs.aws.amazon.com/redshift/latest/dg/r_UNLOAD.html) в Redshift экспортируйте данные в существующий закрытый S3 бакет:
 
-    <Image img="/images/integrations/data-ingestion/redshift/s3-1.webp" size="md" alt="UNLOAD из Redshift в S3" background="white" />
+    <div className="ch-image-md ch-image-background-white">
+      <Frame>
+        ![UNLOAD из Redshift в S3](/images/integrations/data-ingestion/redshift/s3-1.webp)
+      </Frame>
+    </div>
 
     В результате в S3 будут созданы файлы частей с исходными данными
 
-    <Image img="/images/integrations/data-ingestion/redshift/s3-2.webp" size="md" alt="Данные в S3" background="white" />
+    <div className="ch-image-md ch-image-background-white">
+      <Frame>
+        ![Данные в S3](/images/integrations/data-ingestion/redshift/s3-2.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Создайте таблицу в ClickHouse" id="create-the-table-in-clickhouse">

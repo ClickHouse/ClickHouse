@@ -21,7 +21,7 @@ ${CLICKHOUSE_CLIENT} -q "select count() from trace_view_lazy" 2>&1 | grep -m1 -o
 echo "=== the spans are read when the table is read ==="
 ${CLICKHOUSE_CLIENT} -q "
     insert into system.opentelemetry_span_log
-        (hostname, trace_id, span_id, parent_span_id, operation_name, kind, start_time_us, finish_time_us, finish_date, attribute)
+        (hostname, trace_id, span_id, parent_span_id, operation_name, kind, start_time_us, finish_time_us, event_date, attribute)
     values
         ('h', '$trace_id', 1, 0, 'root',  'INTERNAL', 1000, 5000, today(), map()),
         ('h', '$trace_id', 2, 1, 'child', 'INTERNAL', 2000, 3000, today(), map())

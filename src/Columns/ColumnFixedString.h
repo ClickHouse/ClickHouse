@@ -97,6 +97,7 @@ public:
     bool isDefaultAt(size_t index) const override;
 
     bool hasOnlyTypeDefaults() const override;
+    ColumnPtr createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
 
     void insert(const Field & x) override;
 
@@ -137,8 +138,6 @@ public:
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
     void updateHashWithValue(size_t index, SipHash & hash) const override;
-    /// Feeds `value` into `hash` as `updateHashWithValue` feeds a row that holds this value.
-    static void updateHashWithStringValue(std::string_view value, SipHash & hash);
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
@@ -178,6 +177,13 @@ public:
 #else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #endif
+
+    void insertFromEither(
+        const IColumn & src_true,
+        bool src_true_is_const,
+        const IColumn & src_false,
+        bool src_false_is_const,
+        const IColumn::Filter & condition) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 

@@ -1,0 +1,145 @@
+-- { echoOn }
+
+-- An expression in both PREWHERE and the select list.
+SELECT x % 7 = 0 AS c, x FROM file(currentDatabase() || '_05833.parquet') PREWHERE x % 7 = 0 ORDER BY x LIMIT 4;
+1	0
+1	7
+1	14
+1	21
+SELECT x + 1 AS y, s FROM file(currentDatabase() || '_05833.parquet') PREWHERE x + 1 > 97 ORDER BY x;
+98	97
+99	98
+100	99
+SELECT x % 7 = 0 FROM file(currentDatabase() || '_05833.parquet') PREWHERE x % 7 = 0 ORDER BY x LIMIT 3;
+1
+1
+1
+SELECT (x % 7 = 0) AND (s LIKE '%1%') AS c, x FROM file(currentDatabase() || '_05833.parquet') PREWHERE (x % 7 = 0) AND (s LIKE '%1%') ORDER BY x;
+1	14
+1	21
+1	91
+-- A Tuple column: file() does not support a subcolumn in PREWHERE, the whole tuple is fine.
+SELECT t.a FROM file(currentDatabase() || '_05833.parquet') PREWHERE t.a = 5; -- { serverError ILLEGAL_PREWHERE }
+SELECT t.a FROM file(currentDatabase() || '_05833.parquet') PREWHERE tupleElement(t, 'b') = '90' SETTINGS optimize_functions_to_subcolumns = 1; -- { serverError ILLEGAL_PREWHERE }
+SELECT t.b FROM file(currentDatabase() || '_05833.parquet') PREWHERE t = tuple(5, '50');
+50
+SELECT t.b, x FROM file(currentDatabase() || '_05833.parquet') WHERE t.a = 5;
+50	5
+SELECT t.b FROM file(currentDatabase() || '_05833.parquet') PREWHERE x > 90 WHERE t.a % 2 = 0 ORDER BY x;
+920
+940
+960
+980
+-- A PREWHERE that uses no columns.
+SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') PREWHERE rand() % 1 = 0;
+100	4950
+SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') PREWHERE rand() % 1 = 1;
+0	0
+SELECT s FROM file(currentDatabase() || '_05833.parquet') PREWHERE rand() % 1 = 0 AND x < 2 ORDER BY s;
+0
+1
+SELECT count() FROM file(currentDatabase() || '_05833.parquet') PREWHERE rand() % 1 = 0 WHERE x < 5;
+5
+SELECT count() BETWEEN 1 AND 99 FROM file(currentDatabase() || '_05833.parquet') PREWHERE rand() % 2 = 0;
+1
+-- A constant PREWHERE.
+SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') PREWHERE 1;
+100	4950
+SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') PREWHERE 0;
+0	0
+SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') PREWHERE toUInt8(1);
+100	4950
+SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') PREWHERE NULL;
+0	0
+SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') PREWHERE toNullable(1);
+100	4950
+SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') PREWHERE toNullable(0);
+0	0
+SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') PREWHERE toLowCardinality(toUInt8(0));
+0	0
+SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') PREWHERE toLowCardinality(toNullable(toUInt8(1)));
+100	4950
+SELECT x FROM file(currentDatabase() || '_05833.parquet') PREWHERE 1 WHERE x = 3;
+3
+SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') PREWHERE toUInt8(1) WHERE x < 10;
+10	45
+SELECT s FROM file(currentDatabase() || '_05833.parquet') PREWHERE 0;
+-- PREWHERE with IN (subquery).
+SELECT x FROM file(currentDatabase() || '_05833.parquet') PREWHERE x IN (SELECT number * 11 FROM numbers(5)) ORDER BY x;
+0
+11
+22
+33
+44
+SELECT s FROM file(currentDatabase() || '_05833.parquet') PREWHERE x IN (SELECT x FROM file(currentDatabase() || '_05833.parquet') WHERE x > 97) ORDER BY s;
+98
+99
+SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') PREWHERE x NOT IN (SELECT number FROM numbers(90));
+10	945
+SELECT x FROM file(currentDatabase() || '_05833.parquet') PREWHERE (x, s) IN (SELECT number, toString(number) FROM numbers(3)) ORDER BY x;
+0
+1
+2
+SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') PREWHERE x IN (SELECT number FROM numbers(0));
+0	0
+-- A column with a DEFAULT that is missing from the file, with the reader's filters on. file() does not support it in PREWHERE.
+SET input_format_parquet_filter_push_down = 1, input_format_parquet_bloom_filter_push_down = 1, input_format_parquet_page_filter_push_down = 1;
+SELECT count() FROM file(currentDatabase() || '_05833.parquet', Parquet, 'x UInt64, d UInt64 DEFAULT 42') WHERE d = 42;
+100
+SELECT count() FROM file(currentDatabase() || '_05833.parquet', Parquet, 'x UInt64, d UInt64 DEFAULT 42') WHERE d = 7;
+0
+SELECT x, d FROM file(currentDatabase() || '_05833.parquet', Parquet, 'x UInt64, d UInt64 DEFAULT x * 2') WHERE d = 10;
+5	10
+SELECT count(), min(x) FROM file(currentDatabase() || '_05833.parquet', Parquet, 'x UInt64, d UInt64 DEFAULT x * 2') WHERE d > 150;
+24	76
+SELECT x, d FROM file(currentDatabase() || '_05833.parquet', Parquet, 'x UInt64, d UInt64 DEFAULT x * 2') WHERE d IN (10, 20) ORDER BY x;
+5	10
+10	20
+SELECT x, d FROM file(currentDatabase() || '_05833.parquet', Parquet, 'x UInt64, d UInt64 DEFAULT x * 2') PREWHERE x > 50 WHERE d = 120;
+60	120
+SELECT x, d FROM file(currentDatabase() || '_05833.parquet', Parquet, 'x UInt64, d UInt64 DEFAULT x * 2') PREWHERE d = 10; -- { serverError ILLEGAL_PREWHERE }
+-- file() does not support a virtual column in PREWHERE, only in WHERE.
+SELECT count() FROM file(currentDatabase() || '_05833.parquet') PREWHERE _file = currentDatabase() || '_05833.parquet'; -- { serverError ILLEGAL_PREWHERE }
+SELECT count() FROM file(currentDatabase() || '_05833.parquet') PREWHERE _row_number < 5; -- { serverError ILLEGAL_PREWHERE }
+SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') WHERE _row_number < 5;
+5	10
+SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') WHERE _file = currentDatabase() || '_05833.parquet' AND x < 5;
+5	10
+SELECT count(), sum(x) FROM file(currentDatabase() || '_05833.parquet') PREWHERE x < 5 WHERE _row_number < 3;
+3	3
+-- Row group, bloom filter and page index pruning on columns used only in PREWHERE. 10 row groups of 1000 rows;
+-- `e = 4321` is inside the min/max of one row group but absent from it. Each filter prunes nothing when it is off.
+-- The last two reads add a DEFAULT column missing from the file.
+SET use_query_condition_cache = 0, use_parquet_metadata_cache = 0, input_format_parquet_dictionary_filter_push_down = 0, input_format_parquet_use_offset_index = 1;
+SELECT s FROM file(currentDatabase() || '_05833_pruning.parquet') PREWHERE k = 4321 SETTINGS log_comment = 'k_point';
+4321
+SELECT s FROM file(currentDatabase() || '_05833_pruning.parquet') PREWHERE k = 4321 SETTINGS log_comment = 'k_point_no_page_filter', input_format_parquet_page_filter_push_down = 0;
+4321
+SELECT s FROM file(currentDatabase() || '_05833_pruning.parquet') PREWHERE k = 4321 SETTINGS log_comment = 'k_point_no_stats', input_format_parquet_filter_push_down = 0;
+4321
+SELECT count(), min(s) FROM file(currentDatabase() || '_05833_pruning.parquet') PREWHERE k BETWEEN 4321 AND 4330 SETTINGS log_comment = 'k_range';
+10	4321
+SELECT count(), any(s) FROM file(currentDatabase() || '_05833_pruning.parquet') PREWHERE e = 4321 SETTINGS log_comment = 'e_absent';
+0	
+SELECT count(), any(s) FROM file(currentDatabase() || '_05833_pruning.parquet') PREWHERE e = 4321 SETTINGS log_comment = 'e_absent_no_bloom_filter', input_format_parquet_bloom_filter_push_down = 0;
+0	
+SELECT count(), sum(k), sum(d) FROM file(currentDatabase() || '_05833_pruning.parquet', Parquet, 'k UInt64, d UInt64 DEFAULT k + 1') PREWHERE k BETWEEN 4321 AND 4330 SETTINGS log_comment = 'default_k_range';
+10	43255	43265
+SELECT count(), sum(k), sum(d) FROM file(currentDatabase() || '_05833_pruning.parquet', Parquet, 'k UInt64, e UInt64, d UInt64 DEFAULT 42') PREWHERE e IN (4321, 8642) WHERE d = 42 SETTINGS log_comment = 'default_e_in';
+1	4321	42
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, ProfileEvents['ParquetPrunedRowGroups'] AS pruned_by_stats,
+    ProfileEvents['ParquetBloomFilterPrunedRowGroups'] AS pruned_by_bloom_filter, ProfileEvents['ParquetPrunedPages'] > 0 AS pruned_pages
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+    AND log_comment IN ('k_point', 'k_point_no_page_filter', 'k_point_no_stats', 'k_range', 'e_absent', 'e_absent_no_bloom_filter',
+        'default_k_range', 'default_e_in')
+ORDER BY log_comment;
+default_e_in	8	1	1
+default_k_range	9	0	1
+e_absent	9	1	0
+e_absent_no_bloom_filter	9	0	1
+k_point	9	0	1
+k_point_no_page_filter	9	0	0
+k_point_no_stats	0	9	1
+k_range	9	0	1

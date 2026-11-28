@@ -1,0 +1,3 @@
+accepted: FixedString to String	legacy	610000
+accepted: FixedString to String	opt_skip	610000
+accepted: FixedString to String	opt_strict	61

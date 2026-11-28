@@ -69,9 +69,9 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectData<T>,
           AggregateFunctionGroupArrayIntersect<T>>({argument_type}, parameters_, result_type_) {}
 
-    String getName() const override { return "groupArrayIntersect"; }
+    [[nodiscard]] String getName() const override { return "groupArrayIntersect"; }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -217,9 +217,9 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectGenericData, AggregateFunctionGroupArrayIntersectGeneric<is_plain_column>>({input_data_type_}, parameters_, result_type_)
         , input_data_type(result_type_) {}
 
-    String getName() const override { return "groupArrayIntersect"; }
+    [[nodiscard]] String getName() const override { return "groupArrayIntersect"; }
 
-    bool allocatesMemoryInArena() const override { return true; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
