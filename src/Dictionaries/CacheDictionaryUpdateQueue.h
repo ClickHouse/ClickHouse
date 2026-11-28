@@ -123,7 +123,7 @@ public:
     /// Is queue finished
     bool isFinished() const { return update_queue.isFinished(); }
 
-    /// Synchronous wait for update queue to stop
+    /// Synchronous wait for update queue to stop. Can be called more than once.
     void stopAndWait();
 
     /** Try to add update unit into queue.
