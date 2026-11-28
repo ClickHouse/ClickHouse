@@ -162,8 +162,7 @@ protected:
         UInt64 available = 0;
     };
 
-    /// An override must not call the space getters: with the cache on it runs under the non-recursive cache mutex;
-    /// virtual for tests that count, fail or delay the `statvfs` calls.
+    /// An override must not call the space getters: with the cache on it runs under the non-recursive cache mutex.
     [[nodiscard]] virtual DiskSpace readDiskSpace() const;
 
     std::atomic<bool> broken{false};
@@ -173,8 +172,7 @@ private:
     bool tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints, UInt64 & unreserved_space);
 
     [[nodiscard]] DiskSpace getDiskSpace() const;
-    /// Does not take the cache mutex: a probe holds it for as long as the file system takes to answer,
-    /// and neither a reload nor an access check should wait for that.
+    /// Does not take the cache mutex: a probe can hold it for as long as the file system takes to answer.
     void invalidateDiskSpaceCache() const;
 
     /// Setup disk for healthy check.

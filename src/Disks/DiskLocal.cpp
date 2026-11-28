@@ -317,7 +317,6 @@ DiskLocal::DiskSpace DiskLocal::getDiskSpace() const
     const bool invalidated = disk_space_cache_invalidated.exchange(false);
     if (invalidated || !cached_disk_space || disk_space_watch.elapsedMilliseconds() >= ttl_ms)
     {
-        /// The age of a value counts from the start of its probe, and a failed probe leaves nothing to serve.
         cached_disk_space.reset();
         disk_space_watch.restart();
         cached_disk_space = readDiskSpace();
@@ -661,7 +660,6 @@ void DiskLocal::applyNewSettings(const Poco::Util::AbstractConfiguration & confi
     if (keep_free_space_bytes != new_keep_free_space_bytes)
         keep_free_space_bytes = new_keep_free_space_bytes;
 
-    /// A new TTL starts the cache anew: a value cached with another TTL may be older than the new one allows.
     if (disk_space_cache_ttl_ms != new_disk_space_cache_ttl_ms)
     {
         invalidateDiskSpaceCache();
