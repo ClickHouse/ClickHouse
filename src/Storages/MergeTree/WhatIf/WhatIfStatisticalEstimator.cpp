@@ -65,7 +65,7 @@ bool tryEstimateWithStatistics(
         return false;
 
     auto profile = estimator->estimateRelationProfile(metadata, filter_node);
-    auto unfiltered = estimator->estimateRelationProfile();
+    auto unfiltered = estimator->estimateRelationProfile(metadata);
     if (unfiltered.rows == 0)
         return false;
 

@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <Poco/URI.h>
+#include <Common/SecretString.h>
 
 #include <Core/SettingsEnums.h>
 
@@ -37,17 +38,17 @@ struct URI
     std::string storage_name;
     /// Path (or path pattern) in archive if uri is an archive.
     std::optional<std::string> archive_pattern;
-    std::string uri_str;
+    SecretString uri_str;
 
     bool is_virtual_hosted_style = false;
 
     URI() = default;
     explicit URI(
-        const std::string & uri_,
+        std::string_view uri_,
         bool allow_archive_path_syntax = false,
         bool keep_presigned_query_parameters = true,
         S3UriStyle uri_style = S3UriStyle::AUTO);
-    void addRegionToURI(const std::string & region);
+    void addRegionToURI(std::string_view region);
 
     /// Allowed by an <s3_bucket> entry for the endpoint and bucket, or by a <host>/<host_regexp> entry for the host.
     /// With throw_on_error, throws UNACCEPTABLE_URL instead of returning false.

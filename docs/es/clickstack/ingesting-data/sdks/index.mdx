@@ -29,28 +29,23 @@ En los entornos basados en navegador, los SDKs también pueden encargarse de rec
 
 <br />
 
-| Idioma       | Descripción                                                                | Enlace                                                        |
-| ------------ | -------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| AWS Lambda   | Instrumente sus funciones de AWS Lambda                                    | [Documentación](/es/clickstack/ingesting-data/sdks/aws-lambda)   |
-| Browser      | SDK de JavaScript para aplicaciones basadas en navegador                   | [Documentación](/es/clickstack/ingesting-data/sdks/browser)      |
-| Elixir       | Aplicaciones de Elixir                                                     | [Documentación](/es/clickstack/ingesting-data/sdks/elixir)       |
-| Go           | Aplicaciones y microservicios en Go                                        | [Documentación](/es/clickstack/ingesting-data/sdks/golang)       |
-| Java         | Aplicaciones de Java                                                       | [Documentación](/es/clickstack/ingesting-data/sdks/java)         |
-| NestJS       | Aplicaciones de NestJS                                                     | [Documentación](/es/clickstack/ingesting-data/sdks/nestjs)       |
-| Next.js      | Aplicaciones de Next.js                                                    | [Documentación](/es/clickstack/ingesting-data/sdks/nextjs)       |
-| Node.js      | Entorno de ejecución de JavaScript para aplicaciones del lado del servidor | [Documentación](/es/clickstack/ingesting-data/sdks/nodejs)       |
-| Deno         | Aplicaciones de Deno                                                       | [Documentación](/es/clickstack/ingesting-data/sdks/deno)         |
-| Python       | Aplicaciones y servicios web en Python                                     | [Documentación](/es/clickstack/ingesting-data/sdks/python)       |
-| React Native | Aplicaciones móviles de React Native                                       | [Documentación](/es/clickstack/ingesting-data/sdks/react-native) |
-| Ruby         | Aplicaciones de Ruby on Rails y servicios web                              | [Documentación](/es/clickstack/ingesting-data/sdks/ruby)         |
+| Idioma                        | Descripción                                                               | Enlace                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| AWS Lambda                    | SDK de Node.js de ClickStack para handlers async o capas de OpenTelemetry | [Documentación](/es/clickstack/ingesting-data/sdks/aws-lambda)                |
+| Browser                       | SDK de JavaScript para aplicaciones basadas en navegador                  | [Documentación](/es/clickstack/ingesting-data/sdks/browser)                   |
+| Elixir                        | Aplicaciones de Elixir                                                    | [Documentación](/es/clickstack/ingesting-data/sdks/elixir)                    |
+| Go                            | Aplicaciones y microservicios en Go                                       | [Documentación](/es/clickstack/ingesting-data/sdks/golang)                    |
+| Java                          | Aplicaciones de Java                                                      | [Documentación](/es/clickstack/ingesting-data/sdks/java)                      |
+| NestJS                        | SDK de Node.js de ClickStack para NestJS                                  | [Documentación](/es/clickstack/ingesting-data/sdks/nestjs)                    |
+| Next.js (Node.js autoalojado) | SDK de Node.js de ClickStack                                              | [Documentación](/es/clickstack/ingesting-data/sdks/nextjs#self-hosted-nextjs) |
+| Next.js (Vercel o Edge)       | `@vercel/otel`                                                            | [Documentación](/es/clickstack/ingesting-data/sdks/nextjs#vercel-or-edge)     |
+| Node.js                       | SDK de Node.js de ClickStack                                              | [Documentación](/es/clickstack/ingesting-data/sdks/nodejs)                    |
+| Deno                          | OpenTelemetry integrado                                                   | [Documentación](/es/clickstack/ingesting-data/sdks/deno)                      |
+| Python                        | Aplicaciones y servicios web en Python                                    | [Documentación](/es/clickstack/ingesting-data/sdks/python)                    |
+| React Native                  | Aplicaciones móviles de React Native                                      | [Documentación](/es/clickstack/ingesting-data/sdks/react-native)              |
+| Ruby                          | Aplicaciones de Ruby on Rails y servicios web                             | [Documentación](/es/clickstack/ingesting-data/sdks/ruby)                      |
 
 ## Protección mediante API key {#securing-api-key}
-
-<Info>
-  **No es necesario para Managed ClickStack**
-
-  La API key no es necesaria para Managed ClickStack.
-</Info>
 
 Para ingestar datos en ClickStack mediante el OTel collector, los SDKs deberán especificar una API key de ingesta. Esto puede configurarse mediante una función `init` en el SDK o la variable de entorno `OTEL_EXPORTER_OTLP_HEADERS`:
 
@@ -58,7 +53,7 @@ Para ingestar datos en ClickStack mediante el OTel collector, los SDKs deberán 
 OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
 ```
 
-Esta API key la genera la UI de ClickStack (HyperDX) y está disponible en la aplicación, en `Team Settings → API Keys`.
+Esta API key la genera la UI de ClickStack y está disponible en la aplicación, en `Team Settings → API Keys`.
 
 Para la mayoría de los [SDKs de lenguaje](/es/clickstack/ingesting-data/sdks/index) y las bibliotecas de telemetría compatibles con OpenTelemetry, puedes simplemente configurar la variable de entorno `OTEL_EXPORTER_OTLP_ENDPOINT` en tu aplicación o especificarla durante la inicialización del SDK:
 

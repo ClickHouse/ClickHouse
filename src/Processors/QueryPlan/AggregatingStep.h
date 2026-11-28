@@ -24,6 +24,12 @@ Block generateOutputHeader(const Block & input_header, const Names & keys, bool 
 /// the choice has to be communicated to a remote peer errs on the side of communicating it.
 bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params);
 
+/// The same for the methods of fixed-width keys and one `String` key (see
+/// `AggregatedDataVariants::isKeysAndPackedString`): whether `enable_fixed_and_packed_string_keys_in_aggregation` can
+/// affect the aggregation. See `Aggregator::Params::enable_fixed_and_packed_string_keys`.
+bool aggregationCanUseFixedAndPackedStringKeys(
+    const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params);
+
 /// Whether `dag` forwards the column `name` unchanged (possibly through aliases). Guards the GROUP BY top-K
 /// optimization: the heap ranks the aggregation keys, so every expression between the aggregation and the sort
 /// must hand the sorted key through untouched. If such an expression computed a new value and published it under
@@ -136,6 +142,16 @@ public:
     [[nodiscard]] size_t getUniqExactInOrderLayerPrefix() const { return uniq_exact_in_order_layer_prefix; }
     /// Set when the read is split into layers by the key, so that no value of the argument is in two streams.
     void setUniqExactInOrderDisjointStreams() { uniq_exact_in_order_disjoint_streams = true; }
+    /// The kept-keys cutoff of a trivial `GROUP BY ... LIMIT` (`shared_kept_keys_for_overflow_any`) keeps the values
+    /// of the kept keys exact only when this aggregation runs both stages. A partial aggregation whose states are merged
+    /// with those of other nodes drops it, the same way `serializeSettings` drops it from a plan shipped to them.
+    void disableKeptKeysCutoff()
+    {
+        if (!params.shared_kept_keys_for_overflow_any)
+            return;
+        params.shared_kept_keys_for_overflow_any = false;
+        params.max_rows_to_group_by = 0;
+    }
     void applyTopKOptimization(Aggregator::Params::TopKParams top_k);
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker);
     [[nodiscard]] bool memoryBoundMergingWillBeUsed() const;

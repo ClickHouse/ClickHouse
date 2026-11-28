@@ -1046,7 +1046,7 @@ struct PhraseSearchStats
         ProfileEvents::increment(ProfileEvents::TextIndexPhraseCandidatesMicroseconds, candidates_us);
         ProfileEvents::increment(ProfileEvents::TextIndexPositionsDecodeMicroseconds, directory_us + decode_us);
         ProfileEvents::increment(ProfileEvents::TextIndexPhraseMatchMicroseconds, match_us);
-        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksRead, blocks_read);
+        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksRead, ranges_read);
         ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksTotal, blocks_total);
         ProfileEvents::increment(ProfileEvents::TextIndexPositionsBytesRead, bytes_read);
     }
@@ -1056,7 +1056,7 @@ struct PhraseSearchStats
     UInt64 directory_us = 0;
     UInt64 decode_us = 0;
     UInt64 match_us = 0;
-    size_t blocks_read = 0;
+    size_t ranges_read = 0;
     size_t blocks_total = 0;
     UInt64 bytes_read = 0;
 };
@@ -1118,7 +1118,7 @@ private:
         size_t previous_read = std::numeric_limits<size_t>::max();
         for (size_t idx = 0; idx < ranks.size();)
         {
-            const size_t block_idx = ranks[idx] / TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+            const size_t block_idx = ranks[idx] / TextIndexBlockedPositionsCodec::BLOCK_SIZE;
             if (block_idx >= dir.numBlocks())
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Corrupt text index positions: rank {} is outside the token's {} blocks", ranks[idx], dir.numBlocks());
@@ -1140,7 +1140,7 @@ private:
                     stats.bytes_read += block_bytes;
                 }
                 parsed_blocks[u] = block_idx;
-                ++stats.blocks_read;
+                ++stats.ranges_read;
             }
 
             const auto & doc_offsets = scratches[u].doc_offsets;
@@ -1149,17 +1149,17 @@ private:
             size_t needed = 0;
             do
             {
-                const size_t local_rank = ranks[group_end] % TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+                const size_t local_rank = ranks[group_end] % TextIndexBlockedPositionsCodec::BLOCK_SIZE;
                 needed += doc_offsets[local_rank + 1] - doc_offsets[local_rank];
                 ++group_end;
-            } while (group_end < ranks.size() && ranks[group_end] / TextIndexBlockedPositionsCodec::BLOCK_DOCS == block_idx);
+            } while (group_end < ranks.size() && ranks[group_end] / TextIndexBlockedPositionsCodec::BLOCK_SIZE == block_idx);
 
             /// Copy the whole block for many candidates and only their positions for few, so the lane stays within 4x of what the chunk needs.
             if (4 * needed < doc_offsets.back())
             {
                 for (; idx < group_end; ++idx)
                 {
-                    const size_t local_rank = ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+                    const size_t local_rank = ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_SIZE;
                     token_bounds.push_back(lane.size());
                     lane.insert(values.begin() + doc_offsets[local_rank], values.begin() + doc_offsets[local_rank + 1]);
                     token_bounds.push_back(lane.size());
@@ -1171,7 +1171,7 @@ private:
             lane.insert(values.begin(), values.begin() + doc_offsets.back());
             for (; idx < group_end; ++idx)
             {
-                const size_t local_rank = ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+                const size_t local_rank = ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_SIZE;
                 token_bounds.push_back(lane_begin + doc_offsets[local_rank]);
                 token_bounds.push_back(lane_begin + doc_offsets[local_rank + 1]);
             }
@@ -1448,10 +1448,15 @@ void MergeTreeReaderTextIndex::setPrecomputedGranule(const IndexGranulesMap & gr
 {
     auto it = granules.find(index_read_task.index.index->index.name);
 
-    if (it != granules.end() && it->second)
+    /// The read tasks of a part usually pass the same granule, and the state of the reader stays valid from one task
+    /// to the next: `readRows` resets the cursors when a task starts before the previous one, and
+    /// `updateAllMarkRanges` drops the posting blocks outside the ranges of the new task.
+    /// A different granule invalidates all the state keyed into the previous one.
+    if (it != granules.end() && it->second && it->second != granule)
     {
         resetCursors();
         postings_blocks.clear();
+        postings_streams.clear();
         setIndexGranule(it->second);
     }
 }

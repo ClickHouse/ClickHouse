@@ -1,4 +1,4 @@
-<test run_all_queries="1">
+<test>
     <!-- Probe-dominated hash joins against small (cache-resident) build sides with Nullable
          keys. With a tiny hash table the probe loop iteration is only a few cycles, so any
          extra per-row work in `HashJoinMethods::joinRightColumns` shows up here first; the

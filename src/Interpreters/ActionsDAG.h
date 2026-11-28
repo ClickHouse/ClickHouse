@@ -376,7 +376,10 @@ public:
     [[nodiscard]] bool hasInputNameShadowedByComputedNode() const;
 
 #if USE_EMBEDDED_COMPILER
-    void compileExpressions(size_t min_count_to_compile_expression, const UnorderedSetWithMemoryTracking<const Node *> & lazy_executed_nodes = {});
+    void compileExpressions(
+        size_t min_count_to_compile_expression,
+        const UnorderedSetWithMemoryTracking<const Node *> & lazy_executed_nodes = {},
+        std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag = nullptr);
     /// The functions `compileExpressions` compiled into `function`, or nullptr if it is not a compiled expression.
     static const std::vector<FunctionBasePtr> * getCompiledFunctions(const IFunctionBase & function);
     /// For a node compiled from an `and` chain: its children that are conjuncts of that chain. Empty for any other node.
@@ -646,8 +649,11 @@ public:
         bool single_output_condition_node = true);
 
     /// Check if `predicate` is a combination of AND functions.
-    /// Returns a list of nodes representing atomic predicates.
+    /// Returns a list of nodes representing atomic predicates. Right to left.
+    /// An `and` with several parents contributes its atoms once.
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
+    /// Same, in the written order, the order `and` evaluates them.
+    static NodeRawConstPtrs extractConjunctionAtomsInWrittenOrder(const Node * predicate);
 
     [[nodiscard]] UInt64 getHash() const;
     /// `build_independent` leaves out anything that differs between two builds of the same query -
@@ -707,7 +713,10 @@ private:
         bool all_const);
 
 #if USE_EMBEDDED_COMPILER
-    void compileFunctions(size_t min_count_to_compile_expression, const UnorderedSetWithMemoryTracking<const Node *> & lazy_executed_nodes = {});
+    void compileFunctions(
+        size_t min_count_to_compile_expression,
+        const UnorderedSetWithMemoryTracking<const Node *> & lazy_executed_nodes = {},
+        std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag = nullptr);
 #endif
 
     bool removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);

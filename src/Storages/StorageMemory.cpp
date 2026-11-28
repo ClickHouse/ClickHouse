@@ -1,7 +1,7 @@
 #include <Common/CurrentThread.h>
 #include <Formats/FormatSettings.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>
 
@@ -290,7 +290,7 @@ void StorageMemory::setData(std::unique_ptr<BlocksWithCounts> new_data)
     setCurrentQueryMemoryDriftExpected();
 
     /// The replaced blocks are dropped inside this scope, unless a reader still holds them.
-    MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
+    ServerOwnedMemoryScope table_data_not_charged_to_the_query;
     auto replaced = data.get();
     data.set(std::move(new_data));
 }
@@ -484,7 +484,8 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
 
     if (params.isSettingsAlter())
     {
-        auto & settings_changes = new_metadata.settings_changes->as<ASTSetQuery &>();
+        const auto settings_changes_ast = new_metadata.getSettingsChanges();
+        auto & settings_changes = settings_changes_ast->as<ASTSetQuery &>();
         const auto current_settings_snapshot = memory_settings.get();
         const auto & current_settings = *current_settings_snapshot;
         auto changed_settings_ptr = std::make_unique<MemorySettings>(current_settings);

@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromFileView.h>
 
 #include <cstring>
+#include <IO/ByteRangeSet.h>
 
 using namespace DB;
 

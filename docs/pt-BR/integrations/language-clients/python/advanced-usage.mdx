@@ -31,19 +31,19 @@ Cabe a quem faz a chamada lidar com o objeto `bytes` resultante. Observe que `Cl
 
 O método síncrono `Client.raw_stream` tem a mesma API de `raw_query`, mas retorna um fluxo `io.IOBase` de fragmentos de bytes. Feche o fluxo quando o processamento for concluído. `AsyncClient.raw_stream` deve ser aguardado com `await` e retorna um `StreamContext` assíncrono para uso com `async with` e `async for`.
 
-### Método `raw_insert` do cliente {#client-rawinsert-method}
+### Método `raw_insert` do Client {#client-rawinsert-method}
 
 O método `Client.raw_insert` permite inserts diretos de objetos `bytes` ou geradores de objetos `bytes` usando a conexão do cliente. Como ele não faz nenhum processamento da carga útil de insert, oferece alto desempenho. O método fornece opções para especificar configurações e o formato de insert:
 
-| Parâmetro            | Tipo                                 | Padrão      | Descrição                                                                                                          |
-| -------------------- | ------------------------------------ | ----------- | ------------------------------------------------------------------------------------------------------------------ |
-| `table`              | str                                  | Obrigatório | Tabela de destino simples ou qualificada com o banco de dados.                                                     |
-| `column_names`       | Sequence[str]                        | `None`      | Nomes das colunas para o bloco de insert. Obrigatório quando `fmt` não incluir nomes.                              |
-| `insert_block`       | str, bytes, generator, or `BinaryIO` | Obrigatório | Dados a serem usados no insert. Strings são codificadas usando a codificação do cliente.                           |
-| `settings`           | dict                                 | `None`      | Consulte [Argumento `settings`](/pt-BR/integrations/language-clients/python/driver-api#settings-argument-1).             |
-| `fmt`                | str                                  | `None`      | Formato de entrada do ClickHouse da carga útil `insert_block`. `Native` é usado quando nenhum formato é especificado. |
-| `compression`        | str                                  | `None`      | Compressão já aplicada a `insert_block`, como `"gzip"`, `"lz4"` ou `"zstd"`.                                       |
-| `transport_settings` | dict                                 | `None`      | Cabeçalhos HTTP adicionados a esta requisição.                                                                    |
+| Parâmetro            | Tipo                                 | Padrão      | Descrição                                                                                                                                                                                          |
+| -------------------- | ------------------------------------ | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `table`              | str                                  | Obrigatório | Tabela de destino simples ou qualificada com o banco de dados.                                                                                                                                     |
+| `column_names`       | Sequence[str]                        | `None`      | Nomes das colunas para o bloco de insert. Obrigatório quando `fmt` não incluir nomes.                                                                                                              |
+| `insert_block`       | str, bytes, generator, or `BinaryIO` | Obrigatório | Dados a serem usados no insert. Strings são codificadas usando a codificação do cliente. `AsyncClient.raw_insert` recebe um iterável assíncrono, como um gerador assíncrono, em vez de um gerador. |
+| `settings`           | dict                                 | `None`      | Consulte [Argumento `settings`](/pt-BR/integrations/language-clients/python/driver-api#settings-argument-1).                                                                                             |
+| `fmt`                | str                                  | `None`      | Formato de entrada do ClickHouse da carga útil `insert_block`. `Native` é usado quando nenhum formato é especificado.                                                                              |
+| `compression`        | str                                  | `None`      | Compressão já aplicada a `insert_block`, como `"gzip"`, `"lz4"` ou `"zstd"`.                                                                                                                       |
+| `transport_settings` | dict                                 | `None`      | Cabeçalhos HTTP adicionados a esta requisição.                                                                                                                                                     |
 
 É responsabilidade de quem chama garantir que o `insert_block` esteja no formato especificado e use o método de compressão especificado. O ClickHouse Connect usa esses inserts brutos para uploads de arquivos e tabelas PyArrow, delegando o parsing ao servidor ClickHouse.
 
@@ -173,6 +173,20 @@ O ClickHouse Connect usa pools de conexões do `urllib3` para gerenciar a conex�
 
 As opções de socket padrão habilitam o keepalive TCP e o `TCP_NODELAY`. O sistema operacional gerencia os tamanhos dos buffers de envio e recebimento do socket.
 
+Passe `dedicated_pool=True` quando as conexões de um cliente síncrono precisarem ser liberadas assim que esse cliente for fechado:
+
+```python
+import clickhouse_connect
+
+with clickhouse_connect.get_client(dedicated_pool=True) as client:
+    result = client.query("SELECT 13")
+    print(result.first_row)
+```
+
+O cliente tem um pool separado com as opções de proxy e TLS configuradas. Pools dedicados não são compartilhados, mesmo quando há um proxy configurado. `client.close()` encerra imediatamente as conexões idle. As respostas ativas podem ser concluídas, e suas conexões são fechadas quando devolvidas ao pool. Fechar o cliente não cancela as consultas em execução.
+
+Use um cliente dedicado durante todo o ciclo de vida de um job ou componente da aplicação e reutilize-o em várias consultas. Cada cliente dedicado cria suas próprias conexões e faz seu próprio handshake TLS para HTTPS. Evite criar muitos clientes dedicados de curta duração. O valor padrão `dedicated_pool=False` mantém as regras atuais de seleção de pool, incluindo pools separados para opções de TLS personalizadas. Combinar `dedicated_pool=True` com `pool_mgr` gera `ProgrammingError`.
+
 Para aplicações grandes e multithread, pode ser mais adequado usar pools de conexões separados. Pools de conexões personalizados podem ser fornecidos como o argumento nomeado `pool_mgr` para a função principal `clickhouse_connect.get_client`:
 
 ```python
@@ -189,6 +203,6 @@ Os clientes podem compartilhar o mesmo gerenciador de pool, ou cada cliente pode
 
 Para definir opções de socket, passe `socket_options` para `httputil.get_pool_manager` ou `httputil.get_pool_manager_options`. Isso substitui toda a lista padrão, incluindo as opções de keepalive e `TCP_NODELAY`. Passe `[]` ou `None` para não aplicar nenhuma opção de socket explícita.
 
-O cliente assíncrono tem um pool do aiohttp em vez de usar `urllib3`. Configure-o com `connector_limit`, `connector_limit_per_host` e `keepalive_timeout` em `get_async_client`. Chamar `await async_client.close_connections()` renova o pool sem interromper as requisições em andamento.
+O cliente assíncrono tem um pool do aiohttp em vez de usar `urllib3`. Ele aceita `dedicated_pool`, mas o parâmetro não tem efeito. Cada cliente assíncrono tem seu próprio connector, independentemente do valor da flag, portanto `dedicated_pool=False` não habilita o compartilhamento. Configure o pool com `connector_limit`, `connector_limit_per_host` e `keepalive_timeout` em `get_async_client`. Chamar `await async_client.close_connections()` renova o pool sem interromper as requisições em andamento.
 
 Em consultas e inserts assíncronos, a espera por um slot livre no pool não tem tempo limite. Leia até o fim ou feche as respostas em streaming para liberar os slots que elas ocupam no pool. O `connect_timeout` começa a contar depois que um slot fica disponível e abrange a resolução de DNS, o estabelecimento das conexões TCP e TLS e a negociação com o proxy. O `send_receive_timeout` limita as leituras do socket. Para definir um prazo para a operação inteira, incluindo a espera pelo pool, use `asyncio.wait_for`, por exemplo, `await asyncio.wait_for(client.query("SELECT 13"), timeout=30)`.

@@ -1,0 +1,10 @@
+MergeTree
+{"b":1,"c":"x"}	{"b":1,"c":"x"}	{"b":1,"c":"x"}	{"b":1,"c":"x"}	{"b":1,"c":"x"}	{"b":1,"c":"x"}
+Memory
+{"b":1,"c":"x"}	{"b":1,"c":"x"}	{"b":1,"c":"x"}	{"b":1,"c":"x"}	{"b":1,"c":"x"}	{"b":1,"c":"x"}
+types
+JSON(b UInt32)	JSON(b UInt32)	JSON(b UInt32)	JSON(b UInt32)
+functions
+1	1	{"b":1,"c":"x"}
+nested
+['{"b":1}']

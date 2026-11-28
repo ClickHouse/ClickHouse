@@ -36,6 +36,9 @@ SET automatic_parallel_replicas_max_duplicated_read_ratio = 1;
 -- before the cost model, where its reads are to be declined.
 SET optimize_move_to_prewhere = 1;
 
+-- Plan-based parallel replicas does not always match the plans of these queries, and then collects no statistics:
+-- https://github.com/ClickHouse/ClickHouse/issues/131450
+SET parallel_replicas_plan_based = 0;
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 1;
 SET parallel_replicas_local_plan = 1;
@@ -74,6 +77,16 @@ SELECT count(), sum(d.v), sum(b.v), sum(a.v)
 FROM t_occ_d AS d, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS a, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS b
 WHERE d.id = b.id AND a.id = b.k AND d.id < 20000
 SETTINGS log_comment = '05628_replicas_ambiguous';
+-- The statistics still favour replicas, but they do not make the plan usable. The decline is remembered: the next run
+-- builds the plan with parallel replicas again at once and declines the same way, and the one after it skips the build.
+SELECT count(), sum(d.v), sum(b.v), sum(a.v)
+FROM t_occ_d AS d, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS a, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS b
+WHERE d.id = b.id AND a.id = b.k AND d.id < 20000
+SETTINGS log_comment = '05628_retry_ambiguous';
+SELECT count(), sum(d.v), sum(b.v), sum(a.v)
+FROM t_occ_d AS d, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS a, (SELECT id, k, v FROM t_occ_t WHERE id < 20000) AS b
+WHERE d.id = b.id AND a.id = b.k AND d.id < 20000
+SETTINGS log_comment = '05628_deferred_ambiguous';
 
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
@@ -102,6 +115,18 @@ SELECT
 FROM system.query_log
 WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
   AND event_date >= yesterday() AND log_comment = '05628_replicas_ambiguous'
+FORMAT TSVWithNames;
+
+SELECT
+    replaceOne(log_comment, '05628_', '') AS run,
+    ProfileEvents['AutomaticParallelReplicasProbePlansBuilt'] AS built,
+    ProfileEvents['AutoParallelReplicasCostModelEvaluated'] > 0 AS cost_model_evaluated,
+    ProfileEvents['AutoParallelReplicasRetryDeferred'] AS deferred,
+    ProfileEvents['ParallelReplicasUsedCount'] > 0 AS replicas_were_used
+FROM system.query_log
+WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
+  AND event_date >= yesterday() AND log_comment IN ('05628_retry_ambiguous', '05628_deferred_ambiguous')
+ORDER BY event_time_microseconds
 FORMAT TSVWithNames;
 
 DROP TABLE t_occ_d;

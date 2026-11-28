@@ -1,0 +1,97 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/nextjs
+description: 'إعداد Next.js وتهيئته للاستخدام مع ClickHouse Observability وعمليات النشر المُدارة ذاتيًا.'
+title: 'Next.js'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'إضافة أدوات الرصد']
+sidebarTitle: 'Next.js'
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+اختر طريقة إضافة أدوات الرصد من جانب الخادم (server-side) المناسبة لنشر Next.js لديك:
+
+* **بيئة مستضافة ذاتيًا مع بيئة تشغيل Node.js:** استخدم ClickStack Node.js SDK.
+* **Vercel أو بيئة تشغيل Edge:** استخدم `@vercel/otel`.
+
+لجمع بيانات القياس عن بُعد من المتصفح وإعادة تشغيل الجلسة، راجع [دليل SDK للمتصفح](/ar/clickstack/observability/ingesting-data/sdks/browser).
+
+<ClickStackIntegrates signals={['traces']} />
+
+## Next.js المستضاف ذاتيًا {#self-hosted-nextjs}
+
+استخدم Node.js 22.15 أو إصدارًا أحدث، ثم ثبّت حزمة SDK:
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+أنشئ الملف `instrumentation.ts` في الدليل الجذر لمشروعك، أو داخل `src` إذا كان تطبيقك يستخدم هذا الدليل. وهيّئ SDK في بيئة تشغيل Node.js فقط:
+
+```typescript
+export async function register() {
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { init } = await import('@clickhouse/clickstack-node');
+    init();
+  }
+}
+```
+
+أضف حزمة SDK إلى `serverExternalPackages` في تهيئة Next.js الحالية لديك كي تُحمَّل خارج حزمة الخادم:
+
+```javascript
+// next.config.mjs
+export default {
+  serverExternalPackages: ['@clickhouse/clickstack-node'],
+};
+```
+
+قم بتهيئة الوجهة أدناه، واضبط `OTEL_SERVICE_NAME` لتحديد هوية تطبيقك. ولا تُجرِ تحميلًا مسبقًا لـ SDK أو تُهيّئ OpenTelemetry SDK آخر إلى جانبه. للاطلاع على مزيد من الخيارات، راجع [دليل Node.js](/ar/clickstack/observability/ingesting-data/sdks/nodejs).
+
+للاطلاع على اعتبارات الإنهاء والنشر، راجع [إرشادات Next.js الخاصة بـ SDK](https://github.com/ClickHouse/clickstack-node#nextjs).
+
+## Vercel وبيئة التشغيل Edge {#vercel-or-edge}
+
+استخدم `@vercel/otel` باتباع [تعليمات إعداد OpenTelemetry في Next.js](https://nextjs.org/docs/app/guides/open-telemetry). استخدم هذا الإعداد بدلًا من تهيئة ClickStack Node.js SDK الموضحة أعلاه.
+
+هيّئ [تصدير OTLP](https://github.com/vercel/otel/tree/main/packages/otel#registerotelconfig-configuration) باستخدام إعدادات الاتصال أدناه. استبدل أي وجهات واردة في الأمثلة وأي تجاوزات لنقاط النهاية الخاصة بإشارات بعينها، ثم عيّن المتغيرات في تهيئة النشر لديك.
+
+إذا كان نشر Vercel لديك يستخدم تكاملًا للتتبّع بالفعل، فهيّئ [مُصدِّرًا مخصصًا](https://nextjs.org/docs/app/guides/open-telemetry#custom-exporters) لهذه الوجهة؛ إذ لا تكفي متغيرات البيئة الخاصة بنقطة النهاية وحدها لتجاوز ذلك التكامل.
+
+## تهيئة الوجهة {#configure-destination}
+
+حدِّد اسم الخدمة لأيٍّ من خيارَي إضافة أدوات الرصد:
+
+```shell
+export OTEL_SERVICE_NAME='my-nextjs-app'
+```
+
+<Tabs>
+  <Tab title="مُدار بالكامل">
+    <BetaBadge label="عرض تجريبي" />
+
+    افتح **إعدادات الفريق ← البيانات ← Managed Telemetry** في خدمتك، وانسخ **نقطة نهاية OTLP HTTP** و**مفتاح API**. استخدم نقطة نهاية HTTPS كاملةً، بما في ذلك المنفذ:
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="مُدار ذاتيًا">
+    استخدم نقطة نهاية OTLP HTTP الخاصة بجامع البيانات لديك ومفتاح الإدخال. استخدم `http://` بدلًا من `https://` إذا لم يكن TLS مُهيّأً على جامع البيانات لديك. لمعرفة كيفية إعداد جامع البيانات، راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/observability/ingesting-data/opentelemetry#self-managed).
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## التحقق من إدخال البيانات {#verify-ingestion}
+
+شغّل تطبيقك وأرسل طلبات إلى صفحة يُجرى تصييرها على الخادم أو إلى أحد مسارات واجهة برمجة التطبيقات. في ClickHouse Observability، حدّد نطاقًا زمنيًا حديثًا، ثم ابحث عن اسم الخدمة الخاص بتطبيقك ضمن Traces.

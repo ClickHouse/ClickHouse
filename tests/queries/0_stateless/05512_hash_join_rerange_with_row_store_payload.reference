@@ -1,0 +1,19 @@
+ALL INNER	parallel	1
+ALL INNER	serial	1
+ALL LEFT	parallel	1
+ALL LEFT	serial	1
+0	0	0	
+0	20	140	xx
+0	40	280	xxxx
+0	60	420	xxxxxx
+0	80	560	xxxxxxxx
+1	1	7	x
+1	21	147	xxx
+1	41	287	xxxxx
+1	61	427	xxxxxxx
+1	81	567	
+2	2	14	xx
+2	22	154	xxxx
+2	42	294	xxxxxx
+2	62	434	xxxxxxxx
+2	82	574	x

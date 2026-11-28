@@ -2,7 +2,7 @@
 sidebarTitle: '소개'
 description: 'SQL을 다시 작성하지 않고 PostgreSQL에서 바로 ClickHouse 분석 쿼리를 실행합니다'
 slug: '/cloud/managed-postgres/extensions/pg_clickhouse'
-title: 'pg_clickhouse 참고 문서'
+title: 'pg_clickhouse 문서'
 doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', '확장 기능']
 ---
@@ -60,6 +60,8 @@ ClickHouse 테이블을 가져오고 쿼리 푸시다운을 시작하려면 [tut
 | [쿼리 20] |     473 ms |             28 ms |      |
 | [쿼리 21] |    1145 ms |           4470 ms |      |
 | [쿼리 22] |     270 ms |             45 ms |   ✼  |
+
+## 설치 {#installation}
 
 ### 소스 코드로 빌드하기 {#compile-from-source}
 
@@ -203,6 +205,42 @@ ERROR:  must be owner of database regression
 make installcheck PGUSER=postgres
 ```
 
+### CloudNativePG {#cloudnativepg}
+
+[ExtensionConfiguration]을 사용하여 [CloudNativePG] 클러스터에 pg&#95;clickhouse를 추가합니다:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cluster-example
+spec:
+  # ... <snip>
+  postgresql:
+    # ExtensionConfiguration
+    extensions:
+      - name: pg_clickhouse
+        image:
+        reference: ghcr.io/ClickHouse/cnpg-pg_clickhouse:{pg_major_version}-{pg_clickhouse_version}
+```
+
+데이터베이스에 로드하려면 [ExtensionSpec]을 사용하세요.
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: pg_clickhouse-cluster
+spec:
+  name: app
+  owner: app
+  cluster:
+    name: pg_clickhouse-cluster
+  extensions:
+    - name: pg_clickhouse
+      version: {pg_clickhouse_version}
+```
+
 ### 로드 {#loading}
 
 `pg_clickhouse`가 설치되면 슈퍼유저로 접속한 후 다음을 실행하여 데이터베이스에 추가할 수 있습니다:
@@ -237,8 +275,6 @@ make], [CMake]가 필요합니다.
 * CREATE SERVER
   및 GUCs를 통해 서버 수준과 세션 수준의 ClickHouse 설정 지원
 * 모든 ClickHouse 데이터 타입 지원
-* 경량한 DELETE 및 UPDATE 지원
-* COPY를 통한 배치 삽입 지원
 * 임의의 ClickHouse 쿼리를 실행하고 그 결과를 테이블로 반환하는 함수
   추가
 * 모두 원격 데이터베이스를 쿼리하는 경우 UNION 쿼리에 대한 푸시다운 지원 추가
@@ -248,6 +284,7 @@ make], [CMake]가 필요합니다.
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 * [Josh Ventura](https://github.com/JoshDreamland)
+* [Kaushik Iska](https://github.com/iskakaushik)
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 
@@ -258,41 +295,49 @@ make], [CMake]가 필요합니다.
 * 일부 저작권 (c) 2019-2023, Adjust GmbH
 * 일부 저작권 (c) 2012-2019, PostgreSQL Global Development Group
 
-[pg_clickhouse]: https://github.com/clickHouse/pg_clickhouse "GitHub의 pg_clickhouse"
+  [pg_clickhouse]: https://github.com/clickHouse/pg_clickhouse "GitHub의 pg_clickhouse"
 
-[import foreign tables]: /products/managed-postgres/extensions/pg_clickhouse/reference#import-foreign-schema
+  [import foreign tables]: /products/managed-postgres/extensions/pg_clickhouse/reference#import-foreign-schema
 
-[Docker image]: https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "최신 Docker 릴리스"
+  [Docker image]: https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "최신 Docker 릴리스"
 
-[tutorial]: /products/managed-postgres/extensions/pg_clickhouse/tutorial "pg_clickhouse 튜토리얼"
+  [tutorial]: /products/managed-postgres/extensions/pg_clickhouse/tutorial "pg_clickhouse 튜토리얼"
 
-[PostgreSQL Apt]: https://wiki.postgresql.org/wiki/Apt
+  [PostgreSQL Apt]: https://wiki.postgresql.org/wiki/Apt
 
-[PostgreSQL Yum]: https://yum.postgresql.org
+  [PostgreSQL Yum]: https://yum.postgresql.org
 
-[PGXN client]: https://pgxn.github.io/pgxnclient/ "PGXN 클라이언트 문서"
+  [PGXN client]: https://pgxn.github.io/pgxnclient/ "PGXN 클라이언트 문서"
 
-[Homebrew]: https://formulae.brew.sh/formula/pgxnclient#default "Homebrew의 PGXN 클라이언트"
+  [Homebrew]: https://formulae.brew.sh/formula/pgxnclient#default "Homebrew의 PGXN 클라이언트"
 
-[Apt]: https://tracker.debian.org/pkg/pgxnclient "Debian Apt의 PGXN 클라이언트"
+  [Apt]: https://tracker.debian.org/pkg/pgxnclient "Debian Apt의 PGXN 클라이언트"
 
-[`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
+  [`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
 
-[PostgreSQL]: https://www.postgresql.org "PostgreSQL: 세계에서 가장 진보된 오픈 소스 관계형 데이터베이스"
+  [PostgreSQL]: https://www.postgresql.org "PostgreSQL: 세계에서 가장 진보된 오픈 소스 관계형 데이터베이스"
 
-[libcurl]: https://curl.se/libcurl/ "libcurl — 네트워크 전송용 라이브러리"
+  [libcurl]: https://curl.se/libcurl/ "libcurl — 네트워크 전송용 라이브러리"
 
-[libuuid]: https://linux.die.net/man/3/libuuid "libuuid - DCE 호환 범용 고유 식별자 라이브러리"
+  [libuuid]: https://linux.die.net/man/3/libuuid "libuuid - DCE 호환 범용 고유 식별자 라이브러리"
 
-[GNU make]: https://www.gnu.org/software/make "GNU Make"
+  [GNU make]: https://www.gnu.org/software/make "GNU Make"
 
-[CMake]: https://cmake.org/ "CMake: 강력한 소프트웨어 빌드 시스템"
+  [CMake]: https://cmake.org/ "CMake: 강력한 소프트웨어 빌드 시스템"
 
-[LibSSL]: https://openssl-library.org "OpenSSL 라이브러리"
+  [LibSSL]: https://openssl-library.org "OpenSSL 라이브러리"
 
-[TPC-H]: https://www.tpc.org/tpch/
+  [TPC-H]: https://www.tpc.org/tpch/
 
-[re2]: https://github.com/ClickHouse/pg_re2 "pg_re2: RE2를 사용하는 ClickHouse 호환 정규식 함수"
+  [re2]: https://github.com/ClickHouse/pg_re2 "pg_re2: RE2를 사용하는 ClickHouse 호환 정규식 함수"
+
+  [CloudNativePG]: https://cloudnative-pg.io/ "Kubernetes 방식으로 PostgreSQL 실행하기"
+
+  [ExtensionConfiguration]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionconfiguration
+
+  &quot;CloudNativePG 문서: ExtensionConfiguration:
+  [ExtensionSpec]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionspec
+  &quot;CloudNativePG 문서: ExtensionSpec:
 
 [쿼리 1] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/1.sql
 [쿼리 2] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/2.sql
