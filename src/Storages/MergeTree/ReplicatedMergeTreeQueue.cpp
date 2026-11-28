@@ -66,6 +66,16 @@ static bool hasSupportedMetadataMutation(const MutationCommands & commands)
     return false;
 }
 
+/// A mutation applies the patch parts of its partition that are newer than its source part and older than its result part.
+static bool isPatchPartAppliedByMutation(
+    const MergeTreePartInfo & patch_info, const MergeTreePartInfo & source_part_info, const MergeTreePartInfo & mutated_part_info)
+{
+    return patch_info.isPatch()
+        && patch_info.getOriginalPartitionId() == mutated_part_info.getPartitionId()
+        && patch_info.getDataVersion() > source_part_info.getDataVersion()
+        && patch_info.getDataVersion() < mutated_part_info.getDataVersion();
+}
+
 
 ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_)
     : storage(storage_)
@@ -388,6 +398,7 @@ bool ReplicatedMergeTreeQueue::havePendingPatchPartsForMutation(
         return false;
 
     auto new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+    auto source_part_info = MergeTreePartInfo::fromPartName(entry.source_parts.at(0), format_version);
     auto data_version = new_part_info.getDataVersion();
 
     auto it = committing_blocks.find(new_part_info.getPartitionId());
@@ -414,15 +425,44 @@ bool ReplicatedMergeTreeQueue::havePendingPatchPartsForMutation(
             continue;
 
         auto fetch_part_info = MergeTreePartInfo::fromPartName(fetch_entry->new_part_name, format_version);
-        if (fetch_part_info.isPatch() && fetch_part_info.getDataVersion() < data_version)
-        {
-            constexpr auto fmt_string = "Not executing log entry {} for part {} because at least one patch part {} is not fetched yet";
-            LOG_DEBUG(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.new_part_name, fetch_part_info.getPartNameForLogs());
-            return true;
-        }
+        if (!isPatchPartAppliedByMutation(fetch_part_info, source_part_info, new_part_info))
+            continue;
+
+        /// The fetch waits for a DROP_PART that waits for this mutation, so the mutated part is fetched instead.
+        String drop_reason;
+        if (drop_parts.isAffectedByDropPart(*fetch_entry, drop_reason))
+            continue;
+
+        constexpr auto fmt_string = "Not executing log entry {} for part {} because at least one patch part {} is not fetched yet";
+        LOG_DEBUG(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.new_part_name, fetch_part_info.getPartNameForLogs());
+        return true;
     }
 
     return false;
+}
+
+String ReplicatedMergeTreeQueue::getPatchPartBlockedByDropPart(const LogEntry & entry) const
+{
+    if (entry.type != LogEntry::MUTATE_PART || !storage.supportsLightweightUpdate())
+        return {};
+
+    auto new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+    auto source_part_info = MergeTreePartInfo::fromPartName(entry.source_parts.at(0), format_version);
+    std::shared_lock lock(state_mutex);
+
+    for (const auto & fetch_entry : queue)
+    {
+        if (fetch_entry->type != LogEntry::GET_PART)
+            continue;
+
+        auto fetch_part_info = MergeTreePartInfo::fromPartName(fetch_entry->new_part_name, format_version);
+        String drop_reason;
+        if (isPatchPartAppliedByMutation(fetch_part_info, source_part_info, new_part_info)
+            && drop_parts.isAffectedByDropPart(*fetch_entry, drop_reason))
+            return fetch_entry->new_part_name;
+    }
+
+    return {};
 }
 
 void ReplicatedMergeTreeQueue::insertUnlocked(

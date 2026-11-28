@@ -111,6 +111,16 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         };
     }
 
+    if (String patch_part = storage.queue.getPatchPartBlockedByDropPart(entry); !patch_part.empty())
+    {
+        LOG_DEBUG(log, "Will fetch part {} because patch part {} is going to be dropped before it is fetched", entry.new_part_name, patch_part);
+        return PrepareResult{
+            .prepared_successfully = false,
+            .need_to_check_missing_part_in_fetch = true,
+            .part_log_writer = part_log_writer,
+        };
+    }
+
     MergeTreeData::DataPartPtr source_part = storage.getActiveContainingPart(source_part_name);
     if (!source_part)
     {
