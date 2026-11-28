@@ -33,6 +33,7 @@ def cluster():
                 "configs/config.d/bg_processing_pool_conf.xml",
                 "configs/config.d/blob_log.xml",
                 "configs/config.d/allowed_disks_for_table_engines.xml",
+                "configs/config.d/secret_cluster.xml",
             ],
             user_configs=[
                 "configs/config.d/users.xml",
@@ -1311,6 +1312,9 @@ def test_data_lake_named_custom_disk_remote_host_filter(cluster):
         "CREATE TABLE t_lake_disk (x Int64) ENGINE = Iceberg(path = 'lake_disk', format = Parquet) "
         "SETTINGS disk = '{}'",
         "SELECT * FROM icebergS3('lake_disk', 'Parquet', 'x Int64', SETTINGS disk = '{}')",
+        # The node parses the inner function on a secondary query authenticated by the cluster secret.
+        "DESCRIBE TABLE cluster('secret_cluster', "
+        "icebergS3Cluster('secret_cluster', 'lake_disk', 'Parquet', 'x Int64', SETTINGS disk = '{}'))",
     ]
 
     with ConfigManager() as cm:

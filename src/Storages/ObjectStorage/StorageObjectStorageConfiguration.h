@@ -152,7 +152,8 @@ public:
 
     /// Add/replace structure and format arguments in the AST arguments if they have 'auto' values.
     virtual void addStructureAndFormatToArgsIfNeeded(
-        ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) = 0;
+        ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure,
+        bool replace_not_overridable) = 0;
 
     [[nodiscard]] bool isNamespaceWithGlobs() const;
 
@@ -433,6 +434,14 @@ public:
     /// Set by the storage when the table definition is replayed from stored metadata (see `isReplayedTableDefinition`):
     /// the inferred `format` or `structure` stored over a `NOT OVERRIDABLE` `'auto'` of the named collection is then accepted.
     bool is_replayed_definition = false;
+
+    /// Set by a `*Cluster` table function on a node for a query authenticated by the cluster secret: the inferred `format`
+    /// or `structure` the initiator sends over a `NOT OVERRIDABLE` `'auto'` of the named collection is then accepted.
+    bool accept_sent_not_overridable_auto = false;
+
+    /// Whether the structure is a `NOT OVERRIDABLE` `'auto'` of a named collection: the nodes of a cluster without a secret
+    /// then infer it, so the initiator does as well.
+    bool is_structure_not_overridable = false;
 
     /// Set by `initialize` when the arguments come from a named collection.
     bool initialized_from_named_collection = false;
