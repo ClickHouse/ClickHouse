@@ -125,6 +125,12 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
     return compressBody(/*completed_stages=*/0, source, source_size, getMaxCompressedDataSize(source_size), dest);
 }
 
+UInt32 CompressionCodecMultiple::doCompressDataWithValueBoundaries(
+    const char * source, UInt32 source_size, char * dest, std::span<const UInt32> value_boundaries) const
+{
+    return compressBody(/*completed_stages=*/0, source, source_size, getMaxCompressedDataSize(source_size), dest, value_boundaries);
+}
+
 UInt32 CompressionCodecMultiple::compressRemainingStages(
     size_t completed_stages, const char * input, UInt32 input_size, UInt32 source_size, char * dest) const
 {
@@ -135,8 +141,8 @@ UInt32 CompressionCodecMultiple::compressRemainingStages(
     return writeHeader(dest, body_size, source_size);
 }
 
-UInt32
-CompressionCodecMultiple::compressBody(size_t completed_stages, const char * input, UInt32 input_size, UInt32 dest_size, char * dest) const
+UInt32 CompressionCodecMultiple::compressBody(
+    size_t completed_stages, const char * input, UInt32 input_size, UInt32 dest_size, char * dest, std::span<const UInt32> value_boundaries) const
 {
     const auto chain = getCodecs();
     chassert(completed_stages <= chain.size());
@@ -164,7 +170,10 @@ CompressionCodecMultiple::compressBody(size_t completed_stages, const char * inp
             output = buffers[idx % 2].data();
         }
 
-        input_size = codec->compress(input, input_size, output);
+        /// The boundaries of the values are offsets in the source of the chain.
+        input_size = idx == 0 && !value_boundaries.empty()
+            ? codec->compressWithValueBoundaries(input, input_size, output, value_boundaries)
+            : codec->compress(input, input_size, output);
         input = output;
     }
 
@@ -266,6 +275,61 @@ UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 so
     if (input != dest)
         memcpy(dest, input, decompressed_size);
     return decompressed_size;
+}
+
+uint8_t CompressionCodecMultiple::decompressAllStagesButFirst(const char * source, UInt32 source_size, PODArray<char> & result, int error_code)
+{
+    if (source_size < 1 || !source[0])
+        throw Exception(error_code, "Wrong compression methods list");
+
+    UInt8 compression_methods_size = source[0];
+    if (static_cast<UInt32>(compression_methods_size) + 1 > source_size)
+        throw Exception(error_code, "Wrong compression methods list: header claims {} codecs but compressed data is only {} bytes",
+            static_cast<UInt32>(compression_methods_size), source_size);
+
+    const char * input = source + compression_methods_size + 1;
+    UInt32 input_size = source_size - compression_methods_size - 1;
+
+    /// The input of a stage is copied when its codec needs padding after it.
+    PODArray<char> padded_input;
+    PODArray<char> output;
+
+    for (int idx = compression_methods_size - 1; idx >= 1; --idx)
+    {
+        const auto codec = CompressionCodecFactory::instance().get(static_cast<UInt8>(source[idx + 1]));
+        const UInt32 additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
+
+        if (input_size < COMPRESSED_BLOCK_HEADER_SIZE)
+            throw Exception(error_code, "Compressed data is too short to contain a block header: {} bytes", input_size);
+
+        if (additional_size_at_the_end_of_buffer)
+        {
+            padded_input.resize(input_size + additional_size_at_the_end_of_buffer);
+            memcpy(padded_input.data(), input, input_size);
+            input = padded_input.data();
+        }
+
+        UInt32 uncompressed_size = codec->readDecompressedBlockSize(input);
+        if (uncompressed_size >= 1_GiB)
+            throw Exception(error_code, "Too large uncompressed size: {}", uncompressed_size);
+
+        output.resize(uncompressed_size + additional_size_at_the_end_of_buffer);
+        codec->decompress(input, input_size, output.data());
+        output.resize(uncompressed_size);
+
+        result.swap(output);
+        input = result.data();
+        input_size = uncompressed_size;
+    }
+
+    if (input_size < COMPRESSED_BLOCK_HEADER_SIZE)
+        throw Exception(error_code, "Compressed data is too short to contain a block header: {} bytes", input_size);
+
+    /// A chain of one codec: the input is not in `result` yet.
+    if (compression_methods_size == 1)
+        result.assign(input, input + input_size);
+
+    return static_cast<uint8_t>(source[1]);
 }
 
 VectorWithMemoryTracking<uint8_t> CompressionCodecMultiple::getCodecsBytesFromData(const char * source)

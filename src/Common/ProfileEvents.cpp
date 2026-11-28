@@ -70,6 +70,7 @@
     M(FileSyncElapsedMicroseconds, "Total time spent waiting for F_FULLFSYNC/fsync/fdatasync syscall for files.", ValueType::Microseconds) \
     M(DirectorySyncElapsedMicroseconds, "Total time spent waiting for F_FULLFSYNC/fsync/fdatasync syscall for directories.", ValueType::Microseconds) \
     M(ReadCompressedBytes, "Number of bytes (the number of bytes before decompression) read from compressed sources (files, network).", ValueType::Bytes) \
+    M(CompressedReadBufferFSSTBlocksWithoutDecoding, "Number of times a compressed block encoded by the FSST codec was given to the reader without decoding it, e.g. to check the string values in it against a filter.", ValueType::Number) \
     M(CompressedReadBufferBlocks, "Number of compressed blocks (the blocks of data that are compressed independent of each other) read from compressed sources (files, network).", ValueType::Number) \
     M(CompressedReadBufferBytes, "Number of uncompressed bytes (the number of bytes after decompression) read from compressed sources (files, network).", ValueType::Bytes) \
     M(CompressedWriteBufferBlocks, "Number of compressed blocks (the blocks of data that are compressed independent of each other) written by `CompressedWriteBuffer` (files, network, temporary data).", ValueType::Number) \
