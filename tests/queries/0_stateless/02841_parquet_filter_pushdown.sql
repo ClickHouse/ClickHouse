@@ -114,13 +114,13 @@ select count(), sum(number) from file('02841.parquet') where indexHint(sometimes
 select count(), sum(number) from file('02841.parquet') where indexHint(sometimes_null_lc is NULL);
 select count(), sum(number) from file('02841.parquet') where indexHint(mostly_null is not NULL);
 select count(), sum(number) from file('02841.parquet') where indexHint(mostly_null_lc is not NULL);
+-- Quirk with infinities: this reads too much because KeyCondition represents NULLs as positive infinity.
 select count(), sum(number) from file('02841.parquet') where indexHint(sometimes_null > 850);
 select count(), sum(number) from file('02841.parquet') where indexHint(sometimes_null_lc > 850);
 select count(), sum(number) from file('02841.parquet') where indexHint(never_null > 850);
 select count(), sum(number) from file('02841.parquet') where indexHint(never_null_lc > 850);
 select count(), sum(number) from file('02841.parquet') where indexHint(never_null < 150);
 select count(), sum(number) from file('02841.parquet') where indexHint(never_null_lc < 150);
--- Quirk with infinities: this reads too much because KeyCondition represents NULLs as infinities.
 select count(), sum(number) from file('02841.parquet') where indexHint(sometimes_null < 150);
 select count(), sum(number) from file('02841.parquet') where indexHint(sometimes_null_lc < 150);
 
@@ -132,11 +132,11 @@ insert into function file('02841.parquet') select
     if(number%234 == 0, NULL, 'I am a string') as string_or_null
     from numbers(1000);
 
-select count(), sum(number) from file('02841.parquet') where indexHint(positive_or_null < 50); -- quirk with infinities
+select count(), sum(number) from file('02841.parquet') where indexHint(positive_or_null < 50);
 select count(), sum(number) from file('02841.parquet', Parquet, 'number UInt64, positive_or_null UInt64') where indexHint(positive_or_null < 50);
-select count(), sum(number) from file('02841.parquet') where indexHint(negative_or_null > -50);
+select count(), sum(number) from file('02841.parquet') where indexHint(negative_or_null > -50); -- quirk with infinities
 select count(), sum(number) from file('02841.parquet', Parquet, 'number UInt64, negative_or_null Int64') where indexHint(negative_or_null > -50);
-select count(), sum(number) from file('02841.parquet') where indexHint(string_or_null == ''); -- quirk with infinities
+select count(), sum(number) from file('02841.parquet') where indexHint(string_or_null == '');
 
 -- Parquet index analysis doesn't support empty() function yet
 select count(), sum(number) from file('02841.parquet', Parquet, 'number UInt64, string_or_null String') where indexHint(string_or_null == '') settings optimize_empty_string_comparisons = 0;
