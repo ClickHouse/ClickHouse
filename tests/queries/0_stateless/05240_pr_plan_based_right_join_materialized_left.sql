@@ -53,35 +53,35 @@ SET join_algorithm = 'hash', join_use_nulls = 0;
 
 SELECT 'non-MergeTree left: reads from replicas';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') FROM (
-    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM t_mem AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+    EXPLAIN distributed = 1 SELECT count(), sum(r.key), sum(l.key) FROM t_mem AS l RIGHT JOIN t_right AS r ON l.key = r.key);
 SELECT count(), sum(r.key), sum(l.key) FROM t_mem AS l RIGHT JOIN t_right AS r ON l.key = r.key;
 SELECT 'the join is shipped to the replicas';
 SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
-    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM t_mem AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+    EXPLAIN distributed = 1 SELECT count(), sum(r.key), sum(l.key) FROM t_mem AS l RIGHT JOIN t_right AS r ON l.key = r.key);
 
 -- A plain `MergeTree` left side is shippable only while `parallel_replicas_for_non_replicated_merge_tree`
 -- admits it; without it only the replicated right side's read is distributed.
 SELECT 'non-replicated MergeTree left: reads from replicas';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') FROM (
-    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM t_left AS l RIGHT JOIN t_right AS r ON l.key = r.key)
+    EXPLAIN distributed = 1 SELECT count(), sum(r.key), sum(l.key) FROM t_left AS l RIGHT JOIN t_right AS r ON l.key = r.key)
 SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
 SELECT count(), sum(r.key), sum(l.key) FROM t_left AS l RIGHT JOIN t_right AS r ON l.key = r.key
 SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
 SELECT 'the join is not shipped';
 SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
-    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM t_left AS l RIGHT JOIN t_right AS r ON l.key = r.key)
+    EXPLAIN distributed = 1 SELECT count(), sum(r.key), sum(l.key) FROM t_left AS l RIGHT JOIN t_right AS r ON l.key = r.key)
 SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
 SELECT 'the same left admitted: the join is shipped to the replicas';
 SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
-    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM t_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+    EXPLAIN distributed = 1 SELECT count(), sum(r.key), sum(l.key) FROM t_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
 
 SELECT 'view left: reads from replicas';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') FROM (
-    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM v_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+    EXPLAIN distributed = 1 SELECT count(), sum(r.key), sum(l.key) FROM v_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
 SELECT count(), sum(r.key), sum(l.key) FROM v_left AS l RIGHT JOIN t_right AS r ON l.key = r.key;
 SELECT 'the join is shipped to the replicas';
 SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
-    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM v_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+    EXPLAIN distributed = 1 SELECT count(), sum(r.key), sum(l.key) FROM v_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
 
 -- `FINAL` over the plain `View` makes the left side unshippable again, so this is the negative case
 -- for the arm above: the query is not distributed, and the answer is the same. The wrapper gates the query-based tests pin -
@@ -92,19 +92,19 @@ SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
 -- is nothing to assert about them here.
 SELECT 'view left with FINAL: reads from replicas';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') FROM (
-    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM (SELECT key FROM v_left FINAL) AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+    EXPLAIN distributed = 1 SELECT count(), sum(r.key), sum(l.key) FROM (SELECT key FROM v_left FINAL) AS l RIGHT JOIN t_right AS r ON l.key = r.key);
 SELECT count(), sum(r.key), sum(l.key) FROM (SELECT key FROM v_left FINAL) AS l RIGHT JOIN t_right AS r ON l.key = r.key;
 SELECT 'the join is not shipped';
 SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
-    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM (SELECT key FROM v_left FINAL) AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+    EXPLAIN distributed = 1 SELECT count(), sum(r.key), sum(l.key) FROM (SELECT key FROM v_left FINAL) AS l RIGHT JOIN t_right AS r ON l.key = r.key);
 
 SELECT 'materialized view left: reads from replicas';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') FROM (
-    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM mv_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+    EXPLAIN distributed = 1 SELECT count(), sum(r.key), sum(l.key) FROM mv_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
 SELECT count(), sum(r.key), sum(l.key) FROM mv_left AS l RIGHT JOIN t_right AS r ON l.key = r.key;
 SELECT 'the join is shipped to the replicas';
 SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
-    EXPLAIN SELECT count(), sum(r.key), sum(l.key) FROM mv_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
+    EXPLAIN distributed = 1 SELECT count(), sum(r.key), sum(l.key) FROM mv_left AS l RIGHT JOIN t_right AS r ON l.key = r.key);
 
 DROP TABLE mv_left SYNC;
 DROP VIEW v_left;

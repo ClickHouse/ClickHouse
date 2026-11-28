@@ -51,7 +51,7 @@ SETTINGS parallel_replicas_plan_based = 0;
 SELECT
     countIf(explain LIKE '%FRANCE%' AND explain LIKE '%OR%'
             AND (explain LIKE '%Filter column:%' OR explain LIKE '%Prewhere filter column:%')) AS pushed_disjunctions,
-    countIf(explain LIKE '%ReadFromParallelReplicas (QueryPlan%') AS plan_based_reads
+    countIf(explain LIKE '%ReadFromParallelReplicas%') AS plan_based_reads
 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM disj_left AS l, disj_right AS r

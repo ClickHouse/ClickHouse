@@ -81,11 +81,10 @@ namespace FailPoints
 
 namespace
 {
-/// Formats the fragment for the step description and for the text that names the query on the
-/// replica. `actions` and `indexes` are off on purpose: they make `describeActions` and
-/// `describeIndexes` ask every MergeTree read for its analysis result, so building a description
-/// string would run index analysis, which is expensive and can throw (for example when the analysis
-/// exceeds `max_rows_to_read`) even though nothing is being read yet.
+/// Formats the fragment for the text that names the query on the replica. `actions` and `indexes` are
+/// off on purpose: they make `describeActions` and `describeIndexes` ask every MergeTree read for its
+/// analysis result, so building the string would run index analysis, which is expensive and can throw
+/// (for example when the analysis exceeds `max_rows_to_read`) even though nothing is being read yet.
 String dumpQueryPlanShape(const QueryPlan & query_plan)
 {
     WriteBufferFromOwnString buffer;
@@ -126,7 +125,7 @@ ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
         replicas.push_back(pools_to_use[i]->getAddress());
     }
 
-    auto description = fmt::format("QueryPlan: {} Replicas: {}", dumpQueryPlanShape(*query_plan), fmt::join(replicas, ", "));
+    auto description = fmt::format("Replicas: {}", fmt::join(replicas, ", "));
     setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
 }
 

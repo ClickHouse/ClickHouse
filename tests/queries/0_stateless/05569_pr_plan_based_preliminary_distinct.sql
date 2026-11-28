@@ -34,7 +34,7 @@ WHERE event_date >= yesterday() AND NOT is_initial_query AND type = 'QueryFinish
 
 -- With a LIMIT, a final DISTINCT and the LIMIT are shipped too, so a replica sends at most 3 rows.
 SELECT arrayJoin(extractAll(explain, 'Limit \\([^)]+\\)|Distinct \\([^)]+\\)|ReadFromParallelReplicas|ReadFromMergeTree'))
-FROM (EXPLAIN SELECT DISTINCT c FROM t_pr_preliminary_distinct LIMIT 3);
+FROM (EXPLAIN distributed = 1 SELECT DISTINCT c FROM t_pr_preliminary_distinct LIMIT 3);
 
 SELECT count() FROM (SELECT DISTINCT c FROM t_pr_preliminary_distinct LIMIT 3);
 
