@@ -15,10 +15,11 @@ REGISTER_FUNCTION(VisitParamExtractInt)
 Parses `Int64` from the value of the field named `field_name`.
 If `field_name` is a string field, it tries to parse a number from the beginning of the string.
 If the field does not exist, or it exists but does not contain a number, it returns `0`.
+A `JSON` value is searched as its `String` text.
 )";
     FunctionDocumentation::Syntax syntax = "simpleJSONExtractInt(json, field_name)";
     FunctionDocumentation::Arguments arguments = {
-        {"json", "The JSON in which the field is searched for.", {"String"}},
+        {"json", "The JSON in which the field is searched for.", {"String", "JSON"}},
         {"field_name", "The name of the field to search for.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the number parsed from the field if the field exists and contains a number, `0` otherwise", {"Int64"}};

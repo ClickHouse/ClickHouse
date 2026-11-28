@@ -83,6 +83,8 @@ struct ExtractParamImpl
 
     static constexpr bool use_default_implementation_for_constants = true;
     static constexpr bool supports_start_pos = false;
+    /// A `JSON` haystack is searched as its `String` text.
+    static constexpr bool supports_json_haystack = true;
     static constexpr auto name = Name::name;
 
     static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1, 2};}
@@ -168,6 +170,8 @@ struct ExtractParamImpl
 template <typename ParamExtractor>
 struct ExtractParamToStringImpl
 {
+    static constexpr bool supports_json_haystack = true;
+
     static void vector(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets,
                        std::string needle,
                        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets,

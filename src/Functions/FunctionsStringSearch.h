@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/JSONAsStringConverter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
@@ -124,6 +125,8 @@ private:
     /// Compile-count threshold for JIT-compiling regular expressions, or `size_t(-1)` to disable.
     size_t regexp_jit_min_count = std::numeric_limits<size_t>::max();
 
+    std::optional<JSONAsStringConverter> json_converter;
+
 public:
     static constexpr auto name = Impl::name;
 
@@ -141,9 +144,18 @@ public:
         /// compile-count threshold; otherwise it gets a sentinel that disables the JIT path.
         if (context && context->getSettingsRef()[Setting::compile_regular_expressions])
             regexp_jit_min_count = context->getSettingsRef()[Setting::min_count_to_compile_regular_expression];
+
+        if constexpr (ImplSupportsJSONHaystack<Impl>::value)
+            json_converter.emplace(context);
     }
 
     [[nodiscard]] String getName() const override { return name; }
+
+    void updateHash(SipHash & hash) const override
+    {
+        if (json_converter)
+            json_converter->updateHash(hash);
+    }
 
     [[nodiscard]] bool isVariadic() const override { return Impl::supports_start_pos || ImplSupportsEscape<Impl>::value; }
 
@@ -176,7 +188,9 @@ public:
         const String ret = (execution_error_policy == ExecutionErrorPolicy::Null)
             ? ("Nullable(" + elem + ")")
             : elem;
-        const String haystack = (argument_order == ArgumentOrder::HaystackNeedle)
+        const String haystack = ImplSupportsJSONHaystack<Impl>::value
+            ? "StringOrFixedString | Enum | JSON, String"
+            : (argument_order == ArgumentOrder::HaystackNeedle)
             ? "StringOrFixedString | Enum, String"
             : "String, StringOrFixedString | Enum";
         if constexpr (ImplSupportsEscape<Impl>::value)
@@ -331,6 +345,12 @@ public:
 
             if (!enum_needs_transform)
                 column_haystack = castColumn(haystack_argument, std::make_shared<DataTypeString>());
+        }
+
+        if constexpr (ImplSupportsJSONHaystack<Impl>::value)
+        {
+            if (isObject(haystack_argument.type))
+                column_haystack = json_converter->convert(haystack_argument);
         }
 
         ColumnPtr column_needle_rewritten;
