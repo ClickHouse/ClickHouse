@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Stopwatch.h>
 #include <Disks/DiskLocalCheckThread.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
@@ -155,8 +156,24 @@ public:
 protected:
     void checkAccessImpl(const String & path) override;
 
+    struct DiskSpace
+    {
+        UInt64 total = 0;
+        UInt64 available = 0;
+    };
+
+    /// An override must not call the space getters: with the cache on it runs under the non-recursive cache mutex.
+    [[nodiscard]] virtual DiskSpace readDiskSpace() const;
+
+    std::atomic<bool> broken{false};
+    std::atomic<bool> readonly{false};
+
 private:
     bool tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints, UInt64 & unreserved_space);
+
+    [[nodiscard]] DiskSpace getDiskSpace() const;
+    /// Does not take the cache mutex: a probe can hold it for as long as the file system takes to answer.
+    void invalidateDiskSpaceCache() const;
 
     /// Setup disk for healthy check.
     /// Throw exception if it's not possible to setup necessary files and directories.
@@ -164,6 +181,7 @@ private:
 
     const String disk_path;
     std::atomic<UInt64> keep_free_space_bytes;
+    std::atomic<UInt64> disk_space_cache_ttl_ms{0};
     LoggerPtr logger;
     DataSourceDescription data_source_description;
 
@@ -172,8 +190,11 @@ private:
 
     mutable std::mutex reservation_mutex;
 
-    std::atomic<bool> broken{false};
-    std::atomic<bool> readonly{false};
+    mutable std::mutex disk_space_mutex;
+    mutable std::optional<DiskSpace> cached_disk_space;
+    mutable Stopwatch disk_space_watch;
+    mutable std::atomic<bool> disk_space_cache_invalidated{false};
+
     std::optional<DiskLocalCheckThread> disk_checker;
 };
 

@@ -1009,6 +1009,7 @@ The sub-tags above define the following settings for `disks`:
 | `<disk_name_N>`         | The name of the disk, which should be unique.                                                         |
 | `path`                  | The path to which server data will be stored (`data` and `shadow` catalogues). It should end with `/` |
 | `keep_free_space_bytes` | Size of the reserved free space on disk.                                                              |
+| `disk_space_cache_ttl_ms` | The time in milliseconds during which a `local` disk reuses the total and available space reported by one `statvfs` call instead of probing the file system again (`0` - probe the disk on every check, default value is `0`). Everything that asks the disk for its space, such as the reservations of inserts and merges or the `system.disks` table, gets these values; they can lag behind the file system by up to this interval. Unlike `least_used_ttl_ms`, which only limits how often a volume with `load_balancing = least_used` re-reads the unreserved space of its disks to choose one, it changes what the disk itself reports. The setting is re-read when the configuration is reloaded; for an `encrypted` disk, set it on the wrapped disk, whose space it reports. For the implicit `default` disk, add a `<default>` section without `path`. |
 
 <Note>
 The order of the disks does not matter.

@@ -69,17 +69,11 @@ bool errnoIndicatesReadOnlyDisk(int err)
     return err == EROFS || err == EACCES || err == EPERM || err == ENOSPC || err == EDQUOT;
 }
 
-UInt64 getTotalSpaceByName(const String & name, const String & disk_path, UInt64 keep_free_space_bytes)
+UInt64 minusKeepingFreeSpace(UInt64 space, UInt64 keep_free_space_bytes)
 {
-    struct statvfs fs{};
-    if (name == "default") /// for default disk we get space from path/data/
-        fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
-    else
-        fs = getStatVFS(disk_path);
-    UInt64 total_size = fs.f_blocks * fs.f_frsize;
-    if (total_size < keep_free_space_bytes)
+    if (space < keep_free_space_bytes)
         return 0;
-    return total_size - keep_free_space_bytes;
+    return space - keep_free_space_bytes;
 }
 
 }
@@ -288,24 +282,51 @@ std::optional<UInt64> DiskLocal::getTotalSpace() const
 {
     if (broken || readonly)
         return 0;
-    return getTotalSpaceByName(name, disk_path, keep_free_space_bytes);
+    return minusKeepingFreeSpace(getDiskSpace().total, keep_free_space_bytes);
 }
 
 std::optional<UInt64> DiskLocal::getAvailableSpace() const
 {
     if (broken || readonly)
         return 0;
-    /// we use f_bavail, because part of b_free space is
-    /// available for superuser only and for system purposes
+    return minusKeepingFreeSpace(getDiskSpace().available, keep_free_space_bytes);
+}
+
+DiskLocal::DiskSpace DiskLocal::readDiskSpace() const
+{
     struct statvfs fs{};
     if (name == "default") /// for default disk we get space from path/data/
         fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
     else
         fs = getStatVFS(disk_path);
-    UInt64 total_size = fs.f_bavail * fs.f_frsize;
-    if (total_size < keep_free_space_bytes)
-        return 0;
-    return total_size - keep_free_space_bytes;
+    /// we use f_bavail, because part of b_free space is
+    /// available for superuser only and for system purposes
+    DiskSpace space;
+    space.total = fs.f_blocks * fs.f_frsize;
+    space.available = fs.f_bavail * fs.f_frsize;
+    return space;
+}
+
+DiskLocal::DiskSpace DiskLocal::getDiskSpace() const
+{
+    const UInt64 ttl_ms = disk_space_cache_ttl_ms;
+    if (ttl_ms == 0)
+        return readDiskSpace();
+
+    std::lock_guard lock(disk_space_mutex);
+    const bool invalidated = disk_space_cache_invalidated.exchange(false);
+    if (invalidated || !cached_disk_space || disk_space_watch.elapsedMilliseconds() >= ttl_ms)
+    {
+        cached_disk_space.reset();
+        disk_space_watch.restart();
+        cached_disk_space = readDiskSpace();
+    }
+    return *cached_disk_space;
+}
+
+void DiskLocal::invalidateDiskSpaceCache() const
+{
+    disk_space_cache_invalidated = true;
 }
 
 std::optional<UInt64> DiskLocal::getUnreservedSpace() const
@@ -631,11 +652,19 @@ void DiskLocal::applyNewSettings(const Poco::Util::AbstractConfiguration & confi
 
     loadDiskLocalConfig(name, config, config_prefix, context, new_disk_path, new_keep_free_space_bytes);
 
+    UInt64 new_disk_space_cache_ttl_ms = config.getUInt64(config_prefix + ".disk_space_cache_ttl_ms", 0);
+
     if (disk_path != new_disk_path)
         throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path can't be updated from config {}", name);
 
     if (keep_free_space_bytes != new_keep_free_space_bytes)
         keep_free_space_bytes = new_keep_free_space_bytes;
+
+    if (disk_space_cache_ttl_ms != new_disk_space_cache_ttl_ms)
+    {
+        invalidateDiskSpaceCache();
+        disk_space_cache_ttl_ms = new_disk_space_cache_ttl_ms;
+    }
 
     IDisk::applyNewSettings(config, context, config_prefix, disk_map);
 }
@@ -655,6 +684,8 @@ DiskLocal::DiskLocal(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
     : DiskLocal(name_, path_, keep_free_space_bytes_, config, config_prefix)
 {
+    disk_space_cache_ttl_ms = config.getUInt64(config_prefix + ".disk_space_cache_ttl_ms", 0);
+
     auto local_disk_check_period_ms = config.getUInt("local_disk_check_period_ms", 0);
     if (local_disk_check_period_ms > 0)
         disk_checker.emplace(this, context, local_disk_check_period_ms);
@@ -696,6 +727,8 @@ void DiskLocal::shutdown()
 
 void DiskLocal::checkAccessImpl(const String & path)
 {
+    const bool was_unusable = broken || readonly;
+
     if (!FS::canRead(disk_path, /*allow_throw=*/false))
     {
         broken = true;
@@ -734,6 +767,10 @@ void DiskLocal::checkAccessImpl(const String & path)
         broken = true;
         throw;
     }
+
+    /// Set before the disk becomes usable: a caller that finds the disk usable must not reuse the space cached before.
+    if (was_unusable)
+        invalidateDiskSpaceCache();
 
     broken = false;
     readonly = false;
