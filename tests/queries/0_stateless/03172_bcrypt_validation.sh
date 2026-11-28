@@ -16,3 +16,11 @@ ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER} IDENTIFIED WITH bcrypt_hash BY '012
 HASH_64='$2a$04$5nQvqncp7WGRfBG.nGaU/O59eNFFYuWXpp.sjFAhbwYgxSywzWa3iabcd'
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER} IDENTIFIED WITH bcrypt_hash BY '${HASH_64}'" 2>&1 | grep -m1 -o 'has length 64 but must be 59 or 60 bytes'
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER}"
+
+# A 64-byte hash is a 59- or 60-character hash followed by zero padding only
+HASH_64_NUL='$2a$04$5nQvqncp7WGRfBG.nGaU/O59eNFFYuWXpp.sjFAhbwYgxSywzWa3iabc\0'
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER} IDENTIFIED WITH bcrypt_hash BY '${HASH_64_NUL}'" 2>&1 | grep -m1 -o 'has length 64 but must be 59 or 60 bytes'
+HASH_64_PADDED='$2a$04$5nQvqncp7WGRfBG.nGaU/O59eNFFYuWXpp.sjFAhbwYgxSywzWa3i\0\0\0\0'
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER} IDENTIFIED WITH bcrypt_hash BY '${HASH_64_PADDED}'"
+${CLICKHOUSE_CLIENT} -q "SELECT auth_type FROM system.users WHERE name = '${USER}'"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER}"

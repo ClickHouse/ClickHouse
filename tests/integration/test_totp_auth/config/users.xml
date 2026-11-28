@@ -137,5 +137,12 @@
                 <secret>MFRGGZDFMZTWQ2LK</secret>
             </time_based_one_time_password>
         </totuser_rotation>
+
+        <totuser_bcrypt>
+            <password_bcrypt_hash>$2b$04$CqFyC7zigmZFWVs4tHWlu.0QXKbhGgIkQD2nvIRj3lMaeRNGPA9Ya</password_bcrypt_hash>
+            <time_based_one_time_password>
+                <secret>YYOZWJUCW4O54ICB</secret>
+            </time_based_one_time_password>
+        </totuser_bcrypt>
     </users>
 </clickhouse>
