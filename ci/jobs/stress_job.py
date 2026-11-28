@@ -1,4 +1,3 @@
-import csv
 import logging
 import os
 import sys
@@ -115,7 +114,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
     # Split on LF only (not on CR or CRLF) so bare CR bytes that the
     # writer failed to escape stay inside their row instead of
     # fragmenting it. `sanitize_test_result_line` then strips those
-    # CRs before csv parsing. Python's default text-mode `open` would
+    # CRs before the row is split. Python's default text-mode `open` would
     # turn every bare CR into LF (universal-newlines), and `newline=""`
     # still splits lines on CR — both behaviours produce the "row
     # exploded into many fragments" failure observed on PR #105243
@@ -123,19 +122,16 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
     with open(results_path, "rb") as descriptor:
         raw = descriptor.read().decode("utf-8", errors="replace")
     lines = raw.split("\n")
-    # `"` is an ordinary character in the `Escaped` rule, so csv must not
-    # treat it as structural.
-    reader = csv.reader(
-        (sanitize_test_result_line(line) for line in lines),
-        delimiter="\t",
-        quoting=csv.QUOTE_NONE,
-    )
-    for line_number, line in enumerate(reader, start=1):
+    for line_number, row in enumerate(
+        (sanitize_test_result_line(line) for line in lines), start=1
+    ):
         # Blank lines (typically a trailing newline at end of file, or
         # a separator artifact between writes) carry no information —
         # skip them silently.
-        if not line:
+        if not row:
             continue
+        # The `Escaped` rule has no quoting and never leaves a raw TAB in a cell.
+        line = row.split("\t")
         if len(line) < 2:
             malformed.append((line_number, line[0]))
             continue
