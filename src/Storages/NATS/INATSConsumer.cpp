@@ -10,6 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int CANNOT_CONNECT_NATS;
 }
 
@@ -67,7 +68,7 @@ void INATSConsumer::salvageReceived()
         }
     }
     if (num_salvaged)
-        LOG_DEBUG(log, "Kept {} messages received on the lost connection", num_salvaged);
+        LOG_DEBUG(log, "Kept {} messages received on the connection", num_salvaged);
 }
 
 bool INATSConsumer::maintainConnection(String & error)
@@ -116,17 +117,19 @@ void INATSConsumer::unsubscribe()
         subscribed = false;
         return;
     }
-    subscribed = false;
-
     try
     {
+        /// Waits until the server has processed the unsubscription, so that every message of the subscriptions has arrived.
         unsubscribeImpl();
+        /// What has arrived is kept (core NATS cannot deliver it again) or returned by the caller (JetStream).
+        salvageReceived();
         LOG_DEBUG(log, "Consumer unsubscribed");
     }
     catch (...)
     {
         tryLogCurrentException(log, "Cannot unsubscribe a NATS consumer");
     }
+    subscribed = false;
 }
 
 void INATSConsumer::disconnect()
@@ -151,6 +154,13 @@ bool INATSConsumer::receive(UInt64 timeout_ms)
                 return true;
             timeout_ms = 0;
         }
+    }
+    catch (const Exception & e)
+    {
+        /// The server refused something (e.g. a JetStream pull request): that is not an empty queue.
+        if (e.code() == ErrorCodes::ACCESS_DENIED)
+            throw;
+        tryLogCurrentException(log, "Cannot receive messages from NATS");
     }
     catch (...)
     {
@@ -229,12 +239,19 @@ void INATSConsumer::finishAndReturnUnprocessed(SkippedMessages skipped_messages_
         return;
     }
 
-    /// What was received but not consumed goes back too.
+    /// What was received but not consumed, also what the connection has received already, goes back to the server
+    /// (JetStream), or is kept to be inserted after the consumer subscribes again (core NATS, which cannot redeliver).
+    salvageReceived();
     std::vector<String> unprocessed;
+    DequeWithMemoryTracking<MessageData> kept;
     for (auto & message : buffered)
+    {
         if (!message.reply.empty())
             unprocessed.push_back(std::move(message.reply));
-    buffered.clear();
+        else
+            kept.push_back(std::move(message));
+    }
+    buffered = std::move(kept);
     if (subscribed && !connection.hasFailed())
     {
         try

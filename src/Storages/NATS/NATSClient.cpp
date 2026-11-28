@@ -57,6 +57,9 @@ constexpr UInt64 MAX_PAYLOAD_LIMIT = 64 * 1024 * 1024;
 /// Buffered output is sent once it reaches this size, and a larger buffer is released after it is sent.
 constexpr size_t OUTPUT_BUFFER_SIZE = 1024 * 1024;
 
+/// A connection stops reading messages once it has buffered this many: the server is back-pressured through TCP.
+constexpr size_t MAX_BUFFERED_MESSAGES = 100000;
+
 /// How many operations `processIncoming` reads at most in one call.
 constexpr size_t MAX_OPERATIONS_PER_PROCESSING = 100000;
 
@@ -799,7 +802,7 @@ void Connection::processIncoming()
     {
         sendPingIfNeeded();
         const auto now = Clock::now();
-        for (size_t i = 0; i < MAX_OPERATIONS_PER_PROCESSING; ++i)
+        for (size_t i = 0; i < MAX_OPERATIONS_PER_PROCESSING && messages.size() < MAX_BUFFERED_MESSAGES; ++i)
         {
             if (!readOperation(now))
                 break;
@@ -878,9 +881,8 @@ void Connection::unsubscribe(UInt64 sid)
 {
     guarded([&]
     {
+        /// The messages of the subscription that are already buffered stay: the consumer decides what to do with them.
         writeLine(fmt::format("UNSUB {}", sid));
-        /// Messages of the subscription that are already buffered are not needed anymore.
-        std::erase_if(messages, [sid](const Message & message) { return message.sid == sid; });
     });
 }
 
@@ -945,7 +947,7 @@ std::optional<Message> Connection::receive(Poco::Timespan timeout)
             /// Read what has arrived already as well: data left in the socket is lost if the server resets the connection,
             /// while received messages are kept by `takeReceived`.
             const auto now = Clock::now();
-            for (size_t i = 0; i < MAX_OPERATIONS_PER_PROCESSING; ++i)
+            for (size_t i = 0; i < MAX_OPERATIONS_PER_PROCESSING && messages.size() < MAX_BUFFERED_MESSAGES; ++i)
             {
                 if (!readOperation(now))
                     break;

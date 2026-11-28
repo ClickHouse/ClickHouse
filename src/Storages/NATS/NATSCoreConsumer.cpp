@@ -26,7 +26,8 @@ void NATSCoreConsumer::unsubscribeImpl()
 {
     for (const auto sid : sids)
         getConnection().unsubscribe(sid);
-    sids.clear();
+    /// The server answers in order: when the `PONG` arrives, every message of the subscriptions has arrived too.
+    /// The sids are kept until the next subscription, so that those messages are still accepted.
     getConnection().flush();
 }
 
