@@ -10,6 +10,11 @@ that is the `ch_parse`/`ch_format_json` interface below.
 
 ## Building
 
+The npm wrapper under `npm/` is the local path: `cd utils/wasm-parser/npm && npm run setup && npm run build`.
+That downloads wasi-sdk for Linux or macOS, compiles both wasm configurations, and packs
+`@clickhouse/wasm-parser`. See `npm/README.md`. The `.wasm` files and the tarball are generated;
+they are not committed.
+
 This is a CMake project of its own, not part of the main build: it cross-compiles to
 `wasm32-wasip1`, which cannot be mixed into a tree configured for the host. Point it at the
 toolchain file that wasi-sdk ships. Note that the release for 64-bit ARM is named `arm64`, which

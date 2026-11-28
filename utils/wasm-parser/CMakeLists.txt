@@ -2,7 +2,8 @@
 #
 # This is a project of its own rather than a part of the main build: it cross-compiles to
 # `wasm32-wasip1` with a wasi-sdk toolchain, which cannot be mixed into a tree configured for the
-# host. Configure it separately, pointing at the toolchain file the SDK ships:
+# host. The local path is `cd utils/wasm-parser/npm && npm run setup && npm run build`. Configure
+# it separately, pointing at the toolchain file the SDK ships:
 #
 #   cmake -S utils/wasm-parser -B build-wasm -G Ninja \
 #       -DCMAKE_TOOLCHAIN_FILE=$WASI_SDK/share/cmake/wasi-sdk-p1.cmake \
