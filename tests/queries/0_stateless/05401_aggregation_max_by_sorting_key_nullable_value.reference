@@ -1,0 +1,17 @@
+-- Nullable column
+not applied
+1	42	42
+1	42	42
+1	42
+-- LowCardinality(Nullable) column
+not applied
+1	a	a
+1	a	a
+-- Nullable expression
+not applied
+1	42	42
+1	42	42
+-- not Nullable: applied, the first and the last granule are read
+Granules: 2/3
+1	0	0
+1	0	0

@@ -1,0 +1,25 @@
+-- negative limit with an offset, DESC
+not applied
+1	2
+1	1
+1	0
+1	2
+1	1
+1	0
+-- negative limit with an offset, ASC
+not applied
+1	9
+1	10
+1	11
+1	9
+1	10
+1	11
+-- the largest positive limit with an offset, DESC and ASC
+not applied
+10	0	9
+10	0	9
+10	2	11
+10	2	11
+-- a limit that fits still applies
+Granules: 2/3
+1	9

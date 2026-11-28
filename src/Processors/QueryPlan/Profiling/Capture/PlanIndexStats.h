@@ -29,6 +29,7 @@ enum class PlanIndexType : uint8_t
     PrimaryKeyExpand,
     Statistics,
     NonIntersectingSplit,
+    MaxBySortingKey,
 };
 
 /// What one replica contributed, when the analysis was distributed.

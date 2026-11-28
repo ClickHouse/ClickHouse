@@ -1,0 +1,12 @@
+-- a stored column with a default using a deprecated function
+not applied
+1	11
+-- a pending rename of a column with a default using an introspection function
+not applied
+1	11
+-- a pending conversion from Nullable that fills NULL with a stateful default
+not applied
+1	11
+1	11
+1	11	11
+1	11	11
