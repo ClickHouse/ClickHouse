@@ -598,6 +598,13 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
         parameters->reference_vector.data(), parameters->reference_vector.size(),
         granule->scalar_kind, ErrorCodes::INCORRECT_QUERY, "reference vector in the SELECT query");
 
+    /// An index holds at most UInt32 max entries.
+    if (parameters->limit > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The LIMIT of a vector search ({}) exceeds the maximum number of entries in a vector similarity index ({}). "
+            "Use a smaller LIMIT, or a lower 'max_limit_for_vector_search_queries' so that the query does not use the index",
+            parameters->limit, std::numeric_limits<UInt32>::max());
+
     size_t limit = parameters->limit;
     if (parameters->additional_filters_present || is_rescoring)
     {
@@ -613,7 +620,10 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
     /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to
     /// synchronize index access, see https://github.com/unum-cloud/usearch/issues/500. As a workaround, we extended USearch' search method
     /// to accept a custom expansion_add setting. The config value is only used on the fly, i.e. not persisted in the index.
-    auto search_result = index->search(parameters->reference_vector.data(), limit, USearchIndex::any_thread(), false, expansion_search);
+    /// Values above the index size cannot change the result, they would only size the candidate buffers of the search.
+    const size_t max_neighbours = index->size();
+    auto search_result = index->search(parameters->reference_vector.data(), std::min(limit, max_neighbours),
+        USearchIndex::any_thread(), false, std::min(expansion_search, max_neighbours));
     if (!search_result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());
 
