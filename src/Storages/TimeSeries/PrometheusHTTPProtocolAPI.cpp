@@ -65,6 +65,8 @@ namespace Setting
 {
     extern const SettingsUInt64 promql_max_points_per_series;
     extern const SettingsBool promql_push_down_label_matchers;
+    extern const SettingsQueryResultCacheNondeterministicFunctionHandling query_cache_nondeterministic_function_handling;
+    extern const SettingsBool use_query_cache;
 }
 
 namespace
@@ -258,6 +260,27 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     /// Isolate the settings required by generated PromQL from the request context.
     auto query_context = Context::createCopy(getContext());
     StoragePrometheusQuery::applySettingsForPrometheusQuery(*query_context);
+
+    const auto & settings = getContext()->getSettingsRef();
+    if (settings[Setting::use_query_cache])
+    {
+        /// The generated subqueries share per-query state, so they must not be cached one by one.
+        query_context->setSetting("query_cache_for_subqueries", false);
+
+        const auto & handling = settings[Setting::query_cache_nondeterministic_function_handling];
+        if (params.query_cache_handling_param.empty() && !handling.changed)
+        {
+            /// The timeSeries* functions only depend on per-query state, so a result at an explicit time is safe to cache.
+            if (!evaluation_settings.use_current_time)
+                query_context->setSetting("query_cache_nondeterministic_function_handling", String("save"));
+        }
+        else if (handling != QueryResultCacheNondeterministicFunctionHandling::Save)
+        {
+            /// An explicit 'ignore' or 'throw' never reads a cached result.
+            query_context->setSetting("enable_reads_from_query_cache", false);
+            query_context->setSetting("enable_reads_from_query_cache_on_disk", false);
+        }
+    }
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
 
