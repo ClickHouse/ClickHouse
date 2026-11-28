@@ -5535,8 +5535,7 @@ ActionsDAG ActionsDAG::deserialize(
     size_t nesting_depth)
 {
     /// max_type_complexity is the type-complexity guard resolved once by the caller: the effective setting for
-    /// client-reachable QueryPlan packets, or unlimited (0) for trusted internal metadata (e.g. data-lake
-    /// schema transforms deserialized with the global context).
+    /// client-reachable packets (QueryPlan, read task responses of cluster functions), or unlimited (0) for trusted data.
 
     checkActionsDAGDeserializationDepth(nesting_depth);
 

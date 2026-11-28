@@ -2704,7 +2704,7 @@ ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskRes
         case Protocol::Client::ReadTaskResponse:
         {
             auto task = std::make_shared<ClusterFunctionReadTaskResponse>();
-            task->deserialize(*in);
+            task->deserialize(*in, state.query_context);
             state.at_packet_boundary = true;
             return task;
         }
