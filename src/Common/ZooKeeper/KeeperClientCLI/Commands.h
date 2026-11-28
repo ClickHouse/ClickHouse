@@ -241,7 +241,7 @@ class HelpCommand : public IKeeperClientCommand
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
-    [[nodiscard]] String getHelpMessage() const override { return "{} -- Prints this message"; }
+    [[nodiscard]] String getHelpMessage() const override { return "{} [command] -- Prints this message, or the help for the given command"; }
 };
 
 class FourLetterWordCommand : public IKeeperClientCommand

@@ -1,0 +1,24 @@
+-- help for a command
+create <path> <value> [mode] -- Creates new node with the set value
+-- help for an unknown command
+The command `no_such_command` is unknown
+-- help for a four-letter-word command
+`ruok` is sent to Keeper as a four-letter-word command, the same as `flwc ruok`
+-- help without arguments lists all commands
+create <path> <value> [mode] -- Creates new node with the set value
+help [command] -- Prints this message, or the help for the given command
+-- missing value
+Syntax error at position 9: expected value
+Syntax error at position 6: expected value
+-- missing path
+Syntax error at position 6: expected path
+-- missing watch id
+Syntax error at position 5: expected watch_id
+-- misspelled optional argument
+Syntax error: unexpected trailing input at position 12: expected one of: PERSISTENT, EPHEMERAL
+-- unknown command
+Syntax error at position 0
+-- --help
+Usage: clickhouse
+keeper-client [OPTION] [query]
+non-interactive

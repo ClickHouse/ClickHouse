@@ -335,7 +335,7 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
             .binding("password"));
 
     options.addOption(
-        Poco::Util::Option("query", "q", "will execute given query, then exit.")
+        Poco::Util::Option("query", "q", "will execute given query in non-interactive mode, then exit.")
             .argument("<query>")
             .binding("query"));
 
@@ -427,15 +427,6 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
 
     history_max_entries = config().getUInt("history-max-entries", 1000000);
 
-    String default_log_level;
-    if (config().has("query"))
-        /// We don't want to see any information log in query mode, unless it was set explicitly
-        default_log_level = "error";
-    else
-        default_log_level = "information";
-
-    Poco::Logger::root().setLevel(config().getString("log-level", default_log_level));
-
     EventNotifier::init();
 
     const char * env_password = getenv("CLICKHOUSE_KEEPER_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
@@ -445,6 +436,25 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     const char * env_identity = getenv("CLICKHOUSE_KEEPER_IDENTITY"); // NOLINT(concurrency-mt-unsafe)
     if (env_identity && !config().has("identity"))
         config().setString("identity", env_identity);
+}
+
+namespace
+{
+
+void printExpected(const Expected & expected)
+{
+    if (expected.variants.empty())
+        return;
+
+    std::cerr << (expected.variants.size() == 1 ? ": expected " : ": expected one of: ");
+    const char * separator = "";
+    for (const char * variant : expected.variants)
+    {
+        std::cerr << separator << variant;
+        separator = ", ";
+    }
+}
+
 }
 
 bool KeeperClient::processQueryText(const String & text, bool is_interactive)
@@ -494,11 +504,21 @@ bool KeeperClient::processQueryText(const String & text, bool is_interactive)
                 KeeperParser parser;
                 ASTPtr res;
                 Expected expected;
+                const char * statement_begin = pos->begin;
                 bool parsed = parser.parse(pos, res, expected);
 
                 if (!parsed || !res)
                 {
-                    std::cerr << "Syntax error at position " << (pos->begin - begin) << "\n";
+                    /// Report the furthest position the parser reached and what it expected there,
+                    /// unless it failed on the command name itself.
+                    const char * error_pos = statement_begin;
+                    if (expected.max_parsed_pos && expected.max_parsed_pos > statement_begin)
+                        error_pos = expected.max_parsed_pos;
+
+                    std::cerr << "Syntax error at position " << (error_pos - begin);
+                    if (error_pos > statement_begin)
+                        printExpected(expected);
+                    std::cerr << "\n";
                     return true;
                 }
 
@@ -512,7 +532,11 @@ bool KeeperClient::processQueryText(const String & text, bool is_interactive)
                 if (!pos->isEnd() && pos->type != TokenType::Semicolon)
                 {
                     std::cerr << "Syntax error: unexpected trailing input at position "
-                        << (pos->begin - begin) << "\n";
+                        << (pos->begin - begin);
+                    /// An optional argument which failed to parse, e.g. a misspelled mode of `create`.
+                    if (expected.max_parsed_pos == pos->begin)
+                        printExpected(expected);
+                    std::cerr << "\n";
                     return true;
                 }
 
@@ -717,13 +741,36 @@ void KeeperClient::connectToKeeper()
     zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(new_zk_args));
 }
 
-int KeeperClient::main(const std::vector<String> & /* args */)
+int KeeperClient::main(const std::vector<String> & args)
 {
+    /// As in `clickhouse-local`, a positional argument is the query: clickhouse keeper-client "ls /"
+    if (!args.empty())
+    {
+        if (args.size() > 1 || config().has("query"))
+        {
+            /// Not an exception: Poco catches the exceptions from `main` and returns `EXIT_SOFTWARE`.
+            std::cerr << "Positional option `" << args.back() << "` is not supported.\n";
+            return ErrorCodes::BAD_ARGUMENTS;
+        }
+        config().setString("query", args[0]);
+    }
+
+    String default_log_level;
+    if (config().has("query"))
+        /// We don't want to see any information log in query mode, unless it was set explicitly
+        default_log_level = "error";
+    else
+        default_log_level = "information";
+
+    Poco::Logger::root().setLevel(config().getString("log-level", default_log_level));
+
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(KeeperClient::options());
-        auto header_str = fmt::format("{} [OPTION]\n", commandName());
-        help_formatter.setHeader(header_str);
+        std::string app_name = (commandName() == "clickhouse-keeper-client") ? "clickhouse-keeper-client" : "clickhouse keeper-client";
+        help_formatter.setCommand(app_name);
+        help_formatter.setUsage("[OPTION] [query]");
+        help_formatter.setHeader("Without a query, the client starts in the interactive mode.");
         help_formatter.format(std::cout);
         return 0;
     }
