@@ -203,7 +203,11 @@ void MergeTreeReaderStream::announceReadRequestMap()
 
 void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_position)
 {
-    init();
+    if (!initialized)
+    {
+        deferred_seek.emplace(row_index, column_position);
+        return;
+    }
 
     /// All marks of an empty file point to its beginning, so don't load them.
     if (file_size == 0)
@@ -236,6 +240,7 @@ void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_
 void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
 {
     init();
+    deferred_seek.reset();
 
     if (compressed_data_buffer)
     {
@@ -337,6 +342,12 @@ void MergeTreeReaderStream::adjustRightMark(size_t right_mark)
 ReadBuffer * MergeTreeReaderStream::getDataBuffer()
 {
     init();
+    if (deferred_seek)
+    {
+        auto [row_index, column_position] = *deferred_seek;
+        deferred_seek.reset();
+        seekToMarkAndColumn(row_index, column_position);
+    }
     return data_buffer;
 }
 
