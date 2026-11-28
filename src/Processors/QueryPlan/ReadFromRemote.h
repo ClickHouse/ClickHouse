@@ -62,6 +62,8 @@ public:
 
     void allowReadingShardFromSeveralReplicas(bool allow) { allow_reading_shard_from_several_replicas = allow; }
 
+    const ClusterProxy::SelectStreamFactory::Shards & getShards() const { return shards; }
+
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;
@@ -150,6 +152,8 @@ public:
     /// remote-pool pass can reuse the exact same replica set the coordinator was created with.
     [[nodiscard]] const VectorWithMemoryTracking<ConnectionPoolPtr> & getPools() const { return pools_to_use; }
     [[nodiscard]] std::optional<size_t> getExcludePoolIndex() const { return exclude_pool_index; }
+
+    [[nodiscard]] const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
 
 private:
     Pipes addPipes(ASTPtr ast, const SharedHeader & out_header);

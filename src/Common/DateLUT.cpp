@@ -1,5 +1,5 @@
 #include <Common/DateLUT.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
@@ -253,7 +253,7 @@ const DateLUTImpl & DateLUT::getImplementation(std::string_view time_zone) const
     if (inserted)
     {
         /// Lives as long as the process, not the query that first named this time zone.
-        MemoryTrackerBlockerInThread not_charged_to_the_query;
+        ServerOwnedMemoryScope not_charged_to_the_query;
 
         try
         {

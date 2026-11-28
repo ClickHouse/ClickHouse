@@ -7,47 +7,32 @@ keywords: ['configuración de Postgres', 'configuración de PostgreSQL', 'PgBoun
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
-
 Puedes modificar los parámetros de configuración y gestionar la configuración de tu instancia de ClickHouse Managed Postgres desde la pestaña **Configuración** de la barra lateral.
 
-<div id="service-actions">
-  ## Service actions y escalado
-</div>
+## Service actions y escalado {#service-actions}
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Service actions y escalado](/images/managed-postgres/service-actions.webp)
-
-</Frame>
-
+  <Frame>
+    ![Service actions y escalado](/images/managed-postgres/service-actions.webp)
+  </Frame>
 </div>
 
 La barra de herramientas **Service actions** proporciona controles para administrar tu instancia de ClickHouse Managed Postgres:
 
 * **Reset password**: Actualiza la contraseña del superusuario (solo cuando la instancia está en estado `Running`)
 * **Restart**: Reinicia la instancia de base de datos (solo cuando la instancia está en estado `Running`)
+* **Start**: Reactiva una instancia [desactivada](/es/products/managed-postgres/pricing#service-deactivation). Solo se muestra cuando la instancia está desactivada y permanece deshabilitado hasta que la facturación de tu organización esté al día
 * **Delete**: Elimina la instancia
 
-La sección **Scaling** te permite cambiar los tipos de instancia de tu instancia primaria y tus instancias en espera para aumentar o reducir los recursos de cómputo y la capacidad de almacenamiento.
+La sección **Escalado** te permite cambiar los tipos de instancia de tu instancia primaria y tus instancias en espera para aumentar o reducir los recursos de cómputo y la capacidad de almacenamiento.
 Consulta la [página de escalado](/es/products/managed-postgres/scaling) para obtener más detalles.
 
-<div id="changing-configuration">
-  ## Cambiar parámetros de configuración
-</div>
+## Cambiar parámetros de configuración {#changing-configuration}
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Configuración de parámetros de Postgres](/images/managed-postgres/postgres-parameters.webp)
-
-</Frame>
-
+  <Frame>
+    ![Configuración de parámetros de Postgres](/images/managed-postgres/postgres-parameters.webp)
+  </Frame>
 </div>
 
 Para modificar un parámetro, selecciona el botón **Edit parameters**. Selecciona los parámetros que quieras modificar y cambia sus valores según corresponda. Cuando hayas terminado, pulsa el botón **Save Changes**.
@@ -56,10 +41,8 @@ Todos los cambios realizados en los parámetros de configuración suelen persist
 
 Consulta la [documentación](https://www.postgresql.org/docs/current/runtime-config.html) oficial sobre los parámetros de configuración. La lista de parámetros disponibles para configurar se ampliará pronto. Mientras tanto, ponte en contacto con [soporte](https://clickhouse.com/support/program) para solicitar un parámetro que actualmente no esté admitido.
 
-<div id="scheduled-upgrades">
-  ## Actualizaciones programadas
-</div>
+## Actualizaciones programadas {#scheduled-upgrades}
 
-La sección **Configuración** también le permite controlar cuándo se aplican a su instancia las tareas de mantenimiento de la plataforma —actualizaciones de versiones menores de PostgreSQL, actualizaciones de funciones del servicio gestionado y parches del sistema operativo—. Seleccione **Configurar programación** en la subsección **Actualizaciones programadas** para elegir una ventana de dos horas en UTC y, opcionalmente, los días de la semana en que se pueden aplicar las actualizaciones.
+La sección **Configuration** también le permite controlar cuándo se aplica a su instancia el mantenimiento de la plataforma: actualizaciones de versión menor de PostgreSQL, actualizaciones de funcionalidades del servicio administrado y parches del sistema operativo. Seleccione **Configure schedule** en la subsección **Actualizaciones programadas** para elegir una ventana de dos horas en UTC y, opcionalmente, los días de la semana en los que se pueden aplicar las actualizaciones.
 
-Para consultar las ventanas disponibles y lo que cubre y no cubre una programación, vea [actualizaciones programadas](/es/products/managed-postgres/upgrades#scheduled-upgrades).
+Para conocer las ventanas disponibles y qué cubre y qué no una programación, consulte [actualizaciones programadas](/es/products/managed-postgres/upgrades#scheduled-upgrades).

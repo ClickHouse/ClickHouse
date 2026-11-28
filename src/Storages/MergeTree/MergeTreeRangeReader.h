@@ -151,31 +151,46 @@ class FilterWithCachedCount
 {
     ConstantFilterDescription const_description;  /// TODO: ConstantFilterDescription only checks always true/false for const columns
                                                   /// think how to handle when the column in not const but has all 0s or all 1s
-    ColumnPtr column = nullptr;
-    const IColumn::Filter * data = nullptr;
+    /// The filter as a full `UInt8` column. A sparse filter builds it on first use.
+    mutable ColumnPtr column = nullptr;
+    mutable const IColumn::Filter * data = nullptr;
     mutable size_t cached_count_bytes = -1;
 
+    ColumnPtr sparse_column;
     ColumnPtr sparse_indices_holder;
     const ColumnUInt64 * sparse_indices = nullptr;
+    size_t num_rows = 0;
+
+    void materialize(const ColumnPtr & filter_column) const;
 
 public:
     explicit FilterWithCachedCount() = default;
 
     explicit FilterWithCachedCount(const ColumnPtr & column_);
 
-    bool present() const { return !!column; }
+    bool present() const { return column || sparse_column; }
 
     bool alwaysTrue() const { return const_description.always_true; }
     bool alwaysFalse() const { return const_description.always_false; }
 
-    ColumnPtr getColumn() const { return column; }
+    ColumnPtr getColumn() const
+    {
+        if (!column && sparse_column)
+            materialize(sparse_column);
+        return column;
+    }
 
-    const IColumn::Filter & getData() const { return *data; }
+    const IColumn::Filter & getData() const
+    {
+        if (!column && sparse_column)
+            materialize(sparse_column);
+        return *data;
+    }
 
     bool isSparse() const { return sparse_indices != nullptr; }
     const ColumnUInt64 * getSparseIndices() const { return sparse_indices; }
 
-    size_t size() const { return column->size(); }
+    size_t size() const { return num_rows; }
 
     size_t countBytesInFilter() const
     {
@@ -304,7 +319,7 @@ private:
         void toNextMark();
         [[nodiscard]] size_t ceilRowsToCompleteGranules(size_t rows_num) const;
         [[nodiscard]] size_t alignRowsToColumnsCacheStripes(
-            size_t rows_num, size_t stripe_marks, size_t max_block_size_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const;
+            size_t rows_num, size_t stripe_marks, size_t max_stripe_block_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const;
         [[nodiscard]] size_t alignRowsToColumnsCacheStripesImpl(size_t rows_num, size_t stripe_marks) const;
     };
 
@@ -547,12 +562,12 @@ public:
         LoggerPtr log;
     };
 
-    /// `max_block_size_rows` is the limit of rows in a block (`max_block_size`, lowered by a `LIMIT`), which `max_rows`
-    /// can be below of to keep to `preferred_block_size_bytes`. 0 if not known.
+    /// A block that is a whole stripe of the columns cache can have more rows than `max_rows`, but at most twice
+    /// `max_stripe_block_rows`. 0 if blocks are not extended to whole stripes.
     /// `columns_cache_readers` are the readers of the chain that read columns, which decide together how its blocks
     /// are aligned with the stripes of the columns cache; only this reader if empty.
     ReadResult startReadingChain(
-        size_t max_rows, MarkRanges & ranges, size_t max_block_size_rows = 0, std::span<IMergeTreeReader * const> columns_cache_readers = {});
+        size_t max_rows, MarkRanges & ranges, size_t max_stripe_block_rows = 0, std::span<IMergeTreeReader * const> columns_cache_readers = {});
     Columns continueReadingChain(ReadResult & result, size_t & num_rows);
 
     const Block & getSampleBlock() const { return result_sample_block; }

@@ -8,7 +8,7 @@ keywords: ['스토리지', '컴퓨트', '아키텍처', '확장성', '클라우�
 ---
 
 <div id="overview">
-  ## 개요
+  ## 개요 {#overview}
 </div>
 
 이 가이드에서는 ClickHouse와 S3를 사용해 스토리지와 컴퓨트가 분리된 아키텍처를 구현하는 방법을 살펴봅니다.
@@ -27,7 +27,7 @@ S3 기반 ClickHouse는 특히 「콜드」 데이터에 대한 쿼리 성능이
 
 <Steps>
   <Step title="S3를 ClickHouse 디스크로 사용" id="1-use-s3-as-a-clickhouse-disk">
-    ### 디스크 생성
+### 디스크 생성 {#creating-a-disk}
 
     저장소 구성(Storage configuration)을 저장할 새 파일을 ClickHouse `config.d` 디렉터리에 만드십시오:
 
@@ -155,13 +155,9 @@ S3 기반 ClickHouse는 특히 「콜드」 데이터에 대한 쿼리 성능이
     모든 것이 정상적으로 작동했다면, 이제 저장소와 컴퓨트가 분리된 ClickHouse를 사용하고 있습니다!
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![저장소와 컴퓨트 분리를 사용하는 S3 버킷 예시](/images/guides/s3_bucket_example.webp)
-
-    </Frame>
-
+      <Frame>
+        ![저장소와 컴퓨트 분리를 사용하는 S3 버킷 예시](/images/guides/s3_bucket_example.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -179,7 +175,7 @@ S3 기반 ClickHouse는 특히 「콜드」 데이터에 대한 쿼리 성능이
 </Steps>
 
 <div id="further-reading">
-  ## 추가 자료
+  ## 추가 자료 {#further-reading}
 </div>
 
 * [SharedMergeTree 테이블 엔진](/ko/products/cloud/features/infrastructure/shared-merge-tree)

@@ -27,13 +27,9 @@ Los datos se ingestarán en un `ReplacingMergeTree`. Este motor de tabla se usa 
     Puede consultar la guía de AWS [aquí](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html).
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![DynamoDB Kinesis Stream](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
-
-    </Frame>
-
+      <Frame>
+        ![DynamoDB Kinesis Stream](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -42,18 +38,14 @@ Los datos se ingestarán en un `ReplacingMergeTree`. Este motor de tabla se usa 
     **Deberá realizar una &quot;exportación completa&quot; en el formato JSON de DynamoDB.**
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Exportación de DynamoDB a S3](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Exportación de DynamoDB a S3](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="Cargar la instantánea en ClickHouse" id="3-load-the-snapshot-into-clickhouse">
-    ### Crear las tablas necesarias
+### Crear las tablas necesarias {#create-necessary-tables}
 
     Los datos de la instantánea de DynamoDB tendrán este aspecto:
 
@@ -116,7 +108,7 @@ Los datos se ingestarán en un `ReplacingMergeTree`. Este motor de tabla se usa 
     * La tabla debe usar la clave de partición como clave de ordenación (especificada por `ORDER BY`)
       * Las filas con la misma clave de ordenación se deduplicarán según la columna `version`.
 
-    ### Crear el ClickPipe de instantánea
+### Crear el ClickPipe de instantánea {#create-the-snapshot-clickpipe}
 
     Ahora puede crear un ClickPipe para cargar los datos de la instantánea desde S3 en ClickHouse. Siga la guía de S3 ClickPipe [aquí](/es/integrations/clickpipes/object-storage/amazon-s3/overview), pero use la siguiente configuración:
 
@@ -143,13 +135,9 @@ Los datos se ingestarán en un `ReplacingMergeTree`. Este motor de tabla se usa 
       * Asigne los demás campos a las columnas de destino correspondientes, como se muestra a continuación
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![DynamoDB: asignación de columnas](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
-
-    </Frame>
-
+      <Frame>
+        ![DynamoDB: asignación de columnas](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
+      </Frame>
     </div>
   </Step>
 

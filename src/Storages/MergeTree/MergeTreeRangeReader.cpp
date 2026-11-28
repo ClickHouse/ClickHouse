@@ -59,6 +59,7 @@ LoggerPtr getMergeTreeRangeReaderLogger()
 
 FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
     : const_description(*column_)
+    , num_rows(column_->size())
 {
     if (const auto * sparse = typeid_cast<const ColumnSparse *>(column_.get()))
     {
@@ -78,10 +79,17 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
                 sparse_indices_holder = std::move(sparse_desc.valid_offsets);
             else
                 sparse_indices_holder = column_;
+            sparse_column = column_;
+            return;
         }
     }
 
-    ColumnPtr col = column_->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+    materialize(column_);
+}
+
+void FilterWithCachedCount::materialize(const ColumnPtr & filter_column) const
+{
+    ColumnPtr col = filter_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     FilterDescription desc(*col);
     column = desc.data_holder ? desc.data_holder : col;
     data = desc.data;
@@ -89,8 +97,9 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
 
 static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)
 {
-    const auto & filter_data = filter.getData();
     const ColumnUInt64 * sparse_indices = filter.getSparseIndices();
+    /// `index` writes the kept rows to new columns: it is faster than the mask filter only when few rows are kept.
+    const bool few_rows_kept = sparse_indices && sparse_indices->size() * 8 <= filter.size();
 
     for (auto & column : columns)
     {
@@ -101,20 +110,20 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                     column->size(), filter.size());
 
             if (const auto * column_sparse = sparse_indices ? typeid_cast<const ColumnSparse *>(column.get()) : nullptr;
-                column_sparse && column_sparse->getOffsetsData() == sparse_indices->getData())
+                few_rows_kept || (column_sparse && column_sparse->getOffsetsData() == sparse_indices->getData()))
             {
-                /// The filter keeps exactly the non-default rows of this column, so `index` shares its values.
-                column = column_sparse->index(*sparse_indices, 0);
+                /// `index` shares the values of a sparse column whose non-default rows are exactly the kept ones.
+                column = column->index(*sparse_indices, 0);
             }
             else if (canInplaceFilter(column))
             {
                 auto mutable_column = IColumn::mutate(std::move(column));
-                mutable_column->filter(filter_data);
+                mutable_column->filter(filter.getData());
                 column = std::move(mutable_column);
             }
             else
             {
-                column = column->filter(filter_data, filter.countBytesInFilter());
+                column = column->filter(filter.getData(), filter.countBytesInFilter());
             }
 
             if (column->empty())
@@ -1144,20 +1153,20 @@ size_t MergeTreeRangeReader::Stream::ceilRowsToCompleteGranules(size_t rows_num)
 /// closest to `rows_num`, but at most twice as far; `rows_num` if the range has no such stripe end.
 /// A block that is a whole stripe is served from the cache and written to it without a copy.
 /// A stripe that is served from the cache, or written to it, is read whole even if `rows_num` is
-/// much less: the block shares the columns of the cache, so its size costs no memory. But not beyond
-/// twice `max_block_size_rows`, which a `LIMIT` lowers to read no more than it needs. Only if every reader of the
-/// chain can: the columns a later reader reads from disk would make the block as large.
+/// less: the block shares the columns of the cache, so it is not copied. But not beyond twice
+/// `max_stripe_block_rows`, see `MergeTreeReadTask::read`. Only if every reader of the chain can: the
+/// columns a later reader reads from disk would make the block as large.
 size_t MergeTreeRangeReader::Stream::alignRowsToColumnsCacheStripes(
-    size_t rows_num, size_t stripe_marks, size_t max_block_size_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const
+    size_t rows_num, size_t stripe_marks, size_t max_stripe_block_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const
 {
     const size_t rows = alignRowsToColumnsCacheStripesImpl(rows_num, stripe_marks);
     const size_t stripe_end = (current_mark / stripe_marks + 1) * stripe_marks;
     if (offset_after_current_mark != 0 || current_mark % stripe_marks != 0 || stripe_end > last_mark)
         return rows;
     const size_t stripe_rows = index_granularity->getRowsCountInRange(current_mark, stripe_end);
-    /// `stripe_rows > 2 * max_block_size_rows` without overflowing for a huge `max_block_size`
+    /// `stripe_rows > 2 * max_stripe_block_rows` without overflowing for a huge `max_block_size`
     /// (`stripe_rows` is positive here, because `rows >= stripe_rows` otherwise).
-    if (rows >= stripe_rows || (stripe_rows - 1) / 2 >= max_block_size_rows)
+    if (rows >= stripe_rows || (stripe_rows - 1) / 2 >= max_stripe_block_rows)
         return rows;
     for (auto * reader : columns_cache_readers)
     {
@@ -1234,7 +1243,7 @@ static size_t getTotalBytesInColumns(const Columns & columns)
 }
 
 MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(
-    size_t max_rows, MarkRanges & ranges, size_t max_block_size_rows, std::span<IMergeTreeReader * const> columns_cache_readers)
+    size_t max_rows, MarkRanges & ranges, size_t max_stripe_block_rows, std::span<IMergeTreeReader * const> columns_cache_readers)
 {
     IMergeTreeReader * const this_reader[] = {merge_tree_reader};
     if (columns_cache_readers.empty())
@@ -1304,7 +1313,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(
 
             if (!aligned_to_stripes)
             {
-                space_left = stream.alignRowsToColumnsCacheStripes(space_left, stripe_marks, max_block_size_rows, columns_cache_readers);
+                space_left = stream.alignRowsToColumnsCacheStripes(space_left, stripe_marks, max_stripe_block_rows, columns_cache_readers);
                 aligned_to_stripes = true;
             }
 

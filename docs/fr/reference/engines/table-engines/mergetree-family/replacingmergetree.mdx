@@ -19,9 +19,7 @@ Ainsi, `ReplacingMergeTree` convient pour supprimer les données en double en ar
   Un guide détaillé sur ReplacingMergeTree, incluant les bonnes pratiques et des conseils d’optimisation des performances, est disponible [ici](/fr/concepts/features/operations/update/replacing-merge-tree).
 </Note>
 
-<div id="creating-a-table">
-  ## Créer une table
-</div>
+## Créer une table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -43,22 +41,18 @@ Pour une description des paramètres de la requête, consultez la [description d
   L’unicité des lignes est déterminée par la section `ORDER BY` de la table, et non par `PRIMARY KEY`.
 </Note>
 
-<div id="replacingmergetree-parameters">
-  ## Paramètres de ReplacingMergeTree
-</div>
+## Paramètres de ReplacingMergeTree {#replacingmergetree-parameters}
 
-<div id="ver">
-  ### `ver`
-</div>
+### `ver` {#ver}
 
-`ver` — colonne contenant le numéro de version. Type `UInt*`, `Date`, `DateTime` ou `DateTime64`. Paramètre facultatif.
+`ver` — colonne contenant le numéro de version. Type `UInt*`, `Date`, `DateTime` ou `DateTime64`. Paramètre facultatif. Il peut également s’agir d’une sous-colonne d’une autre colonne, par exemple un élément d’un `Tuple` ou un chemin typé d’une colonne `JSON` : `ReplacingMergeTree(meta.ver)`.
 
-Lors de la fusion, `ReplacingMergeTree` ne conserve qu’une seule ligne parmi toutes celles ayant la même clé de tri :
+Lors de la fusion, `ReplacingMergeTree` ne conserve qu’une seule ligne parmi toutes celles ayant la même clé de tri :
 
 * La dernière de la sélection, si `ver` n’est pas défini. Une sélection est un ensemble de lignes dans un ensemble de parts participant à la fusion. La part créée le plus récemment (la dernière insertion) sera la dernière de la sélection. Ainsi, après déduplication, c’est la toute dernière ligne de l’insertion la plus récente qui sera conservée pour chaque clé de tri unique.
 * Celle ayant la version maximale, si `ver` est spécifié. Si `ver` est identique pour plusieurs lignes, la règle &quot;si `ver` n’est pas spécifié&quot; s’applique alors, c’est-à-dire que la ligne insérée le plus récemment sera conservée.
 
-Exemple :
+Exemple :
 
 ```sql
 -- without ver - the last inserted 'wins'
@@ -100,25 +94,23 @@ SELECT * FROM mySecondReplacingMT FINAL;
 └─────┴─────────┴─────────────────────┘
 ```
 
-<div id="is_deleted">
-  ### `is_deleted`
-</div>
+### `is_deleted` {#is_deleted}
 
 `is_deleted` — Nom d’une colonne utilisée lors d’une fusion pour déterminer si les données de cette ligne représentent un état ou doivent être supprimées ; `1` correspond à une ligne &quot;supprimée&quot;, `0` à une ligne &quot;d’état&quot;.
 
-Type de données de la colonne — `UInt8`.
+Type de données de la colonne — `UInt8`. Comme `ver`, il peut s’agir d’une sous-colonne d’une autre colonne.
 
 <Note>
   `is_deleted` ne peut être activé que lorsque `ver` est utilisé.
 
   Quelle que soit l’opération effectuée sur les données, la version doit être incrémentée. Si deux lignes insérées ont le même numéro de version, la dernière ligne insérée est conservée.
 
-  Par défaut, ClickHouse conserve la dernière ligne pour une clé, même s’il s’agit d’une ligne de suppression. Cela permet d’insérer ensuite en toute sécurité d’autres lignes avec des versions inférieures, la ligne de suppression étant toujours appliquée.
+  Par défaut, ClickHouse conserve la dernière ligne pour une clé, même s’il s’agit d’une ligne marquée comme supprimée. Cela permet d’insérer ensuite en toute sécurité d’autres lignes avec des versions inférieures, la ligne marquée comme supprimée étant toujours appliquée.
 
-  Pour supprimer définitivement ces lignes de suppression, activez le paramètre de table `allow_experimental_replacing_merge_with_cleanup`, puis :
+  Pour supprimer définitivement ces lignes marquées comme supprimées, activez le paramètre de table `allow_experimental_replacing_merge_with_cleanup`, puis :
 
   1. Définissez les paramètres de table `enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`, `min_age_to_force_merge_on_partition_only` et `min_age_to_force_merge_seconds`. Si toutes les parts d’une partition sont plus anciennes que `min_age_to_force_merge_seconds`, ClickHouse les fusionnera
-     toutes en une seule part et supprimera toutes les lignes de suppression.
+     toutes en une seule part et supprimera toutes les lignes marquées comme supprimées.
 
   2. Exécutez manuellement `OPTIMIZE TABLE table [PARTITION partition | PARTITION ID 'partition_id'] FINAL CLEANUP`.
 </Note>
@@ -157,9 +149,7 @@ select * from myThirdReplacingMT final;
 └─────┴─────────┴─────────────────────┴────────────┘
 ```
 
-<div id="query-clauses">
-  ## Clauses de requête
-</div>
+## Clauses de requête {#query-clauses}
 
 Lors de la création d&#39;une table `ReplacingMergeTree`, les mêmes [clauses](/fr/reference/engines/table-engines/mergetree-family/mergetree) sont requises que pour la création d&#39;une table `MergeTree`.
 
@@ -184,9 +174,7 @@ Lors de la création d&#39;une table `ReplacingMergeTree`, les mêmes [clauses](
   * `ver` - colonne contenant la version. Paramètre facultatif. Pour une description, voir le texte ci-dessus.
 </details>
 
-<div id="query-time-de-duplication--final">
-  ## Déduplication à l’exécution de la requête &amp; FINAL
-</div>
+## Déduplication à l’exécution de la requête &amp; FINAL {#query-time-de-duplication--final}
 
 Lors des fusions, ReplacingMergeTree identifie les lignes dupliquées en utilisant les valeurs des colonnes `ORDER BY` (utilisées pour créer la table) comme identifiant unique, et ne conserve que la version la plus élevée. Cela ne garantit toutefois la correction qu’à terme : rien n’assure que les lignes seront dédupliquées, et vous ne devez pas vous y fier. Les requêtes peuvent donc produire des résultats incorrects, car des lignes mises à jour ou supprimées peuvent encore être prises en compte.
 

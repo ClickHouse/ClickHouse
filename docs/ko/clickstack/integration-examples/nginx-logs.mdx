@@ -15,14 +15,14 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-nginx">
-  ## 기존 Nginx 통합
+  ## 기존 Nginx 통합 {#existing-nginx}
 </div>
 
 이 섹션에서는 ClickStack OTel collector 구성을 수정해 기존 Nginx 설치에서 로그를 ClickStack으로 전송하도록 설정하는 방법을 설명합니다.
 기존 환경을 직접 구성하기 전에 통합을 테스트하려면, [다음 섹션](/ko/clickstack/integration-examples/nginx-logs#demo-dataset)에서 미리 구성된 환경과 샘플 데이터로 테스트할 수 있습니다.
 
 <div id="prerequisites">
-  ##### 사전 준비 사항
+  ##### 사전 준비 사항 {#prerequisites}
 </div>
 
 * 실행 중인 ClickStack 인스턴스
@@ -66,7 +66,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="사용자 지정 OTel collector 구성 만들기" id="custom-otel">
-    ClickStack에서는 사용자 지정 설정 파일을 마운트하고 환경 변수를 설정해 기본 OpenTelemetry Collector 구성을 확장할 수 있습니다. 사용자 지정 구성은 OpAMP를 통해 HyperDX가 관리하는 기본 구성과 머지됩니다.
+    ClickStack에서는 사용자 지정 설정 파일을 마운트하고 환경 변수를 설정해 기본 OpenTelemetry Collector 구성을 확장할 수 있습니다. 사용자 지정 구성은 OpAMP를 통해 ClickStack UI가 관리하는 기본 구성과 머지됩니다.
 
     다음 구성으로 nginx-monitoring.yaml 파일을 만드세요:
 
@@ -105,7 +105,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     * 표준 위치에서 Nginx 로그를 읽습니다
     * JSON 로그 항목을 파싱합니다
     * 원본 로그 타임스탬프를 추출하여 유지합니다
-    * HyperDX에서 필터링할 수 있도록 source: Nginx 속성을 추가합니다
+    * ClickStack UI에서 필터링할 수 있도록 source: Nginx 속성을 추가합니다
     * 전용 파이프라인을 통해 로그를 ClickHouse exporter로 라우팅합니다
 
     <Note>
@@ -123,7 +123,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     2. 환경 변수 CUSTOM&#95;OTELCOL&#95;CONFIG&#95;FILE=/etc/otelcol-contrib/custom.config.yaml을 설정합니다
     3. collector가 읽을 수 있도록 Nginx 로그 디렉터리를 마운트합니다
 
-    ##### 옵션 1: Docker Compose
+##### 옵션 1: Docker Compose {#docker-compose}
 
     ClickStack 배포 구성을 업데이트합니다:
 
@@ -140,7 +140,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
           # ... other volumes ...
     ```
 
-    ##### 옵션 2: Docker Run (올인원 이미지)
+##### 옵션 2: Docker Run (올인원 이미지) {#all-in-one}
 
     docker run 명령으로 올인원 이미지를 사용하는 경우:
 
@@ -158,41 +158,33 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="HyperDX에서 로그 확인하기" id="verifying-logs">
-    구성이 완료되면 HyperDX에 로그인한 다음 로그가 정상적으로 유입되는지 확인하세요:
+  <Step title="ClickStack UI에서 로그 확인하기" id="verifying-logs">
+    구성이 완료되면 ClickStack UI에 로그인한 다음 로그가 정상적으로 유입되는지 확인하세요:
 
     1. 검색 보기로 이동하세요
-    2. `source`를 Logs로 설정하고 `request`, `request&#95;time`, `upstream&#95;response&#95;time` 등의 필드가 포함된 로그 항목이 표시되는지 확인하세요
+    2. source를 Logs로 설정하고 request, request&#95;time, upstream&#95;response&#95;time 등의 필드가 포함된 로그 항목이 표시되는지 확인하세요
 
     다음은 표시되어야 하는 화면의 예시입니다:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![로그 보기](/images/clickstack/nginx-logs-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![로그 보기](/images/clickstack/nginx-logs-search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![로그 보기](/images/clickstack/log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![로그 보기](/images/clickstack/log-view.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## 데모 데이터세트
+  ## 데모 데이터세트 {#demo-dataset}
 </div>
 
-프로덕션 시스템을 구성하기 전에 nginx 통합을 테스트하려는 사용자를 위해, 실제와 유사한 트래픽 패턴이 반영된 미리 생성된 nginx 액세스 로그 샘플 데이터세트를 제공합니다.
+운영 환경 시스템을 구성하기 전에 nginx 통합을 테스트하려는 사용자를 위해, 실제와 유사한 트래픽 패턴이 반영된 미리 생성된 nginx 액세스 로그 샘플 데이터세트를 제공합니다.
 
 <Steps>
   <Step title="샘플 데이터세트 다운로드" id="download-sample">
@@ -257,46 +249,36 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="HyperDX에서 로그 확인" id="verify-demo-logs">
+  <Step title="ClickStack UI에서 로그 확인" id="verify-demo-logs">
     ClickStack이 실행되면 다음을 수행하세요:
 
-    1. [HyperDX](http://localhost:8080/)를 열고 계정에 로그인하세요(먼저 계정을 만들어야 할 수 있습니다)
-    2. Search view로 이동한 다음 소스를 `Logs`로 설정하세요
+    1. [ClickStack UI](http://localhost:8080/)를 열고 계정에 로그인하세요(먼저 계정을 만들어야 할 수 있습니다)
+    2. 검색 뷰로 이동한 다음 소스를 `Logs`로 설정하세요
     3. 시간 범위를 **2025-10-19 11:00:00 - 2025-10-22 11:00:00**으로 설정하세요
 
-    검색 화면에는 다음과 같이 표시됩니다:
+    검색 뷰에는 다음과 같이 표시됩니다:
 
     <Info>
       **시간대 표시**
 
-      HyperDX는 브라우저의 로컬 시간대를 기준으로 타임스탬프를 표시합니다. 데모 데이터는 UTC 기준 2025-10-20 11:00:00 - 2025-10-21 11:00:00 범위에 걸쳐 있습니다. 넓은 시간 범위를 지정하면 위치와 관계없이 데모 로그를 확인할 수 있습니다. 로그가 표시되면 더 명확하게 시각화할 수 있도록 범위를 24시간으로 좁힐 수 있습니다.
+      ClickStack UI는 브라우저의 로컬 시간대를 기준으로 타임스탬프를 표시합니다. 데모 데이터는 UTC 기준 2025-10-20 11:00:00 - 2025-10-21 11:00:00 범위에 걸쳐 있습니다. 넓은 시간 범위를 지정하면 위치와 관계없이 데모 로그를 확인할 수 있습니다. 로그가 표시되면 더 명확하게 시각화할 수 있도록 범위를 24시간으로 좁힐 수 있습니다.
     </Info>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Log view](/images/clickstack/nginx-logs-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Log view](/images/clickstack/nginx-logs-search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Log view](/images/clickstack/log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Log view](/images/clickstack/log-view.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## 대시보드 및 시각화
-</div>
+## 대시보드 및 시각화 {#dashboards}
 
 ClickStack으로 nginx 로그 모니링을 시작할 수 있도록 Nginx 로그용 필수 시각화를 제공합니다.
 
@@ -306,55 +288,43 @@ ClickStack으로 nginx 로그 모니링을 시작할 수 있도록 Nginx 로그�
   </Step>
 
   <Step title="사전 구축된 대시보드 가져오기" id="import-dashboard">
-    1. HyperDX를 열고 Dashboards 섹션으로 이동합니다.
-    2. 오른쪽 상단의 줄임표 메뉴에서 &quot;Import Dashboard&quot;를 클릭합니다.
+    1. ClickStack UI를 열고 대시보드 섹션으로 이동합니다.
+    2. 오른쪽 상단의 줄임표 메뉴에서 &quot;대시보드 가져오기&quot;를 클릭합니다.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![대시보드 가져오기](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![대시보드 가져오기](/images/clickstack/import-dashboard.webp)
+      </Frame>
     </div>
 
     3. nginx-logs-dashboard.json 파일을 업로드한 다음 가져오기를 완료합니다.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![가져오기 완료](/images/clickstack/finish-nginx-logs-import.webp)
-
-    </Frame>
-
+      <Frame>
+        ![가져오기 완료](/images/clickstack/finish-nginx-logs-import.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="모든 시각화가 사전 구성된 상태로 대시보드가 생성됩니다" id="created-dashboard">
     <Note>
-      데모 데이터세트를 사용하는 경우 시간 범위를 **2025-10-20 11:00:00 - 2025-10-21 11:00:00 (UTC)**로 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되지 않습니다.
+      데모 데이터세트를 사용하는 경우 시간 범위를 **2025-10-20 11:00:00 - 2025-10-21 11:00:00 (UTC)**&#xB85C; 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되지 않습니다.
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![예시 대시보드](/images/clickstack/nginx-logs-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![예시 대시보드](/images/clickstack/nginx-logs-dashboard.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## 문제 해결
+  ## 문제 해결 {#troubleshooting}
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### 사용자 지정 구성이 로드되지 않는 경우
+  ### 사용자 지정 구성이 로드되지 않는 경우 {#troubleshooting-not-loading}
 </div>
 
 * 환경 변수 CUSTOM&#95;OTELCOL&#95;CONFIG&#95;FILE이 올바르게 설정되어 있는지 확인하세요
@@ -375,9 +345,7 @@ docker exec <container-name> ls -lh /etc/otelcol-contrib/custom.config.yaml
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml
 ```
 
-<div id="no-logs">
-  ### HyperDX에 로그가 표시되지 않는 경우
-</div>
+### ClickStack UI에 로그가 표시되지 않는 경우 {#no-logs}
 
 * nginx가 JSON 형식으로 로그를 기록하고 있는지 확인하십시오
 
@@ -404,14 +372,12 @@ docker exec `<container>` cat /etc/otel/supervisor-data/agent.log
 ```
 
 <div id="next-steps">
-  ## 다음 단계
+  ## 다음 단계 {#next-steps}
 </div>
 
 * 중요한 메트릭(오류율, 지연 시간 임계값)에 대한 [알림](/ko/clickstack/features/alerts)을 설정하세요
 * 특정 사용 사례(API 모니터링, 보안 이벤트)를 위한 추가 [대시보드](/ko/clickstack/features/dashboards/overview)를 만드세요
 
-<div id="going-to-production">
-  ## 운영 환경으로 전환하기
-</div>
+## 운영 환경으로 전환하기 {#going-to-production}
 
 이 가이드는 빠르게 설정할 수 있도록 ClickStack에 내장된 OpenTelemetry Collector를 활용합니다. 운영 환경에 배포하는 경우 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 전송하는 것을 권장합니다. 운영 환경 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.

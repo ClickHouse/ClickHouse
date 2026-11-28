@@ -103,11 +103,12 @@ private:
     [[nodiscard]] Poco::JSON::Object::Ptr readTableMetadata(const IcebergRESTCatalogWarehouse & warehouse, const IcebergTablePointer & pointer) const;
 
     /// Writes the first metadata file and registers the table. Removes the file if the table is not registered.
-    [[nodiscard]] IcebergRESTCatalogWarehouse::CreateTableResult writeAndRegisterTable(
+    [[nodiscard]] IcebergRESTCatalogWarehouse::CreateTableOutcome writeAndRegisterTable(
         const IcebergRESTCatalogWarehouse & warehouse,
         const IcebergNamespaceName & ns,
         const String & table,
         const IcebergTablePointer & pointer,
+        const String & location,
         const Poco::JSON::Object::Ptr & metadata,
         CompressionMethod compression_method) const;
 
