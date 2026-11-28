@@ -38,8 +38,11 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/Stopwatch.h>
 
+#include <IO/WriteBufferFromFileDecorator.h>
+
 #include <Poco/Util/XMLConfiguration.h>
 
+#include <algorithm>
 #include <future>
 #include <limits>
 #include <sstream>
@@ -1776,6 +1779,25 @@ TEST_P(CoordinationTest, TestDurableState)
     assert_read_state();
 
     {
+        SCOPED_TRACE("Read from corrupted file with a valid backup");
+        state_manager.reset();
+        std::filesystem::copy_file("./state", "./state-OLD", std::filesystem::copy_options::overwrite_existing);
+        DB::WriteBufferFromFile write_buf("./state", DB::DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY);
+        write_buf.seek(20, SEEK_SET);
+        DB::writeIntBinary(31, write_buf);
+        write_buf.sync();
+        write_buf.close();
+        reload_state_manager();
+        /// The backup must be used in every build type, including debug ones.
+        assert_read_state();
+        ASSERT_FALSE(std::filesystem::exists("./state-OLD"));
+
+        /// The backup was promoted to a valid state file.
+        reload_state_manager();
+        assert_read_state();
+    }
+
+    {
         SCOPED_TRACE("Read from corrupted file");
         state_manager.reset();
         DB::WriteBufferFromFile write_buf("./state", DB::DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY);
@@ -1916,6 +1938,254 @@ TEST_P(CoordinationTest, TestDurableStateCrashDuringSave)
         std::filesystem::remove("./state");
     if (std::filesystem::exists("./state-OLD"))
         std::filesystem::remove("./state-OLD");
+}
+
+namespace
+{
+
+/// Test disk: records the order of the operations that matter for the durability of the state
+/// file (opening a file for writing, file and directory syncs, removals) and can fail one of them.
+class RecordingStateDisk : public DB::DiskLocal
+{
+public:
+    RecordingStateDisk(const std::string & disk_name, const std::string & disk_path)
+        : DB::DiskLocal(disk_name, disk_path)
+    {
+    }
+
+    /// The operation recorded as `event` throws instead of being executed.
+    void failOn(std::string event) { fail_event = std::move(event); }
+    void clearEvents() { events.clear(); }
+
+    size_t countEvents(const std::string & event) const
+    {
+        return static_cast<size_t>(std::count(events.begin(), events.end(), event));
+    }
+
+    /// Returns true if `expected` is a subsequence of the recorded events.
+    bool happenedInOrder(const std::vector<std::string> & expected) const
+    {
+        auto it = events.begin();
+        for (const auto & event : expected)
+        {
+            it = std::find(it, events.end(), event);
+            if (it == events.end())
+                return false;
+            ++it;
+        }
+        return true;
+    }
+
+    std::string dumpEvents() const
+    {
+        std::string result;
+        for (const auto & event : events)
+            result += event + "; ";
+        return result;
+    }
+
+    std::unique_ptr<DB::WriteBufferFromFileBase>
+    writeFile(const String & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
+    {
+        record((mode == DB::WriteMode::Append ? "append " : "rewrite ") + path);
+        return std::make_unique<RecordingWriteBuffer>(DB::DiskLocal::writeFile(path, buf_size, mode, settings), *this, path);
+    }
+
+    void removeFile(const String & path) override
+    {
+        record("remove " + path);
+        DB::DiskLocal::removeFile(path);
+    }
+
+    void removeFileIfExists(const String & path) override
+    {
+        if (existsFile(path))
+            record("remove " + path);
+        DB::DiskLocal::removeFileIfExists(path);
+    }
+
+    DB::SyncGuardPtr getDirectorySyncGuard(const String & path) const override
+    {
+        return std::make_unique<RecordingSyncGuard>(*this, DB::DiskLocal::getDirectorySyncGuard(path));
+    }
+
+private:
+    void record(const std::string & event) const
+    {
+        if (event == fail_event)
+            throw std::runtime_error("Injected failure of '" + event + "'");
+        events.push_back(event);
+    }
+
+    class RecordingWriteBuffer final : public DB::WriteBufferFromFileDecorator
+    {
+    public:
+        RecordingWriteBuffer(std::unique_ptr<DB::WriteBuffer> impl_, const RecordingStateDisk & disk_, std::string path_)
+            : DB::WriteBufferFromFileDecorator(std::move(impl_)), disk(disk_), path(std::move(path_))
+        {
+        }
+
+        void sync() override
+        {
+            disk.record("sync " + path);
+            DB::WriteBufferFromFileDecorator::sync();
+        }
+
+    private:
+        const RecordingStateDisk & disk;
+        std::string path;
+    };
+
+    class RecordingSyncGuard final : public DB::ISyncGuard
+    {
+    public:
+        RecordingSyncGuard(const RecordingStateDisk & disk_, DB::SyncGuardPtr inner_)
+            : disk(disk_), inner(std::move(inner_))
+        {
+        }
+
+        void sync() override
+        {
+            disk.record("sync directory");
+            inner->sync();
+        }
+
+    private:
+        const RecordingStateDisk & disk;
+        DB::SyncGuardPtr inner;
+    };
+
+    mutable std::vector<std::string> events;
+    std::string fail_event;
+};
+
+}
+
+/// Regression test for https://github.com/ClickHouse/ClickHouse/issues/133688.
+/// A power loss cannot be simulated here, so the test checks what protects against it: a copy of
+/// the state is never overwritten or removed before the other copy and its directory entry are synced.
+TEST_P(CoordinationTest, TestDurableStateSyncOrder)
+{
+    ChangelogDirTest logs("./logs");
+    this->setLogDirectory("./logs");
+
+    const auto remove_state_files = []
+    {
+        std::filesystem::remove("./state");
+        std::filesystem::remove("./state-OLD");
+        std::filesystem::remove("./STATE_COPY_LOCK");
+    };
+    remove_state_files();
+
+    auto disk = std::make_shared<RecordingStateDisk>("StateFile", ".");
+    this->keeper_context->setStateFileDisk(disk);
+
+    std::optional<DB::KeeperStateManager> state_manager;
+    const auto reload_state_manager = [&]
+    {
+        state_manager.emplace(1, "localhost", 9181, this->keeper_context);
+        state_manager->loadLogStore(1, 0);
+    };
+
+    const auto make_state = [](uint64_t term, int32_t voted_for)
+    {
+        auto state = nuraft::cs_new<nuraft::srv_state>();
+        state->set_term(term);
+        state->set_voted_for(voted_for);
+        state->allow_election_timer(true);
+        return state;
+    };
+
+    const auto assert_read_term = [&](uint64_t term)
+    {
+        auto read_state = state_manager->read_state();
+        ASSERT_NE(read_state, nullptr);
+        ASSERT_EQ(read_state->get_term(), term);
+    };
+
+    reload_state_manager();
+    ASSERT_EQ(state_manager->read_state(), nullptr);
+    state_manager->save_state(*make_state(1, 2));
+
+    {
+        SCOPED_TRACE("The backup is durable before the state file is rewritten");
+        disk->clearEvents();
+        state_manager->save_state(*make_state(2, 3));
+        ASSERT_TRUE(disk->happenedInOrder(
+            {"rewrite state-OLD",
+             "sync state-OLD",
+             "sync directory",
+             "remove STATE_COPY_LOCK",
+             "sync directory",
+             "rewrite state",
+             "sync state",
+             "sync directory",
+             "remove state-OLD"}))
+            << disk->dumpEvents();
+        ASSERT_EQ(disk->countEvents("rewrite state"), 1) << disk->dumpEvents();
+    }
+
+    {
+        SCOPED_TRACE("A failed sync of the backup leaves the state file untouched");
+        disk->clearEvents();
+        disk->failOn("sync state-OLD");
+        ASSERT_THROW(state_manager->save_state(*make_state(3, 4)), std::exception);
+        disk->failOn("");
+        ASSERT_EQ(disk->countEvents("rewrite state"), 0) << disk->dumpEvents();
+        reload_state_manager();
+        assert_read_term(2);
+    }
+
+    {
+        SCOPED_TRACE("A failed directory sync after the backup leaves the state file untouched");
+        disk->clearEvents();
+        disk->failOn("sync directory");
+        ASSERT_THROW(state_manager->save_state(*make_state(3, 4)), std::exception);
+        disk->failOn("");
+        ASSERT_EQ(disk->countEvents("rewrite state"), 0) << disk->dumpEvents();
+        reload_state_manager();
+        assert_read_term(2);
+    }
+
+    state_manager->save_state(*make_state(3, 4));
+    reload_state_manager();
+    assert_read_term(3);
+
+    {
+        SCOPED_TRACE("A valid state file is synced before a leftover backup is removed");
+        std::filesystem::copy_file("./state", "./state-OLD", std::filesystem::copy_options::overwrite_existing);
+
+        disk->clearEvents();
+        disk->failOn("sync state");
+        reload_state_manager();
+        ASSERT_THROW(state_manager->read_state(), std::exception);
+        disk->failOn("");
+        ASSERT_TRUE(std::filesystem::exists("./state-OLD"));
+
+        disk->clearEvents();
+        reload_state_manager();
+        assert_read_term(3);
+        ASSERT_TRUE(disk->happenedInOrder({"append state", "sync state", "sync directory", "remove state-OLD"})) << disk->dumpEvents();
+        ASSERT_EQ(disk->countEvents("rewrite state"), 0) << disk->dumpEvents();
+        ASSERT_FALSE(std::filesystem::exists("./state-OLD"));
+    }
+
+    {
+        SCOPED_TRACE("A restored state file is synced before the backup is removed");
+        std::filesystem::copy_file("./state", "./state-OLD", std::filesystem::copy_options::overwrite_existing);
+        std::filesystem::resize_file("./state", 0);
+
+        disk->clearEvents();
+        reload_state_manager();
+        assert_read_term(3);
+        ASSERT_TRUE(disk->happenedInOrder({"rewrite state", "sync state", "sync directory", "remove state-OLD"})) << disk->dumpEvents();
+        ASSERT_FALSE(std::filesystem::exists("./state-OLD"));
+
+        reload_state_manager();
+        assert_read_term(3);
+    }
+
+    remove_state_files();
 }
 
 TEST_P(CoordinationTest, TestFeatureFlags)
