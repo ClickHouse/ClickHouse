@@ -266,7 +266,7 @@ struct ArrayJoinStep : public Step
     NamesAndTypesList required_columns;
     ColumnsWithTypeAndName result_columns;
 
-    ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_);
+    ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_, bool array_join_use_nulls_ = false);
 
     [[nodiscard]] NamesAndTypesList getRequiredColumns() const override { return required_columns; }
     [[nodiscard]] ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }

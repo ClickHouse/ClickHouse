@@ -1,0 +1,9 @@
+nested scope
+1	UInt8
+1	UInt8
+reset
+1	UInt8
+enabled in subquery
+materialized view
+1	UInt8
+2	UInt8
