@@ -35,6 +35,8 @@ SETTINGS max_joined_block_size_rows = 20, max_joined_block_size_bytes = 4194304,
 -- must still split the output. So the block size must land strictly between one left row's worth
 -- of matches (10) and the whole result (1000). `avg_bytes_per_row` is derived from container
 -- capacities, so the exact size within that range is build-dependent, not a query-level invariant.
+-- With `enable_join_in_memory_compression` it is derived from the size of the data instead, which is smaller, so the
+-- budget is low enough to split the output with either estimate.
 SELECT max(bs) > 10 AND max(bs) < 1000, count()
 FROM
 (
@@ -43,4 +45,4 @@ FROM
     INNER JOIN (SELECT number % 10 AS k, rightPad(toString(number), 64, '_') AS v2 FROM numbers(100)) AS r
     ON l.k = r.k
 )
-SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 4500, join_algorithm = 'hash';
+SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 2000, join_algorithm = 'hash';

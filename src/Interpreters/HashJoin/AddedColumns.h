@@ -85,6 +85,11 @@ struct LazyOutput
     bool join_data_sorted = false;
     bool output_by_row_list = false;
 
+    /// Set when the join compressed its stored right-side blocks (`enable_join_in_memory_compression`).
+    /// In that case a stored `StoredBlock` must be decompressed (via `HashJoin::getDecompressedColumns`) before reading.
+    const HashJoin * join = nullptr;
+    bool have_compressed = false;
+
     ColumnAccessIndexes output_access_indexes;
     std::optional<size_t> row_store_row_length;
     bool has_columns = false;
@@ -117,6 +122,10 @@ struct LazyOutput
 
     void buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
+    /// Appends the rows of `selection` to `columns`: through the emit table, or through the
+    /// decompressed views of the stored blocks when the join compressed them.
+    void emitColumnarOutputs(MutableColumns & columns, const RefWordSelection & selection) const;
+
     [[nodiscard]] size_t buildOutputFromBlocksLimitAndOffset(
         MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
         const PaddedPODArray<UInt64> & left_sizes, const IColumn::Offsets & left_offsets,
@@ -140,6 +149,16 @@ struct EmitPlan
 /// wrap the stored one in `Nullable` and which emits row by row through `buildJoinGetOutput`.
 EmitPlan
 planJoinEmit(const HashJoin::RightTableData & data, std::span<const size_t> positions, const NamesAndTypes & type_name, bool with_gather);
+
+/// Emits the columnar outputs of `selection` from a join whose stored blocks are compressed
+/// (`enable_join_in_memory_compression`), decompressing each referenced block through `resolve`.
+void emitCompressedColumnarOutputs(
+    DecompressResolver & resolve,
+    const StoredBlock * const * stored_columns,
+    MutableColumns & columns,
+    const ColumnAccessIndexes & output_access_indexes,
+    const NamesAndTypes & type_name,
+    const RefWordSelection & selection);
 
 /// Records the probe's matches as encoded ref words. Every strictness records rather than emits:
 /// the output columns are built later, by the emit kernels, from the words this collects.
@@ -214,7 +233,14 @@ public:
                 nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
         }
 
-        EmitPlan plan = planJoinEmit(*join.getJoinedData(), right_indexes, lazy_output.type_name, !is_join_get);
+        lazy_output.join = &join;
+        lazy_output.have_compressed = join.haveCompressed();
+
+        /// The emit table holds raw planes of the stored columns: when the join compressed them, those
+        /// are `ColumnCompressed` placeholders, so it is not resolved, and the emit reads the blocks
+        /// through their decompressed views instead (see `LazyOutput::emitColumnarOutputs`).
+        EmitPlan plan = planJoinEmit(
+            *join.getJoinedData(), right_indexes, lazy_output.type_name, !is_join_get && !lazy_output.have_compressed);
         lazy_output.output_access_indexes = std::move(plan.access_indexes);
         lazy_output.emit_gather = std::move(plan.gather);
         lazy_output.row_store_row_length = plan.row_store_row_length;
@@ -283,6 +309,11 @@ private:
 
     void checkColumns(const StoredBlock & to_check)
     {
+        /// When stored blocks are compressed, `to_check` holds ColumnCompressed placeholders whose type
+        /// differs from the destination columns; the consistency check is decompression-unaware, so skip it.
+        if (lazy_output.have_compressed)
+            return;
+
         auto check = [&](size_t dst_idx, const IColumn * column_from_block)
         {
             const auto * dest_column = columns[dst_idx].get();
