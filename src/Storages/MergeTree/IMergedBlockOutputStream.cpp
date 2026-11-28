@@ -45,9 +45,42 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
         new_serialization_infos = SerializationInfoByName(columns_list, info_settings);
 }
 
+namespace
+{
+
+/// Names of the streams of `column` present in `checksums`. The recorded substreams list them exactly. The
+/// serialization is enumerated only without them: without the data it misses the streams of `Dynamic` and `JSON`.
+std::vector<String> getColumnStreams(
+    const NameAndTypePair & column,
+    const ColumnsSubstreams & columns_substreams,
+    const IMergeTreeDataPart & data_part,
+    const MergeTreeDataPartChecksums & checksums)
+{
+    std::vector<String> streams;
+    if (const auto * substreams = columns_substreams.tryGetColumnSubstreams(column.name))
+    {
+        for (const auto & substream : *substreams)
+        {
+            if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", checksums))
+                streams.push_back(std::move(*stream_name));
+        }
+        return streams;
+    }
+
+    data_part.getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    {
+        if (auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", checksums, data_part.storage.getSettings()))
+            streams.push_back(std::move(*stream_name));
+    });
+    return streams;
+}
+
+}
+
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const MergeTreeDataPartPtr & data_part,
     NamesAndTypesList & columns,
+    const ColumnsSubstreams & columns_substreams,
     const NameSet & empty_columns,
     SerializationInfoByName & serialization_infos,
     MergeTreeData::DataPart::Checksums & checksums)
@@ -77,13 +110,8 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     std::map<String, size_t> stream_counts;
     for (const auto & column : columns)
     {
-        data_part->getSerialization(column.name)->enumerateStreams(
-            [&](const ISerialization::SubstreamPath & substream_path)
-            {
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", checksums, data_part->storage.getSettings());
-                if (stream_name)
-                    ++stream_counts[*stream_name];
-            });
+        for (const auto & stream_name : getColumnStreams(column, columns_substreams, *data_part, checksums))
+            ++stream_counts[stream_name];
     }
 
     NameSet remove_files;
@@ -101,27 +129,16 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         if (column_it == columns.end())
             continue;
 
-        auto info_it = serialization_infos.find(column_name);
-        auto serialization = info_it == serialization_infos.end()
-            ? IDataType::getSerialization(*column_it, serialization_infos.getSettings())
-            : IDataType::getSerialization(*column_it, *info_it->second);
-
-        if (!serialization)
-            continue;
-
-        ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+        for (const auto & stream_name : getColumnStreams(*column_it, columns_substreams, *data_part, checksums))
         {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", checksums, data_part->storage.getSettings());
-
             /// Delete files if they are no longer shared with another column.
-            if (stream_name && --stream_counts[*stream_name] == 0)
+            if (--stream_counts[stream_name] == 0)
             {
-                remove_files.emplace(*stream_name + ".bin");
-                remove_files.emplace(*stream_name + mrk_extension);
+                remove_files.emplace(stream_name + ".bin");
+                remove_files.emplace(stream_name + mrk_extension);
             }
-        };
+        }
 
-        serialization->enumerateStreams(callback);
         serialization_infos.erase(column_name);
     }
 
