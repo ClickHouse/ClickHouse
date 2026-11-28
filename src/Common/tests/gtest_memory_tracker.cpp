@@ -10,6 +10,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/IMemoryReleasableCache.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -30,6 +31,7 @@ namespace DB::ErrorCodes
 namespace CurrentMetrics
 {
     extern const Metric MergesMutationsMemoryTracking;
+    extern const Metric MemoryTracking;
 }
 
 namespace ProfileEvents
@@ -47,6 +49,7 @@ constexpr Int64 TOLERANCE = MB;
 constexpr Int64 GLOBAL_TOLERANCE = 64 * 1024;
 constexpr Int64 LIMIT = 50 * MB;
 constexpr Int64 OVER_LIMIT = 60 * MB;
+constexpr Int64 MEASUREMENT_DELTA = 8 * MB;
 
 struct MemoryTrackerHierarchy
 {
@@ -157,6 +160,106 @@ TEST(MemoryTracker, GlobalLimitFailureRollsBackAmountAndRSS)
 
     EXPECT_LE(std::abs(total_memory_tracker.get() - amount_before), GLOBAL_TOLERANCE);
     EXPECT_LE(std::abs(total_memory_tracker.getRSS() - rss_before), GLOBAL_TOLERANCE);
+}
+
+/// Plays one tick of the background memory worker while the global tracker decides on an allocation
+/// over its limit: the tracker is set to a measurement, which cannot contain that allocation yet.
+struct MemoryWorkerTick : DB::IMemoryReleasableCache
+{
+    MemoryWorkerTick(Int64 allocated_, Int64 resident_, bool fits_)
+        : allocated(allocated_), resident(resident_), fits(fits_)
+    {
+    }
+
+    bool autoResize(Int64, size_t) override
+    {
+        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+        MemoryTracker::updateAllocated(allocated, /*log_change=*/false);
+        peak_after_correction = total_memory_tracker.getPeak();
+        MemoryTracker::updateRSS(resident);
+        ++ticks;
+        return fits;
+    }
+
+    const Int64 allocated;
+    const Int64 resident;
+    const bool fits;
+    size_t ticks = 0;
+    Int64 peak_after_correction = 0;
+};
+
+TEST(MemoryTracker, GlobalLimitFailureAfterCorrectionRollsBackAmountAndRSS)
+{
+    const Int64 hard_limit_before = total_memory_tracker.getHardLimit();
+    SCOPE_EXIT(total_memory_tracker.setHardLimit(hard_limit_before));
+
+    /// The first refusal in the process leaves its one-off allocations charged.
+    total_memory_tracker.setHardLimit(std::max(total_memory_tracker.get(), total_memory_tracker.getRSS()) + LIMIT);
+    expectMemoryLimitExceeded(OVER_LIMIT);
+
+    DB::CurrentThread::flushUntrackedMemory();
+    const Int64 amount_before = total_memory_tracker.get();
+    const Int64 rss_before = total_memory_tracker.getRSS();
+
+    const auto metric_before = total_memory_tracker.getMetric();
+    total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+    SCOPE_EXIT(total_memory_tracker.setMetric(metric_before));
+
+    MemoryWorkerTick tick(amount_before + MEASUREMENT_DELTA, rss_before + MEASUREMENT_DELTA, /*fits=*/ false);
+    DB::setMemoryReleasableCache(&tick);
+    SCOPE_EXIT(DB::setMemoryReleasableCache(nullptr));
+
+    total_memory_tracker.setHardLimit(std::max(amount_before, rss_before) + LIMIT);
+    total_memory_tracker.resetPeak();
+    expectMemoryLimitExceeded(OVER_LIMIT);
+
+    EXPECT_EQ(tick.ticks, 1u);
+    EXPECT_LE(std::abs(tick.peak_after_correction - (amount_before + MEASUREMENT_DELTA)), GLOBAL_TOLERANCE);
+    EXPECT_LE(std::abs(total_memory_tracker.get() - (amount_before + MEASUREMENT_DELTA)), GLOBAL_TOLERANCE);
+    EXPECT_LE(std::abs(total_memory_tracker.getRSS() - (rss_before + MEASUREMENT_DELTA)), GLOBAL_TOLERANCE);
+    EXPECT_LE(std::abs(CurrentMetrics::get(CurrentMetrics::MemoryTracking) - (amount_before + MEASUREMENT_DELTA)), GLOBAL_TOLERANCE);
+    EXPECT_LE(total_memory_tracker.getPeak() - std::max<Int64>(amount_before + MEASUREMENT_DELTA, 0), GLOBAL_TOLERANCE);
+
+    {
+        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+        MemoryTracker::updateAllocated(total_memory_tracker.get() - MEASUREMENT_DELTA, /*log_change=*/ false);
+        MemoryTracker::updateRSS(total_memory_tracker.getRSS() - MEASUREMENT_DELTA);
+    }
+}
+
+TEST(MemoryTracker, GlobalLimitAdmissionAfterCorrectionKeepsTheCharge)
+{
+    DB::CurrentThread::flushUntrackedMemory();
+    const Int64 amount_before = total_memory_tracker.get();
+    const Int64 rss_before = total_memory_tracker.getRSS();
+    const Int64 hard_limit_before = total_memory_tracker.getHardLimit();
+    SCOPE_EXIT(total_memory_tracker.setHardLimit(hard_limit_before));
+
+    const auto metric_before = total_memory_tracker.getMetric();
+    total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+    SCOPE_EXIT(total_memory_tracker.setMetric(metric_before));
+
+    MemoryWorkerTick tick(amount_before + MEASUREMENT_DELTA, rss_before + MEASUREMENT_DELTA, /*fits=*/ true);
+    DB::setMemoryReleasableCache(&tick);
+    SCOPE_EXIT(DB::setMemoryReleasableCache(nullptr));
+
+    total_memory_tracker.setHardLimit(std::max(amount_before, rss_before) + LIMIT);
+    EXPECT_NO_THROW(std::ignore = CurrentMemoryTracker::alloc(OVER_LIMIT));
+
+    EXPECT_EQ(tick.ticks, 1u);
+    EXPECT_LE(std::abs(total_memory_tracker.get() - (amount_before + MEASUREMENT_DELTA + OVER_LIMIT)), GLOBAL_TOLERANCE);
+    EXPECT_LE(std::abs(total_memory_tracker.getRSS() - (rss_before + MEASUREMENT_DELTA + OVER_LIMIT)), GLOBAL_TOLERANCE);
+    EXPECT_LE(
+        std::abs(CurrentMetrics::get(CurrentMetrics::MemoryTracking) - (amount_before + MEASUREMENT_DELTA + OVER_LIMIT)),
+        GLOBAL_TOLERANCE);
+
+    std::ignore = CurrentMemoryTracker::free(OVER_LIMIT);
+
+    {
+        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+        MemoryTracker::updateAllocated(total_memory_tracker.get() - MEASUREMENT_DELTA, /*log_change=*/ false);
+        MemoryTracker::updateRSS(total_memory_tracker.getRSS() - MEASUREMENT_DELTA);
+    }
 }
 
 TEST(MemoryTracker, ParentLimitFailureDoesNotUpdatePeaks)
