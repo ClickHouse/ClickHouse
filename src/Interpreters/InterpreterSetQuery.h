@@ -28,7 +28,10 @@ public:
     [[nodiscard]] bool supportsTransactions() const override { return true; }
 
     /// To apply SETTINGS clauses from query as early as possible
-    static void applySettingsFromQuery(const ASTPtr & ast, ContextMutablePtr context_);
+    static ASTPtr getCreateInsertSettings(const ASTPtr & ast);
+    static void applySettingsFromQuery(
+        const ASTPtr & ast, ContextMutablePtr context_, const ASTPtr * create_insert_settings = nullptr,
+        bool apply_create_storage_settings_for_client = false);
 
 private:
     ASTPtr query_ptr;

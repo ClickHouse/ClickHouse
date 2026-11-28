@@ -1,5 +1,6 @@
 #include <Parsers/ParserExplainQuery.h>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -71,7 +72,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             pos = begin;
     }
 
-    ParserCreateTableQuery create_p;
+    ParserCreateTableQuery create_p(end);
     ParserSelectWithUnionQuery select_p;
     ParserInsertQuery insert_p(end, allow_settings_after_format_in_insert);
     ParserSystemQuery system_p;
@@ -170,6 +171,20 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     insert_query->data = nullptr;
                     insert_query->end = nullptr;
                 }
+            }
+        }
+        else if (auto * create_query = query->as<ASTCreateQuery>();
+                 create_query && create_query->insert_select && !create_query->insert_format.empty())
+        {
+            ASTPtr input_function;
+            create_query->tryFindInputFunction(input_function);
+
+            ParserKeyword s_format(Keyword::FORMAT);
+            if (!input_function && !s_format.checkWithoutMoving(pos, expected))
+            {
+                explain_output_format = make_intrusive<ASTIdentifier>(create_query->insert_format);
+                setIdentifierSpecial(explain_output_format);
+                create_query->insert_format.clear();
             }
         }
 

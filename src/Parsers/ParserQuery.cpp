@@ -28,8 +28,11 @@
 #include <Parsers/ParserUpdateQuery.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserCopyQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/parseQuery.h>
 
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
@@ -165,6 +168,9 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         res = execute_as_p.parse(pos, node, expected);
     }
 #endif
+
+    if (res && (node->as<ASTCreateQuery>() || node->as<ASTExplainQuery>()) && getInsertData(node))
+        return true;
 
     if (res && allow_in_parallel_with)
     {

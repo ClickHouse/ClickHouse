@@ -1,3 +1,4 @@
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -24,6 +25,7 @@
 #include <Parsers/ParserShowSettingQuery.h>
 #include <Parsers/ParserSnapshotQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/ParserDescribeCacheQuery.h>
 #include <Parsers/Access/ParserCreateTokenQuery.h>
 #include <Parsers/Access/ParserShowAccessEntitiesQuery.h>
@@ -91,7 +93,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserDescribeTableQuery describe_table_p;
     ParserDescribeCacheQuery describe_cache_p;
     ParserShowProcesslistQuery show_processlist_p;
-    ParserCreateQuery create_p;
+    ParserCreateQuery create_p(end);
     ParserAlterQuery alter_p;
     ParserRenameQuery rename_p;
     ParserDropQuery drop_p;
@@ -134,6 +136,12 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (!parsed)
         return false;
+
+    if (getInsertData(query))
+    {
+        node = std::move(query);
+        return true;
+    }
 
     /// FIXME: try to prettify this cast using `as<>()`
     auto & query_with_output = dynamic_cast<ASTQueryWithOutput &>(*query);

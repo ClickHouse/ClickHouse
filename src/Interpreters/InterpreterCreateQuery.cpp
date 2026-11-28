@@ -49,11 +49,13 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/IndicesDescription.h>
@@ -65,6 +67,7 @@
 #include <Storages/SubcolumnCodecs.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageInput.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
@@ -1452,6 +1455,28 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         properties.columns = ColumnsDescription(std::move(columns_from_select));
         properties.columns_inferred_from_select_query = true;
     }
+    else if (create.insert_select && !create.columns_list)
+    {
+        SharedHeader as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(
+            create.insert_select->clone(),
+            getContext(),
+            SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
+
+        auto columns_from_select = as_select_sample->getNamesAndTypesList();
+        if (mode < LoadingStrictnessLevel::ATTACH)
+        {
+            /// Same as for `CREATE TABLE ... AS SELECT`: pin the state version into the inferred types.
+            for (auto & column : columns_from_select)
+                pinCurrentStateVersionToAggregateFunctions(column.type);
+        }
+        properties.columns = ColumnsDescription(std::move(columns_from_select));
+        properties.columns_inferred_from_select_query = true;
+    }
+    else if ((create.has_and_insert || create.has_as_insert) && !create.insert_select && !create.columns_list)
+    {
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "CREATE TABLE with AND INSERT/AS INSERT using VALUES or FORMAT requires an explicit column list");
+    }
     else if (create.as_table_function)
     {
         /// Table function without columns list.
@@ -2503,6 +2528,40 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
+    /// An existing destination does not need its CREATE definition normalized. `AS INSERT` is a no-op;
+    /// `AND INSERT` still executes and validates its payload against the existing table.
+    if (create.if_not_exists && !create.attach && create.cluster.empty()
+        && (create.has_as_insert || create.has_and_insert)
+        && !create.replace_table && !create.create_or_replace && !create.replace_view
+        && !create.is_materialized_view)
+    {
+        if (create.isTemporary())
+        {
+            if (getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
+            {
+                if (!create.has_and_insert)
+                    return {};
+
+                /// Resolve the session table by name rather than using a UUID from the CREATE definition.
+                create.uuid = UUIDHelpers::Nil;
+                return fillTableIfNeeded(create);
+            }
+        }
+        /// Replicated databases keep going through the regular flow (checks and DDL replication).
+        else if (auto existing_database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+                 existing_database && existing_database->getEngineName() != "Replicated"
+                 && existing_database->isTableExist(create.getTable(), getContext()))
+        {
+            /// Table already exists: `AS INSERT` is a no-op.
+            if (!create.has_and_insert)
+                return {};
+
+            auto existing_table = DatabaseCatalog::instance().getTable({database_name, create.getTable()}, getContext());
+            create.uuid = existing_table->getStorageID().uuid;
+            return fillTableIfNeeded(create);
+        }
+    }
+
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
@@ -2625,7 +2684,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     bool allow_heavy_populate = getContext()->getSettingsRef()[Setting::database_replicated_allow_heavy_create] && create.is_populate;
-    if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
+    if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" &&
+        (create.select || create.is_populate))
     {
         const bool allow_create_select_for_replicated
             = (create.isView() && !create.is_populate) || create.is_create_empty || !is_storage_replicated;
@@ -2644,6 +2704,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "CREATE AS SELECT is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
         }
+    }
+
+    if (create.has_and_insert || create.has_as_insert || create.insert_select)
+    {
+        if (database && database->getEngineName() == "Replicated")
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "CREATE TABLE IF NOT EXISTS ... AS INSERT / AND INSERT is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
     }
 
     if (create.is_clone_as)
@@ -2704,7 +2772,18 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// previous create-then-populate order did. This narrow, intentional visibility change (the table becomes
     /// visible only once fully populated) is covered by
     /// `04547_create_as_select_destination_not_visible_during_populate`.
+    ///
+    /// `AS INSERT`/`AND INSERT` populate from `VALUES`/`FORMAT` data instead of a `SELECT`; that data is
+    /// only available here when it was embedded in the query text (`create.insert_data`). Clients such as
+    /// `clickhouse-client` strip it from the query text and stream it afterwards over the native protocol,
+    /// exactly like a plain `INSERT`, so the interpreter never sees it.
+    bool insert_fill_available_synchronously = (create.select != nullptr || create.insert_select != nullptr)
+        || (create.insert_data && create.insert_data_end && create.insert_data <= create.insert_data_end)
+        || create.insert_tail;
+
     if (create.isCreateQueryWithImmediateInsertSelect()
+        && insert_fill_available_synchronously
+        && !create.has_and_insert
         && !create.is_materialized_view
         && database && database->getUUID() != UUIDHelpers::Nil)
     {
@@ -2795,6 +2874,33 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!created)   /// Table already exists
     {
         ddl_guard.reset();
+        if (create.has_and_insert)
+        {
+            if (create.isTemporary())
+            {
+                create.uuid = UUIDHelpers::Nil;
+                return fillTableIfNeeded(create);
+            }
+
+            auto existing_table = DatabaseCatalog::instance().getTable(
+                {create.getDatabase(), create.getTable()}, getContext());
+            create.uuid = existing_table->getStorageID().uuid;
+
+            if (database && database->getEngineName() == "Replicated")
+            {
+                const bool allow_heavy =
+                    getContext()->getSettingsRef()[Setting::database_replicated_allow_heavy_create];
+
+                if (!allow_heavy)
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "AND INSERT into an existing table with a Replicated engine is not supported "
+                        "in Replicated databases. Consider using a separate INSERT query. "
+                        "Alternatively, enable 'database_replicated_allow_heavy_create' to allow "
+                        "this operation, use with caution.");
+            }
+            return fillTableIfNeeded(create);
+        }
         return {};
     }
 
@@ -3578,6 +3684,13 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// atomic path is only wired into the plain CREATE flow, not the create-or-replace flow (which
         /// populates a temporary table and then atomically swaps it in via EXCHANGE/RENAME).
         BlockIO fill_io = fillTableIfNeeded(create, /*published_table_name=*/table_to_replace_name);
+        /// The publish-by-rename below cannot be deferred until a client streams `AS/AND INSERT` data
+        /// afterwards, so reject that combination here with a normal exception rather than letting
+        /// executeTrivialBlockIO hit an unfinished pipeline (see the routing comment in createTable()).
+        if (fill_io.pipeline.initialized() && !fill_io.pipeline.completed())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "CREATE OR REPLACE ... AS/AND INSERT with data streamed by the client is not supported, "
+                "use CREATE ... AS/AND INSERT with inline data or a separate INSERT query");
         /// For queries like 'CREATE OR REPLACE TABLE ... AS SELECT * INSERT' might take a long time,
         /// passing this callback allows tcp sessions to send progress, stats and logs.
         /// It prevents getting socket timeout as well.
@@ -3791,8 +3904,26 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
     {
         auto insert = make_intrusive<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
-        insert->select = create.select->clone();
+        if (create.insert_select)
+        {
+            insert->select = create.insert_select->clone();
+            insert->format = create.insert_format;
+        }
+        else if (!create.insert_format.empty())
+        {
+            insert->format = create.insert_format;
+        }
+        else if (create.select)
+        {
+            insert->select = create.select->clone();
+        }
 
+        if (create.insert_data && create.insert_data_end && create.insert_data <= create.insert_data_end)
+        {
+            insert->data = create.insert_data;
+            insert->end = create.insert_data_end;
+        }
+        insert->tail = std::move(create.insert_tail);
         ContextMutablePtr insert_context = getContext();
         /// Every replica of a `Replicated` database executes this entry and fills its own copy of the table, so the population
         /// must neither read through parallel replicas nor be sent to other servers as a distributed `INSERT`.
@@ -3805,6 +3936,37 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
             insert_context = local_context;
         }
 
+        /// Unlike a top-level `INSERT ... SELECT FROM input(...)`, this synthetic query never goes
+        /// through `executeQueryImpl`, so the `StorageInput` pipe backing `input()` must be wired here.
+        if (insert->select && insert->hasInlinedData())
+        {
+            ASTPtr input_function;
+            insert->tryFindInputFunction(input_function);
+            if (input_function)
+            {
+                insert->table_id = insert_context->resolveStorageID(insert->table_id);
+                if (!insert_context->hasInsertionTableColumnsDescription())
+                {
+                    auto table = DatabaseCatalog::instance().getTable(insert->table_id, insert_context);
+                    InterpreterInsertQuery::setInsertContextValues(insert_context, *insert, table);
+                }
+
+                const auto * select_query_hint = insert->select->as<ASTSelectQuery>();
+                if (!select_query_hint)
+                {
+                    if (const auto * union_query = insert->select->as<ASTSelectWithUnionQuery>();
+                        union_query && union_query->list_of_selects->children.size() == 1)
+                        select_query_hint = union_query->list_of_selects->children.front()->as<ASTSelectQuery>();
+                }
+
+                StoragePtr input_table_storage = insert_context->executeTableFunction(input_function, select_query_hint);
+                auto & input_storage = typeid_cast<StorageInput &>(*input_table_storage);
+                auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr(insert_context, false);
+                auto pipe = getSourceFromASTInsertQuery(insert, true, input_metadata_snapshot->getSampleBlock(), insert_context, input_function);
+                input_storage.setPipe(std::move(pipe));
+            }
+        }
+
         InterpreterInsertQuery interpreter(
             insert,
             insert_context,
@@ -3814,7 +3976,10 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
             /* async_isnert */ false);
         /// The caller authorized `INSERT` on `published_table_name` before the populate.
         interpreter.setSkipTargetInsertAccessCheck(target_is_temporary);
-        return interpreter.execute();
+        auto result = interpreter.execute();
+        if (!insert->select)
+            result.insert_query = insert;
+        return result;
     }
 
     /// If the query is a CREATE TABLE .. CLONE AS ..., attach all partitions of the source table to the newly created table.
@@ -4277,7 +4442,25 @@ BlockIO InterpreterCreateQuery::execute()
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
 
+    if (create.attach && (create.has_as_insert || create.has_and_insert))
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "ATTACH TABLE with AS INSERT or AND INSERT is not supported. Use separate ATTACH and INSERT queries.");
+
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
+
+    if (!create.cluster.empty() && (create.has_as_insert || create.has_and_insert))
+    {
+        ASTPtr input_function;
+        if (create.insert_select)
+            create.tryFindInputFunction(input_function);
+
+        if (!create.insert_select || input_function)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "CREATE TABLE with AS INSERT or AND INSERT and input data is not supported ON CLUSTER. "
+                "Use separate CREATE and INSERT queries.");
+    }
 
     bool is_create_database = create.database && !create.table;
 

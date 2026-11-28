@@ -24,18 +24,11 @@ namespace ErrorCodes
 }
 
 
-namespace
-{
-
-/// Whether the SELECT of an INSERT ... SELECT reads inline data through the `input` table function.
-/// Only in that case does an INSERT with a SELECT carry inline data following the FORMAT clause.
 bool selectReadsInlineDataViaInputFunction(const ASTPtr & ast)
 {
     ASTPtr input_function;
     ASTInsertQuery::tryFindInputFunction(ast, input_function);
     return input_function != nullptr;
-}
-
 }
 
 

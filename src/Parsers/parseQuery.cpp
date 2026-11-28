@@ -16,6 +16,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <algorithm>
+#include <Parsers/ASTCreateQuery.h>
 
 
 namespace DB
@@ -405,29 +406,38 @@ std::string getUnmatchedParenthesesErrorMessage(
 
 static ASTInsertQuery * getInsertAST(const ASTPtr & ast)
 {
-    /// Either it is INSERT or EXPLAIN INSERT.
     if (auto * explain = ast->as<ASTExplainQuery>())
     {
         if (auto explained_query = explain->getExplainedQuery())
-        {
             return explained_query->as<ASTInsertQuery>();
-        }
     }
     else
-    {
         return ast->as<ASTInsertQuery>();
+
+    return nullptr;
+}
+
+static ASTCreateQuery * getCreateAST(const ASTPtr & ast)
+{
+    if (auto * explain = ast->as<ASTExplainQuery>())
+    {
+        if (auto explained_query = explain->getExplainedQuery())
+            return explained_query->as<ASTCreateQuery>();
     }
+    else
+        return ast->as<ASTCreateQuery>();
 
     return nullptr;
 }
 
 const char * getInsertData(const ASTPtr & ast)
 {
-    if (const ASTInsertQuery * insert = getInsertAST(ast))
+    if (const auto * insert = getInsertAST(ast))
         return insert->data;
+    if (const auto * create = getCreateAST(ast))
+        return create->insert_data;
     return nullptr;
 }
-
 
 ASTPtr tryParseQuery(
     IParser & parser,
@@ -528,7 +538,7 @@ ASTPtr tryParseQuery(
     /// The walk below also matches the brackets. If they match up to the first `;` or the end, and the parse does not
     /// look past it, `checkUnmatchedParentheses` would find nothing in this statement, so it is skipped.
     const char * brackets_match_until = nullptr;
-    if (consumes_raw_text || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
+    if (consumes_raw_text || (!ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead) && !ParserKeyword(Keyword::CREATE).ignore(lookahead)))
     {
         /// A closing bracket that matches nothing stays on the stack, so the stack never gets empty again.
         VectorWithMemoryTracking<TokenType> open_brackets;
@@ -601,7 +611,9 @@ ASTPtr tryParseQuery(
     /// in any format and not necessary be lexical correct, so we can't perform
     /// most of the checks.
     if (res && getInsertData(res))
+    {
         return res;
+    }
 
     // More granular checks for queries other than INSERT w/inline data.
     /// Lexical error, unless the parser read the raw text itself and only used the tokens
@@ -801,6 +813,14 @@ std::pair<const char *, bool> splitMultipartQuery(
             while (*pos && *pos != '\n')
                 ++pos;
             insert->end = pos;
+            is_insert_with_data = true;
+        }
+        else if (ASTCreateQuery * create = getCreateAST(ast); create && create->insert_data)
+        {
+            pos = create->insert_data;
+            while (*pos && *pos != '\n')
+                ++pos;
+            create->insert_data_end = pos;
             is_insert_with_data = true;
         }
 

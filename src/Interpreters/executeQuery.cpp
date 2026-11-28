@@ -2073,13 +2073,20 @@ void wrapNestedConstructionSettings(
         /// a view's source `SELECT` here: a `POPULATE` materialized view is an immediate-insert `CREATE`,
         /// so without the `!isView()` guard its `SETTINGS` would be materialized and removed here, and the
         /// rejection (which checks the stored `SELECT`) would no longer fire. Only a non-view
-        /// immediate-insert `CREATE` (`CREATE TABLE … AS SELECT`) is wrapped.
+        /// immediate-insert `CREATE` is wrapped.
         if (create_query->select && create_query->isCreateQueryWithImmediateInsertSelect() && !create_query->isView())
         {
             ASTPtr select_ptr = create_query->select->ptr();
             wrapNestedConstructionSettings(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
             if (select_ptr.get() != create_query->select)
                 create_query->replace(create_query->select, select_ptr);
+        }
+        if (create_query->insert_select && create_query->isCreateQueryWithImmediateInsertSelect() && !create_query->isView())
+        {
+            ASTPtr select_ptr = create_query->insert_select->ptr();
+            wrapNestedConstructionSettings(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (select_ptr.get() != create_query->insert_select)
+                create_query->replace(create_query->insert_select, select_ptr);
         }
         return;
     }
@@ -2176,6 +2183,13 @@ static void wrapPerArmConstructionSettingsImpl(
             wrapPerArmConstructionSettingsImpl(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
             if (select_ptr.get() != create_query->select)
                 create_query->replace(create_query->select, select_ptr);
+        }
+        if (create_query->insert_select && create_query->isCreateQueryWithImmediateInsertSelect() && !create_query->isView())
+        {
+            ASTPtr select_ptr = create_query->insert_select->ptr();
+            wrapPerArmConstructionSettingsImpl(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (select_ptr.get() != create_query->insert_select)
+                create_query->replace(create_query->insert_select, select_ptr);
         }
         return;
     }
@@ -2909,7 +2923,8 @@ static BlockIO executeQueryImpl(
             {
                 /// Verify that AST formatting is consistent:
                 /// If you format AST, parse it back, you get the same AST, and if you format it again, you get the same string.
-                std::string_view original_query{begin, static_cast<size_t>(end - begin)};
+                const char * original_query_end = getInsertData(out_ast);
+                std::string_view original_query{begin, static_cast<size_t>((original_query_end ? original_query_end : end) - begin)};
 
                 auto format_ast = [](ASTPtr ast)
                 {
@@ -3051,11 +3066,10 @@ static BlockIO executeQueryImpl(
         }
 
         const char * query_end = end;
-
         if (out_ast)
         {
-            if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
-                query_end = insert_query->data;
+            if (const char * insert_data = getInsertData(out_ast))
+                query_end = insert_data;
         }
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
@@ -3102,7 +3116,10 @@ static BlockIO executeQueryImpl(
     {
         /// Anyway log the query.
         if (query.empty())
-            query.assign(begin, std::min(static_cast<size_t>(end - begin), max_query_size));
+        {
+            const char * insert_data = out_ast ? getInsertData(out_ast) : nullptr;
+            query.assign(begin, std::min(static_cast<size_t>((insert_data ? insert_data : end) - begin), max_query_size));
+        }
 
         query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
         logQuery(query_for_logging, context, internal, stage);
@@ -3172,6 +3189,8 @@ static BlockIO executeQueryImpl(
 
             const bool run_query_in_background_before_settings_from_query = settings[Setting::run_query_in_background].value;
 
+            const ASTPtr create_insert_settings = InterpreterSetQuery::getCreateInsertSettings(out_ast);
+
             /// Construction settings in a non-last `UNION` arm's own `SETTINGS` clause are per-arm;
             /// wrap each such arm with its own `SELECT`/`WHERE`/`ORDER BY`/`LIMIT`/`OFFSET` and remove
             /// the settings from the AST. This runs before `applySettingsFromQuery` so the per-arm
@@ -3181,7 +3200,7 @@ static BlockIO executeQueryImpl(
 
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
-            InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+            InterpreterSetQuery::applySettingsFromQuery(out_ast, context, &create_insert_settings);
 
             /// The `database` setting is documented as equivalent to `USE`. To behave that way it must
             /// change the database that unqualified names resolve to, not just be stored as a string.
@@ -3247,8 +3266,15 @@ static BlockIO executeQueryImpl(
                 ASTPtr input_function;
                 if (insert_query)
                     insert_query->tryFindInputFunction(input_function);
+
+                const auto * create_query = out_ast->as<ASTCreateQuery>();
+                ASTPtr create_input_function;
+                if (create_query && (create_query->has_as_insert || create_query->has_and_insert) && create_query->insert_select)
+                    create_query->tryFindInputFunction(create_input_function);
                 if ((istr && !istr->eof())
-                    || (insert_query && !insert_query->hasInlinedData() && (!insert_query->select || input_function)))
+                    || (insert_query && !insert_query->hasInlinedData() && (!insert_query->select || input_function))
+                    || (create_query && (create_query->has_as_insert || create_query->has_and_insert)
+                        && !create_query->insert_data && (!create_query->insert_select || create_input_function)))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "A query whose data streams over the connection cannot be run in the background");
 
@@ -3317,7 +3343,19 @@ static BlockIO executeQueryImpl(
             }
 
             if (auto * insert_query = out_ast->as<ASTInsertQuery>())
+            {
                 insert_query->tail = std::move(istr);
+            }
+            else if (auto * create_query = out_ast->as<ASTCreateQuery>();
+                    create_query && (create_query->has_and_insert || create_query->has_as_insert))
+            {
+                ASTPtr input_function;
+                if (create_query->insert_select)
+                    create_query->tryFindInputFunction(input_function);
+
+                if (!create_query->insert_select || input_function)
+                    create_query->insert_tail = std::move(istr);
+            }
 
             if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
             {
@@ -3426,9 +3464,11 @@ static BlockIO executeQueryImpl(
         }
         else if (!insert_query || !insert_query->returning)
         {
-            /// reset Input callbacks if query is not INSERT SELECT,
-            /// and not INSERT ... RETURNING, which reads the data sent by the client with these callbacks.
-            context->resetInputCallbacks();
+            ASTPtr input_function;
+            if (auto * create_query = out_ast ? out_ast->as<ASTCreateQuery>() : nullptr; create_query && create_query->insert_select)
+                create_query->tryFindInputFunction(input_function);
+            if (!input_function)
+                context->resetInputCallbacks();
         }
 
         StreamLocalLimits limits;
@@ -4040,6 +4080,10 @@ static BlockIO executeQueryImpl(
 
         throw;
     }
+
+    /// CREATE ... AS/AND INSERT executes an ASTInsertQuery synthesized internally; expose it to the caller as the real parsed query.
+    if (res.insert_query)
+        out_ast = res.insert_query;
 
     return res;
 }

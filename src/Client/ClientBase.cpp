@@ -2597,6 +2597,17 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 onProfileEvents(packet.block);
                 break;
 
+            case Protocol::Server::EndOfStream:
+            {
+                const auto * create = parsed_query->as<ASTCreateQuery>();
+                if (create && create->if_not_exists && create->has_as_insert && !received_sample)
+                {
+                    onEndOfStream();
+                    return false;
+                }
+                [[fallthrough]];
+            }
+
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
                     "Unexpected packet from server (expected Data, Exception, Log, TableColumns, TimezoneUpdate, "
@@ -2705,7 +2716,7 @@ StdinState getStdinStateNonBlocking(ReadBuffer & std_in, int fd)
 }
 
 
-void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
+void ClientBase::processInsertQuery(String query, ASTPtr parsed_query, const Settings * input_settings)
 {
     if (!query_parameters.empty()
         && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
@@ -2721,16 +2732,34 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     }
 
     /// Process the query that requires transferring data blocks to the server.
-    const auto & parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
-    if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && !isStdinNotEmptyAndValid(*std_in))))
+    const ASTInsertQuery * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
+    /// Process create query with and/as INSERT.
+    const ASTCreateQuery * parsed_create_query = parsed_query->as<ASTCreateQuery>();
+
+    const char * inline_data_begin = parsed_insert_query ? parsed_insert_query->data
+                                                         : (parsed_create_query ? parsed_create_query->insert_data : nullptr);
+
+    const bool has_infile = parsed_insert_query && parsed_insert_query->infile;
+    bool empty_create_input = false;
+    if (!inline_data_begin && !has_infile
+        && (is_interactive || stdin_is_a_tty || !isStdinNotEmptyAndValid(*std_in)))
     {
-        const auto & settings = client_context->getSettingsRef();
+        const auto & settings = input_settings ? *input_settings : client_context->getSettingsRef();
         if (settings[Setting::throw_if_no_data_to_insert])
             throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
-        return;
+
+        if (!parsed_create_query || !(parsed_create_query->has_as_insert || parsed_create_query->has_and_insert)
+            || parsed_create_query->attach || parsed_create_query->replace_table || parsed_create_query->create_or_replace)
+            return;
+
+        if (connection->getConnectionType() == IServerConnection::Type::LOCAL
+            && parsed_create_query->insert_select && (is_interactive || stdin_is_a_tty))
+            throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
+
+        empty_create_input = true;
     }
 
-    if (isEmbeeddedClient() && parsed_insert_query.infile)
+    if (isEmbeeddedClient() && has_infile)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading from INFILE is disabled when you are running client embedded into server.");
 
     query_interrupt_handler.start();
@@ -2767,18 +2796,27 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         if (send_external_tables)
             sendExternalTables(parsed_query);
 
+        if (input_settings)
+        {
+            client_context->setSettings(*input_settings);
+            connection->setFormatSettings(getNativeWireFormatSettings(client_context));
+        }
+
         startKeystrokeInterceptorIfExists();
         SCOPE_EXIT({ stopKeystrokeInterceptorIfExists(); });
 
         /// The server sends its `session_timezone` with the structure of the data it reads through `input`
         /// (also for RETURNING); it must be applied before the data is parsed in other threads.
         ASTPtr input_function;
-        if (parsed_insert_query.select)
-            parsed_insert_query.tryFindInputFunction(input_function);
-        const bool wait_for_timezone_update = (input_function || parsed_insert_query.returning)
+        if (parsed_insert_query && parsed_insert_query->select)
+            parsed_insert_query->tryFindInputFunction(input_function);
+        else if (parsed_create_query && parsed_create_query->insert_select)
+            parsed_create_query->tryFindInputFunction(input_function);
+
+        const bool wait_for_timezone_update =
+            (input_function || (parsed_insert_query && parsed_insert_query->returning))
             && connection->getConnectionType() != IServerConnection::Type::LOCAL
             && connection->getServerRevision(connection_parameters.timeouts) >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES;
-
         /// Receive description of table structure.
         Block sample;
         ColumnsDescription columns_description;
@@ -2786,9 +2824,13 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         {
             /// If structure was received (thus, server has not thrown an exception),
             /// send our data with that structure.
-            setInsertionTable(parsed_insert_query);
+            if (parsed_insert_query)
+                setInsertionTable(*parsed_insert_query);
 
-            sendData(sample, columns_description, parsed_query);
+            if (empty_create_input && connection->isSendDataNeeded())
+                connection->sendData({}, "", false);
+            else
+                sendData(sample, columns_description, parsed_query);
             receiveEndOfQueryForInsert(parsed_query);
         }
     }
@@ -2823,7 +2865,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
     /// If INSERT data must be sent.
     auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
-    if (!parsed_insert_query)
+    auto * parsed_create_query = parsed_query->as<ASTCreateQuery>();
+    if (!parsed_insert_query && !parsed_create_query)
         return;
 
     /// If it's clickhouse-local, and the input data reading is already baked into the query pipeline,
@@ -2837,9 +2880,9 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     /// use a non-blocking check and append stdin only when it already has data. When there is no other data source,
     /// use the blocking check as before.
     bool have_data_in_stdin = false;
-    if (!parsed_insert_query->infile && !is_interactive && !stdin_is_a_tty)
+    if ((!parsed_insert_query || !parsed_insert_query->infile) && !is_interactive && !stdin_is_a_tty)
     {
-        if (parsed_insert_query->data)
+        if ((parsed_insert_query && parsed_insert_query->data) || (parsed_create_query && parsed_create_query->insert_data))
         {
             const auto stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
             have_data_in_stdin = stdin_state == StdinState::Data && isStdinNotEmptyAndValid(*std_in);
@@ -2863,7 +2906,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     }
 
     /// If data fetched from file (maybe compressed file)
-    if (parsed_insert_query->infile)
+    if (parsed_insert_query && parsed_insert_query->infile)
     {
         if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading from INFILE is disabled when you are running client embedded into server.");
@@ -2959,7 +3002,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             throw;
         }
     }
-    else if (parsed_insert_query->data)
+    else if (parsed_insert_query && parsed_insert_query->data)
     {
         /// Send data contained in the query.
         ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
@@ -2981,6 +3024,28 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         // where the next query begins.
         parsed_insert_query->end = parsed_insert_query->data + data_in.count();
     }
+    else if (parsed_create_query && parsed_create_query->insert_data)
+    {
+        /// Send data contained in the query.
+        ReadBufferFromMemory data_in(parsed_create_query->insert_data, parsed_create_query->insert_data_end - parsed_create_query->insert_data);
+        try
+        {
+            sendDataFrom(data_in, sample, columns_description_for_query, parsed_query, have_data_in_stdin);
+            if (have_data_in_stdin && !cancelled)
+                sendDataFromStdin(sample, columns_description_for_query, parsed_query);
+        }
+        catch (Exception & e)
+        {
+            /// The following query will use data from input
+            //      "CREATE TABLE data FORMAT TSV\n " < data.csv
+            //  And may be pretty hard to debug, so add information about data source to make it easier.
+            e.addMessage("data for CREATE TABLE was parsed from query");
+            throw;
+        }
+        // Remember where the data ended. We use this info later to determine
+        // where the next query begins.
+        parsed_create_query->insert_data_end = parsed_create_query->insert_data + data_in.count();
+    }
     else if (!is_interactive)
     {
         sendDataFromStdin(sample, columns_description_for_query, parsed_query);
@@ -2999,6 +3064,11 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     {
         if (!insert->format.empty())
             current_format = insert->format;
+    }
+    else if (const auto * createInsert = parsed_query->as<ASTCreateQuery>())
+    {
+        if (!createInsert->insert_format.empty())
+            current_format = createInsert->insert_format;
     }
 
     const Settings & settings = client_context->getSettingsRef();
@@ -3370,8 +3440,37 @@ void ClientBase::processParsedSingleQuery(
 
         ASTPtr input_function;
         const auto * insert = parsed_query->as<ASTInsertQuery>();
+        const auto * create_ast = parsed_query->as<ASTCreateQuery>();
+        const auto * create_with_insert = [&]() -> const ASTCreateQuery *
+        {
+            if (const auto * c = parsed_query->as<ASTCreateQuery>())
+                if ((c->has_as_insert || c->has_and_insert) && !c->insert_format.empty() && !c->insert_select)
+                    return c;
+            return nullptr;
+        }();
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
+        else if (create_ast && create_ast->insert_select)
+            create_ast->tryFindInputFunction(input_function);
+
+        std::optional<Settings> create_input_settings;
+        if (create_ast && (create_with_insert || input_function) && !create_ast->select && !create_ast->settings_ast
+            && create_ast->storage && create_ast->storage->settings
+            && client_context->getApplicationType() == Context::ApplicationType::CLIENT)
+        {
+            if (!create_ast->storage->engine)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ENGINE must be specified for CREATE with INSERT data and storage SETTINGS in the native client");
+
+            /// Classify against the engine without changing the AST or the settings sent before the server parses it.
+            auto input_context = Context::createCopy(client_context);
+            ASTPtr create_for_settings = parsed_query->clone();
+            ReplaceQueryParameterVisitor visitor(query_parameters);
+            visitor.visit(create_for_settings);
+            InterpreterSetQuery::applySettingsFromQuery(
+                create_for_settings, input_context, nullptr, /* apply_create_storage_settings_for_client */ true);
+            create_input_settings = input_context->getSettingsRef();
+        }
 
         /// When the user explicitly requested inline insert data mode (via `--inline-insert-data` or
         /// `send_table_structure_on_insert_with_inline_data = 0`), it takes precedence over `async_insert`
@@ -3419,21 +3518,31 @@ void ClientBase::processParsedSingleQuery(
         /// because it's needed to be done on server side.
         if (insert && insert->data && !is_async_insert_with_inlined_data && !is_inline_insert_data && insert_query_without_data_length)
             query = query_.substr(0, insert_query_without_data_length);
+        else if (create_with_insert && insert_query_without_data_length)
+            query = query_.substr(0, insert_query_without_data_length);
         else
             query = query_;
 
+        bool create_select_needs_input = create_ast && create_ast->insert_select && input_function;
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function) && !is_inline_insert_data)
+        if ((insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function) && !is_inline_insert_data)
+            || create_select_needs_input)
         {
+            bool format_empty = insert ? insert->format.empty() : create_ast->insert_format.empty();
+            const Settings & input_settings = create_input_settings ? *create_input_settings : client_context->getSettingsRef();
             /// The reader format for `input()` can come from the query `FORMAT` clause or from the
             /// `input_format` / `format` settings (mirrors `getSourceFromASTInsertQuery`); only reject
             /// when none of them is set.
-            if (input_function && insert->format.empty()
-                && client_context->getSettingsRef()[Setting::input_format].value.empty()
-                && client_context->getSettingsRef()[Setting::format].value.empty())
+            if (input_function && format_empty
+                && input_settings[Setting::input_format].value.empty()
+                && input_settings[Setting::format].value.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
 
-            processInsertQuery(query, parsed_query);
+            processInsertQuery(query, parsed_query, create_input_settings ? &*create_input_settings : nullptr);
+        }
+        else if (create_with_insert)
+        {
+            processInsertQuery(query, parsed_query, create_input_settings ? &*create_input_settings : nullptr);
         }
         else
             processOrdinaryQuery(query, parsed_query);
@@ -3709,13 +3818,15 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // - Other formats (e.g. FORMAT CSV) are arbitrarily more complex and tricky to parse. For example, we may be unable to distinguish if the semicolon
     //   is part of the data or ends the statement. In this case, we simply assume that the end of the INSERT statement is determined by \n\n (two newlines).
     auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-    // We also consider the INSERT query in EXPLAIN queries (same as normal INSERT queries)
+    auto * create_ast = parsed_query->as<ASTCreateQuery>();
+    // We also consider INSERT and CREATE queries inside EXPLAIN.
     if (!insert_ast)
     {
         auto * explain_ast = parsed_query->as<ASTExplainQuery>();
         if (explain_ast && explain_ast->getExplainedQuery())
         {
             insert_ast = explain_ast->getExplainedQuery()->as<ASTInsertQuery>();
+            create_ast = explain_ast->getExplainedQuery()->as<ASTCreateQuery>();
         }
     }
     if (insert_ast && insert_ast->data)
@@ -3757,6 +3868,40 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
                 this_query_end = all_queries_end;
         }
         insert_ast->end = this_query_end;
+    }
+    else if (create_ast && create_ast->insert_data &&
+            (create_ast->has_as_insert || create_ast->has_and_insert))
+    {
+        if (create_ast->insert_format == "Values")
+        {
+            ReadBufferFromMemory data_in(create_ast->insert_data, all_queries_end - create_ast->insert_data);
+            skipBOMIfExists(data_in);
+            do
+            {
+                skipWhitespaceAndSQLComments(data_in);
+                if (data_in.eof() || *data_in.position() == ';')
+                    break;
+            }
+            while (ValuesBlockInputFormat::skipToNextRow(&data_in, 1, 0));
+
+            this_query_end = create_ast->insert_data + data_in.count();
+            const auto * pos_newline = find_first_symbols<'\n'>(this_query_end, all_queries_end);
+            if (pos_newline != this_query_end)
+            {
+                TestHint hint(String(this_query_end, pos_newline - this_query_end));
+                if (hint.hasClientErrors() || hint.hasServerErrors())
+                    this_query_end = pos_newline;
+            }
+        }
+        else
+        {
+            auto pos_newline = String(create_ast->insert_data, all_queries_end).find("\n\n");
+            if (pos_newline != std::string::npos)
+                this_query_end = create_ast->insert_data + pos_newline;
+            else
+                this_query_end = all_queries_end;
+        }
+        create_ast->insert_data_end = this_query_end;
     }
 
     return MultiQueryProcessingStage::EXECUTE_QUERY;
@@ -3957,8 +4102,14 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 auto query_to_execute = std::string_view(all_queries_text).substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
                 size_t insert_query_without_data_length = 0;
                 if (const auto * insert = parsed_query->as<ASTInsertQuery>())
+                {
                     insert_query_without_data_length = insert->data - query_to_execute.data();
-
+                }
+                else if (const auto * create = parsed_query->as<ASTCreateQuery>();
+                         create && create->insert_data && (create->has_as_insert || create->has_and_insert) && !create->insert_select)
+                {
+                    insert_query_without_data_length = create->insert_data - query_to_execute.data();
+                }
                 // Try to include the trailing comment with test hints. It is just
                 // a guess for now, because we don't yet know where the query ends
                 // if it is an INSERT query with inline data. We will do it again
@@ -4148,6 +4299,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // , where the inline data is delimited by semicolon and not by a
                 // newline.
                 auto * insert_ast = parsed_query->as<ASTInsertQuery>();
+                auto * create_ast = parsed_query->as<ASTCreateQuery>();
                 if (insert_ast && insert_ast->data && !is_async_insert_with_inlined_data)
                 {
                     this_query_end = insert_ast->end;
@@ -4157,7 +4309,15 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                         static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]),
                         static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]));
                 }
-
+                else if (create_ast && create_ast->insert_data && (create_ast->has_as_insert || create_ast->has_and_insert) && !create_ast->insert_select)
+                {
+                    this_query_end = create_ast->insert_data_end;
+                    adjustQueryEnd(
+                        this_query_end,
+                        all_queries_end,
+                        static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]),
+                        static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]));
+                }
                 if (buzz_house && have_error)
                 {
                     // Retrieve the right error code for BuzzHouse
