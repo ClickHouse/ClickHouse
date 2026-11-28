@@ -11,6 +11,9 @@
 
 #include <base/unit.h>
 #include <base/getL2CacheSize.h>
+#include <base/unaligned.h>
+
+#include <absl/container/inlined_vector.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
@@ -845,6 +848,9 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         aggregate_functions[i] = params.aggregates[i].function.get();
         has_function_with_parallelizable_merge |= aggregate_functions[i]->isAbleToParallelizeMerge();
     }
+
+    aggregate_key_runs_as_constant = params.optimize_group_by_constant_keys && params.keys_size == 1
+        && std::ranges::all_of(aggregate_functions, [](const IAggregateFunction * function) { return function->canOptimizeEqualKeysRanges(); });
 
     /// Initialize sizes of aggregation states and its offsets.
     offsets_of_aggregate_states.resize(params.aggregates_size);
@@ -1993,14 +1999,17 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// - this affects only optimize_aggregation_in_order,
     /// - this is just a pointer, so it should not be significant,
     /// - and plus this will require other changes in the interface.
-    size_t places_size = all_keys_are_const ? 1 : row_end;
+    /// The one place of const keys is on the stack.
+    AggregateDataPtr const_keys_place = nullptr;
+    size_t places_size = all_keys_are_const ? 0 : row_end;
     AllocatorWithMemoryTracking<AggregateDataPtr> allocator;
     auto places_deleter = [&allocator, &places_size](auto * ptr)
     {
-        if (ptr) [[likely]]
+        if (ptr && places_size) [[likely]]
             allocator.deallocate(ptr, places_size);
     };
-    std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(allocator.allocate(places_size), places_deleter);
+    std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(
+        places_size ? allocator.allocate(places_size) : &const_keys_place, places_deleter);
 
     size_t key_start = 0;
     size_t key_end = 0;
@@ -2171,7 +2180,7 @@ void Aggregator::executeAggregateInstructions(
 #if USE_EMBEDDED_COMPILER
     if (use_compiled_functions)
     {
-        std::vector<ColumnData> columns_data;
+        absl::InlinedVector<ColumnData, 16> columns_data;
         bool can_optimize_equal_keys_ranges = true;
 
         for (size_t i = 0; i < aggregate_functions.size(); ++i)
@@ -2189,7 +2198,8 @@ void Aggregator::executeAggregateInstructions(
 
         if (all_keys_are_const || (can_optimize_equal_keys_ranges && has_only_one_value_since_last_reset))
         {
-            ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
+            if (!all_keys_are_const)
+                ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
             auto add_into_aggregate_states_function_single_place = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function_single_place;
             callJITFunction(add_into_aggregate_states_function_single_place, row_begin, row_end, columns_data.data(), places[key_start]);
         }
@@ -2213,7 +2223,8 @@ void Aggregator::executeAggregateInstructions(
 
         if (all_keys_are_const || (inst->can_optimize_equal_keys_ranges && has_only_one_value_since_last_reset))
         {
-            ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
+            if (!all_keys_are_const)
+                ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
             addBatchSinglePlace(row_begin, row_end, inst, places[key_start] + inst->state_offset, aggregates_pool);
         }
         else
@@ -2545,6 +2556,82 @@ void Aggregator::buildAggregateFunctionInstruction(
     aggregate_functions_instructions[i].batch_that = that;
 }
 
+namespace
+{
+
+constexpr size_t key_runs_before_average_check = 8;
+/// After this many consecutive runs shorter than `min_average_key_run_rows`, the scan stops and leaves them to the
+/// per-row path.
+constexpr size_t max_consecutive_short_key_runs = 32;
+constexpr size_t min_average_key_run_rows = 64;
+
+/// `ends[i]` ends run `i` of one value.
+struct KeyRuns
+{
+    absl::InlinedVector<size_t, key_runs_before_average_check> ends;
+};
+
+template <typename T>
+void findKeyRunsImpl(const char * data, size_t begin, size_t end, KeyRuns & runs)
+{
+    const auto at = [data](size_t row) { return unalignedLoad<T>(data + row * sizeof(T)); };
+    size_t short_runs = 0;
+    for (size_t row = begin; row < end;)
+    {
+        const T value = at(row);
+        size_t run_end = row + 1;
+        /// 64 rows at a time without a branch inside, so the scan vectorizes.
+        for (; run_end + 64 <= end; run_end += 64)
+        {
+            bool differs = false;
+            for (size_t i = 0; i < 64; ++i)
+                differs |= at(run_end + i) != value;
+            if (differs)
+                break;
+        }
+        while (run_end < end && at(run_end) == value)
+            ++run_end;
+        runs.ends.push_back(run_end);
+        if (runs.ends.size() > key_runs_before_average_check && (run_end - begin) / runs.ends.size() < min_average_key_run_rows)
+        {
+            runs.ends.pop_back();
+            return;
+        }
+        short_runs = run_end - row < min_average_key_run_rows ? short_runs + 1 : 0;
+        if (short_runs == max_consecutive_short_key_runs)
+        {
+            runs.ends.resize(runs.ends.size() - short_runs);
+            return;
+        }
+        row = run_end;
+    }
+}
+
+/// Runs of one value at the start of rows [begin, end) of a fixed-size key column: one run, or runs averaging
+/// `min_average_key_run_rows` rows, ending before the first run past the 8th that would lower the average below that
+/// or before `max_consecutive_short_key_runs` consecutive short runs.
+/// Equal key bytes are one group for every method of a single fixed-size key, so a run can be aggregated like a constant key.
+KeyRuns findKeyRuns(const IColumn & column, size_t begin, size_t end)
+{
+    KeyRuns runs;
+    if (end - begin < 2 || !column.isFixedAndContiguous())
+        return runs;
+    const char * data = column.getRawData().data();
+    switch (column.sizeOfValueIfFixed())
+    {
+        case 1: findKeyRunsImpl<UInt8>(data, begin, end, runs); break;
+        case 2: findKeyRunsImpl<UInt16>(data, begin, end, runs); break;
+        case 4: findKeyRunsImpl<UInt32>(data, begin, end, runs); break;
+        case 8: findKeyRunsImpl<UInt64>(data, begin, end, runs); break;
+        default: break;
+    }
+    if (runs.ends.size() > 1 && (runs.ends.back() - begin) / runs.ends.size() < min_average_key_run_rows)
+        runs.ends.clear();
+    return runs;
+}
+
+}
+
 bool Aggregator::executeOnBlock(Columns columns,
     size_t row_begin, size_t row_end,
     AggregatedDataVariants & result,
@@ -2593,6 +2680,10 @@ bool Aggregator::executeOnBlock(Columns columns,
     Columns materialized_columns;
     NestedColumnsHolder nested_columns_holder;
     AggregateFunctionInstructions aggregate_functions_instructions;
+    KeyRuns key_runs;
+    /// A one-row key column that holds the key of the run being aggregated.
+    IColumn * run_key = nullptr;
+    bool single_place_batches = false;
 
     /// The block's materialized key and argument columns are temporaries of this call, created and released in
     /// `aggregator_scope`: the guard releases them there, because a release is charged to the tracker current at the
@@ -2603,6 +2694,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         Columns().swap(materialized_columns);
         NestedColumnsHolder().swap(nested_columns_holder);
         AggregateFunctionInstructions().swap(aggregate_functions_instructions);
+        key_runs = {};
     });
     std::optional<MemoryTrackerSwitcher> block_columns_scope;
     aggregator_scope(block_columns_scope, /*table_may_freeze=*/false);
@@ -2668,7 +2760,45 @@ bool Aggregator::executeOnBlock(Columns columns,
     replaceNegativeZeros(key_columns, materialized_columns);
 
     prepareAggregateInstructions(columns, aggregate_columns, materialized_columns, aggregate_functions_instructions, nested_columns_holder);
+
+    /// Not once new keys are refused, where the constant-key path behaves differently, not while the top-K heap ranks
+    /// rows, which the constant-key path neither checks nor feeds, not for sparse arguments, whose one-place batches add
+    /// the default rows last, and not for `key8`, whose lookup-table batches beat one-place batches for some aggregates.
+    if (aggregate_key_runs_as_constant && !all_keys_are_const && !no_more_keys && !top_k_active
+        && result.type != AggregatedDataVariants::Type::key8 && !hasSparseArguments(aggregate_functions_instructions.data()))
+    {
+        key_runs = findKeyRuns(*key_columns[0], row_begin, row_end);
+        if (!key_runs.ends.empty())
+        {
+            materialized_columns.push_back(key_columns[0]->cut(row_begin, 1));
+            run_key = &materialized_columns.back()->assumeMutableRef();
+        }
+    }
     block_columns_scope.reset();
+
+    const auto for_each_key_run = [&](auto && execute)
+    {
+        single_place_batches = all_keys_are_const || !key_runs.ends.empty();
+        if (key_runs.ends.empty())
+        {
+            execute(row_begin, row_end, all_keys_are_const);
+            return;
+        }
+        const IColumn * key_column = key_columns[0];
+        key_columns[0] = run_key;
+        size_t run_begin = row_begin;
+        for (size_t run_end : key_runs.ends)
+        {
+            /// Overwritten in place: the column keeps its one-row buffer, so a run does not allocate.
+            run_key->popBack(1);
+            run_key->insertFrom(*key_column, run_begin);
+            execute(run_begin, run_end, /*all_keys_are_const=*/true);
+            run_begin = run_end;
+        }
+        key_columns[0] = key_column;
+        if (run_begin < row_end)
+            execute(run_begin, row_end, /*all_keys_are_const=*/false);
+    };
 
     if ((params.overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
     {
@@ -2698,9 +2828,12 @@ bool Aggregator::executeOnBlock(Columns columns,
         /// in the producer's partition buffers for the merge.
         std::optional<MemoryTrackerSwitcher> scope;
         aggregator_scope(scope, /*table_may_freeze=*/false);
-        executeFrozen(
-            columns, row_begin, row_end, result, key_columns, aggregate_functions_instructions.data(), *adaptive, all_keys_are_const,
-            aggregator_tracker ? result.memory_tracker.get() : nullptr);
+        for_each_key_run([&](size_t begin, size_t end, bool keys_are_const)
+        {
+            executeFrozen(
+                columns, begin, end, result, key_columns, aggregate_functions_instructions.data(), *adaptive, keys_are_const,
+                aggregator_tracker ? result.memory_tracker.get() : nullptr);
+        });
     }
     else if (adaptive && adaptive->isLearning() && result.isConvertibleToTwoLevel() && !all_keys_are_const
              && result.sizeWithoutOverflowRow() + (row_end - row_begin) > params.adaptive_aggregator_freeze_threshold
@@ -2739,8 +2872,15 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         /// This is where data is written that does not fit in `max_rows_to_group_by` with `group_by_overflow_mode = any`.
         AggregateDataPtr overflow_row_ptr = params.overflow_row ? result.without_key : nullptr;
-        executeImpl(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data(), no_more_keys, all_keys_are_const, overflow_row_ptr);
+        for_each_key_run([&](size_t begin, size_t end, bool keys_are_const)
+        {
+            executeImpl(result, begin, end, key_columns, aggregate_functions_instructions.data(), no_more_keys, keys_are_const, overflow_row_ptr);
+        });
     }
+
+    /// Counted once per block, not once per key run.
+    if (single_place_batches && params.aggregates_size && !is_simple_count)
+        ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
 
     size_t result_size = result.sizeWithoutOverflowRow();
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
