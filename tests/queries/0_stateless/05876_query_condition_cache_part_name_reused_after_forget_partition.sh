@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # FORGET PARTITION restarts the block numbers of a partition, so the next INSERT writes a part with the name of a
-# dropped one. A query condition cache entry of the dropped part with another number of marks must not be used.
+# dropped one. The query condition cache entries of the dropped part must not be used.
 
 # The uncompressed cache is keyed by file path, so it can serve the dropped part's data here too.
 SETTINGS="SET use_query_condition_cache = 1, use_uncompressed_cache = 0, insert_keeper_fault_injection_probability = 0;"
@@ -50,3 +50,5 @@ function check()
 check t_fewer 1000 16
 # The new part has more marks than the dropped one.
 check t_more 16 1000
+# The new part has as many marks as the dropped one.
+check t_same 16 16

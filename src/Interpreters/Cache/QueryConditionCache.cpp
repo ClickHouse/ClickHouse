@@ -346,6 +346,7 @@ void QueryConditionCache::write(
     /// An entry with another number of marks was written for an earlier part with the same name.
     if (entry->matching_marks.size() != marks_count)
     {
+        chassert(false, "Query condition cache entry has a different number of marks than the part");
         entry = load_func();
         cache.set(key, entry);
     }

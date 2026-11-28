@@ -2364,7 +2364,10 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                 auto marks = query_condition_cache->read(storage_id.uuid, part_name, hash, /*increment_profile_events=*/false);
                 /// An entry with another number of marks was written for an earlier part with the same name.
                 if (marks && marks->size() != marks_count)
+                {
+                    chassert(false, "Query condition cache entry has a different number of marks than the part");
                     marks.reset();
+                }
                 return marks;
             };
             auto row_level_marks_opt = read_marks(condition_hash);
