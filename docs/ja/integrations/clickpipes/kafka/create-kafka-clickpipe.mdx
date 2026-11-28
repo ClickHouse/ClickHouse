@@ -19,13 +19,9 @@ Kafka ClickPipes は、ClickPipes UI を使用して手動でデプロイおよ�
     左側のメニューで `Data Sources` ボタンを選択し、&quot;Set up a ClickPipe&quot; をクリックします。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![インポートを選択](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
-
-    </Frame>
-
+      <Frame>
+        ![インポートを選択](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -33,13 +29,9 @@ Kafka ClickPipes は、ClickPipes UI を使用して手動でデプロイおよ�
     一覧からKafkaのデータソースを選択します。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![データソースの種類を選択](/images/integrations/data-ingestion/clickpipes/cp_step1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![データソースの種類を選択](/images/integrations/data-ingestion/clickpipes/cp_step1.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -47,13 +39,9 @@ Kafka ClickPipes は、ClickPipes UI を使用して手動でデプロイおよ�
     ClickPipe の名前、説明 (任意) 、認証情報、その他の接続情報を入力してフォームを完成させます。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![接続情報を入力](/images/integrations/data-ingestion/clickpipes/cp_step2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![接続情報を入力](/images/integrations/data-ingestion/clickpipes/cp_step2.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -78,13 +66,9 @@ Kafka ClickPipes は、ClickPipes UI を使用して手動でデプロイおよ�
        * **SSH User**: 踏み台サーバーで認証に使用するユーザー名。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![SSH トンネル設定](/images/integrations/data-ingestion/clickpipes/cp_ssh_tunnel.webp)
-
-    </Frame>
-
+      <Frame>
+        ![SSH トンネル設定](/images/integrations/data-ingestion/clickpipes/cp_ssh_tunnel.webp)
+      </Frame>
     </div>
 
     3. 鍵ベース認証を使用するには、&quot;Revoke and regenerate key pair&quot; をクリックして新しい鍵ペアを生成し、生成された公開鍵を SSH サーバーの `~/.ssh/authorized_keys` にコピーします。
@@ -101,13 +85,9 @@ Kafka ClickPipes は、ClickPipes UI を使用して手動でデプロイおよ�
     その後、UI にそのトピックのサンプルドキュメントが表示されます。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![トピックを選択](/images/integrations/data-ingestion/clickpipes/cp_step3.webp)
-
-    </Frame>
-
+      <Frame>
+        ![トピックを選択](/images/integrations/data-ingestion/clickpipes/cp_step3.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -115,25 +95,17 @@ Kafka ClickPipes は、ClickPipes UI を使用して手動でデプロイおよ�
     次のステップでは、データを新しい ClickHouse テーブルに取り込むか、既存のテーブルを再利用するかを選択できます。画面の案内に従って、テーブル名、スキーマ、設定を変更してください。上部のサンプルテーブルで、変更内容をリアルタイムでプレビューできます。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![テーブル、スキーマ、設定を指定する](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
-
-    </Frame>
-
+      <Frame>
+        ![テーブル、スキーマ、設定を指定する](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
+      </Frame>
     </div>
 
     用意されているコントロールを使用して、詳細設定をカスタマイズすることもできます。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![詳細設定を行うためのコントロール](/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp)
-
-    </Frame>
-
+      <Frame>
+        ![詳細設定を行うためのコントロール](/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -144,13 +116,9 @@ Kafka ClickPipes は、ClickPipes UI を使用して手動でデプロイおよ�
     * `Only destination table`: 宛先テーブルに対する `INSERT` 権限のみを付与します。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![権限](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
-
-    </Frame>
-
+      <Frame>
+        ![権限](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -158,13 +126,9 @@ Kafka ClickPipes は、ClickPipes UI を使用して手動でデプロイおよ�
     &quot;Create ClickPipe&quot; をクリックすると、ClickPipe が作成されて起動します。作成後は、Data Sources セクションに表示されます。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![概要を表示](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
-
-    </Frame>
-
+      <Frame>
+        ![概要を表示](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>

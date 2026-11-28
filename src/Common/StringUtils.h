@@ -5,7 +5,6 @@
 #include <string_view>
 #include <span>
 #include <cstring>
-#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -30,7 +29,7 @@ inline bool endsWith(const std::string & s, const std::string & suffix)
 }
 
 
-/// With GCC, strlen is evaluated compile time if we pass it a constant
+/// strlen is evaluated at compile time if we pass it a constant
 /// string that is known at compile time.
 inline bool startsWith(const std::string & s, const char * prefix)
 {
@@ -89,9 +88,6 @@ constexpr bool isAlphaASCII(char c)
 
 constexpr bool isNumericASCII(char c)
 {
-    /// This is faster than
-    /// return UInt8(UInt8(c) - UInt8('0')) < UInt8(10);
-    /// on Intel CPUs when compiled by gcc 8.
     return (c >= '0' && c <= '9');
 }
 
@@ -158,6 +154,17 @@ inline bool isControlASCII(char c)
     return static_cast<unsigned char>(c) <= 31;
 }
 
+inline bool isControlOrDeleteASCII(char c)
+{
+    return isControlASCII(c) || c == 0x7F;
+}
+
+/// A character allowed in an HTTP token, such as a header name (RFC 9110, section 5.6.2).
+inline bool isHTTPTokenChar(char c)
+{
+    return isAlphaNumericASCII(c) || std::string_view("!#$%&'*+-.^_`|~").contains(c);
+}
+
 inline bool isPrintableASCII(char c)
 {
     uint8_t uc = c;
@@ -216,7 +223,7 @@ inline char toUpperIfAlphaASCII(char c)
     return c & (~0x20);
 }
 
-inline char alternateCaseIfAlphaASCII(char c)
+constexpr char alternateCaseIfAlphaASCII(char c)
 {
     return c ^ 0x20;
 }
@@ -284,12 +291,12 @@ inline const char * skipWhitespacesUTF8(const char * pos, const char * end)
     return pos;
 }
 
-inline bool equalsCaseInsensitive(char a, char b)
+constexpr bool equalsCaseInsensitive(const char a, const char b)
 {
     return a == b || (isAlphaASCII(a) && alternateCaseIfAlphaASCII(a) == b);
 }
 
-inline bool equalsCaseInsensitive(std::string_view a, std::string_view b)
+constexpr bool equalsCaseInsensitive(std::string_view a, std::string_view b)
 {
     return a.size() == b.size()
         && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) { return equalsCaseInsensitive(x, y); });
@@ -420,7 +427,10 @@ inline void trimRight(std::string_view & str, char c = ' ')
 
 inline void trimRight(std::string & str, char c = ' ')
 {
-    str.erase(str.find_last_not_of(c) + 1);
+    /// `find_last_not_of` answers `npos` for a string that is entirely `c`, and `npos + 1` only
+    /// lands on the 0 this wants by wrapping.
+    const size_t last_kept = str.find_last_not_of(c);
+    str.erase(last_kept == std::string::npos ? 0 : last_kept + 1);
 }
 
 inline void trim(std::string_view & str, char c = ' ')

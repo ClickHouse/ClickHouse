@@ -5,12 +5,10 @@ title: '파티션 삭제'
 hide_title: false
 description: '파티션 삭제에 대해 설명하는 페이지'
 keywords: ['DROP PARTITION', '파티션 삭제', '파티션 삭제', '파티션 제거', '파티션 관리']
-doc_type: '참고'
+doc_type: 'reference'
 ---
 
-<div id="background">
-  ## 배경
-</div>
+## 배경 {#background}
 
 파티셔닝은 테이블을 처음 정의할 때 `PARTITION BY` 절로 지정합니다. 이 절에는 임의의 컬럼에 대한 SQL 표현식을 포함할 수 있으며, 그 결과에 따라 각 행이 어느 파티션으로 보내질지가 결정됩니다.
 
@@ -19,7 +17,7 @@ doc_type: '참고'
 ```sql
  CREATE TABLE posts
 (
-        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `Id` Int32 CODEC(Delta, Default),
         `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
         `AcceptedAnswerId` UInt32,
         `CreationDate` DateTime64(3, 'UTC'),
@@ -35,9 +33,7 @@ PARTITION BY toYear(CreationDate)
 
 ClickHouse에서는 파티셔닝을 쿼리 최적화 기법이 아니라 주로 데이터 관리 기능으로 보는 것이 좋습니다. 키를 기준으로 데이터를 논리적으로 분리하면 각 파티션에 대해 독립적으로 작업할 수 있으며, 예를 들어 삭제할 수 있습니다. 이를 통해 시간 기준으로 파티션, 즉 데이터의 하위 집합을 [스토리지 계층](/ko/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers) 간에 효율적으로 이동하거나 [데이터를 만료시키거나 클러스터에서 효율적으로 삭제](/ko/reference/statements/alter/partition)할 수 있습니다.
 
-<div id="drop-partitions">
-  ## 파티션 삭제
-</div>
+## 파티션 삭제 {#drop-partitions}
 
 `ALTER TABLE ... DROP PARTITION`는 파티션 전체를 비용 효율적으로 삭제하는 방법입니다.
 

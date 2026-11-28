@@ -11,7 +11,7 @@ integration:
   - category: "clickpipes"
 ---
 
-Vous pouvez utiliser GCP [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect) pour établir une connexion sécurisée entre ClickPipes et une source de données hébergée sur GCP. ClickPipes crée un **point de terminaison privé inversé (RPE)** dans son VPC et le configure pour cibler un endpoint service privé publié pour votre source de données, afin que le trafic ne soit jamais exposé à Internet.
+Vous pouvez utiliser GCP [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect) pour établir une connexion sécurisée entre ClickPipes et une source de données hébergée sur GCP. ClickPipes crée un **reverse private endpoint (RPE)** dans son VPC et le configure pour cibler un endpoint service privé publié pour votre source de données, afin que le trafic ne soit jamais exposé à Internet.
 
 <Check>
   ClickPipes prend en charge la connectivité PSC **interrégionale** via [l’accès global](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access). L’accès global est requis pour les endpoints situés dans une région différente de celle où s’exécute l’infrastructure ClickPipes. Consultez la [documentation sur les régions GCP de ClickPipes](/fr/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips) pour plus de détails.

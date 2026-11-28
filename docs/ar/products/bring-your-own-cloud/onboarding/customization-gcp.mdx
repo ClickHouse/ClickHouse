@@ -22,13 +22,9 @@ doc_type: 'reference'
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![تفاصيل الشبكة الفرعية لـ BYOC على GCP، مع عرض نطاقات IPv4 الأساسية والثانوية وتفعيل Private Google Access](/images/cloud/reference/byoc-gcp-subnet.webp)
-
-    </Frame>
-
+      <Frame>
+        ![تفاصيل الشبكة الفرعية لـ BYOC على GCP، مع عرض نطاقات IPv4 الأساسية والثانوية وتفعيل Private Google Access](/images/cloud/reference/byoc-gcp-subnet.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -56,17 +52,13 @@ doc_type: 'reference'
     2. أدخل **اسم شبكة VPC**.
     3. أدخل **اسم الشبكة الفرعية** التي خصصتها لـ ClickHouse.
     4. اختياريًا، أدخل **Secondary range names** لتحديد أي من النطاقات الثانوية للشبكة الفرعية يستخدمه GKE لوحدات Pod. اتركه فارغًا لاستخدامها جميعًا؛ ويجب أن يكون كل اسم تُدرجه موجودًا مسبقًا على الشبكة الفرعية.
-    5. إذا كانت شبكة VPC لديك موجودة في مشروع مضيف لشبكة Shared VPC، فأدخل **Shared VPC host project ID**. اتركه فارغًا عندما تكون شبكة VPC في المشروع نفسه الذي توجد فيه البنية التحتية. راجع [شبكة Shared VPC من مشروع مضيف](#shared-vpc-host-project) أدناه.
+    5. إذا كانت شبكة VPC لديك موجودة في مشروع مضيف لشبكة Shared VPC، فأدخل **معرّف المشروع المضيف لشبكة VPC المشتركة**. اتركه فارغًا عندما تكون شبكة VPC في المشروع نفسه الذي توجد فيه البنية التحتية. راجع [شبكة VPC مشتركة من مشروع مضيف](#shared-vpc-host-project) أدناه.
     6. انقر على **Set up Infrastructure** لبدء التجهيز.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![واجهة إعداد ClickHouse Cloud BYOC مع تحديد Use existing VPC لـ GCP، مع عرض حقول اسم شبكة VPC واسم الشبكة الفرعية وأسماء النطاقات الثانوية ومعرّف المشروع المضيف لشبكة Shared VPC](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
-
-    </Frame>
-
+      <Frame>
+        ![واجهة إعداد ClickHouse Cloud BYOC مع تحديد Use existing VPC لـ GCP، مع عرض حقول اسم شبكة VPC واسم الشبكة الفرعية وأسماء النطاقات الثانوية ومعرّف المشروع المضيف لشبكة VPC المشتركة](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>

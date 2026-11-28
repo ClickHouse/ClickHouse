@@ -255,7 +255,8 @@ bool UnityCatalog::tryGetTableMetadata(
                         /// NOTE: Weird case with OSS Unity catalog, when instead of JSON for simple we have just string with type name
                         if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
                         {
-                            String type_name = type_json_str.substr(1, type_json_str.size() - 2);
+                            /// A lone `"` both starts and ends with a quote: its name is empty, which raises `BAD_ARGUMENTS` below.
+                            String type_name = type_json_str.size() >= 2 ? type_json_str.substr(1, type_json_str.size() - 2) : String{};
                             auto data_type_from_str = DB::getDeltaLakeSimpleTypeByName(type_name);
                             data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
                         }
@@ -428,6 +429,7 @@ CatalogTables UnityCatalog::getTablesForSchema(const std::string & schema, size_
     params.push_back({"max_results", DB::toString(limit)});
 
     CatalogTables tables;
+    std::unordered_set<String> seen_tokens;
     do
     {
         String json_str;
@@ -468,6 +470,8 @@ CatalogTables UnityCatalog::getTablesForSchema(const std::string & schema, size_
                 if (continuation_token.empty())
                     break;
 
+                checkUnityPageTokenIsNew(seen_tokens, continuation_token, fmt::format("the tables of schema `{}.{}`", warehouse, schema));
+
                 if (params.size() == 4)
                     params.pop_back();
 
@@ -495,6 +499,7 @@ DataLake::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base
     params.push_back({"catalog_name", warehouse});
 
     DataLake::ICatalog::Namespaces schemas;
+    std::unordered_set<String> seen_tokens;
     do
     {
         String json_str;
@@ -512,7 +517,8 @@ DataLake::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base
             for (size_t i = 0; i < schemas_object->size(); ++i)
             {
                 auto schema_info = schemas_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
-                chassert(schema_info->get("catalog_name").extract<String>() == warehouse);
+                if (!isUnitySchemaOfCatalog(schema_info, warehouse))
+                    continue;
                 UnityCatalogFullSchemaName schema_name = parseFullSchemaName(schema_info->get("full_name").extract<String>());
 
                 if (schema_name.schema_name.starts_with(base_prefix))
@@ -531,6 +537,8 @@ DataLake::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base
 
                 if (continuation_token.empty())
                     break;
+
+                checkUnityPageTokenIsNew(seen_tokens, continuation_token, fmt::format("the schemas of catalog `{}`", warehouse));
 
                 if (params.size() == 2)
                     params.pop_back();

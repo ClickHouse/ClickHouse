@@ -90,7 +90,9 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 查询预计的最大执行时间 (秒) 。当
 [`timeout_before_checking_execution_speed`](/zh/reference/settings/session-settings/other#timeout_before_checking_execution_speed)
-超时后，会对每个数据块进行检查。
+超时后，会对每个数据块进行检查。该设置根据当前查询执行
+速度外推估算执行时间。如果将 `timeout_before_checking_execution_speed` 设置为 0，则不会
+检查此设置。
 
 ## max_expanded_ast_elements {#max_expanded_ast_elements}
 
@@ -149,13 +151,15 @@ LIMIT 大于此设置值的 SELECT 查询将无法使用向量相似性索引。
 
 执行查询时，每个分片可使用的最大副本数。
 
-可能的值：
+可选值：
 
 * 正整数。
 
 **附加信息**
 
 此选项在不同设置下会产生不同的结果。
+
+当 `parallel_replicas_mode` 为 `sampling_key`，或在包含多个分片的集群上使用 custom key 模式时，每个副本只返回该分片结果中由其负责的那一部分。只有当发起服务器自行对这些部分进行聚合或完全排序时 (例如不带 `GROUP BY` 键的聚合) ，才会同时使用一个分片的多个副本。在其他情况下，例如启用了 `distributed_aggregation_memory_efficient` 的 `GROUP BY` 或 `ORDER BY`，该分片只会从单个副本读取。
 
 ### 使用 `SAMPLE` 采样键进行并行处理 {#parallel-processing-using-sample-key}
 

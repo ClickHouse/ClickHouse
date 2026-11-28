@@ -20,9 +20,7 @@ GitHub 存储库中找到：[https://github.com/ClickHouse/clickhouse-cpp](https
   [https://github.com/ClickHouse/clickhouse-cpp/issues](https://github.com/ClickHouse/clickhouse-cpp/issues)
 </Note>
 
-<div id="including-library-into-project">
-  ## 将库纳入你的项目
-</div>
+## 将库纳入你的项目 {#including-library-into-project}
 
 将库纳入项目的最简单方法是使用 CMake 的 `FetchContent`
 模块。通过这种方式，你可以锁定特定的库版本，并将其作为常规
@@ -35,7 +33,7 @@ set(WITH_OPENSSL YES CACHE BOOL "Enable OpenSSL in clickhouse-cpp" FORCE)
 FetchContent_Declare(
     clickhouse-cpp
     GIT_REPOSITORY https://github.com/ClickHouse/clickhouse-cpp.git
-    GIT_TAG v2.6.0   # can also be `master` or other banch
+    GIT_TAG v2.6.0   # can also be `master` or other branch
 )
 FetchContent_MakeAvailable(clickhouse-cpp)
 ```
@@ -54,13 +52,9 @@ ClickHouse Cloud 或其他启用了 SSL 的 ClickHouse 部署时必须启用。�
 target_link_libraries(your-target PRIVATE clickhouse-cpp-lib)
 ```
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
-<div id="example-setup-client">
-  ### 设置 Client 对象
-</div>
+### 设置 Client 对象 {#example-setup-client}
 
 创建一个 `Client` 实例，以建立与 ClickHouse 的连接。下面的示例
 演示了如何连接到本地 ClickHouse 实例：该实例无需密码，且未
@@ -88,9 +82,7 @@ clickhouse::Client client{
     };
 ```
 
-<div id="example-create-table">
-  ### 创建表并执行不返回数据的查询
-</div>
+### 创建表并执行不返回数据的查询 {#example-create-table}
 
 要执行不返回任何数据的查询 (例如创建表) ，请使用 `Execute` 方法。
 同样的方法也适用于其他语句，例如 `ALTER TABLE`、`DROP` 等。
@@ -104,9 +96,7 @@ client.Execute(R"(
     ENGINE = MergeTree ORDER BY id)");
 ```
 
-<div id="example-insert-data">
-  ### 插入数据
-</div>
+### 插入数据 {#example-insert-data}
 
 要将数据插入表中，请先构造一个 `Block`，并用与表 schema 匹配的列对象填充它。数据按列依次追加，随后通过 `Insert` 方法一次性插入；该方法针对高效批次写入进行了优化。
 
@@ -135,9 +125,7 @@ block.AppendColumn("language", language);
 client.Insert("greetings", block);
 ```
 
-<div id="example-select">
-  ### 选择数据
-</div>
+### 选择数据 {#example-select}
 
 要执行返回数据的查询，请使用 `Select` 方法，并提供一个回调函数来处理结果。查询结果会以 `Block` 对象的形式返回，这反映了 ClickHouse 原生的列式数据表示。
 
@@ -154,9 +142,7 @@ client.Select(
     });
 ```
 
-<div id="supported-data-types">
-  ## 支持的数据类型
-</div>
+## 支持的数据类型 {#supported-data-types}
 
 * `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`
 * `UInt128`, `Int128`

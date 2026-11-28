@@ -264,8 +264,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     /// Only use parallel replicas if the Cluster variant of this table function exists
     /// (e.g. `s3Cluster` for `s3`). Table functions without a Cluster variant (e.g. `paimonLocal`)
     /// cannot distribute work via task iterators, so distributing would just read all data on every replica.
-    /// The change data feed of a Delta Lake table (`delta_lake_snapshot_start_version`) is read by
-    /// `ReadFromDeltaLakeTableChangesStep`, which does not distribute work either, so every replica would return all changes.
+    /// The data files of the change data feed of a Delta Lake table (`delta_lake_snapshot_start_version`) are not
+    /// distributed between replicas, because their selected rows and additional columns are not sent to replicas.
     const bool is_delta_lake_change_data_feed = configuration->isDataLakeConfiguration()
         && (query_settings[Setting::delta_lake_snapshot_start_version] != -1
             || query_settings[Setting::delta_lake_snapshot_end_version] != -1);
@@ -275,7 +275,10 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query && !context->isSQLSecurityOverriddenBody())
+    /// Stored columns accompany a table definition rather than an ad-hoc query, so creation and
+    /// replay must resolve to the same storage.
+    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query && cached_columns.empty()
+        && !context->isSQLSecurityOverriddenBody())
     {
         storage = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,

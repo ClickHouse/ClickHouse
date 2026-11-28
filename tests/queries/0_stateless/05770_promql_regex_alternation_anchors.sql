@@ -31,8 +31,9 @@ SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx, 'm{pod=~"\\
 
 SELECT '-- generated regular expressions';
 
--- A regex without an alternation at the top level keeps its leading literal, so the primary key on `metric_name`
--- can filter by its fixed prefix (`extractFixedPrefixFromRegularExpression` stops at a leading group).
+-- A regex of a matcher is passed to `fullMatch` as is: the anchoring happens inside the function,
+-- in a way that keeps the leading literal visible to `extractFixedPrefixFromRegularExpression`,
+-- so the primary key on `metric_name` can filter by the fixed prefix of the regex.
 SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"^(node_foo|node_bar)$"}', 0, 2000, 'timestamp_and_value') SETTINGS log_comment = 'promql_anchor_1';
 SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"m.*"}', 0, 2000, 'timestamp_and_value') SETTINGS log_comment = 'promql_anchor_2';
 SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"zzz|m.*"}', 0, 2000, 'timestamp_and_value') SETTINGS log_comment = 'promql_anchor_3';
@@ -40,7 +41,7 @@ SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"\\\\Qm"}', 0, 2000, 'tim
 SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"zzz|\\\\Qm"}', 0, 2000, 'timestamp_and_value') SETTINGS log_comment = 'promql_anchor_5';
 
 SYSTEM FLUSH LOGS query_log, text_log;
-SELECT q.log_comment, extract(t.message, 'match\\(metric_name, (\'[^\']*\')\\)')
+SELECT q.log_comment, extract(t.message, 'fullMatch\\(metric_name, (\'[^\']*\')\\)')
 FROM system.text_log AS t
 INNER JOIN
 (

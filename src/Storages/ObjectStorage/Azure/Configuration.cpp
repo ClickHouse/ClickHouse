@@ -14,6 +14,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Formats/FormatFactory.h>
+#include <IO/parseURI.h>
 #include <azure/storage/blobs.hpp>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -78,7 +79,7 @@ namespace ErrorCodes
 
 void StorageAzureConfiguration::check(ContextPtr context)
 {
-    auto url = Poco::URI(connection_params.getConnectionURLWithoutQuery());
+    auto url = parseURI(connection_params.getConnectionURLWithoutQuery());
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url);
     StorageObjectStorageConfiguration::check(context);
 }

@@ -142,7 +142,7 @@ GRANT SELECT(foo) ON db.table* TO john -- wrong
 يظهر أدناه التسلسل الهرمي للامتيازات في ClickHouse:
 
 * [`ALL`](#all)
-  * [`إدارة الوصول`](#access-management)
+  * [`ACCESS MANAGEMENT`](#access-management)
     * `ALLOW SQL SECURITY NONE`
     * `ALTER QUOTA`
     * `ALTER ROLE`
@@ -167,6 +167,15 @@ GRANT SELECT(foo) ON db.table* TO john -- wrong
       * `SHOW ROW POLICIES`
       * `SHOW SETTINGS PROFILES`
       * `SHOW USERS`
+  * [`AI FUNCTIONS`](#ai-functions)
+    * `aiClassify`
+    * `aiEmbed`
+    * `aiExtract`
+    * `aiFilter`
+    * `aiGenerate`
+    * `aiRedact`
+    * `aiSimilarity`
+    * `aiTranslate`
   * [`ALTER`](#alter)
     * `ALTER DATABASE`
       * `ALTER DATABASE SETTINGS`
@@ -218,20 +227,25 @@ GRANT SELECT(foo) ON db.table* TO john -- wrong
     * `CREATE DATABASE`
     * `CREATE DICTIONARY`
     * `CREATE FUNCTION`
-    * `CREATE RESOURCE`
     * `CREATE TABLE`
     * `CREATE VIEW`
-    * `CREATE WORKLOAD`
+  * `CREATE RESOURCE`
+  * `CREATE WORKLOAD`
   * [`dictGet`](#dictget)
   * [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
   * [`DROP`](#drop)
     * `DROP DATABASE`
     * `DROP DICTIONARY`
     * `DROP FUNCTION`
-    * `DROP RESOURCE`
     * `DROP TABLE`
     * `DROP VIEW`
-    * `DROP WORKLOAD`
+  * `DROP RESOURCE`
+  * `DROP WORKLOAD`
+  * `HANDLER ADMIN`
+    * `ALTER HANDLER`
+    * `CREATE HANDLER`
+    * `DROP HANDLER`
+    * `SHOW HANDLERS`
   * [`INSERT`](#insert)
   * [`INTROSPECTION`](#introspection)
     * `addressToLine`
@@ -635,6 +649,25 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
   * `addressToSymbol`. المستوى: `GLOBAL`
   * `demangle`. المستوى: `GLOBAL`
 
+### AI FUNCTIONS {#ai-functions}
+
+يسمح باستخدام [دوال الذكاء الاصطناعي](/ar/reference/functions/regular-functions/ai-functions). ويتطلب استدعاء أي دالة ذكاء اصطناعي كذلك امتلاك امتياز `NAMED COLLECTION` على بيانات الاعتماد المحددة.
+
+* `AI FUNCTIONS`. المستوى: `GROUP`
+  * `aiClassify`. المستوى: `GLOBAL`
+  * `aiEmbed`. المستوى: `GLOBAL`
+  * `aiExtract`. المستوى: `GLOBAL`
+  * `aiFilter`. المستوى: `GLOBAL`
+  * `aiGenerate`. المستوى: `GLOBAL`
+  * `aiRedact`. المستوى: `GLOBAL`
+  * `aiSimilarity`. المستوى: `GLOBAL`
+  * `aiTranslate`. المستوى: `GLOBAL`
+
+أمثلة:
+
+* `GRANT AI FUNCTIONS ON *.* TO john`
+* `GRANT aiGenerate, aiClassify ON *.* TO john`
+
 ### المصادر {#sources}
 
 يتيح استخدام مصادر البيانات الخارجية. ينطبق على [محركات قواعد البيانات](/ar/reference/engines/database-engines/index) و[محركات الجداول](/ar/reference/engines/table-engines/index) و[دوال الجداول](/ar/reference/functions/table-functions/index) المعتمدة على مصدر.
@@ -730,7 +763,7 @@ GRANT READ ON S3('s3://bar/.*') TO john
   ```
 </Warning>
 
-**إعادة المنح باستخدام `GRANT OPTION`:**
+**إعادة المنح باستخدام GRANT OPTION:**
 
 إذا كان المنح الأصلي يتضمن `WITH GRANT OPTION`، فيمكن إعادة منحه باستخدام `GRANT CURRENT GRANTS`:
 
@@ -742,9 +775,20 @@ GRANT READ ON S3('s3://foo/.*') TO john WITH GRANT OPTION
 GRANT CURRENT GRANTS(READ ON S3) TO alice
 ```
 
+**سحب الصلاحيات:**
+
+```sql
+-- Revokes only this filter, other filters on S3 are kept
+REVOKE READ ON S3('s3://foo/.*') FROM john
+
+-- Revokes READ on S3, including all filters
+REVOKE READ ON S3 FROM john
+```
+
 **قيود مهمة:**
 
-* **لا يُسمح بإلغاء الصلاحيات جزئيًا:** لا يمكنك إلغاء جزء من نمط التصفية الممنوح. يجب إلغاء المنح بالكامل ثم منحها من جديد باستخدام أنماط جديدة عند الحاجة.
+* **تُقارَن عوامل التصفية بوصفها سلاسل نصية:** لا يزيل `REVOKE` إلا عامل التصفية المطابق تمامًا لعامل التصفية الممنوح. فسحب الصلاحية على `S3('s3://foo/bar/.*')` يُطلق استثناءً بدلًا من تضييق نطاق المنح على `S3('s3://foo/.*')`.
+* **لا يُسمح بسحب الصلاحيات جزئيًا:** لا يمكنك سحب الصلاحيات عن جزء من نمط التصفية الممنوح. يجب سحب صلاحيات المنح بالكامل ثم منحها من جديد باستخدام أنماط جديدة عند الحاجة.
 * **لا يُسمح بمنحٍ باستخدام أحرف البدل فقط:** لا يمكنك استخدام `GRANT READ ON *('regexp')` أو أنماط مشابهة تعتمد على أحرف البدل فقط. يجب تحديد `source` بعينه.
 
 ### dictGet {#dictget}

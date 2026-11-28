@@ -1,4 +1,5 @@
 -- Tags: no-parallel-replicas
+-- Random settings limits: index_granularity_bytes=(100000, None)
 -- optimize_aggregators_of_group_by_keys must eliminate min/max/any/anyLast of a LowCardinality
 -- GROUP BY key just as for a plain key, so a HAVING predicate on the key pushes down to storage
 -- and uses skip indexes. See https://github.com/ClickHouse/ClickHouse/issues/110041

@@ -642,8 +642,9 @@ static CharSet analyzeFirst(std::vector<Op> & ops, const CharSet & follow, int &
     std::vector<CharSet> rest_first(n + 1);
     rest_first[n] = follow;
 
-    for (size_t i = n; i-- > 0;)
+    for (size_t i = n; i > 0;)
     {
+        --i;
         Op & op = ops[i];
         const CharSet & after = rest_first[i + 1];
         switch (op.kind)

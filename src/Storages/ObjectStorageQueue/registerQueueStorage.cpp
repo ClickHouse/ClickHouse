@@ -9,6 +9,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/FormatFactory.h>
+#include <IO/parseURI.h>
 #include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/ObjectStorageQueue/AzureQueue_fwd.h>
@@ -80,7 +81,7 @@ ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageS3Configurat
 ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageAzureConfiguration & configuration, const ContextPtr &)
 {
     String endpoint = configuration.getConnectionURLWithoutQuery();
-    const Poco::URI uri(endpoint);
+    const Poco::URI uri = parseURI(endpoint);
     if (uri.getScheme() != "http" && uri.getScheme() != "https")
         return {};
     return {configuration.getTypeName(), std::move(endpoint), configuration.getContainer(), configuration.getRawPath().path};

@@ -48,6 +48,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/parseURI.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Credentials.h>
 #include <IO/S3Settings.h>
@@ -204,7 +205,7 @@ GlueCatalog::GlueCatalog(
             credentials.SetAWSSecretKey("testing");
         }
 
-        Poco::URI uri(endpoint);
+        Poco::URI uri = DB::parseURI(endpoint);
         if (uri.getScheme() == "http")
             poco_config.scheme = Aws::Http::Scheme::HTTP;
     }

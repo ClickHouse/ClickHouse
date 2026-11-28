@@ -195,13 +195,13 @@ SETTINGS iceberg_timestamp_ms = 1714636800000
 
 ### Delta Lake {#delta-lake-settings}
 
-버전 25.6부터 ClickHouse는 Delta Lake Rust 커널을 통해 S3 및 GCS의 Delta Lake를 읽습니다. 이 설정의 이름은 버전 26.8 이상에서는 [`allow_delta_kernel_rs`](/ko/reference/settings/session-settings/allow#allow_delta_kernel_rs)이며, 버전 25.5부터 26.7까지는 `allow_experimental_delta_kernel_rs`입니다. Azure Blob Storage에서는 커널이 비활성화되어 있으므로 legacy reader와 함께 [deltaLakeAzure()](/ko/reference/functions/table-functions/deltalake)를 사용하십시오. 커널을 사용하지 않으면 파티션 프루닝, 변경 데이터 피드, 스냅샷 버전 읽기는 지원되지 않습니다.
+ClickHouse는 Delta Lake Rust 커널(`delta-kernel-rs`)을 사용하여 Delta Lake를 읽습니다. 버전 26.11부터는 이 커널이 유일한 Delta Lake 리더이므로, 이 커널을 선택하는 데 사용하던 설정은 더 이상 사용되지 않습니다.
 
 #### Delta Kernel {#delta-kernel}
 
-파티션 프루닝, 변경 데이터 피드, 스냅샷 버전 읽기를 사용하려면 Delta kernel 설정을 활성화해야 합니다. 25.5부터는 S3 및 GCS에서 기본적으로 활성화됩니다. 명시적으로 활성화할 때는 ClickHouse 버전에 맞는 이름을 사용하십시오.
+26.11 이전 버전에서는 파티션 프루닝, 변경 데이터 피드, 스냅샷 버전 읽기를 사용하려면 Delta kernel 설정을 활성화해야 합니다. 25.5부터는 S3 및 GCS에서 기본적으로 활성화됩니다. 커널을 사용하지 않으면 ClickHouse는 이러한 기능을 지원하지 않는 레거시 리더를 사용합니다. 명시적으로 활성화할 때는 ClickHouse 버전에 맞는 이름을 사용하십시오.
 
-버전 26.8 이상:
+26.8부터 26.10까지의 버전:
 
 ```sql
 SET allow_delta_kernel_rs = 1;

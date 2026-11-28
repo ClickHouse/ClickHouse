@@ -3,8 +3,8 @@
 #include <Backups/BackupIO_Disk.h>
 #include <Backups/BackupIO_File.h>
 #include <Backups/BackupImpl.h>
+#include <Backups/BackupLocatorArchive.h>
 #include <Backups/BackupSourceAccess.h>
-#include <Core/Settings.h>
 #include <Disks/IDisk.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
@@ -21,12 +21,6 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SUPPORT_IS_DISABLED;
-}
-
-namespace Setting
-{
-extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
 }
 
 
@@ -203,37 +197,21 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         const String & engine_name = params.backup_info.backup_engine_name;
         auto location = resolveLocalBackupLocation(params.backup_info, params.context);
 
-        BackupImpl::ArchiveParams archive_params;
-        if (!location.archive_name.empty())
+        /// A `Disk` destination can be backed by object storage (e.g. an `s3`-typed disk). In that case a zip
+        /// archive is just as problematic as a direct `S3(...)`/`AzureBlobStorage(...)` destination, because zip
+        /// requires seeking to read its central directory and every seek turns into a separate HTTP request.
+        /// Reject it here too, so the seek-heavy path is not reachable through `BackupReaderDisk`/`BackupWriterDisk`.
+        if (location.disk && hasSupportedZipExtension(location.archive_name))
         {
-            /// A `Disk` destination can be backed by object storage (e.g. an `s3`-typed disk). In that case a zip
-            /// archive is just as problematic as a direct `S3(...)`/`AzureBlobStorage(...)` destination, because zip
-            /// requires seeking to read its central directory and every seek turns into a separate HTTP request.
-            /// Reject it here too, so the seek-heavy path is not reachable through `BackupReaderDisk`/`BackupWriterDisk`.
-            if (location.disk && hasSupportedZipExtension(location.archive_name))
-            {
-                const auto object_storage_type = location.disk->getDataSourceDescription().object_storage_type;
-                if ((object_storage_type == ObjectStorageType::S3) || (object_storage_type == ObjectStorageType::Azure))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Zip archive format is not supported for backups on disk '{}' because it is backed by object storage, "
-                        "which does not support seeking efficiently (zip requires seeking). "
-                        "Use tar.gz or other tar-based formats instead", location.disk->getName());
-            }
-
-            if (params.is_internal_backup)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
-
-            archive_params.archive_name = location.archive_name;
-            archive_params.compression_method = params.compression_method;
-            archive_params.compression_level = params.compression_level;
-            archive_params.password = params.password;
-            archive_params.adaptive_buffer_max_size = params.context->getSettingsRef()[Setting::archive_adaptive_buffer_max_size_bytes];
+            const auto object_storage_type = location.disk->getDataSourceDescription().object_storage_type;
+            if ((object_storage_type == ObjectStorageType::S3) || (object_storage_type == ObjectStorageType::Azure))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Zip archive format is not supported for backups on disk '{}' because it is backed by object storage, "
+                    "which does not support seeking efficiently (zip requires seeking). "
+                    "Use tar.gz or other tar-based formats instead", location.disk->getName());
         }
-        else
-        {
-            if (!params.password.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password is not applicable, backup cannot be encrypted");
-        }
+
+        auto archive_params = makeBackupArchiveParams(params, location.archive_name);
 
         if (params.open_mode == IBackup::OpenMode::READ)
         {
