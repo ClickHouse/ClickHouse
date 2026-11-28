@@ -828,6 +828,18 @@ public:
     }
 };
 
+/// A declared time zone belongs to the value, so it wins; without one the value is read in the
+/// reading session's zone. Resolving it per use rather than holding it is what lets `DynamicNode`
+/// reuse a cached node in a later query.
+const DateLUTImpl & getTimeZoneToParseIn(const TimezoneMixin & type_time_zone, const FormatSettings & format_settings)
+{
+    /// Settings built by hand, as in internal casts, carry no zone; the type's own then stands.
+    if (!type_time_zone.hasExplicitTimeZone() && format_settings.session_time_zone)
+        return *format_settings.session_time_zone;
+
+    return type_time_zone.getTimeZone();
+}
+
 template <typename JSONParser>
 class DateTimeNode : public JSONExtractTreeNode<JSONParser>, public TimezoneMixin
 {
@@ -858,8 +870,8 @@ public:
             /// With schema-inference parsing accept a string only if it would be inferred as a date time on
             /// its own; the strict parser rejects numeric and fractional strings and out-of-range values.
             const bool parsed = insert_settings.parse_date_time_strings_as_schema_inference
-                ? tryInferDateTimeFromString(data, value, format_settings, time_zone, utc_time_zone)
-                : tryParse(value, data, format_settings.date_time_input_format, saturate);
+                ? tryInferDateTimeFromString(data, value, format_settings, getTimeZoneToParseIn(*this, format_settings), utc_time_zone)
+                : tryParse(value, data, format_settings);
             if (!parsed)
             {
                 error = fmt::format("cannot parse DateTime value here: {}", data);
@@ -923,22 +935,24 @@ public:
         return true;
     }
 
-    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format, bool saturate_on_overflow) const
+    bool tryParse(time_t & value, std::string_view data, const FormatSettings & format_settings) const
     {
+        const bool saturate_on_overflow = !format_settings.throwOnDateTimeOverflow();
         const auto overflow = saturate_on_overflow ? DateTimeOverflow::Saturate : DateTimeOverflow::Report;
         ReadBufferFromMemory buf(data);
-        switch (date_time_input_format)
+        const auto & parse_time_zone = getTimeZoneToParseIn(*this, format_settings);
+        switch (format_settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadDateTimeText(value, buf, time_zone, nullptr, nullptr, saturate_on_overflow) && buf.eof())
+                if (tryReadDateTimeText(value, buf, parse_time_zone, nullptr, nullptr, saturate_on_overflow) && buf.eof())
                     return true;
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffort:
-                if (tryParseDateTimeBestEffort(value, buf, time_zone, utc_time_zone, overflow) && buf.eof())
+                if (tryParseDateTimeBestEffort(value, buf, parse_time_zone, utc_time_zone, overflow) && buf.eof())
                     return true;
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                if (tryParseDateTimeBestEffortUS(value, buf, time_zone, utc_time_zone, overflow) && buf.eof())
+                if (tryParseDateTimeBestEffortUS(value, buf, parse_time_zone, utc_time_zone, overflow) && buf.eof())
                     return true;
                 break;
         }
@@ -1131,8 +1145,8 @@ public:
             /// Accept a string only if it would be inferred as a date time on its own; the strict parser
             /// rejects numeric and fractional strings and out-of-range values.
             const bool parsed = insert_settings.parse_date_time_strings_as_schema_inference
-                ? tryInferDateTime64FromString(data, value, format_settings, time_zone, utc_time_zone, scale)
-                : tryParse(value, data, format_settings.date_time_input_format);
+                ? tryInferDateTime64FromString(data, value, format_settings, getTimeZoneToParseIn(*this, format_settings), utc_time_zone, scale)
+                : tryParse(value, data, format_settings);
             if (!parsed)
             {
                 error = fmt::format("cannot parse DateTime64 value here: {}", data);
@@ -1204,21 +1218,22 @@ public:
         return true;
     }
 
-    bool tryParse(DateTime64 & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
+    bool tryParse(DateTime64 & value, std::string_view data, const FormatSettings & format_settings) const
     {
         ReadBufferFromMemory buf(data);
-        switch (date_time_input_format)
+        const auto & parse_time_zone = getTimeZoneToParseIn(*this, format_settings);
+        switch (format_settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadDateTime64Text(value, scale, buf, time_zone) && buf.eof())
+                if (tryReadDateTime64Text(value, scale, buf, parse_time_zone) && buf.eof())
                     return true;
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffort:
-                if (tryParseDateTime64BestEffort(value, scale, buf, time_zone, utc_time_zone) && buf.eof())
+                if (tryParseDateTime64BestEffort(value, scale, buf, parse_time_zone, utc_time_zone) && buf.eof())
                     return true;
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                if (tryParseDateTime64BestEffortUS(value, scale, buf, time_zone, utc_time_zone) && buf.eof())
+                if (tryParseDateTime64BestEffortUS(value, scale, buf, parse_time_zone, utc_time_zone) && buf.eof())
                     return true;
                 break;
         }
@@ -2098,7 +2113,7 @@ public:
                     if (auto it = variant_info.variant_name_to_discriminator.find("DateTime"); it != variant_info.variant_name_to_discriminator.end())
                     {
                         time_t value = 0;
-                        if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
+                        if (tryInferDateTimeFromString(data, value, format_settings, timeZoneForSchemaInference(format_settings), utc_time_zone_for_schema_inference))
                         {
                             insertValueIntoDynamicVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
                             return true;
@@ -2108,7 +2123,7 @@ public:
                     if (auto it = variant_info.variant_name_to_discriminator.find("DateTime64(9)"); it != variant_info.variant_name_to_discriminator.end())
                     {
                         DateTime64 value;
-                        if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
+                        if (tryInferDateTime64FromString(data, value, format_settings, timeZoneForSchemaInference(format_settings), utc_time_zone_for_schema_inference))
                         {
                             insertValueIntoDynamicVariant<ColumnDateTime64, DateTime64>(variant_info, variant_column, value, "DateTime64(9)");
                             return true;
@@ -2255,7 +2270,7 @@ private:
             {
                 auto data = element.getString();
 
-                if (auto type = tryInferDateOrDateTimeFromString(data, format_settings))
+                if (auto type = tryInferDateOrDateTimeFromString(data, format_settings, timeZoneForSchemaInference(format_settings)))
                     return type;
 
                 if (format_settings.json.try_infer_numbers_from_strings)
@@ -2322,6 +2337,12 @@ private:
     /// Time zone references for Date/DateTime inference from strings.
     const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
+
+    /// Settings that carry no zone keep the one captured when the node was built.
+    const DateLUTImpl & timeZoneForSchemaInference(const FormatSettings & format_settings) const
+    {
+        return format_settings.session_time_zone ? *format_settings.session_time_zone : time_zone_for_schema_inference;
+    }
 
     /// Avoid building JSONExtractTreeNode for the same data types on each row by using cache.
     mutable std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> json_extract_nodes_cache;
@@ -2878,7 +2899,7 @@ private:
                 if (format_settings.try_infer_dates && tryInferDateFromString(data, scalar.date))
                     scalar.kind = ScalarKind::Date;
                 else if (format_settings.try_infer_datetimes && tryInferDateTimeOrDateTime64FromString(
-                             data, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference,
+                             data, format_settings, timeZoneForSchemaInference(format_settings), utc_time_zone_for_schema_inference,
                              is_datetime64, scalar.datetime, scalar.datetime64))
                     scalar.kind = is_datetime64 ? ScalarKind::DateTime64 : ScalarKind::DateTime;
                 else
@@ -3019,6 +3040,12 @@ private:
 
     const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
+
+    /// Settings that carry no zone keep the one captured when the node was built.
+    const DateLUTImpl & timeZoneForSchemaInference(const FormatSettings & format_settings) const
+    {
+        return format_settings.session_time_zone ? *format_settings.session_time_zone : time_zone_for_schema_inference;
+    }
 
     enum class JSONElementType
     {

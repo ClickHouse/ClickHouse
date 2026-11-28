@@ -11,6 +11,8 @@
 namespace DB
 {
 
+template <typename> struct ServerOwnedObjectAllocator;
+
 /** Mark is the position in the compressed file. The compressed file consists of adjacent compressed blocks.
   * Mark is a tuple - the offset in the file to the start of the compressed block, the offset in the decompressed block to the start of the data.
   */
@@ -137,7 +139,8 @@ public:
     };
 
 private:
-    /// Private constructor used by Builder::finish.
+    /// Private constructor used by Builder::finish, through `makeServerOwned`.
+    template <typename> friend struct ServerOwnedObjectAllocator;
     MarksInCompressedFile(
         size_t num_marks_,
         PODArray<BlockInfo, 4096, JemallocCacheAllocator> && blocks_,

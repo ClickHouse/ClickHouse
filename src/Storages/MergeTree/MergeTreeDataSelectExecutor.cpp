@@ -320,10 +320,9 @@ bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
         for (size_t part_index = window_begin; part_index < window_end; ++part_index)
         {
             pool->scheduleOrThrowOnError(
-                [&, part_index, slot = part_index - window_begin, thread_group = CurrentThread::getGroup(),
+                attachedJob(ThreadName::MERGETREE_INDEX, [&, part_index, slot = part_index - window_begin,
                  component_name = Coordination::getCurrentComponent()]
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
                     auto local_component_guard = Coordination::setCurrentComponent(component_name);
                     try
                     {
@@ -333,7 +332,7 @@ bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
                     {
                         window_exceptions[slot] = std::current_exception();
                     }
-                });
+                }));
         }
 
         pool->wait();
@@ -1851,9 +1850,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             for (size_t job = 0; job < num_jobs; ++job)
             {
                 pool.scheduleOrThrowOnError(
-                    [&, thread_group = CurrentThread::getGroup(), component_name = Coordination::getCurrentComponent()]
+                    attachedJob(ThreadName::MERGETREE_INDEX, [&, component_name = Coordination::getCurrentComponent()]
                     {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
                         /// ThreadGroupSwitcher does not carry the Keeper component, so propagate it
                         /// explicitly: skip-index analysis below may read from a Keeper-backed disk.
                         auto local_component_guard = Coordination::setCurrentComponent(component_name);
@@ -1867,7 +1865,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                             process_part(part_index);
                         }
-                    });
+                    }));
             }
 
             pool.wait();
@@ -2768,6 +2766,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         exact_ranges = nullptr;
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
+
+    /// Neither are there exact ranges when a nested `NULL` or `NaN` of a key value costs every range its
+    /// `can_be_false` claim. The search would otherwise trim the boundary marks of a continuous range and
+    /// then find the interior marks not exact either, which looks like an inconsistent `KeyCondition`.
+    if (exact_ranges && key_condition.mayClaimNestedNullOrNaN(primary_key.data_types))
+        exact_ranges = nullptr;
+
     /// The columns are unnamed, because `KeyCondition` names the function results it caches in this block.
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
 

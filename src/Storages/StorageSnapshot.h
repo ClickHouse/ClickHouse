@@ -70,7 +70,8 @@ struct StorageSnapshot
 
     /// Verify that all the requested names are in the table and are set correctly:
     /// list of names is not empty and the names do not repeat.
-    void check(const Names & column_names) const;
+    /// The error lists the table's columns only with `list_columns_in_error`.
+    void check(const Names & column_names, bool list_columns_in_error = true) const;
 
     /// Get default expression for a column.
     /// Takes into account physical and virtual columns.
