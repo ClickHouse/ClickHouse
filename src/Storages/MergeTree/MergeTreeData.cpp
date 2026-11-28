@@ -7954,13 +7954,21 @@ bool MergeTreeData::canUseParquetPartFormat(
     if (inherited_codec)
         default_codecs.push_back(inherited_codec);
 
+    /// `FirstApplicable` selects a codec for the data type of every substream, and an alternative with an encryption
+    /// codec may be selected only for some of the types (e.g. `FirstApplicable(Multiple(Delta, AES_128_GCM_SIV), LZ4)`
+    /// encrypts the integers, but not the strings). A codec resolved without a data type tells only about the
+    /// alternative that applies to any type, so all the alternatives are inspected: the format is not used
+    /// if any of them encrypts.
     for (const auto & default_codec : default_codecs)
-        if (default_codec->isEncryption())
+        if (default_codec->isEncryption() || codec_factory.hasEncryptionCodecInAnyAlternative(default_codec->getFullCodecDescription()))
             return false;
 
     auto is_allowed_codec = [&](const ASTPtr & codec)
     {
         if (tryExtractQuantizedCodecParams(codec))
+            return false;
+
+        if (codec_factory.hasEncryptionCodecInAnyAlternative(codec))
             return false;
 
         /// Only the generic and encryption codecs matter here, and the type-specific codecs apply to the values

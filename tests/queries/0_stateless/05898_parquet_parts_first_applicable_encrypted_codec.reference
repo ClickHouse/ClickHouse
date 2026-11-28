@@ -1,0 +1,18 @@
+tuple	1
+(42)
+primitive	1
+1	a
+default	1
+1	(2)	a
+default in column	1
+1	(2)
+subcolumn	1
+1	(2,'a')
+nested	1
+1	(2)
+recompress	1
+1	2020-01-01	(2)
+projection	1
+1	(2)
+not encrypted	Parquet
+1	(2)	a

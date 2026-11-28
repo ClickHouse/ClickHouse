@@ -98,6 +98,18 @@ void CompressionCodecFactory::checkCodecChainIsNotColumnLevelOnly(const ASTPtr &
     forEachCodecFamilyNameInChain(ast, [this](const String & family_name) { checkCodecIsNotColumnLevelOnly(family_name); });
 }
 
+bool CompressionCodecFactory::hasEncryptionCodecInAnyAlternative(const ASTPtr & ast) const
+{
+    bool res = false;
+    forEachCodecFamilyNameInChain(ast, [&](const String & family_name)
+    {
+        /// `Default` is not a codec family.
+        if (const String * canonical_family_name = tryGetCanonicalFamilyName(family_name))
+            res |= family_name_with_properties.at(*canonical_family_name).is_encryption;
+    });
+    return res;
+}
+
 void CompressionCodecFactory::checkCodecChainIsNotDeclarative(const ASTPtr & ast) const
 {
     forEachCodecFamilyNameInChain(ast, [this](const String & family_name)

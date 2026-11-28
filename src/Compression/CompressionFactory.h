@@ -44,6 +44,10 @@ struct CompressionCodecFamilyProperties
     /// interpret the values and so applies to any type (e.g. `ZSTD`). Used by `FirstApplicable` to choose among
     /// alternatives: the choice must not depend on catching the exception the creator throws for a wrong type.
     std::function<bool(const IDataType & type)> is_applicable_to_type = {};
+
+    /// The codec encrypts the data (e.g. `AES_128_GCM_SIV`), so the codecs made by the family are `isEncryption`.
+    /// It tells that a codec description may encrypt without resolving `FirstApplicable` in it for a data type.
+    bool is_encryption = false;
 };
 
 struct CodecValidationSettings
@@ -134,6 +138,11 @@ public:
     /// Throws if any codec of the chain in `ast` is declarative (see `CompressionCodecFamilyProperties`).
     /// For a caller that applies a codec chain directly to bytes, e.g. `estimateCompressionRatio`.
     void checkCodecChainIsNotDeclarative(const ASTPtr & ast) const;
+
+    /// True if the codec chain `ast` (a `CODEC(...)` function) has an encryption codec, including in any alternative
+    /// of `FirstApplicable`, whichever data type it is selected for. So it is true if the data of at least one
+    /// substream of a column with this codec may be encrypted. `Default` in the chain is not looked into.
+    [[nodiscard]] bool hasEncryptionCodecInAnyAlternative(const ASTPtr & ast) const;
 
     /// Names of the dedicated settings gating registered codec families.
     [[nodiscard]] Strings getGateSettingNames() const;
