@@ -220,7 +220,8 @@ private:
         ContextPtr local_context,
         bool commit_once_processed,
         bool is_direct_select,
-        size_t max_processed_files_override = 0);
+        size_t max_processed_files_override = 0,
+        std::atomic_bool * iterator_consumed = nullptr);
 
     /// Get number of dependent materialized views.
     size_t getDependencies() const;
@@ -229,7 +230,7 @@ private:
     /// and pushing result to dependent tables.
     void threadFunc(size_t streaming_tasks_index);
     /// A subset of logic executed by threadFunc.
-    bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
+    bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch, std::atomic_bool & iterator_consumed);
     /// Remove the per-table gauges of the table with this name from the dimensional metrics,
     /// and its watermarks from `metadata` (which can be null).
     static void removeGaugeMetrics(const StorageID & storage_id, ObjectStorageQueueMetadata * metadata);
