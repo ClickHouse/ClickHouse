@@ -159,7 +159,9 @@ namespace
         Names result;
 #if USE_AVRO
         const auto format = Poco::toLower(format_name);
-        if ((format != "parquet" && format != "orc" && format != "avro") || !dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
+        const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(&object_info);
+        /// Without `first_row_id` the row lineage of every row is NULL, also where the data file stores it.
+        if ((format != "parquet" && format != "orc" && format != "avro") || !iceberg_info || !iceberg_info->info.first_row_id)
             return result;
 
         for (const auto * name : {"_row_id", "_last_updated_sequence_number"})
