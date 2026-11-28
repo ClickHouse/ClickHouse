@@ -5,6 +5,7 @@
 #include <Common/setThreadName.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
+#include <base/scope_guard.h>
 
 #include <array>
 #include <atomic>
@@ -14,8 +15,10 @@
 #include <future>
 #include <latch>
 #include <memory>
+#include <optional>
 #include <random>
 #include <thread>
+#include <utility>
 
 
 using namespace DB;
@@ -117,6 +120,87 @@ private:
     Priority priority;
 };
 
+class BlockingExecutableTask : public IExecutableTask
+{
+public:
+    BlockingExecutableTask(std::latch & started_, std::latch & finish_, std::latch & destroyed_)
+        : started(started_)
+        , finish(finish_)
+        , destroyed(destroyed_)
+    {
+    }
+
+    ~BlockingExecutableTask() override { destroyed.count_down(); }
+
+    bool executeStep() override
+    {
+        started.count_down();
+        finish.wait();
+        return false;
+    }
+
+    void cancel() noexcept override { }
+    [[nodiscard]] StorageID getStorageID() const override { return {"test", "blocking"}; }
+    void onCompleted() override { }
+    [[nodiscard]] Priority getPriority() const override { return {}; }
+    [[nodiscard]] String getQueryId() const override { return "test::blocking"; }
+
+private:
+    std::latch & started;
+    std::latch & finish;
+    std::latch & destroyed;
+};
+
+
+class DestructionTrackingExecutableTask : public IExecutableTask
+{
+public:
+    explicit DestructionTrackingExecutableTask(std::latch & destroyed_)
+        : destroyed(destroyed_)
+    {
+    }
+
+    ~DestructionTrackingExecutableTask() override { destroyed.count_down(); }
+
+    bool executeStep() override { return false; }
+    void cancel() noexcept override { }
+    [[nodiscard]] StorageID getStorageID() const override { return {"test", "destruction_tracking"}; }
+    void onCompleted() override { }
+    [[nodiscard]] Priority getPriority() const override { return {}; }
+    [[nodiscard]] String getQueryId() const override { return "test::destruction_tracking"; }
+
+private:
+    std::latch & destroyed;
+};
+
+
+class BlockingDestructorTask : public IExecutableTask
+{
+public:
+    BlockingDestructorTask(std::latch & destruction_started_, std::latch & finish_destruction_)
+        : destruction_started(destruction_started_)
+        , finish_destruction(finish_destruction_)
+    {
+    }
+
+    ~BlockingDestructorTask() override
+    {
+        destruction_started.count_down();
+        finish_destruction.wait();
+    }
+
+    bool executeStep() override { return false; }
+    void cancel() noexcept override { }
+    [[nodiscard]] StorageID getStorageID() const override { return {"test", "blocking_destructor"}; }
+    void onCompleted() override { }
+    [[nodiscard]] Priority getPriority() const override { return {}; }
+    [[nodiscard]] String getQueryId() const override { return "test::blocking_destructor"; }
+
+private:
+    std::latch & destruction_started;
+    std::latch & finish_destruction;
+};
+
 
 TEST(Executor, Simple)
 {
@@ -187,6 +271,303 @@ TEST(Executor, ReserveTaskSlotsWaitsForAvailableSlot)
     executor->releaseTaskSlots(1);
     ASSERT_EQ(reserved_slot.get(), 1);
     executor->releaseTaskSlots(1);
+    executor->wait();
+}
+
+
+TEST(Executor, SchedulingPauseWaitsForTaskDestruction)
+{
+    std::latch task_started(1);
+    std::latch finish_task(1);
+    std::latch task_destroyed(1);
+    std::latch scheduling_paused(1);
+    std::latch release_pause(1);
+    std::atomic_bool pause_succeeded = false;
+    bool task_released = false;
+    bool pause_released = false;
+    const auto release_task = [&]
+    {
+        if (!std::exchange(task_released, true))
+            finish_task.count_down();
+    };
+    const auto release_pause_thread = [&]
+    {
+        if (!std::exchange(pause_released, true))
+            release_pause.count_down();
+    };
+
+    auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>(
+        ThreadName::TEST_SCHEDULER,
+        1, // threads
+        1, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds);
+
+    std::future<bool> pause;
+    /// Unblock both threads on every exit path before `pause` and `executor` join them.
+    SCOPE_EXIT({
+        release_task();
+        release_pause_thread();
+    });
+
+    ASSERT_TRUE(executor->trySchedule(std::make_shared<BlockingExecutableTask>(task_started, finish_task, task_destroyed)));
+    task_started.wait();
+
+    pause = std::async(
+        std::launch::async,
+        [&]
+        {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            auto guard = executor->pauseScheduling();
+            if (!guard.waitForIdle(deadline))
+            {
+                scheduling_paused.count_down();
+                return false;
+            }
+
+            pause_succeeded = true;
+            scheduling_paused.count_down();
+            release_pause.wait();
+            return task_destroyed.try_wait();
+        });
+
+    EXPECT_EQ(pause.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+    release_task();
+    scheduling_paused.wait();
+
+    EXPECT_TRUE(pause_succeeded);
+    EXPECT_FALSE(executor->trySchedule(std::make_shared<LambdaExecutableTask>("while_paused", 1)));
+
+    release_pause_thread();
+    EXPECT_TRUE(pause.get());
+    EXPECT_TRUE(executor->trySchedule(std::make_shared<LambdaExecutableTask>("after_pause", 1)));
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    {
+        auto final_pause = executor->pauseScheduling();
+        ASSERT_TRUE(final_pause.waitForIdle(deadline));
+    }
+    executor->wait();
+}
+
+
+TEST(Executor, SchedulingCallerDoesNotRetainAcceptedTask)
+{
+    std::latch scheduling_caller_held(1);
+    std::latch release_scheduling_caller(1);
+    std::latch task_destroyed(1);
+    bool caller_released = false;
+    const auto release_caller = [&]
+    {
+        if (!std::exchange(caller_released, true))
+            release_scheduling_caller.count_down();
+    };
+
+    auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>(
+        ThreadName::TEST_SCHEDULER,
+        1, // threads
+        1, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds);
+
+    auto task_to_schedule = std::make_shared<DestructionTrackingExecutableTask>(task_destroyed);
+    std::weak_ptr<IExecutableTask> weak_task = task_to_schedule;
+    std::future<bool> scheduling_caller;
+    /// Unblock the scheduling caller on every exit path before `scheduling_caller` joins it.
+    SCOPE_EXIT({ release_caller(); });
+
+    scheduling_caller = std::async(
+        std::launch::async,
+        [&, owned_task = std::move(task_to_schedule)]() mutable
+        {
+            bool scheduled = false;
+            {
+                SCOPE_EXIT({ scheduling_caller_held.count_down(); });
+                scheduled = executor->trySchedule(std::move(owned_task));
+            }
+            release_scheduling_caller.wait();
+            return scheduled;
+        });
+
+    scheduling_caller_held.wait();
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    auto pause = executor->pauseScheduling();
+    const bool became_idle = pause.waitForIdle(deadline);
+    EXPECT_TRUE(became_idle);
+    EXPECT_TRUE(task_destroyed.try_wait());
+    EXPECT_TRUE(weak_task.expired());
+    EXPECT_EQ(scheduling_caller.wait_for(std::chrono::milliseconds(0)), std::future_status::timeout);
+
+    release_caller();
+    EXPECT_TRUE(scheduling_caller.get());
+    executor->wait();
+}
+
+
+using RoundRobinExecutor = MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
+
+/// Calls `release` at a varying offset from a paused `waitForIdle` running on another thread.
+/// Returns false if a wait slept until its deadline, i.e. missed the notification of a release.
+static bool idleWaitObservesEveryRelease(
+    RoundRobinExecutor & executor, const std::function<bool()> & prepare, const std::function<void()> & release)
+{
+    static constexpr size_t iterations = 100'000;
+    static constexpr size_t max_release_delay = 1024;
+
+    std::optional<RoundRobinExecutor::SchedulingPause> pause;
+    std::atomic<size_t> started = 0;
+    std::atomic<size_t> finished = 0;
+    std::atomic<bool> missed = false;
+    std::atomic<bool> stop = false;
+
+    std::thread waiter([&]
+    {
+        for (size_t i = 1;; ++i)
+        {
+            while (started.load() < i)
+                if (stop.load())
+                    return;
+
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            if (!pause->waitForIdle(deadline) || std::chrono::steady_clock::now() >= deadline)
+                missed = true;
+            finished.store(i);
+        }
+    });
+    SCOPE_EXIT({
+        stop = true;
+        waiter.join();
+    });
+
+    for (size_t i = 1; i <= iterations && !missed.load(); ++i)
+    {
+        if (!prepare())
+        {
+            ADD_FAILURE() << "Could not occupy a task slot before pausing";
+            break;
+        }
+
+        pause.emplace(executor.pauseScheduling());
+        started.store(i);
+        for (size_t delay = i % max_release_delay; delay; --delay)
+            __asm__ volatile("nop");
+
+        release();
+        while (finished.load() < i)
+            std::this_thread::yield();
+        pause.reset();
+    }
+
+    return !missed.load();
+}
+
+
+TEST(Executor, SchedulingPauseObservesReleasedTaskSlots)
+{
+    auto executor = std::make_shared<RoundRobinExecutor>(
+        ThreadName::TEST_SCHEDULER,
+        1, // threads
+        1, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds);
+
+    {
+        std::optional<RoundRobinExecutor::SchedulingPause> pause = executor->pauseScheduling();
+        const size_t granted_while_paused = executor->tryReserveTaskSlots(1);
+        EXPECT_EQ(granted_while_paused, 0);
+        executor->releaseTaskSlots(granted_while_paused);
+
+        std::future<size_t> reserved;
+        /// Resume scheduling on every exit path before `reserved` joins the blocked reservation.
+        SCOPE_EXIT({ pause.reset(); });
+
+        reserved = std::async(std::launch::async, [&] { return executor->reserveTaskSlots(1); });
+        EXPECT_EQ(reserved.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+        pause.reset();
+
+        const size_t granted = reserved.get();
+        EXPECT_EQ(granted, 1);
+        executor->releaseTaskSlots(granted);
+    }
+
+    EXPECT_TRUE(idleWaitObservesEveryRelease(
+        *executor, [&] { return executor->tryReserveTaskSlots(1) == 1; }, [&] { executor->releaseTaskSlots(1); }));
+    executor->wait();
+}
+
+
+TEST(Executor, SchedulingPauseObservesRemovedTasks)
+{
+    /// No workers, so the scheduled task stays pending until `removeTasksCorrespondingToStorage`.
+    auto executor = std::make_shared<RoundRobinExecutor>(
+        ThreadName::TEST_SCHEDULER,
+        0, // threads
+        1, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds);
+
+    EXPECT_TRUE(idleWaitObservesEveryRelease(
+        *executor,
+        [&] { return executor->trySchedule(std::make_shared<FakeExecutableTask>("removed")); },
+        [&] { executor->removeTasksCorrespondingToStorage({"test", "removed"}); }));
+    executor->wait();
+}
+
+
+TEST(Executor, SchedulingPauseWaitsForRemovedTaskDestruction)
+{
+    std::latch destruction_started(1);
+    std::latch finish_destruction(1);
+    bool destruction_released = false;
+    const auto release_destruction = [&]
+    {
+        if (!std::exchange(destruction_released, true))
+            finish_destruction.count_down();
+    };
+
+    /// No workers, so the task stays pending until `removeTasksCorrespondingToStorage` destroys it.
+    auto executor = std::make_shared<RoundRobinExecutor>(
+        ThreadName::TEST_SCHEDULER,
+        0, // threads
+        1, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds);
+
+    ASSERT_TRUE(executor->trySchedule(std::make_shared<BlockingDestructorTask>(destruction_started, finish_destruction)));
+    auto pause = executor->pauseScheduling();
+
+    std::future<void> remover;
+    /// Unblock the task destructor on every exit path before `remover` joins it.
+    SCOPE_EXIT({ release_destruction(); });
+
+    remover = std::async(std::launch::async, [&] { executor->removeTasksCorrespondingToStorage({"test", "blocking_destructor"}); });
+    destruction_started.wait();
+    EXPECT_FALSE(pause.waitForIdle(std::chrono::steady_clock::now() + std::chrono::milliseconds(100)));
+
+    release_destruction();
+    remover.get();
+    EXPECT_TRUE(pause.waitForIdle(std::chrono::steady_clock::now() + std::chrono::seconds(5)));
     executor->wait();
 }
 
