@@ -2,6 +2,7 @@
 #include <Formats/FormatSettings.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Processors/Transforms/FillingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -25,14 +26,59 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-static ITransformingStep::Traits getTraits()
+/// Fill values are computed in `Float64`, so a generated value of a narrower float key can round onto an original one.
+static bool fillValueMayRound(const Block & header, const String & column_name)
+{
+    const auto * column = header.findByName(column_name);
+    if (!column)
+        return true;
+    WhichDataType which(removeNullable(column->type));
+    return which.isFloat32() || which.isBFloat16();
+}
+
+/// A generated row defaults every key that is neither filled nor in the filling sorting prefix. Only such a key ahead of a
+/// filled key loses its order: past the last filled key, a generated row already differs from its neighbours on a filled key.
+/// A filled key whose generated value may round onto an original one does not separate the rows, so the prefix ends at it.
+static size_t preservedSortPrefixSize(
+    const Block & header, const SortDescription & sort_description, bool use_with_fill_by_sorting_prefix)
+{
+    size_t begin = 0;
+    if (use_with_fill_by_sorting_prefix)
+        while (begin < sort_description.size() && !sort_description[begin].with_fill)
+            ++begin;
+
+    size_t last_with_fill = begin;
+    for (size_t i = begin; i < sort_description.size(); ++i)
+        if (sort_description[i].with_fill)
+            last_with_fill = i;
+
+    for (size_t i = begin; i < sort_description.size(); ++i)
+    {
+        if (!sort_description[i].with_fill)
+        {
+            if (i < last_with_fill)
+                return i;
+        }
+        else if (fillValueMayRound(header, sort_description[i].column_name))
+            return i + 1;
+    }
+
+    return sort_description.size();
+}
+
+static bool sortingIsPreserved(const Block & header, const SortDescription & sort_description, bool use_with_fill_by_sorting_prefix)
+{
+    return preservedSortPrefixSize(header, sort_description, use_with_fill_by_sorting_prefix) == sort_description.size();
+}
+
+static ITransformingStep::Traits getTraits(bool preserves_sorting)
 {
     return ITransformingStep::Traits
     {
         {
             .returns_single_stream = true,
             .preserves_number_of_streams = true,
-            .preserves_sorting = true,
+            .preserves_sorting = preserves_sorting,
         },
         {
             .preserves_number_of_rows = false,
@@ -60,11 +106,19 @@ FillingStep::FillingStep(
     SortDescription sort_description_,
     InterpolateDescriptionPtr interpolate_description_,
     bool use_with_fill_by_sorting_prefix_)
-    : ITransformingStep(input_header_, std::make_shared<const Block>(FillingTransform::transformHeader(*input_header_, sort_description_)), getTraits())
+    : ITransformingStep(
+          input_header_,
+          std::make_shared<const Block>(FillingTransform::transformHeader(*input_header_, sort_description_)),
+          getTraits(sortingIsPreserved(*input_header_, sort_description_, use_with_fill_by_sorting_prefix_)))
     , sort_description(std::move(sort_description_))
     , interpolate_description(interpolate_description_)
     , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
 {
+}
+
+size_t FillingStep::getPreservedSortPrefixSize() const
+{
+    return preservedSortPrefixSize(*input_headers.front(), sort_description, use_with_fill_by_sorting_prefix);
 }
 
 void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -169,7 +223,7 @@ void FillingStep::serialize(Serialization & ctx) const
     /// from `actions` on the other side, so a stream cannot describe a fill that disagrees with its own DAG.
     /// The pairs are sorted because the map has no stable order and these bytes are also a plan cache key.
     /// Keys are unique, so ordering the pairs orders them by key.
-    std::vector<std::pair<std::string_view, std::string_view>> required_columns;
+    VectorWithMemoryTracking<std::pair<std::string_view, std::string_view>> required_columns;
     required_columns.reserve(interpolate_description->required_columns_map.size());
     for (const auto & [key, name_and_type] : interpolate_description->required_columns_map)
         required_columns.emplace_back(key, name_and_type.name);
@@ -217,6 +271,12 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
     {
         auto actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
 
+        /// `FillingTransform` executes the expression on a single row and copies row 0 of each result,
+        /// but `ARRAY JOIN` changes the number of rows (an empty array leaves none). The analyzer rejects
+        /// it in `INTERPOLATE`, so a plan containing it did not come from a planner.
+        if (actions.hasArrayJoin())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "FillingStep: ARRAY JOIN is not supported in INTERPOLATE");
+
         /// The plan may come from an untrusted client (`TCPHandler::receiveQueryPlan`), so the description
         /// is rebuilt from the DAG rather than taken from the wire. `FillingTransform` pairs the executed
         /// DAG's output columns with `result_columns_order` by position and stages each required column in
@@ -226,8 +286,17 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
         const auto dag_required_columns = actions.getRequiredColumns();
 
         UnorderedMapWithMemoryTracking<std::string, NameAndTypePair> required_columns_map;
+        NameSet sourced_required_columns;
         size_t num_required_columns = 0;
         readVarUInt(num_required_columns, ctx.in);
+
+        /// The planner writes one pair per column that the expression requires, so the number of the pairs
+        /// is known before they are read, and the serialized data cannot make this loop any longer than that.
+        if (num_required_columns != dag_required_columns.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "FillingStep: INTERPOLATE expects {} source columns, got {}",
+                dag_required_columns.size(), num_required_columns);
+
         for (size_t i = 0; i < num_required_columns; ++i)
         {
             String key;
@@ -256,18 +325,31 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
 
             /// The type comes from the DAG, never from the wire: it decides the column the transform
             /// stages the value in before executing the expression.
-            required_columns_map[key] = *name_and_type;
-        }
+            /// The planner gives every column required by the expression exactly one source, under its own key.
+            /// The number of the pairs is checked above, so it is enough to refuse a repeated key and a repeated
+            /// required column: either of them would leave a required column without a source, which
+            /// the expression would find out only when `FillingTransform` executes it.
+            if (!required_columns_map.emplace(key, *name_and_type).second)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: INTERPOLATE source column '{}' occurs more than once", key);
 
-        if (required_columns_map.size() != dag_required_columns.size())
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "FillingStep: INTERPOLATE expects {} source columns, got {}",
-                dag_required_columns.size(), required_columns_map.size());
+            if (!sourced_required_columns.insert(name).second)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: column '{}' required by the interpolate expression has more than one source", name);
+        }
 
         /// One entry per DAG output, in output order - the pairing `FillingTransform` relies on.
         VectorWithMemoryTracking<std::string> result_columns_order;
+        NameSet result_column_names;
         for (const auto & column : actions.getResultColumns())
         {
+            /// `FillingTransform` inserts every output into the header column of its name, so a repeated
+            /// output would grow that column once per occurrence and break the row count of the chunk.
+            /// The planner never repeats a column in INTERPOLATE.
+            if (!result_column_names.insert(column.name).second)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: INTERPOLATE column '{}' occurs more than once", column.name);
+
             if (!input_header.has(column.name))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "FillingStep: INTERPOLATE column '{}' is not present in the input header", column.name);

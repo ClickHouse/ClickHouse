@@ -100,14 +100,9 @@ public:
 
     DeltaLake::KernelHelperPtr getKernelHelper() const { return kernel_helper; }
 
-    DeltaLake::TableChangesPtr getTableChanges(
-        const DeltaLake::TableChangesVersionRange & version_range,
-        const Block & header,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr context) const;
-
     SinkToStoragePtr write(
         SharedHeader sample_block,
+        StorageMetadataPtr metadata_snapshot,
         const StorageID & table_id,
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration,
@@ -138,6 +133,8 @@ private:
         const ColumnsDescription & columns,
         ASTPtr partition_by,
         bool delta_log_exists);
+
+    [[nodiscard]] DeltaLake::TableChangesPtr getTableChanges(const DeltaLake::TableChangesVersionRange & version_range) const;
 
     /// No version means latest version.
     DeltaLake::TableSnapshotPtr getTableSnapshot(

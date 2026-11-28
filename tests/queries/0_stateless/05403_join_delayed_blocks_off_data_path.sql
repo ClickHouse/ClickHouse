@@ -72,7 +72,8 @@ SYSTEM FLUSH LOGS query_log, processors_profile_log;
 SELECT log_comment, min(ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin'] > 0),
     min(log_comment = 'spill_limit' OR ProfileEvents['JoinDelayedJoinedTransformRowCount'] > 0)
 FROM system.query_log
-WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND log_comment LIKE 'spill\_%'
+WHERE current_database = currentDatabase() AND event_date >= yesterday() AND event_time >= now() - 600
+    AND type = 'QueryFinish' AND log_comment LIKE 'spill\_%'
 GROUP BY log_comment ORDER BY log_comment;
 
 SELECT q.log_comment, countIf(p.name = 'DelayedJoinedBlocksWorkerTransform') > 0,
@@ -81,10 +82,10 @@ FROM system.processors_profile_log AS p
 INNER JOIN
 (
     SELECT query_id, log_comment FROM system.query_log
-    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
-        AND log_comment LIKE 'profile\_%'
+    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND event_time >= now() - 600
+        AND type = 'QueryFinish' AND log_comment LIKE 'profile\_%'
 ) AS q ON p.query_id = q.query_id
-WHERE p.event_date >= yesterday()
+WHERE p.event_date >= yesterday() AND p.event_time >= now() - 600
 GROUP BY q.log_comment ORDER BY q.log_comment;
 
 DROP VIEW lhs_05403, rhs_05403;

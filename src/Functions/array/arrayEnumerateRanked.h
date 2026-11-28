@@ -90,22 +90,22 @@ class FunctionArrayEnumerateRankedExtended : public IFunction
 public:
     static FunctionPtr create(ContextPtr /* context */) { return std::make_shared<Derived>(); }
 
-    String getName() const override { return Derived::name; }
+    [[nodiscard]] String getName() const override { return Derived::name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Documentation-only — variadic with an optional const-`UInt`
     /// clear-depth, then per-array (array, optional const-`UInt` depth)
     /// groups. The result is a nested array of `UInt32` whose depth matches
     /// the maximum effective input depth — not expressible in the DSL.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "([const UInt], Array, [const UInt], ...) -> Array(UInt32)";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
@@ -123,7 +123,7 @@ public:
         return type;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// The documentation signature cannot represent the input-dependent
         /// nesting depth. Reuse the authoritative implementation so callers
@@ -137,7 +137,7 @@ public:
         return getReturnTypeImpl(columns);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
@@ -258,7 +258,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     executeMethodImpl(offsets_by_depth, data_columns, arrays_depths, res_values);
 
     ColumnPtr result_nested_array = std::move(res_nested);
-    for (ssize_t depth = arrays_depths.max_array_depth - 1; depth >= 0; --depth)
+    for (ssize_t depth = static_cast<ssize_t>(arrays_depths.max_array_depth) - 1; depth >= 0; --depth)
         result_nested_array = ColumnArray::create(result_nested_array, offsetsptr_by_depth[depth]);
 
     return result_nested_array;
@@ -388,7 +388,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 
             // Debug: DUMP(off, prev_off, j, columns_indices, res_values[j], columns);
 
-            for (ssize_t depth = depth_to_look - 1; depth >= 0; --depth)
+            for (ssize_t depth = static_cast<ssize_t>(depth_to_look) - 1; depth >= 0; --depth)
             {
                 /// Skipping offsets for empty arrays
                 while (last_offset_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])

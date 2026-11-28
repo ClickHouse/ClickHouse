@@ -39,7 +39,8 @@ Aggregator::Params makeParams(const Names & keys, bool enable_packed_string_keys
         /*max_block_size=*/65536,
         /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
         /*serialize_string_with_zero_byte=*/false,
-        enable_packed_string_keys);
+        enable_packed_string_keys,
+        /*enable_fixed_and_packed_string_keys=*/true);
     params.group_by_two_level_threshold = group_by_two_level_threshold;
     return params;
 }

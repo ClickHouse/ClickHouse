@@ -1,4 +1,5 @@
 -- Tags: no-fasttest
+-- Random settings limits: output_format_parquet_row_group_size_bytes=(536870912, None); output_format_parquet_max_dictionary_size=(1048576, None)
 -- In the last PREWHERE step over a single dictionary-encoded column of a Parquet file, the functions applied
 -- to that column run once per dictionary value. Results must match a direct computation, and the step must
 -- not see a value of a row that an earlier step rejected.

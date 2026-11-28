@@ -2,7 +2,7 @@
 title: "ClickPipes 向け GCP Private Service Connect"
 sidebarTitle: "GCP Private Service Connect"
 icon: "/images/icons/cloud-providers/google-cloud-color.svg"
-description: "Private Service Connect（PSC）を使用して、ClickPipes と GCP 上でホストされているデータソース間の安全な接続を確立します。"
+description: "Private Service Connect（PSC）を使用して、ClickPipes と GCP 上でホストされているデータソース間のセキュアな接続を確立します。"
 slug: "/integrations/clickpipes/networking/gcp-psc"
 doc_type: "guide"
 keywords: ["gcp psc", "private service connect", "ClickPipes security", "reverse private endpoint", "private connectivity"]
@@ -10,8 +10,6 @@ integration:
   - support_level: "core"
   - category: "clickpipes"
 ---
-
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 GCP の [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect) を使用すると、ClickPipes と GCP 上でホストされているデータソース間にセキュアな接続を確立できます。ClickPipes は VPC 内に **リバースプライベートエンドポイント (RPE)&#x20;**&#x20;を作成し、データソース用に公開されたプライベートエンドポイントサービスに接続するため、トラフィックがパブリックインターネットに公開されることはありません。
 

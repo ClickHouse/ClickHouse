@@ -23,7 +23,7 @@ public:
     BinaryFormatReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) override;
-    bool readFieldImpl(IColumn & column, const SerializationPtr & serialization);
+    bool readFieldImpl(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization);
 
     void skipField(size_t file_column) override;
 
@@ -47,7 +47,7 @@ class BinaryRowInputFormat final : public RowInputFormatWithNamesAndTypes<Binary
 public:
     BinaryRowInputFormat(ReadBuffer & in_, SharedHeader header, IRowInputFormat::Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
-    String getName() const override { return "BinaryRowInputFormat"; }
+    [[nodiscard]] String getName() const override { return "BinaryRowInputFormat"; }
 
     /// RowInputFormatWithNamesAndTypes implements logic with DiagnosticInfo, but
     /// in this format we cannot provide any DiagnosticInfo, because here we have

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Joins.h>
 #include <DataTypes/IDataType_fwd.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -29,33 +30,37 @@ struct JoinOperator
     /// The locality of the join (e.g., LOCAL, GLOBAL)
     JoinLocality locality;
 
+    /// The set operation (`INTERSECT` or `EXCEPT`) this join executes on all columns of its inputs, compared with `<=>`.
+    /// The join removes duplicate rows itself.
+    JoinSetOperation set_operation = JoinSetOperation::None;
+
     /// An expression in ON/USING clause of a JOIN statement
-    std::vector<JoinActionRef> expression = {};
+    VectorWithMemoryTracking<JoinActionRef> expression = {};
     /// Additional filter after join (e.g. from WHERE clause)
     /// Difference is for OUTER JOINs, where expression used to match row or return NULL
     /// but residual filter is used to filter rows after join.
     /// For INNER JOINs, residual filter is the same as expression
-    std::vector<JoinActionRef> residual_filter = {};
+    VectorWithMemoryTracking<JoinActionRef> residual_filter = {};
 
     /// Runtime filters that `HashJoin` should publish as shared `FixedHashMap` runtime filters.
     /// Set by the `joinRuntimeFilter` optimizer pass.
-    std::vector<SharedRuntimeFilterDescriptor> shared_runtime_filter_descriptors = {};
+    VectorWithMemoryTracking<SharedRuntimeFilterDescriptor> shared_runtime_filter_descriptors = {};
 
     explicit JoinOperator(
         JoinKind kind_ = JoinKind::Cross,
         JoinStrictness strictness_ = JoinStrictness::All,
         JoinLocality locality_ = JoinLocality::Unspecified,
-        std::vector<JoinActionRef> expression_ = {})
+        VectorWithMemoryTracking<JoinActionRef> expression_ = {})
         : kind(kind_)
         , strictness(strictness_)
         , locality(locality_)
         , expression(std::move(expression_))
     {}
 
-    void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_) const;
-    static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions);
+    void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_, UInt64 step_version) const;
+    static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions, UInt64 step_version);
 
-    String dump() const;
+    [[nodiscard]] String dump() const;
 };
 
 
@@ -145,7 +150,7 @@ struct JoinSettings
 
     /// Whether `join_algorithms` is the built-in default of `join_algorithm`, whose algorithm the join order optimizer may
     /// choose per join. Any other list is a priority list the user chose, used as it is.
-    bool hasDefaultJoinAlgorithms() const;
+    [[nodiscard]] bool hasDefaultJoinAlgorithms() const;
 
     /// `join_operator` is the step the settings are serialized for: whether a downgraded plan can be
     /// handed to an older peer depends on which algorithm of the preference list that step reaches.
@@ -162,7 +167,7 @@ struct JoinSettings
     /// The size limits count only where the older peer spills on them: a hash-family entry the step
     /// reaches, with a spill threshold, for a step `grace_hash` can run. Elsewhere - no threshold, a step
     /// `GraceHashJoin` declines, a merge algorithm, a CROSS join - they are hard caps on both sides.
-    bool spillBehaviorDiffersFromLegacy(const JoinOperator & join_operator) const;
+    [[nodiscard]] bool spillBehaviorDiffersFromLegacy(const JoinOperator & join_operator) const;
 
     /// Returns the effective threshold for converting a hash join into a grace hash join (spilling to disk),
     /// combining the absolute `max_bytes_before_external_join` and the ratio `max_bytes_ratio_before_external_join`
@@ -176,11 +181,11 @@ struct JoinSettings
     /// limits, and one without them resolves it to 0, so the answer here would depend on the node.
     /// Neither does `grace_hash` on a server without temporary storage (`tmp_path` / `tmp_policy`): there the
     /// join pickers refuse it instead of passing it over.
-    bool canRunGraceHash() const;
+    [[nodiscard]] bool canRunGraceHash() const;
 
     /// Combines the stored raw absolute and ratio settings using local memory limits.
     /// Recomputed on every executor so distributed queries pick up per-node memory.
-    UInt64 getEffectiveMaxBytesBeforeExternalJoin() const
+    [[nodiscard]] UInt64 getEffectiveMaxBytesBeforeExternalJoin() const
     {
         return getMaxBytesBeforeExternalJoin(max_bytes_before_external_join, max_bytes_ratio_before_external_join);
     }

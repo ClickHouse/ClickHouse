@@ -19,19 +19,19 @@ public:
 
     static FunctionPtr create(ContextPtr context);
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool isVariadic() const override { return true; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const  override { return {0, 1}; }
-    bool useDefaultImplementationForConstants() const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const  override { return {0, 1}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return
             "() -> String"
@@ -39,7 +39,7 @@ public:
             " OR (const UInt | Nothing, const UInt | Nothing) -> String";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
     static String generateRandomStructure(size_t seed, const ContextPtr & context);
     static String generateRandomDataType(pcg64 & rng, bool allow_suspicious_lc_types, bool allow_complex_types);

@@ -56,7 +56,6 @@ namespace ErrorCodes
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_RMDIR;
-    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_STAT;
 }
 
@@ -85,9 +84,6 @@ UInt64 getTotalSpaceByName(const String & name, const String & disk_path, UInt64
 
 }
 
-std::mutex DiskLocal::reservation_mutex;
-
-
 using DiskLocalPtr = std::shared_ptr<DiskLocal>;
 
 class DiskLocalReservation : public IReservation
@@ -100,21 +96,21 @@ public:
         , metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
     {}
 
-    UInt64 getSize() const override { return size; }
-    std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
+    [[nodiscard]] UInt64 getSize() const override { return size; }
+    [[nodiscard]] std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
 
-    DiskPtr getDisk(size_t i) const override
+    [[nodiscard]] DiskPtr getDisk(size_t i) const override
     {
         if (i != 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't use i != 0 with single disk reservation. It's a bug");
         return disk;
     }
 
-    Disks getDisks() const override { return {disk}; }
+    [[nodiscard]] Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override
     {
-        std::lock_guard lock(DiskLocal::reservation_mutex);
+        std::lock_guard lock(disk->reservation_mutex);
         disk->reserved_bytes -= size;
         size = new_size;
         disk->reserved_bytes += size;
@@ -124,7 +120,7 @@ public:
     {
         try
         {
-            std::lock_guard lock(DiskLocal::reservation_mutex);
+            std::lock_guard lock(disk->reservation_mutex);
             if (disk->reserved_bytes < size)
             {
                 disk->reserved_bytes = 0;
@@ -165,16 +161,16 @@ public:
 
     void next() override { ++entry; }
 
-    bool isValid() const override { return entry != fs::directory_iterator(); }
+    [[nodiscard]] bool isValid() const override { return entry != fs::directory_iterator(); }
 
-    String path() const override
+    [[nodiscard]] String path() const override
     {
         if (entry->is_directory())
             return dir_path / entry->path().filename() / "";
         return dir_path / entry->path().filename();
     }
 
-    String name() const override { return entry->path().filename(); }
+    [[nodiscard]] String name() const override { return entry->path().filename(); }
 
 private:
     fs::path dir_path;
@@ -207,7 +203,7 @@ ReservationPtr DiskLocal::reserveAndGetUnreservedSpace(
 
 bool DiskLocal::tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints, UInt64 & unreserved_space)
 {
-    std::lock_guard lock(DiskLocal::reservation_mutex);
+    std::lock_guard lock(reservation_mutex);
 
     auto available_space = getAvailableSpace();
 
@@ -314,7 +310,7 @@ std::optional<UInt64> DiskLocal::getAvailableSpace() const
 
 std::optional<UInt64> DiskLocal::getUnreservedSpace() const
 {
-    std::lock_guard lock(DiskLocal::reservation_mutex);
+    std::lock_guard lock(reservation_mutex);
     auto available_space = *getAvailableSpace();
     available_space -= std::min(available_space, reserved_bytes);
     return available_space;
@@ -775,14 +771,6 @@ struct stat DiskLocal::stat(const String & path) const
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot stat file: {}", path);
 }
 
-void DiskLocal::chmod(const String & path, mode_t mode)
-{
-    auto full_path = fs::path(disk_path) / path;
-    if (::chmod(full_path.string().c_str(), mode) == 0)
-        return;
-    DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot chmod file: {}", path);
-}
-
 ObjectStoragePtr DiskLocal::getObjectStorage()
 {
     LocalObjectStorageSettings settings_object_storage(name, disk_path, /* read_only */false);
@@ -797,7 +785,7 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         ContextPtr context,
-        const DisksMap & map,
+        const DisksMap & /*map*/,
         bool attach,
         bool custom_disk) -> DiskPtr
     {
@@ -807,10 +795,6 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
 
         if (custom_disk && !attach)
             checkCustomLocalDiskPath(path, context);
-
-        for (const auto & [disk_name, disk_ptr] : map)
-            if (path == disk_ptr->getPath())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} and disk {} cannot have the same path ({})", name, disk_name, path);
 
         bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false) || global_skip_access_check;
         std::shared_ptr<IDisk> disk

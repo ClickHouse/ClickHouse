@@ -44,8 +44,7 @@ denied_grant() { local out; out=$(cat); echo "$(grep -oE 'grant [A-Z ]+ ON' <<< 
 echo -e "no_create_table\t$(${CLICKHOUSE_CLIENT} --user "${user_no_create}" -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.t_no_create (x Int32) ENGINE = memory" 2>&1 | denied_grant)"
 echo -e "no_create_database\t$(${CLICKHOUSE_CLIENT} --user "${user_no_create}" -q "CREATE DATABASE ${new_db} ENGINE = atomic" 2>&1 | denied_grant)"
 echo -e "no_cluster\t$(run_as_user "CREATE DATABASE ${new_db} ON CLUSTER test_shard_localhost ENGINE = atomic" | denied_grant)"
-echo -e "no_cluster_legacy_table\t$(${CLICKHOUSE_CLIENT} --user "${user}" --distributed_ddl_entry_format_version 2 -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.t_on_cluster ON CLUSTER test_shard_localhost (x Int32) ENGINE = memory" 2>&1 | denied_grant)"
-# The current-format `CREATE TABLE ... ON CLUSTER` checks `TABLE ENGINE` before `CLUSTER`.
+# `CREATE TABLE ... ON CLUSTER` checks `TABLE ENGINE` before `CLUSTER`.
 echo -e "no_cluster_table\t$(run_as_user "CREATE TABLE ${CLICKHOUSE_DATABASE}.t_on_cluster ON CLUSTER test_shard_localhost (x Int32) ENGINE = memory" | unknown_engine)"
 ${CLICKHOUSE_CLIENT} -q "GRANT CLUSTER ON *.* TO ${user}"
 echo -e "on_cluster\t$(run_as_user "CREATE DATABASE ${new_db} ON CLUSTER test_shard_localhost ENGINE = atomic" | unknown_engine)"

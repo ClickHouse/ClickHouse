@@ -10,7 +10,6 @@ sidebarTitle: 'OpenTelemetry'
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 
 <Tabs>
 <Tab title="Fully managed">
@@ -23,7 +22,15 @@ Send logs, metrics, and traces to ClickHouse Observability using OpenTelemetry S
 
 Open your service and navigate to **Team Settings → Data → Managed Telemetry**. Copy the **OTLP HTTP endpoint** and **API key**. The **Env vars** and **Collector config** tabs provide configuration for your service.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry showing the masked OTLP HTTP endpoint and API key" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry showing the masked OTLP HTTP endpoint and API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 Use the full HTTPS endpoint, including the port shown in Managed Telemetry. For a base OTLP HTTP endpoint, omit signal paths such as `/v1/logs`, `/v1/traces`, and `/v1/metrics`; the exporters append these paths.
 

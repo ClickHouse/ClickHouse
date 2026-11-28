@@ -99,9 +99,9 @@ public:
         }
     }
 
-    size_t size() const { return total_values; }
+    [[nodiscard]] size_t size() const { return total_values; }
 
-    bool empty() const { return samples.empty(); }
+    [[nodiscard]] bool empty() const { return samples.empty(); }
 
     T quantileNearest(double level)
     {
@@ -219,8 +219,11 @@ private:
         {
             /// Access `items` through the logical limb order because its physical order depends on host byte order.
             cpp_int result;
-            for (unsigned i = static_cast<unsigned>(std::size(value.items)); i-- > 0;)
+            for (unsigned i = static_cast<unsigned>(std::size(value.items)); i > 0;)
+            {
+                --i;
                 result = (result << 64) | value.items[NativeType::_impl::little(i)];
+            }
 
             if (value < NativeType{})
                 result -= cpp_int(1) << (sizeof(NativeType) * 8);
@@ -378,7 +381,7 @@ private:
     }
 
     template <typename ResultType>
-    ResultType onEmpty() const
+    [[nodiscard]] ResultType onEmpty() const
     {
         if (OnEmpty == ReservoirSamplerOnEmpty::THROW)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Quantile of empty ReservoirSampler");

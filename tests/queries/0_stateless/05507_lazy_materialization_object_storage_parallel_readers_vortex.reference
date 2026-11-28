@@ -1,0 +1,13 @@
+-- the lazy read step is in the plan
+1
+1
+-- the same result with the optimization enabled and disabled
+same
+same
+-- the number of readers
+iceberg_subcolumn	1
+narrow	1
+narrow_tuple	1
+string	1
+subcolumn	1
+tuple	1

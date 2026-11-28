@@ -64,15 +64,8 @@ std::unique_ptr<ORC::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
 /// Creates an ORC file reader; throws INCORRECT_DATA if the root type of the file is not a struct.
 std::unique_ptr<ORC::Reader> createORCReader(std::unique_ptr<ORC::InputStream> stream, const ORC::ReaderOptions & options);
 
-/// The names the top-level fields of an Iceberg ORC file are read as, by the ORC column id of the field.
-using IcebergORCFieldNames = UnorderedMapWithMemoryTracking<UInt64, std::string>;
-
 std::unique_ptr<ORC::SearchArgument> buildORCSearchArgument(
-    const KeyCondition & key_condition,
-    const Block & header,
-    const ORC::Type & schema,
-    const FormatSettings & format_settings,
-    const IcebergORCFieldNames * field_names = nullptr);
+    const KeyCondition & key_condition, const Block & header, const ORC::Type & schema, const FormatSettings & format_settings);
 
 class ORCColumnToCHColumn;
 class NativeORCBlockInputFormat final : public IInputFormat
@@ -158,15 +151,20 @@ public:
     using ORCColumnWithType = std::pair<ORCColumnPtr, ORCTypePtr>;
     using NameToColumnPtr = UnorderedMapWithMemoryTracking<std::string, ORCColumnWithType>;
 
+    /// `absent_columns` are proven missing from the file by Iceberg field id (see `column_mapper_`): no field of the file
+    /// is read into them, and they get their `absent_column_defaults_` if any. A struct or list column whose subcolumns are
+    /// requested is read with its type in `nested_table_type_hints_`, the one its fields were selected with, if it is there.
     ORCColumnToCHColumn(
         const Block & header_,
-        bool allow_missing_columns_,
-        bool null_as_default_,
-        bool case_insensitive_matching_ = false,
-        bool dictionary_as_low_cardinality_ = false,
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore,
+        const ORC::Type & file_schema_,
+        const FormatSettings & format_settings_,
         UnorderedSetWithMemoryTracking<UInt64> count_only_fields_ = {},
-        std::optional<IcebergORCFieldNames> iceberg_field_names_ = {});
+        const ColumnMapper * column_mapper_ = nullptr,
+        NameSet absent_columns_ = {},
+        UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults_ = {},
+        UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_ = {},
+        UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_ = {},
+        std::optional<UnorderedMapWithMemoryTracking<UInt64, String>> top_level_read_names_ = {});
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -188,9 +186,20 @@ private:
         const ORC::Type * orc_type,
         const std::string & column_name,
         bool inside_nullable,
-        DataTypePtr type_hint = nullptr) const;
+        DataTypePtr type_hint = nullptr,
+        const String & mapper_path = {}) const;
+
+    /// Reads an unshredded variant, a struct of binary `metadata` and `value`, as `Dynamic` or `JSON`.
+    ColumnWithTypeAndName readVariantFromORCStruct(
+        const ORC::ColumnVectorBatch * orc_column,
+        const ORC::Type * orc_type,
+        const std::string & column_name,
+        const DataTypePtr & type_hint) const;
 
     const Block & header;
+    const FormatSettings format_settings;
+    /// The type tree of the file, which the read types are pruned from.
+    const ORC::Type & file_schema;
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
     bool null_as_default;
@@ -199,8 +208,16 @@ private:
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
     /// ORC column ids of the struct fields that are read only for the size and the null map of their struct.
     const UnorderedSetWithMemoryTracking<UInt64> count_only_fields;
-    /// nullopt: the top-level fields are matched by name.
-    const std::optional<IcebergORCFieldNames> iceberg_field_names;
+    /// Iceberg schema of the file, to fill the fields of a struct that the file does not have.
+    const ColumnMapper * column_mapper;
+    NameSet absent_columns;
+    UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints;
+    /// ORC column ids of the structs of the file a field of which has no Iceberg field id: their fields are matched by name,
+    /// also when the fields read have one.
+    const UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids;
+    /// If set, the names the top-level fields are read as, by ORC column id; a field without an entry is not read.
+    const std::optional<UnorderedMapWithMemoryTracking<UInt64, String>> top_level_read_names;
 };
 }
 #endif

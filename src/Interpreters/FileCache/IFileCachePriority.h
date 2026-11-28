@@ -171,7 +171,7 @@ public:
     public:
         virtual ~Iterator() = default;
 
-        virtual EntryPtr getEntry() const = 0;
+        [[nodiscard]] virtual EntryPtr getEntry() const = 0;
 
         /// Note: IncrementSize unlike decrementSize requires a cache lock, because
         /// it requires more consistency guarantees for eviction.
@@ -180,7 +180,7 @@ public:
 
         virtual void decrementSize(size_t size) = 0;
 
-        virtual bool isValid(const CachePriorityGuard::WriteLock &) const = 0;
+        [[nodiscard]] virtual bool isValid(const CachePriorityGuard::WriteLock &) const = 0;
 
         /// Batch removal: the caller holds the queue's write lock across several removes.
         virtual void remove(const CachePriorityGuard::WriteLock &) = 0;
@@ -196,13 +196,13 @@ public:
         /// would only pin the entry allocation until the cleanup discards it).
         virtual void invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept { invalidate(); }
 
-        virtual QueueEntryType getType() const = 0;
+        [[nodiscard]] virtual QueueEntryType getType() const = 0;
 
-        virtual const Iterator * getNestedOrThis() const { return this; }
+        [[nodiscard]] virtual const Iterator * getNestedOrThis() const { return this; }
         virtual Iterator * getNestedOrThis() { return this; }
 
         /// The structural guard protecting this iterator's queue entry.
-        virtual CachePriorityGuard & getPriorityGuard() const = 0;
+        [[nodiscard]] virtual CachePriorityGuard & getPriorityGuard() const = 0;
 
         virtual void check(const CacheStateGuard::Lock &) const {}
     };
@@ -315,6 +315,44 @@ public:
         FromHead,   /// Start from the queue head; do not persist a position.
         Reserve,    /// Foreground reserve path (shared by concurrent reservers).
         Background, /// Background free-space keeping thread.
+        Promotion,  /// SLRU downgrade walk over the protected queue (shared by concurrent promoters).
+    };
+
+    /// A cursor shared by the threads which run the same kind of eviction walk. A lone thread
+    /// resets it and scans from the head in strict LRU order; overlapping threads resume where the
+    /// previous one stopped, a clock-like order that is cheaper than rescanning the head each time.
+    class SharedEvictionCursor : private boost::noncopyable
+    {
+    public:
+        explicit SharedEvictionCursor(EvictionCursor cursor_) : cursor(cursor_) {}
+
+        /// Counts the current thread as an evictor for as long as it may walk.
+        class ActiveEvictor : private boost::noncopyable
+        {
+        public:
+            explicit ActiveEvictor(SharedEvictionCursor & shared_) : shared(shared_)
+            {
+                shared.active_evictors.fetch_add(1, std::memory_order_relaxed);
+            }
+            ~ActiveEvictor() { shared.active_evictors.fetch_sub(1, std::memory_order_relaxed); }
+
+        private:
+            SharedEvictionCursor & shared;
+        };
+
+        /// Resets the cursor when this thread is the only active evictor. Called right before
+        /// the walk, so that it sees the evictors active at that moment.
+        EvictionCursor getCursor(IFileCachePriority & priority) const
+        {
+            if (active_evictors.load(std::memory_order_relaxed) > 1)
+                return cursor;
+            priority.resetEvictionPos(cursor);
+            return EvictionCursor::FromHead;
+        }
+
+    private:
+        const EvictionCursor cursor;
+        std::atomic<size_t> active_evictors = 0;
     };
 
     /// Collect eviction candidates sufficient to free `size` bytes
@@ -408,9 +446,9 @@ public:
             priority.holdImpl(size, elements, lock);
         }
 
-        size_t getSize() const { return size; }
+        [[nodiscard]] size_t getSize() const { return size; }
 
-        size_t getElements() const { return elements; }
+        [[nodiscard]] size_t getElements() const { return elements; }
 
         void release(const CacheStateGuard::Lock &) { releaseUnlocked(); }
 

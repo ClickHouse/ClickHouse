@@ -2,8 +2,6 @@
 -- When replicas in a hydra group have different values of this setting,
 -- parts written with escaping enabled must be readable by replicas with escaping disabled and vice versa.
 
-set enable_variant_type=1;
-
 -- Case 1: Start with escaping disabled, then switch to enabled.
 -- Parts written without escaping should still be readable after enabling escaping.
 drop table if exists test_fallback;

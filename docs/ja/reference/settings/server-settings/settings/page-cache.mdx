@@ -30,7 +30,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 ## page_cache_policy {#page_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />ユーザー空間ページキャッシュのエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />ユーザー空間のページキャッシュで使用するキャッシュエビクションポリシー。設定可能な値: `LRU`、`SLRU`、`SIEVE`。キャッシュ容量については [`page_cache_max_size`](/ja/reference/settings/server-settings/settings/page-cache#page_cache_max_size) を、SLRUポリシーにおける保護キューのサイズについては [`page_cache_size_ratio`](/ja/reference/settings/server-settings/settings/page-cache#page_cache_size_ratio) を参照してください。
 
 ## page_cache_shards {#page_cache_shards}
 

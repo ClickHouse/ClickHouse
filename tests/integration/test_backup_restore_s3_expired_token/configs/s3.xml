@@ -11,6 +11,7 @@
                 <use_environment_credentials>1</use_environment_credentials>
                 <role_arn>arn::role</role_arn>
                 <role_session_name>expired-token-test</role_session_name>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3_source>
         </disks>
         <policies>

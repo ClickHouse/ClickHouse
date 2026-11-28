@@ -17,7 +17,7 @@ ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
     const String & file_name_,
     size_t buffer_size_,
     std::unique_ptr<ReadBufferFromFileBase> in_,
-    const String & key_,
+    const SecretString & key_,
     const FileEncryption::Header & header_,
     size_t offset_)
     : ReadBufferFromFileBase(buffer_size_, nullptr, 0)
@@ -306,6 +306,11 @@ void ReadBufferFromEncryptedFile::performSeekAndSetReadUntilPosition()
 
 void ReadBufferFromEncryptedFile::prefetch(Priority priority)
 {
+    /// Apply a pending seek or `read_until_position` before prefetching. Otherwise the inner buffer
+    /// prefetches with the old range, and applying the new one in `nextImpl` discards that prefetch.
+    if (need_seek || need_set_read_until_position)
+        performSeekAndSetReadUntilPosition();
+
     in->prefetch(priority);
 }
 

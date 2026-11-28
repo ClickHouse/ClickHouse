@@ -81,6 +81,7 @@ Campos de configuración:
 | `ssl_ca_pem`                    | Contenido del certificado de CA con el que se verifica el certificado del servidor MySQL. Opcional.                                                                                                                                                                                                                                                                                                                                                         |
 | `ssl_cert_pem`                  | Contenido del certificado de cliente para la autenticación basada en certificados. Opcional.                                                                                                                                                                                                                                                                                                                                                                |
 | `ssl_key_pem`                   | Contenido de la clave privada correspondiente a `ssl_cert_pem`. Opcional.                                                                                                                                                                                                                                                                                                                                                                                   |
+| `ssl_key_passphrase`            | Frase de contraseña de un `ssl_key` / `ssl_key_pem` cifrado. Opcional.                                                                                                                                                                                                                                                                                                                                                                                      |
 | `ssl_ca`, `ssl_cert`, `ssl_key` | Las mismas credenciales como rutas a archivos en el servidor. Solo se permiten para un diccionario definido en un archivo de configuración del servidor o mediante una colección con nombre definida allí; consulta más abajo. Opcional.                                                                                                                                                                                                                    |
 
 <Note>
@@ -99,7 +100,11 @@ Campos de configuración:
   No existe un parámetro `secure` explícito. Al establecer una conexión SSL, la seguridad es obligatoria.
 </Note>
 
-Se puede conectar a MySQL en un host local mediante sockets. Para ello, establece `host` y `socket`.
+Es posible conectarse a MySQL en un host local mediante sockets. Para ello, establezca `host` en `localhost` e indique `socket`. Para cualquier otro valor de `host`, `socket` se ignora y la conexión se establece mediante TCP. Sin `socket`, la conexión se establece mediante TCP con el `port` indicado, incluso cuando se usa `localhost`.
+
+<Note>
+  `remote_url_allow_hosts` solo comprueba `host` y `port`: la ruta indicada en `socket` no se comprueba.
+</Note>
 
 Ejemplo de configuración:
 

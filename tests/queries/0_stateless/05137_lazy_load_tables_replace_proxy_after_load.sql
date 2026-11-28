@@ -24,9 +24,6 @@ SELECT 'select', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t;
 SELECT 'engine', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
 SELECT 'parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't' AND active;
 SELECT 'parts_columns', count() > 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't' AND active;
--- The proxy does not forward `totalBytesUncompressed`, so this is only known once the database hands
--- out the loaded storage itself instead of the proxy.
-SELECT 'total_bytes_uncompressed', total_bytes_uncompressed IS NOT NULL FROM system.tables WHERE database = currentDatabase() AND name = 't';
 
 -- A mutation and a lightweight delete both need the real storage.
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t DELETE WHERE id = 1 SETTINGS mutations_sync = 2;

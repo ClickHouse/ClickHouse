@@ -4,4 +4,6 @@ invalid index type size: caught expected exception INCORRECT_DATA
 index row count mismatch: caught expected exception INCORRECT_DATA
 sparse over replicated: caught expected exception INCORRECT_DATA
 huge element count: caught expected exception TOO_LARGE_ARRAY_SIZE
+replicated tuple element: caught expected exception INCORRECT_DATA
+replicated on insert: caught expected exception INCORRECT_DATA
 server alive	0

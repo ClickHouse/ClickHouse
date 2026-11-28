@@ -1,8 +1,12 @@
 #include <Processors/Transforms/WindowTransform.h>
-#include <Common/VectorWithMemoryTracking.h>
+
+#include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+
 #include <DataTypes/DataTypeLowCardinality.h>
+
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 #include <iterator>
@@ -59,6 +63,15 @@ void destroyStates(VectorWithMemoryTracking<GeneralWindowFunctionSlot> & general
             slot.function->destroyState(slot.state.data());
 }
 
+void resetPartitions(VectorWithMemoryTracking<GeneralWindowFunctionSlot> & general_functions, VectorWithMemoryTracking<AggregateWindowFunctionSlot> & aggregate_functions)
+{
+    for (auto & slot : general_functions)
+        slot.function->resetPartition(slot.state.data());
+
+    for (auto & slot : aggregate_functions)
+        slot.function->resetPartition();
+}
+
 MutableColumns initializeResultColumns(const VectorWithMemoryTracking<GeneralWindowFunctionSlot> & general_functions, const VectorWithMemoryTracking<AggregateWindowFunctionSlot> & aggregate_functions, int64_t rows_count)
 {
     MutableColumns columns(general_functions.size() + aggregate_functions.size());
@@ -73,6 +86,32 @@ MutableColumns initializeResultColumns(const VectorWithMemoryTracking<GeneralWin
         column->reserve(rows_count);
 
     return columns;
+}
+
+Int64 evaluateFunctions(
+    VectorWithMemoryTracking<GeneralWindowFunctionSlot> & general_functions,
+    VectorWithMemoryTracking<AggregateWindowFunctionSlot> & aggregate_functions,
+    const WindowBounds & bounds, SlidingArguments & arguments, MutableColumns & results)
+{
+    Int64 first_row = std::numeric_limits<Int64>::max();
+
+    for (auto & slot : general_functions)
+        first_row = std::min(first_row, slot.function->evaluate(slot.state.data(), bounds, arguments.view(slot.function_index), *results[slot.function_index]));
+
+    for (auto & slot : aggregate_functions)
+        first_row = std::min(first_row, slot.function->evaluate(bounds, arguments.view(slot.function_index), *results[slot.function_index]));
+
+    return first_row;
+}
+
+Chunk packBlock(const SlidingBlock & block, MutableColumns results)
+{
+    Columns columns = block.input_columns;
+    columns.insert(columns.end(), std::make_move_iterator(results.begin()), std::make_move_iterator(results.end()));
+
+    Chunk chunk;
+    chunk.setColumns(std::move(columns), block.rows_count);
+    return chunk;
 }
 
 bool isRowReady(const WindowFunctionRequirements & required, const Frame & frame, const Peers & peers, const Partition & partition)
@@ -95,10 +134,6 @@ WindowTransform::WindowTransform(
     , arguments(params.input_header, functions)
     , frame(params)
 {
-    for (const auto & function : functions)
-        if (const auto general = asGeneralWindowFunction(function.aggregate_function))
-            general->checkWindowFrameType(params.window_description);
-
     try
     {
         general_functions.reserve(functions.size());
@@ -106,8 +141,8 @@ WindowTransform::WindowTransform(
         for (size_t function_index = 0; function_index < functions.size(); ++function_index)
         {
             const WindowFunctionDescription & function = functions[function_index];
-            if (auto general = asGeneralWindowFunction(function.aggregate_function))
-                general_functions.push_back(createGeneralSlot(std::move(general), function_index));
+            if (function.general_function)
+                general_functions.push_back(createGeneralSlot(function.general_function, function_index));
             else
                 aggregate_functions.push_back(createAggregateSlot(function.aggregate_function, params.window_description, function_index));
         }
@@ -197,30 +232,13 @@ void WindowTransform::evaluateRowsBatch()
     if (current_results.empty())
         current_results = initializeResultColumns(general_functions, aggregate_functions, block.rows_count);
 
-    Int64 first_row = std::numeric_limits<Int64>::max();
-    for (auto & slot : general_functions)
-        first_row = std::min(first_row, slot.function->evaluate(slot.state.data(), bounds, arguments.view(slot.function_index), *current_results[slot.function_index]));
-    for (auto & slot : aggregate_functions)
-        first_row = std::min(first_row, slot.function->evaluate(bounds, arguments.view(slot.function_index), *current_results[slot.function_index]));
+    first_row_read_by_functions = evaluateFunctions(general_functions, aggregate_functions, bounds, arguments, current_results);
 
     const bool block_complete = batch_start.row + bounds.rows == block.rows_count;
     if (block_complete)
-        packReadyBlock();
+        pending_outputs.push_back(packBlock(block, std::exchange(current_results, {})));
 
-    first_row_read_by_functions = first_row;
     clearBounds(bounds);
-}
-
-void WindowTransform::packReadyBlock()
-{
-    const SlidingBlock & block = blocks.blockAt(batch_start.block);
-    Columns columns = block.input_columns;
-    columns.insert(columns.end(), std::make_move_iterator(current_results.begin()), std::make_move_iterator(current_results.end()));
-    current_results.clear();
-
-    Chunk chunk;
-    chunk.setColumns(std::move(columns), block.rows_count);
-    pending_outputs.push_back(std::move(chunk));
 }
 
 void WindowTransform::startNextPartition()
@@ -234,11 +252,7 @@ void WindowTransform::startNextPartition()
     frame.enterPartition(partition_start);
     first_row_read_by_functions = 0;
 
-    for (auto & slot : general_functions)
-        slot.function->resetPartition(slot.state.data());
-
-    for (auto & slot : aggregate_functions)
-        slot.function->resetPartition();
+    resetPartitions(general_functions, aggregate_functions);
 }
 
 IProcessor::Status WindowTransform::prepare()

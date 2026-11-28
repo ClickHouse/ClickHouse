@@ -207,7 +207,7 @@ SerializationPtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCrea
     return SerializationVariantElementNullMap::create(variant_element_name, global_variant_discriminator, num_variants);
 }
 
-ColumnPtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::create(const DB::ColumnPtr &) const
+ColumnPtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::create(const DB::ColumnPtr &, const DataTypePtr &) const
 {
     /// Iterate through discriminators and create null-map for our variant.
     auto null_map_col = ColumnUInt8::create();
