@@ -19,6 +19,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -173,6 +174,25 @@ bool injectRequiredColumnsRecursively(
 
 }
 
+bool defaultReadsColumns(const ColumnsDescription & columns, const String & column_name, std::unordered_map<String, bool> & cache)
+{
+    checkStackSize();
+    if (auto it = cache.find(column_name); it != cache.end())
+        return it->second;
+
+    /// Cyclic defaults are rejected by `ALTER` and `CREATE`, so a column is never revisited before its answer is known.
+    cache.emplace(column_name, false);
+    const auto * column = columns.tryGet(column_name);
+    if (!column || !column->default_desc.expression)
+        return false;
+
+    /// An alias or ephemeral column is not stored: its own expression is computed instead.
+    const bool result = std::ranges::any_of(getStorageColumnsReadByDefault(columns, *column),
+        [&](const String & read) { return columns.hasPhysical(read) || defaultReadsColumns(columns, read, cache); });
+    cache[column_name] = result;
+    return result;
+}
+
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)
 {
     /// Patches are joined by the keys read in the first step, which the text index reader cannot read.
@@ -233,14 +253,28 @@ NameSet injectRequiredColumns(
         /// (to be resolvable by the StorageSnapshot). This handles cases where the table schema has changed
         /// since the part was created: columns may have been added (not in the part) or dropped (not in metadata).
         const auto & part_columns = data_part_info_for_reader.getColumns();
+
+        bool share_nested = true;
+        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
+            share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
         NamesAndTypesList available_columns;
+        NamesAndTypesList readable_columns;
+        std::unordered_map<String, bool> default_reads_columns;
         for (const auto & column : part_columns)
         {
-            if (storage_snapshot->tryGetColumn(options, column.name))
-                available_columns.push_back(column);
+            if (!storage_snapshot->tryGetColumn(options, column.name))
+                continue;
+            available_columns.push_back(column);
+            /// A column that a pending mutation drops is filled from its default, which can read other columns.
+            if (!alter_conversions || !alter_conversions->isColumnDropped(column.name, share_nested)
+                || !defaultReadsColumns(storage_snapshot->metadata->getColumns(), column.name, default_reads_columns))
+                readable_columns.push_back(column);
         }
 
-        if (available_columns.empty())
+        if (!readable_columns.empty())
+            available_columns = std::move(readable_columns);
+        else if (available_columns.empty())
             available_columns = part_columns;
 
         const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
