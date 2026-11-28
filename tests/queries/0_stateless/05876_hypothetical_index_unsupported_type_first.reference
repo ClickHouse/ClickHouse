@@ -1,0 +1,7 @@
+a transform that reads a table the user cannot read
+(NOT_IMPLEMENTED)
+0
+a transform with a wrong number of arguments
+(NOT_IMPLEMENTED)
+a tokenizer that does not exist
+(NOT_IMPLEMENTED)

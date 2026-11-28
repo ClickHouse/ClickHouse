@@ -36,11 +36,11 @@ echo "$error" | grep -oE 'Supported types: [a-z0-9_, ]+' | head -1
 echo "$error" | grep -oE 'NOT_IMPLEMENTED' | head -1
 $CLICKHOUSE_CLIENT -q "SET allow_experimental_full_text_index = 1; CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (s) TYPE text(tokenizer = 'array') GRANULARITY 1;" 2>&1 | grep -oE 'NOT_IMPLEMENTED' | head -1
 
-echo "--- validate still runs before the allowlist check ---"
-# 'hypothesis' is registered but its validator rejects it outright, so that error must win
-$CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (a > 0) TYPE hypothesis GRANULARITY 1;" 2>&1 | grep -oE 'ILLEGAL_INDEX' | head -1
-# an unregistered type is rejected by the factory lookup, not by the allowlist
-$CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (s) TYPE no_such_index GRANULARITY 1;" 2>&1 | grep -oE 'INCORRECT_QUERY' | head -1
+echo "--- the allowlist check runs before validate ---"
+# the validator of 'hypothesis' rejects it, but the allowlist rejects it first
+$CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (a > 0) TYPE hypothesis GRANULARITY 1;" 2>&1 | grep -oE 'ILLEGAL_INDEX|NOT_IMPLEMENTED' | head -1
+# the allowlist also rejects an unregistered type, before the factory lookup
+$CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (s) TYPE no_such_index GRANULARITY 1;" 2>&1 | grep -oE 'INCORRECT_QUERY|NOT_IMPLEMENTED' | head -1
 
 echo "--- arguments the creator rejects fail at CREATE, not later ---"
 # sparse_grams tokenizer bounds are enforced by the creator; validate only checks arity

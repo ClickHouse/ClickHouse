@@ -224,7 +224,7 @@ $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_bad;
     CREATE TABLE t_hypo_bad (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
     CREATE HYPOTHETICAL INDEX bad ON t_hypo_bad (b) TYPE no_such_type GRANULARITY 1;
-" 2>&1 | grep -m1 -oE 'INCORRECT_QUERY|UNKNOWN_FUNCTION|BAD_ARGUMENTS'
+" 2>&1 | grep -m1 -oE 'INCORRECT_QUERY|UNKNOWN_FUNCTION|BAD_ARGUMENTS|NOT_IMPLEMENTED'
 
 echo "--- type_full distinguishes parametrized index types ---"
 $CLICKHOUSE_CLIENT -n -q "

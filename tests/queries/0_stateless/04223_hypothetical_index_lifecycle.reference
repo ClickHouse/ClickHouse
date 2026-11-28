@@ -64,7 +64,7 @@ With idx_l (set, hypothetical):
 --- CREATE rejects reserved auto_minmax_index_ name ---
 reserved index name
 --- CREATE rejects unknown index type ---
-INCORRECT_QUERY
+NOT_IMPLEMENTED
 --- type_full distinguishes parametrized index types ---
 i1	bloom_filter	bloom_filter(0.01)
 i2	bloom_filter	bloom_filter(0.001)
