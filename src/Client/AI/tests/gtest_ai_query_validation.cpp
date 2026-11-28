@@ -230,6 +230,7 @@ TEST(AIQueryValidation, RejectsRunningQueriesAndAccessMetadata)
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "masking_policies"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "connections"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "dns_cache"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "macros"));
     /// The definitions of the databases, with the parameters of their engines and the paths of the server.
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "databases"));
     /// The introspection of the server process shows the addresses of its code.
@@ -1095,4 +1096,7 @@ TEST(AIQueryValidation, RejectsGetServerSetting)
     EXPECT_FALSE(isAllowed("SELECT getServerSetting('max_connections')"));
     EXPECT_FALSE(isAllowed("SELECT getserversetting('max_connections')"));
     EXPECT_FALSE(isAllowedWithoutSchemaAccess("SELECT getServerSetting('max_connections')"));
+    /// `getMacro` does the same with the macros of the server configuration.
+    EXPECT_FALSE(isAllowed("SELECT getMacro('shard')"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SELECT getMacro('shard')"));
 }

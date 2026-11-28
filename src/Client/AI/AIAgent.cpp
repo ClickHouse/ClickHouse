@@ -615,13 +615,15 @@ void AIAgent::truncateCurrentQuestion(size_t total_bytes)
 {
     static constexpr std::string_view QUESTION_CUT_NOTICE
         = "\n\n[The question was cut here: {} of its {} bytes did not fit the conversation. "
-          "Answer what is left, or ask the user to send the rest in smaller parts.]";
+          "Answer what is left, or ask the user to send the rest in smaller parts.]\n\n";
 
     /// The question of the current turn is never dropped and never elided - it is what the model
     /// is asked about - so a single oversized question (a pasted log, a long instruction) keeps
     /// the prompt over the budget however much of the older history is given up. Cut it instead,
-    /// keeping its beginning, and say by how much: the model then sees a question it can answer
-    /// rather than a request the provider rejects for its size.
+    /// and say by how much: the model then sees a question it can answer rather than a request the
+    /// provider rejects for its size. Its middle is what goes, and both ends are kept: the
+    /// beginning is where the message starts with its context, and the end is where the ask
+    /// itself usually is - a pasted log followed by "why did this fail?".
     if (total_bytes <= max_history_bytes)
         return;
 
@@ -650,8 +652,15 @@ void AIAgent::truncateCurrentQuestion(size_t total_bytes)
     if (keep >= original_size)
         return;
 
-    truncateToUTF8Boundary(text_part->text, keep);
-    text_part->text += fmt::format(QUESTION_CUT_NOTICE, original_size - text_part->text.size(), original_size);
+    String head = text_part->text;
+    truncateToUTF8Boundary(head, keep / 2);
+    String tail = text_part->text;
+    truncateToUTF8BoundaryFromLeft(tail, keep - keep / 2);
+
+    const size_t cut = original_size - head.size() - tail.size();
+    text_part->text = std::move(head);
+    text_part->text += fmt::format(QUESTION_CUT_NOTICE, cut, original_size);
+    text_part->text += tail;
 }
 
 void AIAgent::reset()

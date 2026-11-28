@@ -623,6 +623,27 @@ TEST(AIAgent, HistoryIsTrimmedWhenTheQuestionItselfIsOversized)
     EXPECT_TRUE(question.starts_with("xxxx"));
 }
 
+TEST(AIAgent, OversizedQuestionKeepsItsBeginningAndItsEnd)
+{
+    /// A pasted log followed by the ask: the ask is at the end, so the middle of the message is
+    /// what is cut, and the model is told where and by how much.
+    AgentWithMock harness({textStep("done")});
+    harness.agent->chat("The log:\n" + String(1024 * 1024, 'x') + "\n\nWhy did query X fail?");
+
+    ASSERT_EQ(harness.transport->conversations.size(), 1u);
+    const auto & sent = harness.transport->conversations.back();
+    EXPECT_LE(conversationBytes(sent), 256 * 1024);
+
+    ASSERT_FALSE(sent.empty());
+    const String question = sent.front().get_text();
+    EXPECT_TRUE(question.starts_with("The log:\nxxxx"));
+    EXPECT_TRUE(question.ends_with("xxxx\n\nWhy did query X fail?"));
+    const size_t notice = question.find("The question was cut here");
+    ASSERT_NE(notice, String::npos);
+    EXPECT_GT(notice, 1024u);
+    EXPECT_LT(notice, question.size() - 1024);
+}
+
 TEST(AIAgent, HistoryIsTrimmedWhenOneStepCarriesAHugeQueryArgument)
 {
     /// The arguments of a tool call are stored so the model can see what it asked for, and a

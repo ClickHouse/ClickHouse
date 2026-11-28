@@ -521,6 +521,26 @@ TEST(AIAgentProtocol, RenderSystemPromptListsTools)
     EXPECT_NE(rendered.find("<tool_call>"), String::npos);
 }
 
+TEST(AIAgentProtocol, CodeFenceIsRecognizedWithEveryLineBreak)
+{
+    /// A model can break the lines around a fence with something else than a line feed. The block
+    /// inside is still an example, and the one after the closing fence is still a call.
+    for (const std::string_view line_break : {"\r", "\r\n", "\xE2\x80\xA8", "\xE2\x80\xA9", "\xC2\x85", "\x0B", "\x0C"})
+    {
+        const String br(line_break);
+        size_t counter = 1;
+        auto step = AIServerFunctionTransport::parseResponse(
+            "Here is the syntax:" + br + "~~~" + br
+                + R"(<tool_call>{"name": "run_readonly_query", "arguments": {"query": "SELECT 1"}}</tool_call>)" + br + "~~~" + br
+                + R"(<tool_call>{"name": "list_databases", "arguments": {}}</tool_call>)",
+            counter);
+
+        ASSERT_EQ(step.tool_calls.size(), 1u) << br.size();
+        EXPECT_EQ(step.tool_calls[0].tool_name, "list_databases");
+        EXPECT_NE(step.text.find("run_readonly_query"), String::npos);
+    }
+}
+
 TEST(AIAgentProtocol, EveryLineSeparatorStartsQuotedLine)
 {
     /// A text can break a line with more than `\n` and `\r`, and what follows the break must not

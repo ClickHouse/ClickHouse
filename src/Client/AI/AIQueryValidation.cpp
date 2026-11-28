@@ -409,6 +409,9 @@ bool isDeniedScalarFunction(const String & name)
         /// secrets among them unmasked, and it reveals the server configuration even when
         /// the schema access of the agent is disabled.
         "getserversetting",
+        /// The same for the macros of the server configuration: substitutions of any content,
+        /// which `system.macros` shows as well.
+        "getmacro",
         /// Not external either, but it writes: it creates and advances a counter in Keeper, and
         /// `readonly` does not stop it.
         "generateserialid",
@@ -1118,6 +1121,9 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
         /// they apply to, and the connections of every user to the server with their addresses.
         "masking_policies",
         "connections",
+        /// The macros of the server configuration: substitutions of any content, shown as they
+        /// are, like the server settings above.
+        "macros",
         /// The names and the addresses of the hosts the server has resolved: the external systems
         /// that its tables, dictionaries and named collections talk to, for whichever user.
         "dns_cache",

@@ -102,9 +102,10 @@ private:
     /// newest step goes last - it is the one the results the model is about to reason over answer.
     /// Returns the size of the history that is left.
     size_t elideOldestAssistantSteps(size_t total_bytes);
-    /// Cut the question of the current turn down to the byte budget, with a notice of what was
-    /// left out. This is the last resort: the question itself is never dropped, so an oversized
-    /// one (a pasted log) would otherwise break the budget on its own.
+    /// Cut the question of the current turn down to the byte budget, keeping its beginning and
+    /// its end, with a notice of what was left out between them. This is the last resort: the
+    /// question itself is never dropped, so an oversized one (a pasted log) would otherwise break
+    /// the budget on its own.
     void truncateCurrentQuestion(size_t total_bytes);
     static ai::JsonValue truncateOversizedToolResult(ai::JsonValue value);
     /// Cut the message of a failed tool call down to `max_tool_result_bytes`, with a notice of what

@@ -663,6 +663,39 @@ bool isIndentedCodeLine(const String & s, size_t line_start)
     return column >= 4;
 }
 
+/// A copy of `text` of the same size in which every line break is a line feed, for the scanner of
+/// Markdown code below, which knows no other one: the carriage return, alone or before a line feed,
+/// the vertical tab, the form feed, the information separators, and U+0085, U+2028 and U+2029 are
+/// line breaks as well (the same set as in `writeQuotedPayload`), and a model can use any of them
+/// around a fence. The positions are the ones of the text itself: a break of several bytes is
+/// written as spaces followed by the line feed, and trailing spaces mean nothing to the scanner.
+String withLineFeedsForLineBreaks(const String & text)
+{
+    String result = text;
+    for (size_t i = 0; i < result.size(); ++i)
+    {
+        const char c = result[i];
+        if (c == '\r')
+            result[i] = i + 1 < result.size() && result[i + 1] == '\n' ? ' ' : '\n';
+        else if (c == '\v' || c == '\f' || c == '\x1C' || c == '\x1D' || c == '\x1E')
+            result[i] = '\n';
+        else if (c == '\xC2' && i + 1 < result.size() && result[i + 1] == '\x85')
+        {
+            result[i] = ' ';
+            result[i + 1] = '\n';
+            ++i;
+        }
+        else if (c == '\xE2' && i + 2 < result.size() && result[i + 1] == '\x80' && (result[i + 2] == '\xA8' || result[i + 2] == '\xA9'))
+        {
+            result[i] = ' ';
+            result[i + 1] = ' ';
+            result[i + 2] = '\n';
+            i += 2;
+        }
+    }
+    return result;
+}
+
 /// Whether the rest of the line after `pos` holds only whitespace.
 bool restOfLineIsBlank(const String & s, size_t pos)
 {
@@ -761,10 +794,13 @@ AIAgentStep AIServerFunctionTransport::parseResponse(const String & response, si
     AIAgentStep step;
     WriteBufferFromOwnString text;
 
+    /// Where the code is, is decided on a copy with plain line feeds; the positions are the same.
+    const String response_for_code_scan = withLineFeedsForLineBreaks(response);
+
     size_t pos = 0;
     while (pos < response.size())
     {
-        size_t open_pos = findToolCallOutsideCode(response, pos, open_tag);
+        size_t open_pos = findToolCallOutsideCode(response_for_code_scan, pos, open_tag);
         if (open_pos == String::npos)
         {
             writeString(response.substr(pos), text);
