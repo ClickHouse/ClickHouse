@@ -18,6 +18,7 @@
 #include <fmt/format.h>
 
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -1054,6 +1055,20 @@ static std::optional<BoolMask> checkInRangeSingleColumn(
     }
 }
 
+/// Whether a column holding at most one value keeps a small, bounded size however often it is updated.
+/// `LowCardinality` grows its dictionary on every insert; `ColumnTuple` does not report fixed-width values even when its elements do.
+static bool keepsBoundedSizeWhenReused(const IColumn & column)
+{
+    if (column.lowCardinality())
+        return false;
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+        return keepsBoundedSizeWhenReused(nullable->getNestedColumn());
+    if (column.valuesHaveFixedSize())
+        return true;
+    const auto * tuple = typeid_cast<const ColumnTuple *>(&column);
+    return tuple && std::ranges::all_of(tuple->getColumns(), [](const auto & element) { return keepsBoundedSizeWhenReused(*element); });
+}
+
 MergeTreeSetIndex::MergeTreeSetIndex(
     const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_, const Set * source_set)
     : has_all_keys(set_elements.size() == indexes_mapping_.size())
@@ -1101,12 +1116,12 @@ MergeTreeSetIndex::MergeTreeSetIndex(
     else
         ordered_set = sortSetIndexColumns(ordered_set);
 
-    /// Only fixed-width key columns keep the cached ranges buffer small and bounded: their
+    /// Only fixed-width key columns and tuples of them keep the cached ranges buffer small and bounded: their
     /// columns hold at most one value, so reuse cannot grow them. Variable-width columns
     /// (e.g. `ColumnString`) do not release reserved capacity on popBack, so caching them in
     /// thread-local storage could pin arbitrarily large buffers after the query ends.
     cache_ranges = std::all_of(ordered_set.begin(), ordered_set.end(),
-        [](const ColumnPtr & column) { return column->valuesHaveFixedSize(); });
+        [](const ColumnPtr & column) { return keepsBoundedSizeWhenReused(*column); });
 }
 
 MergeTreeSetIndex::FieldValueRanges & MergeTreeSetIndex::getFieldValueRangesBuffer(FieldValueRanges & scratch) const
@@ -1200,20 +1215,26 @@ BoolMask MergeTreeSetIndex::checkInRange(
             continue;
         }
 
-        std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
-            sparse_key_ranges[sparse_pos],
-            indexes_mapping[i].functions,
-            mapping_first_function_number,
-            sparse_data_types[sparse_pos],
-            single_point);
+        const Range * key_range = &sparse_key_ranges[sparse_pos];
+        std::optional<Range> new_range;
+        if (!indexes_mapping[i].functions.empty())
+        {
+            new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
+                *key_range,
+                indexes_mapping[i].functions,
+                mapping_first_function_number,
+                sparse_data_types[sparse_pos],
+                single_point);
 
-        if (!new_range)
-            return {true, true};
+            if (!new_range)
+                return {true, true};
+            key_range = &*new_range;
+        }
 
-        range.left.update(new_range->left);
-        range.right.update(new_range->right);
-        range.left_included = new_range->left_included;
-        range.right_included = new_range->right_included;
+        range.left.update(key_range->left);
+        range.right.update(key_range->right);
+        range.left_included = key_range->left_included;
+        range.right_included = key_range->right_included;
     }
 
     if (tuple_size == 1)
@@ -1265,7 +1286,7 @@ BoolMask MergeTreeSetIndex::checkInRange(
             }
             return false;
         }) - indices.begin();
-    size_t end = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
+    auto not_above = [&](size_t row)
         {
             /// Return false if set[row] is above the key range.
             for (size_t i = 0; i < tuple_size; ++i)
@@ -1278,9 +1299,13 @@ BoolMask MergeTreeSetIndex::checkInRange(
                     return true;
             }
             return true;
-        }) - indices.begin();
+        };
 
-    if (begin > end)
+    /// The set is sorted: set[begin] decides whether an element lies in the range, and set[begin - 1], which is below
+    /// the range, can be above it as well only when the range is inverted.
+    bool can_be_true = begin < size() && not_above(begin);
+
+    if (!can_be_true && begin > 0 && !not_above(begin - 1))
     {
         /// No set element can lie in an empty input key range (e.g. the open interval between two adjacent integers).
         for (const auto & mapping : indexes_mapping)
@@ -1300,8 +1325,6 @@ BoolMask MergeTreeSetIndex::checkInRange(
         return {true, true};
 #endif
     }
-
-    bool can_be_true = begin < end;
 
     /// A special case of 1-element KeyRange. It's useful for partition pruning.
     bool at_most_one_element_range = true;
@@ -1352,21 +1375,27 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
         if (indexes_mapping[i].key_index >= key_ranges.size())
             return {true, true};
 
-        std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
-            key_ranges[indexes_mapping[i].key_index],
-            indexes_mapping[i].functions,
-            mapping_first_function_number,
-            data_types[indexes_mapping[i].key_index],
-            single_point);
+        const Range * key_range = &key_ranges[indexes_mapping[i].key_index];
+        std::optional<Range> new_range;
+        if (!indexes_mapping[i].functions.empty())
+        {
+            new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
+                *key_range,
+                indexes_mapping[i].functions,
+                mapping_first_function_number,
+                data_types[indexes_mapping[i].key_index],
+                single_point);
 
-        if (!new_range)
-            return {true, true};
+            if (!new_range)
+                return {true, true};
+            key_range = &*new_range;
+        }
 
         FieldValueRange & range = ranges[i];
-        range.left.update(new_range->left);
-        range.right.update(new_range->right);
-        range.left_included = new_range->left_included;
-        range.right_included = new_range->right_included;
+        range.left.update(key_range->left);
+        range.right.update(key_range->right);
+        range.left_included = key_range->left_included;
+        range.right_included = key_range->right_included;
     }
 
     if (tuple_size == 1)
@@ -1418,7 +1447,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
             }
             return false;
         }) - indices.begin();
-    size_t end = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
+    auto not_above = [&](size_t row)
         {
             /// Return false if set[row] is above the key range.
             for (size_t i = 0; i < tuple_size; ++i)
@@ -1431,9 +1460,13 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
                     return true;
             }
             return true;
-        }) - indices.begin();
+        };
 
-    if (begin > end)
+    /// The set is sorted: set[begin] decides whether an element lies in the range, and set[begin - 1], which is below
+    /// the range, can be above it as well only when the range is inverted.
+    bool can_be_true = begin < size() && not_above(begin);
+
+    if (!can_be_true && begin > 0 && !not_above(begin - 1))
     {
         /// No set element can lie in an empty input key range (e.g. the open interval between two adjacent integers).
         for (const auto & mapping : indexes_mapping)
@@ -1452,8 +1485,6 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
         return {true, true};
 #endif
     }
-
-    bool can_be_true = begin < end;
 
     /// A special case of 1-element KeyRange. It's useful for partition pruning.
     bool at_most_one_element_range = true;
