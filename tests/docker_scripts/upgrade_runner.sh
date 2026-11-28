@@ -387,7 +387,7 @@ then
 
     if [ "$restart_failed" != 0 ]
     then
-        echo -e "Cannot restart a read-only replica holding a mutation left unfinished by the stress phase (see unkilled_mutation_errors.txt)$FAIL$(head_escaped /test_output/unkilled_mutation_errors.txt)" >> /test_output/test_results.tsv
+        printf "Cannot restart a read-only replica holding a mutation left unfinished by the stress phase (see unkilled_mutation_errors.txt)$FAIL%s\n" "$(head_escaped /test_output/unkilled_mutation_errors.txt)" >> /test_output/test_results.tsv
     fi
 
     kill_unfinished_mutations ||:
@@ -411,7 +411,7 @@ then
             WHERE NOT is_done
             ORDER BY database, table, mutation_id
             FORMAT Vertical" > /test_output/unkilled_mutations.txt ||:
-        echo -e "$unfinished_mutations mutations could not be killed before the upgrade (see unkilled_mutations.txt and unkilled_mutation_errors.txt)$FAIL$(head_escaped /test_output/unkilled_mutations.txt)" >> /test_output/test_results.tsv
+        printf "$unfinished_mutations mutations could not be killed before the upgrade (see unkilled_mutations.txt and unkilled_mutation_errors.txt)$FAIL%s\n" "$(head_escaped /test_output/unkilled_mutations.txt)" >> /test_output/test_results.tsv
     fi
 else
     echo -e "Cannot count the mutations left unfinished by the stress phase$FAIL" >> /test_output/test_results.tsv
@@ -477,7 +477,7 @@ fi
 
 if [ "$drain_failed" != 0 ]
 then
-    echo -e "Cannot run the mutation entries left behind by the killed mutations (see undrained_mutation_errors.txt)$FAIL$(head_escaped /test_output/undrained_mutation_errors.txt)" >> /test_output/test_results.tsv
+    printf "Cannot run the mutation entries left behind by the killed mutations (see undrained_mutation_errors.txt)$FAIL%s\n" "$(head_escaped /test_output/undrained_mutation_errors.txt)" >> /test_output/test_results.tsv
 fi
 if [ "$queued_mutation_entries" != 0 ]
 then
@@ -635,11 +635,11 @@ fi
 
 if [ "$row_policy_check_failed" != 0 ]
 then
-    echo -e "Cannot check whether the row policies can be applied (see unchecked_row_policy_errors.txt)$FAIL$(head_escaped /test_output/unchecked_row_policy_errors.txt)" >> /test_output/test_results.tsv
+    printf "Cannot check whether the row policies can be applied (see unchecked_row_policy_errors.txt)$FAIL%s\n" "$(head_escaped /test_output/unchecked_row_policy_errors.txt)" >> /test_output/test_results.tsv
 fi
 if [ "$row_policy_drop_failed" != 0 ] || [ -s /test_output/undropped_row_policy_errors.txt ]
 then
-    echo -e "Cannot drop the row policies that cannot be applied (see undropped_row_policy_errors.txt)$FAIL$(head_escaped /test_output/undropped_row_policy_errors.txt)" >> /test_output/test_results.tsv
+    printf "Cannot drop the row policies that cannot be applied (see undropped_row_policy_errors.txt)$FAIL%s\n" "$(head_escaped /test_output/undropped_row_policy_errors.txt)" >> /test_output/test_results.tsv
 fi
 
 [ -s /test_output/dropped_row_policies.txt ] || rm -f /test_output/dropped_row_policies.txt
@@ -773,7 +773,7 @@ then
   if [ -s changed_settings.txt ]
   then
       mv changed_settings.txt /test_output/
-      echo -e "Changed settings are not reflected in the settings changes history (see changed_settings.txt)$FAIL$(head_escaped /test_output/changed_settings.txt)" >> /test_output/test_results.tsv
+      printf "Changed settings are not reflected in the settings changes history (see changed_settings.txt)$FAIL%s\n" "$(head_escaped /test_output/changed_settings.txt)" >> /test_output/test_results.tsv
   else
       echo -e "There are no changed settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
   fi
@@ -781,7 +781,7 @@ then
   if [ -s changed_merge_tree_settings.txt ]
   then
       mv changed_merge_tree_settings.txt /test_output/
-      echo -e "Changed MergeTree settings are not reflected in the settings changes history (see changed_merge_tree_settings.txt)$FAIL$(head_escaped /test_output/changed_merge_tree_settings.txt)" >> /test_output/test_results.tsv
+      printf "Changed MergeTree settings are not reflected in the settings changes history (see changed_merge_tree_settings.txt)$FAIL%s\n" "$(head_escaped /test_output/changed_merge_tree_settings.txt)" >> /test_output/test_results.tsv
   else
       echo -e "There are no changed MergeTree settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
   fi
@@ -789,7 +789,7 @@ then
   if [ -s new_settings.txt ]
   then
       mv new_settings.txt /test_output/
-      echo -e "New settings are not reflected in settings changes history (see new_settings.txt)$FAIL$(head_escaped /test_output/new_settings.txt)" >> /test_output/test_results.tsv
+      printf "New settings are not reflected in settings changes history (see new_settings.txt)$FAIL%s\n" "$(head_escaped /test_output/new_settings.txt)" >> /test_output/test_results.tsv
   else
       echo -e "There are no new settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
   fi
@@ -797,7 +797,7 @@ then
   if [ -s new_merge_tree_settings.txt ]
   then
       mv new_merge_tree_settings.txt /test_output/
-      echo -e "New MergeTree settings are not reflected in settings changes history (see new_merge_tree_settings.txt)$FAIL$(head_escaped /test_output/new_merge_tree_settings.txt)" >> /test_output/test_results.tsv
+      printf "New MergeTree settings are not reflected in settings changes history (see new_merge_tree_settings.txt)$FAIL%s\n" "$(head_escaped /test_output/new_merge_tree_settings.txt)" >> /test_output/test_results.tsv
   else
       echo -e "There are no new MergeTree settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
   fi
@@ -836,7 +836,7 @@ start_server || check_allow_list || (echo "Failed to start server" && exit 1)
 
 clickhouse-client --receive_timeout 30 --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
-    && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
+    && printf "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL%s\n" "$(trim_server_logs application_errors.txt)" \
     >> /test_output/test_results.tsv)
 
 # Remove file application_errors.txt if it's empty
@@ -879,13 +879,13 @@ then
         echo -e "The mutation submitted before the upgrade was finished by the new server$OK" >> /test_output/test_results.tsv
     elif [ "$mutation_across_upgrade_finished" = cannot_check ]
     then
-        echo -e "Cannot check whether the mutation submitted before the upgrade was finished (see mutation_across_upgrade_error.txt)$FAIL$(head_escaped /test_output/mutation_across_upgrade_error.txt)" >> /test_output/test_results.tsv
+        printf "Cannot check whether the mutation submitted before the upgrade was finished (see mutation_across_upgrade_error.txt)$FAIL%s\n" "$(head_escaped /test_output/mutation_across_upgrade_error.txt)" >> /test_output/test_results.tsv
     else
         timeout 1m clickhouse-client --query "
             SELECT * FROM system.mutations
             WHERE database = 'default' AND table = 'mutation_across_upgrade'
             FORMAT Vertical" > /test_output/mutation_across_upgrade.txt 2>&1 ||:
-        echo -e "The mutation submitted before the upgrade was not finished by the new server (see mutation_across_upgrade.txt)$FAIL$(head_escaped /test_output/mutation_across_upgrade.txt)" >> /test_output/test_results.tsv
+        printf "The mutation submitted before the upgrade was not finished by the new server (see mutation_across_upgrade.txt)$FAIL%s\n" "$(head_escaped /test_output/mutation_across_upgrade.txt)" >> /test_output/test_results.tsv
     fi
 
     [ -s /test_output/mutation_across_upgrade_error.txt ] || rm -f /test_output/mutation_across_upgrade_error.txt
@@ -1220,7 +1220,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
-    echo -e "Error message in clickhouse-server.log (see upgrade_error_messages.txt)$FAIL$(head_escaped /test_output/upgrade_error_messages.txt)" >> /test_output/test_results.tsv
+    printf "Error message in clickhouse-server.log (see upgrade_error_messages.txt)$FAIL%s\n" "$(head_escaped /test_output/upgrade_error_messages.txt)" >> /test_output/test_results.tsv
 else
     echo -e "No Error messages after server upgrade$OK" >> /test_output/test_results.tsv
 fi
