@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import List
 
 from ci.jobs.scripts import log_export
+from ci.praktika import SecretFetchFailed
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
@@ -1692,10 +1693,15 @@ if __name__ == "__main__":
                 # This command runs in a process of its own, so it holds none of the
                 # credentials `logs_export_config` fetched, and `setup_log_cluster.sh`
                 # creates no `_sender` table without them.
-                ch.log_export_host, ch.log_export_password = (
-                    log_export.get_credentials()
-                )
-                res = ch.start_log_exports(check_start_time=Utils.timestamp())
+                try:
+                    ch.log_export_host, ch.log_export_password = (
+                        log_export.get_credentials()
+                    )
+                except SecretFetchFailed as e:
+                    print(f"WARNING: no CI Logs credentials, skipping log export: {e}")
+                    res = True
+                else:
+                    res = ch.start_log_exports(check_start_time=Utils.timestamp())
             else:
                 res = True
         elif command == "logs_export_stop":

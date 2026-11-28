@@ -15,6 +15,7 @@ performance comparison runs two servers side by side), and a job that runs more
 than one server tells them apart with `check_name_suffix`.
 """
 
+import json
 import math
 import os
 import time
@@ -67,32 +68,53 @@ SENDER_TABLES_QUERY = (
 # in progress per `_sender` table holds it, for at most the send timeouts of the `ci_logs_sender` profile.
 EXPORT_DROP_SEC = 60
 
+# Where the `fetch_ci_logs_credentials` pre-hook drops the credentials it reads
+# on the host, so a job whose container has no AWS access reads them from here
+# instead of calling SSM. Under the checkout, which is mounted into the container.
+CREDENTIALS_FILE = "ci/tmp/ci_logs_credentials.json"
+
 _credentials = None
 
 
-def get_credentials():
-    """The host and the password of the CI Logs cluster, from AWS SSM.
+def fetch_credentials_from_aws():
+    """The host and the password of the CI Logs cluster, from AWS SSM. Needs AWS
+    access, so it runs on the host (locally or in the pre-hook), not in a job
+    container that has none."""
+    return (
+        Secret.Config(
+            name="clickhouse_ci_logs_host",
+            type=Secret.Type.AWS_SSM_PARAMETER,
+            region="us-east-1",
+        )
+        .join_with(
+            Secret.Config(
+                name="clickhouse_ci_logs_password",
+                type=Secret.Type.AWS_SSM_PARAMETER,
+                region="us-east-1",
+            )
+        )
+        .get_value()
+    )
 
-    Fetched once per process: every server of the job exports to the same
+
+def get_credentials():
+    """The host and the password of the CI Logs cluster, read from the file the
+    `fetch_ci_logs_credentials` pre-hook writes on the host, so the job container
+    needs no AWS access of its own. Raises `SecretFetchFailed` when the file is
+    absent - the pre-hook did not run or could not reach SSM - so callers skip the
+    export. Fetched once per process: every server of the job exports to the same
     cluster.
     """
     global _credentials
     if _credentials is None:
-        _credentials = (
-            Secret.Config(
-                name="clickhouse_ci_logs_host",
-                type=Secret.Type.AWS_SSM_PARAMETER,
-                region="us-east-1",
+        creds_file = Path(CREDENTIALS_FILE)
+        if not creds_file.exists():
+            raise SecretFetchFailed(
+                f"No CI Logs credentials file [{CREDENTIALS_FILE}] - the "
+                "fetch_ci_logs_credentials pre-hook did not run or failed"
             )
-            .join_with(
-                Secret.Config(
-                    name="clickhouse_ci_logs_password",
-                    type=Secret.Type.AWS_SSM_PARAMETER,
-                    region="us-east-1",
-                )
-            )
-            .get_value()
-        )
+        print(f"Reading CI Logs credentials from [{CREDENTIALS_FILE}]")
+        _credentials = tuple(json.loads(creds_file.read_text()))
     return _credentials
 
 
