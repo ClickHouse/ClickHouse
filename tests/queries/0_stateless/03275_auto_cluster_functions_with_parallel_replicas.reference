@@ -10,24 +10,18 @@ Expression ((Project names + Projection))
   Aggregating
     Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Change remote column names to local column names))))
       ReadFromCluster
-Expression ((Project names + Projection))
-  Expression (Post Join Actions)
-    Join (JOIN FillRightFirst)
-      Expression (Left Pre Join Actions)
-        Expression (Change column names to column identifiers)
-          ReadFromSystemNumbers
-      Expression (Right Pre Join Actions)
-        Expression (Change column names to column identifiers)
-          ReadFromObjectStorage
-Expression ((Project names + Projection))
-  Expression (Post Join Actions)
-    Join (JOIN FillRightFirst)
-      Expression (Left Pre Join Actions)
-        Expression (Change column names to column identifiers)
-          ReadFromSystemNumbers
-      Expression (Right Pre Join Actions)
-        Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
-          ReadFromObjectStorage
+Expression (((Project names + Projection) + Post Join Actions))
+  Join (JOIN FillRightFirst)
+    Expression ((Left Pre Join Actions + Change column names to column identifiers))
+      ReadFromSystemNumbers
+    Expression ((Right Pre Join Actions + Change column names to column identifiers))
+      ReadFromObjectStorage
+Expression (((Project names + Projection) + Post Join Actions))
+  Join (JOIN FillRightFirst)
+    Expression ((Left Pre Join Actions + Change column names to column identifiers))
+      ReadFromSystemNumbers
+    Expression ((Right Pre Join Actions + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+      ReadFromObjectStorage
 4
 4
 4
