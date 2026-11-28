@@ -182,13 +182,9 @@ bool SplitByNonAlphaTokenizer::nextInStringLike(const char * data, size_t length
         }
         else
         {
-            const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[pos]));
-            /// The sequence length is determined by the first character, but we should always check it does not go beyond the buffer length.
-            for (size_t j = 0; j < sz && pos < length; ++j)
-            {
-                token += data[pos];
-                ++pos;
-            }
+            /// One byte at a time, as `separator_chars` splits stored values: an invalid UTF-8 sequence can hold a separator or a wildcard.
+            token += data[pos];
+            ++pos;
             escaped = false;
         }
     }

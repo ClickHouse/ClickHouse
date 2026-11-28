@@ -1,0 +1,44 @@
+tokensForLikePattern
+['F0','8CBC']	['F0','8CBC']
+['61']
+['61']
+text index
+-- separator after an invalid lead byte
+[1]
+[1]
+Granules: 3/3
+Granules: 1/3
+-- wildcard after an invalid lead byte
+[2]
+[2]
+tokenbf_v1 index
+-- separator after an invalid lead byte
+[1]
+[1]
+Granules: 3/3
+Granules: 1/3
+-- wildcard after an invalid lead byte
+[2]
+[2]
+text index on Map
+-- mapContainsKeyLike
+[1]
+[1]
+Granules: 3/3
+Granules: 1/3
+-- mapContainsValueLike
+[2]
+[2]
+Granules: 3/3
+Granules: 1/3
+tokenbf_v1 index on Map
+-- mapContainsKeyLike
+[1]
+[1]
+Granules: 3/3
+Granules: 1/3
+-- mapContainsValueLike
+[2]
+[2]
+Granules: 3/3
+Granules: 1/3
