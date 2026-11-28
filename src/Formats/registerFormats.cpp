@@ -85,6 +85,7 @@ void registerOutputFormatCapnProto(FormatFactory & factory);
 void registerInputFormatNpy(FormatFactory & factory);
 void registerOutputFormatNpy(FormatFactory & factory);
 void registerInputFormatForm(FormatFactory & factory);
+void registerOutputFormatSSE(FormatFactory & factory);
 #if USE_SQLITE
 void registerInputFormatSQLite(FormatFactory & factory);
 void registerOutputFormatSQLite(FormatFactory & factory);
@@ -246,6 +247,8 @@ void registerFormats()
     registerInputFormatCustomSeparated(factory);
     registerOutputFormatCustomSeparated(factory);
     registerInputFormatForm(factory);
+
+    registerOutputFormatSSE(factory);
 
     registerInputFormatORC(factory);
     registerOutputFormatORC(factory);

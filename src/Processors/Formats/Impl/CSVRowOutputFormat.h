@@ -27,6 +27,9 @@ public:
 
     bool supportsSpecialSerializationKinds() const override { return format_settings.allow_special_serialization_kinds; }
 
+    template <typename Format, bool support_progress>
+    friend class SSEFormat;
+
 private:
     void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;

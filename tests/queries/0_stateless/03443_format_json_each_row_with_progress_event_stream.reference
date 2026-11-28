@@ -1,0 +1,50 @@
+event: progress
+data: {"progress":{"read_rows":"100000","read_bytes":"800000"}}
+
+event: results
+data: {"meta":[{"name":"number","type":"UInt64"}]}
+
+event: results
+data: {"row":{"number":"1"}}
+
+event: progress
+data: {"progress":{"read_rows":"200000","read_bytes":"1600000"}}
+
+event: progress
+data: {"progress":{"read_rows":"300000","read_bytes":"2400000"}}
+
+event: progress
+data: {"progress":{"read_rows":"400000","read_bytes":"3200000"}}
+
+event: progress
+data: {"progress":{"read_rows":"500000","read_bytes":"4000000"}}
+
+event: progress
+data: {"progress":{"read_rows":"600000","read_bytes":"4800000"}}
+
+event: progress
+data: {"progress":{"read_rows":"700000","read_bytes":"5600000"}}
+
+event: progress
+data: {"progress":{"read_rows":"800000","read_bytes":"6400000"}}
+
+event: progress
+data: {"progress":{"read_rows":"900000","read_bytes":"7200000"}}
+
+event: progress
+data: {"progress":{"read_rows":"1000000","read_bytes":"8000000"}}
+
+event: progress
+data: {"progress":{"read_rows":"1100000","read_bytes":"8800000"}}
+
+event: progress
+data: {"progress":{"read_rows":"1200000","read_bytes":"9600000"}}
+
+event: progress
+data: {"progress":{"read_rows":"1300000","read_bytes":"10400000"}}
+
+event: progress
+data: {"progress":{"read_rows":"1400000","read_bytes":"11200000"}}
+
+event: progress
+data: {"progress":{"read_rows":"1500000","read_bytes":"12000000"}}

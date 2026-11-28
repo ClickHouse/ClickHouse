@@ -47,6 +47,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
+#include <Processors/Formats/Impl/JSONEachRowRowOutputFormat.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/Framing/FramingFormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -881,11 +882,21 @@ void HTTPHandler::processQuery(
     /// independent of the user-tunable `snappy_mode` (which controls generic `file()`/`url()` reads).
     auto snappy_mode = SnappyMode::Framed;
 
+    // IS EVENT STREAM ENABLED
+    bool is_event_stream_enabled = isEventStreamRequest(request);
+
     used_output.out_holder =
-        std::make_shared<WriteBufferFromHTTPServerResponse>(
-            response,
-            request.getMethod() == HTTPRequest::HTTP_HEAD,
-            write_event);
+    std::make_shared<WriteBufferFromHTTPServerResponse>(
+        response,
+        request.getMethod() == HTTPRequest::HTTP_HEAD,
+        write_event,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        is_event_stream_enabled);
+
+    if (is_event_stream_enabled)
+        writeEventStreamHeader(response);
+
+
     used_output.out_maybe_compressed = used_output.out_holder;
     used_output.out = used_output.out_holder;
 
@@ -1908,6 +1919,26 @@ void HTTPHandler::releaseOrCloseSession(const String & session_id, bool close_se
         else
             session->releaseSessionID();
     }
+}
+
+bool HTTPHandler::isEventStreamRequest(const HTTPServerRequest & request) const
+{
+    const auto &accept_values = request.getAll("Accept");
+    for (const auto &accept_value : accept_values)
+    {
+        if (startsWith(accept_value, "text/event-stream"))
+            return true;
+    }
+
+    return false;
+}
+
+void HTTPHandler::writeEventStreamHeader(HTTPServerResponse & response)
+{
+    response.setContentType("text/event-stream");
+    response.set("Cache-Control", "no-cache");
+    response.set("Connection", "keep-alive");
+    response.setChunkedTransferEncoding(true);
 }
 
 DynamicQueryHandler::DynamicQueryHandler(

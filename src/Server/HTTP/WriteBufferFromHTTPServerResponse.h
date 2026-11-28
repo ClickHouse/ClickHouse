@@ -33,10 +33,13 @@ public:
         HTTPServerResponse & response_,
         bool is_http_method_head_,
         const ProfileEvents::Event & write_event_ = ProfileEvents::end(),
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        bool is_event_stream_enabled_ = false);
 
     /// Writes progress in repeating HTTP headers.
     void onProgress(const Progress & progress, ContextPtr context);
+
+    void onProgressSSE(const Progress & progress);
 
     /// Turn CORS on or off.
     /// The setting has any effect only if HTTP headers haven't been sent yet.
@@ -114,6 +117,8 @@ private:
     int exception_code = 0;
 
     std::string exception_tag;
+
+    bool is_event_stream_enabled;
 
     std::mutex mutex;    /// progress callback could be called from different threads.
 };
