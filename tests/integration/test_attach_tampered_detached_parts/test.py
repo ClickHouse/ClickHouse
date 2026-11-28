@@ -27,7 +27,7 @@ from helpers.cluster import ClickHouseCluster
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node")
+node = cluster.add_instance("node", main_configs=["configs/storage_conf.xml"])
 
 
 @pytest.fixture(scope="module")
@@ -643,3 +643,71 @@ def test_mutate_mixed_legacy_idx_minmax(started_cluster):
     assert node.query("CHECK TABLE t_mixed_minmax_drop SETTINGS check_query_single_value_result = 1") == "1\n"
 
     node.query("DROP TABLE t_mixed_minmax_drop SYNC")
+
+
+def make_detached_source_parts(table, ranges):
+    # One part per (first, count) range of `x`, detached, returned in insert order.
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(f"CREATE TABLE {table} (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'default'")
+    node.query(f"SYSTEM STOP MERGES {table}")
+    for first, count in ranges:
+        node.query(f"INSERT INTO {table} SELECT number FROM numbers({first}, {count})")
+    node.query(f"ALTER TABLE {table} DETACH PARTITION tuple()")
+    paths = node.query(
+        f"SELECT path FROM system.detached_parts WHERE database = 'default' AND table = '{table}' ORDER BY min_block_number"
+    ).split()
+    assert len(paths) == len(ranges)
+    return [path.rstrip("/") for path in paths]
+
+
+def create_jbod_table(table):
+    # Returns the table's data path on each disk, in the order the disks are listed in `jbod4`.
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(f"CREATE TABLE {table} (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'jbod4'")
+    return node.query(
+        f"SELECT arrayJoin(data_paths) FROM system.tables WHERE database = 'default' AND table = '{table}'"
+    ).split()
+
+
+def sorted_values(table):
+    return node.query(f"SELECT groupArray(x) FROM (SELECT x FROM {table} ORDER BY x)").strip()
+
+
+# In the two tests below every disk holds at most one detached part, so the order in which
+# ATTACH PARTITION ALL finds them is the disk order of `jbod4` (a single directory is listed in
+# filesystem order).
+
+
+def test_attach_partition_all_keeps_part_contained_in_rejected_part(started_cluster):
+    # all_1_4_2 contains all_1_2_1 and intersects all_3_5_1, so it is ignored, and both of the
+    # parts found before it are attached.
+    src = make_detached_source_parts("t_src_contained", [(1, 2), (3, 3), (1, 4)])
+    paths = create_jbod_table("t_contained")
+    exec_root(f"cp -a {src[0]} {paths[0]}detached/all_1_2_1")
+    exec_root(f"cp -a {src[1]} {paths[1]}detached/all_3_5_1")
+    exec_root(f"cp -a {src[2]} {paths[2]}detached/all_1_4_2")
+
+    node.query("ALTER TABLE t_contained ATTACH PARTITION ALL")
+    assert sorted_values("t_contained") == "[1,2,3,4,5]"
+
+    node.query("DROP TABLE t_contained SYNC")
+    node.query("DROP TABLE t_src_contained SYNC")
+
+
+def test_attach_partition_all_rejected_part_covered_by_later_part(started_cluster):
+    # all_8_11_2 intersects all_10_12_1 and is ignored, then all_8_12_3 covers both of them and
+    # the copy of all_8_11_2 on the last disk. Only all_8_12_3 is attached, and a repeated ATTACH
+    # must not attach the covered parts.
+    src = make_detached_source_parts("t_src_covered", [(10, 3), (8, 4), (8, 5)])
+    paths = create_jbod_table("t_covered")
+    exec_root(f"cp -a {src[0]} {paths[0]}detached/all_10_12_1")
+    exec_root(f"cp -a {src[1]} {paths[1]}detached/all_8_11_2")
+    exec_root(f"cp -a {src[2]} {paths[2]}detached/all_8_12_3")
+    exec_root(f"cp -a {src[1]} {paths[3]}detached/all_8_11_2")
+
+    for _ in range(2):
+        node.query("ALTER TABLE t_covered ATTACH PARTITION ALL")
+        assert sorted_values("t_covered") == "[8,9,10,11,12]"
+
+    node.query("DROP TABLE t_covered SYNC")
+    node.query("DROP TABLE t_src_covered SYNC")
