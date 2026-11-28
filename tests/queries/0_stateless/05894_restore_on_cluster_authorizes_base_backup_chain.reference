@@ -1,0 +1,14 @@
+--- without READ ON FILE, a local restore reads no base
+Code: 497 grant READ ON FILE
+--- without READ ON FILE, neither does a restore on the cluster: a base from the metadata, a base of a base, an explicit base
+Code: 497 grant READ ON FILE
+Code: 497 grant READ ON FILE
+Code: 497 grant READ ON FILE
+0
+--- with READ ON FILE, the row stored only in the base is restored on the cluster
+restored
+restored
+restored
+7
+7
+7
