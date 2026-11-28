@@ -35,7 +35,6 @@ macro(clickhouse_split_debug_symbols)
    endif()
 
    # Commands that write the contents of the new sections, then the arguments of the single `objcopy` invocation that adds them.
-   # Each `objcopy` invocation rewrites the whole binary, and `compact-symbols` has to read it while it still has `.symtab`.
    set(SYMBOL_SECTIONS_COMMANDS)
    set(SYMBOL_SECTIONS_OBJCOPY_ARGS)
    set(SYMBOL_SECTIONS_TEMPORARY_FILES)
@@ -57,8 +56,9 @@ macro(clickhouse_split_debug_symbols)
        endif()
 
        set(COMPACT_SYMBOLS_BLOB "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}.symbols")
+       # `--strip-debug` removes no symbol that `compact-symbols` keeps (it keeps symbols with an address and a size).
        list(APPEND SYMBOL_SECTIONS_COMMANDS
-           COMMAND "${COMPACT_SYMBOLS_TOOL}" "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}" "${COMPACT_SYMBOLS_BLOB}"
+           COMMAND "${COMPACT_SYMBOLS_TOOL}" "${STRIP_BINARY_PATH}" "${COMPACT_SYMBOLS_BLOB}"
        )
        list(APPEND SYMBOL_SECTIONS_OBJCOPY_ARGS "--add-section=.clickhouse.symbols=${COMPACT_SYMBOLS_BLOB}")
        list(APPEND SYMBOL_SECTIONS_TEMPORARY_FILES "${COMPACT_SYMBOLS_BLOB}")
@@ -75,18 +75,12 @@ macro(clickhouse_split_debug_symbols)
        list(APPEND SYMBOL_SECTIONS_TEMPORARY_FILES "${MINI_DEBUGINFO_PATH}" "${MINI_DEBUGINFO_PATH}.xz")
    endif()
 
+   set(SYMBOL_SECTIONS_CLEANUP)
    if (ADD_COMPACT_SYMBOLS_SECTION OR ADD_GNU_DEBUGDATA_SECTION)
-       list(APPEND SYMBOL_SECTIONS_COMMANDS
-           # GNU `objcopy` regenerates `.symtab` and `.strtab` on `--remove-section` while the symbols are still there, so drop them with `--strip-unneeded`.
-           # Not `--strip-all`: `llvm-objcopy` would also remove the non-allocated `.clickhouse.hash` and `.gnu_debuglink` sections.
-           COMMAND "${OBJCOPY_PATH}"
-               --strip-unneeded
-               ${SYMBOL_SECTIONS_OBJCOPY_ARGS}
-               "--remove-section=.symtab"
-               "--remove-section=.strtab"
-               "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}"
-           COMMAND "${CMAKE_COMMAND}" -E rm -f ${SYMBOL_SECTIONS_TEMPORARY_FILES}
-       )
+       # GNU `objcopy` regenerates `.symtab` and `.strtab` on `--remove-section` while the symbols are still there, so drop them with `--strip-unneeded`.
+       # Not `--strip-all`: `llvm-objcopy` would also remove the non-allocated `.clickhouse.hash` and `.gnu_debuglink` sections.
+       list(APPEND SYMBOL_SECTIONS_OBJCOPY_ARGS --strip-unneeded "--remove-section=.symtab" "--remove-section=.strtab")
+       set(SYMBOL_SECTIONS_CLEANUP COMMAND "${CMAKE_COMMAND}" -E rm -f ${SYMBOL_SECTIONS_TEMPORARY_FILES})
    endif()
 
    add_custom_command(TARGET ${STRIP_TARGET} POST_BUILD
@@ -95,18 +89,22 @@ macro(clickhouse_split_debug_symbols)
        # Splits debug symbols into separate file, leaves the binary untouched.
        COMMAND "${OBJCOPY_PATH}" --only-keep-debug "--compress-debug-sections=${SPLIT_DEBUG_COMPRESSION}" "${STRIP_BINARY_PATH}" "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug"
        COMMAND chmod 0644 "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug"
+       ${SYMBOL_SECTIONS_COMMANDS}
        # Strips binary, sections '.note' & '.comment' are removed in line with Debian's stripping policy: www.debian.org/doc/debian-policy/ch-files.html, section '.clickhouse.hash' is needed for integrity check.
        # Also, after we disabled the export of symbols for dynamic linking, we still to keep a static symbol table for good stack traces.
-       COMMAND "${STRIP_PATH}" --strip-debug --remove-section=.comment --remove-section=.note "${STRIP_BINARY_PATH}" -o "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}"
-       # Associate stripped binary with debug symbols:
-       COMMAND "${OBJCOPY_PATH}" --add-gnu-debuglink "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug" "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}"
-       ${SYMBOL_SECTIONS_COMMANDS}
+       # Strip, add `.gnu_debuglink` and the symbol sections in one pass: each `objcopy` pass rewrites the whole binary.
+       COMMAND "${OBJCOPY_PATH}" --strip-debug --remove-section=.comment --remove-section=.note
+           "--add-gnu-debuglink=${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug"
+           ${SYMBOL_SECTIONS_OBJCOPY_ARGS}
+           "${STRIP_BINARY_PATH}" "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}"
+       ${SYMBOL_SECTIONS_CLEANUP}
        COMMENT "Stripping clickhouse binary" VERBATIM
    )
 
    unset(SYMBOL_SECTIONS_COMMANDS)
    unset(SYMBOL_SECTIONS_OBJCOPY_ARGS)
    unset(SYMBOL_SECTIONS_TEMPORARY_FILES)
+   unset(SYMBOL_SECTIONS_CLEANUP)
    unset(COMPACT_SYMBOLS_TOOL)
    unset(COMPACT_SYMBOLS_BLOB)
    unset(MINI_DEBUGINFO_PATH)
