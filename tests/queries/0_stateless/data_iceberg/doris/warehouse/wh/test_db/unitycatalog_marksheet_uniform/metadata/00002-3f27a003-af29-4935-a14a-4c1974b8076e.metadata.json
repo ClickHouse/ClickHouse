@@ -1,0 +1,87 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "41e7f6d7-6632-41bb-bac8-f6f117a86cc3",
+  "location" : "s3a://warehouse/wh/test_db/unitycatalog_marksheet_uniform",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1731479104569,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "c1",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "c2",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "c3",
+      "required" : false,
+      "type" : "int"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "wuwenchi",
+    "schema.name-mapping.default" : "[ {\n  \"field-id\" : 1,\n  \"names\" : [ \"c1\" ]\n}, {\n  \"field-id\" : 2,\n  \"names\" : [ \"c2\" ]\n}, {\n  \"field-id\" : 3,\n  \"names\" : [ \"c3\" ]\n} ]",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 2694370357339717157,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 2694370357339717157,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 2694370357339717157,
+    "timestamp-ms" : 1731479104569,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "1",
+      "added-records" : "15",
+      "total-records" : "15",
+      "total-files-size" : "0",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "engine-version" : "3.5.1",
+      "app-id" : "local-1731479094579",
+      "engine-name" : "spark",
+      "iceberg-version" : "Apache Iceberg 1.6.1 (commit 8e9d59d299be42b0bca9461457cd1e95dbaad086)"
+    },
+    "manifest-list" : "s3a://warehouse/wh/test_db/unitycatalog_marksheet_uniform/metadata/snap-2694370357339717157-1-a5158eee-3b31-4500-a83b-4b5f57a34d1c.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1731479104569,
+    "snapshot-id" : 2694370357339717157
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1731479099492,
+    "metadata-file" : "s3a://warehouse/wh/test_db/unitycatalog_marksheet_uniform/metadata/00000-92ce675a-eb5c-4614-846f-fabcf3b87ca2.metadata.json"
+  }, {
+    "timestamp-ms" : 1731479099662,
+    "metadata-file" : "s3a://warehouse/wh/test_db/unitycatalog_marksheet_uniform/metadata/00001-e0214b23-b65e-4717-b489-c7e63ea065ff.metadata.json"
+  } ]
+}

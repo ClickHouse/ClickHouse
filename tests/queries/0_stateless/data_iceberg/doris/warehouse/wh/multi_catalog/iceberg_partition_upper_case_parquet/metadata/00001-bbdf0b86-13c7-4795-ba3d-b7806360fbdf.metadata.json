@@ -1,0 +1,122 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "3879ae8b-df8a-4df4-ab18-222b1a487565",
+  "location" : "s3a://warehouse/wh/multi_catalog/iceberg_partition_upper_case_parquet",
+  "last-updated-ms" : 1720010420713,
+  "last-column-id" : 4,
+  "schema" : {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "K1",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "K2",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "K3",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 4,
+      "name" : "City",
+      "required" : false,
+      "type" : "string"
+    } ]
+  },
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "K1",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "K2",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "K3",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 4,
+      "name" : "City",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "partition-spec" : [ {
+    "name" : "City",
+    "transform" : "identity",
+    "source-id" : 4,
+    "field-id" : 1000
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "City",
+      "transform" : "identity",
+      "source-id" : 4,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "hadoop",
+    "format" : "iceberg/PARQUET",
+    "write.format.default" : "PARQUET",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 5785905972052456687,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 5785905972052456687,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "snapshot-id" : 5785905972052456687,
+    "timestamp-ms" : 1720010420713,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1719998176718",
+      "added-data-files" : "2",
+      "added-records" : "4",
+      "added-files-size" : "2313",
+      "changed-partition-count" : "2",
+      "total-records" : "4",
+      "total-files-size" : "2313",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/multi_catalog/iceberg_partition_upper_case_parquet/metadata/snap-5785905972052456687-1-e39d1a46-9c36-4d60-a768-e891335b33cb.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1720010420713,
+    "snapshot-id" : 5785905972052456687
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1720010414854,
+    "metadata-file" : "s3a://warehouse/wh/multi_catalog/iceberg_partition_upper_case_parquet/metadata/00000-110b7b94-ea3b-430c-b388-a96efa627c7e.metadata.json"
+  } ]
+}

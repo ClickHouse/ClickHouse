@@ -1,0 +1,77 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "b810b3d8-9461-436f-be9a-2ab0947db39d",
+  "location" : "s3a://warehouse/wh/test_db/iceberg_upper_case_parquet",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1720937077518,
+  "last-column-id" : 2,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "ID",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "NAME",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "root",
+    "write.format.default" : "parquet",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 9195951875942722711,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 9195951875942722711,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 9195951875942722711,
+    "timestamp-ms" : 1720937077518,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1720937068050",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "646",
+      "changed-partition-count" : "1",
+      "total-records" : "1",
+      "total-files-size" : "646",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/test_db/iceberg_upper_case_parquet/metadata/snap-9195951875942722711-1-6e9280e7-4a81-4c38-9a84-f86e8e6a82cf.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1720937077518,
+    "snapshot-id" : 9195951875942722711
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1720937077383,
+    "metadata-file" : "s3a://warehouse/wh/test_db/iceberg_upper_case_parquet/metadata/00000-a52d84a5-60fc-4f63-b08f-1cb1a5a32466.metadata.json"
+  } ]
+}

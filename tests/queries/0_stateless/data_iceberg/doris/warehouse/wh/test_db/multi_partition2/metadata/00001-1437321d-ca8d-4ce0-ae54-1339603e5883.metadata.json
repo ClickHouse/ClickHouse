@@ -1,0 +1,89 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "feca41f3-6b4e-4d75-a622-73cd16dc2ff8",
+  "location" : "s3a://warehouse/wh/test_db/multi_partition2",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1721107688167,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : true,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "ts",
+      "required" : true,
+      "type" : "timestamptz"
+    }, {
+      "id" : 3,
+      "name" : "val",
+      "required" : true,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "id",
+      "transform" : "identity",
+      "source-id" : 1,
+      "field-id" : 1000
+    }, {
+      "name" : "ts_hour",
+      "transform" : "hour",
+      "source-id" : 2,
+      "field-id" : 1001
+    } ]
+  } ],
+  "last-partition-id" : 1001,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 6542121824242007392,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 6542121824242007392,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 6542121824242007392,
+    "timestamp-ms" : 1721107688167,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "4",
+      "added-records" : "4",
+      "added-files-size" : "3536",
+      "changed-partition-count" : "2",
+      "total-records" : "4",
+      "total-files-size" : "3536",
+      "total-data-files" : "4",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/test_db/multi_partition2/metadata/snap-6542121824242007392-1-7d88308a-08d6-4972-8336-718c1f7ccebb.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1721107688167,
+    "snapshot-id" : 6542121824242007392
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1721107687266,
+    "metadata-file" : "s3a://warehouse/wh/test_db/multi_partition2/metadata/00000-07a501e0-bed8-445e-9959-d4d55e748cde.metadata.json"
+  } ]
+}

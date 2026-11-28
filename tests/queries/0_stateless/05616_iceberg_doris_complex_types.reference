@@ -1,0 +1,204 @@
+complex_orc_v1
+id	Nullable(Int32)					
+col2	Array(Array(Array(Array(Array(Nullable(Int32))))))					
+col3	Map(Array(Nullable(Float32)), Map(Int32, Map(Int32, Nullable(Float32))))					
+col4	Tuple(x Array(Nullable(Int32)), y Array(Nullable(Float64)), z Map(Bool, Nullable(String)))					
+col5	Map(Int32, Map(Int32, Map(Int32, Map(Int32, Map(Float32, Map(Float64, Tuple(x Nullable(Int32), y Array(Nullable(Float64)))))))))					
+col6	Tuple(xx Array(Nullable(Int32)), yy Array(Map(Float64, Nullable(Float32))), zz Tuple(xxx Tuple(xxxx Tuple(xxxxx Nullable(Decimal(13, 2))))))					
+1	[[[[[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+2	[[[[[2,2,3,9],[2,2,3,9],[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+3	[[[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]],[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]]],[[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]],[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+4	[[[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]]]]	{[2]:{2:{2:222}}}	([2],[2,2,22935,99,59,955],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+5	[[[[[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2,239,39293259,2223,23,59,29,9353])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+6	[[[[[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2},{2:2},{2:2},{2:4},{2:4},{2:4},{2:4},{2:4},{2:4},{2:4}],(((10123.33))))
+6
+1
+1
+2
+1
+1
+1
+[[2]]
+[[2]]
+[[2]]
+[[2]]
+[[2]]
+[[2]]
+6	1
+5	1
+1	10123.33	{2:{2:(2,[2])}}
+2	10123.33	{2:{2:(2,[2])}}
+3	10123.33	{2:{2:(2,[2])}}
+4	10123.33	{2:{2:(2,[2])}}
+5	10123.33	{2:{2:(2,[2,239,39293259,2223,23,59,29,9353])}}
+6	10123.33	{2:{2:(2,[2])}}
+complex_orc_v2
+id	Nullable(Int32)					
+col2	Array(Array(Array(Array(Array(Nullable(Int32))))))					
+col3	Map(Array(Nullable(Float32)), Map(Int32, Map(Int32, Nullable(Float32))))					
+col4	Tuple(x Array(Nullable(Int32)), y Array(Nullable(Float64)), z Map(Bool, Nullable(String)))					
+col5	Map(Int32, Map(Int32, Map(Int32, Map(Int32, Map(Float32, Map(Float64, Tuple(x Nullable(Int32), y Array(Nullable(Float64)))))))))					
+col6	Tuple(xx Array(Nullable(Int32)), yy Array(Map(Float64, Nullable(Float32))), zz Tuple(xxx Tuple(xxxx Tuple(xxxxx Nullable(Decimal(13, 2))))))					
+1	[[[[[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+2	[[[[[2,2,3,9],[2,2,3,9],[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+3	[[[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]],[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]]],[[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]],[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+4	[[[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]]]]	{[2]:{2:{2:222}}}	([2],[2,2,22935,99,59,955],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+5	[[[[[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2,239,39293259,2223,23,59,29,9353])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+6	[[[[[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2},{2:2},{2:2},{2:4},{2:4},{2:4},{2:4},{2:4},{2:4},{2:4}],(((10123.33))))
+6
+1
+1
+2
+1
+1
+1
+[[2]]
+[[2]]
+[[2]]
+[[2]]
+[[2]]
+[[2]]
+6	1
+5	1
+1	10123.33	{2:{2:(2,[2])}}
+2	10123.33	{2:{2:(2,[2])}}
+3	10123.33	{2:{2:(2,[2])}}
+4	10123.33	{2:{2:(2,[2])}}
+5	10123.33	{2:{2:(2,[2,239,39293259,2223,23,59,29,9353])}}
+6	10123.33	{2:{2:(2,[2])}}
+complex_parquet_v1
+id	Nullable(Int32)					
+col2	Array(Array(Array(Array(Array(Nullable(Int32))))))					
+col3	Map(Array(Nullable(Float32)), Map(Int32, Map(Int32, Nullable(Float32))))					
+col4	Tuple(x Array(Nullable(Int32)), y Array(Nullable(Float64)), z Map(Bool, Nullable(String)))					
+col5	Map(Int32, Map(Int32, Map(Int32, Map(Int32, Map(Float32, Map(Float64, Tuple(x Nullable(Int32), y Array(Nullable(Float64)))))))))					
+col6	Tuple(xx Array(Nullable(Int32)), yy Array(Map(Float64, Nullable(Float32))), zz Tuple(xxx Tuple(xxxx Tuple(xxxxx Nullable(Decimal(13, 2))))))					
+1	[[[[[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+2	[[[[[2,2,3,9],[2,2,3,9],[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+3	[[[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]],[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]]],[[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]],[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+4	[[[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]]]]	{[2]:{2:{2:222}}}	([2],[2,2,22935,99,59,955],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+5	[[[[[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2,239,39293259,2223,23,59,29,9353])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+6	[[[[[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2},{2:2},{2:2},{2:4},{2:4},{2:4},{2:4},{2:4},{2:4},{2:4}],(((10123.33))))
+6
+1
+1
+2
+1
+1
+1
+[[2]]
+[[2]]
+[[2]]
+[[2]]
+[[2]]
+[[2]]
+6	1
+5	1
+1	10123.33	{2:{2:(2,[2])}}
+2	10123.33	{2:{2:(2,[2])}}
+3	10123.33	{2:{2:(2,[2])}}
+4	10123.33	{2:{2:(2,[2])}}
+5	10123.33	{2:{2:(2,[2,239,39293259,2223,23,59,29,9353])}}
+6	10123.33	{2:{2:(2,[2])}}
+complex_parquet_v2
+id	Nullable(Int32)					
+col2	Array(Array(Array(Array(Array(Nullable(Int32))))))					
+col3	Map(Array(Nullable(Float32)), Map(Int32, Map(Int32, Nullable(Float32))))					
+col4	Tuple(x Array(Nullable(Int32)), y Array(Nullable(Float64)), z Map(Bool, Nullable(String)))					
+col5	Map(Int32, Map(Int32, Map(Int32, Map(Int32, Map(Float32, Map(Float64, Tuple(x Nullable(Int32), y Array(Nullable(Float64)))))))))					
+col6	Tuple(xx Array(Nullable(Int32)), yy Array(Map(Float64, Nullable(Float32))), zz Tuple(xxx Tuple(xxxx Tuple(xxxxx Nullable(Decimal(13, 2))))))					
+1	[[[[[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+2	[[[[[2,2,3,9],[2,2,3,9],[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+3	[[[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]],[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]]],[[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]],[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+4	[[[[[2,2,3,9]],[[2,2,3,9],[2,2,3,9],[2,2,3,9]]]]]	{[2]:{2:{2:222}}}	([2],[2,2,22935,99,59,955],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+5	[[[[[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2,239,39293259,2223,23,59,29,9353])}}}}}}	([2,2,3,9],[{2:2}],(((10123.33))))
+6	[[[[[2,2,3,9]]]]]	{[2]:{2:{2:2}}}	([2],[2],{true:'example'})	{2:{2:{2:{2:{2:{2:(2,[2])}}}}}}	([2,2,3,9],[{2:2},{2:2},{2:2},{2:4},{2:4},{2:4},{2:4},{2:4},{2:4},{2:4}],(((10123.33))))
+6
+1
+1
+2
+1
+1
+1
+[[2]]
+[[2]]
+[[2]]
+[[2]]
+[[2]]
+[[2]]
+6	1
+5	1
+1	10123.33	{2:{2:(2,[2])}}
+2	10123.33	{2:{2:(2,[2])}}
+3	10123.33	{2:{2:(2,[2])}}
+4	10123.33	{2:{2:(2,[2])}}
+5	10123.33	{2:{2:(2,[2,239,39293259,2223,23,59,29,9353])}}
+6	10123.33	{2:{2:(2,[2])}}
+complex_user_profiles_iceberg_orc
+1	Alice Johnson	(('123 Main St','New York',(40.7128,-74.006)),('alice.johnson@email.com',('+1','555-0101')),[('Reading',8),('Swimming',6),('Cooking',7)])
+2	Bob Smith	(('456 Oak Ave','Los Angeles',(34.0522,-118.2437)),('bob.smith@email.com',('+1','555-0102')),[('Gaming',9),('Photography',5)])
+3	Carol Davis	(('789 Pine Rd','Chicago',(41.8781,-87.6298)),('carol.davis@email.com',('+1','555-0103')),[('Hiking',7),('Yoga',8),('Painting',6),('Gardening',9)])
+4	David Wilson	(('321 Elm St','Houston',(29.7604,-95.3698)),('david.wilson@email.com',('+1','555-0104')),[('Running',8),('Chess',7)])
+5	Eva Martinez	(('654 Maple Dr','Phoenix',(33.4484,-112.074)),('eva.martinez@email.com',('+1','555-0105')),[('Dancing',9),('Music',8),('Traveling',6)])
+6	Frank Brown	(('987 Cedar Ln','Philadelphia',(39.9526,-75.1652)),('frank.brown@email.com',('+1','555-0106')),[('Fishing',7),('Woodworking',8)])
+7	Grace Lee	(('147 Birch Way','San Antonio',(29.4241,-98.4936)),('grace.lee@email.com',('+1','555-0107')),[('Writing',9),('Meditation',7),('Knitting',5)])
+8	Henry Garcia	(('258 Spruce St','San Diego',(32.7157,-117.1611)),('henry.garcia@email.com',('+1','555-0108')),[('Surfing',8),('Cycling',7),('Rock Climbing',6)])
+9	Iris Chen	(('369 Willow Ave','Dallas',(32.7767,-96.797)),('iris.chen@email.com',('+1','555-0109')),[('Programming',9),('Board Games',8),('Baking',7),('Language Learning',6)])
+10	Jack Taylor	(('741 Poplar Rd','San Jose',(37.3382,-121.8863)),('jack.taylor@email.com',('+1','555-0110')),[('Basketball',8),('Video Editing',7)])
+Carol Davis	41.8781	-87.6298	carol.davis@email.com
+Grace Lee	29.4241	-98.4936	grace.lee@email.com
+1	['Reading','Swimming','Cooking']
+3	['Hiking','Yoga','Painting','Gardening']
+5	['Dancing','Music','Traveling']
+7	['Writing','Meditation','Knitting']
+8	['Surfing','Cycling','Rock Climbing']
+9	['Programming','Board Games','Baking','Language Learning']
+1	['Reading','Swimming','Cooking']	[8,6,7]
+2	['Gaming','Photography']	[9,5]
+3	['Hiking','Yoga','Painting','Gardening']	[7,8,6,9]
+complex_user_profiles_iceberg_parquet
+1	Alice Johnson	(('123 Main St','New York',(40.7128,-74.006)),('alice.johnson@email.com',('+1','555-0101')),[('Reading',8),('Swimming',6),('Cooking',7)])
+2	Bob Smith	(('456 Oak Ave','Los Angeles',(34.0522,-118.2437)),('bob.smith@email.com',('+1','555-0102')),[('Gaming',9),('Photography',5)])
+3	Carol Davis	(('789 Pine Rd','Chicago',(41.8781,-87.6298)),('carol.davis@email.com',('+1','555-0103')),[('Hiking',7),('Yoga',8),('Painting',6),('Gardening',9)])
+4	David Wilson	(('321 Elm St','Houston',(29.7604,-95.3698)),('david.wilson@email.com',('+1','555-0104')),[('Running',8),('Chess',7)])
+5	Eva Martinez	(('654 Maple Dr','Phoenix',(33.4484,-112.074)),('eva.martinez@email.com',('+1','555-0105')),[('Dancing',9),('Music',8),('Traveling',6)])
+6	Frank Brown	(('987 Cedar Ln','Philadelphia',(39.9526,-75.1652)),('frank.brown@email.com',('+1','555-0106')),[('Fishing',7),('Woodworking',8)])
+7	Grace Lee	(('147 Birch Way','San Antonio',(29.4241,-98.4936)),('grace.lee@email.com',('+1','555-0107')),[('Writing',9),('Meditation',7),('Knitting',5)])
+8	Henry Garcia	(('258 Spruce St','San Diego',(32.7157,-117.1611)),('henry.garcia@email.com',('+1','555-0108')),[('Surfing',8),('Cycling',7),('Rock Climbing',6)])
+9	Iris Chen	(('369 Willow Ave','Dallas',(32.7767,-96.797)),('iris.chen@email.com',('+1','555-0109')),[('Programming',9),('Board Games',8),('Baking',7),('Language Learning',6)])
+10	Jack Taylor	(('741 Poplar Rd','San Jose',(37.3382,-121.8863)),('jack.taylor@email.com',('+1','555-0110')),[('Basketball',8),('Video Editing',7)])
+Carol Davis	41.8781	-87.6298	carol.davis@email.com
+Grace Lee	29.4241	-98.4936	grace.lee@email.com
+1	['Reading','Swimming','Cooking']
+3	['Hiking','Yoga','Painting','Gardening']
+5	['Dancing','Music','Traveling']
+7	['Writing','Meditation','Knitting']
+8	['Surfing','Cycling','Rock Climbing']
+9	['Programming','Board Games','Baking','Language Learning']
+1	['Reading','Swimming','Cooking']	[8,6,7]
+2	['Gaming','Photography']	[9,5]
+3	['Hiking','Yoga','Painting','Gardening']	[7,8,6,9]
+nested_user_profiles_iceberg_orc
+id	Nullable(Int64)					
+name	Nullable(String)					
+profile	Tuple(address Tuple(street Nullable(String), city Nullable(String), coordinates Tuple(lat Nullable(Float64), lng Nullable(Float64))), contact Tuple(email Nullable(String), phone Tuple(country_code Nullable(String), number Nullable(String))), hobbies Array(Tuple(name Nullable(String), level Nullable(Int32))))					
+tags	Array(Nullable(String))					
+friends	Array(Tuple(user_id Nullable(Int64), nickname Nullable(String), friendship_level Nullable(Int32)))					
+recent_activity	Array(Tuple(action Nullable(String), details Array(Tuple(key Nullable(String), value Nullable(String)))))					
+attributes	Map(String, Nullable(String))					
+complex_attributes	Map(String, Tuple(metadata Tuple(version Nullable(String), created_time Nullable(DateTime64(6, \'UTC\')), last_updated Nullable(DateTime64(6, \'UTC\')), quality_score Nullable(Float64)), historical_scores Array(Tuple(period Nullable(String), score Nullable(Float64), components Array(Tuple(component_name Nullable(String), weight Nullable(Float32), sub_scores Map(String, Nullable(Float64)))), trends Tuple(direction Nullable(String), magnitude Nullable(Float64), confidence_interval Tuple(lower Nullable(Float64), upper Nullable(Float64))))), hierarchical_data Map(String, Tuple(category Nullable(String), sub_items Array(Tuple(item_id Nullable(Int64), properties Map(String, Nullable(String)), metrics Tuple(value Nullable(Float64), unit Nullable(String)))), summary Tuple(total_count Nullable(Int32), average_value Nullable(Float64)))), validation_rules Tuple(required Nullable(Bool), constraints Array(Tuple(rule_type Nullable(String), parameters Map(String, Nullable(String)), error_message Nullable(String))), complex_constraint Tuple(logic_operator Nullable(String), operands Array(Tuple(field_path Nullable(String), operator Nullable(String), comparison_value Nullable(String)))))))					
+1	John Doe	(('123 Main St','New York',(40.7128,-74.006)),('john.doe@email.com',('+1','555-0101')),[('Swimming',3),('Reading',5)])	['Tech','Sports']	[(101,'Mike',5)]	[('Login',[('ip','192.168.1.1'),('device','iPhone')])]	{'character':'Friendly'}	{'premium_feature':(('v1.0','2023-10-01 01:00:00.000000','2024-10-19 02:30:00.000000',0.95),[('2024Q3',88.5,[('Activity',0.6,{'Daily':90,'Peak':85}),('Engagement',0.4,{'Comments':80,'Shares':92})],('Up',5.2,(85.3,91.7)))],{'Department_A':('Category_1',[(1001,{'Color':'Red','Size':'Large'},(100.5,'pcs'))],(150,98.6))},(true,[('Format',{'pattern':'^[a-zA-Z]+'},'Must be letters')],('AND',[('profile.contact.phone.number','NOT_NULL','')])))}
+John Doe	['Tech','Sports']	['Mike']	['Swimming','Reading']	Friendly
+('v1.0','2023-10-01 01:00:00.000000','2024-10-19 02:30:00.000000',0.95)
+nested_user_profiles_iceberg_parquet
+id	Nullable(Int64)					
+name	Nullable(String)					
+profile	Tuple(address Tuple(street Nullable(String), city Nullable(String), coordinates Tuple(lat Nullable(Float64), lng Nullable(Float64))), contact Tuple(email Nullable(String), phone Tuple(country_code Nullable(String), number Nullable(String))), hobbies Array(Tuple(name Nullable(String), level Nullable(Int32))))					
+tags	Array(Nullable(String))					
+friends	Array(Tuple(user_id Nullable(Int64), nickname Nullable(String), friendship_level Nullable(Int32)))					
+recent_activity	Array(Tuple(action Nullable(String), details Array(Tuple(key Nullable(String), value Nullable(String)))))					
+attributes	Map(String, Nullable(String))					
+complex_attributes	Map(String, Tuple(metadata Tuple(version Nullable(String), created_time Nullable(DateTime64(6, \'UTC\')), last_updated Nullable(DateTime64(6, \'UTC\')), quality_score Nullable(Float64)), historical_scores Array(Tuple(period Nullable(String), score Nullable(Float64), components Array(Tuple(component_name Nullable(String), weight Nullable(Float32), sub_scores Map(String, Nullable(Float64)))), trends Tuple(direction Nullable(String), magnitude Nullable(Float64), confidence_interval Tuple(lower Nullable(Float64), upper Nullable(Float64))))), hierarchical_data Map(String, Tuple(category Nullable(String), sub_items Array(Tuple(item_id Nullable(Int64), properties Map(String, Nullable(String)), metrics Tuple(value Nullable(Float64), unit Nullable(String)))), summary Tuple(total_count Nullable(Int32), average_value Nullable(Float64)))), validation_rules Tuple(required Nullable(Bool), constraints Array(Tuple(rule_type Nullable(String), parameters Map(String, Nullable(String)), error_message Nullable(String))), complex_constraint Tuple(logic_operator Nullable(String), operands Array(Tuple(field_path Nullable(String), operator Nullable(String), comparison_value Nullable(String)))))))					
+1	John Doe	(('123 Main St','New York',(40.7128,-74.006)),('john.doe@email.com',('+1','555-0101')),[('Swimming',3),('Reading',5)])	['Tech','Sports']	[(101,'Mike',5)]	[('Login',[('ip','192.168.1.1'),('device','iPhone')])]	{'character':'Friendly'}	{'premium_feature':(('v1.0','2023-10-01 01:00:00.000000','2024-10-19 02:30:00.000000',0.95),[('2024Q3',88.5,[('Activity',0.6,{'Daily':90,'Peak':85}),('Engagement',0.4,{'Comments':80,'Shares':92})],('Up',5.2,(85.3,91.7)))],{'Department_A':('Category_1',[(1001,{'Color':'Red','Size':'Large'},(100.5,'pcs'))],(150,98.6))},(true,[('Format',{'pattern':'^[a-zA-Z]+'},'Must be letters')],('AND',[('profile.contact.phone.number','NOT_NULL','')])))}
+John Doe	['Tech','Sports']	['Mike']	['Swimming','Reading']	Friendly
+('v1.0','2023-10-01 01:00:00.000000','2024-10-19 02:30:00.000000',0.95)
