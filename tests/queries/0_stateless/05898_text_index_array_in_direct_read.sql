@@ -117,7 +117,10 @@ SELECT 'lc scan', id FROM tab_types WHERE lc IN ('error', 'warn') ORDER BY id SE
 SELECT 'lc replaced', count() > 0 FROM (EXPLAIN actions = 1 SELECT id FROM tab_types WHERE lc IN ('error', 'warn')) WHERE explain LIKE '%__text_index_idx_lc_in%';
 SELECT 'n idx', id FROM tab_types WHERE n IN ('error', 'warn') ORDER BY id;
 SELECT 'n scan', id FROM tab_types WHERE n IN ('error', 'warn') ORDER BY id SETTINGS use_skip_indexes = 0;
-SELECT 'n replaced', count() > 0 FROM (EXPLAIN actions = 1 SELECT id FROM tab_types WHERE n IN ('error', 'warn')) WHERE explain LIKE '%__text_index_idx_n_in%';
+-- `IN` on a nullable column returns NULL for a NULL value, which a `UInt8` virtual column cannot carry: no direct read.
+SELECT 'n not replaced', count() FROM (EXPLAIN actions = 1 SELECT id FROM tab_types WHERE n IN ('error', 'warn')) WHERE explain LIKE '%__text_index%';
+SELECT 'n null-aware idx', id FROM tab_types WHERE isNull(n IN ('error', 'warn')) OR n IN ('error', 'warn') ORDER BY id;
+SELECT 'n null-aware scan', id FROM tab_types WHERE isNull(n IN ('error', 'warn')) OR n IN ('error', 'warn') ORDER BY id SETTINGS use_skip_indexes = 0;
 -- `NOT` of a NULL comparison is NULL, so the NULL row is not returned.
 SELECT 'n not idx', id FROM tab_types WHERE n IN ('error', 'info') AND NOT (n IN ('error')) ORDER BY id;
 SELECT 'n not scan', id FROM tab_types WHERE n IN ('error', 'info') AND NOT (n IN ('error')) ORDER BY id SETTINGS use_skip_indexes = 0;
@@ -190,3 +193,30 @@ SELECT 'scan', id FROM tab_partial WHERE s IN ('error', 'warn') ORDER BY id SETT
 SELECT 'replaced', count() > 0 FROM (EXPLAIN actions = 1 SELECT id FROM tab_partial WHERE s IN ('error', 'warn')) WHERE explain LIKE '%__text_index_idx_in%';
 
 DROP TABLE tab_partial;
+
+SELECT '-- a nullable column with a part without a materialized index';
+
+DROP TABLE IF EXISTS tab_partial_nullable;
+
+CREATE TABLE tab_partial_nullable
+(
+    id UInt32,
+    n Nullable(String)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+SYSTEM STOP MERGES tab_partial_nullable;
+
+INSERT INTO tab_partial_nullable VALUES (1, 'a'), (2, NULL);
+
+ALTER TABLE tab_partial_nullable ADD INDEX idx n TYPE text(tokenizer = 'array') GRANULARITY 1;
+
+INSERT INTO tab_partial_nullable VALUES (3, 'b');
+
+SELECT 'idx', id FROM tab_partial_nullable WHERE n IN ('a', 'b') ORDER BY id;
+SELECT 'scan', id FROM tab_partial_nullable WHERE n IN ('a', 'b') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT 'null-aware idx', id FROM tab_partial_nullable WHERE isNull(n IN ('a', 'b')) OR n IN ('a', 'b') ORDER BY id;
+SELECT 'null-aware scan', id FROM tab_partial_nullable WHERE isNull(n IN ('a', 'b')) OR n IN ('a', 'b') ORDER BY id SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab_partial_nullable;

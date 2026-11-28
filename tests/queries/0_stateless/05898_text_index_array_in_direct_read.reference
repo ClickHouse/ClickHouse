@@ -91,7 +91,11 @@ lc scan	2
 lc replaced	1
 n idx	1
 n scan	1
-n replaced	1
+n not replaced	0
+n null-aware idx	1
+n null-aware idx	2
+n null-aware scan	1
+n null-aware scan	2
 n not idx	3
 n not scan	3
 n not in idx	3
@@ -128,3 +132,14 @@ scan	1
 scan	2
 scan	3
 replaced	1
+-- a nullable column with a part without a materialized index
+idx	1
+idx	3
+scan	1
+scan	3
+null-aware idx	1
+null-aware idx	2
+null-aware idx	3
+null-aware scan	1
+null-aware scan	2
+null-aware scan	3

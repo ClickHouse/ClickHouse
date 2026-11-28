@@ -2704,8 +2704,11 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     /// With the `array` tokenizer and no processors an element is one token, so `x IN (...)` is the union of their
     /// posting lists: one `Any` query, read exactly. The original predicate is still needed for the other components
     /// of a tuple, the key of `m['key']`, the row of `arrayJoin` or a JSON path. A set from a subquery has no AST for
-    /// the parts without a materialized index, so direct read skips it, see `convertSetColumnToAST`.
-    const bool read_exactly = total_row_count != 0 && !lhs_is_tuple && has_index_for_argument
+    /// the parts without a materialized index, so direct read skips it, see `convertSetColumnToAST`. A `UInt8` virtual
+    /// column cannot carry the NULL that `IN` returns for a NULL value, so a nullable left-hand side is not read exactly.
+    const auto * lhs_dag_node = lhs.getDAGNode();
+    const bool lhs_can_be_null = !lhs_dag_node || isNullableOrLowCardinalityNullable(lhs_dag_node->result_type);
+    const bool read_exactly = total_row_count != 0 && !lhs_is_tuple && !lhs_can_be_null && has_index_for_argument
         && getDirectReadMode(function_name) == TextIndexDirectReadMode::Exact;
     VectorWithMemoryTracking<String> union_tokens;
 
