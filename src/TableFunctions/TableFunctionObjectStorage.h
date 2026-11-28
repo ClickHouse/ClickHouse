@@ -55,7 +55,9 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorageConfiguration::initialize(*getConfiguration(context), args, context, true);
+        auto configuration_to_initialize = getConfiguration(context);
+        configuration_to_initialize->is_replayed_definition = arguments_from_stored_definition;
+        StorageObjectStorageConfiguration::initialize(*configuration_to_initialize, args, context, true);
     }
 
     static void updateStructureAndFormatArgumentsIfNeeded(

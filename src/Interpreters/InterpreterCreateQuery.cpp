@@ -4295,9 +4295,13 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     /// Required here, not where the table is built: `ON CLUSTER` and `Replicated` databases build it with full access.
     if (create.as_table_function)
+    {
+        const auto mode = getLoadingStrictnessLevel(
+            create.attach, /*force_attach*/ false, /*force_restore*/ false, isSecondaryDDLReplay(getContext()));
         if (auto access = getRequiredAccessOfTableFunction(
-                create.as_table_function->ptr(), getContext(), /*is_replayed_definition=*/ false))
+                create.as_table_function->ptr(), getContext(), isReplayedTableDefinition(mode, create, getContext())))
             required_access.push_back(std::move(*access));
+    }
 
     /// `ATTACH TABLE ... FROM '<path>'` reads a directory in `user_files` as the table data and then moves it to the
     /// data path of the new table. Reading it needs `READ` on the FILE source like the `file` function does, and

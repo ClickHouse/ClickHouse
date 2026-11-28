@@ -1,0 +1,16 @@
+-- hdfs
+Unexpected key `foo_bar` in named collection
+Unexpected key `formt` in named collection
+Unexpected key `Structure` in named collection
+Unexpected key `foo_bar` in named collection
+Unexpected key `formt` in named collection
+Unexpected key `foo_bar` in named collection
+-- local
+Unexpected key `foo_bar` in named collection
+Unexpected key `filename` in named collection
+Unexpected key `foo_bar` in named collection
+-- the keys the configurations read are accepted, a key stored in the collection is not checked
+x	UInt32					
+y	UInt8					
+x	UInt32					
+y	Int32					

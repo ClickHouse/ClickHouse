@@ -156,12 +156,14 @@ std::ostream & operator << (std::ostream & ostr, const NamedCollectionValidateKe
 template <class keys_cmp> using ValidateKeysMultiset = std::multiset<NamedCollectionValidateKey<keys_cmp>, std::less<NamedCollectionValidateKey<keys_cmp>>>;
 using ValidateKeysSet = std::multiset<std::string_view>;
 
+/// With `only_query_overrides`, an unexpected key is an error only if the query passed it (see `isQueryOverridden`).
 template <typename Keys = ValidateKeysSet>
 void validateNamedCollection(
     const NamedCollection & collection,
     const Keys & required_keys,
     const Keys & optional_keys,
-    const std::vector<std::shared_ptr<re2::RE2>> & optional_regex_keys = {})
+    const std::vector<std::shared_ptr<re2::RE2>> & optional_regex_keys = {},
+    bool only_query_overrides = false)
 {
     NamedCollection::Keys keys = collection.getKeys();
     auto required_keys_copy = required_keys;
@@ -187,7 +189,7 @@ void validateNamedCollection(
             [&](const std::shared_ptr<re2::RE2> & regex) { return re2::RE2::PartialMatch(key, *regex); })
             != optional_regex_keys.end();
 
-        if (!match)
+        if (!match && (!only_query_overrides || collection.isQueryOverridden(key)))
         {
              throw Exception(
                  ErrorCodes::BAD_ARGUMENTS,

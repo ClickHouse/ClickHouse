@@ -81,7 +81,8 @@ expect_denied "dynamic_disk_without_key" "
     SETTINGS disk = disk(name = '${DISK}_nocreds', type = s3, endpoint = 'http://localhost:11111/test/${DB}_disk_nocreds/',
         http_client = 'gcp_oauth')"
 
-# The key is masked in the logged query (named-collection override) and in SHOW CREATE (explicit-url engine form).
+# The key is masked in the logged query (named-collection override) and in the logged query of the explicit-url
+# engine form, which rejects the key.
 # A value shaped like a real key file: the whole value is replaced by '[HIDDEN]', no field of it is kept.
 SA_KEY_JSON='{"type": "service_account", "client_email": "leak-check@project.iam.gserviceaccount.com", "private_key": "SA_KEY_LEAK_CHECK"}'
 
@@ -107,9 +108,13 @@ check_masked "query_log_masking" "$($CLICKHOUSE_CLIENT -m -q "
     WHERE query_id = '${mask_qid}' AND current_database = currentDatabase() AND query LIKE '%s3(%'
     ORDER BY event_time_microseconds LIMIT 1")"
 
-$CLICKHOUSE_CLIENT -q "
+engine_qid="05242_engine_${DB}_${RANDOM}"
+$CLICKHOUSE_CLIENT --query_id "${engine_qid}" -q "
     CREATE TABLE ${TABLE}_engine (x UInt8)
     ENGINE = S3('http://localhost:11111/test/${DB}_engine.tsv', 'ak', 'sak', google_service_account_key = '${SA_KEY_JSON}', format = 'TSV')
-" > /dev/null
-check_masked "show_create_masking" "$($CLICKHOUSE_CLIENT -q "
-    SHOW CREATE TABLE ${TABLE}_engine SETTINGS format_display_secrets_in_show_and_select = 0")"
+" > /dev/null 2>&1
+check_masked "engine_form_query_log_masking" "$($CLICKHOUSE_CLIENT -m -q "
+    SYSTEM FLUSH LOGS query_log;
+    SELECT query FROM system.query_log
+    WHERE query_id = '${engine_qid}' AND current_database = currentDatabase()
+    ORDER BY event_time_microseconds LIMIT 1")"
