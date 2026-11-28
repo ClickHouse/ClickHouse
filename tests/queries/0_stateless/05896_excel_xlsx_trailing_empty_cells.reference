@@ -1,0 +1,12 @@
+--- schema inference
+a	Nullable(Int64)					
+b	Nullable(Int64)					
+c	Nullable(Int64)					
+--- data
+1	\N	3
+4	5	6
+7	8	9
+--- without a header
+c1	Nullable(String)					
+c2	Nullable(String)					
+c3	Nullable(String)					

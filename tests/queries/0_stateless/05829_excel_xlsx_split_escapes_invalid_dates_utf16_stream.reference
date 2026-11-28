@@ -1,0 +1,13 @@
+--- escapes split between runs
+_x0041_|B
+--- impossible dates
+Cannot parse the date '2024-02-31'
+Cannot parse the date '2023-02-29'
+Cannot parse the date '1900-02-29'
+Cannot parse the date '2024-04-31'
+2024-02-29
+2000-02-29 10:00:00.000
+--- UTF-16 worksheet
+100000	100000
+100000	100000
+100000	100000

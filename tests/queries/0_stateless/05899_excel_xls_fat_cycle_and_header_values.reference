@@ -1,0 +1,7 @@
+--- a chain of sectors with a short cycle is corrupted, even if the stream ends before the cycle repeats
+a chain of sectors has a cycle
+--- input_format_excel_header accepts only 0, 1 and auto
+must be 0, 1 or 'auto', got 2
+6
+5
+5

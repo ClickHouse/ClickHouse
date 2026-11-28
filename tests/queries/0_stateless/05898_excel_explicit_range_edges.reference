@@ -1,0 +1,73 @@
+--- XLSX: empty rows at the edges of the range
+\N	\N
+\N	\N
+a	b
+10	x
+\N	\N
+30	z
+\N	\N
+\N	\N
+--- XLSX: empty rows are skipped by default
+a	b
+10	x
+30	z
+--- XLSX: empty columns at the right of the range
+id	Nullable(Int64)					
+name	Nullable(String)					
+price	Nullable(Float64)					
+date	Nullable(Date32)					
+ts	Nullable(DateTime64(3))					
+flag	Nullable(Bool)					
+note	Nullable(String)					
+c8	Nullable(String)					
+c9	Nullable(String)					
+c10	Nullable(String)					
+--- XLSX: an open range does not have empty columns at the right
+id	Nullable(Int64)					
+name	Nullable(String)					
+price	Nullable(Float64)					
+date	Nullable(Date32)					
+ts	Nullable(DateTime64(3))					
+flag	Nullable(Bool)					
+note	Nullable(String)					
+--- XLS: empty rows at the edges of the range
+\N	\N
+\N	\N
+a	b
+10	x
+\N	\N
+30	z
+\N	\N
+\N	\N
+--- XLS: empty rows are skipped by default
+a	b
+10	x
+30	z
+--- XLS: empty columns at the right of the range
+id	Nullable(Int64)					
+name	Nullable(String)					
+price	Nullable(Float64)					
+date	Nullable(Date32)					
+ts	Nullable(DateTime64(3))					
+flag	Nullable(Bool)					
+time	Nullable(String)					
+c8	Nullable(String)					
+c9	Nullable(String)					
+c10	Nullable(String)					
+--- XLS: an open range does not have empty columns at the right
+id	Nullable(Int64)					
+name	Nullable(String)					
+price	Nullable(Float64)					
+date	Nullable(Date32)					
+ts	Nullable(DateTime64(3))					
+flag	Nullable(Bool)					
+time	Nullable(String)					
+--- a range without values has all its columns in the empty rows
+c1	Nullable(String)					
+c2	Nullable(String)					
+\N	\N
+\N	\N
+c1	Nullable(String)					
+c2	Nullable(String)					
+\N	\N
+\N	\N

@@ -1,0 +1,15 @@
+--- literal CR and CRLF in the XML become LF, character references and escapes are preserved
+shared	73310A73320A7333
+inline	69310A69320A69330A
+formula	66310A6632
+cdata	63310A63320A6333
+references	72310D0A72320D72330A
+rich	78310A0A7832
+long	270000 0
+--- whitespace in a sheet name is written as character references
+<sheet name="Data&#9;One&#10;Two&#13;Three"
+1
+--- the length of a cell counts every invalid UTF-8 byte as a replacement character
+32767	EFBFBD
+too long for the XLSX format: 32768 characters
+too long for the XLSX format: 32769 characters

@@ -1,0 +1,13 @@
+--- invalid UTF-8 is rejected instead of being written as replacement characters
+Invalid sheet name
+Invalid sheet name
+Invalid sheet name
+--- the boundary of 31 characters for multi-byte characters
+1
+Invalid sheet name
+--- characters outside of the Basic Multilingual Plane count as two
+1
+Invalid sheet name
+--- the name of a continuation sheet is truncated by the same rules and does not split a character
+1048575
+1
