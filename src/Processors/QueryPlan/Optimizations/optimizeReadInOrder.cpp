@@ -50,6 +50,7 @@
 #include <stack>
 #include <Common/ListWithMemoryTracking.h>
 #include <Common/StackWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
@@ -426,12 +427,15 @@ void addFixedColumn(const ActionsDAG::Node * fixed_column, FixedColumns & fixed_
 void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
 {
     StackWithMemoryTracking<const ActionsDAG::Node *> stack;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     stack.push(&filter_expression);
 
     while (!stack.empty())
     {
         const auto * node = stack.top();
         stack.pop();
+        if (!visited.insert(node).second)
+            continue;
         if (node->type == ActionsDAG::ActionType::ALIAS)
             stack.push(node->children.front());
         else if (node->type == ActionsDAG::ActionType::FUNCTION)
@@ -1812,8 +1816,9 @@ bool sortPrefixCanGroupDistinctKeys(const InputOrder & order_info, const Names &
 /// Whether a `LIMIT` above the step at the top of `stack` can stop reading early, i.e. no step in between reads its input till the end.
 bool canStopReadingEarly(const Stack & stack)
 {
-    for (size_t i = stack.size(); i-- > 0;)
+    for (size_t i = stack.size(); i > 0;)
     {
+        --i;
         const QueryPlan::Node & node = *stack[i].node;
         const IQueryPlanStep * step = node.step.get();
         if (const auto * limit = typeid_cast<const LimitStep *>(step))

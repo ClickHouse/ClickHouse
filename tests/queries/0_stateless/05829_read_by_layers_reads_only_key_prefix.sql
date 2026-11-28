@@ -2,8 +2,9 @@
 -- not the other columns of the sorting key.
 
 DROP TABLE IF EXISTS t_layers_prefix;
+-- Without statistics: a query that loads them counts their compressed bytes in `ReadCompressedBytes` too.
 CREATE TABLE t_layers_prefix (k UInt32 CODEC(Delta, LZ4), s String) ENGINE = MergeTree ORDER BY (k, s)
-SETTINGS index_granularity = 1024, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 1024, min_bytes_for_wide_part = 0, auto_statistics_types = '';
 
 SYSTEM STOP MERGES t_layers_prefix;
 INSERT INTO t_layers_prefix SELECT number, hex(sipHash128(toString(number))) FROM numbers(100000);

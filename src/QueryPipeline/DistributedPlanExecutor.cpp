@@ -25,6 +25,7 @@
 #include <QueryPipeline/printPipeline.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/TemporaryFiles.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
@@ -833,9 +834,8 @@ public:
         try
         {
             branch->thread = ThreadFromGlobalPool(
-                [branch, filter_name, thread_group = CurrentThread::getGroup(), log = logger]
+                attachedJob(ThreadName::DISTRIBUTED_QUERY_TASK, [branch, filter_name, log = logger]
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
                     try
                     {
                         fiu_do_on(FailPoints::distributed_plan_runtime_filter_receive_branch_fails_before_connect,
@@ -855,7 +855,7 @@ public:
                                 "Receive branch for runtime filter '{}' failed; the filter is skipped and rows pass unfiltered",
                                 filter_name));
                     }
-                });
+                }));
         }
         catch (...)
         {
@@ -999,6 +999,14 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
 
     {
         QueryPlan query_plan = deserializeQueryPlan(task_description.serialized_query_plan, context);
+
+        if (context->getSettingsRef()[Setting::enable_join_runtime_filters_index_analysis] && !task.runtime_filter_descriptors.empty())
+        {
+            NameSet delivered_filter_ids;
+            for (const auto & descriptor : task.runtime_filter_descriptors)
+                delivered_filter_ids.insert(descriptor.filter_key);
+            QueryPlanOptimizations::collectDeliveredJoinRuntimeFilters(*query_plan.getRootNode(), delivered_filter_ids);
+        }
 
         /// A deserialized plan carries neither the thread limit nor the concurrency-control flag,
         /// so both come from the query's settings.

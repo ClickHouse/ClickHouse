@@ -2,7 +2,10 @@
 title: Fragmento de diccionario en Cloud
 ---
 
-<Tip>
-  Si usa un diccionario con ClickHouse Cloud, utilice la opción de consulta DDL para crear sus diccionarios y cree el diccionario como el usuario `default`.
-  Además, consulte la lista de orígenes de diccionario compatibles en la [guía de compatibilidad de Cloud](/es/products/cloud/guides/cloud-compatibility).
-</Tip>
+<Note title="ClickHouse Cloud">
+  Use [`CREATE DICTIONARY`](/es/reference/statements/create/dictionary#creating-a-dictionary-with-a-ddl-query) para crear diccionarios.
+
+  Al crear un diccionario que lea datos de una tabla de ClickHouse, incluya en la cláusula `SOURCE` el nombre de usuario y la contraseña de un usuario dedicado. Dicho usuario necesita el permiso `SELECT` sobre la tabla de origen. Consulte el [ejemplo de origen del diccionario de ClickHouse](/es/reference/statements/create/dictionary/sources/clickhouse).
+
+  Consulte la lista de orígenes de diccionario compatibles en la [guía de compatibilidad de Cloud](/es/products/cloud/guides/cloud-compatibility).
+</Note>

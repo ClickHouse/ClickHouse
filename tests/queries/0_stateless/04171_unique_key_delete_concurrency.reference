@@ -1,0 +1,8 @@
+insert_delete_ok 1
+insert_applied	1	1	1	1
+both_deletes_committed	0	0
+delete_vs_delete	50	0	50
+delete_vs_delete_trivial	50
+truncate_delete_ok 1
+truncate_rows	0
+truncate_active_parts	0

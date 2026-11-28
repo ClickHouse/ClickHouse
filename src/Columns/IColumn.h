@@ -505,8 +505,12 @@ public:
       */
     virtual void expand(const Filter & /*mask*/, bool /*inverted*/) = 0;
 
-    /// Appends `filter.size()` rows: `src[i]` where `filter[i]` is non-zero (zero if `inverted`), a default value elsewhere.
-    virtual void insertFromOrDefaults(const IColumn & src, const Filter & filter, bool inverted);
+    /// Appends `condition.size()` rows: row `i` of `src_true` where `condition[i]` is non-zero and row `i` of
+    /// `src_false` otherwise. A source with `*_is_const` set has a single row, used for every row it provides
+    /// (e.g. the data column of a `ColumnConst`, or a default value). The sources must have the type of this
+    /// column and must not be this column. Is used in `if` and to fill the non-joined rows of a `JOIN`.
+    virtual void insertFromEither(
+        const IColumn & src_true, bool src_true_is_const, const IColumn & src_false, bool src_false_is_const, const Filter & condition);
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
@@ -649,7 +653,7 @@ public:
     virtual size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const;
 
     /** Copies each element according offsets parameter.
-      * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
+      * (i-th element should be copied offsets[i] - offsets[static_cast<ssize_t>(i) - 1] times.)
       * It is necessary in ARRAY JOIN operation.
       */
     using Offset = UInt64;
@@ -1143,8 +1147,13 @@ private:
     /// Devirtualize insertFrom and insertRangeFrom.
     void gather(ColumnGathererStream & gatherer) override;
 
-    /// Devirtualize insertFrom, insertDefault, insertRangeFrom and insertManyDefaults.
-    void insertFromOrDefaults(const IColumn & src, const IColumn::Filter & filter, bool inverted) override;
+    /// Devirtualize insertFrom, insertRangeFrom and insertManyFrom.
+    void insertFromEither(
+        const IColumn & src_true,
+        bool src_true_is_const,
+        const IColumn & src_false,
+        bool src_false_is_const,
+        const IColumn::Filter & condition) override;
 
     /// Devirtualize compareAt.
     void compareColumn(

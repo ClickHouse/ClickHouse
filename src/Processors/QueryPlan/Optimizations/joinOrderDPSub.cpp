@@ -291,6 +291,8 @@ private:
         TUInt shardable_relations = 0;
         /// Per relation: how many leading classes of its read order are its leading primary key columns.
         VectorWithMemoryTracking<UInt8> rel_primary_key_prefix;
+        /// Relations that are sort-merge joins planned in a group of their own, sorted by their merge key.
+        TUInt join_result_relations = 0;
 
         /// Per relation and class (`relation * num_classes + class`): the value range of its column of the class, if known.
         struct KeyRange
@@ -481,6 +483,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     dpsub_data.prepared_storage_mask = toMask(query_graph.prepared_storage_relations);
     dpsub_data.shardable_relations = 0;
     dpsub_data.rel_primary_key_prefix.assign(num_relations, 0);
+    dpsub_data.join_result_relations = 0;
     dpsub_data.key_ranges.assign(dpsub_data.interesting_orders ? num_relations * num_classes : 0, {});
     if (dpsub_data.interesting_orders)
     {
@@ -527,6 +530,12 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
             const auto prefixes = query_graph.find_read_in_order_prefixes(candidates);
             for (size_t relation = 0; relation < num_relations && relation < prefixes.size(); ++relation)
             {
+                if (prefixes[relation].from_join)
+                {
+                    if (!query_graph.reuse_join_output_order)
+                        continue;
+                    dpsub_data.join_result_relations |= static_cast<UInt32>(1) << relation;
+                }
                 for (const auto & name : prefixes[relation].prefix)
                     dpsub_data.rel_prefix_classes[relation].push_back(column_class.at({relation, name}));
                 const size_t primary_key_prefix = std::min(prefixes[relation].primary_key_prefix, prefixes[relation].prefix.size());
@@ -962,7 +971,7 @@ double DPSubJoinOrderOptimizer::hashJoinWork(
 
 double DPSubJoinOrderOptimizer::probeReadFraction(UInt32 probe_mask, UInt32 build_mask) const
 {
-    if (std::popcount(probe_mask) != 1)
+    if (std::popcount(probe_mask) != 1 || (probe_mask & dpsub_data.join_result_relations))
         return 1.0;
     const auto & prefix = dpsub_data.rel_prefix_classes[std::countr_zero(probe_mask)];
     if (prefix.empty() || !(dpsub_data.class_relations[prefix.front()] & build_mask))
@@ -1254,8 +1263,14 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
         }
     }
 
-    return std::make_shared<DPJoinEntry>(
+    auto result = std::make_shared<DPJoinEntry>(
         left, right, entry.rows_cost, entry.sel, entry.estimated_rows, std::move(join_operator), entry.method);
+    if (entry.method == JoinMethod::Merge)
+    {
+        result->merge_order_column = orderColumn(dptable, S, plan_index, entry.merge_class).getColumnName();
+        result->sharded = entry.sharded;
+    }
+    return result;
 }
 
 std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()

@@ -1,0 +1,150 @@
+---
+title: "サンプルパイプライン: SQL Server から ClickHouse へ"
+sidebarTitle: "サンプルパイプライン"
+slug: /integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline
+description: "既存の行を読み込み、挿入・更新・削除を継続的にストリーミングする、SQL Server から ClickHouse への自動パイプラインを構築します。"
+doc_type: guide
+keywords: ['striim', 'clickhouse', 'cdc', 'data ingestion', 'real-time replication']
+---
+
+SQL Server の業務データは、注文、支払い、在庫に関する信頼できる唯一の情報源であることが多い一方で、負荷の高い分析クエリには向いていません。このウォークスルーでは、自動パイプラインを使用して SQL Server のテーブルを ClickHouse に複製します。Striim はまず既存の行を読み込み、その後はすべての挿入、更新、削除を発生と同時にストリーミングします。最後に、ClickHouse で結果をクエリします。
+
+詳しい手順については、[Introducing Automated Pipelines for Effortless Data Replication](https://www.striim.com/blog/automated-pipelines-5-0/) を参照してください。
+
+SQL Server の CDC (変更データキャプチャ) を利用するには、Striim for ClickHouse の **Premium** プランが必要です。
+
+## 構築する内容 {#what-you-will-build}
+
+SQL Server (`sales.orders`) &gt; Striim による初期ロード、その後 CDC (変更データキャプチャ)  &gt; ClickHouse (`sales.orders`、`ReplacingMergeTree`)
+
+## 始める前に {#before-you-begin}
+
+* Premium プランで稼働中の Striim for ClickHouse サービス ([はじめる](/ja/integrations/connectors/data-ingestion/etl-tools/striim/get-started)を参照) 。
+* Striim から接続可能で、SQL Server Agent が実行中の SQL Server インスタンス、および変更データキャプチャを有効化するためのアクセス許可。以下の手順は、VM 上の SQL Server と Amazon RDS for SQL Server のどちらでも利用できます。
+* ClickHouse サービス、`sales` という名前のデータベース、必要な権限を持つ Striim ユーザー、および ClickHouse 接続プロファイル。
+
+## ステップ 1: SQL Server を準備する {#step-1-prepare-sql-server}
+
+データベースと、数行のデータを含むサンプルテーブルを作成します。この初期データは、例を再現できるように用意した説明用のものです。
+
+```sql
+CREATE DATABASE salesdb;
+GO
+USE salesdb;
+GO
+CREATE SCHEMA sales;
+GO
+CREATE TABLE sales.orders (
+  order_id    INT           NOT NULL PRIMARY KEY,
+  customer_id INT           NOT NULL,
+  status      VARCHAR(20)   NOT NULL,
+  total       DECIMAL(10,2) NOT NULL,
+  placed_at   DATETIME2     NOT NULL
+);
+INSERT INTO sales.orders VALUES
+  (1, 101, 'NEW',     120.50, SYSDATETIME()),
+  (2, 102, 'NEW',      75.00, SYSDATETIME()),
+  (3, 103, 'NEW',     310.25, SYSDATETIME());
+GO
+```
+
+データベースで変更データキャプチャを有効化し、Striim 用のユーザーを作成します。選択した各テーブルの CDC (変更データキャプチャ)  は、アプリケーションの起動時に Striim によって有効化されます。
+
+<Tabs>
+  <Tab title="VM 上の SQL Server" id="enable-cdc-vm">
+    ```sql
+    USE salesdb;
+    EXEC sys.sp_cdc_enable_db;
+    ```
+  </Tab>
+
+  <Tab title="Amazon RDS for SQL Server" id="enable-cdc-rds">
+    ```sql
+    EXEC msdb.dbo.rds_cdc_enable_db 'salesdb';
+    ```
+  </Tab>
+</Tabs>
+
+`salesdb` に Striim 用のユーザーを作成します。
+
+```sql
+USE salesdb;
+CREATE LOGIN striim WITH PASSWORD = '<strong password>';
+CREATE USER striim FOR LOGIN striim;
+EXEC sp_addrolemember @rolename = db_owner, @membername = striim;
+```
+
+Striim ユーザーで SQL Server 認証モードを使用できるよう、有効にしておく必要があります。Striim のドキュメントでは、リーダーユーザーに `db_owner` ロールを付与するよう記載されています。パイプラインの開始後、`EXEC sys.sp_cdc_help_change_data_capture` を実行すると、CDC (変更データキャプチャ)  が有効になっていることを確認できます。Azure VM の前提条件および Always On 可用性グループについては、[Configuring SQL Server to use MS SQL Reader](https://www.striim.com/docs/striimforclickhouse/en/configuring-sql-server-to-use-ms-sql-reader.html) を参照してください。
+
+## ステップ 2: 自動パイプラインを作成する {#step-2-create-the-automated-pipeline}
+
+1. Striim で **Apps &gt; Create an App** を選択します。
+2. ソースとして **SQL Server** を検索して選択し、移行先として **ClickHouse** を選択します。
+3. **Get Started** を選択し、自動パイプライン (初期ロード + CDC (変更データキャプチャ)  ) を選択します。
+4. パイプラインに名前を付け (例: `SqlServerToClickHouse`) 、名前空間を選択して **Next** を選択します。
+5. SQL Server の接続情報として、ホストとポート (`<host>:1433`) 、データベース名 `salesdb`、`striim` ユーザーを入力し、**Next** を選択します。Striim が接続を検証します。検証に失敗した場合は **Back** を選択して設定を修正してください。検証に成功しないと次に進めません。
+6. 複製するスキーマを選択します。`sales` を選択し、システムスキーマは選択しないでください。
+7. 各スキーマから複製するテーブルを選択します。ここでは `orders` を選択します。
+8. ClickHouse の接続プロファイルを選択し、**Table Engine** を **`ReplacingMergeTree`** に設定します。このエンジンは、更新時に行全体のイメージを送信する CDC (変更データキャプチャ)  ソースに適しています。
+9. 必要に応じてテーブルのマッピングを編集します。`sales.orders` が ClickHouse の `sales.orders` にマッピングされていることを確認してください。
+10. 設定内容を確認し、**Save &amp; Start** を選択します。
+
+![SQL Server から ClickHouse への自動パイプライン設定を確認する](/images/integrations/striim/automated-pipeline-wizard.png)
+
+*ウィザードの確認画面の例。この手順では、上記のとおり `salesdb`、`sales.orders`、`ReplacingMergeTree` を使用してください。*
+
+Striim は、互いに連携する 2 つのアプリケーションを作成します。まず初期ロードを実行し、すべての行のコピーが完了するとこれを休止させます。続いて CDC (変更データキャプチャ)  アプリケーションを自動的に開始し、変更の反映に合わせてイベント数を表示します。いずれかのフェーズで問題が発生した場合、パイプラインは停止し、推奨される対処方法を表示します。
+
+![実行中の変更データキャプチャアプリケーションを監視する](/images/integrations/striim/pipeline-monitoring.png)
+
+<Warning>
+  初期ロードの実行中は、ソーステーブルに対して DDL を実行しないでください。また、初期ロードの開始時点から CDC (変更データキャプチャ)  アプリケーションが追いつくまでの間、SQL Server に変更データが保持されるようにしてください (デフォルトの保持期間は 3 日間です) 。
+</Warning>
+
+## ステップ 3: ClickHouse で初期ロードを検証する {#step-3-verify-the-initial-load-in-clickhouse}
+
+Striim により、`ReplacingMergeTree` エンジンと 2 つのメタデータカラムを持つターゲットテーブルが作成されています。次のように確認します:
+
+```sql
+SHOW CREATE TABLE sales.orders;
+```
+
+Striim のデータ型マッピングに基づき、`order_id` と `customer_id` は `Int32`、`status` は `String`、`total` は `Decimal(10, 2)`、`placed_at` は `DateTime64` になります。また、`__STRIIM_VERSION` (`UInt64`) と `__STRIIM_ISDELETED` (`UInt8`) のカラム、`ENGINE = ReplacingMergeTree(__STRIIM_VERSION, __STRIIM_ISDELETED)`、`ORDER BY order_id` も含まれているはずです。
+
+```sql
+SELECT order_id, customer_id, status, total
+FROM sales.orders FINAL
+WHERE __STRIIM_ISDELETED = 0
+ORDER BY order_id;
+```
+
+SQL Server から読み込まれた 3 行が表示されるはずです。
+
+## ステップ 4: 変更をストリーミングする {#step-4-stream-changes}
+
+SQL Server でデータを変更します：
+
+```sql
+USE salesdb;
+UPDATE sales.orders SET status = 'SHIPPED' WHERE order_id = 2;
+DELETE FROM sales.orders WHERE order_id = 3;
+INSERT INTO sales.orders VALUES (4, 104, 'NEW', 42.00, SYSDATETIME());
+```
+
+ClickHouse で同じクエリを再度実行します。注文 1、2、4 が存在し、注文 2 は `SHIPPED` と表示され、注文 3 は存在しないはずです。削除は、ソフトデリートを示す行として保存されます。このクエリでは、`FINAL` を使用して最新バージョンを選択し、`__STRIIM_ISDELETED = 0` を使用して削除済みの行を除外しています。削除マーカーはデフォルトで保持されます。バックグラウンドマージだけでは、マーカーが物理的に削除されるとは限りません。クリーンアップの動作については [`ReplacingMergeTree`](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) を参照してください。また、Striim の監視ビューでイベント数や移行先の鮮度を確認したり、Clara に現在の遅延を問い合わせたりすることもできます。
+
+## Striim Clara で同じパイプラインを構築する {#build-the-same-pipeline-with-striim-clara}
+
+ウィザードの代わりに、ホームページでパイプラインの内容を記述することもできます。例: 「sales.orders テーブルを対象に、初期ロードと変更データキャプチャを行う SQL Server から ClickHouse へのパイプラインを構築してください。」Clara は接続情報の入力を求めたうえで TQL プランを生成し、**Accept TQL** を選択した場合にのみデプロイを実行します。
+
+## クリーンアップ {#clean-up}
+
+* Apps ページで 2 つの Striim アプリケーションを停止し、アンデプロイします。
+* デフォルトのリーダー設定では、Striim アプリケーションをアンデプロイした後も SQL Server による変更データのキャプチャは継続されます。このサンプルでのデータキャプチャを停止するには、`sales.orders` に対して `sys.sp_cdc_disable_table` を実行します。データベース内に CDC (変更データキャプチャ)  を必要とする他のテーブルがない場合は、`sys.sp_cdc_disable_db` を実行してもかまいません。詳細は SQL Server の[ドキュメント](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sys-sp-cdc-disable-table-transact-sql)を参照してください。あるいは、Striim の [Auto Disable Table CDC (変更データキャプチャ)  の手順](https://www.striim.com/docs/striimforclickhouse/en/sql-server-operational-considerations.html)に従う方法もあります。
+* 両方のシステムで `DROP TABLE sales.orders;` を実行し、サンプルテーブルを削除します。
+
+## 次のステップ {#next-steps}
+
+* [サポートされているソースの一覧](https://www.striim.com/docs/striimforclickhouse/en/sources.html)にある他のソースも試してみてください。
+* Flow Designer で、転送中のデータに対する変換やマスキングを追加できます。詳細は Striim ドキュメントの [Pipelines](https://www.striim.com/docs/striimforclickhouse/en/pipelines.html) を参照してください。
+* [ClickHouse の可視化](https://clickhouse.com/docs/integrations/connectors/data-visualization)インテグレーションを使用して、レプリケーションされたデータに基づくダッシュボードを構築できます。

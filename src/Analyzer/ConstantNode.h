@@ -10,6 +10,8 @@
 #include <Columns/IColumn_fwd.h>
 #include <Parsers/ASTLiteral.h>
 
+#include <variant>
+
 namespace DB
 {
 
@@ -52,23 +54,29 @@ public:
     /// Get constant value
     const ColumnConstPtr & getColumn() const
     {
-        return constant_value.getColumn();
+        return getConstantValue().getColumn();
     }
 
     /// Get constant value as a `Field` (materializes it). Prefer the typed getters below where a caller
     /// only needs a scalar - they avoid the `Field`.
     Field getValue() const
     {
-        return constant_value.getField();
+        if (auto deferred_field = tryGetDeferredField())
+            return *deferred_field;
+        return getConstantValue().getField();
     }
 
+    /// A long tuple of plain literals, such as the right side of `x IN (1, 2, ...)`, keeps its `Field` until its column
+    /// is needed. Returns that `Field` (kept alive by the result) until then, else nullptr.
+    std::shared_ptr<const Field> tryGetDeferredField() const;
+
     /// Typed value accessors - read the constant without materializing a `Field` (delegate to ConstantValue).
-    bool isNull() const { return constant_value.isNull(); }
-    UInt64 getUInt() const { return constant_value.getUInt(); }
-    Int64 getInt() const { return constant_value.getInt(); }
-    Float64 getFloat64() const { return constant_value.getFloat64(); }
-    bool getBool() const { return constant_value.getBool(); }
-    std::string_view getDataAt() const { return constant_value.getDataAt(); }
+    bool isNull() const { return getConstantValue().isNull(); }
+    UInt64 getUInt() const { return getConstantValue().getUInt(); }
+    Int64 getInt() const { return getConstantValue().getInt(); }
+    Float64 getFloat64() const { return getConstantValue().getFloat64(); }
+    bool getBool() const { return getConstantValue().getBool(); }
+    std::string_view getDataAt() const { return getConstantValue().getDataAt(); }
 
     /// Get constant value string representation
     String getValueStringRepresentation() const;
@@ -96,10 +104,7 @@ public:
         return QueryTreeNodeType::CONSTANT;
     }
 
-    DataTypePtr getResultType() const override
-    {
-        return constant_value.getType();
-    }
+    DataTypePtr getResultType() const override;
 
     /// Check if conversion to AST requires wrapping with _CAST function.
     static bool requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type);
@@ -135,7 +140,7 @@ public:
     {
         if (isMasked())
             return getMaskString();
-        return constant_value.getValueName(options);
+        return getConstantValue().getValueName(options);
     }
 
     bool isDeterministic() const { return is_deterministic; }
@@ -152,7 +157,25 @@ protected:
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
-    ConstantValue constant_value;
+    /// The `Field` and the type of a deferred constant, and its `ConstantValue` once built. Clones share it.
+    struct DeferredValue;
+    using ValueOrDeferred = std::variant<ConstantValue, std::shared_ptr<DeferredValue>>;
+
+    ConstantNode(std::shared_ptr<DeferredValue> deferred_value_, QueryTreeNodePtr source_expression_, bool is_deterministic_);
+
+    static ValueOrDeferred makeConstantValue(Field && value, DataTypePtr value_data_type);
+    static ValueOrDeferred makeConstantValue(Field && value);
+
+    const ConstantValue & getConstantValue() const
+    {
+        if (const auto * value = std::get_if<ConstantValue>(&constant_value)) [[likely]]
+            return *value;
+        return materializeDeferred();
+    }
+
+    const ConstantValue & materializeDeferred() const;
+
+    ValueOrDeferred constant_value;
     QueryTreeNodePtr source_expression;
     bool is_deterministic = true;
     size_t mask_id = 0;

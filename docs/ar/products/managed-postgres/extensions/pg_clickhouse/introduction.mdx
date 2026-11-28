@@ -2,7 +2,7 @@
 sidebarTitle: 'مقدمة'
 description: 'شغّل استعلامات التحليلات على ClickHouse مباشرةً من داخل PostgreSQL من دون إعادة كتابة أي SQL'
 slug: '/cloud/managed-postgres/extensions/pg_clickhouse'
-title: 'الوثائق المرجعية لـ pg_clickhouse'
+title: 'وثائق pg_clickhouse'
 doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', 'إضافة']
 ---
@@ -65,6 +65,8 @@ pushdown كامل ضمن عدة فحوصات خارجية. أُجريت جميع
 | [استعلام 20] |  473 مللي ثانية |     28 مللي ثانية |          |
 | [استعلام 21] | 1145 مللي ثانية |   4470 مللي ثانية |          |
 | [استعلام 22] |  270 مللي ثانية |     45 مللي ثانية |     ✼    |
+
+## التثبيت {#installation}
 
 ### التجميع من الشيفرة المصدرية {#compile-from-source}
 
@@ -210,6 +212,42 @@ ERROR:  must be owner of database regression
 make installcheck PGUSER=postgres
 ```
 
+### CloudNativePG {#cloudnativepg}
+
+أضف الإضافة pg&#95;clickhouse إلى عنقود [CloudNativePG] باستخدام [ExtensionConfiguration]:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cluster-example
+spec:
+  # ... <snip>
+  postgresql:
+    # ExtensionConfiguration
+    extensions:
+      - name: pg_clickhouse
+        image:
+        reference: ghcr.io/ClickHouse/cnpg-pg_clickhouse:{pg_major_version}-{pg_clickhouse_version}
+```
+
+لتحميلها في قاعدة بيانات، استخدم [ExtensionSpec]:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: pg_clickhouse-cluster
+spec:
+  name: app
+  owner: app
+  cluster:
+    name: pg_clickhouse-cluster
+  extensions:
+    - name: pg_clickhouse
+      version: {pg_clickhouse_version}
+```
+
 ### التحميل {#loading}
 
 بمجرد تثبيت `pg_clickhouse`، يمكنك إضافته إلى إحدى قواعد البيانات عبر الاتصال
@@ -238,15 +276,13 @@ make]، و[CMake].
 ينصبّ تركيزنا الأول حاليًا على استكمال تغطية `pushdown` لأعباء العمل التحليلية قبل
 إضافة ميزات DML. خريطة الطريق لدينا:
 
-* الوصول إلى تخطيط أمثل للاستعلامات العشرة المتبقية من TPC-H التي لم يُطبَّق عليها `pushdown`
+* الوصول إلى تخطيط أمثل للاستعلامات العشرة المتبقية من TPC-H التي لم يُطبَّق عليها `pushdown`
 * اختبار `pushdown` لاستعلامات ClickBench وإصلاح مشكلاته
 * دعم `pushdown` الشفاف لجميع الدوال التجميعية في PostgreSQL
 * دعم `pushdown` الشفاف لجميع دوال PostgreSQL
 * إتاحة إعدادات ClickHouse على مستوى الخادم وعلى مستوى الجلسة عبر CREATE SERVER
   وGUCs
 * دعم جميع أنواع بيانات ClickHouse
-* دعم عمليات DELETE وUPDATE خفيفة الوزن
-* دعم الإدراج على دفعات عبر COPY
 * إضافة دالة لتنفيذ أي استعلام ClickHouse وإرجاع
   نتائجه على شكل جداول
 * إضافة دعم `pushdown` لاستعلامات UNION عندما تستعلم جميعها من قاعدة
@@ -257,6 +293,7 @@ make]، و[CMake].
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 * [Josh Ventura](https://github.com/JoshDreamland)
+* [Kaushik Iska](https://github.com/iskakaushik)
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 
@@ -273,7 +310,7 @@ make]، و[CMake].
 
 [Docker image]: https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "أحدث إصدار Docker"
 
-[tutorial]: /products/managed-postgres/extensions/pg_clickhouse/tutorial "البرنامج التعليمي لـ pg_clickhouse"
+[tutorial]: /products/managed-postgres/extensions/pg_clickhouse/tutorial "الدليل العملي لـ pg_clickhouse"
 
 [PostgreSQL Apt]: https://wiki.postgresql.org/wiki/Apt
 
@@ -295,13 +332,21 @@ make]، و[CMake].
 
 [GNU make]: https://www.gnu.org/software/make "GNU Make"
 
-[CMake]: https://cmake.org/ "CMake: نظام قوي لبناء البرمجيات"
+[CMake]: https://cmake.org/ "CMake: نظام قوي لإصدار البرمجيات"
 
 [LibSSL]: https://openssl-library.org "مكتبة OpenSSL"
 
 [TPC-H]: https://www.tpc.org/tpch/
 
 [re2]: https://github.com/ClickHouse/pg_re2 "pg_re2: دوال Regex متوافقة مع ClickHouse باستخدام RE2"
+
+[CloudNativePG]: https://cloudnative-pg.io/ "شغّل PostgreSQL بأسلوب Kubernetes"
+
+[ExtensionConfiguration]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionconfiguration
+
+&quot;توثيق CloudNativePG: ExtensionConfiguration:
+[ExtensionSpec]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionspec
+&quot;توثيق CloudNativePG: ExtensionSpec:
 
 [الاستعلام 1] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/1.sql
 [الاستعلام 2] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/2.sql

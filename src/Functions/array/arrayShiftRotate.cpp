@@ -1,6 +1,7 @@
 #include <limits>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -165,11 +166,31 @@ public:
                 if (!elem_type->isNullable() && default_argument.type->isNullable())
                 {
                     auto materialized_default_column = default_argument.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+                    const auto nested_default_type = removeNullable(default_argument.type);
                     if (const auto * nullable_default_column = checkAndGetColumn<ColumnNullable>(materialized_default_column.get()))
-                        materialized_default_column = nullable_default_column->getNestedColumnWithDefaultOnNull();
+                    {
+                        const auto & null_map = nullable_default_column->getNullMapData();
+                        if (nested_default_type->isDefaultInsertTrivial() || memoryIsZero(null_map.data(), 0, null_map.size()))
+                            materialized_default_column = nullable_default_column->getNestedColumnWithDefaultOnNull();
+                        else
+                        {
+                            /// The default of an `Enum` is its first value, not the column zero.
+                            const auto & nested_default_column = nullable_default_column->getNestedColumn();
+                            auto filled_default_column = nested_default_column.cloneEmpty();
+                            filled_default_column->reserve(nested_default_column.size());
+                            for (size_t row = 0; row < nested_default_column.size(); ++row)
+                            {
+                                if (null_map[row])
+                                    nested_default_type->insertDefaultInto(*filled_default_column);
+                                else
+                                    filled_default_column->insertFrom(nested_default_column, row);
+                            }
+                            materialized_default_column = std::move(filled_default_column);
+                        }
+                    }
 
                     default_argument.column = std::move(materialized_default_column);
-                    default_argument.type = removeNullable(default_argument.type);
+                    default_argument.type = nested_default_type;
                 }
 
                 default_column = castColumn(default_argument, elem_type);
@@ -217,12 +238,16 @@ struct ArrayRotateImpl
             }
 
             size_t shift_num = static_cast<size_t>(shift_num_value);
-            if (nested_size > 0 && shift_num >= nested_size)
+            /// An empty array is rotated by nothing at all: the loop below does not run, and
+            /// `nested_size - shift_num` would underflow here, having had no size to reduce against.
+            if (nested_size > 0)
+            {
                 shift_num %= nested_size;
 
-            // Rotating left to N is the same as shifting right to (size - N).
-            if (actual_direction == ShiftRotateDirection::Right)
-                shift_num = nested_size - shift_num;
+                // Rotating left to N is the same as shifting right to (size - N).
+                if (actual_direction == ShiftRotateDirection::Right)
+                    shift_num = nested_size - shift_num;
+            }
 
             for (size_t j = 0; j < nested_size; ++j)
                 permutation[current_offset + j] = current_offset + (j + shift_num) % nested_size;

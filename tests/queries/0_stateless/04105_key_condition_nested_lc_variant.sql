@@ -21,7 +21,6 @@
 -- analysis runs. This is a separate, pre-existing limitation in parallel replicas constant
 -- serialization, unrelated to the `KeyCondition` fix.
 
-SET allow_experimental_variant_type = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 
 DROP TABLE IF EXISTS t_04105_lc_date;

@@ -5,6 +5,7 @@
 #include <rmm/exec_policy.hpp>
 
 #include <thrust/binary_search.h>
+#include <thrust/transform_reduce.h>
 #include <thrust/scan.h>
 #include <thrust/transform.h>
 
@@ -21,6 +22,21 @@ struct SubtractFrom
     uint64_t minus;
 
     __device__ uint64_t operator()(uint64_t offset) const { return offset - minus; }
+};
+
+/// Saturates at `limit + 1`, which keeps it associative and free of overflow.
+struct SaturatingAdd
+{
+    uint64_t limit;
+
+    __device__ uint64_t operator()(uint64_t a, uint64_t b) const { return a > limit || b > limit || a > limit - b ? limit + 1 : a + b; }
+};
+
+struct ClampTo
+{
+    uint64_t limit;
+
+    __device__ uint64_t operator()(uint64_t size) const { return size > limit ? limit + 1 : size; }
 };
 
 struct AddStart
@@ -53,6 +69,21 @@ __host__ void offsetsFromSizes(const uint64_t * sizes, size_t count, uint64_t * 
         const auto policy = rmm::exec_policy_nosync(stream);
         thrust::inclusive_scan(policy, sizes, sizes + count, offsets_end + 1);
         thrust::transform(policy, offsets_end + 1, offsets_end + 1 + count, offsets_end + 1, AddStart{offsets_end});
+    });
+}
+
+__host__ uint64_t endOfSizesUpTo(const uint64_t * start, const uint64_t * sizes, size_t count, uint64_t limit, cuda::stream_ref stream)
+{
+    return guarded("summing " + std::to_string(count) + " string sizes", [&]
+    {
+        uint64_t base = 0;
+        checkCuda(cudaMemcpyAsync(&base, start, sizeof(uint64_t), cudaMemcpyDeviceToHost, stream.get()), "Cannot copy an offset back");
+        checkCuda(cudaStreamSynchronize(stream.get()), "Cannot wait for an offset to come back");
+        if (base > limit)
+            return limit + 1;
+        if (count == 0)
+            return base;
+        return thrust::transform_reduce(rmm::exec_policy(stream), sizes, sizes + count, ClampTo{limit}, base, SaturatingAdd{limit});
     });
 }
 

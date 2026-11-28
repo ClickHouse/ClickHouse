@@ -362,4 +362,6 @@ void vortex_ffi_writer_free(FFI_VortexWriter *writer);
 /// Frees a string returned by this library, such as an error message.
 void vortex_ffi_free_string(char *string);
 
+const char *vortex_ffi_version();
+
 }  // extern "C"
