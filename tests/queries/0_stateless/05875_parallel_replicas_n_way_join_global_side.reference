@@ -1,0 +1,15 @@
+temporary table
+100	4950
+100	4950
+view
+100
+100
+parallel_replicas_prefer_local_join = 0
+100
+100
+materialized CTE
+10
+10
+join in a subquery
+100
+100
