@@ -5582,9 +5582,10 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
 }
 
 
-void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
+void StorageReplicatedMergeTree::cleanLastPartNode(const MergeTreePartInfo & drop_range)
 {
     auto zookeeper = getZooKeeper();
+    const String & partition_id = drop_range.getPartitionId();
 
     LOG_DEBUG(log, "Cleaning up last part node for partition {}", partition_id);
 
@@ -5611,6 +5612,13 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
         {
             /// There is no information about interested part.
             LOG_TEST(log, "There is no information about the partition");
+            break;
+        }
+
+        /// A part inserted with quorum after the drop range was allocated is not dropped.
+        if (!drop_range.contains(MergeTreePartInfo::fromPartName(parts_with_quorum.added_parts.at(partition_id), format_version)))
+        {
+            LOG_TEST(log, "The last part of the partition is not in the drop range");
             break;
         }
 
@@ -7939,7 +7947,7 @@ void StorageReplicatedMergeTree::dropPartitions(const zkutil::ZooKeeperPtr & zoo
     {
         waitForLogEntryToBeProcessedIfNecessary(*entry, query_context, watch_events);
         auto drop_range_info = MergeTreePartInfo::fromPartName(entry->new_part_name, format_version);
-        cleanLastPartNode(drop_range_info.getPartitionId());
+        cleanLastPartNode(drop_range_info);
     }
 }
 
@@ -10312,6 +10320,10 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
         parts_holder.clear();
         cleanup_thread.wakeup();
 
+        /// The replaced parts may include the last part inserted with quorum.
+        if (replace)
+            cleanLastPartNode(drop_range);
+
         return entry;
     }
 
@@ -10607,7 +10619,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         waitForLogEntryToBeProcessedIfNecessary(entry_delete, query_context, watch_events);
 
         /// Cleaning possibly stored information about parts from /quorum/last_part node in ZooKeeper.
-        cleanLastPartNode(partition_id);
+        cleanLastPartNode(drop_range);
 
         return;
     }

@@ -818,8 +818,8 @@ private:
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name, bool is_parallel);
 
-    /// Deletes info from quorum/last_part node for particular partition_id.
-    void cleanLastPartNode(const String & partition_id);
+    /// Deletes info from quorum/last_part node for the partition of drop_range if drop_range contains the part stored there.
+    void cleanLastPartNode(const MergeTreePartInfo & drop_range);
 
     /// Part name is stored in quorum/last_part for corresponding partition_id.
     bool partIsLastQuorumPart(const MergeTreePartInfo & part_info) const;
