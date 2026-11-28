@@ -370,6 +370,11 @@ private:
         {
             /// Scalar path for non-same-type-float inputs (mixed types or same-type
             /// integers whose ResultType is widened, e.g. Int32 x Int32 -> Int64).
+            /// With a floating-point result the constant is converted once, not per row (integer products stay narrow).
+            using ConstType = std::conditional_t<std::is_floating_point_v<ResultType>, ResultType, LeftType>;
+            PaddedPODArray<ConstType> x(array_size);
+            for (size_t i = 0; i < array_size; ++i)
+                x[i] = static_cast<ConstType>(data_x[i]);
             ColumnArray::Offset current_offset = 0;
             for (size_t row = 0; row < input_rows_count; ++row)
             {
@@ -382,7 +387,7 @@ private:
                     for (size_t j = 0; j < VEC_SIZE; ++j)
                         Kernel::template accumulate<ResultType>(
                             states[j],
-                            static_cast<ResultType>(data_x[i + j]),
+                            static_cast<ResultType>(x[i + j]),
                             static_cast<ResultType>(data_y[current_offset + i + j]));
                 }
 
@@ -391,9 +396,11 @@ private:
                     Kernel::template combine<ResultType>(state, other_state);
 
                 /// Process the tail
+                /// At most 3 elements are left: a vectorized tail would never run and only slows the main loop down.
+                _Pragma("clang loop vectorize(disable)")
                 for (; i < array_size; ++i)
                     Kernel::template accumulate<ResultType>(
-                        state, static_cast<ResultType>(data_x[i]), static_cast<ResultType>(data_y[current_offset + i]));
+                        state, static_cast<ResultType>(x[i]), static_cast<ResultType>(data_y[current_offset + i]));
 
                 result[row] = Kernel::template finalize<ResultType>(state);
 

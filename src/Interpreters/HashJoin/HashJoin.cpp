@@ -1637,15 +1637,7 @@ HashJoin::RightTableData::~RightTableData()
             CurrentMetrics::HashJoinDestroyThreadsScheduled,
             num_threads);
 
-        auto schedule = [&pool, thread_group = CurrentThread::getGroup()](auto job)
-        {
-            pool.scheduleOrThrowOnError(
-                [job, thread_group]
-                {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::HASH_JOIN_DTOR);
-                    job();
-                });
-        };
+        auto schedule = [&pool](auto job) { pool.scheduleOrThrowOnError(attachedJob(ThreadName::HASH_JOIN_DTOR, std::move(job))); };
         auto schedule_destroy = [&schedule](auto & container) { schedule([&container] { auto destroyed = std::move(container); }); };
 
         for (auto & sublist : sublists)
@@ -1738,7 +1730,12 @@ public:
             fillNullsFromBlocks(columns_right, rows_added);
 
         if (auto * stats = parent.matched_rows_stats.get())
+        {
             stats->collectNonJoined(rows_added);
+            /// `IBlocksStream::next` never fills again after an empty fill, so each stream reports its end once
+            if (rows_added == 0)
+                stats->finishNonJoinedStream(num_buckets);
+        }
 
         return rows_added;
     }

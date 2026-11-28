@@ -12,10 +12,10 @@ class QueryPlan;
 /// One step, as a walk of the plan found it.
 struct VisitedStep
 {
-    String id;
+    UInt64 id = 0;
 
     /// This step's own children, then the roots of the child plans it holds.
-    VectorWithMemoryTracking<String> children;
+    VectorWithMemoryTracking<UInt64> children;
 
     IQueryPlanStep * step = nullptr;
 
@@ -24,7 +24,9 @@ struct VisitedStep
     const QueryPlan * owning_plan = nullptr;
 };
 
-/// Every step of a plan and of the child plans its steps hold, visited once.
+/// Every step of a plan and of the child plans its steps hold, visited once. A step without an
+/// identity (`PlanStepIndex::NONE`), or two different steps with the same index, leave nothing to
+/// key the plan by, so the walk is empty.
 ///
 /// The single source of what is below what: `CapturedPlan` and `PlanAnalysisSnapshot` want
 /// different things from each step but the same shape, and both take it from here.
@@ -35,8 +37,12 @@ struct PlanWalk
 {
     /// The plan that was walked. Null when it had nothing to walk.
     const QueryPlan * plan = nullptr;
-    String root_id;
+    UInt64 root_id = 0;
     VectorWithMemoryTracking<VisitedStep> steps;
+
+    /// Whether the walk is empty because a step has no identity (`PlanStepIndex::NONE`). A query
+    /// builds its steps in its thread group, so its plan has none.
+    bool has_step_without_index = false;
 
     /// `only_built_child_plans` keeps the walk from asking a step to build a child plan it does
     /// not already hold, so that reading a plan does not change the work the query does. The

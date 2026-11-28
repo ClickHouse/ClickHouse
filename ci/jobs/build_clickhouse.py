@@ -286,6 +286,9 @@ def setup_build_caches_env(info):
     )
     if info.pr_number > 0 and not backport_from_repo:
         os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
+        # Read-only builds in the main repo use the bucket anonymously; writers and other repos keep credentials.
+        if info.repo_name == "ClickHouse/ClickHouse":
+            os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     os.makedirs(build_dir, exist_ok=True)
 
     if info.is_local_run:
@@ -293,6 +296,8 @@ def setup_build_caches_env(info):
             print(f"NOTE: Using custom sccache endpoint: {os.environ['SCCACHE_ENDPOINT']}")
         if os.environ.get("AWS_ACCESS_KEY_ID"):
             print("NOTE: Using custom AWS credentials for sccache")
+            # Explicit credentials and anonymous access are mutually exclusive.
+            os.environ.pop("SCCACHE_S3_NO_CREDENTIALS", None)
         else:
             os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     else:
@@ -306,6 +311,9 @@ def setup_build_caches_env(info):
         # master/release builds (pr_number == 0) are allowed to write entries.
         if info.pr_number > 0:
             os.environ["CTCACHE_S3_READ_ONLY"] = "true"
+            # Read-only builds in the main repo read anonymously; other repos keep credentials.
+            if info.repo_name == "ClickHouse/ClickHouse":
+                os.environ["CTCACHE_S3_NO_CREDENTIALS"] = "true"
 
 
 # Next to sccache: PR runners can only read the `ccache` prefix.
@@ -347,6 +355,8 @@ def records_access_time(directory):
 def restore_thinlto_cache(info, release_type):
     os.makedirs(THINLTO_CACHE_DIR, exist_ok=True)
     publishes = info.pr_number == 0
+    # Read-only builds in the main repo read anonymously; publishers keep credentials.
+    anonymous = not publishes and info.repo_name == "ClickHouse/ClickHouse"
     atime = records_access_time(THINLTO_CACHE_DIR)
     print(
         f"NOTE: the file system of the ThinLTO cache {'records' if atime else 'does not record'} access times"
@@ -363,6 +373,7 @@ def restore_thinlto_cache(info, release_type):
             s3_path=f"{THINLTO_CACHE_S3_PATH}/{name}.tar.zst",
             local_path=archive,
             no_strict=True,
+            anonymous=anonymous,
         ):
             print(f"ThinLTO cache: restoring [{name}]")
             break

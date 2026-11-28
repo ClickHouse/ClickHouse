@@ -180,6 +180,9 @@ public:
     [[nodiscard]] TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
     /// Whether the index can answer the predicate of the function node.
     [[nodiscard]] bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
+    /// Whether `node` is the index expression itself, not an expression the index answers through it,
+    /// such as an element of an indexed `mapValues` or a JSON path.
+    [[nodiscard]] bool isIndexExpression(const ActionsDAG::Node & node) const;
     /// Returns the name of the virtual column that replaces the function node of the query,
     /// or nothing if the query is not one of this condition or cannot be read directly.
     [[nodiscard]] std::optional<String> tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const;
@@ -310,8 +313,6 @@ private:
     Block header;
     /// Argument types of the JSON index functions of this index, by position in `header`.
     JSONIndexArgumentTypes json_argument_types;
-    /// Whether the index is defined over an `Array` column, whose positions restart for every element.
-    bool indexed_column_is_array = false;
     /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;

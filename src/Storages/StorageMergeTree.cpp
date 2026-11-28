@@ -989,6 +989,7 @@ void StorageMergeTree::alter(
                         if (it != current_mutations_by_version.end())
                         {
                             decrementMutationsCounters(mutation_counters, *it->second.commands);
+                            rememberUnfinishedRemovedMutation(it->first);
                             held_version = it->first;
                             held_entry.emplace(std::move(it->second));
                             current_mutations_by_version.erase(it);
@@ -1336,6 +1337,7 @@ Int64 StorageMergeTree::startMutation(PreparedMutationEntry prepared, ContextPtr
             if (it != current_mutations_by_version.end())
             {
                 decrementMutationsCounters(mutation_counters, *it->second.commands);
+                rememberUnfinishedRemovedMutation(it->first);
                 rolled_back_entry.emplace(std::move(it->second));
                 current_mutations_by_version.erase(it);
             }
@@ -1663,6 +1665,13 @@ bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
 
 }
 
+void StorageMergeTree::rememberUnfinishedRemovedMutation(UInt64 version)
+{
+    unfinished_removed_mutation_versions.insert(version);
+    if (unfinished_removed_mutation_versions.size() > max_remembered_unfinished_removed_mutations)
+        unfinished_removed_mutation_versions.erase(unfinished_removed_mutation_versions.begin());
+}
+
 void StorageMergeTree::assertNoUnfinishedClearOfBlockColumns(Int64 block_number, const StorageMetadataPtr & metadata_snapshot) const
 {
     /// The patch of the update would store the values of `_block_number` and `_block_offset` of the parts the mutation has
@@ -1695,9 +1704,19 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     Int64 mutation_version, std::unique_lock<std::mutex> & /*lock*/, std::set<String> * mutation_ids, bool from_another_mutation) const
 {
     auto current_mutation_it = current_mutations_by_version.find(mutation_version);
-    /// Killed
     if (current_mutation_it == current_mutations_by_version.end())
+    {
+        /// The entry of a finished mutation may be already removed by `clearOldMutations`
+        /// (it is removed right away if `finished_mutations_to_keep` is zero).
+        /// A later mutation that is finished and removed does not make a killed mutation finished.
+        if (mutation_version > 0
+            && static_cast<UInt64>(mutation_version) <= max_cleared_finished_mutation_version
+            && !unfinished_removed_mutation_versions.contains(static_cast<UInt64>(mutation_version)))
+            return MergeTreeMutationStatus{.is_done = true};
+
+        /// Killed
         return {};
+    }
 
     MergeTreeMutationStatus result{.is_done = false};
 
@@ -1923,7 +1942,10 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
         if (it != current_mutations_by_version.end())
         {
             if (!it->second.is_done)
+            {
                 decrementMutationsCounters(mutation_counters, *it->second.commands);
+                rememberUnfinishedRemovedMutation(it->first);
+            }
 
             to_kill.emplace(std::move(it->second));
             current_mutations_by_version.erase(it);
@@ -3242,11 +3264,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::clearOldMutations");
 
-    size_t finished_mutations_to_keep = (*getSettings())[MergeTreeSetting::finished_mutations_to_keep];
-    if (!truncate && !finished_mutations_to_keep)
-        return 0;
-
-    finished_mutations_to_keep = truncate ? 0 : finished_mutations_to_keep;
+    size_t finished_mutations_to_keep = truncate ? 0 : (*getSettings())[MergeTreeSetting::finished_mutations_to_keep];
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
@@ -3265,6 +3283,9 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
             if (!tid.isNonTransactional() && !TransactionManager::getCSN(tid))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug",
                                 it->first, tid);
+
+            /// Queries may still be waiting for this mutation, let them know that it was finished and not killed.
+            max_cleared_finished_mutation_version = std::max(max_cleared_finished_mutation_version, it->first);
 
             mutations_to_delete.push_back(std::move(it->second));
             it = current_mutations_by_version.erase(it);
