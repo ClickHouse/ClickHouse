@@ -97,6 +97,14 @@ SELECT 'scalar', a + 1, b + 1, count() FROM merge(currentDatabase(), '^t_(dist_a
 SELECT 'scalar', groupArraySorted(10)(a), groupArraySorted(10)(b) FROM merge(currentDatabase(), '^t_(a|dist_b)$') SETTINGS optimize_const_name_size = 0;
 SELECT 'scalar', groupArraySorted(10)(a), groupArraySorted(10)(b) FROM merge(currentDatabase(), '^t_(dist_a|b)$') SETTINGS optimize_const_name_size = 0;
 
+-- `grouping` over missing columns: the child's analyzer rebuilds the specializations of `GROUPING SETS`, `ROLLUP` and `CUBE`.
+SELECT 'grouping sets', a, b, grouping(a, b), count() FROM merge(currentDatabase(), '^t_(a|dist_b)$') GROUP BY GROUPING SETS ((a, b), (a), ()) ORDER BY ALL;
+SELECT 'grouping sets', a, b, grouping(a, b), count() FROM merge(currentDatabase(), '^t_(dist_a|b)$') GROUP BY GROUPING SETS ((a, b), (a), ()) ORDER BY ALL;
+SELECT 'rollup', a, b, grouping(a, b), count() FROM merge(currentDatabase(), '^t_(a|dist_b)$') GROUP BY ROLLUP(a, b) ORDER BY ALL;
+SELECT 'rollup', a, b, grouping(a, b), count() FROM merge(currentDatabase(), '^t_(dist_a|b)$') GROUP BY ROLLUP(a, b) ORDER BY ALL;
+SELECT 'cube', a, b, grouping(a, b), count() FROM merge(currentDatabase(), '^t_(a|dist_b)$') GROUP BY CUBE(a, b) ORDER BY ALL;
+SELECT 'cube', a, b, grouping(a, b), count() FROM merge(currentDatabase(), '^t_(dist_a|b)$') GROUP BY CUBE(a, b) ORDER BY ALL;
+
 -- A `Merge` table with a single `Distributed` child is read at `Complete`.
 CREATE TABLE t_m1 (id UInt64, a UInt8, b UInt8) ENGINE = Merge(currentDatabase(), '^t_dist_b$');
 SELECT 'complete', min(a), min(b), count() FROM t_m1;

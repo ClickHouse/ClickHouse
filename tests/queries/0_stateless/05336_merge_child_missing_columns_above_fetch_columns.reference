@@ -117,6 +117,40 @@ scalar	1	1	2
 scalar	6	6	1
 scalar	[0,0,5]	[0,0,5]
 scalar	[0,0,5]	[0,0,5]
+grouping sets	0	0	0	2
+grouping sets	0	0	1	2
+grouping sets	0	0	3	3
+grouping sets	5	0	1	1
+grouping sets	5	5	0	1
+grouping sets	0	0	0	2
+grouping sets	0	0	1	2
+grouping sets	0	0	3	3
+grouping sets	5	0	1	1
+grouping sets	5	5	0	1
+rollup	0	0	0	2
+rollup	0	0	1	2
+rollup	0	0	3	3
+rollup	5	0	1	1
+rollup	5	5	0	1
+rollup	0	0	0	2
+rollup	0	0	1	2
+rollup	0	0	3	3
+rollup	5	0	1	1
+rollup	5	5	0	1
+cube	0	0	0	2
+cube	0	0	1	2
+cube	0	0	2	2
+cube	0	0	3	3
+cube	0	5	2	1
+cube	5	0	1	1
+cube	5	5	0	1
+cube	0	0	0	2
+cube	0	0	1	2
+cube	0	0	2	2
+cube	0	0	3	3
+cube	0	5	2	1
+cube	5	0	1	1
+cube	5	5	0	1
 complete	0	0	2
 buffer	0	0	3
 buffer fuse	47	15.666666666666666
