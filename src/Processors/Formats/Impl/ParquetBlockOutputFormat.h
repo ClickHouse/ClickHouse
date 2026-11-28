@@ -27,6 +27,9 @@ public:
 
     String getName() const override { return "ParquetBlockOutputFormat"; }
 
+    /// The writer converts sparse columns to full ones itself, where it needs them full.
+    bool supportsSpecialSerializationKinds() const override { return format_settings.allow_special_serialization_kinds; }
+
     UnorderedMapWithMemoryTracking<String, size_t> getColumnSizesOnDisk() const override { return column_sizes_on_disk; }
     VectorWithMemoryTracking<UInt64> getRowGroupOffsets() const override { return row_group_offsets; }
 
