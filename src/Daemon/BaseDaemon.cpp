@@ -202,6 +202,8 @@ void BaseDaemon::closeFDs()
 #endif
 
     const auto & signal_pipe = HandledSignals::instance().signal_pipe;
+    /// With `--daemon`, the process that was started waits on it until the initialization is done.
+    const int daemon_launcher_fd = getDaemonLauncherDescriptor();
     if (fs::is_directory(proc_path)) /// Hooray, proc exists
     {
         /// in /proc/self/fd directory filenames are numeric file descriptors.
@@ -212,7 +214,7 @@ void BaseDaemon::closeFDs()
 
         for (const auto & fd : fds)
         {
-            if (fd > 2 && fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
+            if (fd > 2 && fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1] && fd != daemon_launcher_fd)
             {
                 int err = ::close(fd);
                 /// NOTE: it is OK to ignore error here since at least one fd
@@ -233,7 +235,7 @@ void BaseDaemon::closeFDs()
             max_fd = 256; /// bad fallback
         for (int fd = 3; fd < max_fd; ++fd)
         {
-            if (fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
+            if (fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1] && fd != daemon_launcher_fd)
             {
                 int err = ::close(fd);
                 /// NOTE: it is OK to get EBADF here, since it is simply
@@ -470,6 +472,11 @@ void BaseDaemon::initialize(Application & self)
     {
         graphite_writers.emplace(key, std::make_unique<GraphiteWriter>(key));
     }
+
+    /// With `--daemon`, the process that was started waits until here, and shows what the daemon writes to stdout and
+    /// stderr until then, so that an error in the configuration, or a log or pid file that cannot be opened, is seen.
+    /// After that, the errors go to the logs.
+    detachFromDaemonLauncher(true);
 }
 
 
@@ -711,6 +718,10 @@ void BaseDaemon::setupWatchdog()
         /// Close the pipe after notifying the service manager.
         /// The child process is waiting for the pipe to be closed.
         notify_sync.close();
+
+        /// With `--daemon`, the child process tells the process that was started when it has initialized,
+        /// and the watchdog, which stays in the background, must not hold the terminal of the user.
+        detachFromDaemonLauncher(false);
 
         /// Change short thread name and process name.
         DB::setThreadName(ThreadName::CLICKHOUSE_WATCH);

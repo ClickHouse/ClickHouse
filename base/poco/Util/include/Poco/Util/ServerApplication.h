@@ -150,6 +150,29 @@ namespace Util
         /// waitForTerminationRequest(), this method will return
         /// and the application can shut down.
 
+#if defined(POCO_OS_FAMILY_UNIX)
+        static void detachFromDaemonLauncher(bool initialized);
+        /// With --daemon, the process that was started (the launcher) waits until the daemon
+        /// has initialized, while the daemon writes to the original stdout and stderr, so that
+        /// an error at startup (a broken configuration, a log file that is not writable) is
+        /// shown to the user, and the launcher exits with the status of the daemon.
+        ///
+        /// The application must call it with initialized = true when it has initialized: then the
+        /// launcher exits with 0. Otherwise the launcher exits when the daemon does, with its status.
+        ///
+        /// With initialized = false, this process only stops being one the launcher waits for.
+        /// In both cases, also replaces the original stdout and stderr,
+        /// if they are still in place and are not regular files, by /dev/null, so that a process that
+        /// stays in the background does not hold a terminal or a pipe of the caller.
+        /// Does nothing without --daemon, or when called again.
+        /// Must be called in every process that inherited this state and stays alive in the
+        /// background, but is not the one that initializes, such as a watchdog.
+
+        static int getDaemonLauncherDescriptor();
+        /// The descriptor that detachFromDaemonLauncher() writes to, or -1. A process that
+        /// closes all its descriptors must keep this one.
+#endif
+
     protected:
         int run();
         virtual void waitForTerminationRequest();
