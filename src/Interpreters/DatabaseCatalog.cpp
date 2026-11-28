@@ -1206,6 +1206,18 @@ std::vector<StorageID> DatabaseCatalog::getDependentViews(const StorageID & sour
     return view_dependencies.getDependencies(source_table_id);
 }
 
+UInt64 DatabaseCatalog::getViewDependenciesVersion() const
+{
+    std::lock_guard lock{databases_mutex};
+    return view_dependencies.getVersion();
+}
+
+void DatabaseCatalog::bumpViewDependenciesVersion()
+{
+    std::lock_guard lock{databases_mutex};
+    view_dependencies.bumpVersion();
+}
+
 std::vector<StorageID> DatabaseCatalog::takeSourceViewDependencies(const StorageID & source_table_id)
 {
     std::lock_guard lock{databases_mutex};

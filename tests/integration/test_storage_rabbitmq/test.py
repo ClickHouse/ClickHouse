@@ -2276,6 +2276,139 @@ def test_rabbitmq_trickle_does_not_spin_event_loop(rabbitmq_cluster, db, unique)
     )
 
 
+def test_rabbitmq_idle_table_does_not_rebuild_insert_pipeline(rabbitmq_cluster, db, unique):
+    # An idle table must wait for messages inside one insert pipeline, as Kafka does, instead of building
+    # a new pipeline for each empty read. Each streaming call logs "Processed N rows" once.
+    instance.query(
+        f"""
+        CREATE TABLE {db}.idle (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}_idle',
+                     rabbitmq_queue_base = '{unique}_idle',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_flush_interval_ms = 1000;
+        CREATE TABLE {db}.view (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS
+            SELECT * FROM {db}.idle;
+        """
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    def publish(key):
+        channel.basic_publish(
+            exchange=f"{unique}_idle", routing_key="", body=json.dumps({"key": key, "value": key})
+        )
+
+    # One message first, so the measurement starts with streaming already active.
+    publish(0)
+    check_expected_result_polling(1, f"SELECT count() FROM {db}.view")
+
+    empty_calls = f"StorageRabbitMQ ({db}.idle): Processed 0 rows"
+    start = time.monotonic()
+    before = int(instance.count_in_log(empty_calls))
+    time.sleep(10)
+    empty = int(instance.count_in_log(empty_calls)) - before
+    elapsed = time.monotonic() - start
+    logging.info(f"{empty} insert pipelines built for empty reads in {elapsed:.1f} s of idle")
+    # Each empty read waits for the poll timeout (stream_poll_timeout_ms, 500 ms) inside one pipeline, so at
+    # most one per 500 ms (+2 for the reads in flight at both ends); without the wait it is several hundred.
+    assert 0 < empty <= elapsed / 0.5 + 2, f"{empty} insert pipelines built for empty reads in {elapsed:.1f} s of idle"
+
+    # A message published while idle still arrives.
+    publish(1)
+    check_expected_result_polling(2, f"SELECT count() FROM {db}.view")
+    connection.close()
+
+
+@pytest.mark.parametrize(
+    "refresh_while_stopped, cascade", [(False, False), (True, False), (False, True)]
+)
+def test_rabbitmq_view_created_while_cycle_waits_gets_messages(rabbitmq_cluster, db, unique, refresh_while_stopped, cascade):
+    # A view created while a streaming cycle waits for its first message must get the messages that arrive
+    # meanwhile, although the insert pipeline of that cycle was built without it.
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbit (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}',
+                     rabbitmq_queue_base = '{unique}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_flush_interval_ms = 1000;
+        CREATE TABLE {db}.t1 (key UInt64) ENGINE = MergeTree ORDER BY key;
+        CREATE TABLE {db}.t2 (key UInt64) ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW {db}.mv1 TO {db}.t1 AS SELECT key FROM {db}.rabbit;
+        """
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    def publish(key):
+        channel.basic_publish(exchange=unique, routing_key="", body=json.dumps({"key": key}))
+
+    def queue_stats():
+        queue = requests.get(
+            f"http://{rabbitmq_cluster.rabbitmq_ip}:{rabbitmq_cluster.rabbitmq_management_port}/api/queues/%2F/{unique}",
+            auth=("root", "clickhouse"),
+            timeout=30,
+        ).json()
+        return queue.get("messages_ready"), queue.get("messages_unacknowledged")
+
+    # Streaming is active before the cycle is held.
+    publish(0)
+    check_expected_result_polling(1, f"SELECT count() FROM {db}.t1")
+
+    if refresh_while_stopped:
+        # Once two passes have ended after the STOP, no ordinary cycle can reach the failpoint any more.
+        rescheduled = f"StorageRabbitMQ ({db}.rabbit): Rescheduling background streaming process"
+        instance.query(f"SYSTEM STOP {db}.rabbit")
+        before = int(instance.count_in_log(rescheduled))
+        deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+        while int(instance.count_in_log(rescheduled)) < before + 2:
+            assert time.monotonic() < deadline, "the streaming task of the stopped table did not run"
+            time.sleep(0.5)
+
+    failpoint = "rabbitmq_pause_after_building_insert_pipeline"
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
+        if refresh_while_stopped:
+            # The held cycle is the one a REFRESH grants to the stopped table.
+            instance.query(f"SYSTEM REFRESH {db}.rabbit")
+        # The held cycle has its insert pipeline built for mv1 only.
+        instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=DEFAULT_TIMEOUT_SEC)
+        # With `cascade`, the new view reads the target of mv1, which the held pipeline also writes.
+        source = f"{db}.t1" if cascade else f"{db}.rabbit"
+        instance.query(f"CREATE MATERIALIZED VIEW {db}.mv2 TO {db}.t2 AS SELECT key FROM {source}")
+        for key in range(1, 101):
+            publish(key)
+
+        # The consumer of the held cycle has received all of them when the cycle goes on.
+        deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+        while queue_stats() != (0, 100):
+            assert time.monotonic() < deadline, f"messages not delivered to the consumer: {queue_stats()}"
+            time.sleep(0.5)
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+    connection.close()
+
+    check_expected_result_polling(101, f"SELECT count() FROM {db}.t1")
+    check_expected_result_polling(100, f"SELECT count() FROM {db}.t2")
+    assert int(instance.query(f"SELECT uniqExact(key) FROM {db}.t2")) == 100
+
+
 def test_rabbitmq_drop_table_properly(rabbitmq_cluster, db, unique):
     instance.query(
         f"""

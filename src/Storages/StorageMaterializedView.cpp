@@ -1086,6 +1086,8 @@ void StorageMaterializedView::alter(
         instance.removeDependencies(table_id);
 
     setInMemoryMetadata(new_metadata);
+    /// alterTable moved the version before the new query was published; a reader that sampled it in between must see a change.
+    DatabaseCatalog::instance().bumpViewDependenciesVersion();
 
     if (refresher)
         refresher->alterRefreshParams(new_metadata.refresh->as<const ASTRefreshStrategy &>());

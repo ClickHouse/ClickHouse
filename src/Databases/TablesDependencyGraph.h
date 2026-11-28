@@ -49,6 +49,11 @@ public:
     /// Clears this dependency graph.
     void clear();
 
+    /// Incremented by every change of this graph.
+    UInt64 getVersion() const { return version; }
+
+    void bumpVersion() { ++version; }
+
     /// Adds a single dependency "table_id" on "dependency".
     void addDependency(const StorageID & table_id, const StorageID & dependency);
 
@@ -173,6 +178,7 @@ private:
     using NodesSortedByLevel = std::vector<const Node *>;
     mutable NodesSortedByLevel nodes_sorted_by_level_lazy;
     mutable bool levels_calculated = false;
+    mutable UInt64 version = 0;
 
     const String name_for_logging;
     mutable LoggerPtr logger = nullptr;
