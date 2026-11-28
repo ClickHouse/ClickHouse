@@ -42,6 +42,7 @@ cleanup()
         DROP TABLE IF EXISTS t_04093_empty_and_select;
         DROP TABLE IF EXISTS t_04093_large;
         DROP TABLE IF EXISTS t_04093_concurrent;
+        DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_attach_insert_db;
         DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_rmt_db;
     "
 }
@@ -59,6 +60,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     DROP TABLE IF EXISTS t_04093_empty_and_select;
     DROP TABLE IF EXISTS t_04093_large;
     DROP TABLE IF EXISTS t_04093_concurrent;
+    DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_attach_insert_db;
 "
 
 printf '1\n2\n99\n' | ${CLICKHOUSE_CLIENT} --query \
@@ -106,6 +108,26 @@ printf '%s\n' \
     '3' '4' '99' | \
     ${CLICKHOUSE_CURL} -sS --fail-with-body "${CLICKHOUSE_URL}" --data-binary @-
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(x) FROM t_04093_http_input"
+
+${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --multiquery --query "
+    CREATE DATABASE ${CLICKHOUSE_DATABASE}_attach_insert_db ENGINE = Ordinary;
+    CREATE TABLE ${CLICKHOUSE_DATABASE}_attach_insert_db.t (x UInt8) ENGINE = MergeTree ORDER BY x;
+    INSERT INTO ${CLICKHOUSE_DATABASE}_attach_insert_db.t VALUES (1);
+    DETACH TABLE ${CLICKHOUSE_DATABASE}_attach_insert_db.t;
+"
+if response=$(${CLICKHOUSE_CURL} -sS --fail-with-body \
+    "${CLICKHOUSE_URL}&allow_deprecated_database_ordinary=1" \
+    --data-binary "ATTACH TABLE ${CLICKHOUSE_DATABASE}_attach_insert_db.t (x UInt8) ENGINE = MergeTree ORDER BY x AS INSERT VALUES (2)" 2>&1); then
+    echo "Expected ATTACH with AS INSERT to fail" >&2
+    exit 1
+fi
+if [[ "$response" != *"SUPPORT_IS_DISABLED"* ]]; then
+    echo "$response" >&2
+    exit 1
+fi
+${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${CLICKHOUSE_DATABASE}_attach_insert_db.t"
+${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${CLICKHOUSE_DATABASE}_attach_insert_db.t"
+${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(x) FROM ${CLICKHOUSE_DATABASE}_attach_insert_db.t"
 
 query_id_values="${CLICKHOUSE_DATABASE}_04093_explain_values_$$"
 query_id_csv="${CLICKHOUSE_DATABASE}_04093_explain_csv_$$"

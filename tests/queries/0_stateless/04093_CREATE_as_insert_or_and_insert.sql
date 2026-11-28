@@ -218,3 +218,21 @@ CREATE TABLE IF NOT EXISTS t_04093_cluster_reject ON CLUSTER test_shard_localhos
     AND INSERT VALUES (7); -- { serverError SUPPORT_IS_DISABLED }
 SELECT count(), sum(x) FROM t_04093_cluster_reject;
 DROP TABLE t_04093_cluster_reject;
+
+DROP TABLE IF EXISTS t_04093_attach_insert;
+CREATE TABLE t_04093_attach_insert (x UInt8) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_04093_attach_insert VALUES (1);
+DETACH TABLE t_04093_attach_insert;
+ATTACH TABLE t_04093_attach_insert (x UInt8) ENGINE = MergeTree ORDER BY x
+    AS INSERT VALUES (2); -- { serverError SUPPORT_IS_DISABLED }
+ATTACH TABLE t_04093_attach_insert (x UInt8) ENGINE = MergeTree ORDER BY x
+    AS INSERT SELECT 2; -- { serverError SUPPORT_IS_DISABLED }
+ATTACH TABLE IF NOT EXISTS t_04093_attach_insert (x UInt8) ENGINE = MergeTree ORDER BY x
+    AND INSERT VALUES (2); -- { serverError SUPPORT_IS_DISABLED }
+ATTACH TABLE IF NOT EXISTS t_04093_attach_insert
+    AND INSERT SELECT 2; -- { serverError SUPPORT_IS_DISABLED }
+ATTACH TABLE IF NOT EXISTS t_04093_attach_insert ON CLUSTER test_shard_localhost
+    AND INSERT SELECT 2; -- { serverError SUPPORT_IS_DISABLED }
+ATTACH TABLE t_04093_attach_insert;
+SELECT count(), sum(x) FROM t_04093_attach_insert;
+DROP TABLE t_04093_attach_insert;

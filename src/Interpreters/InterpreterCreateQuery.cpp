@@ -4274,6 +4274,11 @@ BlockIO InterpreterCreateQuery::execute()
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
 
+    if (create.attach && (create.has_as_insert || create.has_and_insert))
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "ATTACH TABLE with AS INSERT or AND INSERT is not supported. Use separate ATTACH and INSERT queries.");
+
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 
     if (!create.cluster.empty() && (create.has_as_insert || create.has_and_insert))
