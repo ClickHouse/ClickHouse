@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/ReadFromDictionaryStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -613,6 +614,8 @@ namespace QueryPlanFormat
                 return static_cast<const ReadFromParallelRemoteReplicasStep *>(node->step.get())->getStorageID().getFullNameNotQuoted();
             if (step_name == "ReadFromStorage")
                 return static_cast<const ReadFromStorageStep *>(node->step.get())->getStorage()->getStorageID().getFullNameNotQuoted();
+            if (step_name == "ReadFromDictionary")
+                return static_cast<const ReadFromDictionaryStep *>(node->step.get())->getStorage()->getStorageID().getFullNameNotQuoted();
             if (step_name == "ReadFromMemoryStorage")
                 return static_cast<const ReadFromMemoryStorageStep *>(node->step.get())->getStorage()->getStorageID().getFullNameNotQuoted();
             if (step_name == "ReadFromTable")
