@@ -218,9 +218,14 @@ void INATSConsumer::finishAndReturnUnprocessed(SkippedMessages skipped_messages_
 {
     if (subscribed && !connection.isConnected())
     {
-        /// Nothing can be returned over a lost connection. What was received is kept and inserted after connecting
-        /// again: the acknowledgements of JetStream messages work over any connection.
+        /// Nothing can be returned over a lost connection. What was received but not consumed is kept and inserted after
+        /// connecting again: the acknowledgements of JetStream messages work over any connection. The consumed messages
+        /// belong to the owner that is finishing, and are not committed: they are redelivered after the ACK deadline,
+        /// rather than acknowledged by the next owner of the consumer. Skipped messages are final only for `Acknowledge`.
         unsubscribe();
+        consumed_messages.clear();
+        if (skipped_messages_action != SkippedMessages::Acknowledge)
+            skipped_messages.clear();
         return;
     }
 

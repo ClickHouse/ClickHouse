@@ -6,9 +6,7 @@
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
-#include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromPocoSocket.h>
 
 #include "config.h"
 
@@ -35,6 +33,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_CONNECT_NATS;
     extern const int INCORRECT_DATA;
@@ -380,10 +379,9 @@ Connection::Connection(const ConnectionSettings & settings_, LoggerPtr log_)
         }
         catch (...)
         {
-            if (out)
-                out->cancel();
-            out.reset();
-            in.reset();
+            output.clear();
+            input.clear();
+            input_pos = 0;
             socket.reset();
             error.clear();
             if (!errors.empty())
@@ -395,11 +393,7 @@ Connection::Connection(const ConnectionSettings & settings_, LoggerPtr log_)
     throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to NATS: {}", errors);
 }
 
-Connection::~Connection()
-{
-    if (out)
-        out->cancel();
-}
+Connection::~Connection() = default;
 
 void Connection::connectToServer(const ServerAddress & server)
 {
@@ -427,8 +421,7 @@ void Connection::connectToServer(const ServerAddress & server)
     socket->setReceiveTimeout(settings.request_timeout);
     socket->setSendTimeout(settings.request_timeout);
     socket->setNoDelay(true);
-    in = std::make_unique<ReadBufferFromPocoSocket>(*socket);
-    out = std::make_unique<WriteBufferFromPocoSocket>(*socket);
+    socket->setBlocking(false);
 
     handshake(server);
 }
@@ -502,7 +495,7 @@ void Connection::handshake(const ServerAddress & server)
     connect.stringify(connect_json);
     writeLine("CONNECT " + connect_json.str());
     writeLine("PING");
-    out->next();
+    flushOutput();
 
     /// With `verbose` off the server answers only an error, so a `PONG` confirms that the connection is accepted.
     while (true)
@@ -520,7 +513,7 @@ void Connection::handshake(const ServerAddress & server)
         if (line == "PING")
         {
             writeLine("PONG");
-            out->next();
+            flushOutput();
         }
         /// `+OK` and `INFO` updates are not needed.
     }
@@ -531,19 +524,19 @@ void Connection::handshake(const ServerAddress & server)
 void Connection::startTLS([[maybe_unused]] const ServerAddress & server)
 {
 #if USE_SSL
-    /// The server sends nothing after `INFO` until the client starts the TLS handshake, so nothing is buffered in `in`.
-    out->cancel();
-    out.reset();
-    in.reset();
+    /// The server sends nothing after `INFO` until the client starts the TLS handshake, so nothing is buffered.
+    output.clear();
+    input.clear();
+    input_pos = 0;
 
+    /// The handshake is done in the blocking mode, where it is bounded by the socket timeouts.
+    socket->setBlocking(true);
     auto secure_socket = std::make_unique<Poco::Net::SecureStreamSocket>(
         Poco::Net::SecureStreamSocket::attach(*socket, server.host, makeTLSContext(settings.tls)));
     socket = std::move(secure_socket);
     socket->setReceiveTimeout(settings.request_timeout);
     socket->setSendTimeout(settings.request_timeout);
-
-    in = std::make_unique<ReadBufferFromPocoSocket>(*socket);
-    out = std::make_unique<WriteBufferFromPocoSocket>(*socket);
+    socket->setBlocking(false);
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "TLS connections to NATS are disabled, because ClickHouse was built without SSL support");
 #endif
@@ -560,6 +553,12 @@ void Connection::checkUsable() const
 {
     if (!error.empty())
         throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "The connection to NATS server {} is not usable: {}", server_for_log, error);
+}
+
+void Connection::throwIfPermissionViolation()
+{
+    if (!permission_violation.empty())
+        throw Exception(ErrorCodes::ACCESS_DENIED, "NATS server {}: {}", server_for_log, std::exchange(permission_violation, {}));
 }
 
 template <typename F>
@@ -580,25 +579,77 @@ auto Connection::guarded(F && f)
 
 void Connection::writeLine(std::string_view line)
 {
-    out->write(line.data(), line.size());
-    out->write("\r\n", 2);
+    writeRaw(line.data(), line.size());
+    writeRaw("\r\n", 2);
+}
+
+void Connection::writeRaw(const char * data, size_t size)
+{
+    output.append(data, size);
+}
+
+void Connection::flushOutput()
+{
+    const auto deadline = Clock::now() + std::chrono::microseconds(settings.request_timeout.totalMicroseconds());
+    size_t pos = 0;
+    while (pos < output.size())
+    {
+        const int rc = socket->sendBytes(output.data() + pos, static_cast<int>(std::min<size_t>(output.size() - pos, 1 << 20)));
+        if (rc > 0)
+        {
+            pos += rc;
+            continue;
+        }
+
+        /// Would block. TLS may need to read before it can write (renegotiation).
+        int mode = Poco::Net::Socket::SELECT_WRITE;
+#if USE_SSL
+        if (rc == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_READ)
+            mode = Poco::Net::Socket::SELECT_READ;
+#endif
+        const auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(deadline - Clock::now()).count();
+        if (remaining <= 0 || !socket->poll(Poco::Timespan(remaining), mode | Poco::Net::Socket::SELECT_ERROR))
+            fail("timeout while writing to the server");
+    }
+    output.clear();
+}
+
+bool Connection::waitForInput(Clock::time_point deadline)
+{
+    static constexpr size_t READ_SIZE = 65536;
+    while (input_pos == input.size())
+    {
+        input.resize(READ_SIZE);
+        input_pos = 0;
+        const int rc = socket->receiveBytes(input.data(), static_cast<int>(READ_SIZE));
+        input.resize(rc > 0 ? rc : 0);
+        if (rc > 0)
+            return true;
+        if (rc == 0)
+            fail("the server closed the connection");
+
+        /// Would block: nothing complete has arrived yet (with TLS, possibly a part of a record).
+        int mode = Poco::Net::Socket::SELECT_READ;
+#if USE_SSL
+        if (rc == Poco::Net::SecureStreamSocket::ERR_SSL_WANT_WRITE)
+            mode = Poco::Net::Socket::SELECT_WRITE;
+#endif
+        const auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(deadline - Clock::now()).count();
+        if (remaining <= 0 || !socket->poll(Poco::Timespan(remaining), mode | Poco::Net::Socket::SELECT_ERROR))
+            return false;
+    }
+    return true;
 }
 
 void Connection::readExact(char * to, size_t size, Clock::time_point deadline)
 {
     while (size)
     {
-        if (!in->hasPendingData())
-        {
-            const auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(deadline - Clock::now()).count();
-            if (remaining <= 0 || !in->poll(static_cast<size_t>(remaining)))
-                fail("timeout while reading from the server");
-            if (!in->next())
-                fail("the server closed the connection");
-        }
-        const size_t bytes = std::min(size, in->available());
-        memcpy(to, in->position(), bytes);
-        in->position() += bytes;
+        if (!waitForInput(deadline))
+            fail("timeout while reading from the server");
+        const size_t bytes = std::min(size, input.size() - input_pos);
+        memcpy(to, input.data() + input_pos, bytes);
+        input_pos += bytes;
         to += bytes;
         size -= bytes;
     }
@@ -609,23 +660,17 @@ String Connection::readLine(Clock::time_point deadline)
     String line;
     while (true)
     {
-        if (!in->hasPendingData())
-        {
-            const auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(deadline - Clock::now()).count();
-            if (remaining <= 0 || !in->poll(static_cast<size_t>(remaining)))
-                fail("timeout while reading from the server");
-            if (!in->next())
-                fail("the server closed the connection");
-        }
+        if (!waitForInput(deadline))
+            fail("timeout while reading from the server");
 
-        const char * begin = in->position();
-        const char * end = in->buffer().end();
+        const char * begin = input.data() + input_pos;
+        const char * end = input.data() + input.size();
         const char * newline = static_cast<const char *>(memchr(begin, '\n', end - begin));
         const char * stop = newline ? newline : end;
         if (line.size() + (stop - begin) > MAX_LINE_SIZE)
             fail("too long protocol line");
         line.append(begin, stop);
-        in->position() = newline ? const_cast<char *>(newline) + 1 : const_cast<char *>(end);
+        input_pos = (newline ? newline + 1 : end) - input.data();
         if (newline)
             break;
     }
@@ -637,12 +682,8 @@ String Connection::readLine(Clock::time_point deadline)
 
 bool Connection::readOperation(Clock::time_point start_deadline)
 {
-    if (!in->hasPendingData())
-    {
-        const auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(start_deadline - Clock::now()).count();
-        if (!in->poll(static_cast<size_t>(std::max<Int64>(remaining, 0))))
-            return false;
-    }
+    if (!waitForInput(start_deadline))
+        return false;
 
     /// Once an operation has started arriving, all of it must arrive within the request timeout.
     const auto deadline = Clock::now() + std::chrono::microseconds(settings.request_timeout.totalMicroseconds());
@@ -699,7 +740,7 @@ bool Connection::readOperation(Clock::time_point start_deadline)
     if (operation == "PING")
     {
         writeLine("PONG");
-        out->next();
+        flushOutput();
         return true;
     }
 
@@ -714,10 +755,11 @@ bool Connection::readOperation(Clock::time_point start_deadline)
         String message = line.substr(4);
         boost::algorithm::trim(message);
         boost::algorithm::trim_if(message, [](char c) { return c == '\''; });
-        /// The server keeps the connection after a permissions violation.
+        /// The server keeps the connection after a permissions violation, but the operation has failed.
         if (message.starts_with("Permissions Violation"))
         {
-            LOG_WARNING(log, "NATS server {} reported: {}", server_for_log, message);
+            if (permission_violation.empty())
+                permission_violation = message;
             return true;
         }
         fail(message);
@@ -739,7 +781,7 @@ void Connection::sendPingIfNeeded()
         fail(fmt::format("the server did not answer {} PINGs", settings.max_pings_out));
 
     writeLine("PING");
-    out->next();
+    flushOutput();
     ++pings_sent;
     last_ping = now;
 }
@@ -756,6 +798,7 @@ void Connection::processIncoming()
                 break;
         }
     });
+    throwIfPermissionViolation();
 }
 
 bool Connection::isUsable()
@@ -765,6 +808,14 @@ bool Connection::isUsable()
     try
     {
         processIncoming();
+    }
+    catch (const Exception & e)
+    {
+        /// A permissions violation does not close the connection: it is reported by the next operation.
+        if (e.code() == ErrorCodes::ACCESS_DENIED)
+            permission_violation = e.message();
+        else if (error.empty())
+            error = e.message();
     }
     catch (...)
     {
@@ -780,7 +831,7 @@ void Connection::close()
     {
         try
         {
-            out->next();
+            flushOutput();
         }
         catch (...)
         {
@@ -789,8 +840,7 @@ void Connection::close()
         error = "the connection is closed";
     }
 
-    if (out)
-        out->cancel();
+    output.clear();
     try
     {
         if (socket)
@@ -840,8 +890,8 @@ void Connection::publish(const String & subject, const String & reply, std::stri
             writeLine(fmt::format("PUB {} {}", subject, data.size()));
         else
             writeLine(fmt::format("PUB {} {} {}", subject, reply, data.size()));
-        out->write(data.data(), data.size());
-        out->write("\r\n", 2);
+        writeRaw(data.data(), data.size());
+        writeRaw("\r\n", 2);
     });
 }
 
@@ -850,7 +900,7 @@ void Connection::flush()
     guarded([&]
     {
         writeLine("PING");
-        out->next();
+        flushOutput();
         /// The server answers every `PING` in order, so this one is answered by the `PONG` with this number.
         const UInt64 expected_pongs = ++pings_sent;
         last_ping = Clock::now();
@@ -862,6 +912,8 @@ void Connection::flush()
                 fail("timeout while waiting for PONG");
         }
     });
+    /// The server answers in order, so an error about anything sent before the `PING` has arrived by now.
+    throwIfPermissionViolation();
 }
 
 std::optional<Message> Connection::receive(Poco::Timespan timeout)
@@ -871,7 +923,7 @@ std::optional<Message> Connection::receive(Poco::Timespan timeout)
         guarded([&]
         {
             const auto deadline = Clock::now() + std::chrono::microseconds(timeout.totalMicroseconds());
-            out->next();
+            flushOutput();
             while (messages.empty())
             {
                 sendPingIfNeeded();
@@ -891,6 +943,8 @@ std::optional<Message> Connection::receive(Poco::Timespan timeout)
             }
         });
     }
+
+    throwIfPermissionViolation();
 
     if (messages.empty())
         return {};
@@ -914,7 +968,7 @@ Message Connection::request(const String & subject, std::string_view data, Poco:
 
     auto reply = guarded([&]() -> std::optional<Message>
     {
-        out->next();
+        flushOutput();
         const auto deadline = Clock::now() + std::chrono::microseconds(timeout.totalMicroseconds());
         while (true)
         {
@@ -934,6 +988,8 @@ Message Connection::request(const String & subject, std::string_view data, Poco:
             readOperation(std::min(deadline, last_ping + settings.ping_interval));
         }
     });
+
+    throwIfPermissionViolation();
 
     /// The connection is still usable after a timeout: the reply may just come late.
     if (!reply)

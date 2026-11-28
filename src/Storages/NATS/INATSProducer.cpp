@@ -21,6 +21,7 @@ static constexpr auto PUBLISH_RETRY_INITIAL_WAIT = std::chrono::milliseconds(100
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int ACCESS_DENIED;
     extern const int INVALID_STATE;
     extern const int CANNOT_CONNECT_NATS;
 }
@@ -144,8 +145,14 @@ void INATSProducer::startProducingTaskLoop()
             {
                 publish();
             }
-            catch (...)
+            catch (const Exception & e)
             {
+                /// The server refused the publish: a retry cannot succeed.
+                if (e.code() == ErrorCodes::ACCESS_DENIED)
+                {
+                    publish_error = e.message();
+                    break;
+                }
                 /// The connection failed: the pending message is published again on a new connection.
                 tryLogCurrentException(log, "Cannot publish to NATS");
             }

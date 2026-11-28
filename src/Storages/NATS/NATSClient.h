@@ -16,9 +16,6 @@
 namespace DB
 {
 
-class ReadBufferFromPocoSocket;
-class WriteBufferFromPocoSocket;
-
 /// A minimal synchronous client of the NATS protocol, enough for the `NATS` table engine:
 /// https://docs.nats.io/reference/reference-protocols/nats-protocol
 ///
@@ -139,6 +136,13 @@ private:
     void handshake(const ServerAddress & server);
     void startTLS(const ServerAddress & server);
 
+    /// The socket is non-blocking: every read and write waits with `poll` against a deadline, also with TLS,
+    /// where a blocking read would wait inside the TLS library for the rest of a record as long as bytes trickle in.
+    void writeRaw(const char * data, size_t size);
+    void flushOutput();
+    /// Waits until some input is available (received bytes, or decrypted data in the TLS library). Returns false on timeout.
+    bool waitForInput(std::chrono::steady_clock::time_point deadline);
+
     void writeLine(std::string_view line);
     String readLine(Clock::time_point deadline);
     void readExact(char * to, size_t size, Clock::time_point deadline);
@@ -149,6 +153,8 @@ private:
     void sendPingIfNeeded();
 
     void checkUsable() const;
+    /// Throws `ACCESS_DENIED` if the server reported a permissions violation since the last check.
+    void throwIfPermissionViolation();
     [[noreturn]] void fail(const String & message);
 
     template <typename F>
@@ -159,8 +165,9 @@ private:
     String server_for_log;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
-    std::unique_ptr<ReadBufferFromPocoSocket> in;
-    std::unique_ptr<WriteBufferFromPocoSocket> out;
+    String input;
+    size_t input_pos = 0;
+    String output;
 
     UInt64 max_payload = 1024 * 1024;
     String nonce;
@@ -178,6 +185,8 @@ private:
     Clock::time_point last_ping;
 
     String error;
+    /// The server keeps the connection after a permissions violation, but the command it refers to has failed.
+    String permission_violation;
 
     DequeWithMemoryTracking<Message> messages;
     DequeWithMemoryTracking<Message> replies;
