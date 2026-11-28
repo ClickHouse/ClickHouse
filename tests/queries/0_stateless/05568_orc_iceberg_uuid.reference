@@ -1,0 +1,58 @@
+nullable
+1	12345678-1234-5678-1234-567812345678	alice
+2	abcdefab-cdef-abcd-efab-cdefabcdefab	bob
+3	00000000-0000-0000-0000-000000000000	zeros
+4	\N	null_uuid
+5	ffffffff-ffff-ffff-ffff-ffffffffffff	max
+not nullable
+1	12345678-1234-5678-1234-567812345678
+2	abcdefab-cdef-abcd-efab-cdefabcdefab
+3	00000000-0000-0000-0000-000000000000
+4	00000000-0000-0000-0000-000000000000
+5	ffffffff-ffff-ffff-ffff-ffffffffffff
+low cardinality
+1	12345678-1234-5678-1234-567812345678
+2	abcdefab-cdef-abcd-efab-cdefabcdefab
+3	00000000-0000-0000-0000-000000000000
+4	\N
+5	ffffffff-ffff-ffff-ffff-ffffffffffff
+1	12345678-1234-5678-1234-567812345678
+2	abcdefab-cdef-abcd-efab-cdefabcdefab
+3	00000000-0000-0000-0000-000000000000
+4	00000000-0000-0000-0000-000000000000
+5	ffffffff-ffff-ffff-ffff-ffffffffffff
+1	['00112233-4455-6677-8899-aabbccddeeff',NULL]
+2	[]
+3	[]
+filter
+2
+nested
+1	['00112233-4455-6677-8899-aabbccddeeff',NULL]	{'k':'00112233-4455-6677-8899-aabbccddeeff'}	('00112233-4455-6677-8899-aabbccddeeff')
+2	[]	{}	(NULL)
+3	[]	{}	(NULL)
+union
+1	00112233-4455-6677-8899-aabbccddeeff	UUID
+2	text	String
+3	\N	None
+1	00112233-4455-6677-8899-aabbccddeeff	UUID
+2	text	String
+3	\N	None
+inferred
+id	Nullable(Int32)
+uuid_col	Nullable(UUID)
+name	Nullable(String)
+id	Nullable(Int32)
+l	Array(Nullable(UUID))
+m	Map(String, Nullable(UUID))
+s	Nullable(Tuple(x Nullable(UUID)))
+v	Variant(String, UUID)
+bad	Nullable(UUID)
+1	12345678-1234-5678-1234-567812345678	alice
+2	abcdefab-cdef-abcd-efab-cdefabcdefab	bob
+3	00000000-0000-0000-0000-000000000000	zeros
+4	\N	null_uuid
+5	ffffffff-ffff-ffff-ffff-ffffffffffff	max
+wrong length
+INCORRECT_DATA
+binary without the attribute
+00112233-4455-6677-8899-aabbccddeeff
