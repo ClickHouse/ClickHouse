@@ -61,7 +61,7 @@ namespace ErrorCodes
 static bool hasSupportedMetadataMutation(const MutationCommands & commands)
 {
     for (const auto & cmd : commands)
-        if (AlterConversions::isSupportedMetadataMutation(cmd.type))
+        if (AlterConversions::isSupportedMetadataMutation(cmd.type) || cmd.dropsProjectionDefinition())
             return true;
     return false;
 }
