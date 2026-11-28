@@ -1,0 +1,14 @@
+format_version_4 Code: 48
+missing_schema_id Code: 36
+invalid_format_version rejected
+missing_location rejected
+missing_last_updated_ms rejected
+missing_spec_id rejected
+manifest_newer_than_table rejected
+invalid_decimal_type decimal_missing_scale rejected
+invalid_decimal_type decimal_not_numeric rejected
+invalid_decimal_type decimal_too_wide rejected
+invalid_decimal_type decimal_zero_precision rejected
+invalid_decimal_type decimal_scale_exceeds_precision rejected
+manifest_list_invalid_spec_id spec_id_999 rejected
+manifest_list_invalid_spec_id spec_id_negative rejected

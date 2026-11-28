@@ -1,0 +1,89 @@
+{
+	"location": "data/persistent/case_sensitive_names/default.db/case_sensitive_names",
+	"table-uuid": "ce78d603-c3c7-4955-9bdb-f5e328018ff1",
+	"last-updated-ms": 1746390631837,
+	"last-column-id": 2,
+	"schemas": [
+		{
+			"type": "struct",
+			"fields": [
+				{
+					"id": 1,
+					"name": "user_id",
+					"type": "long",
+					"required": true
+				},
+				{
+					"id": 2,
+					"name": "uSeR_Id",
+					"type": "string",
+					"required": false
+				}
+			],
+			"schema-id": 0,
+			"identifier-field-ids": []
+		}
+	],
+	"current-schema-id": 0,
+	"partition-specs": [
+		{
+			"spec-id": 0,
+			"fields": []
+		}
+	],
+	"default-spec-id": 0,
+	"last-partition-id": 999,
+	"properties": {
+		"write.update.mode": "merge-on-read"
+	},
+	"current-snapshot-id": 5298355539581857556,
+	"snapshots": [
+		{
+			"snapshot-id": 5298355539581857556,
+			"sequence-number": 1,
+			"timestamp-ms": 1746390631837,
+			"manifest-list": "data/persistent/case_sensitive_names/default.db/case_sensitive_names/metadata/snap-5298355539581857556-0-81af3af1-c807-48d2-b022-696b1f81a188.avro",
+			"summary": {
+				"operation": "append",
+				"added-files-size": "982",
+				"added-data-files": "1",
+				"added-records": "3",
+				"total-data-files": "1",
+				"total-delete-files": "0",
+				"total-records": "3",
+				"total-files-size": "982",
+				"total-position-deletes": "0",
+				"total-equality-deletes": "0"
+			},
+			"schema-id": 0
+		}
+	],
+	"snapshot-log": [
+		{
+			"snapshot-id": 5298355539581857556,
+			"timestamp-ms": 1746390631837
+		}
+	],
+	"metadata-log": [
+		{
+			"metadata-file": "data/persistent/case_sensitive_names/default.db/case_sensitive_names/metadata/00000-c86b5eba-44ed-4a98-8b59-1b0dc9fac4ff.metadata.json",
+			"timestamp-ms": 1746390631643
+		}
+	],
+	"sort-orders": [
+		{
+			"order-id": 0,
+			"fields": []
+		}
+	],
+	"default-sort-order-id": 0,
+	"refs": {
+		"main": {
+			"snapshot-id": 5298355539581857556,
+			"type": "branch"
+		}
+	},
+	"statistics": [],
+	"format-version": 2,
+	"last-sequence-number": 1
+}

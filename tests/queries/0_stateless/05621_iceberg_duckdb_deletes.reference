@@ -1,0 +1,55 @@
+equality_deletes/mytable
+4	d	2025-01-04
+5	e	2025-01-05
+4	d
+5	e
+2025-01-04
+2025-01-05
+d
+e
+d	2025-01-04
+e	2025-01-05
+2
+2
+2025-01-04
+4	d
+5	e
+2025-01-04
+2025-01-05
+equality_deletes	d	4
+equality_deletes	e	5
+equality_deletes/mytable_partitioned
+1	a	2025-01-01
+4	d	2025-01-04
+5	e	2025-01-05
+a
+d
+e
+1
+4
+5
+a	2025-01-01
+d	2025-01-04
+e	2025-01-05
+3
+equality_deletes	a
+equality_deletes	d
+equality_deletes	e
+equality_delete_cross_partition rejected
+equality_delete_extra_column rejected
+equality_delete_extra_column before the delete
+1	a
+2	b
+3	c
+legacy_bare_deletion_vector
+1	legacy
+3	legacy
+moved_deletion_vector_path
+99
+0
+deletion_vector_bitmap_count
+1	legacy
+3	legacy
+count_huge rejected
+count_negative rejected
+count_truncated rejected
