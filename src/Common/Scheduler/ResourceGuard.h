@@ -187,9 +187,9 @@ public:
         : link(link_)
         , request(Request::local(metrics))
     {
-        if (cost == 0)
-            link.reset(); // Ignore zero-cost requests
-        else if (link)
+        if (cost == 0 || !link.queue)
+            link.reset(); // Ignore zero-cost requests and links to resources that are not time-shared
+        else
         {
             try
             {
