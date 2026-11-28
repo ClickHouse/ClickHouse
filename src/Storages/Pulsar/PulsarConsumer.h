@@ -40,24 +40,24 @@ public:
     void release();
 
     /// Whether some messages were handed to the parser but not yet acknowledged.
-    bool hasUncommitted() const { return !pending_acks.empty(); }
+    [[nodiscard]] bool hasUncommitted() const { return !pending_acks.empty(); }
 
-    String currentTopic() const { return next_message[-1].topic(); }
-    String currentOrderingKey() const { return next_message[-1].orderingKey(); }
-    String currentPartitionKey() const { return next_message[-1].partitionKey(); }
+    [[nodiscard]] String currentTopic() const { return next_message[-1].topic(); }
+    [[nodiscard]] String currentOrderingKey() const { return next_message[-1].orderingKey(); }
+    [[nodiscard]] String currentPartitionKey() const { return next_message[-1].partitionKey(); }
     /// The producer-set event timestamp in milliseconds. Presence is tracked separately, because a
     /// producer may legitimately set the timestamp to 0 (the Unix epoch), which is indistinguishable
     /// from an unset one by value alone. Unlike the publish timestamp, the broker never assigns it.
-    bool currentHasTimestamp() const { return next_message[-1].hasEventTime(); }
-    UInt64 currentTimestamp() const { return next_message[-1].eventTime(); }
-    String currentPayload() const { return String{next_message[-1].payload()}; }
+    [[nodiscard]] bool currentHasTimestamp() const { return next_message[-1].hasEventTime(); }
+    [[nodiscard]] UInt64 currentTimestamp() const { return next_message[-1].eventTime(); }
+    [[nodiscard]] String currentPayload() const { return String{next_message[-1].payload()}; }
 
-    bool isStalled() const { return polled_messages.empty(); }
+    [[nodiscard]] bool isStalled() const { return polled_messages.empty(); }
 
     /// A consumer that hit a receive error, failed to
     /// acknowledge messages, or was rolled back must not be returned to the pool: the storage
     /// drops it and recreates the slot instead.
-    bool isUsable() const { return usable; }
+    [[nodiscard]] bool isUsable() const { return usable; }
 
 private:
     LoggerPtr log;
@@ -69,7 +69,7 @@ private:
     Pulsar::Messages::const_iterator next_message;
     VectorWithMemoryTracking<Pulsar::MessageId> pending_acks;
 
-    bool hasPolledMessages() const { return next_message != polled_messages.end(); }
+    [[nodiscard]] bool hasPolledMessages() const { return next_message != polled_messages.end(); }
 };
 
 }
