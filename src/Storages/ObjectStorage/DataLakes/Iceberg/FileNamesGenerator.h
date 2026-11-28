@@ -32,9 +32,8 @@ struct GeneratedMetadataFileWithInfo
 /// an existing name is refused. Metadata files of a catalog-backed table (`use_uuid_in_metadata`) are named
 /// `<N>-<uuid>.metadata.json` with `N` zero-padded to 5 digits, as the Iceberg spec (section "Metastore Tables") and
 /// Iceberg Java require. Iceberg Java and pyiceberg parse `N` only from this form, so other writers keep increasing it.
-/// The UUID is derived from the name of the metadata file the commit is based on and from `N`, so the name is unique
-/// for each base, but two writers that commit on top of the same base still pick the same name and only one of them
-/// can write it: a catalog without a conditional pointer swap (Glue) relies on that to serialize writers.
+/// The UUID is random: the catalog swaps its pointer conditionally and serializes the writers, so a file that a failed
+/// commit left behind must not take the name of the next commit on top of the same base.
 ///
 /// All generated paths use table_location as prefix, ensuring they are
 /// always in the correct format for writing into Iceberg metadata files.
@@ -66,9 +65,6 @@ public:
 
     void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
 
-    /// The next metadata file is a successor of the metadata file `base_metadata_path`, which has version `base_version`.
-    /// Required with `use_uuid_in_metadata`.
-    void setBaseMetadataFile(Int32 base_version, const String & base_metadata_path);
     void setCompressionMethod(CompressionMethod compression_method_) { compression_method = compression_method_; }
 
     void setDataLocation(String data_location_)
@@ -83,7 +79,6 @@ private:
     String table_location;
     String data_location; /// Optional override from `write.data.path` table property
     bool use_uuid_in_metadata = false;
-    String base_metadata_file_name;
     CompressionMethod compression_method = CompressionMethod::None;
     String format_name;
 
