@@ -390,6 +390,26 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
     return std::make_pair(begin, end);
 }
 
+/// The column `name`, or the Nested group `name`: the first run of `name.*` columns and the arrays `name.*` declared
+/// after it, which share the group's offsets wherever they are (a non-array column outside the run is not a member).
+static VectorWithMemoryTracking<ColumnsDescription::ColumnsContainer::const_iterator> getColumnOrNestedGroup(
+    const ColumnsDescription::ColumnsContainer & columns, const String & name)
+{
+    auto [begin, end] = getNameRange(columns, name);
+    VectorWithMemoryTracking<ColumnsDescription::ColumnsContainer::const_iterator> group;
+    for (auto it = begin; it != end; ++it)
+        group.push_back(it);
+
+    if (begin != end && begin->name != name)
+    {
+        const String name_with_dot = name + ".";
+        for (auto it = end; it != columns.end(); ++it)
+            if (startsWith(it->name, name_with_dot) && isArray(it->type))
+                group.push_back(it);
+    }
+    return group;
+}
+
 void attachQuantizeSerializationIfNeeded(ColumnDescription & column)
 {
     auto params = tryExtractQuantizedCodecParams(column.codec);
@@ -478,16 +498,14 @@ void ColumnsDescription::addIfNotExists(ColumnDescription column)
 
 void ColumnsDescription::remove(const String & column_name)
 {
-    auto range = getNameRange(columns, column_name);
-    if (range.first == range.second)
-    {
+    auto group = getColumnOrNestedGroup(columns, column_name);
+    if (group.empty())
         throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table{}", column_name, getHintsMessage(column_name));
-    }
 
-    for (auto list_it = range.first; list_it != range.second;)
+    for (const auto & it : group)
     {
-        removeSubcolumns(list_it->name);
-        list_it = columns.get<0>().erase(list_it);
+        removeSubcolumns(it->name);
+        columns.get<0>().erase(it);
     }
     invalidateGetCache();
 }
@@ -673,9 +691,8 @@ NamesAndTypesList ColumnsDescription::getSubcolumns(const String & name_in_stora
 
 NamesAndTypesList ColumnsDescription::getNested(const String & column_name) const
 {
-    auto range = getNameRange(columns, column_name);
     NamesAndTypesList nested;
-    for (auto & it = range.first; it != range.second; ++it)
+    for (const auto & it : getColumnOrNestedGroup(columns, column_name))
         nested.emplace_back(it->name, it->type);
     return nested;
 }
@@ -1072,9 +1089,8 @@ bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, cons
 
 bool ColumnsDescription::hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const
 {
-    auto range = getNameRange(columns, column_name);
-    return range.first != range.second &&
-        defaultKindToGetKind(range.first->default_desc.kind) & kind;
+    return std::ranges::any_of(getColumnOrNestedGroup(columns, column_name),
+        [&](const auto & it) { return defaultKindToGetKind(it->default_desc.kind) & kind; });
 }
 
 bool ColumnsDescription::hasDefaults() const
