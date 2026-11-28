@@ -31,6 +31,7 @@ namespace DB
 {
 class AsynchronousMetrics;
 class ProtocolServerAdapter;
+class TCPServerThreadPool;
 
 class Server : public BaseDaemon, public IServer
 {
@@ -113,7 +114,7 @@ private:
         const ServerSettings & server_settings,
         const Strings & listen_hosts,
         bool listen_try,
-        Poco::ThreadPool & server_pool,
+        TCPServerThreadPool & server_pool,
         AsynchronousMetrics & async_metrics,
         std::vector<ProtocolServerAdapter> & servers,
         bool start_servers = false,
@@ -125,7 +126,7 @@ private:
         const ServerSettings & server_settings,
         const Strings & interserver_listen_hosts,
         bool listen_try,
-        Poco::ThreadPool & server_pool,
+        TCPServerThreadPool & server_pool,
         AsynchronousMetrics & async_metrics,
         std::vector<ProtocolServerAdapter> & servers,
         bool start_servers = false,
@@ -134,7 +135,7 @@ private:
     void updateServers(
         Poco::Util::AbstractConfiguration & config,
         const ServerSettings & server_settings,
-        Poco::ThreadPool & server_pool,
+        TCPServerThreadPool & server_pool,
         AsynchronousMetrics & async_metrics,
         std::vector<ProtocolServerAdapter> & servers,
         std::vector<ProtocolServerAdapter> & servers_to_start_before_tables);

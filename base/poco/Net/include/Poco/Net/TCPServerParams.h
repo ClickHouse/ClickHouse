@@ -32,8 +32,7 @@ namespace Net
 
 
     class Net_API TCPServerParams : public Poco::RefCountedObject
-    /// This class is used to specify parameters to both the
-    /// TCPServer, as well as to TCPServerDispatcher objects.
+    /// This class is used to specify parameters of a TCP server.
     ///
     /// Subclasses may add new parameters to the class.
     {
@@ -71,20 +70,13 @@ namespace Net
 
         void setMaxThreads(int count);
         /// Sets the maximum number of simultaneous threads
-        /// available for this TCPServerDispatcher.
+        /// available for the server.
         ///
         /// Must be greater than or equal to 0.
-        /// If 0 is specified, the TCPServerDispatcher will
-        /// set this parameter to the number of available threads
-        /// in its thread pool.
-        ///
-        /// The thread pool used by the TCPServerDispatcher
-        /// must at least have the capacity for the given
-        /// number of threads.
 
         int getMaxThreads() const;
         /// Returns the maximum number of simultaneous threads
-        /// available for this TCPServerDispatcher.
+        /// available for the server.
 
         void setThreadPriority(Poco::Thread::Priority prio);
         /// Sets the priority of TCP server threads

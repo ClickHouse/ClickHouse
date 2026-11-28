@@ -4,6 +4,7 @@
 #include <Backups/BackupSettings.h>
 #include <Backups/getBackupDataFileName.h>
 
+#include <Poco/AutoPtr.h>
 #include <Poco/Util/MapConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>

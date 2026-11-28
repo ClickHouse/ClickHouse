@@ -6,7 +6,7 @@
 
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
-#include <Poco/Net/HTTPServer.h>
+#include <Server/tests/TestHTTPServer.h>
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -19,11 +19,7 @@
 #include <Poco/SharedPtr.h>
 #include <fmt/format.h>
 
-/// Keep-alive is disabled so a handler thread exits right after sending the response: it does
-/// not park on the connection until the keep-alive timeout (starving the shared default
-/// `Poco::ThreadPool`, capacity 16 for the whole test binary), and teardown does not need
-/// `stopAll(/* abortCurrent */ true)`, whose socket shutdown races with the handler thread
-/// closing the same socket at the end of `HTTPServerConnection::run` (reported by TSan).
+/// Keep-alive is disabled so a connection ends right after its response and stopping the server does not wait for it.
 inline Poco::AutoPtr<Poco::Net::HTTPServerParams> makeMockServerParams()
 {
     Poco::AutoPtr<Poco::Net::HTTPServerParams> params(new Poco::Net::HTTPServerParams());
@@ -72,7 +68,7 @@ class TestPocoHTTPServer
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     Poco::SharedPtr<HTTPRequestHandlerFactory> handler_factory;
     Poco::AutoPtr<Poco::Net::HTTPServerParams> server_params;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
+    std::unique_ptr<DB::TestHTTPServer> server;
     // Stores the last request header handled. It's obviously not thread-safe to share the same
     // reference across request handlers, but it's good enough for this the purposes of this test.
     Poco::Net::MessageHeader last_request_header;
@@ -82,7 +78,7 @@ public:
         server_socket(std::make_unique<Poco::Net::ServerSocket>(0)),
         handler_factory(new HTTPRequestHandlerFactory(last_request_header)),
         server_params(makeMockServerParams()),
-        server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
+        server(std::make_unique<DB::TestHTTPServer>(handler_factory, *server_socket, server_params))
     {
         server->start();
     }
@@ -179,7 +175,7 @@ class TestPocoHTTPStsServer
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     Poco::SharedPtr<StsHTTPRequestHandlerFactory> handler_factory;
     Poco::AutoPtr<Poco::Net::HTTPServerParams> server_params;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
+    std::unique_ptr<DB::TestHTTPServer> server;
     // Stores the last request header handled. It's obviously not thread-safe to share the same
     // reference across request handlers, but it's good enough for this the purposes of this test.
     std::optional<StsRequestInfo> last_request_info;
@@ -189,7 +185,7 @@ public:
         server_socket(std::make_unique<Poco::Net::ServerSocket>(0)),
         handler_factory(new StsHTTPRequestHandlerFactory(last_request_info, std::move(role_access_key), std::move(role_secret_key))),
         server_params(makeMockServerParams()),
-        server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
+        server(std::make_unique<DB::TestHTTPServer>(handler_factory, *server_socket, server_params))
     {
         server->start();
     }

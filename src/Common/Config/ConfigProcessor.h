@@ -16,6 +16,7 @@
 #include <Poco/DOM/NamedNodeMap.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/DirectoryIterator.h>
+#include <Poco/Event.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
 

@@ -17,7 +17,7 @@
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
-#include <Poco/Net/HTTPServer.h>
+#include <Server/tests/TestHTTPServer.h>
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -549,7 +549,7 @@ public:
         , server_params(new Poco::Net::HTTPServerParams())
     {
         server_params->setKeepAlive(false);
-        server = std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params);
+        server = std::make_unique<DB::TestHTTPServer>(handler_factory, *server_socket, server_params);
         server->start();
     }
 
@@ -573,7 +573,7 @@ private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     Poco::SharedPtr<RestCatalogRequestHandlerFactory> handler_factory;
     Poco::AutoPtr<Poco::Net::HTTPServerParams> server_params;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
+    std::unique_ptr<DB::TestHTTPServer> server;
 };
 
 void expectThrowsCode(std::function<void()> fn, int expected_code)

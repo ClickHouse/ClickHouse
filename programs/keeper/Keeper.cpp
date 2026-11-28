@@ -27,7 +27,6 @@
 #include <base/Numa.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/TCPServerParams.h>
-#include <Poco/Net/TCPServer.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <sys/stat.h>
@@ -423,7 +422,7 @@ try
     /// Don't want to use DNS cache
     DNSResolver::instance().setDisableCacheFlag();
 
-    Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
+    TCPServerThreadPool server_pool(config().getUInt("max_connections", 1024));
     std::mutex servers_lock;
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
@@ -499,6 +498,7 @@ try
 
             Poco::Net::TCPServerParams::Ptr tcp_params = new Poco::Net::TCPServerParams;
             tcp_params->setNoDelay(tcp_nodelay);
+            tcp_params->setMaxQueued(config().getUInt("listen_backlog", 64));
 
             servers->emplace_back(
                 listen_host,
@@ -522,6 +522,7 @@ try
 
             Poco::Net::TCPServerParams::Ptr tcp_params = new Poco::Net::TCPServerParams;
             tcp_params->setNoDelay(tcp_nodelay);
+            tcp_params->setMaxQueued(config().getUInt("listen_backlog", 64));
 
             servers->emplace_back(
                 listen_host,
@@ -544,6 +545,7 @@ try
         Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
         http_params->setTimeout(http_context->getReceiveTimeout());
         http_params->setKeepAliveTimeout(keep_alive_timeout);
+        http_params->setMaxQueued(config.getUInt("listen_backlog", 64));
 
         /// Prometheus (if defined and not setup yet with http_port)
         port_name = "prometheus.port";
@@ -635,12 +637,6 @@ try
 #endif
             });
         }
-    }
-
-    for (auto & server : *servers)
-    {
-        server.start();
-        LOG_INFO(log, "Listening for {}", server.getDescription());
     }
 
     Coordination::EventPtr unused_event = std::make_shared<Poco::Event>();
@@ -745,7 +741,7 @@ try
         global_context->shutdownKeeperDispatcherAfterConnectionsFinish(keeper_tcp_connections == 0);
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
-        server_pool.joinAll();
+        server_pool.wait();
 
         LOG_DEBUG(log, "Destroyed global context.");
 
@@ -756,6 +752,11 @@ try
         }
     });
 
+    for (auto & server : *servers)
+    {
+        server.start();
+        LOG_INFO(log, "Listening for {}", server.getDescription());
+    }
 
     buildLoggers(config(), logger());
 

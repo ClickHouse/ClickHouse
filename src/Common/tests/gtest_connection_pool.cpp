@@ -26,7 +26,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Net/HTTPServer.h>
+#include <Server/tests/TestHTTPServer.h>
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
@@ -219,13 +219,13 @@ protected:
     {
         server_data.reset();
         server_data.handler_factory = new HTTPRequestHandlerFactory(options);
-        server_data.server =  std::make_unique<Poco::Net::HTTPServer>(
+        server_data.server =  std::make_unique<DB::TestHTTPServer>(
             server_data.handler_factory, server_data.port);
 
         server_data.server->start();
     }
 
-    [[nodiscard]] Poco::Net::HTTPServer & getServer() const
+    [[nodiscard]] DB::TestHTTPServer & getServer() const
     {
         return *server_data.server;
     }
@@ -254,7 +254,7 @@ protected:
         UInt16 port = 9871;
 
         HTTPRequestHandlerFactory::Ptr handler_factory;
-        std::unique_ptr<Poco::Net::HTTPServer> server;
+        std::unique_ptr<DB::TestHTTPServer> server;
 
         ServerData() = default;
         ServerData(ServerData &&) = default;
@@ -263,7 +263,10 @@ protected:
         void reset()
         {
             if (server)
+            {
+                DB::HTTPConnectionPools::instance().dropCache();
                 server->stop();
+            }
 
             server = nullptr;
             handler_factory = nullptr;
@@ -1594,10 +1597,10 @@ TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
     Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new HTTPRequestHandlerFactory(secondary_options);
     Poco::Net::SocketAddress bind_addr(good_ip, secondary_port);
     Poco::Net::ServerSocket server_socket(bind_addr);
-    auto secondary_server = std::make_unique<Poco::Net::HTTPServer>(
+    auto secondary_server = std::make_unique<DB::TestHTTPServer>(
         factory, server_socket, new Poco::Net::HTTPServerParams);
     secondary_server->start();
-    SCOPE_EXIT({ secondary_server->stop(); });
+    SCOPE_EXIT({ DB::HTTPConnectionPools::instance().dropCache(); secondary_server->stop(); });
 
     /// Mock resolver. First call (from the resolver's constructor `update`) returns
     /// only the bad address, so it is the only candidate `selectBest` can pick on

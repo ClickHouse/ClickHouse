@@ -3,6 +3,7 @@
 #include <Common/StackTrace.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadOutsideGlobalPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
@@ -1256,6 +1257,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 template class ThreadPoolImpl<GlobalThreadType>;
 template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, true>>;
 template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, false>>;
+template class ThreadPoolImpl<ThreadOutsideGlobalPool>;
 template class ThreadFromGlobalPoolImpl<true, true>;
 template class ThreadFromGlobalPoolImpl<true, false>;
 template class ThreadFromGlobalPoolImpl<false, false>;

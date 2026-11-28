@@ -131,9 +131,6 @@ set (SRCS
     src/String.cpp
     src/StringTokenizer.cpp
     src/SyslogChannel.cpp
-    src/Task.cpp
-    src/TaskManager.cpp
-    src/TaskNotification.cpp
     src/TeeStream.cpp
     src/TemporaryFile.cpp
     src/TextBufferIterator.cpp
@@ -142,10 +139,8 @@ set (SRCS
     src/TextIterator.cpp
     src/Thread.cpp
     src/ThreadLocal.cpp
-    src/ThreadPool.cpp
     src/ThreadTarget.cpp
     src/TimedNotificationQueue.cpp
-    src/Timer.cpp
     src/Timespan.cpp
     src/Timestamp.cpp
     src/Timezone.cpp
@@ -216,7 +211,6 @@ target_compile_definitions (_poco_foundation
 )
 
 target_include_directories (_poco_foundation SYSTEM PUBLIC "include")
-target_link_libraries (_poco_foundation PRIVATE clickhouse_common_io)
 
 target_link_libraries (_poco_foundation
     PRIVATE

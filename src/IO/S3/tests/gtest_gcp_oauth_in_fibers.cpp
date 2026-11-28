@@ -16,7 +16,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
-#include <Poco/Net/HTTPServer.h>
+#include <Server/tests/TestHTTPServer.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/ServerSocket.h>
@@ -95,7 +95,7 @@ private:
     };
 
     Poco::Net::ServerSocket server_socket;
-    Poco::Net::HTTPServer server;
+    DB::TestHTTPServer server;
 };
 
 std::string makeServiceAccountKey(const std::string & token_uri)

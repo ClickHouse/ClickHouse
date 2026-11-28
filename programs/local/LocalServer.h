@@ -17,13 +17,12 @@
 #include <optional>
 
 
-namespace Poco { class ThreadPool; }
-
 namespace DB
 {
 
 class AsynchronousMetrics;
 class ServerType;
+class TCPServerThreadPool;
 
 /// Lightweight Application for clickhouse-local.
 /// No networking by default; TCP/HTTP listeners can be started explicitly via `SYSTEM START LISTEN`.
@@ -149,7 +148,7 @@ private:
     std::atomic<bool> is_cancelled{false};
     std::vector<ProtocolServerAdapter> servers;
     std::mutex servers_lock;
-    std::unique_ptr<Poco::ThreadPool> server_pool;
+    std::unique_ptr<TCPServerThreadPool> server_pool;
     std::unique_ptr<AsynchronousMetrics> async_metrics;
 };
 

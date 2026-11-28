@@ -9,7 +9,6 @@
 #    include <Common/OpenSSLHelpers.h>
 #endif
 
-#include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Poco/Util/Application.h>
 
 

@@ -18,8 +18,6 @@
 #define Foundation_AbstractFoundation_INCLUDED
 
 
-#include "Poco/ActiveMethod.h"
-#include "Poco/ActiveResult.h"
 #include "Poco/Foundation.h"
 #include "Poco/Mutex.h"
 #include "Poco/SharedPtr.h"
@@ -75,7 +73,7 @@ class AbstractEvent
 ///         int _data;
 ///     };
 ///
-/// Firing the event is done either by calling the event's notify() or notifyAsync() method:
+/// Firing the event is done by calling the event's notify() method:
 ///
 ///     void MyData::setData(int i)
 ///     {
@@ -91,7 +89,7 @@ class AbstractEvent
 ///         dataChanged(this, this->_data);
 ///     }
 ///
-/// Note that operator (), notify() and notifyAsync() do not catch exceptions, i.e. in case a
+/// Note that operator () and notify() do not catch exceptions, i.e. in case a
 /// delegate throws an exception, notifying is immediately aborted and the exception is propagated
 /// back to the caller.
 ///
@@ -153,9 +151,9 @@ public:
     typedef TDelegate * DelegateHandle;
     typedef TArgs Args;
 
-    AbstractEvent() : _executeAsync(this, &AbstractEvent::executeAsyncImpl), _enabled(true) { }
+    AbstractEvent() : _enabled(true) { }
 
-    AbstractEvent(const TStrategy & strategy) : _executeAsync(this, &AbstractEvent::executeAsyncImpl), _strategy(strategy), _enabled(true)
+    AbstractEvent(const TStrategy & strategy) : _strategy(strategy), _enabled(true)
     {
     }
 
@@ -239,35 +237,6 @@ public:
 
     bool hasDelegates() const { return !empty(); }
 
-    ActiveResult<TArgs> notifyAsync(const void * pSender, const TArgs & args)
-    /// Sends a notification to all registered delegates. The order is
-    /// determined by the TStrategy. This method is not blocking and will
-    /// immediately return. The delegates are invoked in a separate thread.
-    /// Call activeResult.wait() to wait until the notification has ended.
-    /// While executing, other objects can change the delegate list. These changes don't
-    /// influence the current active notifications but are activated with
-    /// the next notify. If a delegate is removed during a notify(), the
-    /// delegate will no longer be invoked (unless it has already been
-    /// invoked prior to removal). If one of the delegates throws an exception,
-    /// the execution is aborted and the exception is propagated to the caller.
-    {
-        NotifyAsyncParams params(pSender, args);
-        {
-            typename TMutex::ScopedLock lock(_mutex);
-
-            // thread-safeness:
-            // copy should be faster and safer than blocking until
-            // execution ends
-            // make a copy of the strategy here to guarantee that
-            // between notifyAsync and the execution of the method no changes can occur
-
-            params.ptrStrat = SharedPtr<TStrategy>(new TStrategy(_strategy));
-            params.enabled = _enabled;
-        }
-        ActiveResult<TArgs> result = _executeAsync(params);
-        return result;
-    }
-
     void enable()
     /// Enables the event.
     {
@@ -276,7 +245,7 @@ public:
     }
 
     void disable()
-    /// Disables the event. notify and notifyAsnyc will be ignored,
+    /// Disables the event. notify will be ignored,
     /// but adding/removing delegates is still allowed.
     {
         typename TMutex::ScopedLock lock(_mutex);
@@ -304,34 +273,6 @@ public:
     }
 
 protected:
-    struct NotifyAsyncParams
-    {
-        SharedPtr<TStrategy> ptrStrat;
-        const void * pSender;
-        TArgs args;
-        bool enabled;
-
-        NotifyAsyncParams(const void * pSend, const TArgs & a) : ptrStrat(), pSender(pSend), args(a), enabled(true)
-        /// Default constructor reduces the need for TArgs to have an empty constructor, only copy constructor is needed.
-        {
-        }
-    };
-
-    ActiveMethod<TArgs, NotifyAsyncParams, AbstractEvent> _executeAsync;
-
-    TArgs executeAsyncImpl(const NotifyAsyncParams & par)
-    {
-        if (!par.enabled)
-        {
-            return par.args;
-        }
-
-        NotifyAsyncParams params = par;
-        TArgs retArgs(params.args);
-        params.ptrStrat->notify(params.pSender, retArgs);
-        return retArgs;
-    }
-
     TStrategy _strategy; /// The strategy used to notify observers.
     bool _enabled; /// Stores if an event is enabled. Notfies on disabled events have no effect
         /// but it is possible to change the observers.
@@ -349,9 +290,9 @@ class AbstractEvent<void, TStrategy, TDelegate, TMutex>
 public:
     typedef TDelegate * DelegateHandle;
 
-    AbstractEvent() : _executeAsync(this, &AbstractEvent::executeAsyncImpl), _enabled(true) { }
+    AbstractEvent() : _enabled(true) { }
 
-    AbstractEvent(const TStrategy & strategy) : _executeAsync(this, &AbstractEvent::executeAsyncImpl), _strategy(strategy), _enabled(true)
+    AbstractEvent(const TStrategy & strategy) : _strategy(strategy), _enabled(true)
     {
     }
 
@@ -433,35 +374,6 @@ public:
         strategy.notify(pSender);
     }
 
-    ActiveResult<void> notifyAsync(const void * pSender)
-    /// Sends a notification to all registered delegates. The order is
-    /// determined by the TStrategy. This method is not blocking and will
-    /// immediately return. The delegates are invoked in a separate thread.
-    /// Call activeResult.wait() to wait until the notification has ended.
-    /// While executing, other objects can change the delegate list. These changes don't
-    /// influence the current active notifications but are activated with
-    /// the next notify. If a delegate is removed during a notify(), the
-    /// delegate will no longer be invoked (unless it has already been
-    /// invoked prior to removal). If one of the delegates throws an exception,
-    /// the execution is aborted and the exception is propagated to the caller.
-    {
-        NotifyAsyncParams params(pSender);
-        {
-            typename TMutex::ScopedLock lock(_mutex);
-
-            // thread-safeness:
-            // copy should be faster and safer than blocking until
-            // execution ends
-            // make a copy of the strategy here to guarantee that
-            // between notifyAsync and the execution of the method no changes can occur
-
-            params.ptrStrat = SharedPtr<TStrategy>(new TStrategy(_strategy));
-            params.enabled = _enabled;
-        }
-        ActiveResult<void> result = _executeAsync(params);
-        return result;
-    }
-
     void enable()
     /// Enables the event.
     {
@@ -470,7 +382,7 @@ public:
     }
 
     void disable()
-    /// Disables the event. notify and notifyAsnyc will be ignored,
+    /// Disables the event. notify will be ignored,
     /// but adding/removing delegates is still allowed.
     {
         typename TMutex::ScopedLock lock(_mutex);
@@ -498,32 +410,6 @@ public:
     }
 
 protected:
-    struct NotifyAsyncParams
-    {
-        SharedPtr<TStrategy> ptrStrat;
-        const void * pSender;
-        bool enabled;
-
-        NotifyAsyncParams(const void * pSend) : ptrStrat(), pSender(pSend), enabled(true)
-        /// Default constructor reduces the need for TArgs to have an empty constructor, only copy constructor is needed.
-        {
-        }
-    };
-
-    ActiveMethod<void, NotifyAsyncParams, AbstractEvent> _executeAsync;
-
-    void executeAsyncImpl(const NotifyAsyncParams & par)
-    {
-        if (!par.enabled)
-        {
-            return;
-        }
-
-        NotifyAsyncParams params = par;
-        params.ptrStrat->notify(params.pSender);
-        return;
-    }
-
     TStrategy _strategy; /// The strategy used to notify observers.
     bool _enabled; /// Stores if an event is enabled. Notfies on disabled events have no effect
         /// but it is possible to change the observers.

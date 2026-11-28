@@ -205,7 +205,7 @@ To execute queries and do side activities ClickHouse allocates threads from one 
 * Background pools for periodic tasks.
 * Pools for preemptable tasks that can be split into steps.
 
-Server pool is a `Poco::ThreadPool` class instance defined in `Server::main()` method. It can have at most `max_connection` threads. Every thread is dedicated to a single active connection.
+Server pool is a `TCPServerThreadPool` created in `Server::main()`, a `ThreadPool` of its own threads (not taken from the global thread pool). It can have at most `max_connections` threads. Every thread is dedicated to a single active connection.
 
 Global thread pool is `GlobalThreadPool` singleton class. To allocate thread from it `ThreadFromGlobalPool` is used. It has an interface similar to `std::thread`, but pulls thread from the global pool and does all necessary initialization. It is configured with the following settings:
 * `max_thread_pool_size` - limit on thread count in pool.

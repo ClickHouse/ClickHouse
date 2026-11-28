@@ -2,6 +2,7 @@
 
 #include <Server/TCPServerConnectionFactory.h>
 #include <Server/TCPServer.h>
+#include <Poco/Net/TCPServerConnection.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Server/IServer.h>
 #include <Server/TCPProtocolStackData.h>

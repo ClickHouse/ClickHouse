@@ -9,7 +9,7 @@
 
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
-#include <Poco/Net/HTTPServer.h>
+#include <Server/tests/TestHTTPServer.h>
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -168,7 +168,7 @@ protected:
     std::atomic<size_t> requests{0};
     DB::RemoteHostFilter remote_host_filter;
     Poco::Net::ServerSocket server_socket;
-    Poco::Net::HTTPServer server;
+    DB::TestHTTPServer server;
     DB::IHTTPConnectionPoolForEndpoint::Ptr pool;
     DB::ReadBufferFromAzureBlobStorage::ContainerClientPtr container_client;
     int64_t connections_before = 0;

@@ -8,7 +8,6 @@
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Common/logger_useful.h>
-#include <Poco/Timer.h>
 #include <amqpcpp.h>
 
 namespace DB

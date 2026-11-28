@@ -41,7 +41,7 @@ public:
         return createConnectionImpl(socket, tcp_server, stack_data);
     }
 
-    /// Same as Poco::Net::TCPServerConnectionFactory except we can pass the TCPServer
+    /// Creates the connection for an accepted socket of `tcp_server`.
     virtual Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) = 0;
     virtual Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server, TCPProtocolStackData &/* stack_data */)
     {

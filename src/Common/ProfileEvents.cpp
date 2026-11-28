@@ -257,9 +257,9 @@
     M(GlobalThreadPoolLockWaitMicroseconds, "Total time threads have spent waiting for locks in the global thread pool.", ValueType::Microseconds) \
     M(GlobalThreadPoolJobs, "Counts the number of jobs that have been pushed to the global thread pool.", ValueType::Number) \
     M(GlobalThreadPoolJobWaitTimeMicroseconds, "Measures the elapsed time from when a job is scheduled in the thread pool to when it is picked up for execution by a worker thread. This metric helps identify delays in job processing, indicating the responsiveness of the thread pool to new tasks.", ValueType::Microseconds) \
-    M(LocalThreadPoolExpansions, "Counts the total number of times threads have been borrowed from the global thread pool to expand local thread pools.", ValueType::Number) \
-    M(LocalThreadPoolShrinks, "Counts the total number of times threads have been returned to the global thread pool from local thread pools.", ValueType::Number) \
-    M(LocalThreadPoolThreadCreationMicroseconds, "Total time local thread pools have spent waiting to borrow a thread from the global pool.", ValueType::Microseconds) \
+    M(LocalThreadPoolExpansions, "Counts the total number of times local thread pools have expanded with a thread borrowed from the global thread pool or, for the pools serving connections, a new thread.", ValueType::Number) \
+    M(LocalThreadPoolShrinks, "Counts the total number of times local thread pools have released a thread, back to the global thread pool or, for the pools serving connections, by ending it.", ValueType::Number) \
+    M(LocalThreadPoolThreadCreationMicroseconds, "Total time local thread pools have spent waiting to borrow a thread from the global pool or, for the pools serving connections, to create one.", ValueType::Microseconds) \
     M(LocalThreadPoolLockWaitMicroseconds, "Total time threads have spent waiting for locks in the local thread pools.", ValueType::Microseconds) \
     M(LocalThreadPoolJobs, "Counts the number of jobs that have been pushed to the local thread pools.", ValueType::Microseconds) \
     M(LocalThreadPoolBusyMicroseconds, "Total time threads have spent executing the actual work.", ValueType::Microseconds) \
