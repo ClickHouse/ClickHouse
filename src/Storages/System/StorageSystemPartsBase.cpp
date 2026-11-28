@@ -337,7 +337,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                 const bool check_access_for_tables_in_db
                     = check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
-                auto iterator = database->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
+                auto iterator = database->getTablesIteratorSkippingFailed(context, table_name_filter);
                 for (; iterator->isValid(); iterator->next())
                 {
                     if (query_status && !query_status->checkTimeLimit())
