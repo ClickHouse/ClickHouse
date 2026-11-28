@@ -1,0 +1,29 @@
+create
+auto_minmax_index_k
+auto_minmax_index_orig
+auto_minmax_index_z
+1
+1
+1
+reload
+auto_minmax_index_k
+auto_minmax_index_orig
+auto_minmax_index_z
+add column
+auto_minmax_index_k
+auto_minmax_index_orig
+auto_minmax_index_w
+auto_minmax_index_z
+alter, before
+auto_minmax_index_k
+auto_minmax_index_orig
+auto_minmax_index_x
+auto_minmax_index_y
+alter, after
+auto_minmax_index_k
+auto_minmax_index_orig
+1
+replicated
+auto_minmax_index_k
+auto_minmax_index_orig
+1

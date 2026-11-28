@@ -1,10 +1,12 @@
 -- parts can have different projection histories, so the span covers each part in each of its own layouts
+-- the implicit minmax indices of add_minmax_index_for_numeric_columns would give the projection its own skip indexes,
+-- and `EXPLAIN WHATIF` does not estimate such projections, so the tables opt out
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, enable_parallel_replicas = 0, mutations_sync = 1;
 
 DROP TABLE IF EXISTS history_est;
 DROP TABLE IF EXISTS history_real;
 CREATE TABLE history_est (p UInt8, a UInt64, b UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY a
-    SETTINGS index_granularity = 150, index_granularity_bytes = '10Mi', use_const_adaptive_granularity = 0,
+    SETTINGS index_granularity = 150, index_granularity_bytes = '10Mi', use_const_adaptive_granularity = 0, add_minmax_index_for_numeric_columns = 0,
         min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, merge_max_block_size = 150;
 CREATE TABLE history_real AS history_est;
 ALTER TABLE history_real ADD PROJECTION p_b (SELECT p, a, b ORDER BY b) WITH SETTINGS (index_granularity = 100);

@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/SubcolumnCodecs.h>
 #include <Storages/VirtualColumnsDescription.h>
 
 
@@ -48,6 +49,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_FUNCTION;
+    extern const int UNKNOWN_IDENTIFIER;
 }
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
@@ -1041,6 +1043,28 @@ NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions(const Names
     return names;
 }
 
+namespace
+{
+
+/// Whether the index reads a column that is compressed with a lossy codec.
+bool readsLossyColumn(const IndexDescription & index, const ColumnsDescription & columns)
+{
+    if (!index.expression)
+        return false;
+
+    for (const auto & name : index.expression->getRequiredColumns())
+    {
+        /// The expression may read a subcolumn, whose streams are a part of the streams of its column.
+        const auto column_or_subcolumn = columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), name);
+        const auto * column = column_or_subcolumn ? columns.tryGet(column_or_subcolumn->getNameInStorage()) : nullptr;
+        if (column && hasLossyCodec(*column))
+            return true;
+    }
+    return false;
+}
+
+}
+
 void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context)
 {
     // Ephemeral columns are excluded from implicit indices because they are not persisted;
@@ -1084,15 +1108,21 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
             {
                 /// An index that cannot be built, e.g. over an ALIAS whose dictionary, `Join` table or function is gone, is not generated.
                 auto index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
+                /// An index may not have an alias, and one inside the expression of an ALIAS column reaches the index with it.
+                KeyDescription::checkNoAlias(index.expression_list_ast.get(), "INDEX " + index.name);
                 static const MergeTreeSettings default_settings;
                 MergeTreeIndexFactory::instance().validate(index, false, default_settings);
-                secondary_indices.push_back(std::move(index));
+                /// The index would hold the values before compression, which a lossy codec does not preserve.
+                if (!readsLossyColumn(index, columns))
+                    secondary_indices.push_back(std::move(index));
             }
             catch (const Exception & e)
             {
+                /// `UNKNOWN_IDENTIFIER`: an ALIAS that reads a subcolumn of another ALIAS, e.g. `b.v + 1` over
+                /// `b ALIAS tuple(a)`, is not expanded to physical columns, and the index cannot be analyzed.
                 if (e.code() != ErrorCodes::BAD_ARGUMENTS && e.code() != ErrorCodes::INCORRECT_QUERY
                     && e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE
-                    && e.code() != ErrorCodes::UNKNOWN_FUNCTION)
+                    && e.code() != ErrorCodes::UNKNOWN_FUNCTION && e.code() != ErrorCodes::UNKNOWN_IDENTIFIER)
                     throw;
             }
         }
@@ -1113,6 +1143,67 @@ void StorageInMemoryMetadata::dropImplicitIndicesForColumn(const String & column
         else
             ++index_it;
     }
+}
+
+void StorageInMemoryMetadata::dropImplicitIndicesOverLossyColumns()
+{
+    static const std::string_view implicit_index_prefix = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX;
+    for (auto index_it = secondary_indices.begin(); index_it != secondary_indices.end();)
+    {
+        /// Only the indices of the columns of the table: a virtual column has no codec.
+        if (index_it->isImplicitlyCreated() && index_it->name.starts_with(implicit_index_prefix)
+            && columns.has(index_it->name.substr(implicit_index_prefix.size())) && readsLossyColumn(*index_it, columns))
+            index_it = secondary_indices.erase(index_it);
+        else
+            ++index_it;
+    }
+}
+
+NameSet StorageInMemoryMetadata::getExpressionAliasesDependingOn(const NameSet & redefined_columns) const
+{
+    const auto references_any = [](const IAST & ast, const NameSet & names, const auto & self) -> bool
+    {
+        if (const auto * identifier = ast.as<ASTIdentifier>())
+        {
+            const auto & name = identifier->name();
+            if (names.contains(name))
+                return true;
+            /// A subcolumn of the column, e.g. `b.size0`.
+            for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
+                if (names.contains(name.substr(0, pos)))
+                    return true;
+            return false;
+        }
+        for (const auto & child : ast.children)
+            if (self(*child, names, self))
+                return true;
+        return false;
+    };
+
+    NameSet reached = redefined_columns;
+    NameSet result;
+    bool changed = true;
+    while (changed)
+    {
+        changed = false;
+        for (const auto & column : columns)
+        {
+            if (column.default_desc.kind != ColumnDefaultKind::Alias || !column.default_desc.expression
+                || reached.contains(column.name))
+                continue;
+
+            if (references_any(*column.default_desc.expression, reached, references_any))
+            {
+                /// A plain column reference has no implicit index of its own, but the expression
+                /// aliases over it reach the redefined column through it.
+                if (!column.default_desc.expression->as<ASTIdentifier>())
+                    result.insert(column.name);
+                reached.insert(column.name);
+                changed = true;
+            }
+        }
+    }
+    return result;
 }
 
 void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr context)

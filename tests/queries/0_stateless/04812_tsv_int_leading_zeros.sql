@@ -199,6 +199,7 @@ SELECT * FROM format(Values, 'a Int8', '(128)') SETTINGS input_format_values_ded
 -- above, and the comparison disagreed with it until now.
 SELECT 'group 14: a string literal compared with a numeric column';
 CREATE TABLE cmp_04812 (id UInt64, v Int64, INDEX bf_04812 v TYPE bloom_filter) ENGINE = MergeTree ORDER BY id
+    SETTINGS add_minmax_index_for_numeric_columns = 0
     AS SELECT number AS id, number AS v FROM numbers(8);
 SELECT v FROM cmp_04812 WHERE v = '007';
 SELECT v FROM cmp_04812 WHERE v = '+7';

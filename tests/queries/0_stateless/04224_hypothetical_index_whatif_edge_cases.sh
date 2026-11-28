@@ -6,11 +6,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# the implicit minmax indices of add_minmax_index_for_numeric_columns change the plans and estimates this test pins
+
 echo "--- projection-served query reports a not_applicable candidate ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_proj;
     CREATE TABLE t_hypo_proj (a UInt64, b UInt64, PROJECTION p (SELECT a, b ORDER BY b))
-    ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_hypo_proj SELECT number, number FROM numbers(1000);
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_proj (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT a FROM t_hypo_proj WHERE b = 5 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
@@ -20,7 +22,7 @@ $CLICKHOUSE_CLIENT -n -q "
 echo "--- empty table reports a clean baseline ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_empty;
-    CREATE TABLE t_hypo_empty (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_hypo_empty (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_empty (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_empty WHERE b = 42;
 " | grep -E '^  parts:|^With |^\s+status:|^\s+reason:'

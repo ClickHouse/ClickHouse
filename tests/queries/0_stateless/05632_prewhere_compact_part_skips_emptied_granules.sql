@@ -2,7 +2,7 @@
 -- even when they are less than half of the read.
 
 CREATE TABLE t (k UInt32, a UInt8, b UInt8, v UInt64) ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000, index_granularity = 100, index_granularity_bytes = '10M';
+SETTINGS add_minmax_index_for_numeric_columns = 0, min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000, index_granularity = 100, index_granularity_bytes = '10M';
 
 -- a = 0 in granules 0, 3, 6 and in the last one (50 rows): 350 of 950 rows.
 INSERT INTO t SELECT number, intDiv(number, 100) % 3 != 0, number % 2, number FROM numbers(950)

@@ -1,0 +1,7 @@
+created	auto_minmax_index__block_number
+live after = DEFAULT	0
+merged part without the index	all_1_2_1	0
+after reattach	0
+live after enabling again	auto_minmax_index__block_number
+live after RESET SETTING	0
+after reattach again	0

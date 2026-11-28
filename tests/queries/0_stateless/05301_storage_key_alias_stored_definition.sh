@@ -23,7 +23,8 @@ INSERT INTO db.t2 VALUES (1, '2100-01-01', 1);
 SET allow_deprecated_syntax_for_merge_tree = 1;
 CREATE TABLE db.t4 (d Date, c0 UInt64, c1 UInt64) ENGINE = MergeTree(d, (c0, c1), 8192);
 INSERT INTO db.t4 VALUES ('2100-01-01', 1, 1);
-CREATE TABLE db.t5 (c0 Int64, c1 Int64, a Int64 ALIAS c1 * 2) ENGINE = MergeTree ORDER BY c0 SETTINGS add_minmax_index_for_numeric_columns = 1;
+-- The implicit index of an ALIAS column is not generated while its expression has an alias, so the index through it is explicit.
+CREATE TABLE db.t5 (c0 Int64, c1 Int64, a Int64 ALIAS c1 * 2, INDEX ia a TYPE minmax) ENGINE = MergeTree ORDER BY c0 SETTINGS add_minmax_index_for_numeric_columns = 1;
 "
 
 metadata_file=$(grep -rl 'ENGINE = MergeTree' "${WORKING_DIR}" --include='t.sql')

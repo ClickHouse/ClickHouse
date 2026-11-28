@@ -11,16 +11,16 @@ DROP TABLE IF EXISTS t_lc;
 DROP TABLE IF EXISTS t_date;
 DROP TABLE IF EXISTS t_u8;
 
-CREATE TABLE t_u64 (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
-CREATE TABLE t_alias (k UInt64, s String ALIAS k) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
-CREATE TABLE t_u32 (k UInt32) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
-CREATE TABLE t_i32 (k Int32) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
-CREATE TABLE t_i64 (k Int64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
-CREATE TABLE t_null (k Nullable(UInt64)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4, allow_nullable_key = 1;
+CREATE TABLE t_u64 (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4;
+CREATE TABLE t_alias (k UInt64, s String ALIAS k) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4;
+CREATE TABLE t_u32 (k UInt32) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4;
+CREATE TABLE t_i32 (k Int32) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4;
+CREATE TABLE t_i64 (k Int64) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4;
+CREATE TABLE t_null (k Nullable(UInt64)) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, allow_nullable_key = 1;
 CREATE TABLE t_lc (k LowCardinality(UInt64)) ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 4, allow_suspicious_low_cardinality_types = 1;
-CREATE TABLE t_date (d Date) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 4;
-CREATE TABLE t_u8 (k UInt8) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
+    SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE t_date (d Date) ENGINE = MergeTree ORDER BY d SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4;
+CREATE TABLE t_u8 (k UInt8) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4;
 
 INSERT INTO t_u64 SELECT number * 7 FROM numbers(200);
 INSERT INTO t_alias (k) SELECT number * 7 FROM numbers(200);

@@ -2,7 +2,7 @@
 
 DROP TABLE IF EXISTS t_float_to_big_int;
 CREATE TABLE t_float_to_big_int (f Float64) ENGINE = MergeTree ORDER BY f
-SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
 INSERT INTO t_float_to_big_int SELECT arrayJoin([1., pow(2, 127), pow(2, 127), pow(2, 128), pow(2, 128), pow(2, 255), pow(2, 255), pow(2, 256), pow(2, 256)]);
 

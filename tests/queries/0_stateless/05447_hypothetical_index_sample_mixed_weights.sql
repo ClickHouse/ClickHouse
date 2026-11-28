@@ -1,9 +1,11 @@
 -- past `index_scan_budget_rows` a part takes a draw from every run of baseline marks, and its last run can be shorter.
 -- a heavy draw next to a light draw keeps all its variance, so the span holds the real granules
 
+-- the implicit minmax indices of add_minmax_index_for_numeric_columns would prune the baseline marks before the hypothetical
+-- indexes are estimated, so the tables opt out to keep the sampling cases this test checks
 DROP TABLE IF EXISTS t_mixed;
 CREATE TABLE t_mixed (x UInt64, v UInt8) ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 SYSTEM STOP MERGES t_mixed;
 -- 30 parts of 9 marks: 4 of the first 8 marks have v = 1, and the last mark has v = 0
 INSERT INTO t_mixed SELECT number % 9, number % 9 IN (2, 3, 4, 6) FROM numbers(270)

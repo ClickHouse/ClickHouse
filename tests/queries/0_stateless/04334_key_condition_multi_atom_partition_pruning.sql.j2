@@ -7,6 +7,7 @@ SET explain_query_plan_default = 'legacy';
 -- Counting from partition values or implicit projections would bypass the reads we want to observe.
 SET optimize_trivial_count_query = 0;
 SET optimize_use_implicit_projections = 0;
+-- The implicit minmax indices of add_minmax_index_for_numeric_columns would add skip index rows to the output, so the tables opt out.
 
 {#- Each check prints the predicate, the count with index analysis, the count of a full scan and the parts
     and granules selected by each index; with `condition`, it also prints the key conditions. -#}
@@ -19,7 +20,7 @@ FORMAT TSVRaw;
 {%- endmacro %}
 
 CREATE TABLE test_part_prune (ts DateTime('UTC'), x UInt32) ENGINE = MergeTree
-PARTITION BY (toYYYYMM(ts), toDate(ts)) ORDER BY x SETTINGS index_granularity = 1;
+PARTITION BY (toYYYYMM(ts), toDate(ts)) ORDER BY x SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 -- 6 days spanning a month boundary, 4 rows per day: 6 partitions.
 INSERT INTO test_part_prune SELECT toDateTime('2026-03-30 00:00:00', 'UTC') + INTERVAL intDiv(number, 4) DAY + INTERVAL (number % 4) * 6 HOUR, number FROM numbers(24);
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'test_part_prune' AND active;
@@ -38,7 +39,7 @@ SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 
 
 -- moduloLegacy in the partition key with modulo predicates.
 CREATE TABLE test_part_modulo (k UInt64) ENGINE = MergeTree PARTITION BY moduloLegacy(k, 10) ORDER BY k
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_part_modulo SELECT number FROM numbers(30);
 {{ check('test_part_modulo', 'k % 10 = 3') }}
 {{ check('test_part_modulo', 'k = 13', condition = true) }}

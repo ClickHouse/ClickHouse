@@ -12,7 +12,7 @@ SET use_statistics_for_part_pruning = 0;
 DROP TABLE IF EXISTS t_set_batches;
 CREATE TABLE t_set_batches (g UInt64, v UInt64, INDEX idx v TYPE set(500) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY g
-SETTINGS index_granularity = 1000, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 1000, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_set_batches SELECT intDiv(number, 1000) AS g, if(g % 10 = 3, number, g * 1000 + number % 500)
 FROM numbers(600000);

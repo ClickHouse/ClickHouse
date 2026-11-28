@@ -1,0 +1,5 @@
+p_inherit	1
+p_reset	0
+after reattach and merge
+p_inherit	1
+p_reset	0

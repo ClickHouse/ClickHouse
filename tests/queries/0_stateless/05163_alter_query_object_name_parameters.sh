@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS alter_param_t";
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE alter_param_t (a UInt64, b UInt64, c UInt64, INDEX idx a TYPE minmax, PROJECTION prj (SELECT a ORDER BY a), CONSTRAINT cns CHECK a > 0) ENGINE = MergeTree() ORDER BY a";
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE alter_param_t (a UInt64, b UInt64, c UInt64, INDEX idx a TYPE minmax, PROJECTION prj (SELECT a ORDER BY a), CONSTRAINT cns CHECK a > 0) ENGINE = MergeTree() ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0";
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO alter_param_t VALUES (1, 10, 100)";
 
 # RENAME COLUMN with parameterized source and target names.

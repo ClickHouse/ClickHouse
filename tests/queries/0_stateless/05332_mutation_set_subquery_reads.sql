@@ -10,7 +10,7 @@ CREATE TABLE mutation_set_source
     payload String
 )
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 1024, index_granularity_bytes = 0,
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 1024, index_granularity_bytes = 0,
     min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0;
 

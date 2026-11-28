@@ -148,6 +148,17 @@ SETTINGS add_minmax_index_for_temporal_columns = true;
 
 ALTER TABLE tbl5 ADD INDEX auto_minmax_index_y y TYPE minmax; -- { serverError BAD_ARGUMENTS, ILLEGAL_COLUMN }
 
+-- The reserved prefix applies to every explicitly enabled implicit-index setting, not only
+-- `add_minmax_index_for_numeric_columns`.
+CREATE TABLE tbl7
+(
+    s String,
+    INDEX auto_minmax_index_s s TYPE minmax
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+SETTINGS add_minmax_index_for_string_columns = true; -- { serverError BAD_ARGUMENTS }
+
 CREATE TABLE tbl6
 (
     key Int,

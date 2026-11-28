@@ -15,7 +15,7 @@ DROP TABLE IF EXISTS t_cc_granules;
 
 CREATE TABLE t_cc_granules (id UInt64, v UInt64, g UInt64, s String)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 0;
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
 
 -- 13 granules: 12 full ones and one of 1696 rows. `g` is the number of the granule.
 INSERT INTO t_cc_granules SELECT number, number % 10, intDiv(number, 8192), toString(number) FROM numbers(100000);

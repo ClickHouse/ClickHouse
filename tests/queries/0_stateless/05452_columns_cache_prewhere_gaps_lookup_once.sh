@@ -20,7 +20,7 @@ do
     $CLICKHOUSE_CLIENT -q "
         DROP TABLE IF EXISTS t_cc_gaps;
         CREATE TABLE t_cc_gaps (k UInt64, m UInt8, v UInt64) ENGINE = MergeTree ORDER BY k
-        SETTINGS index_granularity = 16, index_granularity_bytes = 10485760, min_bytes_for_wide_part = $min_bytes_for_wide_part;
+        SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 16, index_granularity_bytes = 10485760, min_bytes_for_wide_part = $min_bytes_for_wide_part;
         INSERT INTO t_cc_gaps SELECT number, intDiv(number, 16) % 3, number FROM numbers(16000);
         SELECT sum(v) FROM t_cc_gaps SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1,
             columns_cache_max_bytes_to_write_to_cache = 0, columns_cache_max_estimated_bytes_to_write_to_cache = 0 FORMAT Null;

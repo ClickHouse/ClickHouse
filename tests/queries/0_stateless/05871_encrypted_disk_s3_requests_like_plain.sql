@@ -6,6 +6,8 @@
 -- The encryption header used to be read with an unbounded request, which was reopened when the reader set its range.
 -- Parts in packed storage are excluded with `min_bytes_for_full_part_storage = 0`: a file inside the packed archive
 -- does not start at the archive's header, so its header is read with a request of its own.
+-- The same holds for the packed skip indices file, `skp_idx.packed`, which the implicit `minmax` index of `k`
+-- would be written to: `packed_skip_index_max_bytes = 0` keeps the index in files of its own.
 -- Nothing may load the marks or the primary key before the queries, so that both queries load them themselves:
 -- otherwise the shared caches decide whether a query reads them.
 
@@ -13,11 +15,11 @@ DROP TABLE IF EXISTS t_plain;
 DROP TABLE IF EXISTS t_encrypted;
 
 CREATE TABLE t_plain (k UInt64, s String) ENGINE = MergeTree ORDER BY k
-SETTINGS storage_policy = 's3_no_cache', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+SETTINGS storage_policy = 's3_no_cache', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, packed_skip_index_max_bytes = 0,
     prewarm_mark_cache = 0, prewarm_primary_key_cache = 0, use_primary_key_cache = 0, index_granularity = 1024;
 
 CREATE TABLE t_encrypted (k UInt64, s String) ENGINE = MergeTree ORDER BY k
-SETTINGS storage_policy = 's3_no_cache_encrypted', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+SETTINGS storage_policy = 's3_no_cache_encrypted', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, packed_skip_index_max_bytes = 0,
     prewarm_mark_cache = 0, prewarm_primary_key_cache = 0, use_primary_key_cache = 0, index_granularity = 1024;
 
 -- One part per table, so that no background merge runs before `OPTIMIZE` and each table has exactly one merge.

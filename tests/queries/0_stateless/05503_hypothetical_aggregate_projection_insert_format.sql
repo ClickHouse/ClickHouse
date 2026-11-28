@@ -7,8 +7,10 @@ SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_
 -- an insert that gets the states in more blocks copies them into memory of their own, as with two-level aggregation
 SET max_block_size = 65409, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000;
 
+-- the implicit minmax indices of add_minmax_index_for_numeric_columns would prune the marks of the base table and change
+-- the estimates and the real reads this test compares, so the tables opt out
 CREATE TABLE f_est (b UInt64, v UInt8) ENGINE = MergeTree ORDER BY b
-    SETTINGS index_granularity = 48, index_granularity_bytes = 1024, use_const_adaptive_granularity = 1, min_bytes_for_wide_part = 0,
+    SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 48, index_granularity_bytes = 1024, use_const_adaptive_granularity = 1, min_bytes_for_wide_part = 0,
         min_rows_for_wide_part = 0, enable_block_number_column = 0, enable_block_offset_column = 0;
 CREATE TABLE f_inserted AS f_est;
 CREATE TABLE f_materialized AS f_est;

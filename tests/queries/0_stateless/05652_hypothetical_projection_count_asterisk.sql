@@ -4,7 +4,9 @@
 SET enable_parallel_replicas = 0, optimize_use_projections = 1;
 
 DROP TABLE IF EXISTS t_count_star;
-CREATE TABLE t_count_star (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 100;
+-- `EXPLAIN WHATIF` does not estimate projections with their own skip indexes yet, and projections inherit
+-- the implicit minmax indices of `add_minmax_index_for_numeric_columns`
+CREATE TABLE t_count_star (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 100, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_count_star SELECT number % 10, number FROM numbers(1000);
 
 CREATE HYPOTHETICAL PROJECTION p_count ON t_count_star (SELECT a, count() GROUP BY a);

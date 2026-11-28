@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS t_source_part_is_intact;
 
 CREATE TABLE t_source_part_is_intact (id UInt64, u UInt64)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part=1, ratio_of_defaults_for_sparse_serialization = 0.5;
+SETTINGS min_bytes_for_wide_part=1, ratio_of_defaults_for_sparse_serialization = 0.5, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_source_part_is_intact SELECT
     number,

@@ -35,8 +35,10 @@ DROP TABLE IF EXISTS ref_b;
 DROP TABLE IF EXISTS ref_ab;
 DROP TABLE IF EXISTS ref_n;
 
+-- The implicit minmax index on `b` would make `ORDER BY b, a LIMIT` take the skip-index top-K path
+-- instead of skipping granules by the primary key.
 CREATE TABLE t_gb_dyn (a UInt32, b UInt32, s String, n Nullable(UInt32))
-ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 128;
+ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 128, add_minmax_index_for_numeric_columns = 0;
 
 -- One part: 100 values of `a` with 1000 rows each, so a value of `a` spans about 8 granules,
 -- and `b` restarts from 0 inside every `a`.

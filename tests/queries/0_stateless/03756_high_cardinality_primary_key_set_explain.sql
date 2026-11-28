@@ -8,7 +8,7 @@ CREATE TABLE high_cardinality_primary_key_set
     u UInt32
 ) ENGINE = MergeTree()
 ORDER BY (u, d)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 SET explain_query_plan_default = 'legacy';
 

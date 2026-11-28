@@ -1,11 +1,12 @@
 -- The index is used when dividing by a Decimal constant, as long as the dividend rescale cannot overflow
+-- The implicit min-max index of `add_minmax_index_for_numeric_columns` would add its own `Granules` line after the primary key one.
 
 SET enable_parallel_replicas = 0;
 
 -- { echoOn }
 
 DROP TABLE IF EXISTS t;
-CREATE TABLE t (price Decimal64(2)) ENGINE = MergeTree ORDER BY price SETTINGS index_granularity = 2;
+CREATE TABLE t (price Decimal64(2)) ENGINE = MergeTree ORDER BY price SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 2;
 INSERT INTO t SELECT number - 40 FROM numbers(81);
 
 SELECT count() FROM t WHERE price / toDecimal64(3, 2) > 5;
@@ -21,7 +22,7 @@ SELECT replaceRegexpOne(arrayLast(x -> x LIKE '%Granules: %/%', groupArray(expla
 
 -- Rescaling the dividend overflows Int64 above 922337203685477.58: those granules cannot be pruned, the rest still can (only `1` is pruned)
 DROP TABLE t;
-CREATE TABLE t (price Decimal64(2)) ENGINE = MergeTree ORDER BY price SETTINGS index_granularity = 1;
+CREATE TABLE t (price Decimal64(2)) ENGINE = MergeTree ORDER BY price SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 1;
 INSERT INTO t VALUES (1), (922337203685477.57), (922337203685477.58), (922337203685477.59), (999999999999999.99);
 SET decimal_check_overflow = 0;
 SELECT count() FROM t WHERE intDiv(price, toDecimal64(3, 2)) >= 1;
@@ -30,14 +31,14 @@ SET decimal_check_overflow = 1;
 
 -- Decimal32 dividend with a Decimal64 divisor: the Int32 result is narrower than the rescale width
 DROP TABLE t;
-CREATE TABLE t (price Decimal32(2)) ENGINE = MergeTree ORDER BY price SETTINGS index_granularity = 2;
+CREATE TABLE t (price Decimal32(2)) ENGINE = MergeTree ORDER BY price SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 2;
 INSERT INTO t SELECT number FROM numbers(40);
 SELECT count() FROM t WHERE intDiv(price, toDecimal64(3, 2)) = 5;
 SELECT replaceRegexpOne(arrayLast(x -> x LIKE '%Granules: %/%', groupArray(explain)), '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT * FROM t WHERE intDiv(price, toDecimal64(3, 2)) = 5);
 
 -- Wider types around their own overflow boundary: granules beyond it cannot be pruned, the ones within it (around 0) still are
 DROP TABLE t;
-CREATE TABLE t (price Decimal128(5)) ENGINE = MergeTree ORDER BY price SETTINGS index_granularity = 1;
+CREATE TABLE t (price Decimal128(5)) ENGINE = MergeTree ORDER BY price SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 1;
 WITH intDiv(toInt128('170141183460469231731687303715884105727'), toInt128(100000)) AS b
 INSERT INTO t
 SELECT arrayJoin([v, -v]) FROM
@@ -52,7 +53,7 @@ SELECT count() FROM t WHERE price / toDecimal128(-3, 5) > 1;
 SELECT replaceRegexpOne(arrayLast(x -> x LIKE '%Granules: %/%', groupArray(explain)), '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT * FROM t WHERE price / toDecimal128(-3, 5) > 1);
 SET decimal_check_overflow = 1;
 DROP TABLE t;
-CREATE TABLE t (price Decimal256(10)) ENGINE = MergeTree ORDER BY price SETTINGS index_granularity = 1;
+CREATE TABLE t (price Decimal256(10)) ENGINE = MergeTree ORDER BY price SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 1;
 WITH intDiv(toInt256('57896044618658097711785492504343953926634992332820282019728792003956564819967'), toInt256(10000000000)) AS b
 INSERT INTO t
 SELECT arrayJoin([v, -v]) FROM
@@ -69,14 +70,14 @@ SET decimal_check_overflow = 1;
 
 -- At scale 0 the rescale is a no-op, even at the extremes of Decimal256
 DROP TABLE t;
-CREATE TABLE t (price Decimal256(0)) ENGINE = MergeTree ORDER BY price SETTINGS index_granularity = 1;
+CREATE TABLE t (price Decimal256(0)) ENGINE = MergeTree ORDER BY price SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 1;
 INSERT INTO t VALUES (toDecimal256('9999999999999999999999999999999999999999999999999999999999999999999999999999', 0)), (toDecimal256('-9999999999999999999999999999999999999999999999999999999999999999999999999999', 0)), (0), (5);
 SELECT count() FROM t WHERE intDiv(price, toDecimal256(3, 0)) >= 1;
 SELECT replaceRegexpOne(arrayLast(x -> x LIKE '%Granules: %/%', groupArray(explain)), '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT * FROM t WHERE intDiv(price, toDecimal256(3, 0)) >= 1);
 DROP TABLE t;
 
 -- The minimum Decimal256 raw value must not be treated as a small magnitude: both ends divide to zero but the interior is negative
-CREATE TABLE t (price Decimal256(1)) ENGINE = MergeTree ORDER BY price;
+CREATE TABLE t (price Decimal256(1)) ENGINE = MergeTree ORDER BY price SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t SELECT arrayJoin([
     toDecimal256('-723700557733226221397318656304299424082937404160253525246609900049457060249.6', 1) * toDecimal256(8, 0),
     toDecimal256(-6, 1), toDecimal256(-3, 1), toDecimal256(0, 1)]);

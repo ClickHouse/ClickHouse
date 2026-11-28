@@ -4071,6 +4071,42 @@ private:
         /// describing the data of the source part instead of the data of the new part.
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
         {
+            /// A part may hold index files whose name matches an index built over a column this
+            /// part has no data for: `ALTER TABLE t RENAME COLUMN c TO c_old, ADD COLUMN c`
+            /// refreshes the implicit min-max index of `c` to a name derived from `c_old`, while
+            /// the added column's implicit index takes the old name and is shadowed by the stale
+            /// files, so the recalculation checks above selected it. Such an index cannot be
+            /// built here: the rewrite reads only columns the part stores, so the index's
+            /// required columns are absent from the pipeline. Skip it — the rewritten part is
+            /// left without the index (exactly as after a plain addition of an index, before
+            /// `MATERIALIZE INDEX`) and the stale files are dropped with the rewrite. An index
+            /// explicitly materialized by the mutation is never skipped: the interpreter adds
+            /// its required columns to the pipeline, filling defaults for missing ones.
+            const Block & pipeline_header = builder->getHeader();
+            std::erase_if(skip_indices, [&](const MergeTreeIndexPtr & index_ptr)
+            {
+                for (const auto & required_column : index_ptr->index.expression->getRequiredColumns())
+                {
+                    if (pipeline_header.has(required_column))
+                        continue;
+
+                    bool extractable_as_subcolumn = false;
+                    for (const auto & [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(required_column))
+                    {
+                        const auto * column = pipeline_header.findByName(column_name);
+                        if (column && column->type->tryGetSubcolumnType(subcolumn_name))
+                        {
+                            extractable_as_subcolumn = true;
+                            break;
+                        }
+                    }
+
+                    if (!extractable_as_subcolumn)
+                        return true;
+                }
+                return false;
+            });
+
             MergeTreeIndices indices_to_calculate = skip_indices;
             indices_to_calculate.insert(indices_to_calculate.end(), ctx->text_indices_to_recalc.begin(), ctx->text_indices_to_recalc.end());
 

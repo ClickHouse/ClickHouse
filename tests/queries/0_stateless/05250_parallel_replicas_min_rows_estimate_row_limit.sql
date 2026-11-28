@@ -47,7 +47,9 @@ SELECT max(i) FROM x SETTINGS max_rows_to_read = 2, optimize_use_implicit_projec
 DROP TABLE x;
 
 DROP TABLE IF EXISTS t;
-CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4;
+-- The implicit min-max index of `a` would make `ORDER BY a LIMIT` take the skip-index top-K path, and
+-- such a read is not shipped to the replicas, so the read-order shape below would not be reached.
+CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 SYSTEM STOP MERGES t;
 INSERT INTO t SELECT number FROM numbers(100);
 

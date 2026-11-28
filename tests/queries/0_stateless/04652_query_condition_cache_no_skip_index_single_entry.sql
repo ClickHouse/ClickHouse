@@ -32,14 +32,18 @@ ENGINE = MergeTree ORDER BY a
 SETTINGS index_granularity = 8, min_bytes_for_wide_part = 0,
          -- Automatic column statistics prune independently, which adds entries the counts below
          -- do not describe.
-         auto_statistics_types = '';
+         auto_statistics_types = '',
+         -- The implicit minmax indices would give the plain table an effective skip index.
+         add_minmax_index_for_numeric_columns = 0;
 
 CREATE TABLE tab_indexed (a UInt64, b UInt64, INDEX bx b TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY a
 SETTINGS index_granularity = 8, min_bytes_for_wide_part = 0,
          -- Automatic column statistics prune independently, which adds entries the counts below
          -- do not describe.
-         auto_statistics_types = '';
+         auto_statistics_types = '',
+         -- The implicit minmax indices would give the plain table an effective skip index.
+         add_minmax_index_for_numeric_columns = 0;
 
 SYSTEM STOP MERGES tab;
 SYSTEM STOP MERGES tab_indexed;

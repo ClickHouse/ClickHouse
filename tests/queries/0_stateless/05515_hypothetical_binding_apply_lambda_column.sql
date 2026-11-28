@@ -3,7 +3,7 @@
 SET enable_parallel_replicas = 0, optimize_use_projections = 1;
 
 DROP TABLE IF EXISTS t_apply;
-CREATE TABLE t_apply (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+CREATE TABLE t_apply (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 INSERT INTO t_apply SELECT number, 1 FROM numbers(1000);
 
 CREATE HYPOTHETICAL PROJECTION p ON t_apply (SELECT a, count(), COLUMNS(a) APPLY (x -> sum(x + b)) GROUP BY a);

@@ -4,7 +4,7 @@
 DROP TABLE IF EXISTS t;
 
 CREATE TABLE t (id UInt64, `n.a` Array(UInt32))
-ENGINE = MergeTree ORDER BY id SETTINGS share_nested_offsets = 0;
+ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0, share_nested_offsets = 0;
 
 ALTER TABLE t
     ADD COLUMN IF NOT EXISTS n UInt32,

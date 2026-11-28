@@ -8,6 +8,8 @@
 -- group must keep pruning through its other atom, also under negation, and the counts must match a
 -- full scan.
 
+-- The implicit minmax indices of add_minmax_index_for_numeric_columns would add skip index rows to the output, so the tables opt out.
+
 SET explain_query_plan_default = 'legacy';
 SET optimize_trivial_count_with_sparsity_filter = 0;
 
@@ -23,7 +25,7 @@ FORMAT TSVRaw;
 {%- endmacro %}
 
 CREATE TABLE t_negated_curve_group (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY (mortonEncode(x, y), plus(x, 1))
-SETTINGS index_granularity = 4;
+SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_negated_curve_group SELECT intDiv(number, 8), number % 8 FROM numbers(64);
 
 {{ check('t_negated_curve_group', 'NOT x') }}

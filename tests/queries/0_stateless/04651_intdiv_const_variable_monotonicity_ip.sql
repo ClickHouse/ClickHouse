@@ -3,6 +3,12 @@
 -- `getMonotonicityForRange` is strictly negative, strictly positive or spans zero, so the
 -- randomizer (`randint(1, 65536)`) would make these probes non-deterministic. It is pinned
 -- per DDL below as well.
+--
+-- `add_minmax_index_for_numeric_columns` is pinned to 0 per DDL as well: these probes measure
+-- primary-key pruning alone. With an implicit min-max index on the key column the condition
+-- becomes exactly resolvable by a skip index, so the plan collapses into
+-- `ReadFromPreparedSource (_exact_count_projection)` and the `Granules: N/M` line the case 8
+-- rows look for disappears from `EXPLAIN indexes = 1`.
 
 -- Every query prints 1 when the count read through the primary key equals the full-scan
 -- ground truth from an identical `ENGINE = Memory` table.
@@ -39,11 +45,11 @@ DROP TABLE IF EXISTS m_cv_ipwrap6;
 -- ---------------------------------------------------------------------------------------------
 -- The numeric key fixtures are the same ones the sibling files use: a strictly-negative
 -- range (cases 1-4) and a range spanning zero (case 6).
-CREATE TABLE t_cv_neg (a Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_neg (a Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_neg (a Int32) ENGINE = Memory;
 INSERT INTO t_cv_neg VALUES (-40), (-30), (-20), (-10);
 INSERT INTO m_cv_neg VALUES (-40), (-30), (-20), (-10);
-CREATE TABLE t_cv_span (a Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8;
+CREATE TABLE t_cv_span (a Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_span (a Int32) ENGINE = Memory;
 INSERT INTO t_cv_span VALUES (-20), (-10), (10), (20);
 INSERT INTO m_cv_span VALUES (-20), (-10), (10), (20);
@@ -56,11 +62,11 @@ SELECT 'c9i ipv4 divide neg', (SELECT count() FROM t_cv_neg WHERE divide(toIPv4(
 
 -- (ii) IP as the KEY, numeric constant. Granularity 1 gives a singleton range (the first
 -- comparison); granularity 8 gives min != max (the second one). Both are load-bearing.
-CREATE TABLE t_cv_ip1 (a IPv4) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_ip1 (a IPv4) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_ip1 (a IPv4) ENGINE = Memory;
 INSERT INTO t_cv_ip1 VALUES ('1.0.0.1'), ('2.0.0.1'), ('3.0.0.1'), ('4.0.0.1');
 INSERT INTO m_cv_ip1 VALUES ('1.0.0.1'), ('2.0.0.1'), ('3.0.0.1'), ('4.0.0.1');
-CREATE TABLE t_cv_ip8 (a IPv4) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8;
+CREATE TABLE t_cv_ip8 (a IPv4) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_ip8 (a IPv4) ENGINE = Memory;
 INSERT INTO t_cv_ip8 VALUES ('1.0.0.1'), ('2.0.0.1'), ('3.0.0.1'), ('4.0.0.1');
 INSERT INTO m_cv_ip8 VALUES ('1.0.0.1'), ('2.0.0.1'), ('3.0.0.1'), ('4.0.0.1');
@@ -83,7 +89,7 @@ SELECT 'c9iii ipv4 divisor divide', (SELECT count() FROM t_cv_ip8 WHERE divide(a
 -- The `variable / constant` role must keep PRUNING, not merely keep answering: it reads the
 -- constant's integer field and never compares an IP field against zero. 8 rows at granularity 2
 -- give 4 granules, so the pruning decision is observable in the plan (case 8 below).
-CREATE TABLE t_cv_ipv (a IPv4) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 2;
+CREATE TABLE t_cv_ipv (a IPv4) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_ipv (a IPv4) ENGINE = Memory;
 INSERT INTO t_cv_ipv VALUES ('1.0.0.1'), ('2.0.0.1'), ('3.0.0.1'), ('4.0.0.1'), ('5.0.0.1'), ('6.0.0.1'), ('7.0.0.1'), ('8.0.0.1');
 INSERT INTO m_cv_ipv VALUES ('1.0.0.1'), ('2.0.0.1'), ('3.0.0.1'), ('4.0.0.1'), ('5.0.0.1'), ('6.0.0.1'), ('7.0.0.1'), ('8.0.0.1');
@@ -93,11 +99,11 @@ SELECT 'c9iii ipv eq', (SELECT count() FROM t_cv_ipv WHERE intDiv(a, 10) = 16777
 -- `intDiv` substitutes IP keys with unsigned integers before applying a signed divisor. The
 -- ranges below cross the corresponding signed wrap, so key analysis must not prune away the
 -- values above the wrap.
-CREATE TABLE t_cv_ipwrap4 (b UInt8, a IPv4) ENGINE = MergeTree ORDER BY (b, a) SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_ipwrap4 (b UInt8, a IPv4) ENGINE = MergeTree ORDER BY (b, a) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_ipwrap4 (b UInt8, a IPv4) ENGINE = Memory;
 INSERT INTO t_cv_ipwrap4 VALUES (1, '127.255.255.254'), (1, '127.255.255.255'), (1, '128.0.0.0'), (1, '128.0.0.1'), (2, '200.0.0.0');
 INSERT INTO m_cv_ipwrap4 VALUES (1, '127.255.255.254'), (1, '127.255.255.255'), (1, '128.0.0.0'), (1, '128.0.0.1'), (2, '200.0.0.0');
-CREATE TABLE t_cv_ipwrap6 (b UInt8, a IPv6) ENGINE = MergeTree ORDER BY (b, a) SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_ipwrap6 (b UInt8, a IPv6) ENGINE = MergeTree ORDER BY (b, a) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_ipwrap6 (b UInt8, a IPv6) ENGINE = Memory;
 INSERT INTO t_cv_ipwrap6 VALUES (1, '7fff:ffff:ffff:ffff:ffff:ffff:ffff:fffe'), (1, '7fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'), (1, '8000::'), (1, '8000::1'), (2, 'ffff::');
 INSERT INTO m_cv_ipwrap6 VALUES (1, '7fff:ffff:ffff:ffff:ffff:ffff:ffff:fffe'), (1, '7fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'), (1, '8000::'), (1, '8000::1'), (2, 'ffff::');

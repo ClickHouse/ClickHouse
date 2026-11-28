@@ -1,5 +1,6 @@
 -- Test memory consumed by part metadata (1000 parts x 10 columns, 1 row each)
 -- This measures the overhead of part structures, not data
+-- The implicit min-max indices are pinned, so the layout does not follow the server default.
 
 CREATE TABLE test_many_parts (
     id UInt64,
@@ -16,6 +17,7 @@ CREATE TABLE test_many_parts (
 PARTITION BY id  -- Each id becomes a separate partition, forcing separate parts
 ORDER BY id
 SETTINGS
+    add_minmax_index_for_numeric_columns = 0,
     max_bytes_to_merge_at_max_space_in_pool = 1,
     max_bytes_to_merge_at_min_space_in_pool = 1;
 

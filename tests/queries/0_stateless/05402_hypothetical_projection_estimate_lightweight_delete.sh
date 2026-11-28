@@ -13,7 +13,7 @@ echo "--- a part whose rows are mostly, then all deleted ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_z;
     CREATE TABLE t_est_z (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+        SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
     INSERT INTO t_est_z SELECT number, number % 100, number FROM numbers(1000);
     DELETE FROM t_est_z WHERE a >= 100 SETTINGS lightweight_deletes_sync = 2;
     CREATE HYPOTHETICAL PROJECTION p_z ON t_est_z (SELECT a, b, v ORDER BY b);
@@ -27,7 +27,7 @@ echo "--- a part with every row deleted next to a live part ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_m; DROP TABLE IF EXISTS t_real_m;
     CREATE TABLE t_est_m (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree PARTITION BY a < 1000 ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
+        SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
                  lightweight_mutation_projection_mode = 'rebuild';
     CREATE TABLE t_real_m AS t_est_m;
     ALTER TABLE t_real_m ADD PROJECTION p_m (SELECT a, b, v ORDER BY b);
@@ -46,7 +46,7 @@ echo "--- a mostly deleted part with a byte-driven granularity ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_g; DROP TABLE IF EXISTS t_real_g;
     CREATE TABLE t_est_g (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 8192, index_granularity_bytes = 1024, use_const_adaptive_granularity = 0,
+        SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 8192, index_granularity_bytes = 1024, use_const_adaptive_granularity = 0,
                  min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, lightweight_mutation_projection_mode = 'rebuild';
     CREATE TABLE t_real_g AS t_est_g;
     ALTER TABLE t_real_g ADD PROJECTION p_g (SELECT a, b, v ORDER BY b);
@@ -64,7 +64,7 @@ echo "--- a projection that stores _row_exists on a part with deleted rows ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_x;
     CREATE TABLE t_est_x (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+        SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
     INSERT INTO t_est_x SELECT number, number % 100 FROM numbers(1000);
     DELETE FROM t_est_x WHERE a % 2 = 0 SETTINGS lightweight_deletes_sync = 2;
     CREATE HYPOTHETICAL PROJECTION p_x ON t_est_x (SELECT a, b, _row_exists ORDER BY b);

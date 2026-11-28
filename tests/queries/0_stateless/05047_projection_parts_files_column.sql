@@ -11,12 +11,13 @@ CREATE TABLE t_projection_parts_files
     (
         SELECT value, key
         ORDER BY value
-    )
+    ) WITH SETTINGS (add_minmax_index_for_numeric_columns = 0)
 )
 ENGINE = MergeTree
 ORDER BY key
 SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000,
-         serialization_info_version = 'basic', ratio_of_defaults_for_sparse_serialization = 1.0;
+         serialization_info_version = 'basic', ratio_of_defaults_for_sparse_serialization = 1.0,
+         add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_projection_parts_files SELECT number, number * 2 FROM numbers(100);
 

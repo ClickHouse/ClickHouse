@@ -25,7 +25,7 @@ mkdir -p "${DB_DIR}"
 # granules straddle the team_id boundary. Persist it to disk.
 ${CLICKHOUSE_LOCAL} --path="${DB_DIR}" --multiquery --query "
 CREATE TABLE t (team_id UInt64, k UInt8, s String)
-ENGINE = MergeTree ORDER BY (team_id, k, s) SETTINGS index_granularity = 4;
+ENGINE = MergeTree ORDER BY (team_id, k, s) SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 SYSTEM STOP MERGES t;
 INSERT INTO t SELECT 1, number % 5, toString(number) FROM numbers(50);
 INSERT INTO t SELECT 2, number % 5, toString(number) FROM numbers(50);
@@ -69,7 +69,7 @@ mkdir -p "${DB_DIR2}"
 
 ${CLICKHOUSE_LOCAL} --path="${DB_DIR2}" --multiquery --query "
 CREATE TABLE pk (x UInt64, y UInt64, z UInt64)
-ENGINE = MergeTree ORDER BY (x, y, z) SETTINGS index_granularity = 1;
+ENGINE = MergeTree ORDER BY (x, y, z) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO pk VALUES
   (1, 11, 1235), (1, 11, 4395), (1, 22, 3545), (1, 22, 6984), (1, 33, 4596),
   (2, 11, 3572), (2, 11, 4563), (2, 11, 4578), (2, 22, 2791), (2, 22, 2791),
@@ -103,7 +103,7 @@ rm -rf "${DB_DIR3}"
 mkdir -p "${DB_DIR3}"
 
 ${CLICKHOUSE_LOCAL} --path="${DB_DIR3}" --multiquery --query "
-CREATE TABLE t_rev (g UInt32, r UInt32) ENGINE = MergeTree ORDER BY (g, r DESC) SETTINGS index_granularity = 4;
+CREATE TABLE t_rev (g UInt32, r UInt32) ENGINE = MergeTree ORDER BY (g, r DESC) SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_rev SELECT number % 10, 1000 - number FROM numbers(1000);
 "
 

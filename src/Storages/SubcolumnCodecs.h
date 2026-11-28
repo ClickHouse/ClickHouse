@@ -26,4 +26,8 @@ void validateColumnCodecs(ColumnsDescription & columns, const CodecValidationSet
 /// enumerate it.
 ASTPtr getSubstreamCodecDescription(const ISerialization::SubstreamPath & substream_path, const ColumnDescription & column);
 
+/// Whether a stream of `column` is compressed with a lossy codec (e.g. `SZ3`), so that the values read back
+/// from a part differ from the values that were written to it.
+bool hasLossyCodec(const ColumnDescription & column);
+
 }
