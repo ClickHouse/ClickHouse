@@ -118,6 +118,7 @@ struct FormatSettings : FormatSettingsEnums
     bool skip_duplicated_fields = false;
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
+    bool with_names_rename_duplicate_columns = true;
     bool with_types_use_header = false;
     bool write_statistics = true;
     bool into_outfile_create_parent_directories = false;

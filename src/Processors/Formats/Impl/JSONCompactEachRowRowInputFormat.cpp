@@ -793,9 +793,19 @@ void registerJSONCompactEachRowSchemaReader(FormatFactory & factory)
                 factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names](const FormatSettings & settings)
                 {
                     auto result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
-                    if (!with_names)
+                    if (with_names)
+                        result += fmt::format(", rename_duplicate_columns={}", settings.with_names_rename_duplicate_columns);
+                    else
                         result += fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
                     return result;
+                });
+            }
+            else
+            {
+                /// The types are given in the header, so only the names of the header depend on the settings.
+                factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
+                {
+                    return fmt::format("rename_duplicate_columns={}", settings.with_names_rename_duplicate_columns);
                 });
             }
         };
