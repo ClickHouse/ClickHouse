@@ -1,6 +1,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
+#include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
@@ -92,6 +93,15 @@ IdentifierResolveScope * IdentifierResolveScope::getNearestQueryScope()
     }
 
     return scope_to_check;
+}
+
+bool IdentifierResolveScope::isResolvingAsofJoinExpression() const
+{
+    const auto * nearest_join_query_scope = joins_count > 0 ? getNearestQueryScope() : nullptr;
+    const auto * query_node = nearest_join_query_scope ? nearest_join_query_scope->scope_node->as<QueryNode>() : nullptr;
+    const auto * join_node = query_node ? query_node->getJoinTreeNode()->as<JoinNode>() : nullptr;
+    return join_node && join_node->getStrictness() == JoinStrictness::Asof
+        && expressions_in_resolve_process_stack.has(join_node->getJoinExpression().get());
 }
 
 AnalysisTableExpressionData & IdentifierResolveScope::getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node)

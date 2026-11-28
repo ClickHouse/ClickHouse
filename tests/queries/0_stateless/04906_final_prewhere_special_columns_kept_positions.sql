@@ -2,10 +2,10 @@
 -- Regression test for a LOGICAL_ERROR in `ReadFromMergeTree::removeUnusedColumns`:
 -- "Unexpected number of kept output positions after removing unused columns from ReadFromMergeTree".
 --
--- Bare `database` below is the parenthesis-less `currentDatabase()` alias, which only the analyzer
--- resolves; the old analyzer reads it as a column and fails with UNKNOWN_IDENTIFIER. It is load
--- bearing and cannot be spelled `currentDatabase()`: that form folds the whole `PREWHERE` to a
--- constant before the read set is computed, so `ver` is never pruned and the bug is not reached.
+-- `arrayExists(x -> x > 0, [1])` below is always true and is load bearing: the analyzer does not
+-- constant-fold a function with a lambda argument, only the ActionsDAG does. A constant the
+-- analyzer folds would fold the whole `PREWHERE` before the read set is computed, so `ver` would
+-- never be pruned and the bug would not be reached.
 --
 -- A column that `FINAL` reads for merging (`ver`, `is_deleted`, `sign`) but that `PREWHERE` had
 -- consumed was added back to the read set, so the recomputed step header was longer than the
@@ -39,17 +39,17 @@ SELECT count() > 1 AS multi_part FROM system.parts
 WHERE database = currentDatabase() AND table = 't_replacing_is_deleted_04906' AND active;
 
 SELECT '--- replacing with is_deleted';
-SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key
+SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR arrayExists(x -> x > 0, [1]) ORDER BY key
 SETTINGS query_plan_remove_unused_columns = 1;
-SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key
+SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR arrayExists(x -> x > 0, [1]) ORDER BY key
 SETTINGS query_plan_remove_unused_columns = 0;
 
 SELECT '--- through merge()';
-SELECT key, someCol FROM merge(currentDatabase(), '^t_replacing_is_deleted_04906$') FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key
+SELECT key, someCol FROM merge(currentDatabase(), '^t_replacing_is_deleted_04906$') FINAL PREWHERE (ver > 0) OR arrayExists(x -> x > 0, [1]) ORDER BY key
 SETTINGS query_plan_remove_unused_columns = 1;
 
 SELECT '--- prewhere applied after final';
-SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key
+SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR arrayExists(x -> x > 0, [1]) ORDER BY key
 SETTINGS apply_prewhere_after_final = 1, query_plan_remove_unused_columns = 1;
 
 -- The rows above come from an always-true predicate, so they alone would not notice the setting
@@ -61,7 +61,7 @@ SETTINGS apply_prewhere_after_final = 1, query_plan_remove_unused_columns = 1;
 SELECT count() AS deferred_prewhere
 FROM (
     EXPLAIN PLAN actions = 1
-    SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '')
+    SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR arrayExists(x -> x > 0, [1])
     SETTINGS explain_query_plan_default = 'legacy', apply_prewhere_after_final = 1,
              query_plan_remove_unused_columns = 1
 )
@@ -69,7 +69,7 @@ WHERE explain LIKE '%Deferred prewhere filter column%';
 SELECT count() AS deferred_prewhere
 FROM (
     EXPLAIN PLAN actions = 1
-    SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '')
+    SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR arrayExists(x -> x > 0, [1])
     SETTINGS explain_query_plan_default = 'legacy', apply_prewhere_after_final = 0,
              query_plan_remove_unused_columns = 1
 )
@@ -107,12 +107,12 @@ DROP TABLE t_replacing_deferred_04906;
 -- Lazy materialization rebuilds the step header once more, so it is pinned rather than left to the
 -- 5% of runs that randomize it off. The assertion below shows the lazy step is present.
 SELECT '--- lazy materialization';
-SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key LIMIT 1
+SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR arrayExists(x -> x > 0, [1]) ORDER BY key LIMIT 1
 SETTINGS query_plan_remove_unused_columns = 1, query_plan_optimize_lazy_materialization = 1;
 SELECT count() > 0 AS lazy_read_step
 FROM (
     EXPLAIN PLAN header = 1
-    SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key LIMIT 1
+    SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR arrayExists(x -> x > 0, [1]) ORDER BY key LIMIT 1
     SETTINGS explain_query_plan_default = 'legacy', query_plan_remove_unused_columns = 1,
              query_plan_optimize_lazy_materialization = 1
 )
@@ -120,7 +120,7 @@ WHERE explain LIKE '%LazilyReadFromMergeTree%';
 SELECT count() > 0 AS lazy_read_step
 FROM (
     EXPLAIN PLAN header = 1
-    SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key LIMIT 1
+    SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR arrayExists(x -> x > 0, [1]) ORDER BY key LIMIT 1
     SETTINGS explain_query_plan_default = 'legacy', query_plan_remove_unused_columns = 1,
              query_plan_optimize_lazy_materialization = 0
 )
@@ -129,9 +129,9 @@ WHERE explain LIKE '%LazilyReadFromMergeTree%';
 -- Two output columns carrying one name, and one column selected twice: both must keep exactly
 -- two columns.
 SELECT '--- duplicate output names';
-SELECT key, someCol AS key FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY 1, 2
+SELECT key, someCol AS key FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR arrayExists(x -> x > 0, [1]) ORDER BY 1, 2
 SETTINGS query_plan_remove_unused_columns = 1;
-SELECT key, key FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY 1
+SELECT key, key FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR arrayExists(x -> x > 0, [1]) ORDER BY 1
 SETTINGS query_plan_remove_unused_columns = 1;
 
 DROP TABLE t_replacing_is_deleted_04906;
@@ -204,9 +204,9 @@ SELECT count() > 1 AS multi_part FROM system.parts
 WHERE database = currentDatabase() AND table = 't_replacing_04906' AND active;
 
 SELECT '--- replacing without is_deleted';
-SELECT key, someCol FROM t_replacing_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key
+SELECT key, someCol FROM t_replacing_04906 FINAL PREWHERE (ver > 0) OR arrayExists(x -> x > 0, [1]) ORDER BY key
 SETTINGS query_plan_remove_unused_columns = 1;
-SELECT key, someCol FROM t_replacing_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key
+SELECT key, someCol FROM t_replacing_04906 FINAL PREWHERE (ver > 0) OR arrayExists(x -> x > 0, [1]) ORDER BY key
 SETTINGS query_plan_remove_unused_columns = 0;
 
 -- Pruning must stay live on the shape above: with `ver` no longer read out of the step, the
@@ -216,14 +216,14 @@ SELECT '--- pruning is still applied';
 SELECT count() = 0 AS prewhere_input_pruned
 FROM (
     EXPLAIN PLAN actions = 1
-    SELECT key, someCol FROM t_replacing_04906 FINAL PREWHERE (ver > 0) OR (database != '')
+    SELECT key, someCol FROM t_replacing_04906 FINAL PREWHERE (ver > 0) OR arrayExists(x -> x > 0, [1])
     SETTINGS explain_query_plan_default = 'legacy', query_plan_remove_unused_columns = 1
 )
 WHERE explain LIKE '%INPUT%ver%';
 SELECT count() = 0 AS prewhere_input_pruned
 FROM (
     EXPLAIN PLAN actions = 1
-    SELECT key, someCol FROM t_replacing_04906 FINAL PREWHERE (ver > 0) OR (database != '')
+    SELECT key, someCol FROM t_replacing_04906 FINAL PREWHERE (ver > 0) OR arrayExists(x -> x > 0, [1])
     SETTINGS explain_query_plan_default = 'legacy', query_plan_remove_unused_columns = 0
 )
 WHERE explain LIKE '%INPUT%ver%';
@@ -268,9 +268,9 @@ SELECT count() > 1 AS multi_part FROM system.parts
 WHERE database = currentDatabase() AND table = 't_collapsing_04906' AND active;
 
 SELECT '--- collapsing';
-SELECT key, someCol FROM t_collapsing_04906 FINAL PREWHERE (sign = 1) OR (database != '') ORDER BY key
+SELECT key, someCol FROM t_collapsing_04906 FINAL PREWHERE (sign = 1) OR arrayExists(x -> x > 0, [1]) ORDER BY key
 SETTINGS query_plan_remove_unused_columns = 1;
-SELECT key, someCol FROM t_collapsing_04906 FINAL PREWHERE (sign = 1) OR (database != '') ORDER BY key
+SELECT key, someCol FROM t_collapsing_04906 FINAL PREWHERE (sign = 1) OR arrayExists(x -> x > 0, [1]) ORDER BY key
 SETTINGS query_plan_remove_unused_columns = 0;
 
 DROP TABLE t_collapsing_04906;
@@ -295,9 +295,9 @@ SELECT count() > 1 AS multi_part FROM system.parts
 WHERE database = currentDatabase() AND table = 't_versioned_collapsing_04906' AND active;
 
 SELECT '--- versioned collapsing';
-SELECT key, someCol FROM t_versioned_collapsing_04906 FINAL PREWHERE (sign = 1) OR (database != '') ORDER BY key
+SELECT key, someCol FROM t_versioned_collapsing_04906 FINAL PREWHERE (sign = 1) OR arrayExists(x -> x > 0, [1]) ORDER BY key
 SETTINGS query_plan_remove_unused_columns = 1;
-SELECT key, someCol FROM t_versioned_collapsing_04906 FINAL PREWHERE (sign = 1) OR (database != '') ORDER BY key
+SELECT key, someCol FROM t_versioned_collapsing_04906 FINAL PREWHERE (sign = 1) OR arrayExists(x -> x > 0, [1]) ORDER BY key
 SETTINGS query_plan_remove_unused_columns = 0;
 
 DROP TABLE t_versioned_collapsing_04906;
