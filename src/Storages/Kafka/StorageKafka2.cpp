@@ -83,6 +83,8 @@ extern const Event KafkaMessagesFailed;
 extern const Event KafkaRowsRead;
 extern const Event KafkaWrites;
 extern const Event KafkaMVNotReady;
+extern const Event KafkaConsumerShortStall;
+extern const Event KafkaConsumerShortStallStreakStart;
 }
 
 
@@ -1385,10 +1387,22 @@ void StorageKafka2::threadFunc(size_t idx)
     if (!task->stream_cancelled)
     {
         UInt64 kafka_consumer_reschedule_ms = (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds();
-        if (maybe_stall_reason.has_value() && *maybe_stall_reason == StallKind::ShortStall)
+        const bool short_stall = maybe_stall_reason.has_value() && *maybe_stall_reason == StallKind::ShortStall;
+        if (short_stall)
+        {
+            ProfileEvents::increment(ProfileEvents::KafkaConsumerShortStall);
+            if (!task->prev_cycle_short_stall)
+            {
+                ProfileEvents::increment(ProfileEvents::KafkaConsumerShortStallStreakStart);
+                task->prev_cycle_short_stall = true;
+            }
             task->holder->scheduleAfter(kafka_consumer_reschedule_ms / 10);
+        }
         else
+        {
+            task->prev_cycle_short_stall = false;
             task->holder->scheduleAfter(kafka_consumer_reschedule_ms);
+        }
     }
 }
 
