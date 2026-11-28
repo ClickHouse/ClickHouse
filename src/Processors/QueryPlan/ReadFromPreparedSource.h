@@ -18,9 +18,9 @@ public:
     /// The caller supplies a known input bound; an arbitrary prepared pipe may be unbounded.
     explicit ReadFromPreparedSource(Pipe pipe_, bool is_bounded_ = false);
 
-    bool hasBoundedRead() const { return is_bounded; }
-    bool hasTotals() const { return pipe.getTotalsPort() != nullptr; }
-    bool hasExtremes() const { return pipe.getExtremesPort() != nullptr; }
+    [[nodiscard]] bool hasBoundedRead() const { return is_bounded; }
+    [[nodiscard]] bool hasTotals() const { return pipe.getTotalsPort() != nullptr; }
+    [[nodiscard]] bool hasExtremes() const { return pipe.getExtremesPort() != nullptr; }
 
     [[nodiscard]] String getName() const override { return "ReadFromPreparedSource"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;

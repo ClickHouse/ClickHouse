@@ -35,7 +35,7 @@ public:
 
     /// Return whether all output columns with the same name are proven to contain identical values.
     /// Return true when output names are unique, and false when equality cannot be established.
-    bool hasIdenticalDuplicateOutputColumns() const;
+    [[nodiscard]] bool hasIdenticalDuplicateOutputColumns() const;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
 

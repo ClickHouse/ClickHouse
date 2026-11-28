@@ -38,7 +38,7 @@ public:
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     /// Returns true when arguments or limit pushdown bound the read.
-    bool hasBoundedRead() const;
+    [[nodiscard]] bool hasBoundedRead() const;
 
 private:
     Pipe makePipe();
