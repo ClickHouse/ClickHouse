@@ -155,6 +155,7 @@ bool ZooKeeperWithFaultInjection::injectFailureBeforeOperationPromise(const char
             LOG_ERROR(logger, "ZooKeeperWithFaultInjection called after fault injection: seed={}, func={} path={}", seed, func_name, path);
         promise->set_exception(std::make_exception_ptr(
             zkutil::KeeperException::fromMessage(RandomFaultInjection::error_before_op, RandomFaultInjection::msg_session_expired)));
+        return true;
     }
 
     if (unlikely(fault_policy) && fault_policy->beforeOperation())
@@ -425,7 +426,7 @@ zkutil::ZooKeeper::FutureGet ZooKeeperWithFaultInjection::asyncTryGet(std::strin
         return future;
 
     const char * function_name = __func__;
-    auto callback = [&, promise](const Coordination::GetResponse & response) mutable
+    auto callback = [this, promise, path, function_name](const Coordination::GetResponse & response) mutable
     {
         if (injectFailureAfterOperationPromise(function_name, promise, path))
             return;
@@ -481,7 +482,7 @@ zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow
     }
 
     const char * function_name = __func__;
-    auto callback = [&, promise](const Coordination::MultiResponse & response) mutable
+    auto callback = [this, promise, path, request_size, function_name](const Coordination::MultiResponse & response) mutable
     {
         if (unlikely(fault_policy) && fault_policy->afterOperation())
         {
@@ -521,7 +522,7 @@ zkutil::ZooKeeper::FutureRemove ZooKeeperWithFaultInjection::asyncTryRemove(std:
         return future;
 
     const char * function_name = __func__;
-    auto callback = [&, promise](const Coordination::RemoveResponse & response) mutable
+    auto callback = [this, promise, path, function_name](const Coordination::RemoveResponse & response) mutable
     {
         if (injectFailureAfterOperationPromise(function_name, promise, path))
             return;
@@ -556,7 +557,7 @@ zkutil::ZooKeeper::FutureRemove ZooKeeperWithFaultInjection::asyncTryRemoveNoThr
     }
 
     const char * function_name = __func__;
-    auto callback = [&, promise](const Coordination::RemoveResponse & response) mutable
+    auto callback = [this, promise, path, function_name](const Coordination::RemoveResponse & response) mutable
     {
         if (unlikely(fault_policy) && fault_policy->afterOperation())
         {
