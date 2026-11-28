@@ -159,7 +159,7 @@ namespace
         for (const auto & column : query.columns_list->columns->children)
         {
             auto column_declaration = boost::static_pointer_cast<ASTColumnDeclaration>(column);
-            const auto & name = column_declaration->name;
+            const String name = column_declaration->getName();
 
             if ((name == TimeSeriesColumnNames::Samples || name == TimeSeriesColumnNames::TimeSeries) && column_declaration->getType())
             {
@@ -209,13 +209,14 @@ namespace
                 continue;
             auto column_type = DataTypeFactory::instance().get(column_declaration->getType());
 
-            if (column_declaration->name == TimeSeriesColumnNames::Timestamp)
+            const String name = column_declaration->getName();
+            if (name == TimeSeriesColumnNames::Timestamp)
                 setOrCheckDataType(timestamp_type, timestamp_src, column_type, "samples inner column `timestamp`", "timestamp", table_id);
-            else if (column_declaration->name == TimeSeriesColumnNames::Value)
+            else if (name == TimeSeriesColumnNames::Value)
                 setOrCheckDataType(value_type, value_src, column_type, "samples inner column `value`", "value", table_id);
-            else if (column_declaration->name == TimeSeriesColumnNames::ID)
+            else if (name == TimeSeriesColumnNames::ID)
                 setOrCheckDataType(id_type, id_src, column_type, "samples inner column `id`", "id", table_id);
-            else if (column_declaration->name == TimeSeriesColumnNames::Samples)
+            else if (name == TimeSeriesColumnNames::Samples)
             {
                 auto [samples_timestamp_type, samples_value_type] = trySplitSamplesType(column_type, /* allow_unnamed_tuple = */ false);
                 if (!samples_timestamp_type || !samples_value_type || !isTimeSeriesGroupArraySimpleAggregate(column_type))
@@ -242,7 +243,7 @@ namespace
         for (const auto & column : inner_columns->columns->children)
         {
             auto column_declaration = boost::static_pointer_cast<ASTColumnDeclaration>(column);
-            if (column_declaration->name != TimeSeriesColumnNames::ID)
+            if (column_declaration->getName() != TimeSeriesColumnNames::ID)
                 continue;
 
             if (column_declaration->getType())
@@ -811,7 +812,7 @@ namespace
         if (inner_table_columns.columns)
         {
             auto & columns = inner_table_columns.columns->children;
-            auto has_name = [&](const ASTPtr & column) { return column->as<const ASTColumnDeclaration &>().name == column_name; };
+            auto has_name = [&](const ASTPtr & column) { return column->as<const ASTColumnDeclaration &>().getName() == column_name; };
             columns.erase(std::remove_if(columns.begin(), columns.end(), has_name), columns.end());
         }
 
@@ -913,7 +914,7 @@ namespace
             || column.getCollation() || column.getSettings() || column.null_modifier || column.primary_key_specifier)
             return false;
 
-        const auto & name = column.name;
+        const String name = column.getName();
         auto type = DataTypeFactory::instance().get(column.getType());
         auto type_name = type->getName();
 
@@ -979,11 +980,11 @@ namespace
                             return false;
 
                         /// A codec of the column itself is its inline clause or the entry `CODEC samples (...)`, which mean the same.
-                        if (codec || getCodecDeclaration(inner_table_columns, column.name))
+                        if (codec || getCodecDeclaration(inner_table_columns, name))
                             return false;
 
-                        ASTPtr timestamp_codec = getCodecDeclaration(inner_table_columns, column.name + "." + TimeSeriesColumnNames::Timestamp);
-                        ASTPtr value_codec = getCodecDeclaration(inner_table_columns, column.name + "." + TimeSeriesColumnNames::Value);
+                        ASTPtr timestamp_codec = getCodecDeclaration(inner_table_columns, name + "." + TimeSeriesColumnNames::Timestamp);
+                        ASTPtr value_codec = getCodecDeclaration(inner_table_columns, name + "." + TimeSeriesColumnNames::Value);
                         if (!timestamp_codec && !value_codec)
                             return true;
 
@@ -1145,7 +1146,7 @@ namespace
         {
             const auto & column_declaration = column->as<const ASTColumnDeclaration &>();
             if (isGeneratedInnerColumn(column_declaration, inner_table_columns, inner_table_kind, settings))
-                generated_columns.push_back(column_declaration.name);
+                generated_columns.push_back(column_declaration.getName());
         }
 
         for (const auto & name : generated_columns)
@@ -1409,7 +1410,7 @@ namespace
         if (inner_table_columns.columns)
         {
             for (auto & child : inner_table_columns.columns->children)
-                original[child->as<ASTColumnDeclaration &>().name] = child;
+                original[child->as<ASTColumnDeclaration &>().getName()] = child;
         }
 
         auto new_list = make_intrusive<ASTExpressionList>();
@@ -1426,7 +1427,7 @@ namespace
                 return nullptr;
             }
             auto decl = make_intrusive<ASTColumnDeclaration>();
-            decl->name = name;
+            decl->setName(name);
             decl->setType(std::move(type_ast));
             new_list->children.push_back(decl);
             changed = true;
@@ -1619,9 +1620,10 @@ namespace
         for (const auto & column : create_query.columns_list->columns->children)
         {
             const auto & decl = column->as<ASTColumnDeclaration &>();
-            if (decl.name == TimeSeriesColumnNames::Timestamp
-                || decl.name == TimeSeriesColumnNames::Value
-                || decl.name == TimeSeriesColumnNames::ID)
+            const String name = decl.getName();
+            if (name == TimeSeriesColumnNames::Timestamp
+                || name == TimeSeriesColumnNames::Value
+                || name == TimeSeriesColumnNames::ID)
                 return true;
         }
         return false;
@@ -1643,7 +1645,7 @@ namespace
         if (create_query.columns_list && create_query.columns_list->columns)
         {
             for (const auto & child : create_query.columns_list->columns->children)
-                outer_columns_by_name[child->as<ASTColumnDeclaration &>().name] = child;
+                outer_columns_by_name[child->as<ASTColumnDeclaration &>().getName()] = child;
         }
 
         auto type_from_outer = [&](const String & name) -> DataTypePtr
@@ -1690,7 +1692,7 @@ namespace
                     return;
                 }
                 auto decl = make_intrusive<ASTColumnDeclaration>();
-                decl->name = name;
+                decl->setName(name);
                 decl->setType(std::move(type_ast));
                 new_list->children.push_back(decl);
             };
@@ -1788,7 +1790,7 @@ namespace
 
         /// Replace the prealpha flat outer columns with a single `time_series` column.
         auto time_series_decl = make_intrusive<ASTColumnDeclaration>();
-        time_series_decl->name = TimeSeriesColumnNames::TimeSeries;
+        time_series_decl->setName(TimeSeriesColumnNames::TimeSeries);
         time_series_decl->setType(dataTypeToAST(std::make_shared<DataTypeArray>(
             std::make_shared<DataTypeTuple>(DataTypes{timestamp_type, value_type}))));
 
@@ -2368,8 +2370,8 @@ namespace
             if (!column_declaration.getType())
                 throw Exception(ErrorCodes::INCORRECT_QUERY,
                     "{}: Column {} of the inner {} table must have an explicit type",
-                    table_id.getNameForLogs(), column_declaration.name, inner_table_kind);
-            result.add(ColumnDescription{column_declaration.name, DataTypeFactory::instance().get(column_declaration.getType())});
+                    table_id.getNameForLogs(), column_declaration.getName(), inner_table_kind);
+            result.add(ColumnDescription{column_declaration.getName(), DataTypeFactory::instance().get(column_declaration.getType())});
         }
         return result;
     }

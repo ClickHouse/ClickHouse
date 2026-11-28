@@ -96,7 +96,7 @@ void TableOverrideAnalyzer::analyze(const StorageInMemoryMetadata & metadata, Re
         {
             auto * override_column = column_ast->as<ASTColumnDeclaration>();
             auto override_type = DataTypeFactory::instance().get(override_column->getType());
-            auto found = metadata.columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, override_column->name);
+            auto found = metadata.columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, override_column->getName());
             std::optional<ColumnDefaultKind> override_default_kind;
             if (override_column->default_specifier != ColumnDefaultSpecifier::Empty)
                 override_default_kind = toColumnDefaultKind(override_column->default_specifier);
@@ -108,16 +108,16 @@ void TableOverrideAnalyzer::analyze(const StorageInMemoryMetadata & metadata, Re
                 if (existing_default_kind != override_default_kind)
                     throw Exception(ErrorCodes::INVALID_TABLE_OVERRIDE,
                                     "column {}: modifying default specifier is not allowed",
-                                    backQuote(override_column->name));
+                                    backQuote(override_column->getName()));
                 result.modified_columns.push_back({found->name, override_type});
                 /// TODO: validate that the original type can be converted to the overridden type
             }
             else
             {
                 if (override_default_kind && *override_default_kind == ColumnDefaultKind::Alias)
-                    result.added_columns.push_back({override_column->name, override_type});
+                    result.added_columns.push_back({override_column->getName(), override_type});
                 else
-                    throw Exception(ErrorCodes::INVALID_TABLE_OVERRIDE, "column {}: can only add ALIAS columns", backQuote(override_column->name));
+                    throw Exception(ErrorCodes::INVALID_TABLE_OVERRIDE, "column {}: can only add ALIAS columns", backQuote(override_column->getName()));
             }
             /// TODO: validate default and materialized expressions (use checkRequiredColumns, allowing nulls)
         }

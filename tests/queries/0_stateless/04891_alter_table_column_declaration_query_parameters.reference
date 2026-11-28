@@ -1,0 +1,5 @@
+added_col	String
+id	UInt32
+added_col	UInt32
+created_col	UInt64
+CREATE TABLE t ({c:Identifier} UInt8) ENGINE = Memory

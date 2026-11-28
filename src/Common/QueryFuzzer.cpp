@@ -1757,9 +1757,9 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_li
             /// `MergeTreeData` requires the sign to be plain `Int8` - `Nullable(Int8)` and `UInt8` are both
             /// rejected - so match the type exactly the way it does.
             if (typeid_cast<const DataTypeInt8 *>(type.get()))
-                sign_candidates.push_back(column->name);
+                sign_candidates.push_back(column->getName());
             if (type->canBeUsedAsVersion())
-                version_candidates.push_back(column->name);
+                version_candidates.push_back(column->getName());
         }
 
         if (!sign_candidates.empty())
@@ -1832,7 +1832,7 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_li
                 }
                 if (column->getType() && column->default_specifier != ColumnDefaultSpecifier::Alias
                     && column->default_specifier != ColumnDefaultSpecifier::Ephemeral)
-                    key_candidates.push_back(column->name);
+                    key_candidates.push_back(column->getName());
             }
         }
 
@@ -2721,7 +2721,8 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
                 if (create.columns_list && create.columns_list->columns)
                     for (const auto & col_ast : create.columns_list->columns->children)
                         if (const auto * col = col_ast->as<ASTColumnDeclaration>())
-                            names.push_back(col->name);
+                            if (const auto name = col->getName(); !name.empty())
+                                names.push_back(name);
                 if (!names.empty() && fuzz_rand() % 4 != 0)
                     return make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, names));
                 return getRandomColumnLike();
@@ -3684,7 +3685,7 @@ void QueryFuzzer::fuzzCodecDeclarations(ASTColumns & columns_list)
     if (columns_list.columns)
         for (const auto & column_ast : columns_list.columns->children)
             if (const auto * column = column_ast->as<ASTColumnDeclaration>())
-                column_names.push_back(column->name);
+                column_names.push_back(column->getName());
 
     /// A new declaration for a column, or one of its subcolumns, so queries without any get them too
     if (!column_names.empty() && fuzz_rand() % 20 == 0)
@@ -9204,7 +9205,11 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                         /// `MODIFY COLUMN <subcolumn> CODEC(...)` and `... REMOVE CODEC` change the codec of one stream
                         if (alter_cmd->type == ASTAlterCommand::MODIFY_COLUMN && (col->getCodec() || alter_cmd->remove_property == "CODEC")
                             && fuzz_rand() % 10 == 0)
-                            fuzzCodecTarget(col->name);
+                        {
+                            String name = col->getName();
+                            fuzzCodecTarget(name);
+                            col->setName(name);
+                        }
                     }
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->first = !alter_cmd->first;

@@ -3,6 +3,7 @@
 #include <Parsers/ASTCollation.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTWithAlias.h>
@@ -70,6 +71,16 @@ ColumnDefaultKind toColumnDefaultKind(ColumnDefaultSpecifier specifier)
     }
 }
 
+String ASTColumnDeclaration::getName() const
+{
+    return getIdentifierName(getChildOrNull(NAME));
+}
+
+void ASTColumnDeclaration::setName(const String & name)
+{
+    setChild(NAME, make_intrusive<ASTIdentifier>(name));
+}
+
 void ASTColumnDeclaration::resetChild(IndexSlot slot)
 {
     UInt8 idx = getIndex(slot);
@@ -92,6 +103,8 @@ ASTPtr ASTColumnDeclaration::clone() const
     res->children.clear();
     res->packed_indices = kAllNotSet;
 
+    if (auto node = getNameIdentifier())
+        res->setName(node->clone());
     if (auto node = getType())
         res->setType(node->clone());
     if (auto node = getDefaultExpression())
@@ -117,11 +130,11 @@ ASTPtr ASTColumnDeclaration::clone() const
 
 void ASTColumnDeclaration::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    /// `name` is part of `getID`, which the default implementation hashes. The rest of the
-    /// non-child members carry meaning and must be hashed here: `x UInt8 DEFAULT 1` and
-    /// `x UInt8 MATERIALIZED 1` differ only in `default_specifier`.
+    /// The name is a child, hashed by the default implementation. The rest of the non-child members
+    /// carry meaning and must be hashed here: `x UInt8 DEFAULT 1` and `x UInt8 MATERIALIZED 1` differ
+    /// only in `default_specifier`.
     /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
-    static_assert(sizeof(void *) != 8 || sizeof(*this) == 64, "If members were added to ASTColumnDeclaration, hash them here unless they are purely cosmetic.");
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 48, "If members were added to ASTColumnDeclaration, hash them here unless they are purely cosmetic.");
     hash_state.update(default_specifier);
     hash_state.update(null_modifier.has_value());
     if (null_modifier.has_value())
@@ -137,7 +150,16 @@ void ASTColumnDeclaration::updateTreeHashImpl(SipHash & hash_state, bool ignore_
 
 void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
 {
-    format_settings.writeIdentifier(ostr, name, /*ambiguous=*/true);
+    const String name = getName();
+    if (auto name_id = getNameIdentifier(); name_id && name_id->as<ASTIdentifier>()->isParam())
+    {
+        /// A query parameter in the name position (e.g. `{name:Identifier}`) has an empty
+        /// resolved name before substitution. Format the identifier child so the parameter is
+        /// preserved and the AST formats back into a parseable query.
+        name_id->format(ostr, format_settings, state, frame);
+    }
+    else
+        format_settings.writeIdentifier(ostr, name, /*ambiguous=*/true);
 
     if (auto type = getType())
     {
@@ -221,7 +243,10 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
 void ASTColumnDeclaration::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "ColumnDeclaration");
-    w.writeString("name", name);
+    if (auto name_id = getNameIdentifier(); name_id && name_id->as<ASTIdentifier>()->isParam())
+        w.writeChild("name_identifier", name_id);
+    else
+        w.writeString("name", getName());
 
     if (default_specifier != ColumnDefaultSpecifier::Empty)
         w.writeString("default_specifier", std::string_view(toString(default_specifier)));
@@ -246,7 +271,22 @@ void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
 
-    name = r.getString("name");
+    if (r.has("name_identifier"))
+    {
+        auto name_identifier = r.readChildOfType<ASTIdentifier>("name_identifier");
+        if (!name_identifier)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`ColumnDeclaration` 'name_identifier' must not be null during AST JSON deserialization");
+        setName(std::move(name_identifier));
+    }
+    else
+    {
+        String name = r.getString("name");
+        if (name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`ColumnDeclaration` 'name' must not be empty during AST JSON deserialization");
+        setName(name);
+    }
 
     String spec = r.getString("default_specifier");
     default_specifier = columnDefaultSpecifierFromString(spec);
@@ -328,5 +368,6 @@ void ASTColumnDeclaration::forEachPointerToChild(std::function<void(IAST **, boo
     callIfSet(TTL);
     callIfSet(COLLATION);
     callIfSet(SETTINGS);
+    callIfSet(NAME);
 }
 }
