@@ -11,6 +11,7 @@ WriteBufferInlineOrBlob::WriteBufferInlineOrBlob(
     bool create_blob_if_empty_,
     CreateUnderlying create_underlying_,
     FinalizeCallback finalize_callback_,
+    SyncMetadataCallback sync_metadata_callback_,
     size_t buf_size)
     /// This is a staging buffer only: before the spill it has to hold just the inline-or-blob
     /// decision window (`max_inline_bytes`), after it the data is copied into `underlying`, which
@@ -24,6 +25,7 @@ WriteBufferInlineOrBlob::WriteBufferInlineOrBlob(
     , create_blob_if_empty(create_blob_if_empty_)
     , create_underlying(std::move(create_underlying_))
     , finalize_callback(std::move(finalize_callback_))
+    , sync_metadata_callback(std::move(sync_metadata_callback_))
 {
     if (max_inline_bytes == 0)
         spill();
@@ -63,17 +65,24 @@ void WriteBufferInlineOrBlob::finalizeImpl()
     if (!underlying)
     {
         finalize_callback(InlineData{std::move(accumulated)});
-        return;
+    }
+    else
+    {
+        const size_t bytes_written = count();
+
+        if (bytes_written == 0 && !create_blob_if_empty)
+            underlying->cancel();
+        else
+            underlying->finalize();
+
+        finalize_callback(WrittenBlob{bytes_written});
     }
 
-    const size_t bytes_written = count();
-
-    if (bytes_written == 0 && !create_blob_if_empty)
-        underlying->cancel();
-    else
-        underlying->finalize();
-
-    finalize_callback(WrittenBlob{bytes_written});
+    /// The metadata operation is now recorded with the transaction, so a sync that arrived earlier
+    /// (compact parts) has something to reach and can be honored.
+    metadata_written = true;
+    if (sync_requested && sync_metadata_callback)
+        sync_metadata_callback();
 }
 
 void WriteBufferInlineOrBlob::cancelImpl() noexcept
@@ -87,6 +96,11 @@ void WriteBufferInlineOrBlob::sync()
     next();
     if (underlying)
         underlying->sync();
+
+    /// Latch and request the metadata-file sync; honored here or by finalizeImpl once it exists.
+    sync_requested = true;
+    if (metadata_written && sync_metadata_callback)
+        sync_metadata_callback();
 }
 
 }

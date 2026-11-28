@@ -80,10 +80,11 @@ void SetLastModifiedOperation::undo()
         disk.setLastModified(path, *old_timestamp);
 }
 
-WriteFileOperation::WriteFileOperation(std::string path_, std::string data_, IDisk & disk_)
+WriteFileOperation::WriteFileOperation(std::string path_, std::string data_, IDisk & disk_, bool sync_)
     : path(std::move(path_))
     , data(std::move(data_))
     , disk(disk_)
+    , sync(sync_)
 {
 }
 
@@ -104,6 +105,10 @@ void WriteFileOperation::execute()
     auto buf = disk.writeFile(path);
     writeString(data, *buf);
     buf->finalize();
+    /// sync after finalize is a documented WriteBuffer contract, and the descriptor of a
+    /// finalized WriteBufferFromFile is still open.
+    if (sync)
+        buf->sync();
 }
 
 void WriteFileOperation::undo()
@@ -123,13 +128,14 @@ void WriteFileOperation::undo()
     }
 }
 
-UnlinkFileOperation::UnlinkFileOperation(std::string path_, bool if_exists_, bool should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
+UnlinkFileOperation::UnlinkFileOperation(std::string path_, bool if_exists_, bool should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_, bool sync_)
     : path(std::move(path_))
     , if_exists(if_exists_)
     , should_remove_objects(should_remove_objects_)
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
     , objects_to_remove(objects_to_remove_)
+    , sync(sync_)
 {
 }
 
@@ -143,7 +149,7 @@ void UnlinkFileOperation::tryUnlinkMetadataFile()
     if (ref_count > 0)
     {
         object_metadata->ref_count -= 1;
-        write_operation = std::make_unique<WriteFileOperation>(path, object_metadata->serializeToString(), disk);
+        write_operation = std::make_unique<WriteFileOperation>(path, object_metadata->serializeToString(), disk, sync);
         write_operation->execute();
     }
 
@@ -254,12 +260,13 @@ void RemoveDirectoryOperation::undo()
         disk.createDirectory(path);
 }
 
-RemoveRecursiveOperation::RemoveRecursiveOperation(std::string path_, IMetadataTransaction::ShouldRemoveObjectsPredicate should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
+RemoveRecursiveOperation::RemoveRecursiveOperation(std::string path_, IMetadataTransaction::ShouldRemoveObjectsPredicate should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_, bool sync_)
     : path(path_)
     , should_remove_objects(std::move(should_remove_objects_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
     , objects_to_remove(objects_to_remove_)
+    , sync(sync_)
 {
 }
 
@@ -273,7 +280,7 @@ void RemoveRecursiveOperation::traverseFile(const std::string & leaf)
     if (ref_count > 0)
     {
         object_metadata->ref_count -= 1;
-        write_operations.push_back(std::make_unique<WriteFileOperation>(leaf, object_metadata->serializeToString(), disk));
+        write_operations.push_back(std::make_unique<WriteFileOperation>(leaf, object_metadata->serializeToString(), disk, sync));
         write_operations.back()->execute();
     }
 
@@ -342,11 +349,12 @@ void RemoveRecursiveOperation::finalize()
         disk.removeRecursive(temp_directory_path.value());
 }
 
-CreateHardlinkOperation::CreateHardlinkOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix_, IDisk & disk_)
+CreateHardlinkOperation::CreateHardlinkOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix_, IDisk & disk_, bool sync_)
     : path_from(std::move(path_from_))
     , path_to(std::move(path_to_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
+    , sync(sync_)
 {
 }
 
@@ -357,7 +365,7 @@ void CreateHardlinkOperation::execute()
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can't create hardlink for file {}", path_from);
 
     object_metadata->ref_count += 1;
-    write_operation = std::make_unique<WriteFileOperation>(path_from, object_metadata->serializeToString(), disk);
+    write_operation = std::make_unique<WriteFileOperation>(path_from, object_metadata->serializeToString(), disk, sync);
     write_operation->execute();
 
     const bool destination_existed = disk.existsFileOrDirectory(path_to);
@@ -414,12 +422,13 @@ void MoveDirectoryOperation::undo()
     disk.moveDirectory(path_to, path_from);
 }
 
-ReplaceFileOperation::ReplaceFileOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
+ReplaceFileOperation::ReplaceFileOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_, bool sync_)
     : path_from(path_from_)
     , path_to(path_to_)
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
     , objects_to_remove(objects_to_remove_)
+    , sync(sync_)
 {
 }
 
@@ -427,7 +436,7 @@ void ReplaceFileOperation::execute()
 {
     if (disk.existsFile(path_to))
     {
-        unlink_operation = std::make_unique<UnlinkFileOperation>(path_to, /*if_exists=*/false, /*should_remove_objects=*/true, compatible_key_prefix, disk, objects_to_remove);
+        unlink_operation = std::make_unique<UnlinkFileOperation>(path_to, /*if_exists=*/false, /*should_remove_objects=*/true, compatible_key_prefix, disk, objects_to_remove, sync);
         unlink_operation->execute();
     }
 
@@ -450,11 +459,12 @@ void ReplaceFileOperation::finalize()
         unlink_operation->finalize();
 }
 
-WriteInlineDataOperation::WriteInlineDataOperation(std::string path_, std::string inline_data_, const std::string & compatible_key_prefix_, IDisk & disk_)
+WriteInlineDataOperation::WriteInlineDataOperation(std::string path_, std::string inline_data_, const std::string & compatible_key_prefix_, IDisk & disk_, bool sync_)
     : path(std::move(path_))
     , inline_data(std::move(inline_data_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
+    , sync(sync_)
 {
 }
 
@@ -463,7 +473,7 @@ void WriteInlineDataOperation::execute()
     auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk).value_or(DiskObjectStorageMetadata(disk.getPath(), path));
     object_metadata.inline_data = inline_data;
 
-    write_operation = std::make_unique<WriteFileOperation>(path, object_metadata.serializeToString(), disk);
+    write_operation = std::make_unique<WriteFileOperation>(path, object_metadata.serializeToString(), disk, sync);
     write_operation->execute();
 }
 
@@ -473,12 +483,13 @@ void WriteInlineDataOperation::undo()
         write_operation->undo();
 }
 
-RewriteFileOperation::RewriteFileOperation(std::string path_, StoredObjects objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
+RewriteFileOperation::RewriteFileOperation(std::string path_, StoredObjects objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_, bool sync_)
     : path(path_)
     , objects(std::move(objects_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
     , objects_to_remove(objects_to_remove_)
+    , sync(sync_)
 {
 }
 
@@ -488,7 +499,7 @@ void RewriteFileOperation::execute()
     object_metadata.inline_data.clear();
     removed_objects = std::exchange(object_metadata.objects, objects);
 
-    write_operation = std::make_unique<WriteFileOperation>(path, object_metadata.serializeToString(), disk);
+    write_operation = std::make_unique<WriteFileOperation>(path, object_metadata.serializeToString(), disk, sync);
     write_operation->execute();
 }
 
@@ -503,12 +514,13 @@ void RewriteFileOperation::finalize()
     objects_to_remove.append_range(std::move(removed_objects));
 }
 
-AddBlobOperation::AddBlobOperation(std::string path_, StoredObject object_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
+AddBlobOperation::AddBlobOperation(std::string path_, StoredObject object_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_, bool sync_)
     : path(path_)
     , object(std::move(object_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
     , objects_to_remove(objects_to_remove_)
+    , sync(sync_)
 {
 }
 
@@ -519,7 +531,7 @@ void AddBlobOperation::execute()
     if (object.bytes_size > 0)
         object_metadata.objects.push_back(object);
 
-    write_operation = std::make_unique<WriteFileOperation>(path, object_metadata.serializeToString(), disk);
+    write_operation = std::make_unique<WriteFileOperation>(path, object_metadata.serializeToString(), disk, sync);
     write_operation->execute();
 }
 
@@ -536,10 +548,11 @@ void AddBlobOperation::finalize()
         objects_to_remove.push_back(object);
 }
 
-SetReadonlyFileOperation::SetReadonlyFileOperation(std::string path_, const std::string & compatible_key_prefix_, IDisk & disk_)
+SetReadonlyFileOperation::SetReadonlyFileOperation(std::string path_, const std::string & compatible_key_prefix_, IDisk & disk_, bool sync_)
     : path(std::move(path_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
+    , sync(sync_)
 {
 }
 
@@ -551,7 +564,7 @@ void SetReadonlyFileOperation::execute()
 
     object_metadata->read_only = true;
 
-    write_operation = std::make_unique<WriteFileOperation>(path, object_metadata->serializeToString(), disk);
+    write_operation = std::make_unique<WriteFileOperation>(path, object_metadata->serializeToString(), disk, sync);
     write_operation->execute();
 }
 
@@ -561,12 +574,13 @@ void SetReadonlyFileOperation::undo()
         write_operation->undo();
 }
 
-TruncateMetadataFileOperation::TruncateMetadataFileOperation(std::string path_, size_t target_size_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
+TruncateMetadataFileOperation::TruncateMetadataFileOperation(std::string path_, size_t target_size_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_, bool sync_)
     : path(std::move(path_))
     , target_size(std::move(target_size_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
     , objects_to_remove(objects_to_remove_)
+    , sync(sync_)
 {
 }
 
@@ -594,7 +608,7 @@ void TruncateMetadataFileOperation::execute()
     if (current_size != target_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} can't be truncated to size {}", path, target_size);
 
-    write_operation = std::make_unique<WriteFileOperation>(path, object_metadata->serializeToString(), disk);
+    write_operation = std::make_unique<WriteFileOperation>(path, object_metadata->serializeToString(), disk, sync);
     write_operation->execute();
 }
 

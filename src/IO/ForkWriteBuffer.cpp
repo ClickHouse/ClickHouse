@@ -44,6 +44,18 @@ void ForkWriteBuffer::nextImpl()
 
 }
 
+void ForkWriteBuffer::sync()
+{
+    /// Cancellation canceled every source, and a canceled writer may have released its handle.
+    if (isCanceled())
+        return;
+
+    /// This buffer shares storage with sources.front(); next propagates our position there.
+    next();
+    for (const WriteBufferPtr & buffer : sources)
+        buffer->sync();
+}
+
 void ForkWriteBuffer::preFinalize()
 {
     WriteBuffer::preFinalize();
