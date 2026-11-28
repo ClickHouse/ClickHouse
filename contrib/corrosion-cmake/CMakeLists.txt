@@ -313,7 +313,25 @@ elseif (ENABLE_CFI)
 [profile.release.package.vortex-array]
 codegen-units = 4")
     message(STATUS "Rust release profile: one codegen unit per crate, for the CFI link")
+elseif (NOT ENABLE_THINLTO)
+    # Every codegen unit compiles its own copies of the inline and generic functions it uses.
+    # The largest crates keep more units so that none of them is the longest job of the cargo build.
+    set(RUST_RELEASE_PROFILE_EXTRA "codegen-units = 1
+
+[profile.release.package.polyglot-sql]
+codegen-units = 16
+
+[profile.release.package.vortex-array]
+codegen-units = 4
+
+[profile.release.package.perfetto_protos]
+codegen-units = 4
+
+[profile.release.package.chdig]
+codegen-units = 4")
+    message(STATUS "Rust release profile: optimized")
 else()
+    # ThinLTO keeps the default number of codegen units: fewer units make its cargo build slower.
     set(RUST_RELEASE_PROFILE_EXTRA "")
     message(STATUS "Rust release profile: optimized")
 endif()
