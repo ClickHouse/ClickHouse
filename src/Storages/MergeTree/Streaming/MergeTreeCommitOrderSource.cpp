@@ -172,8 +172,11 @@ IProcessor::Status MergeTreeCommitOrderSource::handleReconfiguration(const Class
 {
     auto & output = outputs.front();
 
+    /// The output can be closed by another thread after the check in `prepare`. It has to be handled in the same way:
+    /// a bounded read for an incremental refresh reports its cursor there, and the processor is not prepared again
+    /// after it returns `Finished`.
     if (output.isFinished())
-        return Status::Finished;
+        return handleShutdown();
 
     if (pending_round.has_value())
         return Status::UpdatePipeline;
