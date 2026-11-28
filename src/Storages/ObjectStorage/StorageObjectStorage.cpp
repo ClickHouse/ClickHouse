@@ -11,6 +11,8 @@
 #include <Common/parseGlobs.h>
 #include <Core/LogsLevel.h>
 #include <Core/Settings.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <QueryPipeline/Pipe.h>
@@ -100,6 +102,30 @@ namespace
 bool isPathRefusedByReader(int code)
 {
     return code == ErrorCodes::BAD_ARGUMENTS || code == ErrorCodes::CANNOT_COMPILE_REGEXP;
+}
+
+/// A schema loaded from the data lake has only names and types: the `DEFAULT`s, comments and constraints are in `declared`.
+void keepDeclaredDefinition(const StorageInMemoryMetadata & declared, StorageInMemoryMetadata & metadata)
+{
+    const auto & declared_columns = declared.getColumns();
+    ColumnsDescription columns = metadata.getColumns();
+    for (const auto & column : metadata.getColumns())
+    {
+        const auto * declared_column = declared_columns.tryGet(column.name);
+        if (!declared_column)
+            continue;
+
+        columns.modify(column.name, [&](ColumnDescription & description)
+        {
+            const auto & declared_default = declared_column->default_desc;
+            if (declared_default.kind == ColumnDefaultKind::Default && declared_default.expression)
+                description.default_desc = declared_default;
+            description.comment = declared_column->comment;
+        });
+    }
+    metadata.setColumns(std::move(columns));
+    metadata.setConstraints(declared.getConstraints());
+    metadata.setComment(declared.comment);
 }
 
 }
@@ -429,6 +455,7 @@ StorageObjectStorage::StorageObjectStorage(
 
     metadata.setVirtuals(createVirtualColumns(metadata.columns, sample_path, context));
 
+    declared_metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata));
     setInMemoryMetadata(metadata);
 }
 
@@ -503,9 +530,40 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    auto query_context = CurrentThread::tryGetQueryContext();
+    auto in_memory_metadata = getInMemoryMetadataPtr(query_context, false);
+    auto metadata_snapshot = getMetadataForRead(in_memory_metadata, query_context);
     return metadata_snapshot->getColumnsWithoutDefaultExpressions(
         /*exclude=*/ hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path);
+}
+
+StorageSnapshotPtr StorageObjectStorage::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+{
+    return std::make_shared<StorageSnapshot>(*this, getMetadataForRead(metadata_snapshot, query_context));
+}
+
+StorageMetadataPtr StorageObjectStorage::getMetadataForRead(const StorageMetadataPtr & metadata, const ContextPtr & context) const
+{
+    if (!metadata || (!metadata->getColumns().hasDefaults() && metadata->getConstraints().empty()) || !readsIgnoreDeclaredDefinition(context))
+        return metadata;
+
+    auto read_metadata = std::make_shared<StorageInMemoryMetadata>(*metadata);
+    ColumnsDescription columns = read_metadata->getColumns();
+    for (const auto & column : read_metadata->getColumns())
+        if (column.default_desc.kind == ColumnDefaultKind::Default && column.default_desc.expression)
+            columns.modify(column.name, [](ColumnDescription & description) { description.default_desc = {}; });
+    read_metadata->setColumns(std::move(columns));
+    read_metadata->setConstraints({});
+    return read_metadata;
+}
+
+/// A read with the schema reloaded from the data lake takes the values the lake has: the declared `DEFAULT`s and constraints are for writes.
+bool StorageObjectStorage::readsIgnoreDeclaredDefinition(const ContextPtr & context) const
+{
+    if (!context || !configuration->isDataLakeConfiguration())
+        return false;
+    configuration->lazyInitializeIfNeeded(object_storage, context);
+    return configuration->shouldReloadSchemaForConsistency(context);
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
@@ -687,7 +745,10 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     if (configuration->shouldReloadSchemaForConsistency(query_context))
     {
         if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, query_context))
+        {
             new_metadata = *metadata_snapshot;
+            keepDeclaredDefinition(*declared_metadata.get(), new_metadata);
+        }
     }
 
     auto metadata_with_virtuals = new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
@@ -700,6 +761,18 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     auto latest_metadata = getInMemoryMetadataPtr(query_context, false);
     metadata_with_virtuals.settings_changes = latest_metadata->settings_changes;
     setInMemoryMetadata(metadata_with_virtuals);
+}
+
+void StorageObjectStorage::updateExternalDynamicMetadataForAlter(ContextPtr context)
+{
+    if (!configuration->isDataLakeConfiguration())
+        return;
+
+    /// A query pinned to an older snapshot publishes the schema of that snapshot instead of the declared columns.
+    const auto metadata = getInMemoryMetadataPtr(context, false);
+    const auto declared = declared_metadata.get();
+    if (!std::ranges::equal(metadata->getColumns().getAllPhysical(), declared->getColumns().getAllPhysical()))
+        updateExternalDynamicMetadataIfExists(context);
 }
 
 
@@ -1442,6 +1515,18 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
         return;
     }
 
+    /// `alterTable` below validates the new definition only after the data lake is changed.
+    if (!catalog)
+    {
+        auto create_query = DatabaseCatalog::instance().getDatabase(storage_id.database_name)->getCreateTableQuery(storage_id.table_name, context);
+        applyMetadataChangesToCreateQuery(create_query, metadata_to_store, context);
+        auto ref_dependencies = getDependenciesFromCreateQuery(
+            context->getGlobalContext(), storage_id.getQualifiedName(), create_query, context->getCurrentDatabase());
+        auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), storage_id.getQualifiedName(), create_query);
+        DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(
+            storage_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
+    }
+
     configuration->alter(object_storage, params, context, getStorageID(), catalog);
 
     if (catalog)
@@ -1452,6 +1537,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
         ->alterTable(context, storage_id, metadata_to_store, /*validate_new_create_query=*/true);
     data_lake_partition_by = new_data_lake_partition_by;
     data_lake_order_by = new_data_lake_order_by;
+    declared_metadata.set(std::make_unique<StorageInMemoryMetadata>(new_metadata));
     setInMemoryMetadata(new_metadata);
 }
 void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context)

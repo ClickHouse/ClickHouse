@@ -245,7 +245,7 @@ public:
     void checkAlterIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const AlterCommands & commands) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        getMetadata()->checkAlterIsPossible(commands);
+        getMetadata()->checkAlterIsPossible(commands, context);
     }
 
     void checkAlterPartitionIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const PartitionCommands & commands) override
