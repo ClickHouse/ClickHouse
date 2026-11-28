@@ -1966,7 +1966,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// rows from them, so the fast path is disabled for any attached deletes. This also
     /// covers the count-from-cache shortcut below: a cached per-file row count is keyed only
     /// by path + mtime, both untouched by delete files, so it must not be used either.
-    need_only_count = need_only_count && !hasAttachedDeletes(*object_info) && !read_from_format_info.requested_virtual_columns.contains("_headers");
+    need_only_count = need_only_count && !hasAttachedDeletes(*object_info);
 
     /// The count-from-cache shortcut builds a `ConstChunkGenerator` without opening the read buffer, so a
     /// requested `_headers` virtual column (the HTTP response headers of the data `GET`) would have to fall
@@ -1997,7 +1997,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     else
     {
         const auto format_name = object_info->getFileFormat().value_or(configuration->format);
-        const bool input_format_does_not_read_file = Poco::toLower(format_name) == "one";
+        const String format_name_lower = Poco::toLower(format_name);
+        const bool input_format_does_not_read_file = format_name_lower == "one";
+        /// An `ORC` count reads the footer from storage when `_headers` is requested, so the data
+        /// `GET` supplies the headers even when the reader skips all stripes.
+        if (headers_requested && format_name_lower != "orc")
+            need_only_count = false;
 
         row_lineage_columns = getMaterializedRowLineageColumns(*object_info, read_from_format_info, format_name);
 
@@ -2026,7 +2031,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             read_buf = createReadBuffer(
                 object_info->relative_path_with_metadata, object_storage, context_, log,
                 read_settings, !headers_requested,
-                /*prepare_orc_metadata_cache=*/ Poco::toLower(format_name) == "orc"
+                /*prepare_orc_metadata_cache=*/ format_name_lower == "orc"
                     && context_->getSettingsRef()[Setting::use_orc_metadata_cache] && !headers_requested);
         }
 
@@ -2326,7 +2331,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         logIcebergFileStats(object_info, log);
 
-        const String format_name_lower = Poco::toLower(format_name);
         const bool use_metadata_cache = object_info->getObjectMetadata()->isEtagUsableAsCacheKey()
             && !headers_requested
             && ((format_name_lower == "parquet" && context_->getSettingsRef()[Setting::use_parquet_metadata_cache])

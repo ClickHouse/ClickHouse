@@ -16,6 +16,7 @@ trap 'kill "$http_pid" 2>/dev/null || true; wait "$http_pid" 2>/dev/null || true
 ${CLICKHOUSE_CLIENT} --query "SELECT number AS id FROM numbers(10) FORMAT ORC" > "${work_dir}/small.orc"
 ${CLICKHOUSE_CLIENT} --query "SELECT number AS id FROM numbers(20) FORMAT ORC" > "${work_dir}/large.orc"
 ${CLICKHOUSE_CLIENT} --query "SELECT number + 100 AS id FROM numbers(10) FORMAT ORC" > "${work_dir}/changed.orc"
+${CLICKHOUSE_CLIENT} --query "SELECT sipHash64(number) AS id FROM numbers(131072) FORMAT ORC SETTINGS output_format_orc_compression_method = 'none'" > "${work_dir}/headers.orc"
 cp "${work_dir}/small.orc" "${work_dir}/weak.orc"
 
 python3 -u - "${work_dir}" <<'PY' &
@@ -87,7 +88,7 @@ class Handler(BaseHTTPRequestHandler):
             data = b'<a href="f.orc">f.orc</a>'
             etag = None
         elif self.path == '/headers/f.orc':
-            data = (work_dir / 'small.orc').read_bytes()
+            data = (work_dir / 'headers.orc').read_bytes()
             etag = '"headers-etag"'
         else:
             self.send_error(404)
@@ -102,6 +103,9 @@ class Handler(BaseHTTPRequestHandler):
             content_range = f'bytes {begin}-{end}/{len(data)}'
             data = data[begin:end + 1]
             status = 206
+        if include_body and self.path == '/headers/f.orc':
+            with (work_dir / 'get_bytes').open('a') as counts:
+                print(len(data), file=counts)
         self.send_response(status)
         self.send_header('Content-Length', str(len(data)))
         self.send_header('Accept-Ranges', 'bytes')
@@ -147,7 +151,8 @@ done
 [[ -s "${work_dir}/ports" ]]
 read -r first_port second_port < "${work_dir}/ports"
 
-settings="use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, optimize_count_from_files = 0, use_page_cache_for_object_storage = 0, allow_url_wildcard_from_index_pages = 1, http_max_tries = 1"
+common_settings="use_cache_for_count_from_files = 0, use_page_cache_for_object_storage = 0, allow_url_wildcard_from_index_pages = 1, http_max_tries = 1"
+settings="${common_settings}, use_orc_metadata_cache = 1, optimize_count_from_files = 0"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ORC METADATA CACHE"
 for port in "$first_port" "$second_port"; do
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${port}/data/*.orc', 'ORC', 'id UInt64') SETTINGS ${settings}"
@@ -157,8 +162,16 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_
 cp "${work_dir}/large.orc" "${work_dir}/weak.orc"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/weak/*.orc', 'ORC', 'id UInt64') SETTINGS ${settings}"
 
-${CLICKHOUSE_CLIENT} --query "SELECT count(), any(_headers['X-Method']) FROM url('http://127.0.0.1:${first_port}/headers/*.orc', 'ORC', 'id UInt64') SETTINGS ${settings}, remote_filesystem_read_prefetch = 0"
-${CLICKHOUSE_CLIENT} --query "SELECT count(), any(_headers['X-Method']) FROM url('http://127.0.0.1:${first_port}/headers/*.orc', 'ORC', 'id UInt64') SETTINGS ${settings}, remote_filesystem_read_prefetch = 0"
+headers_source="url('http://127.0.0.1:${first_port}/headers/*.orc', 'ORC', 'id UInt64')"
+for cache in 0 1; do
+    count_settings="${common_settings}, use_orc_metadata_cache = ${cache}, optimize_count_from_files = 1, remote_filesystem_read_prefetch = 0, max_threads = 1"
+    # Prime the footer when caching is enabled. The following query still needs a data `GET` for `_headers`.
+    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${headers_source} SETTINGS ${count_settings}"
+    : > "${work_dir}/get_bytes"
+    ${CLICKHOUSE_CLIENT} --query "SELECT count(), any(_headers['X-Method']) FROM ${headers_source} SETTINGS ${count_settings}"
+    # Allow room for the 16 KiB footer probe while catching a scan of the 1 MiB data column.
+    awk '{ total += $1 } END { if (total == 0 || total > 65536) { print "Unexpected ORC GET bytes:", total + 0; exit 1 } }' "${work_dir}/get_bytes"
+done
 
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/redirect/*.orc', 'ORC', 'id UInt64') SETTINGS ${settings}, max_http_get_redirects = 1"
 
