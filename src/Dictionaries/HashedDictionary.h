@@ -18,7 +18,7 @@
 
 #include <Common/ArenaUtils.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
@@ -394,17 +394,15 @@ HashedDictionary<dictionary_key_type, sparse>::~HashedDictionary()
         if (container.empty())
             return;
 
-        if (!pool.trySchedule([&container, thread_group = getCurrentThreadGroup()]
+        if (!pool.trySchedule(attachedJob(ThreadName::HASHED_DICT_DTOR, [&container]
             {
-                ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_DTOR);
-
                 /// Do not account memory that was occupied by the dictionaries for the query/user context.
-                MemoryTrackerBlockerInThread memory_blocker;
+                ServerOwnedMemoryScope memory_blocker;
 
                 clearContainer(container);
-            }))
+            })))
         {
-            MemoryTrackerBlockerInThread memory_blocker;
+            ServerOwnedMemoryScope memory_blocker;
             clearContainer(container);
         }
 

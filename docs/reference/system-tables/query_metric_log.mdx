@@ -145,6 +145,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_TimeSeriesMetricFamiliesDeduplicationCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of rows written to the metric families tables of TimeSeries tables after they were not found in the deduplication cache.
 - `ProfileEvent_TimeSeriesTagsDeduplicationCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of rows not written to the tags tables of TimeSeries tables because the deduplication cache already had them or the same insert had already written them.
 - `ProfileEvent_TimeSeriesTagsDeduplicationCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of rows written to the tags tables of TimeSeries tables after they were not found in the deduplication cache.
+- `ProfileEvent_PrometheusRemoteWriteDroppedExemplars` ([UInt64](/reference/data-types/int-uint)) — Number of exemplars received through the Prometheus remote-write protocol and dropped because the TimeSeries table does not store exemplars. They are counted only when the write is stored, for an async insert when its flush succeeds.
 - `ProfileEvent_IcebergMetadataReadWaitTimeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time data readers spend waiting for iceberg metadata files to be read and parsed, summed across all reader threads.
 - `ProfileEvent_ParquetMetadataCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times parquet metadata has been found in the cache.
 - `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times parquet metadata has not been found in the cache and had to be read from disk.
@@ -978,6 +979,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ReadBufferFromAzureInitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent initializing connection to Azure.
 - `ProfileEvent_ReadBufferFromAzureBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes read from Azure.
 - `ProfileEvent_ReadBufferFromAzureRequestsErrors` ([UInt64](/reference/data-types/int-uint)) — Number of exceptions while reading from Azure
+- `ProfileEvent_WriteBufferFromAzureBytes` ([UInt64](/reference/data-types/int-uint)) — Bytes written to Azure.
 - `ProfileEvent_CachedReadBufferReadFromCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times the read from filesystem cache hit the cache.
 - `ProfileEvent_CachedReadBufferReadFromCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times the read from filesystem cache miss the cache.
 - `ProfileEvent_CachedReadBufferReadFromSourceMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time reading from filesystem cache source (from remote filesystem, etc)

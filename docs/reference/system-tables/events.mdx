@@ -5148,6 +5148,10 @@ Number of times an entry has been found in the primary index cache, so we didn't
 
 Number of times an entry has not been found in the primary index cache, so we had to load an index file in memory, which is a costly operation, adding to query latency.
 
+### PrometheusRemoteWriteDroppedExemplars {#prometheusremotewritedroppedexemplars}
+
+Number of exemplars received through the Prometheus remote-write protocol and dropped because the TimeSeries table does not store exemplars. They are counted only when the write is stored, for an async insert when its flush succeeds.
+
 ### QueriesWithSubqueries {#querieswithsubqueries}
 
 Count queries with all subqueries
@@ -7395,6 +7399,10 @@ Time spent executing WebAssembly code
 ### WasmTotalExecuteMicroseconds {#wasmtotalexecutemicroseconds}
 
 Time spent executing WebAssembly code
+
+### WriteBufferFromAzureBytes {#writebufferfromazurebytes}
+
+Bytes written to Azure.
 
 ### WriteBufferFromFileDescriptorWrite {#writebufferfromfiledescriptorwrite}
 

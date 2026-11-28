@@ -700,7 +700,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     return true;
 }
 
-void collectAppliedJoinRuntimeFilters(const Stack & stack)
+namespace
+{
+
+void collectAppliedJoinRuntimeFiltersImpl(const Stack & stack, const NameSet * delivered_filter_ids)
 {
     const auto & frame = stack.back();
 
@@ -708,6 +711,24 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
     auto * object_storage_read_step = typeid_cast<ReadFromObjectStorageStep *>(frame.node->step.get());
     if (!read_step && !object_storage_read_step)
         return;
+
+    auto register_filter = [delivered_filter_ids, read_step, object_storage_read_step](const RuntimeFilterIndexAnalysisDescriptor & descr)
+    {
+        if (delivered_filter_ids && !delivered_filter_ids->contains(descr.filter_id))
+            return;
+        if (read_step)
+            read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
+        else if (object_storage_read_step && !descr.is_global_row_index)
+            object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
+    };
+
+    if (delivered_filter_ids)
+    {
+        const auto & source_step = *static_cast<const SourceStepWithFilter *>(frame.node->step.get());
+        if (const auto & prewhere_info = source_step.getPrewhereInfo())
+            for (const auto & descr : findAppliedRuntimeFilters(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name))
+                register_filter(descr);
+    }
 
     /// Walk up from the reading step composing the filters through the expression steps,
     /// exactly like optimizePrimaryKeyConditionAndLimit does for the index analysis, so a
@@ -725,12 +746,7 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
                 filter_dag = ActionsDAG::merge((*it)->clone(), std::move(filter_dag));
 
             for (const auto & descr : findAppliedRuntimeFilters(filter_dag, filter_step->getFilterColumnName()))
-            {
-                if (read_step)
-                    read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
-                else if (object_storage_read_step && !descr.is_global_row_index)
-                    object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
-            }
+                register_filter(descr);
         }
         else if (const auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
         {
@@ -742,6 +758,19 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
         else
             break;
     }
+}
+
+}
+
+void collectAppliedJoinRuntimeFilters(const Stack & stack)
+{
+    collectAppliedJoinRuntimeFiltersImpl(stack, nullptr);
+}
+
+void collectDeliveredJoinRuntimeFilters(QueryPlan::Node & root, const NameSet & delivered_filter_ids)
+{
+    Stack stack;
+    traverseQueryPlan(stack, root, [&](auto &) { collectAppliedJoinRuntimeFiltersImpl(stack, &delivered_filter_ids); });
 }
 
 }
