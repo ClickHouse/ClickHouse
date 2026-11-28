@@ -59,10 +59,16 @@ void sortAndKeepTop(Container & container, size_t limit, Compare compare)
     std::sort(container.begin(), container.end(), compare);
 }
 
-/// Static default format settings to avoid creating it every time.
+/// Static format settings to avoid creating it every time.
 const FormatSettings & getFormatSettings()
 {
-    static const FormatSettings settings;
+    static const FormatSettings settings = []
+    {
+        FormatSettings result;
+        /// Values in the shared variant are in the column binary form, also when written or read as a `Field`.
+        result.binary.aggregate_function_field_as_column = true;
+        return result;
+    }();
     return settings;
 }
 
