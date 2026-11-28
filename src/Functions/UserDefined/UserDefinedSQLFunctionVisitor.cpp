@@ -9,6 +9,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
@@ -36,6 +37,7 @@ namespace Setting
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int UNKNOWN_IDENTIFIER;
 extern const int UNSUPPORTED_METHOD;
 }
 
@@ -82,6 +84,38 @@ bool isVariadic(const ASTPtr & arg)
 {
     return arg->as<ASTAsterisk>() || arg->as<ASTQualifiedAsterisk>() || arg->as<ASTColumnsRegexpMatcher>()
         || arg->as<ASTColumnsListMatcher>() || arg->as<ASTQualifiedColumnsRegexpMatcher>() || arg->as<ASTQualifiedColumnsListMatcher>();
+}
+
+/// `EXCEPT (a, b)` and `t.COLUMNS(a, b)` match column names, their identifiers are not parameters.
+bool isColumnNameList(const IAST & parent, const IAST & child)
+{
+    if (child.as<ASTColumnsExceptTransformer>())
+        return true;
+    const auto * matcher = parent.as<ASTQualifiedColumnsListMatcher>();
+    return matcher && &child == matcher->column_list.get();
+}
+
+/// `QueryTreeBuilder` reads each `COLUMNS(a, b)` entry as an identifier.
+void throwIfColumnsListHasNonIdentifier(const IAST & ast, const String & function_name)
+{
+    StackWithMemoryTracking<const IAST *> nodes;
+    nodes.push(&ast);
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.top();
+        nodes.pop();
+        if (const auto * matcher = node->as<ASTColumnsListMatcher>(); matcher && matcher->column_list)
+        {
+            for (const auto & column : matcher->column_list->children)
+                if (!column->as<ASTIdentifier>())
+                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                        "Identifier inside COLUMNS matcher must resolve into a column, but the expansion of SQL function {} puts {} there",
+                        function_name, column->formatForErrorMessage());
+        }
+        for (const auto & child : node->children)
+            if (child)
+                nodes.push(child.get());
+    }
 }
 }
 
@@ -186,11 +220,16 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
 
         for (auto & child : ast_node_to_update->children)
         {
-            if (auto * inner_function = child->as<ASTFunction>())
+            if (isColumnNameList(*ast_node_to_update, *child))
+                continue;
+
+            /// An expansion can return its argument unexpanded, which may be a SQL UDF call too.
+            while (const auto * inner_function = child->as<ASTFunction>())
             {
                 auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process, context_);
-                if (replace_result)
-                    child = replace_result;
+                if (!replace_result)
+                    break;
+                child = replace_result;
             }
 
             auto identifier_name_opt = tryGetIdentifierName(child);
@@ -217,6 +256,10 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     udf_in_replace_process.erase(it);
 
     function_body_to_update = expression_list->children[0];
+
+    /// Nested calls are expanded by the outermost one, so only it sees the final `COLUMNS` lists.
+    if (udf_in_replace_process.empty())
+        throwIfColumnsListHasNonIdentifier(*function_body_to_update, function.name);
 
     auto function_alias = function.tryGetAlias();
 

@@ -4,6 +4,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -284,8 +285,10 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
     }
     else if (!node->as<ASTSelectQuery>())
     {
+        /// `t.COLUMNS(a, b)` lists column names, not expressions.
+        const auto * qualified_columns = node->as<ASTQualifiedColumnsListMatcher>();
         for (auto & child : node->children)
-            if (needVisitChild(child))
+            if (needVisitChild(child) && !(qualified_columns && child == qualified_columns->column_list))
                 visit(child, data);
     }
 }
