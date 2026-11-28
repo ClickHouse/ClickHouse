@@ -1,0 +1,14 @@
+--- From the sizes of the columns
+d: 1
+dec: 1
+k: 3000
+n: 1
+s: 2
+sid: 300
+--- Without: 10% of the rows, except k, from the range of its bounds
+d: 300
+dec: 300
+k: 3000
+n: 300
+s: 300
+sid: 300
