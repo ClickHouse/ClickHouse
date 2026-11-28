@@ -7304,6 +7304,17 @@ If enabled, schema is reloaded from the DeltaLake metadata before each query exe
 consistency between the schema used during query analysis and the schema used during execution.
 )", 0, \
         {"26.3", false, false, "New setting to control whether DeltaLake reloads schema before each query for consistency."}) \
+    DECLARE(Bool, use_delta_lake_metadata_cache, false, R"(
+If turned on, the `DeltaLake` table engine and table functions keep the scan metadata of each version of a table (the data files with their statistics and partition values) in the Delta Lake metadata cache, so that the queries to the same version do not replay the log again.
+
+The scan metadata of a version is listed without the filter of a query, and delta-kernel applies the filter of each query to it, skipping the files by their statistics and partition values as without the cache.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0, \
+        {"26.12", false, false, "New setting."}) \
     DECLARE(IcebergMetadataLogLevel, iceberg_metadata_log_level, IcebergMetadataLogLevel::None, R"(
 Controls the level of metadata logging for Iceberg tables to system.iceberg_metadata_log.
 Usually this setting can be modified for debugging purposes.

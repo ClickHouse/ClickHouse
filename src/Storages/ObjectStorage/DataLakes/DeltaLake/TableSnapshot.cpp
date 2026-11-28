@@ -3,6 +3,7 @@
 #if USE_DELTA_KERNEL_RS
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeMetadataCache.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
 #include <Core/ColumnWithTypeAndName.h>
@@ -49,6 +50,7 @@ namespace DB::Setting
     extern const SettingsInt64 delta_lake_snapshot_version;
     extern const SettingsBool delta_lake_throw_on_engine_predicate_error;
     extern const SettingsBool delta_lake_enable_engine_predicate;
+    extern const SettingsBool use_delta_lake_metadata_cache;
 }
 
 namespace ProfileEvents
@@ -61,6 +63,7 @@ namespace ProfileEvents
 namespace DB::FailPoints
 {
     extern const char delta_kernel_force_stale_token_error[];
+    extern const char delta_lake_metadata_callback_throw[];
 }
 
 namespace DeltaLake
@@ -74,6 +77,67 @@ namespace
 bool hasDeletionVector(::SharedDvInfo * dv_info_ptr)
 {
     return dv_info_ptr && ::dv_info_has_vector(dv_info_ptr);
+}
+
+std::shared_ptr<CachedScanMetadata> buildCachedScanMetadata(
+    ::SharedSnapshot * snapshot,
+    ::SharedExternEngine * engine,
+    size_t version,
+    const std::function<bool()> & is_cancelled)
+{
+    using KernelScan = KernelPointerWrapper<::SharedScan, ::free_scan>;
+    using KernelScanMetadataIterator = KernelPointerWrapper<::SharedScanMetadataIterator, ::free_scan_metadata_iter>;
+    using KernelExclusiveCachedScanMetadata
+        = KernelPointerWrapper<::ExclusiveCachedScanMetadata, ::free_exclusive_cached_scan_metadata>;
+
+    KernelScan scan(KernelUtils::unwrapResult(::scan_for_cached_scan_metadata(snapshot, engine), "scan_for_cached_scan_metadata"));
+    KernelScanMetadataIterator scan_metadata_iterator(
+        KernelUtils::unwrapResult(::scan_metadata_iter_init(engine, scan.get()), "scan_metadata_iter_init"));
+
+    struct Builder
+    {
+        KernelExclusiveCachedScanMetadata cached;
+        ::SharedExternEngine * engine;
+        std::exception_ptr exception;
+    };
+    Builder builder{KernelExclusiveCachedScanMetadata(::cached_scan_metadata_new(version)), engine, {}};
+
+    while (!is_cancelled())
+    {
+        const bool have_scan_metadata = KernelUtils::unwrapResult(
+            ::scan_metadata_next(
+                scan_metadata_iterator.get(),
+                &builder,
+                [](void * context, ::SharedScanMetadata * scan_metadata)
+                {
+                    auto * current = static_cast<Builder *>(context);
+                    SCOPE_EXIT({ ::free_scan_metadata(scan_metadata); });
+                    try
+                    {
+                        auto * cached = current->cached.get();
+                        const size_t num_files = KernelUtils::unwrapResult(
+                            ::cached_scan_metadata_add(&cached, scan_metadata, current->engine), "cached_scan_metadata_add");
+                        ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles, num_files);
+                    }
+                    catch (...)
+                    {
+                        current->exception = std::current_exception();
+                    }
+                }),
+            "scan_metadata_next");
+
+        if (builder.exception)
+            std::rethrow_exception(builder.exception);
+
+        if (!have_scan_metadata)
+            return std::make_shared<CachedScanMetadata>(::cached_scan_metadata_finish(builder.cached.release()));
+    }
+    return nullptr;
+}
+
+bool fitsIntoMetadataCache(const CachedScanMetadata & scan_metadata, const DB::DeltaLakeMetadataCache & metadata_cache)
+{
+    return DB::DeltaLakeMetadataCacheWeightFunction{}(scan_metadata) <= metadata_cache.maxSizeInBytes();
 }
 
 }
@@ -116,6 +180,9 @@ public:
         bool enable_engine_predicate_,
         DB::ContextPtr query_context_,
         UpdateStatsFunc update_stats_func_,
+        DB::DeltaLakeMetadataCachePtr metadata_cache_,
+        String metadata_cache_key_,
+        CachedScanMetadataPtr cached_scan_metadata_,
         LoggerPtr log_)
         : DB::WithContext(query_context_)
         , kernel_snapshot_state(kernel_snapshot_state_)
@@ -132,6 +199,9 @@ public:
         , throw_on_engine_predicate_error(throw_on_engine_predicate_error_)
         , enable_engine_predicate(enable_engine_predicate_)
         , update_stats_func(update_stats_func_)
+        , metadata_cache(std::move(metadata_cache_))
+        , metadata_cache_key(std::move(metadata_cache_key_))
+        , cached_scan_metadata(std::move(cached_scan_metadata_))
     {
         if (filter_)
         {
@@ -224,9 +294,15 @@ public:
                 "scan");
         }
 
-        scan_data_iterator = KernelUtils::unwrapResult(
-            ::scan_metadata_iter_init(kernel_snapshot_state->engine.get(), scan.get()),
-            "scan_metadata_iter_init");
+        if (cached_scan_metadata)
+            scan_data_iterator = KernelUtils::unwrapResult(
+                ::scan_metadata_iter_init_from_cached(
+                    kernel_snapshot_state->engine.get(), scan.get(), cached_scan_metadata->handle.get()),
+                "scan_metadata_iter_init_from_cached");
+        else
+            scan_data_iterator = KernelUtils::unwrapResult(
+                ::scan_metadata_iter_init(kernel_snapshot_state->engine.get(), scan.get()),
+                "scan_metadata_iter_init");
     }
 
     /// One-shot retry on stale-credentials errors. Safe only when no files have been
@@ -301,6 +377,20 @@ public:
             {
                 try
                 {
+                    if (metadata_cache && !cached_scan_metadata)
+                    {
+                        auto built = buildCachedScanMetadata(
+                            kernel_snapshot_state->snapshot.get(),
+                            kernel_snapshot_state->engine.get(),
+                            kernel_snapshot_state->snapshot_version,
+                            [this] { return shutdown.load(); });
+                        if (!built)
+                            return;
+                        if (fitsIntoMetadataCache(*built, *metadata_cache))
+                            metadata_cache->set(metadata_cache_key, built);
+                        cached_scan_metadata = std::move(built);
+                    }
+
                     initScanState();
 
                     LOG_TEST(log, "Starting iterator loop (predicate exception: {})", bool(engine_predicate_exception));
@@ -671,6 +761,9 @@ private:
     const bool throw_on_engine_predicate_error;
     const bool enable_engine_predicate;
     const UpdateStatsFunc update_stats_func;
+    const DB::DeltaLakeMetadataCachePtr metadata_cache;
+    const String metadata_cache_key;
+    CachedScanMetadataPtr cached_scan_metadata;
 
     std::exception_ptr scan_exception;
     std::exception_ptr engine_predicate_exception;
@@ -723,7 +816,26 @@ size_t TableSnapshot::getVersionUnlocked() const
     return getKernelSnapshotState()->snapshot_version;
 }
 
-TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats() const
+std::string TableSnapshot::getTableId() const
+{
+    std::lock_guard lock(mutex);
+    return getKernelSnapshotState()->table_id;
+}
+
+std::pair<DB::DeltaLakeMetadataCachePtr, String>
+TableSnapshot::getMetadataCache(const DB::ContextPtr & context, const KernelSnapshotState & state) const
+{
+    if (!context->getSettingsRef()[DB::Setting::use_delta_lake_metadata_cache])
+        return {};
+    auto metadata_cache = context->getDeltaLakeMetadataCache();
+    if (!metadata_cache || !metadata_cache->maxSizeInBytes())
+        return {};
+    auto key = DB::DeltaLakeMetadataCache::makeKey(
+        object_storage->getDescription(), helper->getTableLocation(), state.table_id, state.snapshot_version);
+    return {std::move(metadata_cache), std::move(key)};
+}
+
+TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats(const DB::ContextPtr & context) const
 {
     if (snapshot_stats.has_value())
         return snapshot_stats.value();
@@ -731,7 +843,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats() const
     const auto pre_fingerprint = kernel_state_credentials_fingerprint;
     try
     {
-        snapshot_stats = getSnapshotStatsImpl();
+        snapshot_stats = getSnapshotStatsImpl(context);
     }
     catch (const DB::Exception & e)
     {
@@ -741,7 +853,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats() const
         /// freshened credentials, then re-run the stats scan against the new engine.
         kernel_snapshot_state.reset();
         initOrUpdateSnapshot();
-        snapshot_stats = getSnapshotStatsImpl();
+        snapshot_stats = getSnapshotStatsImpl(context);
     }
     LOG_TEST(
         log, "Updated statistics for snapshot version {}",
@@ -749,9 +861,24 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats() const
     return snapshot_stats.value();
 }
 
-TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
+TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::ContextPtr & context) const
 {
     auto state = getKernelSnapshotState();
+
+    CachedScanMetadataPtr cached_scan_metadata;
+    auto [metadata_cache, metadata_cache_key] = getMetadataCache(context, *state);
+    if (metadata_cache)
+    {
+        cached_scan_metadata = metadata_cache->get(metadata_cache_key);
+        if (!cached_scan_metadata)
+        {
+            auto built = buildCachedScanMetadata(
+                state->snapshot.get(), state->engine.get(), state->snapshot_version, [] { return false; });
+            if (fitsIntoMetadataCache(*built, *metadata_cache))
+                metadata_cache->set(metadata_cache_key, built);
+            cached_scan_metadata = std::move(built);
+        }
+    }
 
     KernelScan fallback_scan;
     fallback_scan = KernelUtils::unwrapResult(
@@ -763,10 +890,15 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
         "scan");
 
     KernelScanMetadataIterator fallback_scan_data_iterator;
-    fallback_scan_data_iterator = KernelUtils::unwrapResult(
-        ::scan_metadata_iter_init(
-            state->engine.get(), fallback_scan.get()),
-        "scan_metadata_iter_init");
+    if (cached_scan_metadata)
+        fallback_scan_data_iterator = KernelUtils::unwrapResult(
+            ::scan_metadata_iter_init_from_cached(state->engine.get(), fallback_scan.get(), cached_scan_metadata->handle.get()),
+            "scan_metadata_iter_init_from_cached");
+    else
+        fallback_scan_data_iterator = KernelUtils::unwrapResult(
+            ::scan_metadata_iter_init(
+                state->engine.get(), fallback_scan.get()),
+            "scan_metadata_iter_init");
 
     struct StatsVisitor
     {
@@ -869,16 +1001,16 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
     };
 }
 
-std::optional<size_t> TableSnapshot::getTotalRows() const
+std::optional<size_t> TableSnapshot::getTotalRows(const DB::ContextPtr & context) const
 {
     std::lock_guard lock(mutex);
-    return getSnapshotStats().total_rows;
+    return getSnapshotStats(context).total_rows;
 }
 
-std::optional<size_t> TableSnapshot::getTotalBytes() const
+std::optional<size_t> TableSnapshot::getTotalBytes(const DB::ContextPtr & context) const
 {
     std::lock_guard lock(mutex);
-    return getSnapshotStats().total_bytes;
+    return getSnapshotStats(context).total_bytes;
 }
 
 bool TableSnapshot::tryRefreshAfterStaleTokenError(
@@ -981,6 +1113,45 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & he
         "snapshot_builder_build");
 
     snapshot_version = ::version(snapshot.get());
+
+    using KernelMetadata = KernelPointerWrapper<::SharedMetadata, ::free_metadata>;
+    KernelMetadata metadata(::snapshot_get_metadata(snapshot.get()));
+    struct TableIdVisitor
+    {
+        std::string id;
+        std::exception_ptr exception;
+    };
+    TableIdVisitor table_id_visitor;
+    ::visit_metadata(
+        metadata.get(),
+        &table_id_visitor,
+        [](::NullableCvoid context,
+           ::KernelStringSlice id,
+           const ::KernelStringSlice * /* name */,
+           const ::KernelStringSlice * /* description */,
+           ::KernelStringSlice /* format_provider */,
+           bool /* has_created_time */,
+           int64_t /* created_time_ms */)
+        {
+            auto * visitor = static_cast<TableIdVisitor *>(context);
+            try
+            {
+                fiu_do_on(DB::FailPoints::delta_lake_metadata_callback_throw,
+                {
+                    throw DB::Exception(
+                        DB::ErrorCodes::DELTA_KERNEL_ERROR, "Forced by the delta_lake_metadata_callback_throw failpoint");
+                });
+                visitor->id = KernelUtils::fromDeltaString(id);
+            }
+            catch (...)
+            {
+                visitor->exception = std::current_exception();
+            }
+        });
+    if (table_id_visitor.exception)
+        std::rethrow_exception(table_id_visitor.exception);
+    table_id = std::move(table_id_visitor.id);
+
     scan = KernelUtils::unwrapResult(
         ::scan(snapshot.get(), engine.get(), /* predicate */{}, /* engine_schema */nullptr),
         "scan");
@@ -996,6 +1167,11 @@ DB::ObjectIterator TableSnapshot::iterate(
     std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     auto state = getKernelSnapshotState();
+
+    auto [metadata_cache, metadata_cache_key] = getMetadataCache(context, *state);
+    CachedScanMetadataPtr cached_scan_metadata;
+    if (metadata_cache)
+        cached_scan_metadata = metadata_cache->get(metadata_cache_key);
     auto update_stats_func = [self = shared_from_this(), version = state->snapshot_version, this]
         (SnapshotStats && stats)
         {
@@ -1026,6 +1202,9 @@ DB::ObjectIterator TableSnapshot::iterate(
         settings[DB::Setting::delta_lake_enable_engine_predicate],
         context,
         std::move(update_stats_func),
+        std::move(metadata_cache),
+        std::move(metadata_cache_key),
+        std::move(cached_scan_metadata),
         log);
 }
 

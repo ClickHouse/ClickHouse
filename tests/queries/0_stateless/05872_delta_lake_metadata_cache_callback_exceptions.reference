@@ -1,0 +1,2 @@
+Forced by the delta_lake_metadata_callback_throw failpoint
+metadata without failpoint	100

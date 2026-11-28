@@ -245,7 +245,7 @@ std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalRows(ContextPtr context
     try
     {
         checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
-        return getTableSnapshot(snapshot_version)->getTotalRows();
+        return getTableSnapshot(snapshot_version)->getTotalRows(context);
     }
     catch (...)
     {
@@ -269,7 +269,7 @@ std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalBytes(ContextPtr contex
     try
     {
         checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
-        return getTableSnapshot(snapshot_version)->getTotalBytes();
+        return getTableSnapshot(snapshot_version)->getTotalBytes(context);
     }
     catch (...)
     {
@@ -295,6 +295,10 @@ void DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
                 log);
 
         size_t version = latest_snapshot->getVersion();
+        auto table_id = latest_snapshot->getTableId();
+        if (!latest_table_id.empty() && table_id != latest_table_id)
+            snapshots.clear();
+        latest_table_id = std::move(table_id);
         snapshots.getOrSet(version, [&]() { return latest_snapshot; });
 
         LOG_TEST(

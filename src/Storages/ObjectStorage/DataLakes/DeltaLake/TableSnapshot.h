@@ -17,6 +17,12 @@
 #include <unordered_set>
 #include "delta_kernel_ffi.hpp"
 
+namespace DB
+{
+class DeltaLakeMetadataCache;
+using DeltaLakeMetadataCachePtr = std::shared_ptr<DeltaLakeMetadataCache>;
+}
+
 namespace DeltaLake
 {
 
@@ -38,8 +44,10 @@ public:
     /// Get snapshot version.
     size_t getVersion() const;
 
-    std::optional<size_t> getTotalRows() const;
-    std::optional<size_t> getTotalBytes() const;
+    std::string getTableId() const;
+
+    std::optional<size_t> getTotalRows(const DB::ContextPtr & context) const;
+    std::optional<size_t> getTotalBytes(const DB::ContextPtr & context) const;
 
     /// Iterate over DeltaLake data files.
     DB::ObjectIterator iterate(
@@ -92,6 +100,7 @@ private:
         KernelSnapshot snapshot;
         KernelScan scan;
         size_t snapshot_version;
+        std::string table_id;
     };
     mutable std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
     mutable DB::UInt128 kernel_state_credentials_fingerprint{};
@@ -129,8 +138,11 @@ private:
     void initOrUpdateSnapshot() const TSA_REQUIRES(mutex);
     void initOrUpdateSchemaIfChanged() const TSA_REQUIRES(mutex);
 
-    SnapshotStats getSnapshotStats() const TSA_REQUIRES(mutex);
-    SnapshotStats getSnapshotStatsImpl() const TSA_REQUIRES(mutex);
+    SnapshotStats getSnapshotStats(const DB::ContextPtr & context) const TSA_REQUIRES(mutex);
+    SnapshotStats getSnapshotStatsImpl(const DB::ContextPtr & context) const TSA_REQUIRES(mutex);
+
+    std::pair<DB::DeltaLakeMetadataCachePtr, String>
+    getMetadataCache(const DB::ContextPtr & context, const KernelSnapshotState & state) const;
 
     /// One-shot recovery from `DELTA_KERNEL_ERROR` with `ExpiredToken`/`InvalidToken`:
     /// invokes the catalog refresh callback and compares pre/post credentials fingerprint
