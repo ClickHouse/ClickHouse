@@ -1,6 +1,9 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/IMergeSelector.h>
+
+#include <Common/MemoryTracker.h>
 
 #include <base/interpolate.h>
 
@@ -22,6 +25,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_min_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_number_of_mutations_for_replica;
+    extern const MergeTreeSettingsUInt64 merge_memory_estimate_per_source_part_column;
     extern const MergeTreeSettingsUInt64 min_unreserved_disk_space_for_merge;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_mutation;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_lower_max_size_of_merge;
@@ -143,6 +147,40 @@ UInt64 getMaxSourcePartsBytesForMerge(
     }
 
     return std::min(max_size, static_cast<UInt64>(static_cast<double>(max_unreserved_free_space) / DISK_USAGE_COEFFICIENT_TO_SELECT));
+}
+
+size_t getMaxPartsToMergeAtOnceForMemory(const MergeTreeData & data)
+{
+    const size_t bytes_per_source_part_column = (*data.getSettings())[MergeTreeSetting::merge_memory_estimate_per_source_part_column];
+    if (bytes_per_source_part_column == 0)
+        return MergeConstraint::unlimited_parts;
+
+    const Int64 memory_limit = total_memory_tracker.getHardLimit();
+    if (memory_limit <= 0)
+        return MergeConstraint::unlimited_parts;
+
+    auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), false);
+    size_t num_columns = metadata_snapshot->getColumns().getAllPhysical().size();
+    for (const auto & projection : metadata_snapshot->getProjections())
+        num_columns = std::max(num_columns, projection.metadata->getColumns().getAllPhysical().size());
+
+    return getMaxPartsToMergeAtOnceForMemory(memory_limit, num_columns, bytes_per_source_part_column);
+}
+
+size_t getMaxPartsToMergeAtOnceForMemory(Int64 memory_limit, size_t num_columns, size_t bytes_per_source_part_column)
+{
+    if (memory_limit <= 0 || bytes_per_source_part_column == 0)
+        return MergeConstraint::unlimited_parts;
+
+    num_columns = std::max<size_t>(1, num_columns);
+
+    /// Merges are background work that runs next to the queries and inserts the server is there for.
+    static constexpr size_t inverse_share_of_the_limit = 16;
+
+    /// Divide by the factors one after another instead of by their product, which could overflow for an
+    /// absurdly large estimate. A merge of fewer than two parts makes no progress, so never narrow below that.
+    return std::max<size_t>(
+        2, static_cast<size_t>(memory_limit) / inverse_share_of_the_limit / num_columns / bytes_per_source_part_column);
 }
 
 UInt64 getMaxSourcePartBytesForMutation(const MergeTreeData & data, String * out_log_comment)

@@ -2,18 +2,29 @@
 
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 
+#include <limits>
+
 namespace DB
 {
 
 struct MergeConstraint
 {
-    MergeConstraint(size_t max_size_bytes_, size_t max_size_rows_)
-      : max_size_bytes(max_size_bytes_), max_size_rows(max_size_rows_)
+    static constexpr size_t unlimited_parts = std::numeric_limits<size_t>::max();
+
+    MergeConstraint(size_t max_size_bytes_, size_t max_size_rows_, size_t max_parts_ = unlimited_parts)
+      : max_size_bytes(max_size_bytes_), max_size_rows(max_size_rows_), max_parts(max_parts_)
     {
     }
 
     size_t max_size_bytes;
     size_t max_size_rows;
+
+    /// The maximum number of source parts in one merge that the server executing it can afford,
+    /// see `CompactionStatistics::getMaxPartsToMergeAtOnceForMemory`. It is at least two: a merge of fewer
+    /// parts makes no progress. Honored by the selectors of regular merges (`SimpleMergeSelector`,
+    /// `TrivialMergeSelector`), on top of their own settings; not by the selectors of merges with TTL
+    /// or by the ones that merge what the user explicitly asked for.
+    size_t max_parts;
 };
 
 using MergeConstraints = std::span<const MergeConstraint>;

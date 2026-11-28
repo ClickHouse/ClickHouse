@@ -4627,6 +4627,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         String max_source_part_bytes_for_mutation_log_comment;
         UInt64 max_source_part_bytes_for_mutation = CompactionStatistics::getMaxSourcePartBytesForMutation(*this, &max_source_part_bytes_for_mutation_log_comment);
         UInt64 max_result_part_rows = CompactionStatistics::getMaxResultPartRowsCount(*this);
+        size_t max_parts_to_merge_for_memory = CompactionStatistics::getMaxPartsToMergeAtOnceForMemory(*this);
 
         bool merge_with_ttl_allowed = merges_and_mutations_queued.merges_with_ttl < (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_with_ttl_in_queue] &&
             getTotalMergesWithTTLInMergeList() < (*storage_settings_ptr)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool];
@@ -4644,7 +4645,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 std::make_shared<ReplicatedMergeTreePartsCollector>(*this, local_merge_pred),
                 local_merge_pred,
                 MergeSelectorApplier(
-                    /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
+                    /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows, max_parts_to_merge_for_memory}},
                     /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                     /*aggressive_=*/false,
                     /*range_filter_=*/nullptr,
@@ -4664,7 +4665,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 std::make_shared<ReplicatedMergeTreePartsCollector>(*this, merge_predicate),
                 merge_predicate,
                 MergeSelectorApplier(
-                    /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
+                    /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows, max_parts_to_merge_for_memory}},
                     /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                     /*aggressive_=*/false,
                     /*range_filter_=*/nullptr,
@@ -6813,12 +6814,13 @@ bool StorageReplicatedMergeTree::optimize(
                         });
 
                     UInt64 max_result_part_rows = CompactionStatistics::getMaxResultPartRowsCount(*this);
+                    size_t max_parts_to_merge_for_memory = CompactionStatistics::getMaxPartsToMergeAtOnceForMemory(*this);
 
                     return merger_mutator.selectPartsToMerge(
                         parts_collector,
                         merge_predicate,
                         MergeSelectorApplier(
-                            /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
+                            /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows, max_parts_to_merge_for_memory}},
                             /*merge_with_ttl_allowed=*/false,
                             /*aggressive=*/true,
                             /*range_filter_=*/nullptr,
