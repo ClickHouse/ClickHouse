@@ -267,6 +267,9 @@ Block executeInternalQuery(const String & query, ContextPtr context)
 {
     auto query_context = Context::createCopy(context);
     query_context->makeQueryContext();
+    /// These queries run as the caller, so `SHOW GRANTS ... FOR QUERY` must see their access checks.
+    if (context->getQueryPrivilegesInfo().isRecordingAccess())
+        query_context->setQueryPrivilegesInfo(context->getQueryPrivilegesInfoPtr());
     /// The copied context carries the enclosing query's id; the internal query must
     /// register under its own, or the process list rejects it as already running.
     query_context->setCurrentQueryId("");

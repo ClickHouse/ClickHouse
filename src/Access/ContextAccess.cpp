@@ -792,6 +792,25 @@ bool ContextAccess::checkAccessImplHelper(QueryPrivilegesInfo & privileges_info,
         throw Exception(ErrorCodes::UNKNOWN_USER, "{}: User has been dropped", getUserName());
     }
 
+    if constexpr (!grant_option)
+    {
+        /// The record for `SHOW GRANTS ... FOR QUERY` keeps every check, so it is taken before any decision.
+        if (privileges_info.isRecordingAccess())
+        {
+            AccessFlags recorded_flags = flags;
+            if (recorded_flags & AccessType::CLUSTER && !access_control->doesOnClusterQueriesRequireClusterGrant())
+                recorded_flags &= ~AccessType::CLUSTER;
+            bool is_temporary_table = (recorded_flags.getParameterType() == AccessFlags::NONE)
+                && (getDatabase(args...) == DatabaseCatalog::TEMPORARY_DATABASE);
+            if (recorded_flags && !is_temporary_table)
+            {
+                AccessRightsElement element{recorded_flags, args...};
+                element.wildcard = wildcard;
+                privileges_info.recordAccess(element);
+            }
+        }
+    }
+
     if (params.full_access)
         return true;
 
