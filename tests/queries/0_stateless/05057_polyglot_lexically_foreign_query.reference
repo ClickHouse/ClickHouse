@@ -1,0 +1,17 @@
+--- plain ClickHouse dialect rejects it lexically (expect: SYNTAX_ERROR) ---
+SYNTAX_ERROR
+--- native client accepts it in the polyglot dialect (expect: 1) ---
+1
+--- clickhouse-local accepts it in the polyglot dialect (expect: 1) ---
+1
+--- the HTTP (server) interface accepts it too (expect: 1) ---
+1
+--- multi-statement script (expect: 1 then 2) ---
+1
+2
+--- inline INSERT with a foreign comment (expect: 3 2) ---
+3	2
+--- inline INSERT after a leading foreign comment (expect: 11 2) ---
+11	2
+--- clickhouse-local runs a script with a leading foreign comment (expect: 1) ---
+1

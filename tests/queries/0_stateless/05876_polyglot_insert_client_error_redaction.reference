@@ -1,0 +1,4 @@
+native, single query: UNKNOWN_TABLE, query: INSERT INTO, data printed: 0
+native, script: UNKNOWN_TABLE, query: INSERT INTO, data printed: 0
+polyglot, single query: UNKNOWN_TABLE, query: INSERT INTO, data printed: 0
+polyglot, script: UNKNOWN_TABLE, query: INSERT INTO, data printed: 0
