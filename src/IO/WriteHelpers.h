@@ -1323,7 +1323,13 @@ template <typename T>
 requires is_floating_point<T>
 inline void writeText(T x, WriteBuffer & buf, bool force_decimal_point = false) { writeFloatText(x, buf, force_decimal_point); }
 
-inline void writeText(is_enum auto x, WriteBuffer & buf) { writeText(magic_enum::enum_name(x), buf); }
+inline void writeText(is_enum auto x, WriteBuffer & buf)
+{
+    if (auto name = magic_enum::enum_name(x); !name.empty())
+        writeString(name, buf);
+    else
+        writeString(fmt::to_string(+magic_enum::enum_integer(x)), buf);
+}
 
 inline void writeText(std::string_view x, WriteBuffer & buf) { writeString(x, buf); }
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <magic_enum.hpp>
 #include <fmt/format.h>
+#include <magic_enum_format.hpp>
 
 template <typename T> concept is_enum = std::is_enum_v<T>;
 
@@ -26,13 +26,3 @@ constexpr void static_for(F && f)
     constexpr size_t count = magic_enum::enum_count<E>();
     detail::static_for<E>(std::forward<F>(f), std::make_index_sequence<count>());
 }
-
-/// Enable printing enum values as strings via fmt + magic_enum
-template <is_enum T>
-struct fmt::formatter<T> : fmt::formatter<std::string_view>
-{
-    constexpr auto format(T value, auto& format_context) const
-    {
-        return formatter<string_view>::format(magic_enum::enum_name(value), format_context);
-    }
-};
