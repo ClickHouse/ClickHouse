@@ -4100,7 +4100,7 @@ SELECT code_point, code_point_value, notation FROM system.unicode WHERE code_poi
 .description
 Shows the current user their own query log records. It reads the query log table configured by the `query_log.database` and `query_log.table` server settings (`system.query_log` by default) and returns only the rows whose initiating user is equal to `currentUser()` (the initiating user is taken from `initial_user` when it is set, otherwise from `user`). An authenticated current user must be non-empty and match the reported initial user. The unauthenticated `clickhouse-local` client is the exception: it can read rows with an empty initiating user only when both user identities are empty and the query uses the `LOCAL` interface. In other cases, the table returns no rows.
 
-Unlike the query log table itself, `system.user_query_log` can be read without any grants, so users can inspect their own queries without being given access to the queries of others.
+Unlike the query log table itself, `system.user_query_log` can be read without any grants, so users can inspect their own queries without being given access to the queries of others. A session authenticated with a method that has a [`GRANTS` clause](/reference/statements/create/user#grants-clause) can read it only if the user is granted it explicitly and the clause lists it.
 
 Only top-level rows (`is_initial_query = 1`) are returned. Child rows, such as the queries a distributed query sends to other servers and what runs under the identity of `SQL SECURITY DEFINER` and `NONE` views, are omitted.
 
