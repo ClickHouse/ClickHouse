@@ -8,6 +8,15 @@
 namespace DB
 {
 
+/// Bucket and key of `s3://<bucket>/<key>`. Key may be empty.
+struct IcebergRESTCatalogS3Location
+{
+    String bucket;
+    String key;
+
+    static IcebergRESTCatalogS3Location parse(const String & location);
+};
+
 /// IAM role that the server assumes to access the warehouse storage.
 struct IcebergRESTCatalogWarehouseCredential
 {
@@ -16,6 +25,12 @@ struct IcebergRESTCatalogWarehouseCredential
     String role_arn;
     String external_id;
     String role_session_name;
+
+    /// Partition of `arn:<partition>:iam::<account>:role/<name>`, for example `aws`, `aws-cn` or `aws-us-gov`.
+    [[nodiscard]] String getPartition() const;
+
+    /// `role_session_name`, or `ClickHouseSession` if it is empty. ClickHouse S3 clients use same default.
+    [[nodiscard]] String getSessionName() const;
 
     /// Shape of the `credential` object in the management API: `{"type": "aws_role", "role_arn": ..., ...}`.
     static IcebergRESTCatalogWarehouseCredential fromJSON(const Poco::JSON::Object & json);

@@ -114,7 +114,11 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
             body = std::move(*read);
         }
 
-        const IcebergRESTRequest catalog_request{.method = request.getMethod(), .uri = request.getURI(), .body = std::move(body)};
+        /// The header is a comma-separated list of the mechanisms that the client supports.
+        const bool vend_credentials = request.get("X-Iceberg-Access-Delegation", "").contains("vended-credentials");
+
+        const IcebergRESTRequest catalog_request{
+            .method = request.getMethod(), .uri = request.getURI(), .body = std::move(body), .vend_credentials = vend_credentials};
         sendResponse(response, service->handleExternalRequest(catalog_request, *context));
     }
     catch (...)

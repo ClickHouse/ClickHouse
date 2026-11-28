@@ -3,6 +3,7 @@
 import base64
 import gzip
 import http.client
+import io
 import json
 import time
 import uuid
@@ -253,10 +254,10 @@ def tables_url(ns, table=None):
     return url
 
 
-def create_table(ns, name, schema=DEFAULT_SCHEMA, expected_code=200, auth=None, **extra):
+def create_table(ns, name, schema=DEFAULT_SCHEMA, expected_code=200, auth=None, headers=None, **extra):
     body = {"name": name, "schema": schema, **extra}
     return catalog_request(
-        "POST", tables_url(ns), json=body, expected_code=expected_code, auth=auth
+        "POST", tables_url(ns), json=body, expected_code=expected_code, auth=auth, headers=headers
     )
 
 
@@ -313,13 +314,14 @@ def list_metadata_files(location):
     ]
 
 
-def commit_table(ns, table, requirements, updates, expected_code=200, auth=None):
+def commit_table(ns, table, requirements, updates, expected_code=200, auth=None, headers=None):
     return catalog_request(
         "POST",
         tables_url(ns, table),
         json={"requirements": requirements, "updates": updates},
         expected_code=expected_code,
         auth=auth,
+        headers=headers,
     )
 
 
@@ -370,12 +372,14 @@ def commit_transaction(changes, expected_code=204, auth=None):
     )
 
 
-def load_table(ns, table):
-    return catalog_request("GET", tables_url(ns, table)).json()
+def load_table(ns, table, auth=None, headers=None):
+    return catalog_request("GET", tables_url(ns, table), auth=auth, headers=headers).json()
 
 
-def stage_create_table(ns, name, schema=DEFAULT_SCHEMA, expected_code=200, **extra):
-    return create_table(ns, name, schema=schema, expected_code=expected_code, **{"stage-create": True, **extra})
+def stage_create_table(ns, name, schema=DEFAULT_SCHEMA, expected_code=200, headers=None, **extra):
+    return create_table(
+        ns, name, schema=schema, expected_code=expected_code, headers=headers, **{"stage-create": True, **extra}
+    )
 
 
 # The updates a client sends to finish a staged create.
@@ -412,6 +416,7 @@ def load_pyiceberg_catalog():
     )
 
 
+# `vended_credentials = 0` is needed to avoid logging the MinIO password on debug builds.
 def create_database_query():
     token = base64.b64encode(":".join(DEFAULT_AUTH).encode()).decode()
     return f"""
@@ -420,7 +425,7 @@ def create_database_query():
         CREATE DATABASE rest_tables_db
         ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
         SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
-            storage_endpoint = 'http://minio1:9001/{BUCKET}',
+            storage_endpoint = 'http://minio1:9001/{BUCKET}', vended_credentials = 0,
             auth_header = 'Authorization: Basic {token}'
         """
 
@@ -861,7 +866,7 @@ def test_clickhouse_rest_catalog_client(started_cluster):
         CREATE DATABASE rest_client_db
         ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
         SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
-            storage_endpoint = 'http://minio1:9001/{BUCKET}'
+            storage_endpoint = 'http://minio1:9001/{BUCKET}', vended_credentials = 0
         """)
     try:
         tables = node.query("SHOW TABLES FROM rest_client_db").splitlines()
@@ -900,7 +905,7 @@ def test_clickhouse_rest_catalog_client_location_not_a_uri(started_cluster):
         CREATE DATABASE rest_client_location_db
         ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
         SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
-            storage_endpoint = 'http://minio1:9001/{BUCKET}'
+            storage_endpoint = 'http://minio1:9001/{BUCKET}', vended_credentials = 0
         """)
     try:
         for ns in directories:
@@ -923,7 +928,7 @@ def test_clickhouse_client_creates_table(started_cluster):
         CREATE DATABASE {db}
         ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
         SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
-            storage_endpoint = 'http://minio1:9001/{BUCKET}'
+            storage_endpoint = 'http://minio1:9001/{BUCKET}', vended_credentials = 0
         """)
 
     def create_query(table, if_not_exists=False):
@@ -2354,9 +2359,14 @@ def test_stage_create_location(started_cluster):
     assert committed["metadata-location"].startswith(f"{location}/metadata/v1-")
     assert get_keeper().exists(location_node(location))
 
-    # Staging stores nothing, so the overlap is found at the commit.
+    # A stage inside the location of another table is refused.
     inner = f"{location}/data"
-    staged_inner = stage_create_table(ns, "inner", location=inner).json()["metadata"]
+    response = stage_create_table(ns, "inner", location=inner, expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+    assert f"Location {inner} overlaps location {location}" in response.json()["error"]["message"]
+
+    # Staging stores nothing, so the commit checks the overlap again. The client sends the location in the commit.
+    staged_inner = {**stage_create_table(ns, "inner").json()["metadata"], "location": inner}
     response = commit_table(ns, "inner", ASSERT_CREATE, create_updates_from_metadata(staged_inner), expected_code=400)
     assert_error_shape(response, "BadRequestException")
     assert f"Location {inner} overlaps location {location}" in response.json()["error"]["message"]
@@ -2394,3 +2404,116 @@ def test_pyiceberg_create_table_transaction(started_cluster):
         assert node.query(f"SELECT id, name FROM rest_tables_db.`{ns}.events` ORDER BY id") == "1\ta\n2\tb\n"
     finally:
         node.query("DROP DATABASE IF EXISTS rest_tables_db")
+
+
+VENDING_HEADERS = {"X-Iceberg-Access-Delegation": "vended-credentials"}
+
+
+def assert_vended_credentials(result):
+    config = result["config"]
+    # The mock STS hands out the MinIO keys.
+    assert config["s3.access-key-id"] == minio_access_key
+    assert config["s3.secret-access-key"] == minio_secret_key
+    current_time_ms = time.time() * 1000
+    assert int(config["s3.session-token-expires-at-ms"]) > current_time_ms
+    # The credentials are for the table location.
+    assert result["storage-credentials"] == [{"prefix": result["metadata"]["location"], "config": config}]
+
+
+def assert_no_credentials(result):
+    assert "config" not in result
+    assert "storage-credentials" not in result
+
+
+# The mock STS ignores the session policy, so this test does not check the table scope.
+def test_vended_credentials(started_cluster):
+    ns = f"vended_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+
+    # Create, stage-create and load give credentials.
+    assert_vended_credentials(create_table(ns, "events", headers=VENDING_HEADERS).json())
+    assert_vended_credentials(stage_create_table(ns, "staged", headers=VENDING_HEADERS).json())
+    assert_vended_credentials(load_table(ns, "events", headers=VENDING_HEADERS))
+
+    # The header can list several mechanisms.
+    headers = {"X-Iceberg-Access-Delegation": "remote-signing, vended-credentials"}
+    assert_vended_credentials(load_table(ns, "events", headers=headers))
+
+    # A commit response has no credentials.
+    committed = commit_table(ns, "events", [], [], headers=VENDING_HEADERS).json()
+    assert "config" not in committed
+    assert "storage-credentials" not in committed
+
+
+def test_vended_credentials_staged_create_location(started_cluster):
+    ns = f"vended_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    outer = create_table(ns, "outer").json()["metadata"]["location"]
+
+    # A stage at the location of another table is refused before any credentials are issued.
+    for location in (outer, f"{outer}/data", outer.rsplit("/", 1)[0]):
+        response = stage_create_table(ns, "staged", headers=VENDING_HEADERS, location=location, expected_code=400)
+        assert_error_shape(response, "BadRequestException")
+        assert f"Location {location} overlaps location {outer}" in response.json()["error"]["message"]
+
+    # A stage reserves nothing, so a client-chosen location gets the metadata without credentials.
+    custom = f"{BASE_LOCATION}/custom/{ns}"
+    result = stage_create_table(ns, "staged", headers=VENDING_HEADERS, location=custom).json()
+    assert result["metadata"]["location"] == custom
+    assert "storage-credentials" not in result
+
+
+def test_vended_credentials_need_header(started_cluster):
+    ns = f"vended_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+
+    assert_no_credentials(create_table(ns, "events").json())
+    assert_no_credentials(stage_create_table(ns, "staged").json())
+    assert_no_credentials(load_table(ns, "events"))
+
+
+def overwrite_metadata_file(metadata_location, metadata):
+    data = json.dumps(metadata).encode()
+    cluster.minio_client.put_object(BUCKET, metadata_key(metadata_location), io.BytesIO(data), len(data))
+
+
+def vended_prefix(ns, table):
+    result = load_table(ns, table, headers=VENDING_HEADERS)
+    (credential,) = result["storage-credentials"]
+    return credential["prefix"]
+
+
+# A client with write credentials can overwrite `location` in the metadata file.
+# Credentials must stay scoped to the table root that the catalog assigned.
+def test_vended_credentials_ignore_location_in_metadata_file(started_cluster):
+    ns = f"vended_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    table = create_table(ns, "events").json()
+    table_root = table["metadata"]["location"]
+    bucket_root = f"s3://{BUCKET}"
+
+    # Client points `location` at the whole bucket.
+    overwrite_metadata_file(table["metadata-location"], {**table["metadata"], "location": bucket_root})
+    assert load_table(ns, "events")["metadata"]["location"] == bucket_root
+
+    # Load still vends for the table root.
+    assert vended_prefix(ns, "events") == table_root
+
+    # A commit writes the next metadata file under the table root.
+    committed = commit_table(ns, "events", [], append_updates(fake_snapshot(1, 1))).json()
+    assert committed["metadata-location"].startswith(f"{table_root}/metadata/v2-")
+    assert vended_prefix(ns, "events") == table_root
+
+
+def test_vended_credentials_readonly_user(started_cluster):
+    ns = f"vended_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "events")
+    readonly_auth = ("readonly_user", "")
+
+    # A user who cannot write gets credentials on load.
+    assert_vended_credentials(load_table(ns, "events", auth=readonly_auth, headers=VENDING_HEADERS))
+
+    response = create_table(ns, "forbidden", auth=readonly_auth, headers=VENDING_HEADERS, expected_code=403)
+    assert_error_shape(response, "ForbiddenException")
+
