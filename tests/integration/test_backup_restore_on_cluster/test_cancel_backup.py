@@ -20,6 +20,7 @@ main_configs = [
     "configs/lesser_timeouts.xml",  # Default timeouts are quite big (a few minutes), the tests don't need them to be that big.
     "configs/slow_backups.xml",
     "configs/shutdown_cancel_backups.xml",
+    "configs/allow_concurrent_backups.xml",
 ]
 
 user_configs = [

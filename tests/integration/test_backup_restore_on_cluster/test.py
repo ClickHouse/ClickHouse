@@ -20,6 +20,7 @@ main_configs = [
     "configs/backups_allowed_path.xml",  # Needed by the File() destination of test_backup_on_cluster_internal_writer_fsyncs.
     "configs/query_thread_log.xml",  # The common integration config removes query_thread_log; that test needs it.
     "configs/lesser_timeouts.xml",  # Default timeouts are quite big (a few minutes), the tests don't need them to be that big.
+    "configs/allow_concurrent_backups.xml",
 ]
 
 # node3 holds a different named-collections encryption key (and a different Keeper path), to model

@@ -291,7 +291,6 @@ void BackupCoordinationStageSync::createStartAndAliveNodesAndCheckConcurrency(Co
     std::optional<size_t> num_hosts;
     int num_hosts_version = -1;
 
-    bool check_concurrency = !allow_concurrency;
     int alive_tracker_version = -1;
 
     for (size_t attempt_no = 1; attempt_no <= max_attempts_after_bad_version; ++attempt_no)
@@ -307,14 +306,14 @@ void BackupCoordinationStageSync::createStartAndAliveNodesAndCheckConcurrency(Co
             }
         }
 
-        if (check_concurrency)
+        /// Each retry below follows a change that also bumped `alive_tracker`, so read its version again.
+        if (!allow_concurrency)
         {
             Coordination::Stat stat;
             zookeeper->exists(alive_tracker_node_path, &stat);
             alive_tracker_version = stat.version;
 
             checkConcurrency(zookeeper);
-            check_concurrency = false;
         }
 
         if (zookeeper->exists(start_node_path))
@@ -403,7 +402,7 @@ void BackupCoordinationStageSync::createStartAndAliveNodesAndCheckConcurrency(Co
             (responses[alive_tracker_node_pos]->error == Coordination::Error::ZBADVERSION))
         {
             show_error_before_next_attempt(fmt::format("The version of node {} changed", alive_tracker_node_path));
-            check_concurrency = true; /// needs to recheck for concurrency again
+            /// needs another attempt
         }
         else
         {

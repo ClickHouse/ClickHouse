@@ -15,7 +15,7 @@ num_nodes = 2
 
 
 main_configs = [
-    "configs/disallow_concurrency.xml",
+    "configs/backups_disk.xml",
     generate_cluster_def(__file__, num_nodes),
 ]
 # No [Zoo]Keeper retries for tests with concurrency
@@ -145,9 +145,7 @@ def wait_for_restore_failure(node, restore_id):
         assert False, "Concurrent restores both passed, when one is expected to fail"
 
 
-# All the tests have concurrent backup/restores with same backup names
-# The same works with different backup names too. Since concurrency
-# check comes before backup name check, separate tests are not added for different names
+# The four tests below reuse one backup name or one restore target, so they also accept the resulting name/target errors.
 
 
 def test_concurrent_backups_on_same_node():
@@ -302,3 +300,101 @@ def test_concurrent_restores_on_different_node():
     else:
         # Restore #2 was successful, restore #1 should fail.
         wait_for_restore_failure(nodes[0], restore_id)
+
+
+# Distinct destinations and restore targets, so the only possible rejection is the concurrency check.
+# The first operation is held inside its coordination by a failpoint.
+def test_concurrent_backup_and_restore_rejected_by_default():
+    try:
+        node0.query("CREATE TABLE tbl_local (x UInt64) ENGINE = MergeTree ORDER BY x")
+        node0.query("INSERT INTO tbl_local SELECT number FROM numbers(10)")
+
+        backup_name = new_backup_name()
+        try:
+            node0.query(
+                "SYSTEM ENABLE FAILPOINT backups_pause_before_publishing_progress"
+            )
+            backup_id = node0.query(
+                f"BACKUP TABLE tbl_local TO {backup_name} ASYNC"
+            ).split("\t")[0]
+            node0.query(
+                "SYSTEM WAIT FAILPOINT backups_pause_before_publishing_progress PAUSE",
+                timeout=60,
+            )
+            error = node0.query_and_get_error(
+                f"BACKUP TABLE tbl_local TO {new_backup_name()}"
+            )
+            assert (
+                "Concurrent backups are not allowed, turn on the server setting 'backups.allow_concurrent_backups'"
+                in error
+            )
+        finally:
+            node0.query(
+                "SYSTEM DISABLE FAILPOINT backups_pause_before_publishing_progress"
+            )
+        wait_for_backup(node0, backup_id)
+
+        try:
+            node0.query(
+                "SYSTEM ENABLE FAILPOINT restore_pause_before_data_restore_tasks"
+            )
+            restore_id = node0.query(
+                f"RESTORE TABLE tbl_local AS tbl_local_1 FROM {backup_name} ASYNC"
+            ).split("\t")[0]
+            node0.query(
+                "SYSTEM WAIT FAILPOINT restore_pause_before_data_restore_tasks PAUSE",
+                timeout=60,
+            )
+            error = node0.query_and_get_error(
+                f"RESTORE TABLE tbl_local AS tbl_local_2 FROM {backup_name}"
+            )
+            assert (
+                "Concurrent restores are not allowed, turn on the server setting 'backups.allow_concurrent_restores'"
+                in error
+            )
+        finally:
+            node0.query(
+                "SYSTEM DISABLE FAILPOINT restore_pause_before_data_restore_tasks"
+            )
+        wait_for_restore(node0, restore_id)
+    finally:
+        node0.query("DROP TABLE IF EXISTS tbl_local SYNC")
+        node0.query("DROP TABLE IF EXISTS tbl_local_1 SYNC")
+        node0.query("DROP TABLE IF EXISTS tbl_local_2 SYNC")
+
+
+# Disjoint replicas, so only the cluster-wide check in Keeper can reject the second backup.
+def test_concurrent_on_cluster_backups_on_different_replicas_rejected_by_default():
+    try:
+        for node in nodes:
+            node.query(
+                "CREATE TABLE tbl_local (x UInt64) ENGINE = MergeTree ORDER BY x"
+            )
+            node.query("INSERT INTO tbl_local SELECT number FROM numbers(10)")
+
+        try:
+            node0.query(
+                "SYSTEM ENABLE FAILPOINT backups_pause_before_publishing_progress"
+            )
+            backup_id = node0.query(
+                f"BACKUP TABLE tbl_local ON CLUSTER 'cluster' TO {new_backup_name()} SETTINGS replica_num = 1 ASYNC"
+            ).split("\t")[0]
+            node0.query(
+                "SYSTEM WAIT FAILPOINT backups_pause_before_publishing_progress PAUSE",
+                timeout=60,
+            )
+            error = nodes[1].query_and_get_error(
+                f"BACKUP TABLE tbl_local ON CLUSTER 'cluster' TO {new_backup_name()} SETTINGS replica_num = 2"
+            )
+            assert (
+                "Concurrent backups are not allowed, turn on the server setting 'backups.allow_concurrent_backups'"
+                in error
+            )
+        finally:
+            node0.query(
+                "SYSTEM DISABLE FAILPOINT backups_pause_before_publishing_progress"
+            )
+        wait_for_backup(node0, backup_id)
+    finally:
+        for node in nodes:
+            node.query("DROP TABLE IF EXISTS tbl_local SYNC")

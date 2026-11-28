@@ -117,7 +117,7 @@ void BackupConcurrencyCheck::throwConcurrentOperationNotAllowed(bool is_restore)
 {
     throw Exception(
         ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
-        "Concurrent {} are not allowed, turn on setting '{}'",
+        "Concurrent {} are not allowed, turn on the server setting 'backups.{}'",
         is_restore ? "restores" : "backups",
         is_restore ? "allow_concurrent_restores" : "allow_concurrent_backups");
 }

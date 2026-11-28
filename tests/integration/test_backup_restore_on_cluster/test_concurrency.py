@@ -20,6 +20,7 @@ num_nodes = 4  # Kept equal to num_concurrent_backups to reduce memory usage und
 
 main_configs = [
     "configs/backups_disk.xml",
+    "configs/allow_concurrent_backups.xml",
     generate_cluster_def(__file__, num_nodes),
 ]
 # No [Zoo]Keeper retries for tests with concurrency
