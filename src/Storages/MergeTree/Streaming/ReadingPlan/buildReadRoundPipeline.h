@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/Streaming/ReadingPlan/ReadRoundContext.h>
+#include <Storages/MergeTree/Streaming/PartitionsClassification.h>
 #include <Storages/MergeTree/Streaming/ReadState.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -23,6 +24,7 @@ struct ReadRoundPipeline
 std::optional<ReadRoundPipeline> buildReadRoundPipeline(
     const ReadRoundContext & reading_context,
     const ReadState & state,
-    const std::map<String, Int64> & safe_block_numbers);
+    const std::map<String, Int64> & safe_block_numbers,
+    const ClassifiedPartitions & classification);
 
 }
