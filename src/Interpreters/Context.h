@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Access/QueryPrivilegesInfo.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
@@ -24,6 +25,7 @@
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/StreamingCursor.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/DistributedPlanLocalObject.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
@@ -42,6 +44,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 
 
 namespace Poco::Net
@@ -349,17 +352,6 @@ class SystemAllocatedMemoryHolder;
 using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHolder>;
 
 class QueryMetadataCache;
-class CursorTreeNode;
-using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
-
-/// The cursor that a bounded streaming read of a `MergeTree` table (`STREAM BOUNDED`) advanced to.
-/// It exists only for the incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`), which
-/// persists it to resume the next refresh. Other streaming queries must not rely on it.
-struct StreamingCursor
-{
-    std::mutex mutex;
-    CursorTreeNodePtr tree;
-};
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
 
