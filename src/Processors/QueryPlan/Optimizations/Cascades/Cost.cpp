@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -77,8 +78,8 @@ CostConfig parseCostConfig(const String & json_str)
 
     /// All values must be finite and non-negative. Zero is allowed (it lets a test ignore a
     /// dimension, e.g. `{"network_weight":0}`). A negative value is rejected: it would make
-    /// more work look cheaper and can produce negative costs, which the optimizer's pruning
-    /// relies on never happening.
+    /// more work look cheaper and can produce negative costs, and then a plan could cost less
+    /// than a part of it.
     auto require = [&](Float64 value, const char * name)
     {
         if (!std::isfinite(value) || value < 0)
@@ -445,21 +446,12 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
 
     /// Select the best implementation of each input first: the subtree cost accumulates over
     /// them, and an exchange prices its transfer on the selected child's physical output rows.
-    std::vector<ExpressionWithCost> selected_inputs;
+    VectorWithMemoryTracking<ExpressionWithCost> selected_inputs;
     selected_inputs.reserve(expression->inputs.size());
     bool has_unsatisfiable_input = false;
     for (const auto & input : expression->inputs)
     {
-        ExpressionWithCost best;
-        if (input.group_id == expression->group_id)
-            /// Self-referential enforcer input: price it against an acyclic source (excluding
-            /// itself), so the cost reflects a plan that can actually be built.
-            best = memo.getGroup(input.group_id)->selectInputImplementation(
-                input.required_properties, memo.getContext().cost_config,
-                std::unordered_set<GroupExpression *>{expression.get()}, /*input_is_self_referential=*/true);
-        else
-            best = memo.getGroup(input.group_id)->getBestImplementation(input.required_properties, memo.getContext().cost_config);
-
+        auto best = memo.getGroup(input.group_id)->getBestImplementation(input.required_properties, memo.getContext().cost_config);
         if (!best.expression)
             has_unsatisfiable_input = true;
         selected_inputs.push_back(std::move(best));

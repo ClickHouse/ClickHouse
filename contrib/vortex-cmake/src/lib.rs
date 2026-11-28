@@ -66,7 +66,9 @@ pub type FFI_VortexWriteCallback =
     unsafe extern "C" fn(context: *mut c_void, data: *const u8, length: u64) -> i32;
 
 /// The queue a task waits in.
-#[repr(i32)]
+// `repr(C)`, not `repr(i32)`: CFI encodes a `repr(C)` type in a callback signature by its name,
+// as C++ does, so the type id of `FFI_VortexTaskReadyCallback` matches the C++ callback.
+#[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FFI_VortexTaskQueue {
     /// Decoding, filtering and exporting to Arrow: work that needs a core.
@@ -805,7 +807,13 @@ impl ScanCallbacks {
                 // or releases it - and does not keep the pointer. It must not be released here as
                 // well, so the local is a `ManuallyDrop`.
                 let mut array = std::mem::ManuallyDrop::new(array);
-                unsafe { (self.on_chunk)(self.context as *mut c_void, &mut *array, split_index) }
+                unsafe {
+                    (self.on_chunk)(
+                        self.context as *mut c_void,
+                        &mut *array as *mut FFI_ArrowArray,
+                        split_index,
+                    )
+                }
             }
         };
         if result != 0 {
@@ -1620,6 +1628,11 @@ pub unsafe extern "C" fn vortex_ffi_free_string(string: *mut c_char) {
     if !string.is_null() {
         unsafe { drop(CString::from_raw(string)) };
     }
+}
+
+#[no_mangle]
+pub extern "C" fn vortex_ffi_version() -> *const c_char {
+    concat!(env!("VORTEX_CRATE_VERSION"), "\0").as_ptr().cast()
 }
 
 #[cfg(test)]

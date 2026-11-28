@@ -6,22 +6,22 @@ keywords: ['azure', 'marketplace', 'facturation', 'PAYG']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Commencez à utiliser ClickHouse Cloud sur [Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps) grâce à une offre publique PAYG (paiement à l’utilisation).
 
-<div id="prerequisites">
-  ## Prérequis
-</div>
+## Prérequis {#prerequisites}
 
-* Un projet Azure pour lequel votre administrateur de la facturation a activé les droits d’achat.
-* Pour vous abonner à ClickHouse Cloud sur Azure Marketplace, vous devez être connecté avec un compte disposant des droits d’achat et sélectionner le projet approprié.
+* Un projet Azure doté de droits d&#39;achat activés par votre administrateur de facturation.
+* Pour vous abonner à ClickHouse Cloud sur Azure Marketplace, vous devez être connecté avec un compte disposant de droits d&#39;achat et sélectionner le projet approprié.
 
-1. Accédez à [Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps) et recherchez ClickHouse Cloud. Assurez-vous d’être connecté afin de pouvoir acheter une offre sur la marketplace.
+1. Accédez à [Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps) et recherchez ClickHouse Cloud. Assurez-vous d&#39;être connecté afin de pouvoir acheter une offre sur la place de marché.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-1.webp" size="md" alt="Formulaire d'informations d'inscription à ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Formulaire d'informations d'inscription à ClickHouse Cloud](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-1.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -29,57 +29,85 @@ Commencez à utiliser ClickHouse Cloud sur [Azure Marketplace](https://azuremark
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-2.webp" size="md" alt="Formulaire d'informations d'inscription à ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Formulaire d'informations d'inscription à ClickHouse Cloud](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-2.webp)
+  </Frame>
+</div>
 
 <br />
 
-3. Vous devrez fournir un nom, une adresse e-mail et des informations de localisation sur l’écran suivant.
+3. Sur l&#39;écran suivant, vous devrez indiquer un nom, une adresse e-mail et des informations de localisation.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-3.webp" size="md" alt="Formulaire d'informations d'inscription à ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Formulaire d'informations d'inscription à ClickHouse Cloud](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-3.webp)
+  </Frame>
+</div>
 
 <br />
 
-4. Sur l’écran suivant, cliquez sur **Subscribe**.
+4. Sur l&#39;écran suivant, cliquez sur **Subscribe**.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-4.webp" size="md" alt="Formulaire d'informations d'inscription à ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Formulaire d'informations d'inscription à ClickHouse Cloud](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-4.webp)
+  </Frame>
+</div>
 
 <br />
 
-5. Sur l’écran suivant, choisissez l’abonnement, le groupe de ressources et la région du groupe de ressources. La région du groupe de ressources n’a pas besoin d’être la même que celle où vous prévoyez de lancer vos services sur ClickHouse Cloud.
+5. Sur l&#39;écran suivant, sélectionnez l&#39;abonnement, le groupe de ressources et l&#39;emplacement du groupe de ressources. L&#39;emplacement du groupe de ressources ne doit pas nécessairement correspondre à celui où vous prévoyez de lancer vos services sur ClickHouse Cloud.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-5.webp" size="md" alt="Formulaire d'informations d'inscription à ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Formulaire d'informations d'inscription à ClickHouse Cloud](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-5.webp)
+  </Frame>
+</div>
 
 <br />
 
-6. Vous devrez également fournir un nom pour l’abonnement et choisir la période de facturation parmi les options disponibles. Vous pouvez activer ou désactiver **Recurring billing**. Si vous le définissez sur &quot;off&quot;, votre contrat prendra fin à l’issue de la période de facturation et vos ressources seront mises hors service.
+6. Vous devrez également nommer l&#39;abonnement et choisir la durée de facturation parmi les options proposées. Vous pouvez activer ou désactiver **Recurring billing**. Si vous le désactivez (« off »), votre contrat prendra fin à l&#39;issue de la période de facturation et vos ressources seront mises hors service.
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-6.webp" size="md" alt="Formulaire d'informations d'inscription à ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Formulaire d'informations d'inscription à ClickHouse Cloud](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-6.webp)
+  </Frame>
+</div>
 
 <br />
 
-7. Cliquez sur **&quot;Review + subscribe&quot;**.
+7. Cliquez sur **« Review + subscribe »**.
 
-8. Sur l’écran suivant, vérifiez que tout est correct et cliquez sur **Subscribe**.
-
-<br />
-
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-7.webp" size="md" alt="Formulaire d'informations d'inscription à ClickHouse Cloud" border />
+8. Sur l&#39;écran suivant, vérifiez que tout est correct, puis cliquez sur **Subscribe**.
 
 <br />
 
-9. Notez qu’à ce stade, vous serez abonné à l’abonnement Azure de ClickHouse Cloud, mais vous n’aurez pas encore configuré votre compte sur ClickHouse Cloud. Les étapes suivantes sont nécessaires et essentielles pour permettre à ClickHouse Cloud de s’associer à votre abonnement Azure afin que votre facturation soit correctement gérée via Azure Marketplace.
+<div className="ch-image-md">
+  <Frame>
+    ![Formulaire d'informations d'inscription à ClickHouse Cloud](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-7.webp)
+  </Frame>
+</div>
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-8.webp" size="md" alt="Formulaire d'informations d'inscription à ClickHouse Cloud" border />
+9. À ce stade, vous êtes abonné à l&#39;offre Azure de ClickHouse Cloud, mais vous n&#39;avez pas encore configuré votre compte ClickHouse Cloud. Les étapes suivantes sont indispensables pour que ClickHouse Cloud puisse se lier à votre abonnement Azure et que votre facturation s&#39;effectue correctement via Azure Marketplace.
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![Formulaire d'informations d'inscription à ClickHouse Cloud](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-8.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -87,7 +115,11 @@ Commencez à utiliser ClickHouse Cloud sur [Azure Marketplace](https://azuremark
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-9.webp" size="md" alt="Formulaire d'informations d'inscription à ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Formulaire d'informations d'inscription à ClickHouse Cloud](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-9.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -95,38 +127,54 @@ Commencez à utiliser ClickHouse Cloud sur [Azure Marketplace](https://azuremark
 
 <br />
 
-Vous recevrez un e-mail comme celui ci-dessous contenant des détails sur la configuration de votre compte :
+Vous recevrez un e-mail semblable à celui ci-dessous, contenant les instructions de configuration de votre compte :
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-10.webp" size="md" alt="Formulaire d'informations d'inscription à ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Formulaire d'informations d'inscription à ClickHouse Cloud](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-10.webp)
+  </Frame>
+</div>
 
 <br />
 
-12. Vous serez redirigé vers la page d’inscription ou de connexion de ClickHouse Cloud. Une fois redirigé vers ClickHouse Cloud, vous pourrez soit vous connecter avec un compte existant, soit créer un nouveau compte. Cette étape est très importante pour que nous puissions associer votre organization ClickHouse Cloud à la facturation Azure Marketplace.
+12. Vous serez redirigé vers la page d&#39;inscription ou de connexion de ClickHouse Cloud. Vous pourrez alors soit vous connecter avec un compte existant, soit créer un nouveau compte. Cette étape est essentielle pour que nous puissions lier votre organisation ClickHouse Cloud à la facturation via Azure Marketplace.
 
-13. Notez que si vous êtes un nouvel utilisateur, vous devrez également fournir quelques informations de base sur votre entreprise. Voir les captures d’écran ci-dessous.
-
-<br />
-
-<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="Formulaire d'informations d'inscription à ClickHouse Cloud" border />
+13. Si vous êtes un nouvel utilisateur, vous devrez également fournir quelques informations de base sur votre entreprise. Consultez les captures d&#39;écran ci-dessous.
 
 <br />
 
-Une fois que vous aurez cliqué sur **Complete sign up**, vous serez redirigé vers votre organization dans ClickHouse Cloud, où vous pourrez consulter l’écran de facturation pour vérifier que la facturation s’effectue via Azure Marketplace et créer des services.
+<div className="ch-image-md">
+  <Frame>
+    ![Formulaire d'informations d'inscription à ClickHouse Cloud](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp)
+  </Frame>
+</div>
+
+<br />
+
+Une fois que vous aurez cliqué sur **Complete sign up**, vous serez redirigé vers votre organisation dans ClickHouse Cloud, où vous pourrez consulter l’écran de facturation pour vérifier que la facturation s’effectue via Azure Marketplace et créer des services.
 
 <br />
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-11.webp" size="md" alt="Formulaire d'informations d'inscription à ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Formulaire d'informations d'inscription à ClickHouse Cloud](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-11.webp)
+  </Frame>
+</div>
 
 <br />
 
 <br />
 
-<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-12.webp" size="md" alt="Formulaire d'informations d'inscription à ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Formulaire d'informations d'inscription à ClickHouse Cloud](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-12.webp)
+  </Frame>
+</div>
 
 <br />
 
-14. Si vous rencontrez le moindre problème, n&#39;hésitez pas à contacter [notre équipe d&#39;assistance](https://clickhouse.com/support/program).
+14. Si vous rencontrez le moindre problème, n’hésitez pas à contacter [notre équipe d’assistance](https://clickhouse.com/support/program).

@@ -70,9 +70,9 @@ struct AggregatingTransformParams
     {
     }
 
-    Block getHeader() const { return params.getHeader(header, final); }
+    [[nodiscard]] Block getHeader() const { return params.getHeader(header, final); }
 
-    Block getCustomHeader(bool final_) const { return params.getHeader(header, final_); }
+    [[nodiscard]] Block getCustomHeader(bool final_) const { return params.getHeader(header, final_); }
 };
 
 struct ManyAggregatedData
@@ -238,6 +238,7 @@ private:
     /// Held past the reset of `many_data` at the finish of this producer: the executor keeps the registration of the
     /// component until this transform finishes.
     std::shared_ptr<AdaptiveSessionSpillable> adaptive_spillable;
+    /// The merge threads of the step: the most that an in-memory merge takes (see `initGenerate`).
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
     bool should_produce_results_in_order_of_bucket_number = true;

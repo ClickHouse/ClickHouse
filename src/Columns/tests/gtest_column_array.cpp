@@ -4,6 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -260,6 +261,20 @@ TEST(ColumnArray, InsertManyFromRejectsRowCountOverflowForSelfAlias)
     EXPECT_EQ(column->getData().getUInt(0), 42);
 }
 
+TEST(ColumnArray, IndexRejectsElementCountOverflow)
+{
+    /// An empty tuple holds no values, so a single row can claim half of the offset range.
+    const size_t half = std::numeric_limits<size_t>::max() / 2 + 1;
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->getData().push_back(half);
+    auto column = ColumnArray::create(ColumnTuple::create(half), std::move(offsets));
+
+    auto indexes = ColumnUInt64::create();
+    indexes->getData().push_back(0);
+    indexes->getData().push_back(0);
+    EXPECT_THROW(column->index(*indexes, 0), Exception);
+}
+
 TEST(ColumnArray, InsertManyFromSelfString)
 {
     auto data = ColumnString::create();
@@ -285,43 +300,62 @@ TEST(ColumnArray, InsertManyFromSelfString)
 
 TEST(ColumnArray, InsertManyFromPartiallyAliasedNullableString)
 {
-    auto shared_string = ColumnString::create();
+    /// Two distinct `ColumnNullable` wrappers share the same `ColumnString`. The destination is
+    /// obtained through `IColumn::mutate`, which must detach the shared grandchild, so that inserting
+    /// into the destination leaves the source unchanged.
+    auto string_column = ColumnString::create();
     const String value(1 << 20, 'x');
-    shared_string->insert(value);
-
-    MutableColumnPtr source_nested = shared_string->getPtr();
-    MutableColumnPtr destination_nested = shared_string->getPtr();
+    string_column->insert(value);
+    ColumnPtr shared_string = std::move(string_column);
 
     auto source_null_map = ColumnUInt8::create();
     source_null_map->insertValue(0);
     auto destination_null_map = ColumnUInt8::create();
     destination_null_map->insertValue(0);
 
-    auto source_data = ColumnNullable::create(std::move(source_nested), std::move(source_null_map));
-    auto destination_data = ColumnNullable::create(std::move(destination_nested), std::move(destination_null_map));
+    ColumnPtr source_data = ColumnNullable::create(shared_string, ColumnPtr(std::move(source_null_map)));
+    ColumnPtr destination_data = ColumnNullable::create(shared_string, ColumnPtr(std::move(destination_null_map)));
+    shared_string.reset();
 
     auto source_offsets = ColumnArray::ColumnOffsets::create();
     source_offsets->insertValue(1);
-    auto source = ColumnArray::create(std::move(source_data), std::move(source_offsets));
+    ColumnPtr source = ColumnArray::create(source_data, ColumnPtr(std::move(source_offsets)));
+    source_data.reset();
 
     auto destination_offsets = ColumnArray::ColumnOffsets::create();
     destination_offsets->insertValue(1);
-    auto destination = ColumnArray::create(std::move(destination_data), std::move(destination_offsets));
+    ColumnPtr destination_immutable = ColumnArray::create(destination_data, ColumnPtr(std::move(destination_offsets)));
+    destination_data.reset();
 
-    ASSERT_NE(destination->getDataPtr().get(), source->getDataPtr().get());
+    auto destination = IColumn::mutate(std::move(destination_immutable));
+    auto & destination_array = assert_cast<ColumnArray &>(*destination);
+    const auto & source_array = assert_cast<const ColumnArray &>(*source);
+    const auto & source_nullable = assert_cast<const ColumnNullable &>(source_array.getData());
+    const auto & source_string = assert_cast<const ColumnString &>(source_nullable.getNestedColumn());
 
-    destination->insertManyFrom(*source, 0, 2);
+    ASSERT_NE(destination_array.getDataPtr().get(), source_array.getDataPtr().get());
+    ASSERT_NE(
+        &assert_cast<const ColumnNullable &>(destination_array.getData()).getNestedColumn(),
+        &source_nullable.getNestedColumn());
 
-    ASSERT_EQ(destination->size(), 3);
-    const auto & destination_nullable = assert_cast<const ColumnNullable &>(destination->getData());
+    destination_array.insertManyFrom(source_array, 0, 2);
+
+    ASSERT_EQ(destination_array.size(), 3);
+    const auto & destination_nullable = assert_cast<const ColumnNullable &>(destination_array.getData());
     const auto & destination_string = assert_cast<const ColumnString &>(destination_nullable.getNestedColumn());
     ASSERT_EQ(destination_string.size(), 3);
     ASSERT_EQ(destination_nullable.getNullMapData().size(), 3);
-    for (size_t i = 0; i < destination->size(); ++i)
+    for (size_t i = 0; i < destination_array.size(); ++i)
     {
         EXPECT_EQ(destination_string.getDataAt(i), std::string_view(value));
         EXPECT_EQ(destination_nullable.getNullMapData()[i], 0);
     }
+
+    ASSERT_EQ(source_array.size(), 1);
+    ASSERT_EQ(source_string.size(), 1);
+    ASSERT_EQ(source_nullable.getNullMapData().size(), 1);
+    EXPECT_EQ(source_string.getDataAt(0), std::string_view(value));
+    EXPECT_EQ(source_nullable.getNullMapData()[0], 0);
 }
 
 TEST(ColumnArray, InsertManyFromNonAliasedString)
@@ -559,3 +593,26 @@ TEST(ColumnArrayDeathTest, ConstNestedColumnIsRejected)
 }
 
 #endif
+
+TEST(ColumnArray, InsertSingletonFromSelfAcrossNestedCapacity)
+{
+    auto data = ColumnUInt64::create();
+    data->insertValue(42);
+    const size_t capacity = data->getData().capacity();
+    while (data->size() < capacity)
+        data->insertValue(data->size());
+
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    for (size_t i = 0; i < data->size(); ++i)
+        offsets->insertValue(i + 1);
+    auto column = ColumnArray::create(std::move(data), std::move(offsets));
+
+    column->insertFrom(*column, 0);
+
+    EXPECT_EQ(column->size(), capacity + 1);
+    EXPECT_EQ(column->getData().size(), capacity + 1);
+    EXPECT_EQ(column->getOffsets().back(), capacity + 1);
+    EXPECT_EQ(column->getData().getUInt(capacity), 42);
+    for (size_t i = 1; i < capacity; ++i)
+        EXPECT_EQ(column->getData().getUInt(i), i);
+}

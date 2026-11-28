@@ -7,27 +7,31 @@ description: '介绍如何使用 clickhouse-local 迁移到 ClickHouse 的指南
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import AddARemoteSystem from '/snippets/zh/_add_remote_ip_access_list_detail.mdx';
 
-<Image img="/images/integrations/migration/ch-local-01.webp" size="lg" alt="迁移自管理 ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![迁移自管理 ClickHouse](/images/integrations/migration/ch-local-01.webp)
+  </Frame>
+</div>
 
 您可以使用 ClickHouse，更准确地说，是使用 [`clickhouse-local`](/zh/concepts/features/tools-and-utilities/clickhouse-local)
 作为 ETL 工具，将数据从当前的数据库系统迁移到 ClickHouse Cloud，前提是当前数据库系统具备以下之一：
-ClickHouse 提供的[integration 表引擎](/zh/reference/engines/table-engines/index#integration-engines) 或 [表函数](/zh/reference/functions/table-functions/index)，
+ClickHouse 提供的[集成引擎](/zh/reference/engines/table-engines/index#integration-engines) 或 [表函数](/zh/reference/functions/table-functions/index)，
 或者由相应厂商提供的 JDBC 驱动或 ODBC 驱动。
 
 我们有时将这种迁移方法称为 &quot;中转&quot; 方法，因为它会借助一个中间中转点，将数据从源数据库迁移到目标端数据库。比如，出于安全要求，私有网络或内部网络中可能只允许出站连接，此时就需要采用这种方法：先用 clickhouse-local 从源数据库拉取数据，再将数据推送到目标端 ClickHouse 数据库，而 clickhouse-local 就充当这个中转点。
 
-ClickHouse 为 [MySQL](/zh/reference/engines/table-engines/integrations/mysql)、[PostgreSQL](/zh/reference/engines/table-engines/integrations/postgresql)、[MongoDB](/zh/reference/engines/table-engines/integrations/mongodb) 和 [SQLite](/zh/reference/engines/table-engines/integrations/sqlite) 提供 integration 表引擎 和 表函数 (可动态创建 integration 表引擎) 。
+ClickHouse 为 [MySQL](/zh/reference/engines/table-engines/integrations/mysql)、[PostgreSQL](/zh/reference/engines/table-engines/integrations/postgresql)、[MongoDB](/zh/reference/engines/table-engines/integrations/mongodb) 和 [SQLite](/zh/reference/engines/table-engines/integrations/sqlite) 提供 集成引擎 和 表函数 (可动态生成集成引擎) 。
 对于其他所有常见数据库系统，则可以使用由相应厂商提供的 JDBC 驱动或 ODBC 驱动。
 
-<div id="what-is-clickhouse-local">
-  ## 什么是 clickhouse-local?
-</div>
+## 什么是 clickhouse-local? {#what-is-clickhouse-local}
 
-<Image img="/images/integrations/migration/ch-local-02.webp" size="lg" alt="迁移自管理 ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![迁移自管理 ClickHouse](/images/integrations/migration/ch-local-02.webp)
+  </Frame>
+</div>
 
 通常，ClickHouse 以集群形式运行，即多个 ClickHouse 数据库引擎实例以分布式方式运行在不同的服务器上。
 
@@ -36,7 +40,7 @@ ClickHouse 为 [MySQL](/zh/reference/engines/table-engines/integrations/mysql)�
 `clickhouse-local` 工具让你能够以隔离的命令行工具形式使用 ClickHouse 数据库引擎，对大量输入和输出执行极速的 SQL 数据处理，而无需配置并启动 ClickHouse server。
 
 <div id="installing-clickhouse-local">
-  ## 安装 clickhouse-local
+  ## 安装 clickhouse-local {#installing-clickhouse-local}
 </div>
 
 你需要为 `clickhouse-local` 准备一台主机，并确保该主机能够通过网络同时访问当前的源数据库系统和 ClickHouse Cloud 目标服务。
@@ -89,32 +93,32 @@ ClickHouse 为 [MySQL](/zh/reference/engines/table-engines/integrations/mysql)�
 <AddARemoteSystem />
 
 <div id="example-1-migrating-from-mysql-to-clickhouse-cloud-with-an-integration-engine">
-  ## 示例：使用 Integration 引擎从 MySQL 迁移到 ClickHouse Cloud
+  ## 示例：使用 集成引擎从 MySQL 迁移到 ClickHouse Cloud {#example-1-migrating-from-mysql-to-clickhouse-cloud-with-an-integration-engine}
 </div>
 
-我们将使用 [integration 表引擎](/zh/reference/engines/table-engines/integrations/mysql) (由 [mysql 表函数](/zh/reference/functions/table-functions/mysql) 即时创建) 从源 MySQL 数据库读取数据，并使用 [remoteSecure 表函数](/zh/reference/functions/table-functions/remote)
+我们将使用 [集成引擎](/zh/reference/engines/table-engines/integrations/mysql) (由 [mysql 表函数](/zh/reference/functions/table-functions/mysql) 动态生成) 从源 MySQL 数据库读取数据，并使用 [remoteSecure 表函数](/zh/reference/functions/table-functions/remote)
 将数据写入您的 ClickHouse Cloud 服务中的目标端表。
 
-<Image img="/images/integrations/migration/ch-local-03.webp" size="lg" alt="迁移自管理 ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![迁移自管理 ClickHouse](/images/integrations/migration/ch-local-03.webp)
+  </Frame>
+</div>
 
 <div id="on-the-destination-clickhouse-cloud-service">
-  ### 在目标端 ClickHouse Cloud 服务上：
+  ### 在目标端 ClickHouse Cloud 服务上： {#on-the-destination-clickhouse-cloud-service}
 </div>
 
-<div id="create-the-destination-database">
-  #### 创建目标端数据库：
-</div>
+#### 创建目标端数据库： {#create-the-destination-database}
 
 ```sql
-  CREATE DATABASE db
+CREATE DATABASE db
 ```
 
-<div id="create-a-destination-table-that-has-a-schema-equivalent-to-the-mysql-table">
-  #### 创建一个与 MySQL 表 schema 等效的目标端表：
-</div>
+#### 创建一个与 MySQL 表 schema 等效的目标端表： {#create-a-destination-table-that-has-a-schema-equivalent-to-the-mysql-table}
 
 ```sql
-  CREATE TABLE db.table ...
+CREATE TABLE db.table ...
 ```
 
 <Note>
@@ -122,15 +126,13 @@ ClickHouse 为 [MySQL](/zh/reference/engines/table-engines/integrations/mysql)�
 </Note>
 
 <div id="on-the-clickhouse-local-host-machine">
-  ### 在 clickhouse-local 所在主机上：
+  ### 在 clickhouse-local 所在主机上： {#on-the-clickhouse-local-host-machine}
 </div>
 
-<div id="run-clickhouse-local-with-the-migration-query">
-  #### 运行 clickhouse-local 并执行迁移查询：
-</div>
+#### 运行 clickhouse-local 并执行迁移查询： {#run-clickhouse-local-with-the-migration-query}
 
 ```sql
-  ./clickhouse-local --query "
+./clickhouse-local --query "
 INSERT INTO FUNCTION
 remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table', 'default', 'PASS')
 SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password');"

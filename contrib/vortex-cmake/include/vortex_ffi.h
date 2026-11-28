@@ -70,7 +70,7 @@ struct ArrowArray
 
 
 /// The queue a task waits in.
-enum class FFI_VortexTaskQueue : int32_t
+enum class FFI_VortexTaskQueue
 {
     /// Decoding, filtering and exporting to Arrow: work that needs a core.
     CPU = 0,
@@ -361,5 +361,7 @@ void vortex_ffi_writer_free(FFI_VortexWriter *writer);
 
 /// Frees a string returned by this library, such as an error message.
 void vortex_ffi_free_string(char *string);
+
+const char *vortex_ffi_version();
 
 }  // extern "C"

@@ -15,7 +15,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Access/Common/AccessFlags.h>
-#include <Interpreters/Context.h>
+#include <Functions/FunctionAccessCheck.h>
 
 
 namespace DB
@@ -35,37 +35,40 @@ public:
     static constexpr auto name = "addressToSymbol";
     static FunctionPtr create(ContextPtr context)
     {
-        context->checkAccess(AccessType::addressToSymbol);
-        return std::make_shared<FunctionAddressToSymbol>();
+        return std::make_shared<FunctionAddressToSymbol>(context);
     }
 
-    String getName() const override
+    explicit FunctionAddressToSymbol(const ContextPtr & context) : access_check(context) {}
+
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override
+    void checkAccessOnBuild() const override { access_check.check(AccessType::addressToSymbol); }
+
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
     /// Resolved against the executing node's own binary, like `buildId`.
-    bool isDeterministic() const override { return false; }
-    bool isServerConstant() const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isServerConstant() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(UInt64) -> String";
     }
 
-    bool useDefaultImplementationForConstants() const override
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & column = arguments[0].column;
         const ColumnUInt64 * column_concrete = checkAndGetColumn<ColumnUInt64>(column.get());
@@ -93,6 +96,9 @@ public:
 
         return result_column;
     }
+
+private:
+    FunctionAccessCheck access_check;
 };
 
 }

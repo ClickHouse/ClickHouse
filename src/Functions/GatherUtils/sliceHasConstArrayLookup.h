@@ -201,7 +201,7 @@ public:
         }
     }
 
-    ALWAYS_INLINE bool has(T value) const
+    [[nodiscard]] ALWAYS_INLINE bool has(T value) const
     {
         Key<T> key{};
         if (!makeKey(value, key))
@@ -286,7 +286,7 @@ public:
     }
 
     /// The number of counted values.
-    size_t size() const { return count; }
+    [[nodiscard]] size_t size() const { return count; }
 
 private:
     static constexpr UInt32 not_counted = std::numeric_limits<UInt32>::max();
@@ -318,9 +318,9 @@ struct Work
     /// is given a part of the work of the lookup.
     size_t table_shift = 0;
 
-    size_t allowed() const { return table >> table_shift; }
+    [[nodiscard]] size_t allowed() const { return table >> table_shift; }
     /// The table would have been faster for the rows searched so far.
-    bool exceeded() const { return search > allowed(); }
+    [[nodiscard]] bool exceeded() const { return search > allowed(); }
 };
 
 /// Returns the position of the first of the non-NULL values of the array in `[begin, end)` that is in the row, or `end`. The search
@@ -396,7 +396,7 @@ void searchThenLookup(
 {
     Work work{.table = build_work};
     size_t row = 0;
-    while (row < size && search_row(row, offsets[row - 1], offsets[row], work))
+    while (row < size && search_row(row, offsets[static_cast<ssize_t>(row) - 1], offsets[row], work))
         ++row;
     if (row == size)
         return;
@@ -408,12 +408,12 @@ void searchThenLookup(
         if (allowed_search_work < 0)
             return false;
         Work row_work{.table_shift = search_after_build_table_shift};
-        const bool searched = search_row(searched_row, offsets[searched_row - 1], offsets[searched_row], row_work);
+        const bool searched = search_row(searched_row, offsets[static_cast<ssize_t>(searched_row) - 1], offsets[searched_row], row_work);
         const Int64 saved_work = (searched ? static_cast<Int64>(row_work.table) : 0) - static_cast<Int64>(row_work.search);
         allowed_search_work += lookup_work_per_wasted_search_work * saved_work;
         return searched;
     };
-    auto add_lookup_work = [&](size_t lookup_work) ALWAYS_INLINE { allowed_search_work += lookup_work; };
+    auto add_lookup_work = [&](size_t lookup_work) ALWAYS_INLINE { allowed_search_work += static_cast<Int64>(lookup_work); };
     lookup_rows(row, try_search, add_lookup_work);
 }
 
@@ -542,7 +542,7 @@ void lookupElements(
         {
             if (try_search(row))
                 continue;
-            const size_t begin = offsets[row - 1];
+            const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
             size_t i = begin;
             bool settled = settled_by_null(begin, offsets[row]);
             for (; i < offsets[row] && !settled; ++i)
@@ -644,7 +644,7 @@ void lookupAllOfConst(
         const size_t min_row_size = num_searched + num_counted;
         for (size_t row = from_row; row < size; ++row)
         {
-            const size_t begin = offsets[row - 1];
+            const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
             const size_t end = offsets[row];
             const size_t row_size = end - begin;
             if (row_size < min_row_size)

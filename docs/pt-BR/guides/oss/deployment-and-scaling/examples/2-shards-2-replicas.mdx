@@ -4,10 +4,8 @@ sidebarTitle: 'Replicação + escalonamento'
 title: 'Replicação + escalonamento'
 description: 'Ao acompanhar este tutorial, você aprenderá a configurar um cluster ClickHouse simples.'
 doc_type: 'guide'
-keywords: ['implantação de cluster', 'replicação', 'sharding', 'alta disponibilidade', 'escalonamento']
+keywords: ['implantação de cluster', 'replicação', 'sharding', 'alta disponibilidade', 'escalabilidade']
 ---
-
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 import ConfigExplanation from '/snippets/pt-BR/_config_explanation.mdx';
 import ListenHost from '/snippets/pt-BR/_listen_host.mdx';
@@ -16,6 +14,7 @@ import KeeperConfigExplanation from '/snippets/pt-BR/_keeper_explanation.mdx';
 import VerifyKeeperStatus from '/snippets/pt-BR/_verify_keeper_using_mntr.mdx';
 import DedicatedKeeperServers from '/snippets/pt-BR/_dedicated_keeper_servers.mdx';
 import ExampleFiles from '/snippets/pt-BR/_working_example.mdx';
+
 import CloudTip from '/snippets/pt-BR/_cloud_tip.mdx';
 
 > Neste exemplo, você aprenderá a configurar um cluster ClickHouse simples que
@@ -25,12 +24,16 @@ import CloudTip from '/snippets/pt-BR/_cloud_tip.mdx';
 
 A arquitetura do cluster que você configurará é mostrada abaixo:
 
-<Image img="/images/deployment-guides/replication-sharding-examples/both.webp" size="md" alt="Diagrama de arquitetura para 2 shards e 1 réplica" />
+<div className="ch-image-md">
+  <Frame>
+    ![Diagrama de arquitetura para 2 shards e 1 réplica](/images/deployment-guides/replication-sharding-examples/both.webp)
+  </Frame>
+</div>
 
 <DedicatedKeeperServers />
 
 <div id="prerequisites">
-  ## Pré-requisitos
+  ## Pré-requisitos {#prerequisites}
 </div>
 
 * Você já configurou anteriormente um [servidor ClickHouse local](/pt-BR/get-started/setup/install)
@@ -171,7 +174,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
   </Step>
 
   <Step title="Configurar nós do ClickHouse" id="configure-clickhouse-servers">
-### Configuração do servidor
+### Configuração do servidor {#server-setup}
 
     Agora modifique cada arquivo de configuração vazio `config.xml` localizado em
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. As linhas que estão
@@ -257,7 +260,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
 
     Cada seção do arquivo de configuração acima é explicada com mais detalhes a seguir.
 
-#### Rede e logging
+#### Rede e logging {#networking}
 
     <ListenHost />
 
@@ -277,7 +280,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
     Para mais informações sobre a configuração de logging, consulte os comentários incluídos no
     [arquivo de configuração](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) padrão do ClickHouse.
 
-#### Configuração do cluster
+#### Configuração do cluster {#cluster-config}
 
     A configuração do cluster é definida no bloco `<remote_servers>`.
     Aqui é definido o nome do cluster `cluster_2S_2R`.
@@ -326,7 +329,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
     e serve como template para queries de DDL distribuído, que são queries executadas
     em todo o cluster usando a cláusula `ON CLUSTER`.
 
-#### Configuração do Keeper
+#### Configuração do Keeper {#keeper-config-explanation}
 
     A seção `<ZooKeeper>` informa ao ClickHouse onde o ClickHouse Keeper (ou ZooKeeper) está em execução.
     Como estamos usando um cluster do ClickHouse Keeper, cada `<node>` do cluster precisa ser especificado,
@@ -356,7 +359,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
       em ambientes de produção, recomendamos fortemente que o ClickHouse Keeper seja executado em servidores dedicados.
     </Note>
 
-#### Configuração de macros
+#### Configuração de macros {#macros-config-explanation}
 
     Além disso, a seção `<macros>` é usada para definir substituições de parâmetros para
     tabelas replicadas. Elas são listadas em `system.macros` e permitem o uso de substituições
@@ -369,7 +372,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
     </macros>
     ```
 
-### Configuração de usuário
+### Configuração de usuário {#cluster-configuration}
 
     Agora modifique cada arquivo de configuração vazio `users.xml` localizado em
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` com o seguinte conteúdo:
@@ -423,7 +426,7 @@ A arquitetura do cluster que você configurará é mostrada abaixo:
   <Step title="Configurar o ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     Em seguida, você vai configurar o ClickHouse Keeper, que é usado para coordenação.
 
-### Configuração do Keeper
+### Configuração do Keeper {#configuration-explanation}
 
     <KeeperConfig />
 

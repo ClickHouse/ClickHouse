@@ -32,16 +32,16 @@ public:
     NameAndTypePair(const String & name_in_storage_, const String & subcolumn_name_,
         const DataTypePtr & type_in_storage_, const DataTypePtr & subcolumn_type_);
 
-    String getNameInStorage() const;
-    String getSubcolumnName() const;
+    [[nodiscard]] String getNameInStorage() const;
+    [[nodiscard]] String getSubcolumnName() const;
 
-    bool isSubcolumn() const { return subcolumn_delimiter_position != std::nullopt; }
-    const DataTypePtr & getTypeInStorage() const { return type_in_storage; }
+    [[nodiscard]] bool isSubcolumn() const { return subcolumn_delimiter_position != std::nullopt; }
+    [[nodiscard]] const DataTypePtr & getTypeInStorage() const { return type_in_storage; }
 
     bool operator<(const NameAndTypePair & rhs) const;
     bool operator==(const NameAndTypePair & rhs) const;
 
-    String dump() const;
+    [[nodiscard]] String dump() const;
 
     /// Can be used to convert "t.a.b.c" from meaning "column `t` in storage, subcolumn `a.b.c` inside it"
     /// to meaning "column `t.a.b` in storage, subcolumn `c` inside it".
@@ -91,52 +91,52 @@ public:
     void readText(ReadBuffer & buf, bool check_eof = true);
     void writeText(WriteBuffer & buf) const;
 
-    String toString() const;
+    [[nodiscard]] String toString() const;
     static NamesAndTypesList parse(const String & s);
 
     /// All `rhs` elements must be different.
-    bool isSubsetOf(const NamesAndTypesList & rhs) const;
+    [[nodiscard]] bool isSubsetOf(const NamesAndTypesList & rhs) const;
 
     /// Hamming distance between sets
     ///  (in other words, the added and deleted columns are counted once, the columns that changed the type - twice).
-    size_t sizeOfDifference(const NamesAndTypesList & rhs) const;
+    [[nodiscard]] size_t sizeOfDifference(const NamesAndTypesList & rhs) const;
 
     /// If an element changes type, it is present both in deleted (with the old type) and in added (with the new type).
     void getDifference(const NamesAndTypesList & rhs, NamesAndTypesList & deleted, NamesAndTypesList & added) const;
 
-    Names getNames() const;
-    NameSet getNameSet() const;
-    DataTypes getTypes() const;
+    [[nodiscard]] Names getNames() const;
+    [[nodiscard]] NameSet getNameSet() const;
+    [[nodiscard]] DataTypes getTypes() const;
 
     /// Creates a mapping from name to the type
-    UnorderedMapWithMemoryTracking<std::string, DataTypePtr> getNameToTypeMap() const;
+    [[nodiscard]] UnorderedMapWithMemoryTracking<std::string, DataTypePtr> getNameToTypeMap() const;
 
     /// Remove columns which names are not in the `names`.
     void filterColumns(const NameSet & names);
 
     /// Leave only the columns whose names are in the `names`. In `names` there can be superfluous columns.
-    NamesAndTypesList filter(const NameSet & names) const;
+    [[nodiscard]] NamesAndTypesList filter(const NameSet & names) const;
 
     /// Leave only the columns whose names are in the `names`. In `names` there can be superfluous columns.
-    NamesAndTypesList filter(const Names & names) const;
+    [[nodiscard]] NamesAndTypesList filter(const Names & names) const;
 
     /// Leave only the columns whose names are not in the `names`.
-    NamesAndTypesList eraseNames(const NameSet & names) const;
+    [[nodiscard]] NamesAndTypesList eraseNames(const NameSet & names) const;
 
     /// Unlike `filter`, returns columns in the order in which they go in `names`.
-    NamesAndTypesList addTypes(const Names & names) const;
+    [[nodiscard]] NamesAndTypesList addTypes(const Names & names) const;
 
     /// Check if `name` is one of the column names
-    bool contains(const String & name) const;
-    bool containsCaseInsensitive(const String & name) const;
+    [[nodiscard]] bool contains(const String & name) const;
+    [[nodiscard]] bool containsCaseInsensitive(const String & name) const;
 
     /// Try to get column by name, returns empty optional if column not found
-    std::optional<NameAndTypePair> tryGetByName(const std::string & name) const;
+    [[nodiscard]] std::optional<NameAndTypePair> tryGetByName(const std::string & name) const;
 
     /// Try to get column position by name, returns number of columns if column isn't found
-    size_t getPosByName(const std::string & name) const noexcept;
+    [[nodiscard]] size_t getPosByName(const std::string & name) const noexcept;
 
-    String toNamesAndTypesDescription() const;
+    [[nodiscard]] String toNamesAndTypesDescription() const;
     /// Same as NamesAndTypesList::readText, but includes `type_in_storage`.
     void readTextWithNamesInStorage(ReadBuffer & buf);
     /// Same as NamesAndTypesList::writeText, but includes `type_in_storage`.

@@ -14,17 +14,15 @@ namespace
 class AggregateFunctionCombinatorState final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "State"; }
+    [[nodiscard]] String getName() const override { return "State"; }
 
-    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
-    bool returnsNestedState() const override { return true; }
-
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         return arguments;
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

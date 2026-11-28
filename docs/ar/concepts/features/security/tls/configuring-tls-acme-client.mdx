@@ -9,19 +9,18 @@ doc_type: 'guide'
 
 import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
 
 <SelfManaged />
 
-يوضح هذا الدليل كيفية إعداد ClickHouse لاستخدام بروتوكول [ACME](https://en.wikipedia.org/wiki/Automatic_Certificate_Management_Environment) (الموصوف في [RFC8555](https://www.rfc-editor.org/rfc/rfc8555)).
+يوضح هذا الدليل كيفية تهيئة ClickHouse لاستخدام بروتوكول [ACME](https://en.wikipedia.org/wiki/Automatic_Certificate_Management_Environment) (الموصوف في [RFC8555](https://www.rfc-editor.org/rfc/rfc8555)).
 ومع دعم ACME، يمكن لـ ClickHouse الحصول على الشهادات وتجديدها تلقائيًا من موفّرين مثل [Let&#39;s Encrypt](https://letsencrypt.org/) أو [ZeroSSL](https://zerossl.com/).
 يحمي تشفير TLS البيانات أثناء انتقالها بين العملاء وخوادم ClickHouse، مما يمنع التنصت على الاستعلامات الحساسة ونتائجها.
 
 <div id="overview">
-  ## نظرة عامة
+  ## نظرة عامة {#overview}
 </div>
 
 يحدّد بروتوكول ACME آلية التحديث التلقائي للشهادات بالاستعانة بخدمات مثل [Let&#39;s Encrypt](https://letsencrypt.org/) أو [ZeroSSL](https://zerossl.com/). باختصار، يحتاج ClickHouse، بصفته طالب الشهادة، إلى إثبات ملكية النطاق عبر أنواع التحديات المحددة مسبقًا للحصول على شهادة.
@@ -49,7 +48,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 بعد ذلك، كل ما نحتاجه هو قائمة بالنطاقات.
 
 <div id="current-limitations">
-  ### القيود الحالية
+  ### القيود الحالية {#current-limitations}
 </div>
 
 * لا يُدعَم إلا نوع التحدي `HTTP-01`.
@@ -57,7 +56,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * لا تتم معالجة تحديد المعدّل.
 
 <div id="configuration-parameters">
-  ## معلمات التكوين
+  ## معلمات التكوين {#configuration-parameters}
 </div>
 
 خيارات التكوين المتاحة في قسم `acme`:
@@ -75,11 +74,11 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 لاحظ أن التكوين يستخدم دليل الإنتاج الخاص بـ Let&#39;s Encrypt افتراضيًا. ولتجنب استهلاك حصة الطلبات بسبب خطأ محتمل في التكوين، يُنصح أولًا باختبار عملية إصدار الشهادات باستخدام [دليل staging](https://letsencrypt.org/docs/staging-environment/).
 
 <div id="administration">
-  # الإدارة
+  # الإدارة {#administration}
 </div>
 
 <div id="initial-deployment">
-  ## النشر الأولي
+  ## النشر الأولي {#initial-deployment}
 </div>
 
 عند تمكين عميل ACME على عنقود يضم عدة نسخ متماثلة، يلزم توخي عناية إضافية عند إصدار الشهادة لأول مرة.
@@ -93,7 +92,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 بعد إصدار الشهادة الأولية أو استيرادها، لا يتطلب تجديد الشهادة أي معالجة خاصة، لأن جميع النسخ المتماثلة ستكون قد شغّلت بالفعل عميل ACME وتتشارك الحالة عبر Keeper.
 
 <div id="keeper-data-structure">
-  ## هيكل بيانات Keeper
+  ## هيكل بيانات Keeper {#keeper-data-structure}
 </div>
 
 ```text
@@ -108,7 +107,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 ```
 
 <div id="migrating-from-other-acme-clients">
-  ## الترحيل من عملاء ACME الآخرين
+  ## الترحيل من عملاء ACME الآخرين {#migrating-from-other-acme-clients}
 </div>
 
 يمكن ترحيل شهادة TLS الحالية ومفتاحها إلى Keeper لتبسيط عملية الترحيل.

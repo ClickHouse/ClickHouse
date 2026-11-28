@@ -11,6 +11,8 @@
 namespace DB
 {
 
+template <typename> struct ServerOwnedObjectAllocator;
+
 /** Mark is the position in the compressed file. The compressed file consists of adjacent compressed blocks.
   * Mark is a tuple - the offset in the file to the start of the compressed block, the offset in the decompressed block to the start of the data.
   */
@@ -21,10 +23,10 @@ struct MarkInCompressedFile
 
     auto operator<=>(const MarkInCompressedFile &) const = default;
 
-    auto asTuple() const { return std::make_tuple(offset_in_compressed_file, offset_in_decompressed_block); }
+    [[nodiscard]] auto asTuple() const { return std::make_tuple(offset_in_compressed_file, offset_in_decompressed_block); }
 
-    String toString() const;
-    String toStringWithRows(size_t rows_num) const;
+    [[nodiscard]] String toString() const;
+    [[nodiscard]] String toStringWithRows(size_t rows_num) const;
 };
 
 /**
@@ -92,11 +94,11 @@ public:
     /// Create from a complete plain marks array.
     static std::shared_ptr<MarksInCompressedFile> create(const PlainArray & marks);
 
-    MarkInCompressedFile get(size_t idx) const;
+    [[nodiscard]] MarkInCompressedFile get(size_t idx) const;
 
-    size_t approximateMemoryUsage() const;
+    [[nodiscard]] size_t approximateMemoryUsage() const;
 
-    size_t getNumberOfMarks() const { return num_marks; }
+    [[nodiscard]] size_t getNumberOfMarks() const { return num_marks; }
 
     static constexpr size_t MARKS_PER_BLOCK = 256;
 
@@ -137,7 +139,8 @@ public:
     };
 
 private:
-    /// Private constructor used by Builder::finish.
+    /// Private constructor used by Builder::finish, through `makeServerOwned`.
+    template <typename> friend struct ServerOwnedObjectAllocator;
     MarksInCompressedFile(
         size_t num_marks_,
         PODArray<BlockInfo, 4096, JemallocCacheAllocator> && blocks_,
@@ -148,7 +151,7 @@ private:
     PODArray<UInt64, 4096, JemallocCacheAllocator> packed;
 
     // Mark idx -> {block info, bit offset in `packed`}.
-    std::tuple<const BlockInfo *, size_t> lookUpMark(size_t idx) const;
+    [[nodiscard]] std::tuple<const BlockInfo *, size_t> lookUpMark(size_t idx) const;
 };
 
 using PlainMarksByName = std::unordered_map<String, std::unique_ptr<MarksInCompressedFile::PlainArray>>;

@@ -24,9 +24,9 @@ struct FixedHashTableCell
     FixedHashTableCell(const Key &, const State &) : full(true) {}
 
     const VoidKey getKey() const { return {}; } /// NOLINT
-    VoidMapped getMapped() const { return {}; }
+    [[nodiscard]] VoidMapped getMapped() const { return {}; }
 
-    bool isZero(const State &) const { return !full; }
+    [[nodiscard]] bool isZero(const State &) const { return !full; }
     void setZero() { full = false; }
     static constexpr bool need_zero_value_storage = false;
 
@@ -41,8 +41,8 @@ struct FixedHashTableCell
         Key key;
 
         const VoidKey getKey() const { return {}; } /// NOLINT
-        VoidMapped getMapped() const { return {}; }
-        const value_type & getValue() const { return key; }
+        [[nodiscard]] VoidMapped getMapped() const { return {}; }
+        [[nodiscard]] const value_type & getValue() const { return key; }
         /// The cell pointer is unused (the key is the cell index); const so that const iteration works.
         void update(Key && key_, const FixedHashTableCell *) { key = key_; }
     };
@@ -135,7 +135,7 @@ protected:
 
     void alloc() { buf = reinterpret_cast<Cell *>(Allocator::alloc(NUM_CELLS * sizeof(Cell))); }
 
-    std::pair<UInt32, UInt32> getMinMaxIndex() const
+    [[nodiscard]] std::pair<UInt32, UInt32> getMinMaxIndex() const
     {
         return {min, max};
     }
@@ -205,9 +205,9 @@ protected:
             return &cell;
         }
 
-        auto getPtr() const { return ptr; }
-        size_t getHash() const { return ptr - container->buf; }
-        size_t getCollisionChainLength() const { return 0; }
+        [[nodiscard]] auto getPtr() const { return ptr; }
+        [[nodiscard]] size_t getHash() const { return ptr - container->buf; }
+        [[nodiscard]] size_t getCollisionChainLength() const { return 0; }
         typename cell_type::CellExt cell;
     };
 
@@ -222,7 +222,7 @@ public:
     using ConstLookupResult = const Cell *;
 
 
-    size_t hash(const Key & x) const { return x; }
+    [[nodiscard]] size_t hash(const Key & x) const { return x; }
 
     FixedHashTable() { alloc(); }
 
@@ -308,7 +308,7 @@ public:
     };
 
 
-    const_iterator begin() const
+    [[nodiscard]] const_iterator begin() const
     {
         if (!buf)
             return end();
@@ -316,7 +316,7 @@ public:
         return const_iterator(this, firstPopulatedCell());
     }
 
-    const_iterator cbegin() const { return begin(); }
+    [[nodiscard]] const_iterator cbegin() const { return begin(); }
 
     iterator begin()
     {
@@ -326,13 +326,13 @@ public:
         return iterator(this, const_cast<Cell *>(firstPopulatedCell()));
     }
 
-    const_iterator end() const
+    [[nodiscard]] const_iterator end() const
     {
         /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
         return const_iterator(this, buf ? lastPopulatedCell() : buf);
     }
 
-    const_iterator cend() const
+    [[nodiscard]] const_iterator cend() const
     {
         return end();
     }
@@ -378,21 +378,21 @@ public:
 
     LookupResult ALWAYS_INLINE find(const Key & x) { return !buf[x].isZero(*this) ? &buf[x] : nullptr; }
 
-    ConstLookupResult ALWAYS_INLINE find(const Key & x) const { return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x); }
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key & x) const { return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x); }
 
     LookupResult ALWAYS_INLINE find(const Key &, size_t hash_value) { return !buf[hash_value].isZero(*this) ? &buf[hash_value] : nullptr; }
 
-    ConstLookupResult ALWAYS_INLINE find(const Key & key, size_t hash_value) const
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key & key, size_t hash_value) const
     {
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(key, hash_value);
     }
 
-    bool ALWAYS_INLINE has(const Key & x) const { return !buf[x].isZero(*this); }
-    bool ALWAYS_INLINE has(const Key &, size_t hash_value) const { return !buf[hash_value].isZero(*this); }
+    [[nodiscard]] bool ALWAYS_INLINE has(const Key & x) const { return !buf[x].isZero(*this); }
+    [[nodiscard]] bool ALWAYS_INLINE has(const Key &, size_t hash_value) const { return !buf[hash_value].isZero(*this); }
 
     /// `max < min` means the table is empty. `can_trust_min_max_values` is false when the bounds were not maintained.
     /// `disable_min_max_optimization` keeps the bounds off until `restoreMinMaxOptimization`.
-    bool ALWAYS_INLINE canUseMinMaxOptimization() const
+    [[nodiscard]] bool ALWAYS_INLINE canUseMinMaxOptimization() const
     {
         return (max >= min) && can_trust_min_max_values && !disable_min_max_optimization;
     }
@@ -422,7 +422,7 @@ public:
         can_trust_min_max_values = true;
     }
 
-    const Cell * ALWAYS_INLINE firstPopulatedCell() const
+    [[nodiscard]] const Cell * ALWAYS_INLINE firstPopulatedCell() const
     {
         const Cell * ptr = buf;
         if (!canUseMinMaxOptimization())
@@ -436,7 +436,7 @@ public:
         return ptr;
     }
 
-    Cell * ALWAYS_INLINE lastPopulatedCell() const { return canUseMinMaxOptimization() ? buf + max + 1 : buf + NUM_CELLS; }
+    [[nodiscard]] Cell * ALWAYS_INLINE lastPopulatedCell() const { return canUseMinMaxOptimization() ? buf + max + 1 : buf + NUM_CELLS; }
 
     void write(DB::WriteBuffer & wb) const
     {
@@ -520,8 +520,8 @@ public:
         can_trust_min_max_values = false;
     }
 
-    size_t size() const { return this->getSize(buf, *this, NUM_CELLS); }
-    bool empty() const { return this->isEmpty(buf, *this, NUM_CELLS); }
+    [[nodiscard]] size_t size() const { return this->getSize(buf, *this, NUM_CELLS); }
+    [[nodiscard]] bool empty() const { return this->isEmpty(buf, *this, NUM_CELLS); }
 
     void clear()
     {
@@ -540,9 +540,9 @@ public:
         free();
     }
 
-    size_t getBufferSizeInBytes() const { return NUM_CELLS * sizeof(Cell); }
+    [[nodiscard]] size_t getBufferSizeInBytes() const { return NUM_CELLS * sizeof(Cell); }
 
-    size_t getBufferSizeInCells() const { return NUM_CELLS; }
+    [[nodiscard]] size_t getBufferSizeInCells() const { return NUM_CELLS; }
 
     /// Return offset for result in internal buffer.
     /// Result can have value up to `getBufferSizeInCells() + 1`
@@ -555,7 +555,7 @@ public:
         return ptr - buf + 1;
     }
 
-    const Cell * data() const { return buf; }
+    [[nodiscard]] const Cell * data() const { return buf; }
     Cell * data()
     {
         can_trust_min_max_values = false;
@@ -563,6 +563,6 @@ public:
     }
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
-    size_t getCollisions() const { return 0; }
+    [[nodiscard]] size_t getCollisions() const { return 0; }
 #endif
 };

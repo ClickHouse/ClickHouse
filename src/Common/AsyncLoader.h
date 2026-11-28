@@ -203,7 +203,7 @@ public:
 
     // Return the final jobs in this tasks. This job subset should be used as `dependencies` for dependent jobs or tasks:
     //   auto load_task = loadSomethingAsync(async_loader, load_after_task.goals(), something);
-    const LoadJobSet & goals() const { return goal_jobs.empty() ? jobs : goal_jobs; }
+    [[nodiscard]] const LoadJobSet & goals() const { return goal_jobs.empty() ? jobs : goal_jobs; }
 
     AsyncLoader & loader;
 
@@ -327,9 +327,9 @@ private:
         LoadJobSet dependent_jobs; // Set of jobs dependent on this job. Contains only scheduled jobs.
 
         // Three independent states of a scheduled job.
-        bool isBlocked() const { return dependencies_left > 0; }
-        bool isReady() const { return dependencies_left == 0 && ready_seqno > 0; }
-        bool isExecuting() const { return dependencies_left == 0 && ready_seqno == 0; }
+        [[nodiscard]] bool isBlocked() const { return dependencies_left > 0; }
+        [[nodiscard]] bool isReady() const { return dependencies_left == 0 && ready_seqno > 0; }
+        [[nodiscard]] bool isExecuting() const { return dependencies_left == 0 && ready_seqno == 0; }
     };
 
 public:

@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Interpreters/ActionsDAG.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -25,13 +28,13 @@ namespace DB::QueryPlanOptimizations
 std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTree * reading);
 
 /// Keeps only the projection named `preferred_name` when it is in the list, otherwise leaves the list as is.
-void filterProjectionCandidates(std::vector<const ProjectionDescription *> & projections, const String & preferred_name);
+void filterProjectionCandidates(VectorWithMemoryTracking<const ProjectionDescription *> & projections, const String & preferred_name);
 
 /// Records `reason` in `reject_reasons` for every projection of `projections` that is not in `kept`, keeping a reason that is already there.
 void rejectProjections(
-    std::unordered_map<String, String> & reject_reasons,
-    const std::vector<const ProjectionDescription *> & projections,
-    const std::vector<const ProjectionDescription *> & kept,
+    UnorderedMapWithMemoryTracking<String, String> & reject_reasons,
+    const VectorWithMemoryTracking<const ProjectionDescription *> & projections,
+    const VectorWithMemoryTracking<const ProjectionDescription *> & kept,
     const String & reason);
 
 /// Max blocks for sequential consistency reading from replicated table.
@@ -79,7 +82,7 @@ struct ProjectionCandidate
     ReadFromMergeTree::AnalysisResultPtr merge_tree_projection_select_result_ptr;
 
     /// Parent parts that need to be read due to missing this projection
-    std::unordered_set<const IMergeTreeDataPart *> parent_parts;
+    UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> parent_parts;
     /// Rows of the parent parts that need to be read due to missing this projection
     size_t parent_rows = 0;
 };
@@ -103,7 +106,7 @@ void recordHypotheticalOutcome(
 /// Removes parts not in valid_parts from reading_select_result and updates related counters.
 /// Returns the number of parts removed.
 size_t filterPartsByProjection(
-    ReadFromMergeTree::AnalysisResult & reading_select_result, const std::unordered_set<const IMergeTreeDataPart *> & valid_parts);
+    ReadFromMergeTree::AnalysisResult & reading_select_result, const UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> & valid_parts);
 
 /// This function fills ProjectionCandidate structure for specified projection.
 /// It returns false if for some reason we cannot read from projection.
@@ -112,6 +115,8 @@ size_t filterPartsByProjection(
 /// `top_k_filter_info` is the TopK stamp of the read the projection would replace (if any), so
 /// that the query condition cache consult inside the candidate analysis observes the same TopK
 /// gating and key salting as the read itself.
+/// `lazily_read_column_names` are the columns a lazy read reads from the projection parts the candidate serves, which
+/// each of those parts must have as well as `required_column_names`; a part without them is read from its parent part.
 bool analyzeProjectionCandidate(
     ProjectionCandidate & candidate,
     const MergeTreeDataSelectExecutor & reader,
@@ -125,7 +130,8 @@ bool analyzeProjectionCandidate(
     bool allow_query_condition_cache,
     bool allow_top_k_prewhere_query_condition_cache,
     const ContextPtr & context,
-    const HypotheticalProjection * hypothetical_projection = nullptr);
+    const HypotheticalProjection * hypothetical_projection = nullptr,
+    const Names & lazily_read_column_names = {});
 
 /// Performs part-level filtering using projection to skip irrelevant data parts.
 /// Also collects projections to build filters that will be applied during MergeTree reading for fine-grained row-level filtering.

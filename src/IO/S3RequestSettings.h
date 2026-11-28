@@ -72,7 +72,7 @@ struct S3RequestSettings
     void setByName(const String & name, const String & value);
     /// Returns true if applying `settings` via `updateIfChanged` would change a setting marked with `AFFECTS_CLIENT`,
     /// i.e. the S3 client has to be rebuilt to pick up the change.
-    bool hasChangesAffectingClient(const S3RequestSettings & settings) const;
+    [[nodiscard]] bool hasChangesAffectingClient(const S3RequestSettings & settings) const;
     void validateUploadSettings();
 
     HTTPRequestThrottler request_throttler;
@@ -82,7 +82,7 @@ struct S3RequestSettings
     static S3RequestSettings deserialize(ReadBuffer & in, ContextPtr context);
 
     /// Returns all effective request settings as a string map, for observability (e.g. `system.backups`).
-    std::map<String, String> getSettingsRepresentation() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    [[nodiscard]] std::map<String, String> getSettingsRepresentation() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 private:
     void finishInit(const DB::Settings & settings, bool validate_settings);

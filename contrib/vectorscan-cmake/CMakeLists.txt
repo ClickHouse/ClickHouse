@@ -239,18 +239,14 @@ set (SRCS
 #
 # Also, please use upstream versions of colm and ragel, the packages in Ubuntu 22.04 seem to produce wrong output on ARM.
 #
-# The generated scanners read the input through `const char *` but compare it against `unsigned char` tables (the .rl files declare
-# `alphtype unsigned char`), so they must be compiled with `-funsigned-char`, as the original build system does, otherwise bytes >= 0x80
-# never match on platforms where `char` is signed.
+# The scanners read the input through `const char *` but compare it against `unsigned char` tables (`alphtype unsigned char`). Upstream
+# compiles them with `-funsigned-char`; our .rl files read every byte as `unsigned char` instead (`getkey`, casts), so they are compiled
+# with the `char` of the platform. A TU with another `char` breaks Clang CFI: its checks on `char` types such as `std::ostream` expect
+# type ids that no vtable has. Generated with ragel 7.0.0.12 (`nixpkgs#ragelDev`): `ragel Parser.rl -o Parser.cpp`.
 if (ARCH_AMD64)
     list (APPEND SRCS
         "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/amd64/Parser.cpp"
         "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/amd64/control_verbs.cpp"
-    )
-    set_source_files_properties(
-        "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/amd64/Parser.cpp"
-        "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/amd64/control_verbs.cpp"
-        COMPILE_FLAGS -funsigned-char
     )
 elseif (ARCH_AARCH64)
     list (APPEND SRCS
@@ -260,7 +256,7 @@ elseif (ARCH_AARCH64)
     set_source_files_properties(
         "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/aarch64/Parser.cpp"
         "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/aarch64/control_verbs.cpp"
-        COMPILE_FLAGS "-funsigned-char -Wno-c++11-narrowing"
+        COMPILE_FLAGS -Wno-c++11-narrowing
     )
 endif()
 
