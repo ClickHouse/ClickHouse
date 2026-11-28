@@ -1,0 +1,4 @@
+<test>
+    <query>WITH (SELECT arrayStringConcat(arrayMap(x -> concat('''k', toString(x * 3), ''''), range(10000)), ', ')) AS list SELECT formatQuery(concat('SELECT ', toString(number), ' WHERE k IN (', list, ')')) FROM numbers(100) FORMAT Null</query>
+    <query>WITH (SELECT arrayStringConcat(arrayMap(x -> toString(x * 3), range(10000)), ', ')) AS list SELECT formatQuery(concat('SELECT ', toString(number), ' WHERE k IN (', list, ')')) FROM numbers(100) FORMAT Null</query>
+</test>
