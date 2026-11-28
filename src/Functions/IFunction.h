@@ -478,6 +478,9 @@ public:
     /// also only to read their properties (for example, `isDeterministic`), and this must not throw.
     virtual void checkAccessOnBuild() const {}
 
+    /// See `IFunctionBase::updateHash`; the `Dynamic` and `Variant` adaptors forward to this.
+    virtual void updateHash(SipHash &) const {}
+
     void getLambdaArgumentTypes(DataTypes & arguments) const;
 
     void checkNumberOfArguments(size_t number_of_arguments) const;
