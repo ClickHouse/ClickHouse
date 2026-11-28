@@ -107,6 +107,7 @@ void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQu
         dataflow_cache_updater);
     if (is_shard_limit)
         transform->markAsShardLimit();
+    transform->setRowsSkippedBefore(rows_skipped_before);
     pipeline.addTransform(std::move(transform));
 }
 

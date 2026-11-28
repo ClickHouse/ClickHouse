@@ -28,6 +28,8 @@
 
 #include <algorithm>
 #include <list>
+#include <numeric>
+#include <queue>
 #include <ranges>
 
 #include <boost/functional/hash.hpp>
@@ -270,6 +272,8 @@ public:
     {
         return parts[part_idx].data_part->index_granularity->getMarkRows(mark);
     }
+
+    [[nodiscard]] size_t getLoadedColumnsCount() const { return loaded_columns; }
 private:
     const RangesInDataParts & parts;
     VectorWithMemoryTracking<IMergeTreeDataPart::IndexPtr> indices;
@@ -730,6 +734,178 @@ namespace DB
 SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, bool in_reverse_order, const LoggerPtr & logger)
 {
     return splitPartsRangesImpl(std::move(ranges_in_data_parts), in_reverse_order, logger);
+}
+
+size_t skipLeadingGranulesForOffset(RangesInDataParts & ranges_in_data_parts, size_t offset, size_t prefix_size, bool in_reverse_order, const LoggerPtr & logger)
+{
+    /// Reverse order is not supported yet (boundary-value semantics differ).
+    if (in_reverse_order || offset == 0 || prefix_size == 0 || ranges_in_data_parts.empty())
+        return 0;
+
+    IndexAccess index_access(ranges_in_data_parts);
+
+    /// The cut-point proof must compare only the `prefix_size` sorting-key columns that define the merge order
+    /// (e.g. ORDER BY a on a table sorted by (a, b)); the full primary key would treat merge-order ties as
+    /// strictly separated. Cap by the loaded index columns.
+    const size_t compare_columns = std::min(prefix_size, index_access.getLoadedColumnsCount());
+    if (compare_columns == 0)
+        return 0;
+
+    auto getPrefixValue = [&](size_t part_index, size_t mark)
+    {
+        Values values = index_access.getValue(part_index, mark);
+        values.resize(compare_columns);
+        return values;
+    };
+
+    /// One cursor per non-empty part at its front (smallest) granule; `front` caches its merge-key prefix value.
+    struct PartCursor
+    {
+        size_t part_index;
+        const MarkRanges * ranges;
+        size_t range_index;
+        size_t mark;
+        size_t consumed = 0;
+        Values front;
+    };
+
+    VectorWithMemoryTracking<PartCursor> cursors;
+    cursors.reserve(ranges_in_data_parts.size());
+    for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
+    {
+        const auto & ranges = ranges_in_data_parts[part_index].ranges;
+        if (ranges.empty())
+            continue;
+
+        PartCursor cursor{part_index, &ranges, 0, ranges.front().begin, 0, {}};
+        cursor.front = getPrefixValue(part_index, cursor.mark);
+        cursors.push_back(std::move(cursor));
+    }
+
+    if (cursors.empty())
+        return 0;
+
+    /// Move a cursor to its next granule (across range gaps) and refresh `front`, which is `next_value` unless there
+    /// is a gap. Returns false when the part has no granules left.
+    auto advance = [&](PartCursor & cursor, Values && next_value)
+    {
+        ++cursor.mark;
+        if (cursor.mark != (*cursor.ranges)[cursor.range_index].end)
+        {
+            cursor.front = std::move(next_value);
+            return true;
+        }
+
+        ++cursor.range_index;
+        if (cursor.range_index == cursor.ranges->size())
+            return false;
+        cursor.mark = (*cursor.ranges)[cursor.range_index].begin;
+        cursor.front = getPrefixValue(cursor.part_index, cursor.mark);
+        return true;
+    };
+
+    /// A min-heap by front value of the cursors of the other parts than the current one: O(log parts) per step.
+    auto front_greater = [&](size_t lhs, size_t rhs) { return compareValues(cursors[lhs].front, cursors[rhs].front, in_reverse_order) > 0; };
+    VectorWithMemoryTracking<size_t> indices(cursors.size());
+    std::iota(indices.begin(), indices.end(), 0);
+    std::priority_queue<size_t, VectorWithMemoryTracking<size_t>, decltype(front_greater)> heap(front_greater, std::move(indices));
+
+    auto pop_min = [&]
+    {
+        const size_t index = heap.top();
+        heap.pop();
+        return index;
+    };
+
+    /// The current cursor has the smallest front value, so it holds the smallest not-yet-skipped rows.
+    size_t current = pop_min();
+    size_t remaining = offset;
+    size_t skipped_rows = 0;
+
+    while (remaining > 0)
+    {
+        PartCursor & cursor = cursors[current];
+        const auto & index_granularity = *ranges_in_data_parts[cursor.part_index].data_part->index_granularity;
+
+        /// Drop the granule only if its upper bound value(mark+1) is strictly less than every other part's
+        /// front value, so no tie spans the cut (result independent of merge tie-breaking). value(mark+1) is
+        /// undefined for a part's last granule (+inf): droppable only when no other part has granules left.
+        /// With equal front values, whichever cursor is current, its upper bound is not less than the other
+        /// front value, so the order among ties does not matter.
+        const bool end_value_defined = (cursor.mark + 1) < index_granularity.getMarksCount();
+        Values end_value;
+        if (end_value_defined)
+            end_value = getPrefixValue(cursor.part_index, cursor.mark + 1);
+        if (!heap.empty() && (!end_value_defined || compareValues(end_value, cursors[heap.top()].front, in_reverse_order) >= 0))
+            break;
+
+        const size_t rows = index_granularity.getMarkRows(cursor.mark);
+        if (rows > remaining)
+            break;
+
+        remaining -= rows;
+        skipped_rows += rows;
+        ++cursor.consumed;
+
+        if (!advance(cursor, std::move(end_value)))
+        {
+            if (heap.empty())
+                break;
+            current = pop_min();
+        }
+        /// Without a range gap the new front value is the upper bound checked above, so the cursor stays current.
+        else if (!heap.empty() && compareValues(cursor.front, cursors[heap.top()].front, in_reverse_order) >= 0)
+        {
+            heap.push(current);
+            current = pop_min();
+        }
+    }
+
+    if (skipped_rows == 0)
+        return 0;
+
+    VectorWithMemoryTracking<size_t> consumed_marks(ranges_in_data_parts.size(), 0);
+    for (const auto & cursor : cursors)
+        consumed_marks[cursor.part_index] = cursor.consumed;
+
+    /// Rebuild the ranges, dropping the first consumed_marks[part] granules of each part.
+    RangesInDataParts new_ranges_in_data_parts;
+    new_ranges_in_data_parts.reserve(ranges_in_data_parts.size());
+    for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
+    {
+        auto & part = ranges_in_data_parts[part_index];
+        size_t to_drop = consumed_marks[part_index];
+        if (to_drop == 0)
+        {
+            new_ranges_in_data_parts.push_back(std::move(part));
+            continue;
+        }
+
+        MarkRanges new_ranges;
+        for (auto range : part.ranges)
+        {
+            const size_t length = range.end - range.begin;
+            if (to_drop >= length)
+            {
+                to_drop -= length;
+                continue;
+            }
+            range.begin += to_drop;
+            to_drop = 0;
+            new_ranges.push_back(range);
+        }
+
+        if (!new_ranges.empty())
+        {
+            part.ranges = std::move(new_ranges);
+            new_ranges_in_data_parts.push_back(std::move(part));
+        }
+    }
+
+    ranges_in_data_parts = std::move(new_ranges_in_data_parts);
+
+    LOG_TRACE(logger, "skipLeadingGranulesForOffset: skipped {} rows out of offset {}", skipped_rows, offset);
+    return skipped_rows;
 }
 
 
