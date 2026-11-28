@@ -10533,8 +10533,13 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             {
                 Transaction transaction(*dest_table_storage, NO_TRANSACTION_RAW);
 
-                auto src_data_parts_lock = lockParts();
-                auto dest_data_parts_lock = dest_table_storage->lockParts();
+                /// Lock the parts of both tables in the same order whatever the direction of the move,
+                /// so that moves in opposite directions cannot deadlock.
+                const bool lock_src_first = std::less<const MergeTreeData *>()(this, dest_table_storage.get());
+                auto first_data_parts_lock = lock_src_first ? lockParts() : dest_table_storage->lockParts();
+                auto second_data_parts_lock = lock_src_first ? dest_table_storage->lockParts() : lockParts();
+                auto & src_data_parts_lock = lock_src_first ? first_data_parts_lock : second_data_parts_lock;
+                auto & dest_data_parts_lock = lock_src_first ? second_data_parts_lock : first_data_parts_lock;
 
                 for (auto & part : dst_parts)
                     dest_table_storage->renameTempPartAndReplaceUnlocked(part, transaction, dest_data_parts_lock, /*rename_in_transaction=*/ false);
@@ -10551,7 +10556,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 /// We ignore the list of parts returned from the function below because we cannot remove them from zk
                 /// because we have not created the DROP_RANGE yet. Yes, MOVE PARTITION is trash.
                 removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, src_data_parts_lock);
-                transaction.commit(src_data_parts_lock);
+                transaction.commit(dest_data_parts_lock);
             }
 
             PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
