@@ -2566,14 +2566,31 @@ def read_query_runs(query_runs_path, test_names):
     return series
 
 
-def find_run_trends(series):
+def read_read_only_queries(read_only_path, test_names):
+    """The `(test, query_index)` pairs of `test_names` that perf.py marks read-only (`test, query_index` rows of
+    `read_only_path`); empty if the file does not exist. Raises on a row of `test_names` that does not parse.
+    """
+    read_only = set()
+    if os.path.exists(read_only_path):
+        with open(read_only_path, encoding="utf-8", newline="") as f:
+            for fields in csv.reader(f, delimiter="\t", quoting=csv.QUOTE_NONE):
+                if not fields or fields[0] not in test_names:
+                    continue
+                if len(fields) != 2 or not _TSV_UINT_RE.fullmatch(fields[1]):
+                    raise ValueError(f"unexpected row in [{read_only_path}]: {fields!r}")
+                read_only.add((fields[0], int(fields[1])))
+    return read_only
+
+
+def find_run_trends(series, read_only):
     """The queries of `series` (see `read_query_runs`) that get slower run over run on the tested server.
 
-    Returns a dict per flagged query in (test, query_index) order.
+    Queries of `read_only` (see `read_read_only_queries`) are skipped: their runs cannot change what the next run
+    reads. Returns a dict per flagged query in (test, query_index) order.
     """
     trends = []
     for (test, query_index), (reference, tested) in sorted(series.items()):
-        if len(tested) < RUN_TREND_MIN_RUNS:
+        if (test, query_index) in read_only or len(tested) < RUN_TREND_MIN_RUNS:
             continue
         runs, times = zip(*sorted(tested))
         if times[0] <= 0 or len(set(times)) == 1 or len(set(runs)) == 1:
@@ -2665,7 +2682,8 @@ def changed_tests_gate(info, test_files, workdir, same_build):
         trends, unstable = [], []
         if names:
             query_runs = read_query_runs(f"{workdir}/analyze/query-runs.tsv", names)
-            trends = find_run_trends(query_runs)
+            read_only = read_read_only_queries(f"{workdir}/analyze/read-only-queries.tsv", names)
+            trends = find_run_trends(query_runs, read_only)
             # A PR that changes only tests, compared with a build made like its own, runs the same code on both servers.
             tests_only = same_build and all(f.removeprefix("./").startswith("tests/") for f in changed_files)
             unstable = find_unstable_queries(
