@@ -70,7 +70,7 @@ SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
 FROM (EXPLAIN WHATIF projection_scan_budget_rows = 3000 SELECT b, sum(v) FROM t_est WHERE b < 300 GROUP BY b)
 WHERE match(line, '^(empirical_status:|empirical_reason:)');
 
--- a state of uniqExact grows with its count of values, so the rows have different widths and the verdict is not firm
+-- a state of uniqExact grows with its count of values, but 100 of the widest rows stay under the byte limit of a wide part, so the verdict is firm
 CREATE TABLE u_est AS t_est;
 INSERT INTO u_est SELECT number, number % 300, if(number % 300 < 150, number, 0) FROM numbers(3000);
 CREATE HYPOTHETICAL PROJECTION p_u ON u_est (SELECT b, uniqExact(v) GROUP BY b);

@@ -1,0 +1,18 @@
+-- the string serialization changes before the merge
+Baseline (after PK + partition + existing indexes):
+marks: 7
+With p_k (normal projection, hypothetical):
+marks: 8
+marks_span: 3 to 12
+verdict: too close to call
+real: ReadFromMergeTree (p_k)
+real: Granules: 6/53
+-- two columns of a nested table share the offsets
+Baseline (after PK + partition + existing indexes):
+marks: 14
+With p_k (normal projection, hypothetical):
+marks: 13
+marks_span: 7 to 19
+verdict: too close to call
+real: ReadFromMergeTree (p_k)
+real: Granules: 13/120

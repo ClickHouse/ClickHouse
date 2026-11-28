@@ -43,7 +43,7 @@ Baseline (after PK + partition + existing indexes):
 marks: 30
 With p_u (aggregate projection, hypothetical):
 marks: 1
-verdict: too close to call
+verdict: chosen
 -- no GROUP BY keys
 With p_total (aggregate projection, hypothetical):
 status: not_applicable
