@@ -202,6 +202,7 @@ endif()
 
 if (USE_PULSAR)
     add_subdirectory(Storages/Pulsar/Client/Proto)
+    add_headers_and_sources(dbms Storages/Pulsar)
     add_headers_and_sources(dbms Storages/Pulsar/Client)
 endif()
 
