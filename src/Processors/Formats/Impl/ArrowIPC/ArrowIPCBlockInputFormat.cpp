@@ -356,6 +356,15 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
 namespace
 {
 
+RequestedTypeCastSettings requestedTypeCastSettings(const FormatSettings & format_settings)
+{
+    return {
+        .null_as_default = format_settings.null_as_default,
+        .case_insensitive = format_settings.arrow.case_insensitive_column_matching,
+        .null_tuple_as_default = !format_settings.schema_inference_allow_nullable_tuple_type,
+    };
+}
+
 /// An integer or float alternative strictly wider than a `width`-byte decoded integer.
 bool variantElementWidensTo(const DataTypePtr & alternative, size_t width)
 {
@@ -374,14 +383,72 @@ bool variantElementPrefersType(const DataTypePtr & decoded, const DataTypePtr & 
     return ArrowIPC::stripHint(alternative)->getName() == decoded->getName();
 }
 
+std::optional<DataTypes> variantElementTargets(const DataTypeVariant & from, const DataTypeVariant & to, bool case_insensitive);
+bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative, bool case_insensitive);
+
+/// The tuple cast defaults a target field the source lacks, so each field of a named target tuple must be
+/// found in a named decoded struct the way the cast matches it.
+bool variantElementCompositeMatchesType(const DataTypePtr & decoded, const DataTypePtr & to, bool case_insensitive)
+{
+    const auto child_matches = [&](const DataTypePtr & from_child, const DataTypePtr & to_child)
+    {
+        const DataTypePtr from_leaf = ArrowIPC::stripHint(from_child);
+        /// An Arrow `null` child holds only NULLs, which the cast converts as in a plain column.
+        return isNothing(from_leaf) || variantElementMatchesType(from_leaf, to_child, case_insensitive);
+    };
+
+    if (const auto * from_arr = typeid_cast<const DataTypeArray *>(decoded.get()))
+    {
+        const auto * to_arr = typeid_cast<const DataTypeArray *>(to.get());
+        return to_arr && child_matches(from_arr->getNestedType(), to_arr->getNestedType());
+    }
+    if (const auto * from_map = typeid_cast<const DataTypeMap *>(decoded.get()))
+    {
+        const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+        return to_map && child_matches(from_map->getKeyType(), to_map->getKeyType())
+            && child_matches(from_map->getValueType(), to_map->getValueType());
+    }
+    if (const auto * from_nested = typeid_cast<const DataTypeVariant *>(decoded.get()))
+    {
+        const auto * to_nested = typeid_cast<const DataTypeVariant *>(to.get());
+        return to_nested && variantElementTargets(*from_nested, *to_nested, case_insensitive).has_value();
+    }
+
+    const auto * from_tup = typeid_cast<const DataTypeTuple *>(decoded.get());
+    const auto * to_tup = typeid_cast<const DataTypeTuple *>(to.get());
+    if (!from_tup || !to_tup)
+        return false;
+    const DataTypes & from_elements = from_tup->getElements();
+    const DataTypes & to_elements = to_tup->getElements();
+    if (to_tup->hasExplicitNames() && from_tup->hasExplicitNames())
+    {
+        if (to_elements.empty())
+            return false;
+        bool ambiguous = false;
+        const auto positions = DataTypeTuple::matchElementsByName(
+            from_tup->getElementNames(), to_tup->getElementNames(), case_insensitive, &ambiguous);
+        if (ambiguous)
+            return false;
+        for (size_t i = 0; i < to_elements.size(); ++i)
+            if (!positions[i] || !child_matches(from_elements[*positions[i]], to_elements[i]))
+                return false;
+        return true;
+    }
+    if (from_elements.size() != to_elements.size())
+        return false;
+    for (size_t i = 0; i < to_elements.size(); ++i)
+        if (!child_matches(from_elements[i], to_elements[i]))
+            return false;
+    return true;
+}
+
 /// Whether a decoded `Variant` element can be repaired into a requested alternative: its own decoded type,
 /// otherwise only an alternative the ordinary (non-union) Arrow column path already reaches from `decoded`.
-/// Three exclusions whose reason the arms below do not show: a `UInt8` value outside 0/1 would render as
-/// `true` under the equal-comparing `Bool`; a cast between tuples with differing names fills the target
-/// fields rather than rejecting them, and this walk keeps the decoded names; and `Date32` decoding is
+/// Two exclusions whose reason the arms below do not show: a `UInt8` value outside 0/1 would render as
+/// `true` under the equal-comparing `Bool`; and `Date32` decoding is
 /// hint-dependent (range-checked, saturated or verbatim) while this layer supplies no hint, whereas the
 /// admitted widenings read no hint and are in range at every scale.
-bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative)
+bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative, bool case_insensitive)
 {
     const DataTypePtr to = ArrowIPC::stripHint(alternative);
     const WhichDataType from(decoded);
@@ -390,6 +457,8 @@ bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & 
     /// An element admitted by no arm must still claim its own alternative, or it leaves a sibling ambiguous.
     if (variantElementPrefersType(decoded, alternative))
         return true;
+    if (from.isTuple() || from.isArray() || from.isMap() || from.isVariant())
+        return variantElementCompositeMatchesType(decoded, to, case_insensitive);
     if (isBool(decoded))
         return which.isUInt8() || which.isEnum8() || variantElementWidensTo(to, 0);
     if (from.isInt8() || from.isUInt8())
@@ -437,7 +506,8 @@ bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & 
 /// elements are never left on one alternative name: `DataTypeVariant` deduplicates by name while the column
 /// keeps one element per union child, so a shared name would describe a column whose layout contradicts its
 /// type.
-DataTypes variantElementTargets(const DataTypeVariant & from, const DataTypeVariant & to)
+/// `std::nullopt` when an element would end up under a type the request does not name.
+std::optional<DataTypes> variantElementTargets(const DataTypeVariant & from, const DataTypeVariant & to, bool case_insensitive)
 {
     const DataTypes & elements = from.getVariants();
     const DataTypes & alternatives = to.getVariants();
@@ -446,7 +516,7 @@ DataTypes variantElementTargets(const DataTypeVariant & from, const DataTypeVari
     VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> candidates(elements.size());
     for (size_t e = 0; e < elements.size(); ++e)
         for (size_t a = 0; a < alternatives.size(); ++a)
-            if (variantElementMatchesType(elements[e], alternatives[a]))
+            if (variantElementMatchesType(elements[e], alternatives[a], case_insensitive))
                 candidates[e].push_back(a);
 
     const auto preferred_candidates = [&](size_t e)
@@ -510,6 +580,17 @@ DataTypes variantElementTargets(const DataTypeVariant & from, const DataTypeVari
                 targets[e] = nullptr;
                 dropped = true;
             }
+    }
+
+    /// By full name, as the cast pairs `Variant` alternatives; it rejects a type the request does not name.
+    for (size_t e = 0; e < elements.size(); ++e)
+    {
+        const DataTypePtr & landed = targets[e] ? targets[e] : elements[e];
+        bool requested = false;
+        for (const DataTypePtr & alternative : alternatives)
+            requested |= alternative->getName() == landed->getName();
+        if (!requested)
+            return std::nullopt;
     }
 
     return targets;
@@ -760,28 +841,19 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
     const DataTypeVariant & to_variant, bool case_insensitive, const FormatSettings & format_settings)
 {
     const DataTypes & elements = from_variant.getVariants();
-    const DataTypes targets = variantElementTargets(from_variant, to_variant);
+    const std::optional<DataTypes> maybe_targets = variantElementTargets(from_variant, to_variant, case_insensitive);
+    if (!maybe_targets)
+        return {col, from_type};
+    const DataTypes & targets = *maybe_targets;
     bool any_change = false;
     for (size_t g = 0; g < elements.size() && !any_change; ++g)
         any_change = targets[g] && targets[g]->getName() != elements[g]->getName();
     if (!any_change)
         return {col, from_type};
 
-    /// Repairing helps only when every element ends up under an alternative the request names, matched by
-    /// full name as the cast matches them: otherwise the cast rejects the read whatever this walk does.
-    for (size_t g = 0; g < elements.size(); ++g)
-    {
-        if (targets[g])
-            continue;
-        bool requested = false;
-        for (const DataTypePtr & alternative : to_variant.getVariants())
-            requested |= alternative->getName() == elements[g]->getName();
-        if (!requested)
-            return {col, from_type};
-    }
-
     const auto & variant_col = assert_cast<const ColumnVariant &>(*col);
     const size_t num_elements = variant_col.getNumVariants();
+    const RequestedTypeCastSettings cast_settings = requestedTypeCastSettings(format_settings);
 
     Columns new_elements(num_elements);
     DataTypes new_types(num_elements);
@@ -804,7 +876,9 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
             /// exactly the requested one.
             if (element_type->getName() != target->getName())
             {
-                element = castColumn({element, element_type, ""}, target);
+                ColumnWithTypeAndName cast_element{element, element_type, ""};
+                castColumnToRequestedType(cast_element, target, cast_settings);
+                element = std::move(cast_element.column);
                 element_type = target;
             }
         }
@@ -943,11 +1017,7 @@ Chunk ArrowIPC::buildChunk(
     /// The backing block must outlive the extractor (it holds a reference into it), so keep both.
     UnorderedMapWithMemoryTracking<size_t, std::pair<std::shared_ptr<Block>, std::shared_ptr<NestedColumnExtractHelper>>> nested_extractors;
 
-    const RequestedTypeCastSettings cast_settings{
-        .null_as_default = format_settings.null_as_default,
-        .case_insensitive = case_insensitive,
-        .null_tuple_as_default = !format_settings.schema_inference_allow_nullable_tuple_type,
-    };
+    const RequestedTypeCastSettings cast_settings = requestedTypeCastSettings(format_settings);
 
     Columns columns;
     columns.reserve(header.columns());

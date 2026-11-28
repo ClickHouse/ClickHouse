@@ -10,6 +10,8 @@
 # alternative the request forces on it, resolved the way the native ORC reader resolves union branch hints;
 # a branch whose correspondence stays ambiguous keeps its decoded type, so no guess is ever made. Children the
 # writer stores as one Arrow type, such as `IPv6` and `Int128`, are told apart by the child names it writes.
+# A composite branch needs the same shape and a field correspondence the repair cast realises without
+# defaulting a target field.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -53,6 +55,58 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "DESC file('${DATA}/rt_date.arrow', Arrow)"
 ${CLICKHOUSE_CLIENT} --query \
     "SELECT v, toTypeName(v) FROM file('${DATA}/rt_date.arrow', Arrow, 'v Variant(Date, String)') ORDER BY toString(v)"
+
+echo "--- for Variant(Tuple(ip IPv6), String), whose branch it stores as a struct of raw bytes ---"
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION file('${DATA}/rt_tuple.arrow', Arrow, 'v Variant(Tuple(ip IPv6), String)')
+        SETTINGS engine_file_truncate_on_insert = 1
+        SELECT if(number = 0,
+                  CAST(CAST(tuple(toIPv6('::1')) AS Tuple(ip IPv6)), 'Variant(Tuple(ip IPv6), String)'),
+                  CAST('text', 'Variant(Tuple(ip IPv6), String)'))
+        FROM numbers(2)"
+${CLICKHOUSE_CLIENT} --query "DESC file('${DATA}/rt_tuple.arrow', Arrow)"
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT v, toTypeName(v) FROM file('${DATA}/rt_tuple.arrow', Arrow, 'v Variant(Tuple(ip IPv6), String)') ORDER BY toString(v)"
+
+echo "--- for Variant(Array(IPv6), String) ---"
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION file('${DATA}/rt_array.arrow', Arrow, 'v Variant(Array(IPv6), String)')
+        SETTINGS engine_file_truncate_on_insert = 1
+        SELECT if(number = 0,
+                  CAST([toIPv6('::1')], 'Variant(Array(IPv6), String)'),
+                  CAST('text', 'Variant(Array(IPv6), String)'))
+        FROM numbers(2)"
+${CLICKHOUSE_CLIENT} --query "DESC file('${DATA}/rt_array.arrow', Arrow)"
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT v, toTypeName(v) FROM file('${DATA}/rt_array.arrow', Arrow, 'v Variant(Array(IPv6), String)') ORDER BY toString(v)"
+
+echo "--- and for Variant(Map(String, IPv6), String) ---"
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION file('${DATA}/rt_map.arrow', Arrow, 'v Variant(Map(String, IPv6), String)')
+        SETTINGS engine_file_truncate_on_insert = 1
+        SELECT if(number = 0,
+                  CAST(map('k', toIPv6('::1')), 'Variant(Map(String, IPv6), String)'),
+                  CAST('text', 'Variant(Map(String, IPv6), String)'))
+        FROM numbers(2)"
+${CLICKHOUSE_CLIENT} --query "DESC file('${DATA}/rt_map.arrow', Arrow)"
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT v, toTypeName(v) FROM file('${DATA}/rt_map.arrow', Arrow, 'v Variant(Map(String, IPv6), String)') ORDER BY toString(v)"
+
+echo "--- a NULL inside a composite branch requested without Nullable reads as the default, as in a plain column ---"
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION file('${DATA}/rt_null.arrow', Arrow,
+            't Variant(Tuple(a Nullable(Int32)), String), a Variant(Array(Nullable(Int32)), String), m Variant(Map(String, Nullable(Int32)), String)')
+        SETTINGS engine_file_truncate_on_insert = 1
+        SELECT CAST(CAST(tuple(NULL), 'Tuple(a Nullable(Int32))'), 'Variant(Tuple(a Nullable(Int32)), String)'),
+               CAST(CAST([1, NULL], 'Array(Nullable(Int32))'), 'Variant(Array(Nullable(Int32)), String)'),
+               CAST(CAST(map('k', NULL), 'Map(String, Nullable(Int32))'), 'Variant(Map(String, Nullable(Int32)), String)')"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT * FROM file('${DATA}/rt_null.arrow', Arrow,
+        't Variant(Tuple(a Int32), String), a Variant(Array(Int32), String), m Variant(Map(String, Int32), String)')"
+echo "--- and is refused with input_format_null_as_default = 0, as in a plain column ---"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT t FROM file('${DATA}/rt_null.arrow', Arrow, 't Variant(Tuple(a Int32), String)')
+    SETTINGS input_format_null_as_default = 0" 2>&1 | grep -oE 'CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN' | head -1
 
 # usage: round_trip <format> <type> <value>...; writes the values with the native writer and reads them back
 round_trip()
@@ -109,6 +163,19 @@ def dense_not_null(children, names, type_ids, offsets, length):
 
 def bool_int8():
     return dense([pa.array([True, False]), pa.array([7, -8], type=pa.int8())], ["b", "i"])
+
+
+def struct(pairs, nullable=True):
+    return pa.StructArray.from_arrays(
+        [values for _, _, values in pairs],
+        fields=[pa.field(name, type, nullable=nullable) for name, type, _ in pairs])
+
+
+def inner_union():
+    # A union inside a struct inside a union, so the repair recurses into a nested `Variant`.
+    return pa.UnionArray.from_dense(
+        pa.array([0, 1], type=pa.int8()), pa.array([0, 0], type=pa.int32()),
+        [pa.array([b"\x00" * 15 + b"\x01"], type=pa.binary(16)), pa.array(["x"])], ["f", "s"])
 
 
 columns = {
@@ -178,10 +245,49 @@ columns = {
         [pa.array([b"\x00" * 15 + b"\x01", b"zz", b"\x00" * 15 + b"\x02"], type=pa.binary()),
          pa.array([42], type=pa.int32())],
         ["b", "i"], [0, 0, 0, 1], [0, 0, 2, 0], 4),
-    # A composite branch takes only its own alternative: this walk keeps the decoded names, and a cast to a
-    # tuple whose names are disjoint converts positionally, so a field named `b` would come back holding `a`.
+    # A composite branch takes an alternative of the same shape, but only under a field correspondence the
+    # repair cast realises without inventing a value: a target field the struct does not have would be
+    # filled with a default.
     "struct_utf8": dense(
         [pa.StructArray.from_arrays([pa.array([1, 2], type=pa.int32())], fields=[pa.field("a", pa.int32())]),
+         pa.array(["x", "y"])], ["t", "s"]),
+    # Field names differing from the request only in case, in the reverse order, so pairing them
+    # positionally would return each field holding the other's value.
+    "struct_ci": dense(
+        [struct([("B", pa.int32(), pa.array([1, 2], type=pa.int32())),
+                 ("A", pa.int32(), pa.array([3, 4], type=pa.int32()))]),
+         pa.array(["x", "y"])], ["t", "s"]),
+    # More fields than a request need name, one of them a `date32` the recursion excludes.
+    "struct_fields": dense(
+        [struct([("a", pa.int32(), pa.array([1, 2], type=pa.int32())),
+                 ("b", pa.int32(), pa.array([3, 4], type=pa.int32())),
+                 ("d", pa.date32(), pa.array([19000, 19001], type=pa.date32()))]),
+         pa.array(["x", "y"])], ["t", "s"]),
+    # A `Variant` nested inside a composite inside a `Variant`.
+    "struct_nested_union": dense(
+        [struct([("v", inner_union().type, inner_union())]), pa.array(["p", "q"])], ["t", "s"]),
+    # Two fields differing only in case, which the request distinguishes and names exactly. The branch takes
+    # its own alternative and reaches no cast, so nothing may rename its fields onto one name.
+    "struct_ci_dup": dense(
+        [struct([("A", pa.int32(), pa.array([1, 2], type=pa.int32())),
+                 ("a", pa.int32(), pa.array([3, 4], type=pa.int32()))], nullable=False),
+         fsb], ["t", "f"]),
+    # Two fields that one requested name matches only case-insensitively.
+    "struct_ci_amb": dense(
+        [struct([("Ab", pa.int32(), pa.array([1, 2], type=pa.int32())),
+                 ("aB", pa.int32(), pa.array([3, 4], type=pa.int32()))], nullable=False),
+         fsb], ["t", "f"]),
+    # Empty field names, so the struct decodes as an unnamed tuple.
+    "struct_positional": dense(
+        [struct([("", pa.int32(), pa.array([1, 2], type=pa.int32())),
+                 ("", pa.int32(), pa.array([3, 4], type=pa.int32()))]),
+         pa.array(["x", "y"])], ["t", "s"]),
+    # Children of the Arrow `null` type, which hold only NULLs, as a struct field, a list item and a map value.
+    "struct_null": dense(
+        [struct([("a", pa.null(), pa.nulls(2)),
+                 ("l", pa.list_(pa.null()), pa.array([[None], []], type=pa.list_(pa.null()))),
+                 ("m", pa.map_(pa.string(), pa.null()),
+                  pa.array([[("k", None)], []], type=pa.map_(pa.string(), pa.null())))]),
          pa.array(["x", "y"])], ["t", "s"]),
     # Neither branch prefers a requested alternative and both match both, so nothing is assigned.
     "binary_fsb": dense([pa.array([b"aa", b"bb"], type=pa.binary()), fsb], ["b", "f"]),
@@ -237,11 +343,11 @@ read_column()
         "SELECT $1, toTypeName($1) FROM file('${DATA}/unions.${3:-Arrow}', '${3:-Arrow}', \$\$$1 $2\$\$)${4:+ SETTINGS $4}"
 }
 
-# usage: rejected <column> <requested type>; prints the reported conversion, not merely a failure
+# usage: rejected <column> <requested type> [settings]; prints the reported conversion, not merely a failure
 rejected()
 {
     ${CLICKHOUSE_CLIENT} --query \
-        "SELECT $1 FROM file('${DATA}/unions.Arrow', 'Arrow', \$\$$1 $2\$\$)" 2>&1 \
+        "SELECT $1 FROM file('${DATA}/unions.Arrow', 'Arrow', \$\$$1 $2\$\$)${3:+ SETTINGS $3}" 2>&1 \
         | grep -oE 'Cannot convert type [^.]+\.' | head -1
 }
 
@@ -330,6 +436,28 @@ for FORMAT in Arrow ArrowStream; do
         "allow_suspicious_variant_types = 1, date_time_overflow_behavior = 'throw'"
 done
 
+echo "--- a struct branch whose fields differ from the request only in case, matched by name ---"
+read_column struct_ci 'Variant(Tuple(a Int32, b Int32), String)' Arrow \
+    "input_format_arrow_case_insensitive_column_matching = 1"
+echo "--- a target tuple may name a subset of the struct's fields, and the rest are projected out ---"
+read_column struct_fields 'Variant(Tuple(a Int32), String)'
+echo "--- an unnamed target tuple expresses no name expectation, so its fields are paired positionally ---"
+read_column struct_fields 'Variant(Tuple(Int32, Int32, Date32), String)'
+echo "--- as are the fields of an unnamed struct requested as a named tuple, as in a plain column ---"
+read_column struct_positional 'Variant(Tuple(a Int32, b Int32), String)'
+echo "--- a Variant nested inside a composite inside a Variant is repaired by the same walk ---"
+read_column struct_nested_union 'Variant(Tuple(v Variant(IPv6, String)), String)'
+echo "--- a branch already under the requested name keeps fields the request distinguishes by case ---"
+read_column struct_ci_dup 'Variant(Tuple(A Int32, a Int32), IPv6)' Arrow \
+    "input_format_arrow_case_insensitive_column_matching = 1"
+echo "--- and a case-sensitive lookup names each of those two fields exactly, so a widening one reads back ---"
+read_column struct_ci_dup 'Variant(Tuple(A Int64, a Int64), IPv6)'
+echo "--- as does the case-insensitive one, which prefers the field spelled the same, as in a plain column ---"
+read_column struct_ci_dup 'Variant(Tuple(A Int64, a Int64), IPv6)' Arrow \
+    "input_format_arrow_case_insensitive_column_matching = 1"
+echo "--- a composite branch with children of the Arrow null type reads them as NULL, as in a plain column ---"
+read_column struct_null 'Variant(Tuple(a Nullable(Int32), l Array(Nullable(Int32)), m Map(String, Nullable(Int32))), String)'
+
 echo "--- a date32 branch is excluded by design, so this stays rejected ---"
 rejected date32_utf8 'Variant(Int32, String)'
 echo "--- and the narrowing DateTime64 -> DateTime is refused, so this stays rejected ---"
@@ -340,8 +468,19 @@ echo "--- two branches may never end up on one alternative ---"
 rejected bool_uint8 'Variant(UInt8, String)'
 echo "--- an int8 branch is never re-declared as Bool, so this stays rejected ---"
 rejected int8_utf8 'Variant(Bool, String)'
-echo "--- a composite branch is never re-declared, so a name-differing field stays rejected ---"
+echo "--- a target field the struct does not have would be filled with a default, so this stays rejected ---"
 rejected struct_utf8 'Variant(Tuple(b Int32), String)'
+echo "--- and so does one target field among fields the struct does have ---"
+rejected struct_fields 'Variant(Tuple(a Int32, c Int32), String)'
+echo "--- the case-insensitive match is the setting's, so by default a case-differing field is rejected ---"
+rejected struct_ci 'Variant(Tuple(a Int32, b Int32), String)'
+echo "--- and under that setting a field matching two fields only case-insensitively is ambiguous, so it is rejected ---"
+rejected struct_ci_amb 'Variant(Tuple(ab Int32), IPv6)' \
+    "input_format_arrow_case_insensitive_column_matching = 1"
+echo "--- and the date32 exclusion is inherited by the recursion into a struct field ---"
+rejected struct_fields 'Variant(Tuple(d Int32), String)'
+echo "--- an unnamed target tuple of another arity would drop a field silently, so it is rejected ---"
+rejected struct_fields 'Variant(Tuple(Int32), String)'
 echo "--- an ambiguous branch gets no alternative, so this stays rejected ---"
 rejected binary_fsb 'Variant(IPv6, Int128)'
 echo "--- an unassigned branch the request does not name abandons the repair, keeping the message ---"
