@@ -51,7 +51,8 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
                     filter_column_target_type,
                     geometry,
                     build_options_.distinct_keys_hint,
-                    build_options_.distinct_keys_hint_matches_filter_key));
+                    build_options_.distinct_keys_hint_matches_filter_key,
+                    build_options_.distinct_keys_in_last_run));
         }
         else
         {

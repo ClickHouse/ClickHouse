@@ -113,7 +113,8 @@ public:
                   /// No stats-sized bloom growth for a transported partial: its serialized state must
                   /// match the plan's geometry on every receiving task.
                   /*distinct_keys_hint_=*/std::nullopt,
-                  /*distinct_keys_hint_matches_filter_key_=*/false))
+                  /*distinct_keys_hint_matches_filter_key_=*/false,
+                  /*distinct_keys_in_last_run_=*/std::nullopt))
     {
         if (!filter_column_target_type->equals(*filter_column_original_type))
             cast_to_target_type = createInternalCast(
@@ -528,7 +529,8 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
             /// statistics hint that sizes the bloom filter.
             .track_key_range = false,
             .distinct_keys_hint = std::nullopt,
-            .distinct_keys_hint_matches_filter_key = false});
+            .distinct_keys_hint_matches_filter_key = false,
+            .distinct_keys_in_last_run = std::nullopt});
     if (has_tree_exchange)
         step->setTreeExchange(std::move(tree_exchange_id), std::move(tree_source_buckets), tree_fan_in);
     return step;

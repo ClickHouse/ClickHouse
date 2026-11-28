@@ -56,6 +56,7 @@ RuntimeFilterBuildOptions testBuildOptions()
         .track_key_range = false,
         .distinct_keys_hint = std::nullopt,
         .distinct_keys_hint_matches_filter_key = false,
+        .distinct_keys_in_last_run = std::nullopt,
     };
 }
 

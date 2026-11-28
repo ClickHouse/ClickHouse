@@ -1558,8 +1558,7 @@ HashJoin::~HashJoin()
                 && keyType() != Type::two_level_key16)
             {
                 if (const auto ht_size = getTotalRowCount())
-                    getHashTablesStatistics<HashJoinEntry>().update(
-                        {.ht_size = ht_size, .source_rows = data->rows_to_join}, stats_collecting_params.build);
+                    updateHashJoinSizeStatistics(ht_size, data->rows_to_join, stats_collecting_params.build);
             }
 
             if (stats_collecting_params.match.isCollectionAndUseEnabled() && probe_phase_finished && hash_table_matches.has_value())

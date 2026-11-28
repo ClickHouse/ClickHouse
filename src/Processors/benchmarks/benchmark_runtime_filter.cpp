@@ -263,7 +263,8 @@ UniqueRuntimeFilterPtr buildAdaptiveRuntimeFilter(
             type,
             makeGeometry(ADAPTIVE_EXACT_VALUES_LIMIT),
             /*distinct_keys_hint_=*/std::nullopt,
-            /*distinct_keys_hint_matches_filter_key_=*/false));
+            /*distinct_keys_hint_matches_filter_key_=*/false,
+            /*distinct_keys_in_last_run_=*/std::nullopt));
     if (build_column)
         filter->insert(build_column);
     filter->finishInsert();
@@ -616,7 +617,8 @@ static void BM_AdaptiveSetRuntimeFilterExactToApproximateTransitionUInt64(benchm
                 type,
                 makeGeometry(exact_rows),
                 /*distinct_keys_hint_=*/std::nullopt,
-                /*distinct_keys_hint_matches_filter_key_=*/false);
+                /*distinct_keys_hint_matches_filter_key_=*/false,
+                /*distinct_keys_in_last_run_=*/std::nullopt);
             filter.insert(exact_column);
             state.ResumeTiming();
 
@@ -676,7 +678,8 @@ static void BM_RuntimeFilterAdaptiveBuildTransformInsertOnlyUInt64(benchmark::St
                     .polarity = RuntimeFilterPolarity::Contains,
                     .track_key_range = false,
                     .distinct_keys_hint = std::nullopt,
-                    .distinct_keys_hint_matches_filter_key = false},
+                    .distinct_keys_hint_matches_filter_key = false,
+                    .distinct_keys_in_last_run = std::nullopt},
                 /*query_context_=*/nullptr);
             state.ResumeTiming();
 
@@ -720,7 +723,8 @@ static void BM_RuntimeFilterAdaptiveBuildTransformInsertOnlyCastUInt32ToUInt64(b
                     .polarity = RuntimeFilterPolarity::Contains,
                     .track_key_range = false,
                     .distinct_keys_hint = std::nullopt,
-                    .distinct_keys_hint_matches_filter_key = false},
+                    .distinct_keys_hint_matches_filter_key = false,
+                    .distinct_keys_in_last_run = std::nullopt},
                 /*query_context_=*/nullptr);
             state.ResumeTiming();
 
