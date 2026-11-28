@@ -1,0 +1,33 @@
+<test>
+    <!-- A filtered join input without statistics, as in https://github.com/ClickHouse/ClickHouse/issues/129254:
+         the filter on `nation` must not make the large `orders` the build side. -->
+
+    <!-- Plan from the estimates on every run, not from the hash table sizes of the previous run. -->
+    <settings>
+        <use_hash_table_stats_for_join_reordering>0</use_hash_table_stats_for_join_reordering>
+    </settings>
+
+    <create_query>
+        CREATE TABLE orders_129254 (o_orderkey UInt32, o_custkey UInt32, o_totalprice Decimal(15, 2))
+        ENGINE = MergeTree ORDER BY o_orderkey SETTINGS auto_statistics_types = ''
+    </create_query>
+    <create_query>
+        CREATE TABLE customer_129254 (c_custkey UInt32, c_nationkey UInt32)
+        ENGINE = MergeTree ORDER BY c_custkey SETTINGS auto_statistics_types = ''
+    </create_query>
+    <create_query>
+        CREATE TABLE nation_129254 (n_nationkey UInt32, n_name String)
+        ENGINE = MergeTree ORDER BY n_nationkey SETTINGS auto_statistics_types = ''
+    </create_query>
+
+    <fill_query>INSERT INTO orders_129254 SELECT number, number % 1000000, number % 100000 FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO customer_129254 SELECT number, number % 25 FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO nation_129254 SELECT number, concat('NATION_', toString(number)) FROM numbers(25)</fill_query>
+
+    <query>SELECT avg(o_totalprice) FROM orders_129254 JOIN (SELECT * FROM customer_129254 JOIN nation_129254 ON c_nationkey = n_nationkey WHERE n_name = 'NATION_7') AS cn ON c_custkey = o_custkey</query>
+    <query>SELECT avg(o_totalprice) FROM orders_129254 JOIN (SELECT * FROM customer_129254 JOIN nation_129254 ON c_nationkey = n_nationkey WHERE n_name = 'NONE') AS cn ON c_custkey = o_custkey</query>
+
+    <drop_query>DROP TABLE IF EXISTS orders_129254</drop_query>
+    <drop_query>DROP TABLE IF EXISTS customer_129254</drop_query>
+    <drop_query>DROP TABLE IF EXISTS nation_129254</drop_query>
+</test>

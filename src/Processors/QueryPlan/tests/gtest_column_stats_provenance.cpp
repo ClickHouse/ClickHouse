@@ -298,7 +298,8 @@ void expectUnsupportedUnaryStepStopsBeforeChild(std::unique_ptr<IQueryPlanStep> 
     const auto result = estimateReadRowsCount(root);
     EXPECT_FALSE(result.estimated_rows.has_value());
     EXPECT_TRUE(result.column_stats.empty());
-    EXPECT_EQ(child_visits, 0);
+    /// Only the lookup of an unestimated filter below the step reaches the child.
+    EXPECT_EQ(child_visits, 1);
 }
 }
 
@@ -673,8 +674,8 @@ TEST(ColumnStatsProvenance, DistinctFillingAndUnionAreUnsupportedBoundaries)
     const auto union_result = estimateReadRowsCount(union_node);
     EXPECT_FALSE(union_result.estimated_rows.has_value());
     EXPECT_TRUE(union_result.column_stats.empty());
-    EXPECT_EQ(left_visits, 0);
-    EXPECT_EQ(right_visits, 0);
+    EXPECT_EQ(left_visits, 1);
+    EXPECT_EQ(right_visits, 1);
 }
 
 TEST(ColumnStatsProvenance, TransformationsAppendToBothFactsIdempotently)

@@ -21,6 +21,9 @@ struct RelationStatsOptions
     /// finds already has, or from that read's last `selectRangesToReadForEstimation`, and without either it has no
     /// estimate.
     const FindSingleNodeRead * find_single_node_read = nullptr;
+    /// The caller reads only `source`, so a `MergeTree` read is judged from table metadata and part checksums instead
+    /// of being estimated.
+    bool only_source = false;
 };
 
 /// Estimate the number of rows and per-column statistics of the relation produced by the subtree
