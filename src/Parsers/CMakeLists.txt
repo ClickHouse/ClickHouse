@@ -8,6 +8,7 @@ add_headers_and_sources(clickhouse_parsers ./PRQL)
 add_headers_and_sources(clickhouse_parsers ./Polyglot)
 add_headers_and_sources(clickhouse_parsers ./Trino)
 add_headers_and_sources(clickhouse_parsers ./Prometheus)
+add_headers_and_sources(clickhouse_parsers ./SPARQL)
 add_headers_and_sources(clickhouse_parsers ./LogsQL)
 add_headers_and_sources(clickhouse_parsers ./WhatIf)
 
@@ -28,6 +29,10 @@ endif ()
 
 if(ENABLE_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+if (ENABLE_BENCHMARKS)
+    add_subdirectory(SPARQL/benchmarks)
 endif()
 
 if (ENABLE_FUZZING)
