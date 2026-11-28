@@ -88,10 +88,14 @@ for i in {1..5}; do
     exec 13>&-
 done
 exec 13>&-"""
-    # The release builds keep the symbols for self-symbolization in the `.clickhouse.symbols`
-    # section instead of `.symtab` (`SYMBOL_SECTIONS=compact`). Without the debug symbols
-    # package it is the only source of symbol names, so check that the server resolves them.
-    # The image has no `readelf`, so the section names are read from the ELF header directly.
+    # The packaged binary of the release builds has no `.symtab` and carries the symbols in two
+    # sections instead (`SYMBOL_SECTIONS=both`): `.clickhouse.symbols`, which the server reads for
+    # its own symbolization, and `.gnu_debugdata` (MiniDebugInfo: an xz-compressed ELF file with
+    # `.symtab`), which external tools such as gdb and perf read. Without the debug symbols package
+    # they are the only sources of symbol names, so check that `.gnu_debugdata` decompresses into
+    # an ELF file with a known symbol, that `.clickhouse.symbols` alone resolves that symbol, and
+    # that the server resolves it. The image has no `readelf` and no `xz`, so the section headers
+    # are read from the ELF file directly and `clickhouse-local` decompresses the section.
     symbols_test = r"""#!/bin/bash
 set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR
@@ -113,7 +117,28 @@ for ((i = 0; i < sections; ++i)); do
     dd if="$binary" bs=1 skip=$((names_offset + name)) count=64 status=none | tr '\0' '\n' | head -n 1
 done > /root/sections.txt
 grep -qx '.clickhouse.symbols' /root/sections.txt
-! grep -qx '.symtab' /root/sections.txt
+grep -qx '.gnu_debugdata' /root/sections.txt
+# Not `! grep`: a command negated with `!` does not stop a script under `set -e`.
+if grep -qx '.symtab' /root/sections.txt; then false; fi
+# The file has one line per section header, in the order of the headers.
+gnu_debugdata=$(($(grep -nx '.gnu_debugdata' /root/sections.txt | head -n 1 | cut -d: -f1) - 1))
+gnu_debugdata_header=$((section_headers + gnu_debugdata * section_header_size))
+gnu_debugdata_offset=$(read_uint $((gnu_debugdata_header + 24)) 8)
+gnu_debugdata_size=$(read_uint $((gnu_debugdata_header + 32)) 8)
+tail -c +$((gnu_debugdata_offset + 1)) "$binary" | head -c "$gnu_debugdata_size" > /root/gnu_debugdata.xz
+[ "$(clickhouse-local -q "
+    SELECT startsWith(data, unhex('7F454C46')) AND position(data, '_ZN2DB20StorageSystemSymbolsC') > 0
+    FROM file('/root/gnu_debugdata.xz', RawBLOB, 'data String')")" = 1 ]
+# `SymbolIndex` falls back to `.gnu_debugdata` when it cannot read `.clickhouse.symbols`, so the
+# server resolves symbols even with a broken `.clickhouse.symbols`. A copy of the binary with the
+# 12-byte xz stream header of `.gnu_debugdata` zeroed cannot fall back and has to find the symbol
+# in `.clickhouse.symbols` alone.
+cp "$binary" /root/clickhouse
+dd if=/dev/zero of=/root/clickhouse bs=1 seek="$gnu_debugdata_offset" count=12 conv=notrunc status=none
+compact_resolved=$(/root/clickhouse local -q "
+    SELECT count() FROM system.symbols WHERE startsWith(symbol, '_ZN2DB20StorageSystemSymbolsC')") || :
+rm -f /root/clickhouse
+[ "$compact_resolved" -gt 0 ]
 # Both `system.symbols` and `addressToSymbol` have to resolve a known internal symbol.
 resolved=$(clickhouse-client -q "
     SELECT count()

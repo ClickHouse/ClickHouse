@@ -1,0 +1,16 @@
+<clickhouse>
+    <!-- An HTTP handler with a configured user: requests are authenticated with `AlwaysAllowCredentials`,
+         which the LDAP directory accepts without contacting the LDAP server. -->
+    <http_handlers>
+        <rule>
+            <url>/handler_with_user</url>
+            <methods>GET,POST</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT currentUser()</query>
+                <user>http_handler_user</user>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>

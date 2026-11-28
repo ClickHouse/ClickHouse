@@ -1,7 +1,9 @@
+#include <algorithm>
 #include <memory>
 #include <stack>
 #include <variant>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -15,6 +17,7 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/SharedPtr.h>
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -501,7 +504,15 @@ public:
 
         const auto & inserted_type = current_types[index_to_insert];
         inserted_value = getIcebergInitialDefault(subfield, inserted_type).value_or(inserted_type->getDefault());
+
+        if (std::ranges::all_of(operation_.getPath(), [](const auto & edge) { return edge.parent_type == TransformType::STRUCT; }))
+        {
+            auto column = inserted_type->createColumnConst(1, inserted_value);
+            bytes_per_row_added = assert_cast<const ColumnConst &>(*column).getDataColumn().byteSize();
+        }
     }
+
+    [[nodiscard]] size_t getBytesPerRowAdded() const override { return bytes_per_row_added; }
 
     void transformChildNode(Tuple & initial_node) override
     {
@@ -513,6 +524,7 @@ private:
     size_t index_to_insert;
     DataTypes current_types;
     Field inserted_value;
+    size_t bytes_per_row_added = 0;
 };
 
 class ReorderingTransform : public IIcebergSchemaTransform
@@ -630,6 +642,21 @@ ColumnPtr ExecutableEvolutionFunction::executeImpl(
     }
 
     return result_column;
+}
+
+size_t ExecutableEvolutionFunction::getBytesPerRowOfAddedFields() const
+{
+    std::lock_guard lock(mutex);
+    if (!initialized)
+    {
+        lazyInitialize();
+        initialized = true;
+    }
+
+    size_t bytes = 0;
+    for (const auto & transform : transforms)
+        bytes += transform->getBytesPerRowAdded();
+    return bytes;
 }
 
 void ExecutableEvolutionFunction::fillMissingElementsInPermutation(std::vector<size_t> & permutation, size_t target_size)

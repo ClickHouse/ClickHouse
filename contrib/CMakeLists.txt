@@ -123,9 +123,8 @@ add_contrib (snappy-cmake snappy)
 add_contrib (thrift-cmake thrift)
 add_contrib (StringZilla-cmake StringZilla)
 add_contrib (heks-cmake heks)
-# parquet/arrow
-add_contrib (xsimd-cmake xsimd) # required by arrow's SIMD codepaths
-add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion, xsimd, flatbuffers
+# The definitions of the Parquet, Arrow and Arrow Flight formats; the Apache Arrow C++ library is not built.
+add_contrib (arrow-cmake arrow) # requires: thrift, flatbuffers, and google-protobuf with grpc for Arrow Flight
 add_contrib (avro-cmake avro) # requires: snappy
 add_contrib (openldap-cmake openldap)
 add_contrib (msgpack-c-cmake msgpack-c)
