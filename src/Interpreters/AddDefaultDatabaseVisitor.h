@@ -128,6 +128,26 @@ public:
             substituteDatabaseInTableFunctions(*child);
     }
 
+    /// Qualifies the names of a query sent to servers that use their own default database and replaces `currentDatabase()`.
+    /// Returns false, changing nothing, if a lambda may shadow a function whose call or arguments it rewrites,
+    /// or if a name it would rewrite may resolve to an expression or defines an alias.
+    [[nodiscard]] bool tryBindQuerySentToOtherServers(ASTPtr & ast) const
+    {
+        if ((hasCurrentDatabaseCall(*ast) && hasNameThatMayResolveToLambda(*ast, isCurrentDatabaseName))
+            || hasNameThatMayResolveToLambda(*ast, isFunctionWithBoundArgumentsName)
+            || hasArgumentThatCannotBeBound(*ast))
+            return false;
+
+        visit(ast);
+        qualifyAssignCentroidDictionaryNames(*ast);
+        if (!database_name.empty())
+        {
+            for (auto & child : ast->children)
+                substituteCurrentDatabase(child, *ast);
+        }
+        return true;
+    }
+
 private:
 
     ContextPtr context;
@@ -394,18 +414,103 @@ private:
             visitTableFunction(*argument);
     }
 
-    /// Whether the function is `currentDatabase` or one of its aliases (`DATABASE`, `SCHEMA`, `current_database`),
+    /// `currentDatabase` or one of its aliases (`DATABASE`, `SCHEMA`, `current_database`, `current_schema`),
     /// which are registered in `FunctionFactory` as case-insensitive.
+    static bool isCurrentDatabaseName(const String & name)
+    {
+        if (name == "currentDatabase")
+            return true;
+
+        const String lowered_name = Poco::toLower(name);
+        return lowered_name == "database" || lowered_name == "schema" || lowered_name == "current_database"
+            || lowered_name == "current_schema";
+    }
+
+    /// Functions whose arguments the binder rewrites by the function name: dictionary names and `IN` tables.
+    static bool isFunctionWithBoundArgumentsName(const String & name)
+    {
+        return functionIsDictGet(name) || name == "assignCentroid" || functionIsInOrGlobalInOperator(name);
+    }
+
     static bool isCurrentDatabaseFunction(const ASTFunction & function)
     {
         if (function.arguments && !function.arguments->children.empty())
             return false;
 
-        if (function.name == "currentDatabase")
+        return isCurrentDatabaseName(function.name);
+    }
+
+    static bool hasCurrentDatabaseCall(const IAST & ast)
+    {
+        if (const auto * function = ast.as<ASTFunction>(); function && isCurrentDatabaseFunction(*function))
             return true;
 
-        const String lowered_name = Poco::toLower(function.name);
-        return lowered_name == "database" || lowered_name == "schema" || lowered_name == "current_database";
+        for (const auto & child : ast.children)
+        {
+            if (hasCurrentDatabaseCall(*child))
+                return true;
+        }
+        return false;
+    }
+
+    /// A call of a function with such a name may resolve to a lambda of the query: one aliased with it, directly or through
+    /// an identifier, or a parameter of a lambda, which may be given a lambda.
+    static bool hasNameThatMayResolveToLambda(const IAST & ast, bool (*is_name)(const String &))
+    {
+        const auto * function = ast.as<ASTFunction>();
+        const auto * identifier = dynamic_cast<const ASTIdentifier *>(&ast);
+        if (((function && function->name == "lambda") || (identifier && !identifier->compound()))
+            && is_name(ast.tryGetAlias()))
+            return true;
+
+        if (function && function->name == "lambda" && function->arguments && !function->arguments->children.empty())
+        {
+            if (const auto * parameters = function->arguments->children.front()->as<ASTFunction>(); parameters && parameters->arguments)
+            {
+                for (const auto & parameter : parameters->arguments->children)
+                {
+                    if (const auto * parameter_name = parameter->as<ASTIdentifier>(); parameter_name && is_name(parameter_name->name()))
+                        return true;
+                }
+            }
+        }
+
+        for (const auto & child : ast.children)
+        {
+            if (hasNameThatMayResolveToLambda(*child, is_name))
+                return true;
+        }
+        return false;
+    }
+
+    /// The analyzer resolves a bare name on the right of `IN` or as a dictionary name as a column, an alias or a lambda parameter
+    /// first. A dictionary name literal with an alias is also the value of that alias.
+    static bool hasArgumentThatCannotBeBound(const IAST & ast)
+    {
+        if (const auto * function = ast.as<ASTFunction>(); function && function->arguments)
+        {
+            const auto & arguments = function->arguments->children;
+            const auto is_bare_identifier = [](const ASTPtr & argument)
+            {
+                const auto * identifier = dynamic_cast<const ASTIdentifier *>(argument.get());
+                return identifier && !identifier->compound();
+            };
+
+            if (functionIsInOrGlobalInOperator(function->name) && arguments.size() > 1 && is_bare_identifier(arguments[1]))
+                return true;
+            if (functionIsDictGet(function->name) && !arguments.empty()
+                && (is_bare_identifier(arguments[0]) || !arguments[0]->tryGetAlias().empty()))
+                return true;
+            if (function->name == "assignCentroid" && arguments.size() > 1 && !arguments[1]->tryGetAlias().empty())
+                return true;
+        }
+
+        for (const auto & child : ast.children)
+        {
+            if (hasArgumentThatCannotBeBound(*child))
+                return true;
+        }
+        return false;
     }
 
     /// Replace `currentDatabase()` with a literal everywhere in the subtree.
@@ -416,7 +521,9 @@ private:
             /// The `updatePointerToChild` function replaces the old address with the new one without access, so it is safe to invalidate it in place.
             /// However, just for safety, let's store the old node for a little longer.
             ASTPtr old_ast = ast;
-            ast = make_intrusive<ASTLiteral>(database_name);
+            auto literal = make_intrusive<ASTLiteral>(database_name);
+            literal->setAlias(function->alias);
+            ast = std::move(literal);
             parent.updatePointerToChild(old_ast.get(), ast);
             return;
         }
@@ -445,6 +552,32 @@ private:
         if (!identifier.alias.empty())
             qualified_identifier->setAlias(identifier.alias);
         ast = qualified_identifier;
+    }
+
+    void qualifyDictionaryName(ASTLiteral & literal) const
+    {
+        auto & literal_value = literal.value;
+
+        if (literal_value.getType() != Field::Types::String)
+            return;
+
+        auto dictionary_name = literal_value.safeGet<String>();
+        auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
+        literal_value = qualified_dictionary_name.getFullName();
+    }
+
+    /// The dictionary name of `assignCentroid`, as the analyzer binds it in the queries it sends to other servers.
+    void qualifyAssignCentroidDictionaryNames(IAST & ast) const
+    {
+        if (auto * function = ast.as<ASTFunction>(); function && function->name == "assignCentroid" && function->arguments
+            && function->arguments->children.size() > 1)
+        {
+            if (auto * literal = function->arguments->children[1]->as<ASTLiteral>())
+                qualifyDictionaryName(*literal);
+        }
+
+        for (const auto & child : ast.children)
+            qualifyAssignCentroidDictionaryNames(*child);
     }
 
     void visit(ASTFunction & function, ASTPtr &) const
@@ -476,14 +609,7 @@ private:
                         }
                         else if (auto * literal = child->children[i]->as<ASTLiteral>())
                         {
-                            auto & literal_value = literal->value;
-
-                            if (literal_value.getType() != Field::Types::String)
-                                continue;
-
-                            auto dictionary_name = literal_value.safeGet<String>();
-                            auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
-                            literal_value = qualified_dictionary_name.getFullName();
+                            qualifyDictionaryName(*literal);
                         }
                     }
                     else if (is_operator_in && i == 1)
