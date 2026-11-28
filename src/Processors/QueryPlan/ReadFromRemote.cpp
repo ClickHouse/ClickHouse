@@ -74,6 +74,8 @@ namespace Setting
     extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
+    extern const SettingsUInt64 max_ast_elements;
+    extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool parallel_replicas_filter_pushdown;
@@ -265,9 +267,27 @@ ASTPtr tryBuildAdditionalFilterAST(
     const UnorderedMapWithMemoryTracking<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
     ContextMutablePtr & context,
-    VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts)
+    VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts,
+    size_t max_ast_elements_budget,
+    size_t max_ast_depth_budget)
 {
     UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, ASTPtr> node_to_ast;
+
+    /// A column that is an expression is written into the predicate once for every use, so the predicate may
+    /// outgrow the limits of the shards (`max_ast_elements`, `max_ast_depth`). Track the size and depth of the
+    /// predicate with every copy counted, and keep a conjunct that does not fit on the initiator.
+    struct AstCost
+    {
+        size_t elements = 0;
+        size_t depth = 0;
+    };
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, AstCost> node_to_cost;
+    auto fits = [&](const AstCost & cost)
+    {
+        return (!max_ast_elements_budget || cost.elements <= max_ast_elements_budget)
+            && (!max_ast_depth_budget || cost.depth <= max_ast_depth_budget);
+    };
+    auto leaf_cost = [](const ASTPtr & ast) { return AstCost{ast->size(), ast->checkDepth(std::numeric_limits<size_t>::max())}; };
 
     /** Dropping a conjunct that cannot be converted weakens an `AND`, which is only sound where the
       * predicate is used with positive polarity. Under a `NOT` the weakened `AND` makes the whole
@@ -376,6 +396,7 @@ ASTPtr tryBuildAdditionalFilterAST(
             /// makeCastToTypeNameAST skips the wrap when the exact serialization already cast the value to
             /// the result type (scalar Decimal/DateTime64/Time64), avoiding a redundant identity cast.
             auto casted_literal = makeCastToTypeNameAST(std::move(literal), node->result_type->getName());
+            node_to_cost[node] = leaf_cost(casted_literal);
             node_to_ast[node] = std::move(casted_literal);
             stack.pop();
             continue;
@@ -421,10 +442,15 @@ ASTPtr tryBuildAdditionalFilterAST(
                     /// We rely on plan optimization that the result is (expected to be) valid.
                     res = it->second->toAST();
             }
+            if (res)
+                node_to_cost[node] = leaf_cost(res);
         }
 
         if (node->type == ActionsDAG::ActionType::ALIAS)
+        {
             res = node_to_ast[node->children.at(0)];
+            node_to_cost[node] = node_to_cost[node->children.at(0)];
+        }
 
         if (node->type != ActionsDAG::ActionType::FUNCTION)
             continue;
@@ -432,20 +458,44 @@ ASTPtr tryBuildAdditionalFilterAST(
         if (!node->function_base->isDeterministic() || node->function_base->isStateful())
             continue;
 
+        auto func_name = node->function_base->getName();
+        bool is_function_and = func_name == "and" && conjuncts_safe_to_drop.contains(node);
+
         bool has_all_args = true;
         ASTs arguments;
+        /// The function node, its list of arguments, and the arguments.
+        AstCost cost{2, 2};
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> too_big_children;
         for (const auto * child : node->children)
         {
             auto ast = node_to_ast[child];
+            if (ast)
+            {
+                const auto & child_cost = node_to_cost[child];
+                AstCost with_child{cost.elements + child_cost.elements, std::max(cost.depth, child_cost.depth + 2)};
+                /// Only a conjunct of a positive `AND` can be left out.
+                if (is_function_and && !fits(with_child))
+                {
+                    too_big_children.insert(child);
+                    ast = nullptr;
+                }
+                else
+                    cost = with_child;
+            }
             if (!ast)
                 has_all_args = false;
             else
                 arguments.push_back(std::move(ast));
         }
 
+        /// A conjunct that is left out for its size is dropped for the caller as well.
+        if (!too_big_children.empty() && dropped_conjuncts)
+            for (const auto * child : too_big_children)
+                dropped_conjuncts->push_back(child);
+
         /// Allow to skip children only for an AND whose polarity is known to be positive.
-        auto func_name = node->function_base->getName();
-        bool is_function_and = func_name == "and" && conjuncts_safe_to_drop.contains(node);
+        if (!is_function_and && !fits(cost))
+            continue;
         if (!has_all_args && !is_function_and)
             continue;
 
@@ -531,6 +581,7 @@ ASTPtr tryBuildAdditionalFilterAST(
 
         auto function = makeASTFunction(node->function_base->getName(), std::move(arguments));
         res = std::move(function);
+        node_to_cost[node] = cost;
     }
 
     return node_to_ast[dag.getOutputs().front()];
@@ -572,7 +623,15 @@ static bool addFilters(
         execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
 
     ASTPtr predicate = tryBuildAdditionalFilterAST(
-        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context, dropped_conjuncts);
+        pushed_down_filters,
+        projection_names,
+        execution_name_to_projection_query_tree,
+        external_tables,
+        context,
+        dropped_conjuncts,
+        /// The predicate is spliced into a query that has its own elements, and may be spliced more than once.
+        settings[Setting::max_ast_elements] / 2,
+        settings[Setting::max_ast_depth] / 2);
     if (!predicate)
         return false;
 
