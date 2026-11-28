@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
+#include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/StorageSnapshot.h>
 #include <boost/core/noncopyable.hpp>
@@ -151,6 +152,8 @@ struct MergeTreeReadTaskInfo
     MarkRangesPtr read_request_map;
     /// The same for each of `patch_parts`; empty = the whole patch parts.
     std::vector<MarkRangesPtr> patch_read_request_maps;
+    /// Whether each of `patch_parts` splits with the ranges the query reads from this part, when it has patches.
+    std::shared_ptr<PatchesSplitWithRead> patches_split_with_read;
 
     /// Rows the reader drops from this part before PREWHERE; non-empty, or null to drop none.
     ConstDeleteBitmapPtr delete_bitmap;
