@@ -95,11 +95,46 @@ QueryTreeNodePtr & getMaterializedTableExpressionNode(JoinNode & join_node, bool
     return join_node.getRightTableExpressionNode();
 }
 
+using NullableSources = std::unordered_set<const IQueryTreeNode *>;
+
+/// Collect the table expressions on the side of an outer `JOIN` that is filled with defaults for unmatched rows.
+void collectJoinSideSources(const QueryTreeNodePtr & node, NullableSources & result)
+{
+    if (const auto * join_node = node->as<JoinNode>())
+    {
+        collectJoinSideSources(join_node->getLeftTableExpressionNode(), result);
+        collectJoinSideSources(join_node->getRightTableExpressionNode(), result);
+        return;
+    }
+    if (const auto * cross_join = node->as<CrossJoinNode>())
+    {
+        for (const auto & table_expression : cross_join->getTableExpressions())
+            collectJoinSideSources(table_expression, result);
+        return;
+    }
+    result.insert(node.get());
+}
+
+void collectNullableSources(const QueryTreeNodePtr & node, NullableSources & result)
+{
+    if (const auto * join_node = node->as<JoinNode>())
+    {
+        const auto kind = join_node->getKind();
+        if (kind == JoinKind::Left || kind == JoinKind::Full)
+            collectJoinSideSources(join_node->getRightTableExpressionNode(), result);
+        if (kind == JoinKind::Right || kind == JoinKind::Full)
+            collectJoinSideSources(join_node->getLeftTableExpressionNode(), result);
+    }
+    for (const auto & child : node->getChildren())
+        if (child)
+            collectNullableSources(child, result);
+}
+
 /// Return a clone of the defining expression of an inlineable `ALIAS` column node, or nullptr otherwise.
 /// A JOIN / CROSS_JOIN / ARRAY_JOIN source puts a `ListNode` of the joined sides in the expression child,
 /// which is not an alias body. The expression is cloned so each occurrence gets its own copy: that lets
 /// one occurrence be aliased (a projection output) without mutating another (a reference in ORDER BY).
-QueryTreeNodePtr getInlineableAliasColumnExpression(const QueryTreeNodePtr & node)
+QueryTreeNodePtr getInlineableAliasColumnExpression(const QueryTreeNodePtr & node, const NullableSources & nullable_sources)
 {
     const auto * column_node = node->as<ColumnNode>();
     if (!column_node || !column_node->hasExpression())
@@ -111,11 +146,16 @@ QueryTreeNodePtr getInlineableAliasColumnExpression(const QueryTreeNodePtr & nod
                        || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
         return nullptr;
 
+    /// An outer JOIN fills the unmatched rows of its nullable side with the defaults of the column types,
+    /// while the inlined expression would be evaluated over those defaults above the JOIN.
+    if (nullable_sources.contains(column_source.get()))
+        return nullptr;
+
     return column_node->getExpression()->clone();
 }
 
-void inlineAliasColumnsImpl(QueryTreeNodePtr & node);
-void inlineAliasColumnsInExpression(QueryTreeNodePtr & node);
+void inlineAliasColumnsImpl(QueryTreeNodePtr & node, const NullableSources & nullable_sources);
+void inlineAliasColumnsInExpression(QueryTreeNodePtr & node, const NullableSources & nullable_sources);
 
 /// A `JOIN USING` key is a `ColumnNode` whose expression is a `ListNode` recording how the key resolves on
 /// each side, and a side's entry can itself be an `ALIAS` column. Such an entry keeps the key's name as an
@@ -123,7 +163,7 @@ void inlineAliasColumnsInExpression(QueryTreeNodePtr & node);
 /// what lets a remote server resolve a key that exists only as an `ALIAS` column of the initiator's table.
 /// The alias also tells `rejectUnshippableJoinUsingKeys` which keys no remote server can resolve, and it
 /// reads the entry expecting exactly this shape.
-void inlineJoinUsingKeys(QueryTreeNodePtr & join_expression)
+void inlineJoinUsingKeys(QueryTreeNodePtr & join_expression, const NullableSources & nullable_sources)
 {
     auto * using_list = join_expression->as<ListNode>();
     if (!using_list)
@@ -142,12 +182,12 @@ void inlineJoinUsingKeys(QueryTreeNodePtr & join_expression)
         for (auto & side : key_sides->getNodes())
         {
             const auto * side_column = side->as<ColumnNode>();
-            auto expression = getInlineableAliasColumnExpression(side);
+            auto expression = getInlineableAliasColumnExpression(side, nullable_sources);
             if (!expression)
                 continue;
 
             const String key_name = side_column->getColumnName();
-            inlineAliasColumnsInExpression(expression);
+            inlineAliasColumnsInExpression(expression, nullable_sources);
             expression->setAlias(key_name);
             side = expression;
         }
@@ -156,16 +196,16 @@ void inlineJoinUsingKeys(QueryTreeNodePtr & join_expression)
 
 /// Inline `ALIAS` columns inside an expression subtree without assigning any alias. Nested subqueries are
 /// handed back to `inlineAliasColumnsImpl` so their own projection columns keep their names.
-void inlineAliasColumnsInExpression(QueryTreeNodePtr & node)
+void inlineAliasColumnsInExpression(QueryTreeNodePtr & node, const NullableSources & nullable_sources)
 {
     if ((node->getNodeType() == QueryTreeNodeType::QUERY) || node->as<UnionNode>())
     {
-        inlineAliasColumnsImpl(node);
+        inlineAliasColumnsImpl(node, nullable_sources);
         return;
     }
 
     /// An `ALIAS` column may be defined over another one, so keep unwrapping.
-    while (auto expression = getInlineableAliasColumnExpression(node))
+    while (auto expression = getInlineableAliasColumnExpression(node, nullable_sources))
         node = expression;
 
     auto * join_node = node->as<JoinNode>();
@@ -177,9 +217,9 @@ void inlineAliasColumnsInExpression(QueryTreeNodePtr & node)
             continue;
 
         if (using_join && child == join_node->getJoinExpression())
-            inlineJoinUsingKeys(child);
+            inlineJoinUsingKeys(child, nullable_sources);
         else
-            inlineAliasColumnsInExpression(child);
+            inlineAliasColumnsInExpression(child, nullable_sources);
     }
 }
 
@@ -191,41 +231,41 @@ void inlineAliasColumnsInExpression(QueryTreeNodePtr & node)
 /// clauses (`WHERE`/`GROUP BY`/`ORDER BY`/`HAVING`/`JOIN ON`) no alias is set; otherwise two same-named
 /// `ALIAS` columns from different `JOIN` sources land in one scope with different bodies and the remote
 /// side throws `MULTIPLE_EXPRESSIONS_FOR_ALIAS` (https://github.com/ClickHouse/ClickHouse/issues/107990).
-void inlineAliasColumnsImpl(QueryTreeNodePtr & node)
+void inlineAliasColumnsImpl(QueryTreeNodePtr & node, const NullableSources & nullable_sources)
 {
     if (auto * union_node = node->as<UnionNode>())
     {
         for (auto & query : union_node->getQueries().getNodes())
-            inlineAliasColumnsImpl(query);
+            inlineAliasColumnsImpl(query, nullable_sources);
         return;
     }
 
     auto * query_node = node->as<QueryNode>();
     if (!query_node)
     {
-        inlineAliasColumnsInExpression(node);
+        inlineAliasColumnsInExpression(node, nullable_sources);
         return;
     }
 
     for (auto & projection_item : query_node->getProjection().getNodes())
     {
         const auto * column_node = projection_item->as<ColumnNode>();
-        if (auto expression = getInlineableAliasColumnExpression(projection_item))
+        if (auto expression = getInlineableAliasColumnExpression(projection_item, nullable_sources))
         {
             const String output_alias = column_node->getColumnName();
-            inlineAliasColumnsInExpression(expression);
+            inlineAliasColumnsInExpression(expression, nullable_sources);
             expression->setAlias(output_alias);
             projection_item = expression;
         }
         else
         {
-            inlineAliasColumnsInExpression(projection_item);
+            inlineAliasColumnsInExpression(projection_item, nullable_sources);
         }
     }
 
     for (auto & child : query_node->getChildren())
         if (child && child != query_node->getProjectionNode())
-            inlineAliasColumnsInExpression(child);
+            inlineAliasColumnsInExpression(child, nullable_sources);
 }
 
 /// Visitor that collect column source to columns mapping from query and all subqueries
@@ -959,7 +999,9 @@ void rejectUnshippableJoinUsingKeys(const QueryTreeNodePtr & root)
 
 void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify)
 {
-    inlineAliasColumnsImpl(query_tree_to_modify);
+    NullableSources nullable_sources;
+    collectNullableSources(query_tree_to_modify, nullable_sources);
+    inlineAliasColumnsImpl(query_tree_to_modify, nullable_sources);
 }
 
 bool shippingQueryMaterializesSubqueries(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
@@ -1280,13 +1322,14 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
 namespace
 {
 
-String actionNameAfterAliasInlining(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
+String actionNameAfterAliasInlining(
+    const QueryTreeNodePtr & node, const PlannerContext & planner_context, const NullableSources & nullable_sources)
 {
     /// The action name computed afterwards then matches the name the shard's ActionsDAG assigns
     /// (the shard works on the inlined query tree). Action names come from the column identifier or the
     /// expression rather than the SQL alias, so inlining without aliasing is what this needs.
     auto node_clone = node->clone();
-    inlineAliasColumnsInExpression(node_clone);
+    inlineAliasColumnsInExpression(node_clone, nullable_sources);
 
     /// `buildQueryTreeForShard` performs one more naming-relevant rewrite after inlining ALIAS columns:
     /// `ReplaceLongConstWithScalarVisitor` turns over-threshold constants into `__getScalar('<hash>')` calls
@@ -1308,8 +1351,12 @@ String actionNameAfterAliasInlining(const QueryTreeNodePtr & node, const Planner
 class CollectAliasNameTranslationVisitor : public InDepthQueryTreeVisitor<CollectAliasNameTranslationVisitor>
 {
 public:
-    CollectAliasNameTranslationVisitor(const PlannerContext & planner_context_, std::unordered_map<String, String> & translation_)
+    CollectAliasNameTranslationVisitor(
+        const PlannerContext & planner_context_,
+        const NullableSources & nullable_sources_,
+        std::unordered_map<String, String> & translation_)
         : planner_context(planner_context_)
+        , nullable_sources(nullable_sources_)
         , translation(translation_)
     {
     }
@@ -1324,7 +1371,7 @@ public:
         if (translation.contains(identifier_name))
             return;
 
-        translation.emplace(std::move(identifier_name), actionNameAfterAliasInlining(node, planner_context));
+        translation.emplace(std::move(identifier_name), actionNameAfterAliasInlining(node, planner_context, nullable_sources));
     }
 
     static bool needChildVisit(const QueryTreeNodePtr & /*parent*/, const QueryTreeNodePtr & child)
@@ -1339,6 +1386,7 @@ public:
 
 private:
     const PlannerContext & planner_context;
+    const NullableSources & nullable_sources;
     std::unordered_map<String, String> & translation;
 };
 
@@ -1349,8 +1397,11 @@ class CollectInlinedAliasExpressionsVisitor : public InDepthQueryTreeVisitor<Col
 {
 public:
     CollectInlinedAliasExpressionsVisitor(
-        const PlannerContext & planner_context_, std::unordered_map<String, QueryTreeNodePtr> & alias_expressions_)
+        const PlannerContext & planner_context_,
+        const NullableSources & nullable_sources_,
+        std::unordered_map<String, QueryTreeNodePtr> & alias_expressions_)
         : planner_context(planner_context_)
+        , nullable_sources(nullable_sources_)
         , alias_expressions(alias_expressions_)
     {
     }
@@ -1360,7 +1411,7 @@ public:
         if (node->getNodeType() != QueryTreeNodeType::COLUMN)
             return;
 
-        auto inlined = getInlineableAliasColumnExpression(node);
+        auto inlined = getInlineableAliasColumnExpression(node, nullable_sources);
         if (!inlined)
             return;
 
@@ -1368,7 +1419,7 @@ public:
         if (alias_expressions.contains(identifier_name))
             return;
 
-        inlineAliasColumnsInExpression(inlined);
+        inlineAliasColumnsInExpression(inlined, nullable_sources);
         alias_expressions.emplace(std::move(identifier_name), std::move(inlined));
     }
 
@@ -1381,6 +1432,7 @@ public:
 
 private:
     const PlannerContext & planner_context;
+    const NullableSources & nullable_sources;
     std::unordered_map<String, QueryTreeNodePtr> & alias_expressions;
 };
 
@@ -1496,10 +1548,16 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     std::unordered_set<String> genuine_qualifier_tails;
     {
         QueryTreeNodePtr query_tree_for_visit = query_tree;
-        CollectAliasNameTranslationVisitor visitor(*planner_context, identifier_to_inlined_name);
+
+        /// The shard keeps the `ALIAS` columns of the nullable side of an outer `JOIN` (see `inlineAliasColumns`),
+        /// so the names computed here have to keep them as well.
+        NullableSources nullable_sources;
+        collectNullableSources(query_tree_for_visit, nullable_sources);
+
+        CollectAliasNameTranslationVisitor visitor(*planner_context, nullable_sources, identifier_to_inlined_name);
         visitor.visit(query_tree_for_visit);
 
-        CollectInlinedAliasExpressionsVisitor alias_visitor(*planner_context, identifier_to_alias_expression);
+        CollectInlinedAliasExpressionsVisitor alias_visitor(*planner_context, nullable_sources, identifier_to_alias_expression);
         alias_visitor.visit(query_tree_for_visit);
 
         CollectGenuineQualifierTailsVisitor tails_visitor(*planner_context, genuine_qualifier_tails);
