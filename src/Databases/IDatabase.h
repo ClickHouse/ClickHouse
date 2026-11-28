@@ -246,6 +246,13 @@ public:
     /// This is distinct from `isExternal`, which classifies whether the engine supports ClickHouse internal table types.
     virtual bool isRemoteDatabase() const { return false; }
 
+    /// Active rows across the database's tables, for `system.databases.rows`.
+    /// nullopt for engines that don't track it (e.g. remote/data-lake catalogs).
+    virtual std::optional<UInt64> getCurrentRowCount() const { return {}; }
+
+    /// The database's `max_rows` limit; 0 means unlimited/unsupported.
+    virtual UInt64 getMaxRows() const { return 0; }
+
     /// False for a database that only exposes the tables of other databases, such as `Overlay`:
     /// listing its tables lists the tables of its sources, and the storages it returns are not the source tables themselves.
     virtual bool ownsTables() const { return true; }

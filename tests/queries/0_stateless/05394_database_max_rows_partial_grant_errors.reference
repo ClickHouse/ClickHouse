@@ -1,0 +1,8 @@
+-- a partition import
+Adding 5 rows to table db.visible would exceed the row limit (database setting `max_rows`) of 100. (TOO_MANY_ROWS)
+-- a table attachment
+Adding table `db`.`detached` with 20 rows would exceed the row limit (database setting `max_rows`) of 100. (TOO_MANY_ROWS)
+-- a cross-database RENAME
+Moving table `db`.`moved` with 7 rows would exceed the row limit (database setting `max_rows`) of 100. (TOO_MANY_ROWS)
+-- an insert after the limit is reached
+Too many rows in database `db`. The limit (database setting `max_rows`) is set to 100. (TOO_MANY_ROWS)
