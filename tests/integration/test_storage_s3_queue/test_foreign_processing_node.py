@@ -1527,3 +1527,75 @@ def test_files_are_not_lost_after_ordering_barrier_hand_off_failure(started_clus
         DROP TABLE IF EXISTS {table_name};
         """
         )
+
+
+RECHECK_BATCH_EXTRACTION_FAILPOINT = "object_storage_queue_fail_recheck_batch_extraction"
+
+
+def test_pending_rechecks_survive_a_failed_batch_extraction(started_cluster):
+    """A failure to extract a batch of due rechecks must leave the pending rechecks intact.
+
+    Two files are held by a foreign processor, so two rechecks become due at the same batch
+    boundary. The extraction of that batch throws (as on a memory limit). The file iterator
+    is retained after the exception in `unordered` mode, and it consults the pending rechecks
+    again: both entries must still be there with their objects, and both files must be
+    ingested after the foreign processor releases them without a commit.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_recheck_batch_extraction_failure_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    files_to_generate = 5
+    generate_random_files(started_cluster, files_path, files_to_generate, start_ind=0, row_num=1)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_loading_retries": 100,
+            "s3queue_processing_state_cache_ttl_seconds": 5,
+        },
+    )
+
+    conflict_files = [f"{files_path}/test_1.csv", f"{files_path}/test_3.csv"]
+    conflict_nodes = [node.query(f"SELECT sipHash64('{file}')").strip() for file in conflict_files]
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.ensure_path(f"{keeper_path}/processing")
+    for conflict_node in conflict_nodes:
+        zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
+
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
+
+        run_with_retry(lambda x: x == files_to_generate - len(conflict_files), get_count)
+
+        node.query(f"SYSTEM ENABLE FAILPOINT {RECHECK_BATCH_EXTRACTION_FAILPOINT}")
+        run_with_retry(
+            lambda x: x,
+            lambda: node.contains_in_log("Failpoint-triggered failure to extract a batch of 2 rechecks"),
+        )
+
+        # The foreign processor released the files without committing them.
+        for conflict_node in conflict_nodes:
+            zk.delete(f"{keeper_path}/processing/{conflict_node}")
+
+        run_with_retry(lambda x: x == files_to_generate, get_count)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {RECHECK_BATCH_EXTRACTION_FAILPOINT}")
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
+        """
+        )

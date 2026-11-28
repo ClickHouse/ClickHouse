@@ -289,6 +289,8 @@ public:
         /// The set-processing attempt of a handed-out file threw.
         void onSetProcessingException(const ObjectInfoPtr & object);
         void forgetPendingReplay(const std::string & path) TSA_REQUIRES(next_mutex);
+        /// Does not allocate, unlike the overload which has to derive the ordering domain from the path.
+        void forgetPendingReplay(const OrderingDomain & domain, const std::string & path) noexcept TSA_REQUIRES(next_mutex);
         bool isBehindPendingReplay(const std::string & path) TSA_REQUIRES(next_mutex);
         void forgetInFlightReplay(const std::string & path) TSA_REQUIRES(next_mutex);
         bool isBehindInFlightReplay(const std::string & path) TSA_REQUIRES(next_mutex);
@@ -315,6 +317,7 @@ public:
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
         void filterProcessableFiles(ObjectInfos & objects) TSA_REQUIRES(next_mutex);
         /// The replays among the taken files are added to `in_flight_replays_per_domain` and to `taken_replays`.
+        /// Either transfers the whole batch or throws without modifying the state of the iterator.
         ObjectInfos takeDueForeignProcessingRechecks(std::vector<std::string> & taken_replays) TSA_REQUIRES(next_mutex);
         /// When the recheck of `pending` is due, judging by the most recent cached observation.
         [[nodiscard]] time_t getRecheckDeadline(const PendingRecheck & pending, size_t ttl_sec) const;

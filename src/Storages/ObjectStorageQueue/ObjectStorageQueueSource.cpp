@@ -81,6 +81,7 @@ namespace FailPoints
     extern const char object_storage_queue_fail_tags_fetch[];
     extern const char object_storage_queue_pause_after_blocked_files_replay_cap[];
     extern const char object_storage_queue_fail_bucket_acquisition[];
+    extern const char object_storage_queue_fail_recheck_batch_extraction[];
     extern const char object_storage_queue_fail_ordering_barrier_hand_off[];
 }
 
@@ -805,38 +806,90 @@ ObjectInfos ObjectStorageQueueSource::FileIterator::takeDueForeignProcessingRech
         }
     }
 
-    ObjectInfos due;
-    std::deque<PendingRecheck> remaining;
-    for (size_t i = 0; i < foreign_processing_files_to_recheck.size(); ++i)
+    /// The extraction is transactional. Everything which can throw (e.g. on a memory limit) is done
+    /// first, without modifying the state of the iterator: the iterator can be retained after an
+    /// exception, and a queue with a moved-out entry or partially transferred replay bookkeeping
+    /// would then be consulted again. After that, the transfer itself only moves objects into
+    /// reserved space and splices already allocated nodes, so it cannot fail in the middle.
+    const size_t pending_count = foreign_processing_files_to_recheck.size();
+    std::vector<char> is_taken(pending_count);
+    size_t taken_count = 0;
+    /// The replays among the taken files, grouped the same way as `in_flight_replays_per_domain`.
+    std::map<OrderingDomain, std::multiset<std::string>> taken_replays_per_domain;
+    std::vector<std::string> new_taken_replays;
+    for (size_t i = 0; i < pending_count; ++i)
     {
-        auto & pending = foreign_processing_files_to_recheck[i];
+        const auto & pending = foreign_processing_files_to_recheck[i];
+        const auto & path = pending.object->getPath();
         bool take = is_due[i];
         if (take && !smallest_not_due_per_domain.empty())
         {
-            const auto it = smallest_not_due_per_domain.find(getOrderingDomain(pending.object->getPath()));
-            take = it == smallest_not_due_per_domain.end() || pending.object->getPath() < it->second;
+            const auto it = smallest_not_due_per_domain.find(getOrderingDomain(path));
+            take = it == smallest_not_due_per_domain.end() || path < it->second;
         }
+        if (!take)
+            continue;
 
-        /// The path stays in `inherited_foreign_processing_rechecks` until this pass lists it
-        /// again: if the file is still foreign-held, `recheckForeignProcessingLater` queues it
-        /// again, and the relisted copy must replace that entry instead of being added next to it.
-        if (take)
+        is_taken[i] = true;
+        ++taken_count;
+        if (pending.is_replay)
         {
-            if (pending.is_replay)
-            {
-                /// Not pending in the queue any more, but still not handed out: with buckets it can
-                /// be appended to a bucket cache behind a later file of its domain, see `in_flight_replays_per_domain`.
-                const auto & path = pending.object->getPath();
-                forgetPendingReplay(path);
-                in_flight_replays_per_domain[getOrderingDomain(path)].insert(path);
-                taken_replays.push_back(path);
-            }
+            taken_replays_per_domain[getOrderingDomain(path)].insert(path);
+            new_taken_replays.push_back(path);
+        }
+    }
+
+    if (!taken_count)
+        return {};
+
+    ObjectInfos due;
+    due.reserve(taken_count);
+    taken_replays.reserve(taken_replays.size() + new_taken_replays.size());
+
+    fiu_do_on(FailPoints::object_storage_queue_fail_recheck_batch_extraction,
+    {
+        throw Exception(
+            ErrorCodes::FAULT_INJECTED, "Failpoint-triggered failure to extract a batch of {} rechecks", taken_count);
+    });
+
+    /// Nothing below throws.
+
+    /// A taken replay is not pending in the queue any more, but still not handed out: with buckets
+    /// it can be appended to a bucket cache behind a later file of its domain, see `in_flight_replays_per_domain`.
+    for (const auto & [domain, paths] : taken_replays_per_domain)
+        for (const auto & path : paths)
+            forgetPendingReplay(domain, path);
+
+    /// Splice the nodes: the domains which are not there yet first, then the paths of the others.
+    in_flight_replays_per_domain.merge(taken_replays_per_domain);
+    for (auto & [domain, paths] : taken_replays_per_domain)
+        in_flight_replays_per_domain.find(domain)->second.merge(paths);
+
+    for (auto & path : new_taken_replays)
+        taken_replays.push_back(std::move(path));
+
+    /// The path of a taken file stays in `inherited_foreign_processing_rechecks` until this pass
+    /// lists it again: if the file is still foreign-held, `recheckForeignProcessingLater` queues it
+    /// again, and the relisted copy must replace that entry instead of being added next to it.
+    static_assert(std::is_nothrow_move_assignable_v<PendingRecheck>);
+    size_t remaining_count = 0;
+    for (size_t i = 0; i < pending_count; ++i)
+    {
+        auto & pending = foreign_processing_files_to_recheck[i];
+        if (is_taken[i])
+        {
             due.push_back(std::move(pending.object));
         }
         else
-            remaining.push_back(std::move(pending));
+        {
+            if (remaining_count != i)
+                foreign_processing_files_to_recheck[remaining_count] = std::move(pending);
+            ++remaining_count;
+        }
     }
-    foreign_processing_files_to_recheck = std::move(remaining);
+    /// Erasing the tail of a deque does not allocate.
+    foreign_processing_files_to_recheck.erase(
+        foreign_processing_files_to_recheck.begin() + remaining_count, foreign_processing_files_to_recheck.end());
 
     /// Ordered mode: hand out the files in path order. The queue is not ordered (e.g. files
     /// unblocked by a resolved blocker are appended behind other pending rechecks), and a
@@ -1397,7 +1450,12 @@ void ObjectStorageQueueSource::FileIterator::retryUnresolvedSetProcessingLater(O
 
 void ObjectStorageQueueSource::FileIterator::forgetPendingReplay(const std::string & path)
 {
-    const auto it = pending_replays_per_domain.find(getOrderingDomain(path));
+    forgetPendingReplay(getOrderingDomain(path), path);
+}
+
+void ObjectStorageQueueSource::FileIterator::forgetPendingReplay(const OrderingDomain & domain, const std::string & path) noexcept
+{
+    const auto it = pending_replays_per_domain.find(domain);
     if (it == pending_replays_per_domain.end())
         return;
 
