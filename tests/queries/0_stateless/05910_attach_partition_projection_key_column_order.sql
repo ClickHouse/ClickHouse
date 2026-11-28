@@ -44,6 +44,13 @@ ALTER TABLE t_agg_dst ATTACH PARTITION tuple() FROM t_agg_src; -- { serverError 
 DROP TABLE t_agg_dst;
 DROP TABLE t_agg_src;
 
+CREATE TABLE t_where_dst (id UInt64, x UInt64, y UInt64, PROJECTION p (SELECT * WHERE cityHash64(COLUMNS('x|y')) % 2 = 0 ORDER BY x)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_where_src (id UInt64, y UInt64, x UInt64, PROJECTION p (SELECT * WHERE cityHash64(COLUMNS('x|y')) % 2 = 0 ORDER BY x)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_where_src VALUES (1, 2, 3);
+ALTER TABLE t_where_dst ATTACH PARTITION tuple() FROM t_where_src; -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_where_dst;
+DROP TABLE t_where_src;
+
 -- Different column order with the same projection key is still accepted.
 CREATE TABLE t_ok_dst (id UInt64, x UInt64, y UInt64, PROJECTION p (SELECT * ORDER BY x)) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t_ok_src (id UInt64, y UInt64, x UInt64, PROJECTION p (SELECT * ORDER BY x)) ENGINE = MergeTree ORDER BY id;
@@ -57,12 +64,22 @@ SELECT count(), sum(y) FROM t_ok_dst WHERE x = 5 SETTINGS optimize_use_projectio
 DROP TABLE t_ok_dst;
 DROP TABLE t_ok_src;
 
+CREATE TABLE t_ok_where_dst (id UInt64, x UInt64, y UInt64, PROJECTION p (SELECT * WHERE y >= 500 ORDER BY x)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_ok_where_src (id UInt64, y UInt64, x UInt64, PROJECTION p (SELECT * WHERE y >= 500 ORDER BY x)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_ok_where_src SELECT number, number, number % 100 FROM numbers(1000);
+INSERT INTO t_ok_where_dst SELECT number + 1000, number % 100, number FROM numbers(1000);
+ALTER TABLE t_ok_where_dst ATTACH PARTITION tuple() FROM t_ok_where_src;
+SELECT count(), sum(id) FROM t_ok_where_dst WHERE y >= 500 SETTINGS optimize_use_projections = 0;
+SELECT count(), sum(id) FROM t_ok_where_dst WHERE y >= 500 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+DROP TABLE t_ok_where_dst;
+DROP TABLE t_ok_where_src;
+
 CREATE TABLE t_index_dst (id UInt64, x UInt64, y UInt64, PROJECTION p INDEX * TYPE basic) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t_index_src (x UInt64, id UInt64, y UInt64, PROJECTION p INDEX * TYPE basic) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_index_src SELECT number % 100, number, number FROM numbers(1000);
 INSERT INTO t_index_dst SELECT number, number % 100, number FROM numbers(1000);
 ALTER TABLE t_index_dst ATTACH PARTITION tuple() FROM t_index_src;
 SELECT count() FROM t_index_dst WHERE y >= 900 SETTINGS optimize_use_projections = 0;
-SELECT count() FROM t_index_dst WHERE y >= 900 SETTINGS optimize_use_projections = 1;
+SELECT count() FROM t_index_dst WHERE y >= 900 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 DROP TABLE t_index_dst;
 DROP TABLE t_index_src;
