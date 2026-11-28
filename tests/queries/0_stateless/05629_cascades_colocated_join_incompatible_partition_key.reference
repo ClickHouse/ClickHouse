@@ -33,5 +33,5 @@ Expression ((Project names + Projection))
               ReadFromMergeTree (ParallelRead default.t_coloc_float_left)
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ReplicatedRead default.t_coloc_float_right)
-1999	1999000
-1999	1999000
+2000	1999000
+2000	1999000
