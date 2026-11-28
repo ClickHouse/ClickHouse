@@ -120,7 +120,10 @@ using ConstantColumns = UnorderedMapWithMemoryTracking<const QueryPlan::Node *, 
 [[nodiscard]] bool isPreparedJoinStorage(const QueryPlan::Node & side_node);
 
 /// Whether no two rows that `node` outputs agree on all of `columns`; with no columns, whether it outputs at most one row.
-[[nodiscard]] bool isUniqueByColumns(const QueryPlan::Node & node, NameSet columns);
+/// Once no columns are left, the walk stops at a node of `at_most_one_row`, whose answer it holds.
+[[nodiscard]] bool isUniqueByColumns(
+    const QueryPlan::Node & node, NameSet columns,
+    const UnorderedMapWithMemoryTracking<const QueryPlan::Node *, bool> * at_most_one_row = nullptr);
 
 /// Whether a row of the other side matches at most one row of `side`, whose input is `side_node`: the key
 /// equalities of the join determine columns that this input is unique by.

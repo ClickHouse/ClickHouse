@@ -601,7 +601,9 @@ static void collectDeterminedInputs(const ActionsDAG::Node * node, NameSet & inp
     }
 }
 
-bool isUniqueByColumns(const QueryPlan::Node & root, NameSet columns)
+bool isUniqueByColumns(
+    const QueryPlan::Node & root, NameSet columns,
+    const UnorderedMapWithMemoryTracking<const QueryPlan::Node *, bool> * at_most_one_row)
 {
     const auto has_all = [&](const Names & names)
     {
@@ -610,6 +612,10 @@ bool isUniqueByColumns(const QueryPlan::Node & root, NameSet columns)
 
     for (const auto * node = &root;; node = node->children.front())
     {
+        if (at_most_one_row && columns.empty())
+            if (const auto it = at_most_one_row->find(node); it != at_most_one_row->end())
+                return it->second;
+
         const auto * step = node->step.get();
 
         /// An aggregation outputs one row per value of its keys, unless it is to be finished by another step:

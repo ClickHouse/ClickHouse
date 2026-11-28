@@ -1102,7 +1102,7 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(stack, root, [&](auto & frame_node) { useShuffleForOrderByRand(frame_node); });
 
     /// After every pass that merges, splits or moves expression steps.
-    traverseQueryPlan(stack, root, [&](auto & frame_node) { disableCompilationOverAtMostOneRow(frame_node); });
+    disableCompilationOverAtMostOneRow(root);
 
     /// Last: it reads the final consumers of every remote read.
     allowReadingShardsFromSeveralReplicas(root);
