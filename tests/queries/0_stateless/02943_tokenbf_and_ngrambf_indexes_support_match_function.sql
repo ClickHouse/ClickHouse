@@ -38,7 +38,7 @@ SELECT * FROM ngrambf_tab WHERE match(str, 'Hello (ClickHouse|World)') ORDER BY 
 -- Surrounded by spaces for tokenbf
 
 
-SELECT *
+SELECT trimLeft(explain)
 FROM
 (
     EXPLAIN PLAN indexes=1
@@ -48,7 +48,7 @@ WHERE
     explain LIKE '%Granules: %';
 
 
-SELECT *
+SELECT trimLeft(explain)
 FROM
 (
     EXPLAIN PLAN indexes=1
@@ -69,7 +69,7 @@ SELECT * FROM ngrambf_tab WHERE match(str, '.*(ClickHouse|World)') ORDER BY id;
 -- Surrounded by spaces for tokenbf
 
 
-SELECT *
+SELECT trimLeft(explain)
 FROM
 (
     EXPLAIN PLAN indexes = 1
@@ -79,7 +79,7 @@ WHERE
     explain LIKE '%Granules: %';
 
 
-SELECT *
+SELECT trimLeft(explain)
 FROM
 (
     EXPLAIN PLAN indexes = 1
@@ -98,7 +98,7 @@ SELECT * FROM ngrambf_tab WHERE match(str, 'OLAP.*') ORDER BY id;
 -- Alternatives: -
 -- Surrounded by spaces for tokenbf
 
-SELECT *
+SELECT trimLeft(explain)
 FROM
 (
     EXPLAIN PLAN indexes = 1
@@ -108,7 +108,7 @@ WHERE
     explain LIKE '%Granules: %';
 
 
-SELECT *
+SELECT trimLeft(explain)
 FROM
 (
     EXPLAIN PLAN indexes = 1

@@ -56,12 +56,12 @@ SELECT 'Test without utilizing skip indexes for disjunctions';
 SET use_skip_indexes_for_disjunctions = 0;
 
 SELECT '-- Simple OR condition'; -- surviving granules: 100, but only 1 granule is real match
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab WHERE (i = 1 OR s = 'firststring' OR u = 1 OR hasToken(t1, 'number1'))
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
 SELECT '-- Mixed AND/OR condition'; -- will show 50 granules, but real match is 0 granules
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab WHERE (id >= 301 AND (i = 1 OR s = 'firststring' OR u = 1 OR hasToken(t1, 'number1')))
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
@@ -71,27 +71,27 @@ SELECT 'Test with utilizing skip indexes for disjunctions';
 SET use_skip_indexes_for_disjunctions = 1;
 
 SELECT '-- Simple OR condition'; -- Should show 1 granule
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab WHERE (i = 1 OR s = 'firststring' OR u = 1 OR hasToken(t1, 'number1'))
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
 SELECT '-- Mixed AND/OR condition'; -- final should be 0 granules
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab WHERE (id >= 301 AND (i = 1 OR s = 'firststring' OR u = 1 OR hasToken(t1, 'number1')))
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
 -- Now test with mixing stuff
 SELECT '-- Should show 3 granules, laststring is in the last 2 granules';
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab WHERE (i = 10 OR s = 'laststring')
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
 SELECT '-- Should show 1 granule';
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab WHERE (hasToken(t1, 'number1') OR hasToken(t2, 'line1'))
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
 SELECT '-- Should show 2 granules';
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab WHERE (hasToken(t1, 'number1') OR hasToken(t2, 'line85'))
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';

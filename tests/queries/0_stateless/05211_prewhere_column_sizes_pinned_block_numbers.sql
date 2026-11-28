@@ -57,14 +57,14 @@ SELECT 'pinned_rows', count() FROM t_prewhere_pinned_r1 SETTINGS select_sequenti
 
 -- Unpinned: every part counts, `b` is the heaviest queried column and only `a` moves to PREWHERE.
 SET select_sequential_consistency = 0;
-SELECT replaceRegexpAll(explain, '__table1\.|_String', '')
+SELECT trimLeft(replaceRegexpAll(explain, '__table1\.|_String', ''))
 FROM (EXPLAIN actions = 1 SELECT sum(length(payload)) FROM t_prewhere_pinned_r1 WHERE notEmpty(a) AND notEmpty(b))
 WHERE explain LIKE '%Prewhere filter column%';
 
 -- Pinned: the unconfirmed part is excluded from the estimate exactly as from the read, so `b` is cheap
 -- again and both conditions move to PREWHERE.
 SET select_sequential_consistency = 1;
-SELECT replaceRegexpAll(explain, '__table1\.|_String', '')
+SELECT trimLeft(replaceRegexpAll(explain, '__table1\.|_String', ''))
 FROM (EXPLAIN actions = 1 SELECT sum(length(payload)) FROM t_prewhere_pinned_r1 WHERE notEmpty(a) AND notEmpty(b))
 WHERE explain LIKE '%Prewhere filter column%';
 
