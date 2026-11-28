@@ -1657,7 +1657,7 @@ LIMIT 10;
 
 inline constexpr char SYSTEM_LOG_DOCUMENTATION_METADATA_CHANGE_LOG[] = R"DOCS_MD(
 .description
-Contains a log of schema and metadata change events (create, alter, rename, drop, and undrop of tables and databases).
+Contains a log of schema and metadata change events (create, alter, rename, drop, and undrop of tables and databases), as well as optional full catalog snapshots triggered by `metadata_change_log.snapshot_token`.
 
 `system.metadata_change_log` is created only when the server configuration contains a `metadata_change_log` section. Internal databases (`system`, `INFORMATION_SCHEMA`, `information_schema`, and `_temporary_and_external_tables`) are excluded. Secrets in `create_query` and default expressions are masked.
 
