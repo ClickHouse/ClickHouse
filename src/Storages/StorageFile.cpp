@@ -2074,7 +2074,7 @@ bool StorageFile::prefersLargeBlocks() const
 
 bool StorageFile::parallelizeOutputAfterReading(ContextPtr context) const
 {
-    return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context, format_settings);
 }
 
 size_t StorageFile::getMaxReadStreams(size_t num_streams, ContextPtr)
@@ -4007,6 +4007,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             /*strict=*/ false,
             std::min<UInt64>(build_settings.min_outstreams_per_resize_after_split, split_file_min_streams_per_resize));
     }
+    else if (parallelize_output && storage->parallelizeOutputAfterReading(ctx))
+        resizeOutputAfterReading(pipe, resize_to, /* keep_streams = */ need_only_count, build_settings.min_outstreams_per_resize_after_split);
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
