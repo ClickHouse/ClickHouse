@@ -1,0 +1,25 @@
+repeated groups	4	4	4
+equal time	1	1	1
+same-group new start	3
+finite-window old prefix	3	3	3
+missing predecessor	2	4
+pending early exit	2
+first event inside group	1	3
+order evidence resets	1
+sentinel after start	1	1
+sentinel before start	2	2
+expired A prefix	1
+expired B prefix	2
+expired committed presence	3
+sliding start	2
+latest feasible prefix	3
+empty	0	0
+no match and singleton at zero	0	0	1	1
+zero window	1
+reversed groups	4	4	4
+shuffled groups	4	4	4
+merged groups	4	4	4
+overlapping conditions	4	4	4
+legacy mode compatibility	2	4
+serialized groups	4
+maximum conditions	32
