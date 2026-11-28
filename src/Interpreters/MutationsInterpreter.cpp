@@ -1833,12 +1833,27 @@ void MutationsInterpreter::prepare(bool dry_run)
             return !column_in_metadata || isArray(column_in_metadata->type);
         };
 
-        /// `TTLTransform` runs after every stage and may rewrite members through a GROUP BY TTL or a column TTL of a member.
-        if (std::ranges::any_of(dependencies, is_ttl_target)
-            && (metadata_snapshot->hasAnyGroupByTTL()
-                || std::ranges::any_of(metadata_snapshot->getColumnTTLs(),
-                    [&](const auto & column_ttl) { return shares_offsets_of_table(column_ttl.first); })))
-            return {};
+        /// `TTLTransform` runs after every stage. It may resize a member through a GROUP BY TTL, a column TTL of a member
+        /// with a default expression (without one the member keeps its sizes), or a recompute of a `MATERIALIZED` member.
+        if (std::ranges::any_of(dependencies, is_ttl_target))
+        {
+            if (metadata_snapshot->hasAnyGroupByTTL())
+                return {};
+
+            NameSet columns_with_ttl;
+            for (const auto & [column, _] : metadata_snapshot->getColumnTTLs())
+            {
+                auto column_default = metadata_snapshot->getColumns().getDefault(column);
+                if (shares_offsets_of_table(column) && column_default && column_default->expression)
+                    return {};
+                columns_with_ttl.insert(column);
+            }
+
+            for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
+                if (shares_offsets_of_table(column.name)
+                    && !materialized_dependencies.findColumnsToRecalculate(column.name, columns_with_ttl).empty())
+                    return {};
+        }
 
         /// A member recomputed after the readonly stage rewrites the sizes of the whole group.
         if (std::ranges::any_of(clear_affected_materialized, shares_offsets_of_table))

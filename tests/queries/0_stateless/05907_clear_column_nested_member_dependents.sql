@@ -33,6 +33,8 @@ DROP TABLE IF EXISTS t13_compact;
 DROP TABLE IF EXISTS t13_wide;
 DROP TABLE IF EXISTS t14_compact;
 DROP TABLE IF EXISTS t14_wide;
+DROP TABLE IF EXISTS t15_compact;
+DROP TABLE IF EXISTS t15_wide;
 
 SELECT '-- 1. MATERIALIZED column over the cleared member';
 
@@ -359,6 +361,25 @@ ALTER TABLE t14_wide CLEAR COLUMN n.a;
 SELECT k, n.a, n.b, m, m = arrayMap(x -> x + 1, n.a) FROM t14_compact;
 SELECT k, n.a, n.b, m, m = arrayMap(x -> x + 1, n.a) FROM t14_wide;
 
+SELECT '-- 15. a column TTL of the sibling';
+
+CREATE TABLE t15_compact (k UInt32, `n.a` Array(UInt32), `n.b` Array(UInt32) TTL toDateTime('2100-01-01 00:00:00', 'UTC') + length(`n.a`), m Array(UInt32) MATERIALIZED arrayMap(x -> x + 1, `n.a`))
+ENGINE = MergeTree ORDER BY k
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
+CREATE TABLE t15_wide (k UInt32, `n.a` Array(UInt32), `n.b` Array(UInt32) TTL toDateTime('2100-01-01 00:00:00', 'UTC') + length(`n.a`), m Array(UInt32) MATERIALIZED arrayMap(x -> x + 1, `n.a`))
+ENGINE = MergeTree ORDER BY k
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t15_compact (k, `n.a`, `n.b`) VALUES (1, [1, 2], [3, 4]);
+INSERT INTO t15_wide (k, `n.a`, `n.b`) VALUES (1, [1, 2], [3, 4]);
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't15_compact' AND active;
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't15_wide' AND active;
+
+ALTER TABLE t15_compact CLEAR COLUMN `n.a`;
+ALTER TABLE t15_wide CLEAR COLUMN `n.a`;
+SELECT k, `n.a`, `n.b`, m, m = arrayMap(x -> x + 1, `n.a`) FROM t15_compact;
+SELECT k, `n.a`, `n.b`, m, m = arrayMap(x -> x + 1, `n.a`) FROM t15_wide;
+
 DROP TABLE t1_compact;
 DROP TABLE t1_wide;
 DROP TABLE t2_compact;
@@ -389,3 +410,5 @@ DROP TABLE t13_compact;
 DROP TABLE t13_wide;
 DROP TABLE t14_compact;
 DROP TABLE t14_wide;
+DROP TABLE t15_compact;
+DROP TABLE t15_wide;

@@ -98,3 +98,8 @@ Compact
 Wide
 1	[0,0]	[3,4]	[1,1]	1
 1	[0,0]	[3,4]	[1,1]	1
+-- 15. a column TTL of the sibling
+Compact
+Wide
+1	[0,0]	[3,4]	[1,1]	1
+1	[0,0]	[3,4]	[1,1]	1
