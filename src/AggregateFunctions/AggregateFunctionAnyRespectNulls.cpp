@@ -44,11 +44,13 @@ public:
 
     SerializationPtr serialization;
     const bool returns_nullable_type = false;
+    const bool value_holds_strings = false;
 
     explicit AggregateFunctionAnyRespectNulls(const DataTypePtr & type)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionAnyRespectNulls<First>>({type}, {}, type)
         , serialization(type->getDefaultSerialization())
         , returns_nullable_type(type->isNullable())
+        , value_holds_strings(singleValueTypeHoldsStrings(type))
     {
     }
 
@@ -83,6 +85,8 @@ public:
             return;
         d.setOther();
         columns[0]->get(row_num, d.value);
+        if (value_holds_strings)
+            checkMemoryLimitAfterStoringField();
     }
 
     void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t, Arena * arena) const override
@@ -137,6 +141,8 @@ public:
         {
             d.status = other.status;
             d.value = other.value;
+            if (value_holds_strings)
+                checkMemoryLimitAfterStoringField();
         }
     }
 
@@ -167,6 +173,8 @@ public:
         if (d.status == Data::Status::SetOther)
         {
             serialization->deserializeBinary(d.value, buf, {});
+            if (value_holds_strings)
+                checkMemoryLimitAfterStoringField();
             return;
         }
         throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect type ({}) in {}State", static_cast<Int8>(k), getName());
