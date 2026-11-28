@@ -20,34 +20,29 @@ namespace DB
 class Arena;
 class WindowArguments;
 
-class AggregateState
+class AggregationState
 {
 public:
-    explicit AggregateState(AggregateFunctionPtr function_);
-    ~AggregateState();
+    explicit AggregationState(AggregateFunctionPtr function_);
+    ~AggregationState();
 
     void recreate();
     void add(const WindowArguments & arguments, Int64 begin, Int64 end);
+    void merge(ConstAggregateDataPtr rhs);
     void insertResultInto(IColumn & result);
 
+    [[nodiscard]] ConstAggregateDataPtr getData() const;
+
 private:
-    /// Called for every evaluated row, so only the cheap test is inlined.
-    ALWAYS_INLINE void checkCreated() const
-    {
-        if (unlikely(!created))
-            throwNotCreated();
-    }
+    const AggregateFunctionPtr function;
+    const bool is_state;
 
-    [[noreturn]] NO_INLINE void throwNotCreated() const;
-
-    AggregateFunctionPtr function;
     AlignedBuffer place;
     std::unique_ptr<Arena> arena;
-    const bool is_state;
+    bool created = false;
+
     std::function<void()> check_cancellation;
     CancellationBudget budget;
-    /// False after `destroy` until `create` succeeds, so a throwing `create` in `recreate` does not lead to a second `destroy`.
-    bool created = false;
 };
 
 }
