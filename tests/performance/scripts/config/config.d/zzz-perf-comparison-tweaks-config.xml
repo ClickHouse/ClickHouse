@@ -39,6 +39,12 @@
     <iceberg_metadata_log remove="remove"/>
     <delta_lake_metadata_log remove="remove"/>
 
+    <!-- The report resolves the trace_log addresses itself (addressToSymbol), so symbolizing them in the
+         flush thread only takes CPU from the queries measured at the same time. -->
+    <trace_log>
+        <symbolize>false</symbolize>
+    </trace_log>
+
     <uncompressed_cache_size>1000000000</uncompressed_cache_size>
 
     <!--
