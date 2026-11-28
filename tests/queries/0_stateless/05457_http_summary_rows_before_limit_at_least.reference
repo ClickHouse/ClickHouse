@@ -1,0 +1,21 @@
+SELECT number FROM numbers(100) WHERE number % 2 = 0 LIMIT 10
+summary: 50, JSON: 50
+SELECT number FROM numbers(100) WHERE number % 2 = 0 LIMIT 10 SETTINGS max_block_size = 7
+summary: 50, JSON: 50
+SELECT number FROM numbers(100) WHERE number % 2 = 0 LIMIT 10 OFFSET 5
+summary: 50, JSON: 50
+SELECT number FROM numbers(1000) ORDER BY number DESC LIMIT 5
+summary: 1000, JSON: 1000
+SELECT number % 7 AS k, count() FROM numbers(1000) GROUP BY k ORDER BY k LIMIT 3
+summary: 7, JSON: 7
+SELECT number FROM remote('127.0.0.{1,2}', numbers(100)) WHERE number % 2 = 0 LIMIT 10
+summary: 100, JSON: 100
+SELECT number FROM numbers(100) WHERE number > 1000 LIMIT 10
+summary: 0, JSON: 0
+SELECT number FROM numbers(100) WHERE number % 2 = 0
+summary: absent, JSON: absent
+result_rows of a query with a limit
+10
+Has X-ClickHouse-Progress headers
+X-ClickHouse-Progress headers with rows_before_limit_at_least: 0
+X-ClickHouse-Summary: "rows_before_limit_at_least":"50"
