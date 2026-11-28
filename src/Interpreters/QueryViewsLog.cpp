@@ -2,6 +2,10 @@
 
 #include <base/getFQDNOrHostName.h>
 #include <Common/config_version.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
 #include <Common/DateLUTImpl.h>
 #include <Core/Block.h>
@@ -60,6 +64,7 @@ ColumnsDescription QueryViewsLogElement::getColumnsDescription()
         {"written_bytes", std::make_shared<DataTypeUInt64>(), "Number of written bytes."},
         {"peak_memory_usage", std::make_shared<DataTypeInt64>(), "The maximum difference between the amount of allocated and freed memory in context of this view."},
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "ProfileEvents that measure different metrics. The description of them could be found in the table system.events."},
+        {"Settings", std::make_shared<DataTypeMap>(low_cardinality_string, low_cardinality_string), "Settings that were changed for the insert into the view's target table. To log them, set the log_query_settings parameter to 1."},
 
         {"status", std::move(view_status_datatype), "Status of the view. Values: "
             "'QueryStart' = 1 — Successful start the view execution. Should not appear, "
@@ -76,7 +81,9 @@ NamesAndAliases QueryViewsLogElement::getNamesAndAliases()
 {
     return {
         {"ProfileEvents.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapKeys(ProfileEvents)"},
-        {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"}};
+        {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"},
+        {"Settings.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))}, "mapKeys(Settings)"},
+        {"Settings.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))}, "mapValues(Settings)"}};
 }
 
 void QueryViewsLogElement::appendToBlock(MutableColumns & columns) const
@@ -112,6 +119,26 @@ void QueryViewsLogElement::appendToBlock(MutableColumns & columns) const
     else
     {
         columns[i++]->insertDefault();
+    }
+
+    {
+        /// Write into the subcolumns directly, as `QueryLogElement::appendToBlock` does for its `Settings`.
+        auto & column_map = typeid_cast<ColumnMap &>(*columns[i++]);
+        auto & offsets = column_map.getNestedColumn().getOffsets();
+        auto & tuple_column = column_map.getNestedData();
+        auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
+        auto & value_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(1));
+
+        if (view_settings)
+        {
+            view_settings->forEach([&](std::string_view name, std::string_view value)
+            {
+                key_column.insertData(name.data(), name.size());
+                value_column.insertData(value.data(), value.size());
+            });
+        }
+
+        offsets.push_back(offsets.back() + (view_settings ? view_settings->size() : 0));
     }
 
     columns[i++]->insert(status);
