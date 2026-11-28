@@ -1,0 +1,7 @@
+source parts probe	1
+parts listing requests observed	1
+exact parts	32	496
+exact lookup avoids listing	1
+covering part	4	303
+one merged part	1	1
+covering lookup avoids listing	1

@@ -1,0 +1,10 @@
+original parts retained	1
+original znodes retained	1
+future mutation unavailable	1
+replica before mutation	[1,2]
+intermediate part fetched	1
+future mutation still queued	1
+future miss lists intermediate	1
+replica after mutation	[11,12]
+mutated part active	1
+mutations complete	1
