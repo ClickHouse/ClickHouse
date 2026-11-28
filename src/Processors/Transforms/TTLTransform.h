@@ -27,7 +27,12 @@ public:
         time_t current_time,
         bool apply_ttl_,
         bool force_,
-        std::shared_ptr<WriteBuffer> ttl_skip_flags_ = nullptr
+        std::shared_ptr<WriteBuffer> ttl_skip_flags_ = nullptr,
+        /// The columns a mutation rewrites when it does not rewrite the whole part. The block then holds only some columns,
+        /// so rules that change rows are not applied and rules that cannot be evaluated on it keep the source part's info.
+        std::optional<NameSet> rewritten_columns_ = {},
+        /// The columns such a mutation clears: their values in the block are new, like those of the rewritten columns.
+        NameSet cleared_columns_ = {}
     );
 
     String getName() const override { return "TTL"; }
@@ -56,6 +61,8 @@ private:
     const std::shared_ptr<WriteBuffer> ttl_skip_flags;
     /// The column in which `consume` tags each row with its position in the chunk, if `ttl_skip_flags` is set.
     String ttl_row_position_column_name;
+
+    std::optional<MergeTreeDataPartTTLInfos> carried_ttl_infos;
 
     PreparedSets::Subqueries subqueries_for_sets;
 

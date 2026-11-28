@@ -330,20 +330,23 @@ namespace
     }
 }
 
+TTLInfoMap::const_iterator findTTLInfoForExpression(const TTLInfoMap & ttl_info_map, const String & result_column)
+{
+    if (auto it = ttl_info_map.find(result_column); it != ttl_info_map.end())
+        return it;
+
+    return tryToFindTTLExpressionInMapByASTMatching(ttl_info_map, result_column);
+}
+
 std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescriptions & descriptions, const TTLInfoMap & ttl_info_map, time_t current_time, bool use_max)
 {
     time_t best_ttl_time = 0;
     TTLDescriptions::const_iterator best_entry_it;
     for (auto ttl_entry_it = descriptions.begin(); ttl_entry_it != descriptions.end(); ++ttl_entry_it)
     {
-        auto ttl_info_it = ttl_info_map.find(ttl_entry_it->result_column);
-
+        auto ttl_info_it = findTTLInfoForExpression(ttl_info_map, ttl_entry_it->result_column);
         if (ttl_info_it == ttl_info_map.end())
-        {
-            ttl_info_it = tryToFindTTLExpressionInMapByASTMatching(ttl_info_map, ttl_entry_it->result_column);
-            if (ttl_info_it == ttl_info_map.end())
-                continue;
-        }
+            continue;
 
         time_t ttl_time = 0;
 
