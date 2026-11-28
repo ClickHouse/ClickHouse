@@ -53,13 +53,13 @@ SELECT number % 4, number,
 FROM numbers(4000);
 
 SELECT 'pruned to partition 3';
-SELECT replaceRegexpAll(explain, '__table1\.|_String', '')
+SELECT trimLeft(replaceRegexpAll(explain, '__table1\.|_String', ''))
 FROM (EXPLAIN actions = 1 SELECT sum(length(payload)) FROM prewhere_sizes_pruned_plan WHERE p = 3 AND notEmpty(j.b) AND notEmpty(c))
 WHERE explain LIKE '%Prewhere filter column%' OR explain LIKE '%Filter column%';
 
 -- Nothing pruned: the estimate is the table-wide one and `j.b` is too heavy to move.
 SELECT 'all partitions';
-SELECT replaceRegexpAll(explain, '__table1\.|_String', '')
+SELECT trimLeft(replaceRegexpAll(explain, '__table1\.|_String', ''))
 FROM (EXPLAIN actions = 1 SELECT sum(length(payload)) FROM prewhere_sizes_pruned_plan WHERE p < 4 AND notEmpty(j.b) AND notEmpty(c))
 WHERE explain LIKE '%Prewhere filter column%' OR explain LIKE '%Filter column%';
 

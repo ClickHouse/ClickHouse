@@ -42,22 +42,22 @@ SELECT 'Test without utilizing skip indexes for disjunctions';
 SET use_skip_indexes_for_disjunctions = 0;
 
 SELECT '-- Simple OR condition'; -- surviving granules: 159
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab WHERE (v1 = 111 OR v2 = 111)
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
 SELECT '-- Mixed AND/OR condition'; -- 79
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab WHERE (id >= 5000 AND (v1 = 111 OR v2 = 111))
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
 SELECT '-- Mixed _part_offset / OR condition'; -- 79
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab WHERE (_part_offset >= 5000 AND (v1 = 111 OR v2 = 111))
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
 SELECT '-- No skip index on v3'; -- 159
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab WHERE v1 = 111 OR v2 = 111 OR v3 = 90000
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
@@ -65,27 +65,27 @@ SELECT 'Test with utilizing skip indexes for disjunctions';
 SET use_skip_indexes_for_disjunctions = 1;
 
 SELECT '-- Simple OR condition'; -- 2
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab WHERE (v1 = 111 OR v2 = 111)
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
 SELECT '-- Mixed AND/OR condition'; -- 1
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab WHERE (id >= 5000 AND (v1 = 111 OR v2 = 111))
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
 SELECT '-- Mixed _part_offset / OR condition'; -- 1
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab WHERE (_part_offset >= 5000 AND (v1 = 111 OR v2 = 111))
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
 SELECT '-- No skip index on v3'; -- 157
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab WHERE v1 = 111 OR v2 = 111 OR v3 = 90000
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
 SELECT '-- Complex condition'; -- 0
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab WHERE (v1 BETWEEN 10 AND 20 AND v2 BETWEEN 10 AND 20) OR (v1 BETWEEN 100 AND 2000 AND v2 BETWEEN 100 AND 2000) OR (v1 > 9000 AND v2 > 9000)
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
@@ -117,7 +117,7 @@ SETTINGS
 INSERT INTO tab SELECT (number + 1) / 10, (number + 1) % 100, number + 1, (10000 - number), (number * 5) FROM numbers(1000);
 
 -- 1
-SELECT explain AS explain FROM (
+SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT x, y, v1, v2 FROM tab WHERE (x < 100 AND y < 20) AND (v1 = 111 OR v2 = 111)
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
