@@ -1,0 +1,15 @@
+<test>
+    <!-- gzip output compressed on `max_generic_compression_threads` threads (`auto` by default). The file write goes to
+         /dev/null so that the page cache of earlier runs does not carry over. The HTTP query sends 200 small
+         gzip-compressed responses over one keep-alive connection: the fixed cost of a compressed response. -->
+    <query>
+        INSERT INTO FUNCTION file('/dev/null', 'TSV', 'key UInt64, value UInt64', 'gzip')
+        SELECT number, number FROM numbers(10000000)
+    </query>
+
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CURL} -H 'Accept-Encoding: gzip' \
+            "${CLICKHOUSE_URL}?enable_http_compression=1&log_comment=[1-200]" \
+            --data-binary "SELECT number FROM numbers(10) FORMAT TSV"
+    ]]></query>
+</test>

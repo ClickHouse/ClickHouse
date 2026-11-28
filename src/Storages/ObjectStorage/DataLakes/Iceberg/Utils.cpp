@@ -127,7 +127,7 @@ namespace DB::Setting
 {
     extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
     extern const SettingsUInt64 iceberg_metadata_staleness_ms;
-    extern const SettingsUInt64 max_generic_compression_threads;
+    extern const SettingsMaxThreads max_generic_compression_threads;
     extern const SettingsUInt64 output_format_compression_level;
 }
 

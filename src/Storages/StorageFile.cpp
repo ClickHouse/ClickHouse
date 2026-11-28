@@ -133,7 +133,7 @@ namespace Setting
     extern const SettingsBool engine_file_truncate_on_insert;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds max_execution_time;
-    extern const SettingsUInt64 max_generic_compression_threads;
+    extern const SettingsMaxThreads max_generic_compression_threads;
     extern const SettingsMaxThreads max_parsing_threads;
     extern const SettingsNonZeroUInt64 max_read_buffer_size;
     extern const SettingsBool optimize_count_from_files;

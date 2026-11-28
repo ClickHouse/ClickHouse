@@ -38,15 +38,16 @@ public:
         size_t num_threads_,
         bool compress_empty_ = true,
         std::string filename_ = "")
-        /// Stage about `num_threads` blocks per pass so a single parallel pass keeps the pool busy
-        /// while bounding the working memory. NOLINT: std::move on a forwarding reference is intentional.
+        /// Staging starts at one block and doubles after every full pass, up to about `num_threads` blocks.
+        /// NOLINT: std::move on a forwarding reference is intentional.
         : WriteBufferWithOwnMemoryDecorator(
               std::move(out_), /// NOLINT(bugprone-move-forwarding-reference)
-              std::min(std::max<size_t>(num_threads_, 1), MAX_STAGING_BLOCKS) * BLOCK_SIZE)
+              BLOCK_SIZE)
         , compression_level(compression_level_)
         , compress_empty(compress_empty_)
         , filename(std::move(filename_))
     {
+        enableAdaptiveBufferGrowth(true, std::min(std::max<size_t>(num_threads_, 1), MAX_STAGING_BLOCKS) * BLOCK_SIZE);
         /// The gzip header is written lazily, on the first byte of output, so that with
         /// `compress_empty = false` a buffer that never receives any data emits nothing at all.
     }
