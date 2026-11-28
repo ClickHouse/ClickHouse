@@ -486,8 +486,13 @@ ColumnPtr convertColumnToTypeOrNull(
         return std::move(*decimal);
 
     /// numeric -> `Date`/`Date32`/`DateTime` column-native (same optional convention as above).
-    if (auto date = tryConvertToDateColumnNative(unwrapped, from, to, convert_inexact_floats))
-        return std::move(*date);
+    /// A materialization caller under `date_time_overflow_behavior = 'throw'` or `'saturate'` takes the `Field`
+    /// path instead: an out-of-range integer is not Null for it, see `materializeIntegerAsDateOrTime`.
+    const bool materialize_with_overflow_behavior = !strict && convert_inexact_floats
+        && format_settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore;
+    if (!materialize_with_overflow_behavior)
+        if (auto date = tryConvertToDateColumnNative(unwrapped, from, to, convert_inexact_floats))
+            return std::move(*date);
 
     /// cross-calendar `Date`/`Date32` <-> `DateTime` (timezone-aware).
     if (auto date = tryConvertBetweenDateAndDateTimeColumnNative(unwrapped, from, to))

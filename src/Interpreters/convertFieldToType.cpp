@@ -590,6 +590,71 @@ DataTypePtr widenIntegerElements(const DataTypePtr & type, WideIntegerCarrier ca
     return which.isUInt256() ? nullptr : std::make_shared<DataTypeUInt256>();
 }
 
+/// An integer that a materialization caller (`convert_inexact_floats`: the `INSERT ... VALUES` expression fallback in
+/// `ValuesBlockInputFormat` and the `values` table function) stores into a `Date`, `Date32`, `DateTime` or `Time`
+/// column under `date_time_overflow_behavior = 'throw'` or `'saturate'`. Such a caller consumes the `Field` as the
+/// value to store and does not retry through `CAST`, so it gets what `ConvertImpl` gives for the same constant (see
+/// `ToDateTransformFromSecondsOrDays`, `ToDate32TransformFromSecondsOrDays`, `ToDateTimeTransform64Signed` and
+/// `ToTimeTransform64Signed`): `throw` raises `VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE` and `saturate` clamps to the nearest
+/// end of the range. Like `CAST`, a `Date` / `Date32` constant above the greatest day number is a unix timestamp.
+///
+/// The default `ignore` mode does not get here: it keeps the range check of the storage type, so the constant is Null
+/// ("cannot convert") for every caller, see the branches below. That is also what every exact caller gets under any
+/// mode: clamping an `IN` constant, a key range bound or a partition literal would turn "matches no row" into "matches
+/// the rows at the boundary".
+template <typename T>
+Field materializeIntegerAsDateOrTime(
+    T value, const WhichDataType & which_type, const IDataType & type, FormatSettings::DateTimeOverflowBehavior overflow_behavior)
+{
+    /// Returns the bound to store instead, unless the mode is `throw`.
+    const auto saturate = [&](Field bound) -> Field
+    {
+        if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type {}", value, type.getName());
+        return bound;
+    };
+
+    if (which_type.isTime())
+    {
+        if (accurate::greaterOp(value, MAX_TIME_TIMESTAMP))
+            return saturate(static_cast<Int64>(MAX_TIME_TIMESTAMP));
+        if (accurate::lessOp(value, -MAX_TIME_TIMESTAMP))
+            return saturate(static_cast<Int64>(-MAX_TIME_TIMESTAMP));
+        return static_cast<Int64>(value);
+    }
+
+    if (which_type.isDateTime())
+    {
+        if (accurate::greaterOp(value, MAX_DATETIME_TIMESTAMP))
+            return saturate(static_cast<UInt64>(MAX_DATETIME_TIMESTAMP));
+        if (accurate::lessOp(value, 0))
+            return saturate(static_cast<UInt64>(0));
+        return static_cast<UInt64>(value);
+    }
+
+    const auto & time_zone = DateLUT::instance();
+
+    if (which_type.isDate())
+    {
+        if (accurate::lessOp(value, 0))
+            return saturate(static_cast<UInt64>(0));
+        if (accurate::greaterOp(value, MAX_DATETIME_TIMESTAMP))
+            return saturate(static_cast<UInt64>(static_cast<UInt16>(time_zone.toDayNum(MAX_DATETIME_TIMESTAMP))));
+        if (accurate::greaterOp(value, DATE_LUT_MAX_DAY_NUM))
+            return static_cast<UInt64>(static_cast<UInt16>(time_zone.toDayNum(static_cast<time_t>(value))));
+        return static_cast<UInt64>(value);
+    }
+
+    chassert(which_type.isDate32());
+    if (accurate::lessOp(value, DATE_LUT_MIN_EXTEND_DAY_NUM))
+        return saturate(static_cast<Int64>(DATE_LUT_MIN_EXTEND_DAY_NUM));
+    if (accurate::greaterOp(value, MAX_DATE32_TIMESTAMP))
+        return saturate(static_cast<Int64>(static_cast<Int32>(time_zone.toDayNum(static_cast<DateLUTImpl::Time>(MAX_DATE32_TIMESTAMP)))));
+    if (accurate::greaterOp(value, DATE_LUT_MAX_EXTEND_DAY_NUM))
+        return static_cast<Int64>(static_cast<Int32>(time_zone.toDayNum(static_cast<DateLUTImpl::Time>(value))));
+    return static_cast<Int64>(value);
+}
+
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
     /// A non-Null constant of `Nullable(T)` / `LowCardinality(T)` is a plain value of `T`, and the caller only unwraps
@@ -1011,6 +1076,17 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         {
             /// Convert UInt64 or Int64 to Enum's value
             return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
+        }
+
+        if (!strict && convert_inexact_floats
+            && format_settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore
+            && (which_type.isDate() || which_type.isDate32() || which_type.isDateTime() || which_type.isTime())
+            && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
+        {
+            /// A materialization caller that asked for `throw` or `saturate`, see `materializeIntegerAsDateOrTime`.
+            if (src.getType() == Field::Types::UInt64)
+                return materializeIntegerAsDateOrTime(src.safeGet<UInt64>(), which_type, type, format_settings.date_time_overflow_behavior);
+            return materializeIntegerAsDateOrTime(src.safeGet<Int64>(), which_type, type, format_settings.date_time_overflow_behavior);
         }
 
         if (which_type.isDate() && src.getType() == Field::Types::UInt64)
