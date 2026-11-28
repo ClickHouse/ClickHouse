@@ -1,0 +1,9 @@
+recursive glob count:	3
+strict glob rows:	1	a	2026-01-01
+strict glob filtered count:	1
+strict glob after insert:	1	a	2026-01-01
+strict glob after insert:	6	b	2026-01-02
+strict glob after rejected insert:	2
+cannot match literally
+cannot match literally
+cannot match literally

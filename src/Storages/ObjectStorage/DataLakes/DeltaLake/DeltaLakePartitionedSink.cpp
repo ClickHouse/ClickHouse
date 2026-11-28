@@ -147,7 +147,8 @@ namespace
             context,
             "parquet",
             /* partition_columns_in_data_file */false,
-            /* compression_method */"auto");
+            /* compression_method */"auto",
+            /* strict_read_glob */false);
     }
 }
 
