@@ -189,6 +189,8 @@ private:
     void startLoop();
     void stopLoop();
     void stopLoopIfNoReaders();
+    /// `loop_lock` is the caller's lock of `loop_mutex`.
+    bool restoreConnection(std::lock_guard<std::mutex> & loop_lock);
 
     static Names parseSettings(String settings_list);
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
