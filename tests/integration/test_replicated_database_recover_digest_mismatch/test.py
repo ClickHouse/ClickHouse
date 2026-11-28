@@ -158,3 +158,43 @@ def test_recover_digest_mismatch(started_cluster):
     dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
 
     print("Everything Okay")
+
+
+def test_recover_mysql_table_keeps_stored_definition(started_cluster):
+    db = "recover_mysql_table"
+    main_node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+    dummy_node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+
+    engine = "MySQL('127.0.0.1:3306', 'db', 't', 'u', 'p')"
+    main_node.query(
+        f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 'shard1', 'replica1')"
+    )
+    main_node.query(f"CREATE TABLE {db}.t1 (id Int32) ENGINE = {engine}")
+
+    def definition(node, table):
+        return node.query(
+            f"SELECT create_table_query FROM system.tables WHERE database = '{db}' AND name = '{table}'"
+        )
+
+    expected = definition(main_node, "t1")
+    assert "mysql_datatypes_support_level" not in expected
+
+    # `dummy_node` sets `mysql_datatypes_support_level` in its default profile. As a new replica it creates
+    # `t1` from the definition in Keeper, which must stay as it is.
+    dummy_node.query(
+        f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 'shard1', 'replica2')"
+    )
+    assert_eq_with_retry(
+        dummy_node,
+        f"SELECT create_table_query FROM system.tables WHERE database = '{db}' AND name = 't1'",
+        expected,
+    )
+
+    # A new table still stores the value from the session of the replica that creates it, on every replica.
+    dummy_node.query(f"CREATE TABLE {db}.t2 (id Int32) ENGINE = {engine}")
+    main_node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+    assert "mysql_datatypes_support_level" in definition(main_node, "t2")
+    assert definition(main_node, "t2") == definition(dummy_node, "t2")
+
+    dummy_node.query(f"DROP DATABASE {db} SYNC")
+    main_node.query(f"DROP DATABASE {db} SYNC")
