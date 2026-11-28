@@ -95,10 +95,6 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
     const auto * left_aggregation = static_cast<const AggregationOperatorNode *>(operator_node->getLeftArgument());
     const auto * right_aggregation = static_cast<const AggregationOperatorNode *>(operator_node->getRightArgument());
 
-    auto left_transform = getOneArgumentAggregationTransform(left_aggregation->operator_name);
-    auto right_transform = getOneArgumentAggregationTransform(right_aggregation->operator_name);
-    chassert(left_transform && right_transform);
-
     if (argument.type != ResultType::INSTANT_VECTOR)
     {
         throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
@@ -141,8 +137,8 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
                 makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
                 applyMathBinaryOperatorToAST(
                     operator_node->operator_name, make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y"))),
-            left_transform(make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-            right_transform(make_intrusive<ASTIdentifier>(ColumnNames::Values))));
+            makeOneArgumentAggregationAST(left_aggregation, res),
+            makeOneArgumentAggregationAST(right_aggregation, res)));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
         if (left_aggregation->by || left_aggregation->without)
