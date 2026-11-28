@@ -1,9 +1,11 @@
--- Tags: no-fasttest, no-random-settings, no-parallel-replicas
+-- Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
 -- - no-fasttest -- requires S3
 -- - no-random-settings -- more deterministic prefetch
+-- - no-random-merge-tree-settings -- the layout of the Compact part decides the number of its buffers
 -- - no-parallel-replicas -- other replicas may do prefetch
 
--- Disable multibuffer, there is a separate test
+-- Disable a buffer per column, there is a separate test: the Compact part is read with one buffer for all columns,
+-- which is prefetched once if the limit allows to prefetch all the columns.
 SET merge_tree_compact_parts_min_granules_to_multibuffer_read = 129;
 SET use_columns_cache = 0;
 
