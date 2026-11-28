@@ -158,7 +158,7 @@ private:
         DataLakeStorageSettingsPtr storage_settings,
         DataLake::DataLakeTableFormat table_format) const;
 
-    std::string getStorageEndpointForTable(const DataLake::TableMetadata & table_metadata) const;
+    std::string getStorageEndpointForTable(const DataLake::ICatalog & catalog, const DataLake::TableMetadata & table_metadata) const;
 
     struct TableEngineArgs
     {

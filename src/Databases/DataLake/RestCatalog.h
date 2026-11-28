@@ -62,6 +62,8 @@ public:
 
     std::optional<StorageType> getStorageType() const override;
 
+    std::string getStorageEndpoint() const override;
+
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
         return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
@@ -118,6 +120,8 @@ public:
         /// `snapshot-loading-mode` from `defaults` and from `overrides`, empty if absent.
         std::string default_snapshot_loading_mode;
         std::string override_snapshot_loading_mode;
+        /// `s3.endpoint`, the one from `overrides` takes precedence over the one from `defaults`.
+        std::string storage_endpoint;
 
         [[nodiscard]] std::string toString() const;
     };
