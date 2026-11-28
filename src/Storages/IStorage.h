@@ -790,6 +790,7 @@ public:
     std::atomic<bool> is_dropped{false};
     std::atomic<bool> is_detached{false};
     std::atomic<bool> is_being_restarted{false};
+    UUID parent_table_uuid{}; /// The table on behalf of which this one was created, see `Context::setParentTable`.
 
     /** A list of tasks to check a validity of data.
       * Each IStorage implementation may interpret this task in its own way.

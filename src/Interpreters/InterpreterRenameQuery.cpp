@@ -1,6 +1,7 @@
 #include <Parsers/ASTRenameQuery.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
@@ -29,6 +30,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int UNFINISHED;
+    extern const int TABLE_UUID_MISMATCH;
 }
 
 namespace FailPoints
@@ -180,6 +182,23 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             ddl_guards[to]->releaseTableLock();
             database_locks.clear();
             return database->tryEnqueueReplicatedDDL(query_ptr->clone(), getContext(), {}, std::move(ddl_guards[from]));
+        }
+
+        /// Moves only a table created on behalf of the same parent; a replaying replica may have lost `parent_table_uuid` in a restart.
+        if (auto parent_table = getContext()->getParentTable(); parent_table && !isSecondaryDDLReplay(getContext()))
+        {
+            auto table = database->tryGetTable(elem.from_table_name, getContext());
+            if (table && (*parent_table == UUIDHelpers::Nil || table->parent_table_uuid != *parent_table))
+                throw Exception(ErrorCodes::TABLE_UUID_MISMATCH, "Table {}.{} was not created on behalf of the table with UUID {}",
+                    backQuoteIfNeed(elem.from_database_name), backQuoteIfNeed(elem.from_table_name), *parent_table);
+        }
+        else if (!parent_table)
+        {
+            /// A table moved by anyone else stops being a table created on behalf of its parent, so it cannot be moved back in its place.
+            if (auto table = database->tryGetTable(elem.from_table_name, getContext()))
+                table->parent_table_uuid = UUIDHelpers::Nil;
+            if (auto table = database_catalog.getDatabase(elem.to_database_name)->tryGetTable(elem.to_table_name, getContext()))
+                table->parent_table_uuid = UUIDHelpers::Nil;
         }
 
         StorageID from_table_id{elem.from_database_name, elem.from_table_name};
