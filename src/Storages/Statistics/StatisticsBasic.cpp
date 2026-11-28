@@ -212,8 +212,10 @@ void StatisticsBasic::build(const ColumnPtr & column)
         else if (const auto * nullable = typeid_cast<const ColumnNullable *>(values_ptr))
         {
             const IColumn * nested_ptr = &nullable->getNestedColumn();
-            sum->function.function->addBatchSinglePlaceNotNull(
-                0, column_size, sum->state, &nested_ptr, nullable->getNullMapRawDataOrZeros(), nullptr);
+            if (const auto * null_map = nullable->tryGetNullMapData())
+                sum->function.function->addBatchSinglePlaceNotNull(0, column_size, sum->state, &nested_ptr, null_map->data(), nullptr);
+            else
+                sum->function.function->addBatchSinglePlace(0, column_size, sum->state, &nested_ptr, nullptr);
         }
         else if (sparse)
             sum->function.function->addBatchSparseSinglePlace(0, column_size, sum->state, &values_ptr, nullptr);

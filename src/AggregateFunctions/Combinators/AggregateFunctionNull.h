@@ -17,6 +17,7 @@
 #include <absl/container/inlined_vector.h>
 
 #include <array>
+#include <cstring>
 
 #include "config.h"
 
@@ -534,8 +535,9 @@ public:
         this->nested_function->addBatchSinglePlaceNotNull(
             row_begin, row_end, this->nestedPlace(place), &nested_column, null_map, arena, if_argument_pos);
 
+        /// Any nonzero byte of the null map means NULL, so there is a value only if there is a zero byte.
         if constexpr (result_is_nullable)
-            if (!memoryIsByte(null_map, row_begin, row_end, 1))
+            if (row_begin < row_end && memchr(null_map + row_begin, 0, row_end - row_begin))
                 this->setFlag(place);
     }
 
@@ -549,7 +551,22 @@ public:
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         const IColumn * nested_column = &column->getNestedColumn();
-        const UInt8 * null_map = column->getNullMapRawDataOrZeros();
+        const auto * null_map_data = column->tryGetNullMapData();
+        if (!null_map_data)
+        {
+            /// No NULLs.
+            this->nested_function->addBatchConsecutivePlaces(
+                row_begin, row_end, this->nestedPlace(place), place_stride, &nested_column, arena);
+
+            if constexpr (result_is_nullable)
+            {
+                for (size_t i = row_begin; i < row_end; ++i, place += place_stride)
+                    this->setFlag(place);
+            }
+            return;
+        }
+
+        const UInt8 * null_map = null_map_data->data();
 
         /// One call for all rows, the nested function skips the NULL ones itself, instead of a virtual call per row.
         this->nested_function->addBatchConsecutivePlacesNotNull(
