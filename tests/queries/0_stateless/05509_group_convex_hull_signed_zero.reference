@@ -1,0 +1,7 @@
+result
+[(inf,inf),(inf,1),(1,inf),(inf,inf)]
+[(inf,inf),(inf,1),(1,inf),(inf,inf)]
+state
+1
+deserialized negative zero
+[(inf,inf),(inf,inf),(inf,inf),(inf,inf)]

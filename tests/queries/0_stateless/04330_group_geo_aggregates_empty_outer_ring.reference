@@ -1,0 +1,5 @@
+union_polygon_empty_outer_nonempty_inner
+intersect_polygon_empty_outer_nonempty_inner
+union_multipolygon_empty_outer_nonempty_inner
+union_fully_empty_polygon_is_skipped
+[]

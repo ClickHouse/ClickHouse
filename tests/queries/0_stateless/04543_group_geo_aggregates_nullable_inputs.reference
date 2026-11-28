@@ -1,0 +1,14 @@
+convex_hull_nullable_point_skips_nulls
+POLYGON((0 0,2 3,4 0,0 0))
+convex_hull_nullable_point_result_type
+Ring
+convex_hull_nullable_point_all_null
+[]
+convex_hull_nullable_point_empty_group
+[]
+convex_hull_nullable_point_group_by
+0	POLYGON()
+1	POLYGON((1 0,5 0,1 0,1 0))
+literal_null_argument
+\N	\N	\N
+nullable_ring_is_not_constructible

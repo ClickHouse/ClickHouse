@@ -1,0 +1,4 @@
+near_adjacent	1	1
+near_adjacent_merge	1
+separated	2	2	1
+corner_contact	2	2
