@@ -310,7 +310,6 @@ private:
     {
         std::shared_ptr<DistributedAsyncInsertDirectoryQueue> directory_queue;
         ConnectionPoolWithFailoverPtr connection_pool;
-        Cluster::Addresses addresses;
         size_t clusters_version{};
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;

@@ -1,0 +1,172 @@
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
+
+cluster = ClickHouseCluster(__file__)
+
+node1 = cluster.add_instance(
+    "node1", main_configs=["configs/remote_servers.xml", "configs/secret_cluster.xml"]
+)
+node2 = cluster.add_instance(
+    "node2", main_configs=["configs/remote_servers.xml", "configs/secret_cluster.xml"]
+)
+node3 = cluster.add_instance("node3", main_configs=["configs/remote_servers.xml"])
+
+# Same cluster as configs/remote_servers.xml, but shard 2 points to node3
+# instead of node2. The directory queue of shard 2 on node1 stays the same
+# (same `shard2_replica1` directory), only its destination changes.
+config_with_node3 = """<clickhouse>
+    <remote_servers>
+        <test_cluster>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster>
+    </remote_servers>
+</clickhouse>"""
+
+# configs/secret_cluster.xml with a different secret and the same addresses.
+config_with_secret_b = """<clickhouse>
+    <remote_servers>
+        <secret_cluster>
+            <secret>secret_b</secret>
+            <shard>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </secret_cluster>
+    </remote_servers>
+</clickhouse>"""
+
+PAUSE_FAILPOINT = "distributed_async_insert_pause_before_mark_as_sent"
+
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster.start()
+        for node in (node1, node2, node3):
+            node.query(
+                "CREATE TABLE local (key Int64, batch String) ENGINE = MergeTree ORDER BY key"
+            )
+        node1.query(
+            "CREATE TABLE dist (key Int64, batch String) "
+            "ENGINE = Distributed(test_cluster, currentDatabase(), local, key)"
+        )
+        node2.query(
+            "CREATE TABLE secret_local (key Int64) ENGINE = MergeTree ORDER BY key"
+        )
+        node1.query(
+            "CREATE TABLE secret_dist (key Int64) "
+            "ENGINE = Distributed(secret_cluster, currentDatabase(), secret_local)"
+        )
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+def test_queue_survives_cluster_reload(started_cluster):
+    """A remote_servers reload while a queued file is in flight must not recreate
+    the directory queue: the replaced queue is still alive (mid-send) and removes
+    its file on resume, which leaves a recreated queue retrying FILE_DOESNT_EXIST
+    forever and can deliver the same file twice. The queue's connection pool is
+    updated in place instead; files queued before the reload go to the new
+    destination, nothing is lost, duplicated, or stuck.
+    """
+    # All inserted keys are odd, so every row routes to shard 2 (remote, async).
+    node1.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_FAILPOINT}")
+    try:
+        # Batch A is sent to node2, then the queue pauses before removing the file:
+        # an in-flight send, frozen at the most race-prone point.
+        node1.query("INSERT INTO dist SELECT number * 2 + 1, 'A' FROM numbers(5)")
+        assert_eq_with_retry(node2, "SELECT count() FROM local WHERE batch = 'A'", "5")
+        assert (
+            int(
+                node1.query(
+                    "SELECT sum(data_files) FROM system.distribution_queue WHERE table = 'dist'"
+                )
+            )
+            >= 1
+        )
+
+        # Batch B queues behind the paused send.
+        node1.query("INSERT INTO dist SELECT number * 2 + 1, 'B' FROM numbers(5)")
+
+        # Repoint shard 2 at node3 and reload.
+        node1.replace_config(
+            "/etc/clickhouse-server/config.d/remote_servers.xml", config_with_node3
+        )
+        node1.query("SYSTEM RELOAD CONFIG")
+        assert_eq_with_retry(
+            node1,
+            "SELECT host_name FROM system.clusters WHERE cluster = 'test_cluster' AND shard_num = 2",
+            "node3",
+        )
+
+        # Batch C's INSERT looks the queue up under the new cluster version while
+        # the old send is still in flight, and must finish before the send resumes:
+        # B is sent only after that, through the updated pool. On broken code,
+        # the lookup recreates the queue, and destroying the old one waits for
+        # the paused send, so the INSERT hits the client timeout instead.
+        node1.get_query_request(
+            "INSERT INTO dist SELECT number * 2 + 1, 'C' FROM numbers(5)",
+            timeout=60,
+        ).get_answer()
+    finally:
+        node1.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_FAILPOINT}")
+
+    # The queue drains without errors: batch A was already delivered to node2;
+    # batches B and C go to the new destination.
+    assert_eq_with_retry(
+        node1,
+        "SELECT sum(data_files), sum(error_count) FROM system.distribution_queue WHERE table = 'dist'",
+        "0\t0",
+        retry_count=60,
+    )
+    assert_eq_with_retry(node3, "SELECT count() FROM local", "10")
+
+    # No row was lost, duplicated, or sent to the old destination after the reload.
+    assert node2.query("SELECT count(), countDistinct(key) FROM local") == "5\t5\n"
+    assert node2.query("SELECT countIf(batch != 'A') FROM local") == "0\n"
+    assert (
+        node3.query("SELECT countDistinct(key) FROM local WHERE batch = 'B'") == "5\n"
+    )
+    assert (
+        node3.query("SELECT countDistinct(key) FROM local WHERE batch = 'C'") == "5\n"
+    )
+
+
+def test_queue_picks_up_secret_rotation(started_cluster):
+    """The queue's connection pool also depends on the cluster secret, which address
+    equality ignores: rotating only the secret must still give the existing queue a new
+    pool, or every send fails authentication on the receiver.
+    """
+    # The first INSERT creates the directory queue, with a pool for secret_a.
+    node1.query("INSERT INTO secret_dist SELECT number FROM numbers(5)")
+    node1.query("SYSTEM FLUSH DISTRIBUTED secret_dist")
+    assert node2.query("SELECT count() FROM secret_local") == "5\n"
+
+    for node in (node1, node2):
+        node.replace_config(
+            "/etc/clickhouse-server/config.d/secret_cluster.xml", config_with_secret_b
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+
+    node1.query("INSERT INTO secret_dist SELECT number + 5 FROM numbers(5)")
+    node1.query("SYSTEM FLUSH DISTRIBUTED secret_dist")
+    assert (
+        node2.query("SELECT count(), countDistinct(key) FROM secret_local")
+        == "10\t10\n"
+    )

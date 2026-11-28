@@ -64,6 +64,12 @@ public:
 
     void updatePath(const std::string & new_relative_path);
 
+    /// The pool is replaced in place when the cluster configuration changes
+    /// (see StorageDistributed::getDirectoryQueue()), so that the queue that owns
+    /// the directory is never recreated. Sends take a snapshot via getPool().
+    ConnectionPoolWithFailoverPtr getPool() const;
+    void updatePool(ConnectionPoolWithFailoverPtr new_pool);
+
     void flushAllData(const SettingsChanges & settings_changes);
 
     void shutdownAndDropAllData();
@@ -125,7 +131,9 @@ public:
 
 private:
     StorageDistributed & storage;
-    const ConnectionPoolWithFailoverPtr pool;
+
+    mutable std::mutex pool_mutex;
+    ConnectionPoolWithFailoverPtr pool TSA_GUARDED_BY(pool_mutex);
 
     DiskPtr disk;
     std::string relative_path;
