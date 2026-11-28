@@ -306,7 +306,9 @@ private:
         Names required_column_names,
         Names & column_names_as_aliases,
         bool & is_smallest_column_requested,
-        Aliases & aliases) const;
+        Aliases & aliases,
+        std::unordered_map<String, QueryTreeNodePtr> & missing_column_defaults,
+        std::unordered_map<String, QueryTreeNodePtr> & subcolumn_conversions) const;
 
     /// An object of this helper class is created
     ///  when processing a Merge table data source (subordinary table)
@@ -400,6 +402,8 @@ private:
         const StorageSnapshotPtr & snapshot,
         const ColumnsDescription & merge_columns,
         const Aliases & aliases,
+        const std::unordered_map<String, QueryTreeNodePtr> & missing_column_defaults,
+        const std::unordered_map<String, QueryTreeNodePtr> & subcolumn_conversions,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextPtr context,
         ChildPlan & child,
