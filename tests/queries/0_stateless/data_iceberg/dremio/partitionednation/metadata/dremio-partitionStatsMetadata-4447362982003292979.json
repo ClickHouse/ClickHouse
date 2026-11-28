@@ -1,0 +1,5 @@
+{
+  "partition-stats-files" : {
+    "0" : "file:///tmp/iceberg/metadata/dremio-partitionStats-0-9f0488cd-235e-44d2-b88b-c901424ee372.avro"
+  }
+}

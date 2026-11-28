@@ -1,0 +1,64 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "49e7de56-dd47-4b04-8bee-e7053f3b7ae1",
+  "location" : "/tmp/iceberg",
+  "last-updated-ms" : 1576664640784,
+  "last-column-id" : 4,
+  "schema" : {
+    "type" : "struct",
+    "fields" : [ {
+      "id" : 1,
+      "name" : "n_nationkey",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "n_name",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "n_regionkey",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 4,
+      "name" : "n_comment",
+      "required" : false,
+      "type" : "string"
+    } ]
+  },
+  "partition-spec" : [ {
+    "name" : "n_regionkey",
+    "transform" : "identity",
+    "source-id" : 3
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "n_regionkey",
+      "transform" : "identity",
+      "source-id" : 3
+    } ]
+  } ],
+  "properties" : { },
+  "current-snapshot-id" : 903716733681830804,
+  "snapshots" : [ {
+    "snapshot-id" : 903716733681830804,
+    "timestamp-ms" : 1576664640737,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "5",
+      "added-records" : "25",
+      "changed-partition-count" : "5",
+      "total-records" : "25",
+      "total-data-files" : "5"
+    },
+    "manifest-list" : "/tmp/iceberg/metadata/snap-903716733681830804-1-d2d6b741-764d-4293-b3c8-715b58dac6eb.avro"
+  } ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1576664640737,
+    "snapshot-id" : 903716733681830804
+  } ]
+}
