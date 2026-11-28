@@ -6700,6 +6700,27 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     "Please set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
                     new_merging_params.getModeName());
         }
+
+        /// The guards on the special columns of an engine (`CLEAR COLUMN sign`, `MODIFY COLUMN ver`, ...) read
+        /// the live `merging_params`, which stays the old engine until the next table load. So a command that
+        /// rewrites data is refused as a whole while an engine change is pending, or in the statement that
+        /// sets it: otherwise it could rewrite a column the target engine relies on.
+        auto mutation_commands = commands.getMutationCommands(
+            *current_metadata_handle,
+            local_context->getSettingsRef()[Setting::materialize_ttl_after_modify],
+            local_context,
+            /*with_alters=*/ false,
+            share_nested_offsets);
+        if (mutation_commands.hasNonEmptyMutationCommands())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "The following alter commands: '{}' will modify data on disk, which is not supported {}. {}",
+                mutation_commands.ast()->formatForErrorMessage(),
+                has_modify_engine_command
+                    ? "in the same ALTER as MODIFY ENGINE"
+                    : "while an engine change from ALTER TABLE ... MODIFY ENGINE is pending",
+                has_modify_engine_command
+                    ? "Run them in a separate ALTER before MODIFY ENGINE"
+                    : "Reload the table (DETACH and ATTACH it, or restart the server) to apply the new engine first");
     }
 
     checkAlterEligibility(commands, local_context);
@@ -8163,8 +8184,21 @@ static bool hasTextIndexMaterialization(const MutationCommands & commands, Stora
     return false;
 }
 
+bool MergeTreeData::hasPendingEngineModification() const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    return metadata_snapshot->new_engine != nullptr;
+}
+
 void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const
 {
+    /// The guards on the special columns of an engine (for example, `UPDATE sign = ...`) read the live
+    /// `merging_params`, which stays the old engine until the next table load. See `checkAlterIsPossible`.
+    if (commands.hasNonEmptyMutationCommands() && hasPendingEngineModification())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Mutations are not supported while an engine change from ALTER TABLE ... MODIFY ENGINE is pending. "
+            "Reload the table (DETACH and ATTACH it, or restart the server) to apply the new engine first");
+
     /// Every command that passes `hasNonEmptyMutationCommands` rewrites parts on disk.
     /// Callers that synthesize an ALTER on behalf of a lightweight write relax the setting
     /// on their own context copy, so provenance is decided there, not by command shape.
@@ -15808,6 +15842,12 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
     auto it = std::ranges::find_if(commands, [](const auto & cmd) { return cmd.type != MutationCommand::UPDATE; });
     if (it != commands.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected command with type {} in lightweight update", it->type);
+
+    /// As in `checkMutationIsPossible`: which columns the target engine lets an update change is known only after the reload.
+    if (hasPendingEngineModification())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Lightweight updates are not supported while an engine change from ALTER TABLE ... MODIFY ENGINE is pending. "
+            "Reload the table (DETACH and ATTACH it, or restart the server) to apply the new engine first");
 
     LOG_DEBUG(log, "Executing lightweight update with commands: {}", commands.ast(false)->formatForLogging());
 

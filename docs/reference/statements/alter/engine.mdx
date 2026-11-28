@@ -54,4 +54,6 @@ This feature is experimental. Enable it with the `allow_experimental_alter_modif
 It is only supported for non-replicated [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree)-family tables. The engine family is fixed: a non-replicated table cannot be turned into a `Replicated*MergeTree` (or vice versa) with this command.
 
 The new engine is written to the table's metadata and takes effect after the table is reloaded (for example with `DETACH TABLE` / `ATTACH TABLE`, or on the next server start).
+
+Until then the table still works as its old engine, so the guards the new engine has for its special columns (the sign, version and `is_deleted` columns) are not in effect yet. For this reason, commands that rewrite data are refused while the engine change is pending, and in the same `ALTER` as `MODIFY ENGINE`: mutations (`ALTER TABLE ... UPDATE` / `DELETE`), lightweight updates and deletes, and `ALTER` commands that modify data on disk, such as `CLEAR COLUMN`, `DROP COLUMN` or a `MODIFY COLUMN` that changes the type. Metadata-only commands, such as `ADD COLUMN` or `MODIFY SETTING`, are still allowed. `INSERT` is not restricted, so the rows inserted before the reload must already be valid for the new engine.
 </Note>

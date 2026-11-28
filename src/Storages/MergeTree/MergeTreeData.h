@@ -1459,6 +1459,11 @@ public:
     /// Does not swap the live `merging_params`: the new semantics apply on the next table load.
     void applyEngineModification(const ASTPtr & new_engine_ast, const StorageInMemoryMetadata & new_metadata, ContextPtr local_context);
 
+    /// Whether `ALTER TABLE ... MODIFY ENGINE` has set an engine that is not applied yet: it is in the
+    /// CREATE query, while the live `merging_params` is the old engine until the next table load.
+    /// Commands that rewrite data are refused meanwhile, because their guards read the live `merging_params`.
+    bool hasPendingEngineModification() const;
+
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPart(
         const MergeTreeData::DataPartPtr & src_part,
         const String & tmp_part_prefix,
