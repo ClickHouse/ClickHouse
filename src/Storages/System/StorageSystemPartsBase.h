@@ -19,8 +19,8 @@ class QueryStatus;
 static constexpr size_t COLUMNS_CANCELLATION_CHECK_PERIOD = 16;
 
 /// Test-only instrumentation, a no-op unless the `slowdown_system_parts_enumeration` failpoint
-/// is enabled: sleeps while enumerating the parts of specially named tables, to make the eager
-/// result building slow enough for the tests of query cancellation and time limits.
+/// is enabled: sleeps while enumerating the parts of specially named tables, to make the
+/// enumeration slow enough for the tests of query cancellation and time limits.
 void slowDownSystemPartsEnumeration(const String & table_name);
 
 /// The same, but for the column-enumeration loops: sleeps once per
@@ -123,6 +123,15 @@ private:
 
 protected:
     friend class ReadFromSystemPartsBase;
+    friend class SystemPartsSource;
+
+    /// The data shared by the rows of all parts of one storage.
+    struct StorageProcessingState
+    {
+        virtual ~StorageProcessingState() = default;
+        PartitionKeySamples partition_key_samples;
+    };
+    using StorageProcessingStatePtr = std::unique_ptr<StorageProcessingState>;
 
     StorageSystemPartsBase(const StorageID & table_id_, ColumnsDescription && columns);
 
@@ -131,8 +140,42 @@ protected:
         return std::make_unique<StoragesInfoStream>(std::move(filter_by_database), std::move(filter_by_other_columns), context);
     }
 
-    virtual void
-    processNextStorage(ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column) = 0;
+    /// What the rows of the table describe.
+    enum class RowSource : uint8_t
+    {
+        DataParts,
+        ProjectionParts,
+        /// Entries kept by the storage itself rather than its parts: `processStorage` is called once per storage.
+        Storage,
+    };
+
+    virtual RowSource getRowSource() const { return RowSource::DataParts; }
+
+    /// Called once per storage before its rows. Returns nullptr to skip the storage
+    /// if the query ran into its time limit in the 'break' mode.
+    virtual StorageProcessingStatePtr prepareStorage(ContextPtr /*context*/, const StoragesInfo & /*info*/, const std::vector<UInt8> & /*columns_mask*/)
+    {
+        return std::make_unique<StorageProcessingState>();
+    }
+
+    /// Appends the rows of one part. Required unless the row source is `RowSource::Storage`.
+    virtual void processPart(
+        ContextPtr context,
+        MutableColumns & columns,
+        const std::vector<UInt8> & columns_mask,
+        const StoragesInfo & info,
+        const MergeTreeData::DataPartPtr & part,
+        MergeTreeData::DataPartState part_state,
+        bool has_state_column,
+        StorageProcessingState & storage_state);
+
+    /// Appends all rows of one storage. Required if the row source is `RowSource::Storage`.
+    virtual void processStorage(
+        ContextPtr context,
+        MutableColumns & columns,
+        const std::vector<UInt8> & columns_mask,
+        const StoragesInfo & info,
+        bool has_state_column);
 };
 
 }

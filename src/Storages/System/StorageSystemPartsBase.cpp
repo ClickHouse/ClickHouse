@@ -26,7 +26,7 @@
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -51,6 +51,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 preferred_block_size_bytes;
 }
 
 namespace ErrorCodes
@@ -205,10 +206,6 @@ namespace
 /// A callback for the part enumeration in MergeTreeData to stop it on query cancellation or a time limit.
 /// checkTimeLimit returns false (instead of throwing) only in the 'break' overflow mode, where an
 /// enumeration that stops early is consistent with the semantics of the mode.
-/// Note that the whole result of these tables is built as a single chunk after the enumeration, so
-/// a query that runs into its deadline delivers no rows at all: the chunk is never handed over to
-/// the rest of the pipeline. The point of the checkpoints is therefore to stop the work quickly,
-/// not to hand out the rows that were collected before the deadline.
 std::function<bool()> makeNeedStopCallback(const QueryStatusPtr & query_status)
 {
     if (!query_status)
@@ -409,6 +406,183 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
     storage_uuid_column = block_to_filter.getByName(storage_uuid_column_name).column;
 }
 
+/// Fills the rows part by part and returns a chunk once it reaches `max_block_size` rows or
+/// `max_block_bytes` bytes: a row can carry a lot of part metadata, so a row limit alone does not bound memory.
+class SystemPartsSource final : public ISource
+{
+public:
+    SystemPartsSource(
+        SharedHeader header_,
+        std::shared_ptr<StorageSystemPartsBase> storage_,
+        std::unique_ptr<StoragesInfoStreamBase> stream_,
+        ContextPtr context_,
+        std::vector<UInt8> columns_mask_,
+        bool has_state_column_,
+        size_t max_block_size_,
+        size_t max_block_bytes_)
+        : ISource(std::move(header_))
+        , storage(std::move(storage_))
+        , stream(std::move(stream_))
+        , context(std::move(context_))
+        , query_status(context->getProcessListElement())
+        , columns_mask(std::move(columns_mask_))
+        , has_state_column(has_state_column_)
+        , max_block_size(max_block_size_)
+        , max_block_bytes(max_block_bytes_)
+    {
+    }
+
+    String getName() const override { return "SystemParts"; }
+
+protected:
+    Chunk generate() override;
+
+private:
+    /// Moves to the next storage that has rows to list. Returns false at the end of the stream.
+    bool nextStorage();
+    void releaseStorage();
+
+    std::shared_ptr<StorageSystemPartsBase> storage;
+    std::unique_ptr<StoragesInfoStreamBase> stream;
+    ContextPtr context;
+    QueryStatusPtr query_status;
+    const std::vector<UInt8> columns_mask;
+    const bool has_state_column;
+    const size_t max_block_size;
+    /// Zero means no limit.
+    const size_t max_block_bytes;
+
+    /// The storage whose parts are listed, with its table lock.
+    StoragesInfo info;
+    StorageSystemPartsBase::StorageProcessingStatePtr storage_state;
+    MergeTreeData::DataPartsVector parts;
+    MergeTreeData::DataPartStateVector parts_states;
+    /// Keeps the parent parts of projection parts alive.
+    MergeTreeData::DataPartsVector parent_parts;
+    size_t next_part = 0;
+    /// For `RowSource::Storage`: the rows of the current storage are not appended yet.
+    bool storage_rows_pending = false;
+    bool is_exhausted = false;
+};
+
+Chunk SystemPartsSource::generate()
+{
+    if (is_exhausted)
+        return {};
+
+    MutableColumns columns = getPort().getHeader().cloneEmptyColumns();
+
+    while (true)
+    {
+        if (next_part == parts.size() && !storage_rows_pending && !nextStorage())
+        {
+            is_exhausted = true;
+            break;
+        }
+
+        /// In the 'break' mode `checkTimeLimit` returns false instead of throwing:
+        /// end the stream with the rows collected so far.
+        if (query_status && !query_status->checkTimeLimit())
+        {
+            is_exhausted = true;
+            break;
+        }
+
+        slowDownSystemPartsEnumeration(info.table);
+
+        if (storage_rows_pending)
+        {
+            storage_rows_pending = false;
+            storage->processStorage(context, columns, columns_mask, info, has_state_column);
+        }
+        else
+        {
+            const size_t part_index = next_part++;
+            storage->processPart(context, columns, columns_mask, info, parts[part_index], parts_states[part_index], has_state_column, *storage_state);
+        }
+
+        const size_t num_rows = columns.at(0)->size();
+        if (num_rows == 0)
+            continue;
+
+        if (num_rows >= max_block_size)
+            break;
+
+        if (max_block_bytes)
+        {
+            size_t num_bytes = 0;
+            for (const auto & column : columns)
+                num_bytes += column->byteSize();
+
+            if (num_bytes >= max_block_bytes)
+                break;
+        }
+    }
+
+    if (is_exhausted)
+        releaseStorage();
+
+    const size_t num_rows = columns.at(0)->size();
+    if (num_rows == 0)
+        return {};
+
+    return Chunk(std::move(columns), num_rows);
+}
+
+bool SystemPartsSource::nextStorage()
+{
+    while (true)
+    {
+        releaseStorage();
+
+        info = stream->next();
+        if (!info)
+            return false;
+
+        if (query_status && !query_status->checkTimeLimit())
+            return false;
+
+        storage_state = storage->prepareStorage(context, info, columns_mask);
+        if (!storage_state)
+            continue;
+
+        switch (storage->getRowSource())
+        {
+            case StorageSystemPartsBase::RowSource::Storage:
+            {
+                storage_rows_pending = true;
+                return true;
+            }
+            case StorageSystemPartsBase::RowSource::ProjectionParts:
+            {
+                auto projection_parts = info.getProjectionParts(parts_states, has_state_column, query_status);
+                parts = std::move(projection_parts.projection_parts);
+                parent_parts = std::move(projection_parts.data_parts);
+                break;
+            }
+            case StorageSystemPartsBase::RowSource::DataParts:
+            {
+                parts = info.getParts(parts_states, has_state_column, query_status);
+                break;
+            }
+        }
+
+        if (!parts.empty())
+            return true;
+    }
+}
+
+void SystemPartsSource::releaseStorage()
+{
+    parts.clear();
+    parts_states.clear();
+    parent_parts.clear();
+    next_part = 0;
+    storage_rows_pending = false;
+    storage_state.reset();
+    info = {};
+}
+
 class ReadFromSystemPartsBase : public SourceStepWithFilter
 {
 public:
@@ -423,7 +597,8 @@ public:
         SharedHeader sample_block,
         std::shared_ptr<StorageSystemPartsBase> storage_,
         std::vector<UInt8> columns_mask_,
-        bool has_state_column_);
+        bool has_state_column_,
+        size_t max_block_size_);
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
@@ -431,6 +606,7 @@ protected:
     std::shared_ptr<StorageSystemPartsBase> storage;
     std::vector<UInt8> columns_mask;
     const bool has_state_column;
+    const size_t max_block_size;
     std::optional<ActionsDAG> filter_by_database;
     std::optional<ActionsDAG> filter_by_other_columns;
 };
@@ -443,7 +619,8 @@ ReadFromSystemPartsBase::ReadFromSystemPartsBase(
     SharedHeader sample_block,
     std::shared_ptr<StorageSystemPartsBase> storage_,
     std::vector<UInt8> columns_mask_,
-    bool has_state_column_)
+    bool has_state_column_,
+    size_t max_block_size_)
     : SourceStepWithFilter(
         std::move(sample_block),
         column_names_,
@@ -453,6 +630,7 @@ ReadFromSystemPartsBase::ReadFromSystemPartsBase(
     , storage(std::move(storage_))
     , columns_mask(std::move(columns_mask_))
     , has_state_column(has_state_column_)
+    , max_block_size(max_block_size_)
 {
 }
 
@@ -491,7 +669,7 @@ void StorageSystemPartsBase::readImpl(
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    const size_t /*max_block_size*/,
+    const size_t max_block_size,
     const size_t /*num_streams*/)
 {
     bool has_state_column = hasStateColumn(column_names, storage_snapshot);
@@ -508,7 +686,8 @@ void StorageSystemPartsBase::readImpl(
 
     auto reading = std::make_unique<ReadFromSystemPartsBase>(
         column_names, query_info, storage_snapshot,
-        std::move(context), std::make_shared<const Block>(std::move(header)), std::move(this_ptr), std::move(columns_mask), has_state_column);
+        std::move(context), std::make_shared<const Block>(std::move(header)), std::move(this_ptr), std::move(columns_mask), has_state_column,
+        max_block_size);
 
     query_plan.addStep(std::move(reading));
 }
@@ -516,27 +695,16 @@ void StorageSystemPartsBase::readImpl(
 void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto stream = storage->getStoragesInfoStream(std::move(filter_by_database), std::move(filter_by_other_columns), context);
-    auto header = getOutputHeader();
 
-    MutableColumns res_columns = header->cloneEmptyColumns();
-
-    /// The whole result is built eagerly here, so without this check a cancelled or timed out
-    /// query would keep building rows over every storage until the very end.
-    /// If the time limit is exceeded in the 'break' mode, stop instead of failing the query.
-    QueryStatusPtr query_status = context->getProcessListElement();
-
-    while (StoragesInfo info = stream->next())
-    {
-        if (query_status && !query_status->checkTimeLimit())
-            break;
-
-        storage->processNextStorage(context, res_columns, columns_mask, info, has_state_column);
-    }
-
-    UInt64 num_rows = res_columns.at(0)->size();
-    Chunk chunk(std::move(res_columns), num_rows);
-
-    pipeline.init(Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk))));
+    pipeline.init(Pipe(std::make_shared<SystemPartsSource>(
+        getOutputHeader(),
+        storage,
+        std::move(stream),
+        context,
+        columns_mask,
+        has_state_column,
+        max_block_size,
+        context->getSettingsRef()[Setting::preferred_block_size_bytes])));
 }
 
 
@@ -562,6 +730,29 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Colu
     storage_metadata.setColumns(columns);
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+void StorageSystemPartsBase::processPart(
+    ContextPtr /*context*/,
+    MutableColumns & /*columns*/,
+    const std::vector<UInt8> & /*columns_mask*/,
+    const StoragesInfo & /*info*/,
+    const MergeTreeData::DataPartPtr & /*part*/,
+    MergeTreeData::DataPartState /*part_state*/,
+    bool /*has_state_column*/,
+    StorageProcessingState & /*storage_state*/)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not list parts", getName());
+}
+
+void StorageSystemPartsBase::processStorage(
+    ContextPtr /*context*/,
+    MutableColumns & /*columns*/,
+    const std::vector<UInt8> & /*columns_mask*/,
+    const StoragesInfo & /*info*/,
+    bool /*has_state_column*/)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} lists parts, not the rows of a whole storage", getName());
 }
 
 VirtualColumnsDescription StorageSystemPartsBase::createVirtuals()
