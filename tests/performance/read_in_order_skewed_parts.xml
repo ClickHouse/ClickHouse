@@ -1,0 +1,31 @@
+<test>
+    <settings>
+        <optimize_read_in_order>1</optimize_read_in_order>
+        <max_threads>8</max_threads>
+        <enable_parallel_replicas>0</enable_parallel_replicas>
+    </settings>
+
+    <!-- Skewed part sizes with as many parts as streams: one large part and seven parts of a
+         single granule, read with `max_threads = 8`. No part can get a second stream out of the
+         budget, so the per-part `PrefetchingConcat` has nothing to concatenate, and
+         `ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder` must keep dividing the marks
+         evenly among the streams. Reading every part with one source instead would run the
+         reading, the decompression and the `PREWHERE` of the large part on a single thread. -->
+    <create_query>
+        CREATE TABLE read_in_order_skewed_parts (key UInt64, part UInt8, payload String)
+        ENGINE = MergeTree PARTITION BY part ORDER BY key
+    </create_query>
+
+    <fill_query>INSERT INTO read_in_order_skewed_parts SELECT number, 0, concat('{"x":"', toString(number % 1000), '","y":"', repeat('v', 64), '"}') FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO read_in_order_skewed_parts SELECT number, 1 + number % 7, '{"x":"1"}' FROM numbers(7000)</fill_query>
+    <fill_query>OPTIMIZE TABLE read_in_order_skewed_parts FINAL</fill_query>
+
+    <!-- A costly predicate inside `PREWHERE`: the work is in the reader, so it is parallel only
+         when the large part is read by several sources. -->
+    <query>SELECT key FROM read_in_order_skewed_parts PREWHERE JSONExtractString(payload, 'x') != '' ORDER BY key FORMAT Null</query>
+
+    <!-- The same shape without a predicate: reading and decompression only. -->
+    <query>SELECT * FROM read_in_order_skewed_parts ORDER BY key FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS read_in_order_skewed_parts</drop_query>
+</test>
