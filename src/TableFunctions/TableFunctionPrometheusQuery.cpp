@@ -14,6 +14,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+ColumnsDescription getColumnsDescription(const StoragePrometheusQuery::Configuration & config)
+{
+    PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings};
+    return converter.getResultColumns();
+}
+
+}
 
 template <bool over_range>
 void TableFunctionPrometheusQuery<over_range>::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -24,16 +34,15 @@ void TableFunctionPrometheusQuery<over_range>::parseArguments(const ASTPtr & ast
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' must have arguments.", name);
 
     auto & args = args_func.arguments->children;
-    config = StoragePrometheusQuery::getConfiguration(args, context, over_range);
+    parsed_args = StoragePrometheusQuery::parseArgumentsOnly(args, context, over_range);
 }
 
 
 template <bool over_range>
 ColumnsDescription
-TableFunctionPrometheusQuery<over_range>::getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const
+TableFunctionPrometheusQuery<over_range>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
-    PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings};
-    return converter.getResultColumns();
+    return getColumnsDescription(StoragePrometheusQuery::resolveConfiguration(parsed_args, context));
 }
 
 
@@ -43,10 +52,11 @@ StoragePtr TableFunctionPrometheusQuery<over_range>::executeImpl(
     ContextPtr context,
     const String & table_name,
     ColumnsDescription /* cached_columns */,
-    bool is_insert_query) const
+    bool /* is_insert_query */) const
 {
-    auto columns = getActualTableStructure(context, is_insert_query);
-    auto res = std::make_shared<StoragePrometheusQuery>(StorageID(getDatabaseName(), table_name), columns, config);
+    auto config = StoragePrometheusQuery::resolveConfiguration(parsed_args, context);
+    auto res = std::make_shared<StoragePrometheusQuery>(
+        StorageID(getDatabaseName(), table_name), getColumnsDescription(config), config);
     res->startup();
     return res;
 }

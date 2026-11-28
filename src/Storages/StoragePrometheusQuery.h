@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ConstantValue.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
@@ -18,7 +19,23 @@ public:
         PrometheusQueryEvaluationSettings evaluation_settings;
     };
 
-    static Configuration getConfiguration(ASTs & args, const ContextPtr & context, bool over_range);
+    /// What the arguments of prometheusQuery() / prometheusQueryRange() determine without reading the catalog.
+    /// The query and the times stay unparsed: parsing them needs the scale of the TimeSeries table's timestamps.
+    struct Arguments
+    {
+        StorageID time_series_storage_id = StorageID::createEmpty();
+        String promql_query;
+        PrometheusQueryEvaluationMode mode = {};
+        std::optional<ConstantValue> start_time;
+        /// Only prometheusQueryRange() has an end time and a step; prometheusQuery() evaluates at a single instant.
+        std::optional<ConstantValue> end_time;
+        std::optional<ConstantValue> step;
+    };
+
+    /// `parseArgumentsOnly()` must not read the catalog: a stored `AS prometheusQuery(...)` definition is replayed
+    /// through it while metadata is loaded, and has to load even when the objects it names are gone.
+    static Arguments parseArgumentsOnly(ASTs & args, const ContextPtr & context, bool over_range);
+    static Configuration resolveConfiguration(const Arguments & parsed_args, const ContextPtr & context);
 
     StoragePrometheusQuery(const StorageID & table_id_, const ColumnsDescription & columns_, const Configuration & config_);
 
