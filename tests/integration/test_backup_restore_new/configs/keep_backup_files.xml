@@ -1,0 +1,5 @@
+<clickhouse>
+    <backups>
+        <remove_backup_files_after_failure>false</remove_backup_files_after_failure>
+    </backups>
+</clickhouse>

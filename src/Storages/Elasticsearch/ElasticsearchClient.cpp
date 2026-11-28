@@ -65,8 +65,9 @@ Poco::JSON::Object::Ptr readJSONObject(ReadBuffer & in)
 
 }
 
-ElasticsearchClient::ElasticsearchClient(ElasticsearchConfiguration config_, ContextPtr context_, const ElasticsearchSettings & es_settings)
-    : page_size(es_settings[ElasticsearchSetting::page_size])
+ElasticsearchClient::ElasticsearchClient(ElasticsearchSourceFilter source_filter_, ElasticsearchConfiguration config_, ContextPtr context_, const ElasticsearchSettings & es_settings)
+    : source_filter(std::move(source_filter_))
+    , page_size(es_settings[ElasticsearchSetting::page_size])
     , pit_keep_alive(fmt::format("{}s", es_settings[ElasticsearchSetting::keep_alive].totalSeconds()))
     , config(config_)
     , log(getLogger("ElasticsearchClient"))
@@ -78,10 +79,19 @@ ElasticsearchClient::ElasticsearchClient(ElasticsearchConfiguration config_, Con
     if (config.auth_kind == ElasticsearchConfiguration::AuthKind::Basic)
     {
         credentials.setUsername(config.user);
-        credentials.setPassword(config.password);
+        credentials.setPassword(String(config.password));
         context_->getHTTPHeaderFilter().checkBasicCredentials(credentials);
     }
     auth_headers = config.authorizationHeaders();
+
+    if (source_filter.kind == ElasticsearchSourceFilter::Kind::Includes)
+    {
+        Poco::JSON::Array includes;
+        for (const auto & path : source_filter.includes)
+            includes.add(path);
+
+        prepared_source.set("includes", includes);
+    }
 }
 
 ElasticsearchClient::~ElasticsearchClient()
@@ -132,8 +142,17 @@ std::unique_ptr<ElasticsearchSearchResponse> ElasticsearchClient::searchIndex(co
 
     request_body.set("track_total_hits", false);
 
-    if (!hit_columns.source_pos)
-        request_body.set("_source", false);
+    switch (source_filter.kind)
+    {
+        case ElasticsearchSourceFilter::Kind::None:
+            request_body.set("_source", false);
+            break;
+        case ElasticsearchSourceFilter::Kind::Includes:
+            request_body.set("_source", prepared_source);
+            break;
+        case ElasticsearchSourceFilter::Kind::All:
+            break;
+    }
 
     std::ostringstream body; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     request_body.stringify(body);

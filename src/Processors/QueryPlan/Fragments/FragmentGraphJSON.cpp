@@ -9,12 +9,12 @@
 #include <Processors/QueryPlan/ShuffleSendStep.h>
 #include <Common/Exception.h>
 #include <Common/JSONBuilder.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
 #include <string_view>
-#include <unordered_map>
-#include <vector>
 
 namespace DB
 {
@@ -61,14 +61,14 @@ const QueryFragment & getResultFragment(const FragmentGraph & graph)
 /// (`final_result`) sends to the client, not to an exchange of the graph, so it is not in the map.
 MapStepToExchangeIds collectExchangeIds(const FragmentGraph & graph)
 {
-    std::unordered_map<std::string_view, UInt32> id_by_name;
+    UnorderedMapWithMemoryTracking<std::string_view, UInt32> id_by_name;
     for (const auto & exchange : graph.exchanges)
         id_by_name.emplace(exchange.name, exchange.id);
 
     MapStepToExchangeIds exchange_ids;
     for (const auto & fragment : graph.fragments)
     {
-        std::vector<const QueryPlan::Node *> stack{PreparedFragmentGraph::getPlan(fragment).getRootNode()};
+        VectorWithMemoryTracking<const QueryPlan::Node *> stack{PreparedFragmentGraph::getPlan(fragment).getRootNode()};
         while (!stack.empty())
         {
             const auto * node = stack.back();

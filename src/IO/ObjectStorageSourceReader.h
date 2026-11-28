@@ -18,7 +18,7 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override;
 
-    String name() const override { return "ObjectStorageSourceReader"; }
+    [[nodiscard]] String name() const override { return "ObjectStorageSourceReader"; }
 
 private:
     ObjectStoragePtr storage;

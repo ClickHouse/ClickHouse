@@ -8,7 +8,7 @@ namespace DB
 class ReadBufferWrapperBase
 {
 public:
-    virtual const ReadBuffer & getWrappedReadBuffer() const = 0;
+    [[nodiscard]] virtual const ReadBuffer & getWrappedReadBuffer() const = 0;
     virtual ~ReadBufferWrapperBase() = default;
 };
 

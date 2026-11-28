@@ -1,0 +1,280 @@
+---
+slug: /clickstack/observability/integration-examples/kafka-metrics
+title: 'مراقبة مقاييس Kafka باستخدام ClickHouse Observability'
+sidebarTitle: 'مقاييس Kafka'
+description: 'اجمع مقاييس وسطاء Kafka باستخدام OpenTelemetry JMX Metric Gatherer، ثم أرسلها إلى ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['Kafka', 'metrics', 'OTEL', 'ClickHouse Observability', 'JMX']
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+اجمع مقاييس وسطاء Kafka باستخدام OpenTelemetry JMX Metric Gatherer وأرسلها إلى ClickHouse Observability. ويمكنك استخدام [مجموعة البيانات التجريبية](#demo-dataset) لتجربة التكامل دون الحاجة إلى نشر Kafka.
+
+## المتطلبات المسبقة {#prerequisites}
+
+* خدمة ClickHouse Observability
+* Docker مع Docker Compose وأداة `curl`
+* لاستخدام مقاييسك الخاصة: وسيط Kafka مُفعَّل فيه JMX عن بُعد، ويمكن الوصول إليه من أداة التجميع
+
+### بيانات الاتصال {#connection-details}
+
+<Tabs>
+  <Tab title="مُدار بالكامل">
+    <BetaBadge label="خدمة في المرحلة التجريبية" />
+
+    افتح ClickHouse Observability وانتقل إلى **إعدادات الفريق → Data → بيانات القياس عن بُعد المُدارة**. انسخ نقطة نهاية OTLP عبر HTTP ومفتاح API. يمكنك استخدام **Copy connection details** لنسخ التهيئة، أو **Reveal key** لعرض المفتاح المحجوب.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![بيانات الاتصال في صفحة بيانات القياس عن بُعد المُدارة](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    اضبط هذه المتغيرات في الطرفية التي ستشغّل فيها أداة تجميع JMX أو جامع البيانات التوضيحي:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    استبدل العناصر النائبة بنقطة النهاية الدقيقة لخدمتك، بما في ذلك المنفذ، وبمفتاح API الخاص بها. استخدم نقطة نهاية HTTP الأساسية دون اللاحقة `/v1/metrics`؛ إذ يُلحق المُصدِّر مسار الإشارة تلقائيًا.
+  </Tab>
+
+  <Tab title="مُدار ذاتيًا">
+    استخدم نقطة نهاية OTLP عبر HTTP الخاصة بجامع البيانات، على أن يمكن الوصول إليها (مثل `http://YOUR_COLLECTOR_HOST:4318`)، إلى جانب إعدادات المصادقة. إذا كان جامع البيانات لا يتطلب المصادقة، فاحذف الوسيطة `-Dotel.exporter.otlp.headers` من أداة تجميع JMX وكتلة `headers` من جامع البيانات التوضيحي. راجع [دليل البدء للإصدار المُدار ذاتيًا](/ar/clickstack/self-configured/getting-started/managed) للاطلاع على إرشادات الإعداد.
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+يجب أن يكون الوصول إلى نقطة النهاية ممكنًا من حاوية أداة التجميع أو جامع البيانات. إذا كان جامع البيانات الوجهة يعمل على هذا الحاسوب، فاستخدم `http://host.docker.internal:4318`. تتضمن أوامر Docker أدناه مطابقة المضيف.
+
+## التكامل مع نشر Kafka قائم {#existing-kafka}
+
+<Steps>
+  <Step title="تحقّق من نقطة نهاية JMX الخاصة بالوسيط" id="verify-jmx">
+    استخدم نقطة نهاية JMX البعيدة المهيأة للوسيط لديك. فمثلًا، إذا كان الوسيط يعرض JMX على المنفذ `9999`:
+
+    ```bash
+    export KAFKA_JMX_URL='service:jmx:rmi:///jndi/rmi://YOUR_KAFKA_HOST:9999/jmxrmi'
+    export KAFKA_BROKER_ID='broker-0'
+    ```
+
+    استبدل اسم المضيف ومعرّف الوسيط بالقيم الخاصة بك. ويجب أيضًا أن يكون اسم مضيف RMI الذي يعلن عنه الوسيط قابلًا للوصول من أداة التجميع. وإذا كان الوسيط يستخدم منفذين منفصلين للسجل وRMI، فاسمح بمرور كليهما عبر الشبكة. تقرأ أداة التجميع بيانات JMX فقط، ولا تحتاج إلى منفذ عميل Kafka `9092`.
+
+    إذا كانت الحاويات على شبكة Docker مشتركة، فاستخدم اسم مضيف حاوية الوسيط. أما إذا كان الوسيط يعمل على مضيف Docker، فاستخدم `host.docker.internal` وهيّئ الوسيط ليعلن عن اسم مضيف يمكن للحاوية الوصول إليه. اقصر الوصول إلى JMX على شبكة المراقبة لديك، وحافظ على إعدادات المصادقة وTLS الخاصة بالوسيط.
+  </Step>
+
+  <Step title="نزّل JMX Metric Gatherer" id="download-jmx">
+    ```bash
+    curl -fL -o opentelemetry-jmx-metrics.jar \
+      https://github.com/open-telemetry/opentelemetry-java-contrib/releases/download/v1.32.0/opentelemetry-jmx-metrics.jar
+    ```
+  </Step>
+
+  <Step title="هيّئ أداة التجميع" id="configure-gatherer">
+    احفظ ما يلي باسم `compose.yaml` في الدليل نفسه الذي يحتوي على ملف JAR الذي نزّلته:
+
+    ```yaml
+    services:
+      kafka-jmx-gatherer:
+        image: eclipse-temurin:11-jre
+        extra_hosts:
+          - "host.docker.internal:host-gateway"
+        environment:
+          - KAFKA_JMX_URL
+          - KAFKA_BROKER_ID
+          - OTEL_EXPORTER_OTLP_ENDPOINT
+          - OTEL_EXPORTER_OTLP_AUTHORIZATION
+        volumes:
+          - ./opentelemetry-jmx-metrics.jar:/app/opentelemetry-jmx-metrics.jar:ro
+        command:
+          - sh
+          - -c
+          - >-
+            exec java
+            -Dotel.jmx.service.url="$${KAFKA_JMX_URL}"
+            -Dotel.jmx.target.system=kafka
+            -Dotel.jmx.interval.milliseconds=10000
+            -Dotel.metrics.exporter=otlp
+            -Dotel.exporter.otlp.protocol=http/protobuf
+            -Dotel.exporter.otlp.endpoint="$${OTEL_EXPORTER_OTLP_ENDPOINT}"
+            -Dotel.exporter.otlp.headers="authorization=$${OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+            -Dotel.resource.attributes="service.name=kafka-service,kafka.broker.id=$${KAFKA_BROKER_ID}"
+            -jar /app/opentelemetry-jmx-metrics.jar
+    ```
+
+    إذا كان الوسيط على شبكة Docker قائمة، فأرفق `kafka-jmx-gatherer` بتلك الشبكة في تهيئة Compose لديك. ولاستخدام JMX مع المصادقة، أضف الخاصيتين `otel.jmx.username` و`otel.jmx.password`؛ ولاستخدام TLS، هيّئ مخزن الثقة المناسب. راجع [المصادقة وتهيئة TLS لأداة التجميع](https://github.com/open-telemetry/opentelemetry-java-contrib/tree/v1.32.0/jmx-metrics#configuration).
+  </Step>
+
+  <Step title="ابدأ التجميع" id="run-gatherer">
+    عيّن [متغيرات الاتصال](#connection-details) ومتغيرات الوسيط في هذه الطرفية، ثم شغّل الأمر التالي من الدليل الذي يحتوي على `compose.yaml`:
+
+    ```bash
+    docker compose up kafka-jmx-gatherer
+    ```
+
+    أبقِ الطرفية مفتوحة وراقب ظهور أي أخطاء في اتصال JMX أو أخطاء تصدير OTLP. تجمع الأداة البيانات كل 10 ثوانٍ، لذا انتظر مرور فترتي تجميع على الأقل قبل التحقق من خدمتك. وعند الانتهاء من الاختبار، أوقفها بالضغط على **Ctrl+C**.
+
+    إذا كان لديك عدة وسطاء، فشغّل أداة تجميع مستقلة لكل وسيط، لكلٍّ منها URL خاص بـ JMX و`kafka.broker.id` خاص بها.
+  </Step>
+
+  <Step title="تحقّق من المقاييس" id="verify-metrics">
+    افتح **مستكشف المخططات**، واختر مصدر **Metrics** الخاص بك، وصفِّ النتائج باستخدام `ServiceName:kafka-service`، ثم اختر **Last 15 minutes**. ابحث عن `kafka.partition.count` أو `kafka.partition.under_replicated` أو `kafka.message.count`. لاحظ أن المقاييس المتعلقة بحركة البيانات تتطلب نشاطًا على الوسيط حتى تُنتج قيمًا ذات دلالة.
+  </Step>
+</Steps>
+
+## مجموعة بيانات تجريبية {#demo-dataset}
+
+تحتوي العينة على 6,282 نقطة من نوعَي المقياس (gauge) والمجموع (sum)، أُخذت كل خمس دقائق على مدى 29 ساعة تقريبًا. وتحافظ العينة على أنماط مجموعة البيانات الأصلية من حيث ذروات حركة المرور، وزمن انتقال الطلبات، وتأخر المستهلك، والحالة التشغيلية للأقسام. ولا حاجة إلى نشر Kafka ولا إلى الوصول المباشر إلى قاعدة البيانات.
+
+اضبط [متغيرات الاتصال](#connection-details) قبل البدء.
+
+<Steps>
+  <Step title="تنزيل عينة المقاييس" id="download-sample">
+    [نزّل حزمة العينة](/ar/assets/kafka-metrics-demo.zip) (نحو 53 KB) واستخرج الملف `kafka-metrics-demo.json` إلى دليل العمل.
+  </Step>
+
+  <Step title="تهيئة جامع البيانات التجريبي" id="configure-demo-collector">
+    احفظ ما يلي باسم `kafka-metrics-demo.yaml`:
+
+    ```yaml
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      resource/demo:
+        attributes:
+          - key: service.name
+            value: kafka-demo
+            action: upsert
+      transform/demo_timestamps:
+        error_mode: propagate
+        metric_statements:
+          - context: datapoint
+            statements:
+              - set(cache["interval_ns"], time_unix_nano - start_time_unix_nano)
+              - set(time, Now() - Duration("2m") - (Time("2025-11-06T22:14:00Z", "%Y-%m-%dT%H:%M:%SZ") - time))
+              - set(start_time_unix_nano, time_unix_nano - cache["interval_ns"])
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/managed:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [resource/demo, transform/demo_timestamps, batch]
+          exporters: [otlp_http/managed]
+    ```
+
+    <Note>
+      يقتصر هذا التحويل على العرض التوضيحي، إذ يحدّث الطوابع الزمنية مع الحفاظ على قيم المقاييس والفاصل الزمني بين طابعَي البداية والنهاية لكل نقطة. احذفه عند التعامل مع مقاييس Kafka الحية. أما حد الدفعة فيُبقي حجم عمليات الرفع صغيرًا بما يكفي ليتقبّلها جامع البيانات في الوجهة.
+    </Note>
+  </Step>
+
+  <Step title="تشغيل جامع البيانات التجريبي" id="run-demo-collector">
+    من الدليل الذي يحتوي على ملف التهيئة، شغّل جامع البيانات واترك هذه الطرفية مفتوحة:
+
+    ```bash
+    docker run --rm --name kafka-metrics-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -p 127.0.0.1:14318:4318 \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/kafka-metrics-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+  </Step>
+
+  <Step title="إرسال العينة" id="load-metrics">
+    في طرفية أخرى، شغّل الأمر التالي من دليل التنزيل:
+
+    ```bash
+    curl --fail-with-body -sS http://localhost:14318/v1/metrics \
+      -H 'Content-Type: application/json' \
+      --data-binary @kafka-metrics-demo.json
+    ```
+
+    تدل استجابة مثل `{}` أو `{"partialSuccess":{}}` على أن جامع البيانات المحلي قَبِل الطلب. راجع طرفية جامع البيانات للتأكد من عدم وجود أخطاء التصدير، وامنحه بضع ثوانٍ لإتمام إعادة التوجيه. بعد التحقق من البيانات، أوقفه بالضغط على **Ctrl+C**. وقد يؤدي إرسال العينة مرة أخرى إلى ظهور نقاط مكررة.
+  </Step>
+
+  <Step title="التحقق من المقاييس" id="verify-demo-metrics">
+    استورد لوحة المعلومات الواردة في [القسم التالي](#dashboards)، وصفِّ النتائج باستخدام `ServiceName:kafka-demo`، ثم اختر **آخر يومين**. تتضمن العينة مقاييس من نوعَي المقياس (gauge) والمجموع (sum)، ولا حاجة إلى الوصول المباشر إلى قاعدة البيانات.
+  </Step>
+</Steps>
+
+## لوحات المعلومات والتصور المرئي {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json" download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">تنزيل تهيئة لوحة المعلومات</TrackedLink>} id="download-dashboard" />
+
+  <Step title="استيراد لوحة المعلومات" id="import-dashboard">
+    1. افتح **لوحات المعلومات** وانقر على **Import** في الزاوية العلوية اليمنى.
+    2. حمّل الملف `kafka-metrics-dashboard.json`.
+    3. اربط الرسوم البيانية بمصدر **Metrics** لديك، ثم انقر على **Finish Import**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![زر استيراد لوحة المعلومات](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="عرض لوحة المعلومات" id="view-dashboard">
+    لعرض بيانات العينة، صفِّ النتائج حسب `ServiceName:kafka-demo` واختر **آخر يومين**. تعرض لوحة المعلومات معدل النقل، وتأخر المستهلك، وزمن انتقال الطلبات، وعمق قائمة الانتظار، والأقسام غير المتصلة.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![لوحة معلومات العرض التوضيحي لمقاييس Kafka في ClickHouse Observability، وتظهر فيها معدل النقل، وتأخر المستهلك، وزمن انتقال الطلبات، وعمق قائمة الانتظار، والأقسام غير المتصلة](/images/clickstack/observability-kafka-metrics-dashboard.png)
+      </Frame>
+    </div>
+
+    <Note>
+      تعتمد لوحة المعلومات على أسماء المقاييس المستخدمة في العرض التوضيحي، بما فيها المعدلات المحسوبة مسبقًا وتأخر المستهلك. أما أداة تجميع JMX الخاصة بالوسيط فتعرض مجموعة مختلفة من المقاييس، لذا عدّل الرسوم البيانية بما يتوافق مع بياناتك الفعلية. ولا يوفّر JMX الخاص بالوسيط وحده بيانات تأخر مجموعات المستهلكين.
+    </Note>
+  </Step>
+</Steps>
+
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+### فشل اتصال JMX {#jmx-connection-fails}
+
+تحقق من إخراج أداة التجميع باستخدام الأمر `docker compose logs kafka-jmx-gatherer`. تأكد من أن JMX مفعّل، وأنه يمكن الوصول إلى كلٍّ من سجل RMI ونقطة نهاية RMI المُعلَنة، وأن بيانات اعتماد JMX ومخزن الثقة المُهيَّأين يتطابقان مع إعدادات الوسيط. وعند استخدام أسماء مضيفي الحاويات، يجب أن تكون الحاويات متصلة بالشبكة نفسها المقصودة.
+
+### عدم ظهور المقاييس {#no-metrics}
+
+* تحقّق من مخرجات أداة التجميع أو جامع البيانات التجريبي بحثًا عن أخطاء في الاتصال أو المصادقة أو التصدير.
+* تحقّق من نقطة نهاية OTLP عبر HTTP ومن إعدادات المصادقة بمطابقتهما مع بيانات الاتصال الخاصة بخدمتك.
+* تحقّق من مصدر **Metrics** وعامل تصفية اسم الخدمة والنطاق الزمني. في العرض التوضيحي، اختر **آخر يومين**.
+* إذا كنت تستخدم جامع بيانات موجودًا مسبقًا، فتأكّد من أن مسار المقاييس فيه يتضمن مستقبِل OTLP ومُصدِّرًا للمقاييس.
+* تحقّق من أسماء المقاييس القائمة فعليًا في **مستكشف المخططات** قبل استخدام لوحة المعلومات التجريبية.
+
+### تعارض منافذ JMX في أوامر عميل Kafka {#port-conflicts}
+
+إذا كنت تُشغّل أوامر عميل Kafka داخل حاوية الوسيط، فألغِ تعيين إعدادات JMX الموروثة من الوسيط لذلك الأمر، كي لا يحاول العميل الارتباط بالمنفذ نفسه:
+
+```bash
+env -u JMX_PORT -u KAFKA_JMX_OPTS kafka-topics --list --bootstrap-server YOUR_KAFKA_HOST:9092
+```
+
+## الخطوات التالية {#next-steps}
+
+* أعدّ [التنبيهات](/ar/clickstack/observability/features/alerts) لمراقبة الحالة التشغيلية للتقسيمات أو زمن الانتقال للطلبات.
+* أنشئ [لوحات معلومات](/ar/clickstack/observability/features/dashboards/overview) إضافية لمقاييس الوسطاء لديك.
+* راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/observability/ingesting-data/opentelemetry) للاطلاع على إرشادات نشر جامع البيانات.

@@ -56,7 +56,7 @@ public:
 
     /// Names of the feature columns, in the order the model was trained on. Used by the dictionary to bind
     /// the positional feature arguments of `predictXGBoost` to the columns the backend expects.
-    const VectorWithMemoryTracking<String> & getFeatureNames() const { return feature_columns; }
+    [[nodiscard]] const VectorWithMemoryTracking<String> & getFeatureNames() const { return feature_columns; }
 
     /// The checks of the prediction parameters that do not need a trained model: the accepted keys and their
     /// lower bounds. `predictXGBoost` runs them while analysing the query, so that an invalid call fails even when

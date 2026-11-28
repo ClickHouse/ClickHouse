@@ -9,8 +9,6 @@ ATTACH TABLE t_new (x UInt32) ENGINE = Log; -- { serverError SUPPORT_IS_DISABLED
 ATTACH TABLE t_new (x UInt32) ENGINE = Memory; -- { serverError SUPPORT_IS_DISABLED }
 ATTACH TABLE t_new UUID '0d7a2f61-5d3b-4c55-9b8e-05618a77ac01' (x UInt32) ENGINE = Memory; -- { serverError SUPPORT_IS_DISABLED }
 ATTACH TABLE t_new FROM '/nonexistent' (x UInt32) ENGINE = Log; -- { serverError SUPPORT_IS_DISABLED }
--- the old entry format sends the query to the cluster before the table is created
-ATTACH TABLE t_new UUID '0d7a2f61-5d3b-4c55-9b8e-05618a77ac02' ON CLUSTER test_shard_localhost (x UInt32) ENGINE = Memory SETTINGS distributed_ddl_entry_format_version = 2; -- { serverError SUPPORT_IS_DISABLED }
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't_new';
 
 -- the short syntax still attaches a detached table

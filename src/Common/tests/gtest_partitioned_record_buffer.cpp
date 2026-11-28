@@ -200,6 +200,55 @@ TEST(PartitionedRecordBuffer, ConcurrentPartitionRelease)
         EXPECT_EQ(buffer.recordsOf(partition), 0);
 }
 
+/// `releasePartitions` releases consecutive partitions in one walk, in which the chunks of one block give their
+/// references back together. A block is freed with the last of its chunks, whichever call releases that chunk.
+/// Partitions 0 to 3 share the blocks of one group and partitions 4 to 7 the block of another. Partition 1 also holds a
+/// chunk of its own, and partition 2 holds 6 MB of records, whose chunks span more blocks than a batch of the walk
+/// keeps.
+TEST(PartitionedRecordBuffer, ReleaseOfConsecutivePartitions)
+{
+    runTracked([](const MemoryTracker & tracker)
+    {
+        constexpr size_t partitions = 8;
+        PartitionedRecordBuffer buffer(partitions, 4);
+        const Int64 empty = tracker.get();
+        const auto record = [](size_t partition) { return "record " + std::to_string(partition); };
+        for (size_t partition = 0; partition < partitions; ++partition)
+            appendRecord(buffer, partition, record(partition));
+        appendRecord(buffer, 1, std::string(10000, 'x'));
+        for (size_t i = 0; i < 6000; ++i)
+            appendRecord(buffer, 2, std::string(1000, 'y'));
+        buffer.finishAppending();
+        const Int64 full = tracker.get();
+
+        /// The first group, in one call.
+        buffer.releasePartitions(0, 4);
+        for (size_t partition = 0; partition < 4; ++partition)
+        {
+            EXPECT_EQ(buffer.recordsOf(partition), 0);
+            EXPECT_EQ(readPartition(buffer, partition), "");
+        }
+        for (size_t partition = 4; partition < partitions; ++partition)
+            EXPECT_EQ(readPartition(buffer, partition), record(partition));
+        const Int64 second_group = tracker.get();
+        EXPECT_LT(second_group, full);
+        EXPECT_GT(second_group, empty);
+
+        /// The second group, in two calls: its block goes with the last of its chunks.
+        buffer.releasePartitions(4, 3);
+        EXPECT_EQ(tracker.get(), second_group);
+        EXPECT_EQ(readPartition(buffer, 7), record(7));
+        buffer.releasePartitions(7, 1);
+        EXPECT_EQ(tracker.get(), empty);
+
+        /// Released partitions take appends again.
+        appendRecord(buffer, 2, "again");
+        buffer.finishAppending();
+        EXPECT_EQ(readPartition(buffer, 2), "again");
+        EXPECT_EQ(buffer.recordsOf(2), 1);
+    });
+}
+
 TEST(PartitionedRecordBuffer, RecordCountsWhileAppending)
 {
     PartitionedRecordBuffer buffer(1, 1);

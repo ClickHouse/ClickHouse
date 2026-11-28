@@ -5,7 +5,7 @@
 #include <Core/UUID.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/FailPoint.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
@@ -84,11 +84,11 @@ public:
     }
     void finish(bool) override { }
     void cancel() noexcept override { }
-    size_t getNumberOfOpenStreams() const override { return 0; }
-    const Block & getColumnsSample() const override { return columns_sample; }
-    const ColumnsSubstreams & getColumnsSubstreams() const override { return finished.columns_substreams; }
+    [[nodiscard]] size_t getNumberOfOpenStreams() const override { return 0; }
+    [[nodiscard]] const Block & getColumnsSample() const override { return columns_sample; }
+    [[nodiscard]] const ColumnsSubstreams & getColumnsSubstreams() const override { return finished.columns_substreams; }
 
-    const MergedBlockOutputStream::FinishedColumns & getFinishedColumns() const { return finished; }
+    [[nodiscard]] const MergedBlockOutputStream::FinishedColumns & getFinishedColumns() const { return finished; }
 
 private:
     MergedBlockOutputStream::FinishedColumns finished;
@@ -380,7 +380,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     /// onto the per-user tracker permanently. Reset before the finalizer, which is the query's own work.
     /// Deliberately starts after `finalizePartOnDisk` above: the blocker is thread-wide and the block
     /// write must stay accounted.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    ServerOwnedMemoryScope not_charged_to_the_query;
 
     {
         /// The checksums map lives on the part for its whole lifetime: copy it into the part under the
@@ -550,13 +550,13 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         if (isFullPartStorage(new_part->getDataPartStorage()))
         {
-            auto out = serializeStatisticsPacked(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings);
+            auto out = serializeStatisticsPacked(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings, getStatisticsFileVersion(*new_part->storage.getSettings()));
             written_files.emplace_back(std::move(out));
         }
         /// Write statistics as separate compressed files in packed parts to avoid double buffering.
         else
         {
-            auto files = serializeStatisticsWide(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings);
+            auto files = serializeStatisticsWide(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings, getStatisticsFileVersion(*new_part->storage.getSettings()));
             std::move(files.begin(), files.end(), std::back_inserter(written_files));
         }
     }

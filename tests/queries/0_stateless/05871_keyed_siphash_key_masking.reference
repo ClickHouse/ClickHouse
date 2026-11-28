@@ -1,0 +1,20 @@
+-- The key (the first argument) of the keyed SipHash functions must not be visible in formatted or logged queries.
+
+-- { echoOn }
+EXPLAIN SYNTAX SELECT sipHash64Keyed((1311768467463790320::UInt64, 18364758544493064720::UInt64), number, 'visible_input') FROM numbers(1);
+SELECT sipHash64Keyed(\'[HIDDEN]\', number, \'visible_input\')\nFROM numbers(1)
+EXPLAIN SYNTAX SELECT sipHash128Keyed((1311768467463790320::UInt64, 18364758544493064720::UInt64), number, 'visible_input') FROM numbers(1);
+SELECT sipHash128Keyed(\'[HIDDEN]\', number, \'visible_input\')\nFROM numbers(1)
+EXPLAIN SYNTAX SELECT sipHash128ReferenceKeyed((1311768467463790320::UInt64, 18364758544493064720::UInt64), number, 'visible_input') FROM numbers(1);
+SELECT sipHash128ReferenceKeyed(\'[HIDDEN]\', number, \'visible_input\')\nFROM numbers(1)
+-- A key which is not a literal is hidden as well.
+EXPLAIN SYNTAX SELECT sipHash64Keyed((toUInt64(1311768467463790320), number + 18364758544493064720), 'visible_input') FROM numbers(1);
+SELECT sipHash64Keyed(\'[HIDDEN]\', \'visible_input\')\nFROM numbers(1)
+-- The functions without a key are not affected.
+EXPLAIN SYNTAX SELECT sipHash64((1311768467463790320::UInt64, 18364758544493064720::UInt64), 'visible_input');
+SELECT sipHash64(tuple(CAST(\'1311768467463790320\', \'UInt64\'), CAST(\'18364758544493064720\', \'UInt64\')), \'visible_input\')\nFROM system.one
+1
+SELECT sipHash128Keyed(\'[HIDDEN]\', \'logged_input_2\') FORMAT `Null`
+SELECT sipHash128ReferenceKeyed(\'[HIDDEN]\', \'logged_input_3\') FORMAT `Null`
+SELECT sipHash64Keyed(\'[HIDDEN]\', \'logged_input_1\') FORMAT `Null`
+0

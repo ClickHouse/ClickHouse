@@ -1,0 +1,16 @@
+-- grouped fsync of an insert hashes the file identity
+1
+-- second interval rounding before the epoch in a fractional-hour time zone
+1970-01-01 05:31:34	94
+-- windowFunnel with the maximum window
+2
+2
+2
+2
+-- memory estimate of the sorter with the maximum block size
+[0,2,1]
+-- count of Npy rows with the maximum block size
+3
+-- empty 'medium' state of quantilesTiming
+INCORRECT_DATA
+INCORRECT_DATA

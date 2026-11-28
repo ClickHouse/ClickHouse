@@ -58,6 +58,7 @@ protected:
         bool postpone_next_attempt = false;
     };
 
+    virtual ContextMutablePtr createTaskContext() const = 0;
     virtual PrepareResult prepare() = 0;
     virtual bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) = 0;
 
@@ -78,8 +79,8 @@ protected:
     ReplicatedMergeTreeLogEntry & entry;
     MergeList::EntryPtr merge_mutate_entry{nullptr};
     LoggerPtr log;
-    /// ProfileEvents for current part will be stored here
-    ProfileEvents::Counters profile_counters;
+    /// Collects the counters and the memory of all threads of the task, from its first step.
+    ThreadGroupPtr thread_group;
     ContextMutablePtr task_context;
 
 private:

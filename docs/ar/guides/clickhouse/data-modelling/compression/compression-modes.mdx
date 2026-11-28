@@ -2,7 +2,7 @@
 slug: /data-compression/compression-modes
 title: 'أوضاع الضغط'
 description: 'أوضاع ضغط الأعمدة في ClickHouse'
-keywords: ['الضغط', 'الترميز', 'الترميز', 'الأوضاع']
+keywords: ['الضغط', 'مرمِّز', 'الترميز', 'الأوضاع']
 doc_type: 'reference'
 ---
 
@@ -15,7 +15,7 @@ doc_type: 'reference'
 </Tip>
 
 <div id="modes">
-  ## الأنماط
+  ## الأنماط {#modes}
 </div>
 
 | القيمة | الاسم              | الوصف                              |
@@ -33,7 +33,7 @@ doc_type: 'reference'
 | **lz4** 1.9.2     | 2.1    | 740 MB/s | 4530 MB/s  |
 
 <div id="block">
-  ## كتلة
+  ## كتلة {#block}
 </div>
 
 | الحقل               | النوع   | الوصف                                                                                            |
@@ -45,13 +45,9 @@ doc_type: 'reference'
 | compressed&#95;data | binary  | كتلة بيانات مضغوطة                                                                               |
 
 <div className="ch-image-md">
-
-<Frame>
-
-![مخطط يوضح بنية كتلة الضغط في ClickHouse](/images/data-compression/ch_compression_block.webp)
-
-</Frame>
-
+  <Frame>
+    ![مخطط يوضح بنية كتلة الضغط في ClickHouse](/images/data-compression/ch_compression_block.webp)
+  </Frame>
 </div>
 
 الترويسة هي (raw&#95;size + data&#95;size + وضع)، والحجم الخام هو len(header + compressed&#95;data).
@@ -59,7 +55,7 @@ doc_type: 'reference'
 قيمة التحقق هي `hash(header + compressed_data)`، باستخدام [ClickHouse CityHash](/ar/resources/develop-contribute/native-protocol/hash).
 
 <div id="none-mode">
-  ## وضع None
+  ## وضع None {#none-mode}
 </div>
 
 إذا استُخدم وضع *None*، فإن `compressed_data` تكون مساوية للبيانات الأصلية.

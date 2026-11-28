@@ -33,7 +33,7 @@ public:
     void readString(String & str);
     void readStringAndAppend(PaddedPODArray<UInt8> & str);
 
-    bool eof() const { return in->eof(); }
+    [[nodiscard]] bool eof() const { return in->eof(); }
 
     void setReadBuffer(ReadBuffer & in_) { in = &in_; }
 
@@ -62,6 +62,7 @@ private:
     void ignoreVarint();
     void ignoreGroup();
     [[noreturn]] void throwUnknownFormat() const;
+    [[nodiscard]] Int64 addLengthToCursor(UInt64 length) const;
 
     ReadBuffer * in;
     Int64 cursor = 0;

@@ -42,7 +42,7 @@ public:
 
     void setNextBlock(ScatteredBlock && block);
 
-    std::optional<size_t> getMatchedRightRows() const override { return matched_right_rows; }
+    [[nodiscard]] std::optional<size_t> getMatchedRightRows() const override { return matched_right_rows; }
 
     ~HashJoinResult() override;
 private:

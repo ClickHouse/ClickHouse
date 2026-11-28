@@ -7,6 +7,9 @@
         DROP DICTIONARY IF EXISTS dict_const_path;
     </drop_query>
     <drop_query>
+        DROP DICTIONARY IF EXISTS dict_const_path_hashed_array;
+    </drop_query>
+    <drop_query>
         DROP TABLE IF EXISTS dict_src_const_path;
     </drop_query>
 
@@ -43,6 +46,23 @@
         LAYOUT(HASHED());
     </create_query>
 
+    <create_query>
+        CREATE DICTIONARY dict_const_path_hashed_array
+        (
+            id UInt64,
+            value     UInt32,
+            value_str String
+        )
+        PRIMARY KEY id
+        SOURCE(CLICKHOUSE(TABLE 'dict_src_const_path'))
+        LIFETIME(0)
+        LAYOUT(HASHED_ARRAY());
+    </create_query>
+
+    <create_query>
+        SYSTEM RELOAD DICTIONARY dict_const_path_hashed_array;
+    </create_query>
+
     <query>
         SELECT dictGetKeys('dict_const_path', 'value', 1) FORMAT NULL;
     </query>
@@ -65,8 +85,22 @@
         FORMAT NULL;
     </query>
 
+    <query>
+        SELECT dictGetKeys('dict_const_path_hashed_array', 'value', 1) FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT groupArray(id)
+        FROM dict_src_const_path
+        WHERE dictGetUInt32('dict_const_path_hashed_array', 'value', id) = 1
+        FORMAT NULL;
+    </query>
+
     <drop_query>
         DROP DICTIONARY IF EXISTS dict_const_path;
+    </drop_query>
+    <drop_query>
+        DROP DICTIONARY IF EXISTS dict_const_path_hashed_array;
     </drop_query>
     <drop_query>
         DROP TABLE IF EXISTS dict_src_const_path;

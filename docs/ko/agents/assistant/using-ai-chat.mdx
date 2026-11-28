@@ -1,0 +1,124 @@
+---
+slug: /use-cases/AI_ML/AIChat
+sidebarTitle: '개요'
+title: 'ClickHouse Cloud의 Assistant'
+description: 'ClickHouse Cloud 콘솔의 Assistant를 소개하고, 활성화 및 사용 방법을 알아봅니다'
+keywords: ['AI', 'ClickHouse Cloud', 'Chat', 'SQL Console', 'Agent', 'Docs AI']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+Assistant를 사용하면 자연어로 ClickHouse Cloud 서비스의 데이터를 분석할 수 있습니다. Assistant는 활성 탭, 저장된 쿼리(saved queries), 스키마(schemas), 대시보드 등의 컨텍스트를 활용하여 쿼리, 시각화, 요약을 생성합니다.
+
+또한 Assistant는 ClickHouse 문서를 근거로 질문에 답하는 Docs AI 모드도 제공합니다. 이 가이드에서는 ClickHouse Cloud 콘솔에서 Assistant를 활성화하고 두 모드를 모두 사용하는 방법을 설명합니다.
+
+<Steps>
+  <Step title="사전 요구 사항" id="prerequisites">
+    1. AI 기능이 활성화된 ClickHouse Cloud 조직에 액세스할 수 있어야 합니다(사용할 수 없는 경우 조직 관리자 또는 지원팀에 문의하십시오).
+  </Step>
+
+  <Step title="AI 채팅 패널 열기" id="open-panel">
+    1. ClickHouse Cloud 서비스로 이동합니다.
+    2. 왼쪽 사이드바에서 “Assistant” 레이블이 표시된 반짝임 아이콘을 클릭합니다.
+    3. (단축키) <kbd>⌘</kbd> + <kbd>&#39;</kbd> (macOS) 또는 <kbd>Ctrl</kbd> + <kbd>&#39;</kbd> (Linux/Windows)를 눌러 패널을 열거나 닫습니다.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![AI 채팅 플라이아웃 열기](/images/use-cases/AI_ML/AIChat/1_open_chat.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="데이터 사용 동의(최초 실행 시)" id="consent">
+    1. 처음 사용할 때 데이터 처리 방식과 서드파티 LLM 수탁자(sub-processor)에 대해 설명하는 동의 대화 상자가 표시됩니다.
+    2. 내용을 검토한 후 수락하면 계속 진행할 수 있습니다. 거부하면 패널이 열리지 않습니다.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![동의 대화 상자](/images/use-cases/AI_ML/AIChat/2_consent.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="채팅 모드 선택" id="modes">
+    AI 채팅은 현재 다음 모드를 지원합니다.
+
+    * **Agent**: 스키마(schema)와 메타데이터를 기반으로 한 다단계 추론(서비스가 활성 상태여야 함).
+    * **Docs AI (Ask)**: 공식 ClickHouse 문서와 모범 사례 자료를 기반으로 한 집중형 Q&amp;A.
+
+    플라이아웃 왼쪽 하단의 모드 셀렉터에서 모드를 전환할 수 있습니다.
+
+    <div className="ch-image-sm">
+      <Frame>
+        ![모드 선택](/images/use-cases/AI_ML/AIChat/3_modes.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="메시지 작성 및 전송" id="compose">
+    1. 질문을 입력합니다(예: “사용자별 일일 이벤트를 집계하는 materialized view를 생성해 줘”).
+    2. <kbd>Enter</kbd>를 눌러 전송합니다(줄을 바꾸려면 <kbd>Shift</kbd> + <kbd>Enter</kbd>를 누릅니다).
+    3. 모델이 처리 중일 때 “Stop”을 클릭하여 중단할 수 있습니다.
+  </Step>
+
+  <Step title="“Agent” 추론 단계 이해하기" id="thinking-steps">
+    Agent 모드에서는 펼쳐 볼 수 있는 중간 “추론” 또는 계획 단계가 표시될 수 있습니다. 이를 통해 어시스턴트가 답변을 도출하는 과정을 투명하게 확인할 수 있습니다. 필요에 따라 접거나 펼치십시오.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![추론 단계](/images/use-cases/AI_ML/AIChat/4_thinking.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="새 채팅 시작" id="new-chats">
+    “New Chat” 버튼을 클릭하면 컨텍스트가 초기화되고 새 세션이 시작됩니다.
+  </Step>
+
+  <Step title="채팅 이력 보기" id="history">
+    1. 하단 영역에 최근 채팅 목록이 표시됩니다.
+    2. 이전 채팅을 선택하면 해당 메시지를 불러옵니다.
+    3. 휴지통 아이콘을 클릭하여 대화를 삭제합니다.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![채팅 이력 목록](/images/use-cases/AI_ML/AIChat/5_history.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="생성된 SQL 활용하기" id="sql-actions">
+    어시스턴트가 SQL을 반환하면 다음을 수행합니다.
+
+    * 정확성을 검토합니다.
+    * “Open in editor”를 클릭하여 쿼리를 새 SQL 탭에 불러옵니다.
+    * 콘솔에서 수정하고 실행합니다.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![결과 작업](/images/use-cases/AI_ML/AIChat/6_result_actions.webp)
+      </Frame>
+    </div>
+
+    <div className="ch-image-md">
+      <Frame>
+        ![생성된 쿼리를 편집기에서 열기](/images/use-cases/AI_ML/AIChat/7_open_in_editor.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="응답 중지 또는 중단" id="interrupt">
+    응답이 너무 오래 걸리거나 의도와 다르게 진행되는 경우:
+
+    1. “Stop” 버튼을 클릭합니다(처리 중에만 표시됨).
+    2. 메시지가 중단됨으로 표시되며, 프롬프트를 수정하여 다시 전송할 수 있습니다.
+  </Step>
+
+  <Step title="키보드 단축키" id="shortcuts">
+    | 작업       | 단축키                  |
+    | -------- | -------------------- |
+    | AI 채팅 열기 | `⌘ + '` / `Ctrl + '` |
+    | 메시지 전송   | `Enter`              |
+    | 줄 바꿈     | `Shift + Enter`      |
+  </Step>
+</Steps>

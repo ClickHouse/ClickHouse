@@ -8,7 +8,7 @@ doc_type: 'reference'
 ---
 
 <div id="prerequisites">
-  ## Pré-requisitos
+  ## Pré-requisitos {#prerequisites}
 </div>
 
 Para os exemplos deste artigo, você precisará de:
@@ -52,13 +52,9 @@ Depois de executar uma consulta com sucesso, aparece um botão de download que p
 A interface web foi projetada para profissionais como você.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![captura de tela da interface web do ClickHouse](/images/play.webp)
-
-</Frame>
-
+  <Frame>
+    ![captura de tela da interface web do ClickHouse](/images/play.webp)
+  </Frame>
 </div>
 
 Em scripts de verificação de integridade, use a requisição `GET /ping`. Este handler sempre retorna &quot;Ok.&quot; (com uma quebra de linha no final). Disponível a partir da versão 18.12.13. Veja também `/replicas_status` para verificar o atraso da réplica.
@@ -71,7 +67,7 @@ Ok.
 ```
 
 <div id="querying">
-  ## Consultas por HTTP/HTTPS
+  ## Consultas por HTTP/HTTPS {#querying}
 </div>
 
 Para fazer consultas por HTTP/HTTPS, há três opções:
@@ -294,8 +290,7 @@ curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
 curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
 ```
 
-<a id="modify-an-existing-query" />
-#### Modificar uma consulta existente
+#### Modificar uma consulta existente {#modify-an-existing-query}
 
 As configurações de construção não se limitam a solicitações de caminho: elas também moldam uma consulta que você mesmo escreve. A consulta se torna a tabela derivada; portanto, as configurações se aplicam ao resultado dela, em vez de serem incorporadas a ela. Por exemplo, `?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10` é executada como:
 
@@ -330,8 +325,7 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
   `filter` não é um mecanismo de controle de acesso. Ele adiciona uma cláusula `WHERE` a uma subconsulta envolvente, portanto os dados subjacentes podem ser lidos e processados antes da aplicação do filtro. Para restringir as linhas que um usuário pode acessar, use [políticas de linha](/pt-BR/concepts/features/security/access-rights#row-policy-management) ou [`additional_table_filters`](/pt-BR/reference/settings/session-settings/additional#additional_table_filters).
 </Warning>
 
-<a id="format-and-compression-overrides" />
-### Substituição de formatos e compressão
+### Substituição de formatos e compressão {#format-and-compression-overrides}
 
 | Configuração     | Efeito                                                                                                                                                                                                                                                                                                                                                        |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -347,8 +341,7 @@ As configurações de formato também funcionam com outros protocolos, incluindo
 
 Respostas HTTP binárias e comprimidas incluem um cabeçalho `Content-Disposition: attachment; filename=…`. O nome do arquivo é derivado do caminho da URL ou usa `result.<format>.<compression>` quando o caminho não fornece um nome.
 
-<a id="implicit-table" />
-### Use uma tabela no caminho com uma consulta
+### Use uma tabela no caminho com uma consulta {#implicit-table}
 
 Quando o caminho identifica uma tabela e você também fornece um parâmetro `query`, a tabela no caminho é exposta por [`implicit_table_at_top_level`](/pt-BR/reference/settings/session-settings/implicit#implicit_table_at_top_level). Um `SELECT` sem uma cláusula `FROM` lê a tabela no caminho:
 
@@ -359,14 +352,44 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 
 Se a consulta já contiver uma cláusula `FROM`, o componente do caminho fornecerá apenas o nome do arquivo a ser baixado.
 
+### Enviar dados para uma tabela no caminho {#path-table-inserts}
+
+Uma requisição HTTP `PUT` para `/database/table.format` insere o corpo da requisição em uma tabela existente. Por padrão, a extensão do caminho define o formato de entrada. Assim como em um `INSERT` comum, a configuração `input_format` tem precedência sobre o formato do caminho, seguida pela configuração bidirecional `format`. A requisição deve conter pelo menos um byte decodificado e não pode incluir o parâmetro `query`. Isso é útil quando o nome do arquivo já contém tanto a tabela de destino quanto o formato de entrada:
+
+```bash
+printf '1,"one"\n2,"two"\n' \
+  | curl -X PUT -H 'Content-Type: text/csv' --data-binary @- \
+      'http://localhost:8123/my_db/hits.CSV'
+
+printf '{"a":3,"b":"three"}\n' \
+  | curl -X PUT -H 'Content-Type: application/json' --data-binary @- \
+      'http://localhost:8123/my_db/hits.JSONEachRow'
+```
+
+A tabela já deve existir. Para um envio com prefixo de banco de dados, `http_allow_database_as_path` habilita o
+caminho `/database/table.format`. Um envio não qualificado para `/table.format` continua exigindo
+`http_allow_table_as_file`. O corpo da requisição pode usar um sufixo de compressão, como `.CSV.gz`; o servidor
+o descomprime antes de inserir as linhas. Envios `PUT` para tabelas no caminho seguem a semântica normal de `INSERT`; portanto, repetir
+a mesma requisição pode inserir as linhas novamente. Criação automática, inferência de esquema e upload em múltiplas partes não são
+compatíveis. Use a forma padrão de [`INSERT` via HTTP](#insert-queries) quando for necessário personalizar o comportamento da consulta ou do envio.
+
+O componente de caminho final é decodificado por porcentagem após a divisão do caminho; portanto, um ponto de formato codificado, como
+`hits%2ECSV`, também é aceito.
+
+```bash
+# The path suffix describes the compressed request body.
+gzip -c rows.csv \
+  | curl -X PUT --data-binary @- \
+      'http://localhost:8123/my_db/hits.CSV.gz'
+```
+
 <div id="insert-queries">
-  ## Consultas `INSERT` via HTTP/HTTPS
+  ## Consultas `INSERT` via HTTP/HTTPS {#insert-queries}
 </div>
 
-O método `POST` de transmissão de dados é necessário para consultas `INSERT`. Nesse caso, você pode escrever o início da consulta no parâmetro da URL e usar o POST para enviar os dados a serem inseridos. Os dados a serem inseridos podem ser, por exemplo, um dump do MySQL separado por tabulações. Dessa forma, a consulta `INSERT` substitui o `LOAD DATA LOCAL INFILE` do MySQL.
+O método tradicional `POST` de transmissão de dados é útil quando a consulta precisa ser fornecida explicitamente. Você pode escrever o início da consulta no parâmetro da URL e usar o POST para enviar os dados a serem inseridos. Os dados a serem inseridos podem ser, por exemplo, um dump do MySQL separado por tabulações. Dessa forma, a consulta `INSERT` substitui o `LOAD DATA LOCAL INFILE` do MySQL.
 
-<a id="examples" />
-### Exemplos
+### Exemplos {#examples}
 
 Para criar uma tabela:
 
@@ -452,8 +475,7 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 Para requisições bem-sucedidas que não retornam uma tabela de dados, retorna-se um corpo de resposta vazio.
 
-<a id="insert-protobuf" />
-### Inserir dados Protobuf
+### Inserir dados Protobuf {#insert-protobuf}
 
 Formatos binários como [`Protobuf`](/pt-BR/reference/formats/Protobuf/Protobuf) são enviados da mesma forma, já que `--data-binary` repassa os bytes sem alterações.
 As configurações exigidas pelo formato, como [`format_schema`](/pt-BR/reference/settings/formats/format-schema#format_schema), são passadas como parâmetros de URL junto com `query`, assim como qualquer outra configuração.
@@ -510,8 +532,7 @@ Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
 O formato `Protobuf` espera que cada mensagem seja precedida pelo seu comprimento, codificado como varint.
 Para uma única mensagem sem o prefixo, use [`ProtobufSingle`](/pt-BR/reference/formats/Protobuf/ProtobufSingle); para linhas enviadas como submensagens de uma única mensagem `Envelope`, use [`ProtobufList`](/pt-BR/reference/formats/Protobuf/ProtobufList).
 
-<a id="compression" />
-## Compressão
+## Compressão {#compression}
 
 A compressão pode ser usada para reduzir o tráfego de rede ao transmitir grandes volumes de dados ou para criar dumps já comprimidos.
 
@@ -543,7 +564,7 @@ Você pode configurar o nível de compressão dos dados usando a configuração 
 </Info>
 
 <div id="examples-compression">
-  ## Exemplos
+  ## Exemplos {#examples-compression}
 </div>
 
 Para enviar dados compactados ao servidor:
@@ -576,7 +597,7 @@ curl -sS "http://localhost:8123/?enable_http_compression=1" \
 ```
 
 <div id="default-database">
-  ## Banco de dados padrão
+  ## Banco de dados padrão {#default-database}
 </div>
 
 Você pode usar o parâmetro `database` na URL ou o cabeçalho `X-ClickHouse-Database` para especificar o banco de dados padrão.
@@ -598,7 +619,7 @@ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?databa
 Por padrão, o banco de dados registrado nas configurações do servidor é usado como banco de dados padrão. Por padrão, esse é o banco de dados chamado `default`. Como alternativa, você sempre pode especificar o banco de dados usando um ponto antes do nome da tabela.
 
 <div id="authentication">
-  ## Autenticação
+  ## Autenticação {#authentication}
 </div>
 
 O nome de usuário e a senha podem ser informados de uma destas três formas:
@@ -659,8 +680,7 @@ Para mais informações, consulte:
 * [Configurações](/pt-BR/reference/settings/session-settings)
 * [SET](/pt-BR/reference/statements/set)
 
-<a id="using-clickhouse-sessions-in-the-http-protocol" />
-## Uso de sessões do ClickHouse no protocolo HTTP
+## Uso de sessões do ClickHouse no protocolo HTTP {#using-clickhouse-sessions-in-the-http-protocol}
 
 Você também pode usar sessões do ClickHouse no protocolo HTTP. Para isso, é necessário adicionar o parâmetro `GET` `session_id` à requisição. Você pode usar qualquer string como ID da sessão.
 
@@ -701,8 +721,7 @@ Existem os seguintes parâmetros opcionais:
 
 A interface HTTP permite passar dados externos (tabelas temporárias externas) para consulta. Para mais informações, consulte [&quot;Dados externos para processamento de consultas&quot;](/pt-BR/reference/engines/table-engines/special/external-data).
 
-<a id="response-buffering" />
-## Bufferização de resposta
+## Bufferização de resposta {#response-buffering}
 
 A bufferização de resposta pode ser habilitada no lado do servidor. Os seguintes parâmetros de URL são fornecidos para essa finalidade:
 
@@ -728,25 +747,24 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
   Use bufferização para evitar situações em que ocorra um erro no processamento da consulta depois que o código de resposta e os cabeçalhos HTTP forem enviados ao cliente. Nessa situação, uma mensagem de erro é gravada no final do corpo da resposta e, no lado do cliente, o erro só pode ser detectado na etapa de parsing.
 </Tip>
 
-<a id="setting-role-with-query-parameters" />
-## Definindo uma role com parâmetros de consulta
+## Definindo uma função com parâmetros de consulta {#setting-role-with-query-parameters}
 
-Este recurso foi adicionado ao ClickHouse 24.4.
+Esta funcionalidade foi adicionada no ClickHouse 24.4.
 
-Em cenários específicos, pode ser necessário definir primeiro a role concedida antes de executar a própria instrução.
+Em determinados cenários, pode ser necessário definir primeiro a função concedida antes de executar a instrução propriamente dita.
 No entanto, não é possível enviar `SET ROLE` e a instrução juntos, pois múltiplas instruções não são permitidas:
 
 ```bash
 curl -sS "http://localhost:8123" --data-binary "SET ROLE my_role;SELECT * FROM my_table;"
 ```
 
-O comando acima resulta em um erro:
+O comando acima gera um erro:
 
 ```sql
 Code: 62. DB::Exception: Syntax error (Multi-statements are not allowed)
 ```
 
-Para contornar essa limitação, use o parâmetro de consulta `role`:
+Para contornar essa limitação, use o parâmetro de consulta `role` em vez disso:
 
 ```bash
 curl -sS "http://localhost:8123?role=my_role" --data-binary "SELECT * FROM my_table;"
@@ -760,12 +778,11 @@ Além disso, é possível especificar vários parâmetros de consulta `role`:
 curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "SELECT * FROM my_table;"
 ```
 
-Neste caso, `?role=my_role&role=my_other_role` equivale a executar `SET ROLE my_role, my_other_role` antes da instrução.
+Nesse caso, `?role=my_role&role=my_other_role` funciona de forma semelhante a executar `SET ROLE my_role, my_other_role` antes da instrução.
 
 O parâmetro de consulta `role` não é afetado pela configuração do servidor `access_control_improvements.readonly_restricts_set_role`, que bloqueia apenas a instrução `SET ROLE`.
 
-<a id="http_response_codes_caveats" />
-## Ressalvas sobre códigos de resposta HTTP
+## Ressalvas sobre códigos de resposta HTTP {#http_response_codes_caveats}
 
 Devido às limitações do protocolo HTTP, um código de resposta HTTP 200 não garante que uma consulta tenha sido bem-sucedida.
 
@@ -857,13 +874,13 @@ __exception__
 ```
 
 <div id="cli-queries-with-parameters">
-  ## Consultas com parâmetros
+  ## Consultas com parâmetros {#cli-queries-with-parameters}
 </div>
 
 Você pode criar uma consulta com parâmetros e informar os valores deles por meio dos parâmetros correspondentes da solicitação HTTP. Para mais informações, consulte [Consultas com parâmetros para CLI](/pt-BR/concepts/features/interfaces/client#cli-queries-with-parameters).
 
 <div id="example-3">
-  ### Exemplo
+  ### Exemplo {#example-3}
 </div>
 
 ```bash
@@ -871,7 +888,7 @@ $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHER
 ```
 
 <div id="tabs-in-url-parameters">
-  ### Tabulações em parâmetros de URL
+  ### Tabulações em parâmetros de URL {#tabs-in-url-parameters}
 </div>
 
 Os parâmetros de consulta são interpretados a partir do formato &quot;escaped&quot;. Isso traz alguns benefícios, como a possibilidade de interpretar valores nulos sem ambiguidade como `\N`. Isso significa que o caractere de tabulação deve ser codificado como `\t` (ou `\` seguido de uma tabulação). Por exemplo, o trecho a seguir contém uma tabulação real entre `abc` e `123`, e a string de entrada é dividida em dois valores:
@@ -901,22 +918,21 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 ['abc','123']
 ```
 
-<a id="predefined_http_interface" />
-## Interface HTTP predefinida
+## Interface HTTP Predefinida {#predefined_http_interface}
 
-O ClickHouse suporta consultas específicas por meio da interface HTTP. Por exemplo, você pode gravar dados em uma tabela da seguinte forma:
+O ClickHouse oferece suporte a consultas específicas por meio da interface HTTP. Por exemplo, você pode gravar dados em uma tabela da seguinte forma:
 
 ```bash
 $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
-O ClickHouse também oferece suporte a uma Interface HTTP predefinida, o que pode facilitar a integração com ferramentas de terceiros, como o [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter). Vamos ver um exemplo.
+O ClickHouse também oferece suporte a uma Interface HTTP Predefinida, que facilita a integração com ferramentas de terceiros, como o [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter). Vejamos um exemplo.
 
-Os mesmos manipuladores também podem ser definidos via SQL, sem precisar editar o arquivo de configuração do servidor — consulte [`CREATE HANDLER`](/pt-BR/reference/statements/create/handler).
+Os mesmos manipuladores também podem ser definidos via SQL, sem editar o arquivo de configuração do servidor — consulte [`CREATE HANDLER`](/pt-BR/reference/statements/create/handler).
 
-Antes de mais nada, adicione esta seção ao arquivo de configuração do servidor.
+Primeiro, adicione esta seção ao arquivo de configuração do servidor.
 
-`http_handlers` é configurado para conter várias `rule`. O ClickHouse faz a correspondência entre as requisições HTTP recebidas e o tipo predefinido em `rule`, e a primeira regra correspondente executa o manipulador. Em seguida, o ClickHouse executa a consulta predefinida correspondente se a correspondência for bem-sucedida.
+`http_handlers` é configurado para conter vários `rule`. O ClickHouse compara as requisições HTTP recebidas com o tipo predefinido em `rule`, e a primeira regra correspondente executa o manipulador. Em seguida, se houver correspondência, o ClickHouse executa a consulta predefinida correspondente.
 
 ```yaml title="config.xml"
 <http_handlers>
@@ -933,7 +949,7 @@ Antes de mais nada, adicione esta seção ao arquivo de configuração do servid
 </http_handlers>
 ```
 
-Agora você pode fazer uma solicitação diretamente à URL para obter dados no formato Prometheus:
+Agora você pode fazer uma requisição diretamente à URL para obter dados no formato Prometheus:
 
 ```bash
 $ curl -v 'http://localhost:8123/predefined_query'
@@ -983,7 +999,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 As opções de configuração de `http_handlers` funcionam da seguinte forma.
 
-`rule` pode configurar os seguintes parâmetros:
+Em `rule`, é possível configurar os seguintes parâmetros:
 
 * `method`
 * `headers`
@@ -991,7 +1007,7 @@ As opções de configuração de `http_handlers` funcionam da seguinte forma.
 * `full_url`
 * `handler`
 
-Cada um deles é explicado abaixo:
+Cada um deles é descrito a seguir:
 
 * `method` é responsável por corresponder à parte do método da requisição HTTP. `method` está totalmente em conformidade com a definição de [`method`]
   (https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) no protocolo HTTP. É uma configuração opcional. Se não estiver definido no
@@ -1031,8 +1047,7 @@ Cada um deles é explicado abaixo:
 
 Os métodos de configuração para diferentes `type`s são discutidos a seguir.
 
-<a id="predefined_query_handler" />
-### predefined_query_handler
+### predefined_query_handler {#predefined_query_handler}
 
 `predefined_query_handler` oferece suporte à definição de valores de `Settings` e `query_params`. Você pode configurar `query` para o tipo `predefined_query_handler`.
 
@@ -1073,12 +1088,11 @@ max_final_threads    2
 max_threads    1
 ```
 
-<div id="virtual-param-request-body">
-  #### Parâmetro virtual `_request_body`
-</div>
+#### Parâmetro virtual `_request_body` {#virtual-param-request-body}
 
 Além dos parâmetros de URL, cabeçalhos e parâmetros de consulta, `predefined_query_handler` oferece suporte a um parâmetro virtual especial, `_request_body`.
 Ele contém o corpo bruto da requisição HTTP como uma string.
+Ele é sempre vinculado a partir do corpo da requisição: passar `_request_body` (ou `param__request_body`) na URL, ou capturá-lo com um grupo nomeado das expressões regulares de `url` ou `headers`, resulta em rejeição com uma exceção. Um `_request_body` definido em uma sessão nomeada (`SET param__request_body = ...`) é ignorado.
 Isso permite criar APIs REST flexíveis que podem aceitar formatos de dados arbitrários e processá-los nas suas consultas.
 
 Por exemplo, você pode usar `_request_body` para implementar um endpoint REST que aceita dados JSON em uma requisição POST e os insere em uma tabela:
@@ -1109,11 +1123,10 @@ curl -X POST 'http://localhost:8123/api/events?id=123' \
 ```
 
 <Note>
-  Em um `predefined_query_handler`, apenas uma `consulta` é compatível.
+  Em um `predefined_query_handler`, apenas uma `query` é compatível.
 </Note>
 
-<a id="dynamic_query_handler" />
-### dynamic_query_handler
+### dynamic_query_handler {#dynamic_query_handler}
 
 Em `dynamic_query_handler`, a consulta é escrita como um parâmetro da requisição HTTP. A diferença é que, em `predefined_query_handler`, a consulta é escrita no arquivo de configuração. `query_param_name` pode ser configurado em `dynamic_query_handler`.
 
@@ -1143,9 +1156,7 @@ max_threads 1
 max_final_threads   2
 ```
 
-<div id="static">
-  ### static
-</div>
+### static {#static}
 
 `static` pode retornar [`content_type`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [status](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) e `response_content`. `response_content` pode retornar o conteúdo especificado.
 
@@ -1222,7 +1233,7 @@ Say Hi!%
 Encontre o conteúdo da configuração enviada ao cliente.
 
 ```yaml
-<get_config_static_handler><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></get_config_static_handler>
+<get_config_static_handler><![CDATA[<html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>]]></get_config_static_handler>
 
 <http_handlers>
         <rule>
@@ -1256,10 +1267,10 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
 <
 * Connection #0 to host localhost left intact
-<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
+<html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>%
 ```
 
-Para encontrar o conteúdo do arquivo enviado ao cliente:
+Para obter o conteúdo do arquivo enviado ao cliente:
 
 ```yaml
 <http_handlers>
@@ -1337,7 +1348,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="redirect">
-  ### redirect
+  ### redirect {#redirect}
 </div>
 
 `redirect` fará um redirecionamento `302` para `location`
@@ -1360,7 +1371,7 @@ Por exemplo, veja como adicionar automaticamente set user ao `play` do ClickHous
 ```
 
 <div id="http-response-headers">
-  ## Cabeçalhos de resposta HTTP
+  ## Cabeçalhos de resposta HTTP {#http-response-headers}
 </div>
 
 O ClickHouse permite configurar cabeçalhos de resposta HTTP personalizados que podem ser aplicados a qualquer tipo de handler configurável. Esses cabeçalhos podem ser definidos usando a configuração `http_response_headers`, que aceita pares chave-valor que representam nomes de cabeçalhos e seus respectivos valores. Esse recurso é especialmente útil para implementar cabeçalhos de segurança personalizados, políticas de CORS ou quaisquer outros requisitos de cabeçalhos HTTP em toda a interface HTTP do ClickHouse.
@@ -1397,8 +1408,7 @@ No exemplo abaixo, toda resposta do servidor conterá dois cabeçalhos personali
 </clickhouse>
 ```
 
-<a id="valid-output-on-exception-http-streaming" />
-## Resposta JSON/XML válida em caso de exceção durante HTTP streaming
+## Resposta JSON/XML válida em caso de exceção durante HTTP streaming {#valid-output-on-exception-http-streaming}
 
 Durante a execução da consulta por HTTP, pode ocorrer uma exceção quando parte dos dados já tiver sido enviada. Normalmente, a exceção é enviada ao cliente em texto simples.
 Mesmo que tenha sido usado um formato de dados específico para a saída, ela pode acabar se tornando inválida em relação ao formato especificado.

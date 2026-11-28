@@ -6,9 +6,7 @@ keywords: ['クォータ', 'クエリ複雑度']
 description: 'クォータとクエリ複雑度は、ClickHouse でユーザーが実行できる操作を制限・制御するための強力な手段です。この KB 記事では、これら 2 つの異なるアプローチの適用例を紹介します。'
 ---
 
-<div id="about-quotas-and-query-complexity">
-  ## クォータとクエリ複雑度について
-</div>
+## クォータとクエリ複雑度について {#about-quotas-and-query-complexity}
 
 [クォータ](/ja/concepts/features/configuration/server-config/quotas) と [クエリ複雑度](/ja/concepts/features/configuration/settings/query-complexity) は、ClickHouse でユーザーが実行できる操作を制限するための強力な手段です。
 
@@ -16,9 +14,7 @@ description: 'クォータとクエリ複雑度は、ClickHouse でユーザー�
 
 この KB 記事では、これら 2 つの異なるアプローチの適用例を紹介します。
 
-<div id="the-sample-data">
-  ## サンプルデータ
-</div>
+## サンプルデータ {#the-sample-data}
 
 これらの例では、次のシンプルなサンプルテーブルを使用します。
 
@@ -70,9 +66,7 @@ clickhouse-cloud :) SELECT * FROM default.test_table_00006488 LIMIT 5
 -- 5 rows in set. Elapsed: 0.003 sec.
 ```
 
-<div id="using-quotas">
-  ## クォータを使用する
-</div>
+## クォータを使用する {#using-quotas}
 
 この例では、10 秒ごとに取得できる結果行を 10 行までに制限する Quota を適用するロールを作成します。
 
@@ -136,7 +130,7 @@ clickhouse-cloud :) CREATE QUOTA quota_max_10_result_rows_per_10_seconds FOR INT
 次に、`user_with_quota` ユーザーとしてログインします
 
 ```sql
--- ロールを通じてクォータが適用されているユーザーとしてログインする
+-- login as the user where quota is applied through the role
 clickhouse-cloud :) SELECT user()
 
 -- SELECT user()
@@ -149,7 +143,7 @@ clickhouse-cloud :) SELECT user()
 
 -- 1 row in set. Elapsed: 0.002 sec.
 
--- 権限の一覧を表示する
+-- list grants
 clickhouse-cloud :) SHOW GRANTS
 
 -- SHOW GRANTS
@@ -162,7 +156,7 @@ clickhouse-cloud :) SHOW GRANTS
 
 -- 1 row in set. Elapsed: 0.001 sec.
 
--- 時刻を確認する
+-- check the time
 clickhouse-cloud :) select now()
 
 -- SELECT now()
@@ -175,7 +169,7 @@ clickhouse-cloud :) select now()
 
 -- 1 row in set. Elapsed: 0.001 sec.
 
--- 10行をクエリする
+-- query ten rows
 clickhouse-cloud :) SELECT * FROM test_table LIMIT 10
 
 -- SELECT *
@@ -199,7 +193,7 @@ clickhouse-cloud :) SELECT * FROM test_table LIMIT 10
 
 -- 10 rows in set. Elapsed: 0.002 sec.
 
--- 直前のクエリから10秒以内に別の行を取得しようとする
+-- attempt to get another row within the 10 seconds interval since the last query
 clickhouse-cloud :) SELECT * FROM test_table LIMIT 1
 
 -- SELECT *
@@ -210,11 +204,11 @@ clickhouse-cloud :) SELECT * FROM test_table LIMIT 1
 
 -- 0 rows in set. Elapsed: 0.094 sec.
 
--- サーバーから例外を受信しました（バージョン 23.8.1）:
+-- Received exception from server (version 23.8.1):
 -- Code: 201. DB::Exception: Received from dxqjx1s5lt.eu-west-1.aws.clickhouse.cloud:9440. DB::Exception: Quota for user `user_with_quota` for 10s has been exceeded: result_rows = 11/10. 
 -- Interval will end at 2023-10-25 14:37:50. Name of quota template: `quota_max_10_result_rows_per_10_seconds`. (QUOTA_EXCEEDED)
 
--- 時刻を確認する
+-- check the time
 clickhouse-cloud :) select now()
 
 -- SELECT now()
@@ -230,9 +224,7 @@ clickhouse-cloud :) select now()
 
 ユーザーが新たに10行の結果セットの「割り当て枠」を取得できるようになるまで、さらに5秒待つ必要がある点に注意してください。
 
-<div id="using-query-complexity">
-  ## クエリ複雑度を使用する
-</div>
+## クエリ複雑度を使用する {#using-query-complexity}
 
 この例では、各クエリで返される行数を 1 行のみに制限する クエリ複雑度 `SETTING` を適用するロールを作成します。
 

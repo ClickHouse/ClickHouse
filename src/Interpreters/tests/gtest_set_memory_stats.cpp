@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/tests/gtest_disk.h>
-#include <Interpreters/DiskSet.h>
+#include <Interpreters/DiskSet/DiskSet.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <QueryPipeline/SizeLimits.h>

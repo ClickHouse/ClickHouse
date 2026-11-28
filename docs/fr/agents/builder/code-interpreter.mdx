@@ -1,0 +1,65 @@
+---
+sidebarTitle: 'Interpréteur de code'
+slug: /agents/builder/code-interpreter
+title: 'Interpréteur de code'
+description: 'Exécution de code en sandbox dans ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'code interpreter', 'sandbox', 'python']
+doc_type: 'reference'
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+L&#39;interpréteur de code permet à un agent d&#39;exécuter du code dans une sandbox gérée. Utilisez-le pour les calculs, la transformation de données, la conversion de formats, la création de graphiques et toute autre tâche qui s&#39;accomplit mieux avec du code qu&#39;en langage naturel.
+
+## Activer l’interpréteur de code {#enable-it}
+
+Dans le Créateur d’agents, activez **Run Code** dans la section **Capabilities**, puis enregistrez. L’agent détermine quand exécuter du code en fonction de la requête de l’utilisateur et de ses propres instructions.
+
+<div className="ch-image-sm">
+  <Frame>
+    ![Section Run Code du panneau Capabilities, avec la case Run Code cochée et un bouton Upload to Code Environment](/images/cloud/agent-builder/run-code/run-code.webp)
+  </Frame>
+</div>
+
+## Langages pris en charge {#supported-languages}
+
+La sandbox est un environnement Unix doté de deux environnements d’exécution génériques et de quelques utilitaires shell :
+
+* **Python 3** : le choix par défaut pour les tâches de traitement de données.
+* **Node.js (JavaScript)** : lorsqu’un agent préfère JS pour la tâche.
+* **Bash** et **sh** : scripts shell pour enchaîner des commandes et effectuer des E/S rapides.
+* **AWK** et **sed** : traitement de texte ligne par ligne.
+* **bc** : calcul en précision arbitraire.
+
+Les agents privilégient Python pour tout ce qui touche à l’analyse, à la transformation ou au calcul de données.
+
+<Tip>
+  Réservez les outils shell aux tâches qui gagnent réellement à être traitées par une commande d’une seule ligne.
+</Tip>
+
+## Fichiers {#files}
+
+Les utilisateurs peuvent téléverser des fichiers dans une conversation ; l&#39;interpréteur de code peut y accéder depuis le répertoire de travail de la sandbox. Le code peut également générer des fichiers de sortie (CSV, graphiques, archives), qui apparaissent dans la conversation sous forme de pièces jointes téléchargeables.
+
+## Isolation du sandbox {#sandbox-isolation}
+
+Chaque exécution s&#39;effectue dans un sandbox éphémère, sans accès réseau ni stockage persistant. Les sessions ne partagent aucun état : les variables et les fichiers d&#39;une exécution ne sont pas conservés pour la suivante, sauf si l&#39;agent les recharge explicitement.
+
+Des limites de ressources propres à chaque offre s&#39;appliquent (mémoire, fichiers par exécution, quotas mensuels de requêtes). Les erreurs et la sortie stderr s&#39;affichent dans la conversation, aux côtés de stdout.
+
+## Quand l’utiliser {#when-to-use-it}
+
+Faites appel à l’interpréteur de code lorsque la réponse exige un calcul déterministe qu’un modèle de langage ne peut pas produire de manière fiable par le seul raisonnement.
+Exemples d’utilisation courants :
+
+* Analyser un fichier CSV ou JSON téléversé par l’utilisateur.
+* Calculer des statistiques descriptives ou exécuter une simulation rapide.
+* Convertir des données d’un format à un autre (Parquet, JSON, CSV).
+* Générer un graphique à partir des résultats d’une requête.
+
+<Tip>
+  Évitez de l’utiliser pour des tâches auxquelles le modèle peut déjà répondre à partir du contexte.
+  L’exécution de code augmente la latence et consomme du quota.
+</Tip>

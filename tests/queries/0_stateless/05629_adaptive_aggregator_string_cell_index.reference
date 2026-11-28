@@ -1,0 +1,16 @@
+string key, no freeze
+1
+FixedString key, every table frozen
+1
+string key, frozen table with thawed two-level tables
+1
+string key, no table frozen, top-K by uniqExact
+37	300
+36	292
+35	284
+34	276
+33	268
+fixed_frozen	1	1	0	1	0
+no_freeze	1	0	0	1	0
+thawed	1	1	1	1	0
+topk_uniq	1	0	0	1	1

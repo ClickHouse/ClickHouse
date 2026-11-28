@@ -426,7 +426,7 @@ public:
     {
     }
 
-    String getName() const override { return "ReadFromStorageKafka2"; }
+    [[nodiscard]] String getName() const override { return "ReadFromStorageKafka2"; }
 
 private:
     Pipe makePipe() final
@@ -560,7 +560,7 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
     auto payload_split = StorageKafkaUtils::splitPayloadColumns(header, map_virtual_columns_on_write);
 
     auto producer = std::make_unique<KafkaProducer>(
-        std::make_shared<cppkafka::Producer>(conf), topics[0], std::chrono::milliseconds(poll_timeout), shutdown_called, header, map_virtual_columns_on_write);
+        std::move(conf), topics[0], std::chrono::milliseconds(poll_timeout), shutdown_called, header, map_virtual_columns_on_write);
 
     LOG_TRACE(log, "Kafka producer created");
 
@@ -1070,7 +1070,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                     result_columns[i]->rollback(*checkpoints[i]);
 
                     // all data columns will get default value in case of error
-                    result_columns[i]->insertDefault();
+                    non_virtual_header.getByPosition(i).type->insertDefaultInto(*result_columns[i]);
                 }
                 return 1;
             }

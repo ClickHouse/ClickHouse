@@ -35,17 +35,18 @@ SELECT '=== partition pruning by a boolean literal';
 -- every file of the table to the matching partitions only. A pruner that does not recognize the
 -- `Bool` literal returns the same rows, but keeps reading every file, so the rows alone prove
 -- nothing and `EngineFileLikeReadFiles` is asserted below.
+-- The query condition cache would skip the files an earlier query found to have no match.
 SELECT f_int_nn
 FROM paimonS3(s3_conn, filename = 'paimon_all_types')
 WHERE f_boolean = false
 ORDER BY f_int_nn
-SETTINGS use_paimon_partition_pruning = 0, log_comment = '05137_pruning_off';
+SETTINGS use_paimon_partition_pruning = 0, use_query_condition_cache = 0, log_comment = '05137_pruning_off';
 
 SELECT f_int_nn
 FROM paimonS3(s3_conn, filename = 'paimon_all_types')
 WHERE f_boolean = false
 ORDER BY f_int_nn
-SETTINGS use_paimon_partition_pruning = 1, log_comment = '05137_pruning_on';
+SETTINGS use_paimon_partition_pruning = 1, use_query_condition_cache = 0, log_comment = '05137_pruning_on';
 
 SYSTEM FLUSH LOGS query_log;
 

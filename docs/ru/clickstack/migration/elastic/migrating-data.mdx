@@ -8,9 +8,7 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
-<div id="parallel-operation-strategy">
-  ## Стратегия параллельной эксплуатации
-</div>
+## Стратегия параллельной эксплуатации {#parallel-operation-strategy}
 
 При переходе с Elastic на ClickStack для задач обсервабилити мы рекомендуем использовать **параллельную эксплуатацию**, а не пытаться переносить исторические данные. У этой стратегии есть несколько преимуществ:
 
@@ -26,9 +24,7 @@ doc_type: 'guide'
   В разделе [&quot;Миграция данных&quot;](#migrating-data) мы показываем подход к переносу важных данных из Elasticsearch в ClickHouse. Его не следует использовать для крупных наборов данных, так как он редко обеспечивает достаточную производительность: всё упирается в возможности Elasticsearch по эффективному экспорту, при этом поддерживается только формат JSON.
 </Info>
 
-<div id="implementation-steps">
-  ### Этапы реализации
-</div>
+### Этапы реализации {#implementation-steps}
 
 <Steps>
   <Step title="Настройте двойную ингестию" id="configure-dual-ingestion">
@@ -54,9 +50,7 @@ doc_type: 'guide'
   </Step>
 </Steps>
 
-<div id="long-term-retention">
-  ### Долгосрочное хранение
-</div>
+### Долгосрочное хранение {#long-term-retention}
 
 Для организаций, которым требуются более длительные сроки хранения:
 
@@ -64,9 +58,7 @@ doc_type: 'guide'
 * Возможности [многоуровневого хранения](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes) в ClickStack помогают эффективно управлять долгосрочным хранением данных.
 * Рассмотрите возможность использования [materialized views](/ru/concepts/features/materialized-views/incremental-materialized-view) для поддержки агрегированных или отфильтрованных исторических данных, позволяя при этом необработанным данным удаляться по истечении срока хранения.
 
-<div id="migration-timeline">
-  ### Сроки миграции
-</div>
+### Сроки миграции {#migration-timeline}
 
 Сроки миграции зависят от ваших требований к сроку хранения данных:
 
@@ -74,15 +66,11 @@ doc_type: 'guide'
 * **Более длительное хранение**: продолжайте параллельную работу, пока данные не истекут в Elastic.
 * **Исторические данные**: если это действительно необходимо, воспользуйтесь разделом [Миграция данных](#migrating-data), чтобы импортировать нужные исторические данные.
 
-<div id="migration-settings">
-  ## Перенос настроек
-</div>
+## Перенос настроек {#migration-settings}
 
 При переходе с Elastic на ClickStack настройки индексирования и хранения нужно адаптировать к архитектуре ClickHouse. Если Elasticsearch для производительности и отказоустойчивости опирается на горизонтальное масштабирование и сегментирование данных, поэтому по умолчанию использует несколько сегментов, то ClickHouse оптимизирован для вертикального масштабирования и обычно лучше работает с меньшим числом сегментов.
 
-<div id="recommended-settings">
-  ### Рекомендуемые настройки
-</div>
+### Рекомендуемые настройки {#recommended-settings}
 
 Мы рекомендуем начинать с **одного сегмента** и масштабироваться вертикально. Такая конфигурация подходит для большинства рабочих нагрузок обсервабилити и упрощает как управление, так и настройку производительности запросов.
 
@@ -94,9 +82,7 @@ doc_type: 'guide'
   * Использовать [`ReplicatedMergeTree`](/ru/reference/engines/table-engines/mergetree-family/replication), если требуется высокая доступность
   * Для отказоустойчивости [одной реплики вашего сегмента](/ru/reference/engines/table-engines/mergetree-family/replication) обычно достаточно для рабочих нагрузок обсервабилити.
 
-<div id="when-to-shard">
-  ### Когда требуется сегментирование
-</div>
+### Когда требуется сегментирование {#when-to-shard}
 
 Сегментирование может потребоваться, если:
 
@@ -106,9 +92,7 @@ doc_type: 'guide'
 
 Если сегментирование всё же требуется, см. раздел [Горизонтальное масштабирование](/ru/guides/oss/deployment-and-scaling/examples/2-shards-1-replica) с рекомендациями по ключам сегментирования и настройке distributed таблицы.
 
-<div id="retention-and-ttl">
-  ### Хранение данных и TTL
-</div>
+### Хранение данных и TTL {#retention-and-ttl}
 
 ClickHouse использует [предложения `TTL`](/ru/clickstack/managing/production#configure-ttl) в таблицах MergeTree для управления сроком хранения данных. Политики TTL позволяют:
 
@@ -118,9 +102,7 @@ ClickHouse использует [предложения `TTL`](/ru/clickstack/ma
 
 Мы рекомендуем согласовать конфигурацию TTL в ClickHouse с вашими существующими политиками хранения данных в Elastic, чтобы сохранить единый жизненный цикл данных во время миграции. Примеры см. в разделе [настройка TTL ClickStack для production](/ru/clickstack/managing/production#configure-ttl).
 
-<div id="migrating-data">
-  ## Миграция данных
-</div>
+## Миграция данных {#migrating-data}
 
 Хотя для большинства данных обсервабилити мы рекомендуем параллельную работу систем, в некоторых случаях может потребоваться прямая миграция данных из Elasticsearch в ClickHouse:
 
@@ -442,12 +424,14 @@ ClickHouse использует [предложения `TTL`](/ru/clickstack/ma
       ```
     </Accordion>
 
+    <Note>
+      В версиях с 24.8 по 25.2 перед созданием таблиц на этой странице включите типы `JSON` и `Variant` с помощью `SET allow_experimental_json_type = 1, allow_experimental_variant_type = 1;`.
+    </Note>
+
     Эквивалентная схема таблицы ClickHouse:
 
     <Accordion title="Схема ClickHouse">
       ```sql
-      SET enable_json_type = 1;
-
       CREATE TABLE logs_system_syslog
       (
           `@timestamp` DateTime,
@@ -549,8 +533,6 @@ ClickHouse использует [предложения `TTL`](/ru/clickstack/ma
     Как вариант, можно просто создать таблицу с одним столбцом `JSON`.
 
     ```sql
-    SET enable_json_type = 1;
-
     CREATE TABLE syslog_json
     (
      `json` JSON(`host.name` String, `@timestamp` DateTime)
@@ -670,5 +652,9 @@ ClickHouse использует [предложения `TTL`](/ru/clickstack/ma
     ```
 
     Обратите внимание, что имя поля `@timestamp` необходимо экранировать, а также использовать входной формат `JSONAsObject`.
+
+    <Note>
+      В версиях с 24.8 по 25.2 добавьте `--allow_experimental_json_type=1` к этой команде `clickhouse-client`. Она выполняется в собственном сеансе, и в нём для `input('json JSON')` нужен тип `JSON`.
+    </Note>
   </Step>
 </Steps>

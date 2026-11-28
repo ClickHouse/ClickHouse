@@ -26,7 +26,7 @@ SET max_block_size = 1000;
 -- contract; the optimization must not replace it with the approximate `any` mode.
 SELECT toString(number), count() FROM numbers(10) GROUP BY number LIMIT 5 SETTINGS max_rows_to_group_by = 5; -- { serverError TOO_MANY_ROWS }
 
--- Aggregate-free projections keep the existing settings-based path, including external aggregation.
+-- The optimization also works with external aggregation.
 SELECT count() FROM
 (
     SELECT number FROM numbers(100000) GROUP BY number LIMIT 10

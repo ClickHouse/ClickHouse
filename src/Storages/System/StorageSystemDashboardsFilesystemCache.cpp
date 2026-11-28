@@ -169,6 +169,9 @@ const std::vector<Chart> & getCharts()
                 {"DropCacheThreads", "sum(CurrentMetric_FilesystemCacheDropCacheThreads)"},
                 {"DropCacheThreadsActive", "sum(CurrentMetric_FilesystemCacheDropCacheThreadsActive)"},
                 {"DropCacheThreadsScheduled", "sum(CurrentMetric_FilesystemCacheDropCacheThreadsScheduled)"},
+                {"CleanupHelperThreads", "sum(CurrentMetric_FilesystemCacheCleanupHelperThreads)"},
+                {"CleanupHelperThreadsActive", "sum(CurrentMetric_FilesystemCacheCleanupHelperThreadsActive)"},
+                {"CleanupHelperThreadsScheduled", "sum(CurrentMetric_FilesystemCacheCleanupHelperThreadsScheduled)"},
             },
         },
         {
@@ -282,6 +285,7 @@ const std::vector<Chart> & getCharts()
             "Priority updates skipped on lock contention (per second)",
             {
                 {"FailToIncreasePriority", "sum(ProfileEvent_FileSegmentFailToIncreasePriority)"},
+                {"SkippedBusyPriorityLock", "sum(ProfileEvent_FilesystemCacheSkippedBusyPriorityLock)"},
             },
         },
         {
@@ -313,6 +317,7 @@ const std::vector<Chart> & getCharts()
             {
                 {"BytesDownloaded", "sum(ProfileEvent_CacheWarmerBytesDownloaded)"},
                 {"DataPartsDownloaded", "sum(ProfileEvent_CacheWarmerDataPartsDownloaded)"},
+                {"DataPartsSkippedSameAvailabilityZone", "sum(ProfileEvent_CacheWarmerDataPartsSkippedSameAvailabilityZone)"},
                 {"BytesInProgress", "sum(CurrentMetric_CacheWarmerBytesInProgress)"},
             },
         },

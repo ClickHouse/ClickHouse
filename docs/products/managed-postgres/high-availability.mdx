@@ -18,13 +18,19 @@ ClickHouse Managed Postgres offers different levels of high availability to matc
 
 With two standbys, two replica nodes are provisioned alongside your primary. Both standbys are the same size as the primary and either can take over if the primary fails.
 
-This configuration uses **synchronous replication** where the primary waits for acknowledgement from at least one standby before confirming writes. This provides stronger durability guarantees than asynchronous replication. Because only one acknowledgement is required (not both), the performance impact is less severe than synchronous replication with a single standby.
+This configuration uses **synchronous replication** where the primary waits for acknowledgement from at least one standby before confirming writes. This provides stronger durability guarantees than asynchronous replication. Because both standbys are full replicas, your database maintains full throughput and keeps a ready failover target even through an extended availability zone failure.
 
-### 1 Standby {#one-standby}
+### 1 Standby Synchronous (Preview) {#one-standby-synchronous}
+
+With one standby plus a lightweight WAL listener, the standby is the same size as the primary and can take over if the primary fails.
+
+The lightweight WAL listener acts as a second standby at no additional cost, receiving the write-ahead log stream and providing a second acknowledgement path. This configuration uses **synchronous replication** where the primary waits for acknowledgement from either the standby or the WAL listener before confirming writes. This keeps latency and throughput stable if the standby slows down or is briefly disrupted, while preserving strong durability guarantees.
+
+### 1 Standby Asynchronous {#one-standby-asynchronous}
 
 With one standby, a replica node is provisioned alongside your primary. The standby is the same size as the primary and can take over if the primary fails.
 
-Data is replicated to the standby using **asynchronous replication**. This means writes commit to the primary without waiting for acknowledgement from the standby. Asynchronous replication ensures that high availability doesn't slow down your writes due to additional network latency. However, it also means the standby might not have received the most recent transactions at the moment of a primary failure. For most applications, this trade-off between performance and the small risk of losing very recent writes is worth it. If durability of writes is necessary, it is recommended to opt for 2 standbys.
+Data is replicated to the standby using **asynchronous replication**. This means writes commit to the primary without waiting for acknowledgement from the standby. Asynchronous replication ensures that high availability doesn't slow down your writes due to additional network latency. However, it also means the standby might not have received the most recent transactions at the moment of a primary failure. For most applications, this trade-off between performance and the small risk of losing very recent writes is worth it. If durability of writes is necessary, it is recommended to opt for one of the synchronous options.
 
 ### No Standby {#no-standby}
 

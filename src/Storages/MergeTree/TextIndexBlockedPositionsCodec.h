@@ -16,18 +16,18 @@ struct TokenPostingsInfo;
 
 /// Blocked candidate-driven positions codec (the text index positions layout).
 ///
-/// One token's positions as per-document lists, chunked into blocks of BLOCK_DOCS consecutive
+/// One token's positions as per-document lists, chunked into blocks of BLOCK_SIZE consecutive
 /// posting ranks. No doc ids in the stream: block b covers postings entries
-/// [b*BLOCK_DOCS, (b+1)*BLOCK_DOCS), so a posting cursor's rank addresses a document directly and a
+/// [b*BLOCK_SIZE, (b+1)*BLOCK_SIZE), so a posting cursor's rank addresses a document directly and a
 /// phrase query fetches only the blocks covering its candidate rows.
 ///
 /// Per-token stream layout (at token_info.position_offset in the .pos substream):
 ///     [VarUInt: num_docs]
-///     [VarUInt: num_blocks]                        (must equal ceil(num_docs / BLOCK_DOCS))
+///     [VarUInt: num_blocks]                        (must equal ceil(num_docs / BLOCK_SIZE))
 ///     num_blocks x [VarUInt: payload_bytes]        (directory; one contiguous read, offsets by prefix sum)
 ///     num_blocks x payload, back to back
 ///
-/// Block payload (docs_in_block = min(BLOCK_DOCS, num_docs - b*BLOCK_DOCS)):
+/// Block payload (docs_in_block = min(BLOCK_SIZE, num_docs - b*BLOCK_SIZE)):
 ///     [PFor: docs_in_block x (freq - 1)]           (a single zero block when every document has one position)
 ///     [PFor: total_positions UInt32 values]        (total_positions = docs_in_block + sum(freq - 1);
 ///                                                   within-document deltas in posting order, the
@@ -37,8 +37,8 @@ struct TokenPostingsInfo;
 class TextIndexBlockedPositionsCodec
 {
 public:
-    /// Posting ranks per block; baked into the format (changing it needs a version bump).
-    static constexpr size_t BLOCK_DOCS = 128;
+    /// Posting ranks per block. Persisted in the text index header as `positions_block_size`; only this value is supported yet.
+    static constexpr size_t BLOCK_SIZE = 128;
     /// Fits `MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS` documents with one UInt32 position each plus 6 bytes of headers.
     static constexpr size_t MAX_EMBEDDED_BYTES = 32;
 
@@ -52,11 +52,11 @@ public:
         std::array<char, MAX_EMBEDDED_BYTES> embedded{};
         size_t embedded_size = 0;
 
-        size_t numBlocks() const { return block_offsets.empty() ? 0 : block_offsets.size() - 1; }
-        size_t docsInBlock(size_t block_idx) const
+        [[nodiscard]] size_t numBlocks() const { return block_offsets.empty() ? 0 : block_offsets.size() - 1; }
+        [[nodiscard]] size_t docsInBlock(size_t block_idx) const
         {
-            const UInt64 begin = block_idx * BLOCK_DOCS;
-            return static_cast<size_t>(std::min<UInt64>(BLOCK_DOCS, num_docs - begin));
+            const UInt64 begin = block_idx * BLOCK_SIZE;
+            return static_cast<size_t>(std::min<UInt64>(BLOCK_SIZE, num_docs - begin));
         }
     };
 
@@ -79,7 +79,7 @@ public:
         /// `positions` must be non-empty and strictly increasing.
         void addDocument(std::span<const UInt32> positions);
         void finalize(WriteBuffer & out);
-        UInt64 numDocuments() const { return num_docs; }
+        [[nodiscard]] UInt64 numDocuments() const { return num_docs; }
 
     private:
         /// Appends the open block's payload to `out` and returns its size.
@@ -88,9 +88,8 @@ public:
         /// Deltas of the open block's finished documents, then the open document's raw positions.
         PaddedPODArray<UInt32, 64> values;
         size_t open_document_begin = 0;
-        /// One per document of the open block.
-        PODArray<UInt32, 64> frequencies_minus_one;
-        bool has_frequency_run = false;
+        /// (local rank, freq - 1) of the open block's documents with more than one position.
+        PODArray<UInt32, 16> frequency_exceptions;
         size_t docs_in_block = 0;
         /// Payloads of the sealed blocks.
         PaddedPODArray<UInt8> staged;
@@ -141,7 +140,6 @@ void validateTokenPositions(const TokenPostingsInfo & info, size_t file_size);
 class PositionListBuilder
 {
 public:
-    /// Positions may repeat or go backwards within a row: each element of a tokenized Array restarts them at 0.
     void add(UInt32 doc_id, UInt32 position)
     {
         if (has_document && doc_id != current_doc)

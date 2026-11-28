@@ -45,8 +45,8 @@ public:
 
     ~RemoteInserter();
 
-    const Block & getHeader() const { return header; }
-    UInt64 getServerRevision() const { return server_revision; }
+    [[nodiscard]] const Block & getHeader() const { return header; }
+    [[nodiscard]] UInt64 getServerRevision() const { return server_revision; }
 
 private:
     /// Accounts the `ProfileEvents` packet of the remote server for the quotas over profile events of
