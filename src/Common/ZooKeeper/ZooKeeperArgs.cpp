@@ -158,7 +158,8 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
             auto load_balancing = magic_enum::enum_cast<DB::LoadBalancing>(Poco::toUpper(load_balancing_str));
             if (!load_balancing)
                 throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown load balancing: {}", load_balancing_str);
-            get_priority_load_balancing = DB::GetPriorityForLoadBalancing(*load_balancing, thread_local_rng() % hosts.size());
+            get_priority_load_balancing
+                = DB::GetPriorityForLoadBalancing(*load_balancing, hosts.empty() ? 0 : thread_local_rng() % hosts.size());
             break;
         }
     }
@@ -345,7 +346,8 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
     }
 
     if (load_balancing)
-        get_priority_load_balancing = DB::GetPriorityForLoadBalancing(*load_balancing, thread_local_rng() % hosts.size());
+        get_priority_load_balancing
+            = DB::GetPriorityForLoadBalancing(*load_balancing, hosts.empty() ? 0 : thread_local_rng() % hosts.size());
 
     if (prefer_local_availability_zone)
         client_availability_zone = DB::PlacementInfo::PlacementInfo::instance().getAvailabilityZone();

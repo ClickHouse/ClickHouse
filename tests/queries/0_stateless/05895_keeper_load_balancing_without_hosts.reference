@@ -1,0 +1,6 @@
+no signal death
+testkeeper with load balancing	a	1
+no signal death
+zookeeper without nodes: 1
+no signal death
+keeper_server without servers: 1
