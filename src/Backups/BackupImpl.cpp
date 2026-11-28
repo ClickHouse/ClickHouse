@@ -5,7 +5,6 @@
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
-#include <Backups/getBackupDataFileName.h>
 #include <Backups/findCharacterNotPreservedByXML.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
@@ -222,8 +221,6 @@ BackupImpl::BackupImpl(
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
-    , data_file_name_generator(params.data_file_name_generator)
-    , data_file_name_prefix_length(params.data_file_name_prefix_length)
     , coordination(params.backup_coordination)
     , uuid(params.backup_uuid)
     , backup_id(params.backup_id)
@@ -572,8 +569,8 @@ void BackupImpl::writeBackupMetadata()
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
     if (!backup_id.empty())
         *out << "<backup_id>" << xml << xml_string("backup_id", backup_id) << "</backup_id>";
-    if (data_file_name_generator != BackupDataFileNameGeneratorType::FirstFileName)
-        *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(data_file_name_generator)
+    if (params.data_file_name_generator != BackupDataFileNameGeneratorType::FirstFileName)
+        *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(params.data_file_name_generator)
              << "</data_file_name_generator>";
 
     /// Iterate in place instead of copying all file infos (a backup can contain millions).
@@ -628,8 +625,8 @@ void BackupImpl::writeBackupMetadata()
 
     num_files = num_all_file_infos;
     total_size = 0;
-    num_entries = 0;
-    size_of_entries = 0;
+    num_entries = coordination->getNumEntries();
+    size_of_entries = coordination->getSizeOfEntries();
 
     *out << "<contents>";
     coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & info)
@@ -665,15 +662,6 @@ void BackupImpl::writeBackupMetadata()
         }
 
         total_size += info.size;
-        bool has_entry = !params.deduplicate_files
-            || (info.size && (info.size != info.base_size)
-                && (info.data_file_name.empty()
-                    || info.data_file_name == getBackupDataFileName(info, data_file_name_generator, data_file_name_prefix_length)));
-        if (has_entry)
-        {
-            ++num_entries;
-            size_of_entries += info.size - info.base_size;
-        }
 
         *out << "</file>";
     });
@@ -697,22 +685,13 @@ void BackupImpl::recalculateMetadataCounters()
 {
     num_files = 0;
     total_size = 0;
-    num_entries = 0;
-    size_of_entries = 0;
+    num_entries = coordination->getNumEntries();
+    size_of_entries = coordination->getSizeOfEntries();
 
     coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & info)
     {
         ++num_files;
         total_size += info.size;
-        const bool has_entry = !params.deduplicate_files
-            || (info.size && info.size != info.base_size
-                && (info.data_file_name.empty()
-                    || info.data_file_name == getBackupDataFileName(info, data_file_name_generator, data_file_name_prefix_length)));
-        if (has_entry)
-        {
-            ++num_entries;
-            size_of_entries += info.size - info.base_size;
-        }
     });
 
     uncompressed_size = size_of_entries + writer->getFileSize(METADATA_FILE_NAME);
