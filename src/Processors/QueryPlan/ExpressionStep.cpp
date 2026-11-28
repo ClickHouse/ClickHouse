@@ -14,8 +14,8 @@
 
 #include <span>
 #include <string_view>
-#include <unordered_map>
 #include <unordered_set>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -86,7 +86,7 @@ bool ExpressionStep::hasIdenticalDuplicateOutputColumns() const
     /// Repeated outputs of one DAG node carry the same values, including through aliases.
     /// Comparing names or empty header columns alone cannot establish that equality.
     const auto & outputs = actions_dag.getOutputs();
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> column_sources;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> column_sources;
     for (const auto * output : outputs)
     {
         const auto * source = output;
