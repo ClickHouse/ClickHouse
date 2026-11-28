@@ -442,17 +442,6 @@ ReadBuffer & ZooKeeper::getReadBuffer()
     return *in;
 }
 
-static void removeRootPath(String & path, const String & chroot)
-{
-    if (chroot.empty())
-        return;
-
-    if (path.size() <= chroot.size())
-        throw Exception::fromMessage(Error::ZDATAINCONSISTENCY, "Received path is not longer than chroot");
-
-    path = path.substr(chroot.size());
-}
-
 ZooKeeper::~ZooKeeper()
 {
     try
