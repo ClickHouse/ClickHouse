@@ -243,6 +243,13 @@ void ConditionTemplate<Cond>::addTransformation(Transformer transformer_)
     transformers.push_back(std::move(transformer_));
 }
 
+template <typename Cond>
+size_t ConditionTemplate<Cond>::getNumTransformations() const
+{
+    std::unique_lock lock(mutex);
+    return transformers.size();
+}
+
 template class ConditionTemplate<KeyCondition>;
 template class ConditionTemplate<MergeTreeIndexConditionPtr>;
 
