@@ -42,6 +42,22 @@ SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0, log_c
 SELECT count() FROM tab WHERE hasToken(s, 'a')
 SETTINGS use_query_condition_cache = 1, use_skip_indexes = 0, log_comment = '02346_qcc_skip_off' FORMAT Null;
 
+-- The query above wrote a row-level entry under the bare hash, which any profile may consult.
+-- Start over with only the skip-index entry, so the check below sees whether that one is consulted.
+-- The cache is keyed by the table uuid, so a recreated table has no entries.
+DROP TABLE tab;
+CREATE TABLE tab
+(
+    s String,
+    INDEX idx s TYPE text(tokenizer = splitByNonAlpha, preprocessor = replaceAll(s, ' ', ''))
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES ('zzz'), ('a b');
+
+SELECT count() FROM tab WHERE hasToken(s, 'a')
+SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0 FORMAT Null;
+
 -- ignore_data_skipping_indices = 'idx' disables 'idx' while use_skip_indexes stays true, a different
 -- effective profile, so the skip-index entry must not be consulted.
 SELECT count() FROM tab WHERE hasToken(s, 'a')
