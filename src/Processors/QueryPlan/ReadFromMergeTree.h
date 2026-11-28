@@ -362,6 +362,7 @@ public:
         const Names & all_column_names,
         LoggerPtr log,
         std::optional<Indexes> & indexes,
+        const IndexReadTasks & index_read_tasks,
         bool find_exact_ranges,
         bool is_parallel_reading_from_replicas_,
         bool allow_query_condition_cache_,

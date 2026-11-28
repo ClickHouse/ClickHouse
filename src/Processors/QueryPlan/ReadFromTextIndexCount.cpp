@@ -187,6 +187,7 @@ UInt64 computeCountForPart(
         .index = *index.index,
         .readable_ranges = nullptr,
         .text_index_read_postings = !single_token,
+        .index_read_task = nullptr,
         .reader_settings = reader_settings,
     };
 

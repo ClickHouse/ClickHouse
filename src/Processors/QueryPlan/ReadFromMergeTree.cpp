@@ -3293,6 +3293,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         all_column_names,
         log,
         indexes,
+        index_read_tasks,
         find_exact_ranges,
         is_parallel_reading_from_replicas,
         allow_query_condition_cache,
@@ -3329,6 +3330,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEst
         all_column_names,
         log,
         indexes,
+        index_read_tasks,
         /*find_exact_ranges=*/false,
         is_parallel_reading_from_replicas,
         allow_query_condition_cache && allow_query_condition_cache_,
@@ -4105,6 +4107,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const Names & all_column_names,
     LoggerPtr log,
     std::optional<Indexes> & indexes,
+    const IndexReadTasks & index_read_tasks,
     bool find_exact_ranges,
     bool is_parallel_reading_from_replicas_,
     bool allow_query_condition_cache_,
@@ -4295,6 +4298,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         .query_info = query_info_,
         .context = context_,
         .indexes = *indexes,
+        .index_read_tasks = index_read_tasks,
         .top_k_filter_info = top_k_filter_info,
         .reader_settings = reader_settings,
         .log = log,
@@ -6511,6 +6515,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         {
             skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
                 applicable_skip_indexes,
+                index_read_tasks,
                 indexes->key_condition_rpn_template,
                 indexes->use_skip_indexes_for_disjunctions,
                 context->getIndexMarkCache(),
@@ -6532,6 +6537,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     {
         skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
             UsefulSkipIndexes{},
+            IndexReadTasks{},
             indexes->key_condition_rpn_template,
             /*use_for_disjunctions=*/false,
             context->getIndexMarkCache(),
@@ -6551,6 +6557,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     {
         skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
             UsefulSkipIndexes{},
+            IndexReadTasks{},
             indexes->key_condition_rpn_template,
             /*use_for_disjunctions=*/false,
             context->getIndexMarkCache(),

@@ -28,6 +28,7 @@ class IMergeTreeIndexCondition;
 class IMergeTreeDataPartInfoForReader;
 struct IMergeTreeIndex;
 struct MarkRanges;
+struct IndexReadTask;
 
 /// Represents a substream of a merge tree index.
 /// By default skip indexes have one substream (skp_idx_<name>.idx),
@@ -82,6 +83,8 @@ struct MergeTreeIndexDeserializationState
     const IMergeTreeIndex & index;
     const MarkRanges * readable_ranges = nullptr;
     bool text_index_read_postings = true;
+    /// The read task of the index if the query reads its virtual columns.
+    const IndexReadTask * index_read_task = nullptr;
     const MergeTreeReaderSettings & reader_settings;
 };
 
