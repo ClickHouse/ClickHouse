@@ -1,0 +1,13 @@
+?, -col
+?, +col
+?, -x, ?
+?, -CAST(? AS UInt8)
+SELECT * FROM t WHERE x IN (?, -col, ?)
+SELECT * FROM t WHERE x IN (?, col, ?)
+0
+0
+?, - -x
+?..
+?..
+1
+0
