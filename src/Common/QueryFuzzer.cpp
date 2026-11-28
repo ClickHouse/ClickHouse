@@ -4507,7 +4507,9 @@ String QueryFuzzer::fuzzHivePath(String path)
         return path;
 
     const String value = fieldToNumericString(getRandomField(fuzz_rand() % 11));
-    switch (fuzz_rand() % 3)
+    /// The first level of a URL path is the bucket, shared with the object storage disks: do not glob all of it
+    const bool in_bucket_root = scheme != String::npos && path.find('/', first_slash + 1) >= last_slash;
+    switch (fuzz_rand() % (in_bucket_root ? 2 : 3))
     {
         case 0:
         {
