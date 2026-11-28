@@ -529,7 +529,7 @@ public:
         absl::flat_hash_set<const ActionsDAG::Node *> filter_condition_nodes;
         if (scoring_predicate_indexes && filter_node)
         {
-            std::vector<const ActionsDAG::Node *> to_visit{filter_node};
+            VectorWithMemoryTracking<const ActionsDAG::Node *> to_visit{filter_node};
             while (!to_visit.empty())
             {
                 const auto * visited = to_visit.back();
