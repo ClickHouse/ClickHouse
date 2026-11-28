@@ -23,7 +23,10 @@ namespace mysqlxx
   * that is not shared, which is never cached. Exposed for testing.
   */
 std::string getPoolEntryName(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_name, unsigned default_max_connections);
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_name,
+    unsigned default_max_connections,
+    bool created_from_ddl);
 
 /*
  * PoolFactory.h
@@ -47,7 +50,8 @@ public:
         const std::string & config_name,
         unsigned default_connections = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
         unsigned max_connections = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
-        size_t max_tries = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
+        size_t max_tries = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+        bool created_from_ddl = false);
 
     void reset();
 

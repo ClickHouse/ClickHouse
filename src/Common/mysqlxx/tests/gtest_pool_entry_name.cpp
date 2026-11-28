@@ -13,11 +13,11 @@
 namespace
 {
 
-std::string entryName(const std::string & xml, const std::string & config_name = "source")
+std::string entryName(const std::string & xml, bool created_from_ddl = false)
 {
     std::stringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration(stream));
-    return mysqlxx::getPoolEntryName(*config, config_name, /* default_max_connections= */ 16);
+    return mysqlxx::getPoolEntryName(*config, "source", /* default_max_connections= */ 16, created_from_ddl);
 }
 
 }
@@ -177,6 +177,21 @@ TEST(MySQLPoolEntryName, ReplicaPriorityIsPartOfTheKey)
     };
 
     EXPECT_NE(with_priorities("1", "2"), with_priorities("2", "1"));
+}
+
+/// The checks of a dictionary created with a DDL query see only the keys of that query, so it must not
+/// get a pool created from a configuration file, even for the same configuration.
+TEST(MySQLPoolEntryName, DDLSourcesDoNotShareConfigurationFilePools)
+{
+    for (const std::string & source : {
+             "<host>h</host><port>3306</port><user>u</user><db>d</db>",
+             "<port>3306</port><user>u</user><db>d</db><replica><priority>1</priority><host>a</host></replica>"
+             "<replica><priority>2</priority><host>b</host></replica>"})
+    {
+        const std::string xml = "<c><source><share_connection>1</share_connection>" + source + "</source></c>";
+        EXPECT_NE(entryName(xml, /* created_from_ddl= */ true), entryName(xml, /* created_from_ddl= */ false));
+        EXPECT_EQ(entryName(xml, /* created_from_ddl= */ true), entryName(xml, /* created_from_ddl= */ true));
+    }
 }
 
 /// A single physical pool cannot have two different sizes or wait semantics.
