@@ -98,6 +98,7 @@ namespace FailPoints
     extern const char keeper_changelog_readahead_pre_drain[];
     extern const char keeper_changelog_readahead_fill_exception[];
     extern const char keeper_changelog_preallocate_no_space[];
+    extern const char keeper_changelog_write_thread_before_append[];
 }
 
 namespace
@@ -4223,6 +4224,9 @@ void Changelog::writeThread()
     bool batch_append_ok = true;
     size_t pending_appends = 0;
 
+    /// Highest index a flush may report as durable: lowered by a failed append, raised by successful ones.
+    uint64_t durable_write_ceiling = std::numeric_limits<uint64_t>::max();
+
     /// Flush request that we delay to batch it with more appends and to limit the flush frequency.
     /// A newer Flush request subsumes an older pending one: its index is not less,
     /// and one completion notification is enough for both.
@@ -4245,7 +4249,10 @@ void Changelog::writeThread()
 
         {
             std::lock_guard lock{durable_idx_mutex};
-            last_durable_idx = flush.index;
+            last_durable_idx = std::min(flush.index, durable_write_ceiling);
+            /// An entry up to `flush.index` was never written: fail the flush, which also releases the waiters in `Changelog::flush`.
+            if (durable_write_ceiling < flush.index)
+                *flush.failed = true;
         }
 
         pending_appends = 0;
@@ -4324,10 +4331,16 @@ void Changelog::writeThread()
                 if (!batch_append_ok)
                     continue;
 
+                FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_write_thread_before_append);
+
                 std::lock_guard writer_lock(writer_mutex);
                 chassert(current_writer);
 
                 batch_append_ok = current_writer->appendRecord(buildRecord(append_log->index, append_log->log_entry));
+                if (batch_append_ok)
+                    durable_write_ceiling = std::max(durable_write_ceiling, append_log->index);
+                else
+                    durable_write_ceiling = std::min(durable_write_ceiling, append_log->index - 1);
                 ++pending_appends;
             }
             else
@@ -4452,6 +4465,9 @@ void Changelog::compact(uint64_t up_to_log_index)
 {
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before compacting records");
+
+    /// wait for all appends to finish before removing the active changelog file
+    flush();
 
     std::lock_guard lock(writer_mutex);
     LOG_INFO(log, "Compact logs up to log index {}, our max log id is {}", up_to_log_index, max_log_id.load(std::memory_order_relaxed));
