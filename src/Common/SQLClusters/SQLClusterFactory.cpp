@@ -678,6 +678,11 @@ void SQLClusterFactory::reloadFromStorage()
         context->removeSQLCluster(cluster_name);
     }
 
+    /// Track every name before publishing any cluster: this insertion allocates and can throw, and a cluster
+    /// that is published but not tracked would never be removed after it is dropped on another replica.
+    /// A tracked name without a published cluster is harmless: `removeSQLCluster` does nothing for it.
+    stored_cluster_names.insert(new_stored_cluster_names.begin(), new_stored_cluster_names.end());
+
     for (auto & [cluster_name, cluster] : materialized)
     {
         /// A `Replicated` database could have been created after the check above. Recheck under the database guard
@@ -756,6 +761,8 @@ void SQLClusterFactory::createFromSQL(const ASTCreateSQLClusterQuery & query)
     /// `CLUSTER_ALREADY_EXISTS` and blocks other servers at `loadIfNot`.
     auto create_statement = resolved_query.formatWithSecretsOneLine();
     auto cluster = materializeCluster(resolved_query, context, create_statement);
+    /// Track the name before the cluster is persisted and published (see `reloadFromStorage`).
+    stored_cluster_names.insert(query.cluster_name);
     context->installSQLCluster(
         query.cluster_name,
         cluster,
@@ -764,7 +771,6 @@ void SQLClusterFactory::createFromSQL(const ASTCreateSQLClusterQuery & query)
             metadata_storage->writeCreateQuery(query.cluster_name, create_statement, false);
         },
         /*allow_replace_sql=*/ false);
-    stored_cluster_names.insert(query.cluster_name);
 }
 
 void SQLClusterFactory::alterFromSQL(const ASTAlterSQLClusterQuery & query)
@@ -804,6 +810,10 @@ void SQLClusterFactory::alterFromSQL(const ASTAlterSQLClusterQuery & query)
 
     auto create_statement = create_query.formatWithSecretsOneLine();
     auto cluster = materializeCluster(create_query, context, create_statement);
+    /// The cluster may have been created on another replica and not yet loaded here by the background reload.
+    /// Register it, so that a later reload or `DROP CLUSTER` removes it once it is gone from the metadata storage.
+    /// This is done before the cluster is persisted and published (see `reloadFromStorage`).
+    stored_cluster_names.insert(query.cluster_name);
     context->installSQLCluster(
         query.cluster_name,
         cluster,
@@ -812,9 +822,6 @@ void SQLClusterFactory::alterFromSQL(const ASTAlterSQLClusterQuery & query)
             metadata_storage->writeCreateQuery(query.cluster_name, create_statement, true);
         },
         /*allow_replace_sql=*/ true);
-    /// The cluster may have been created on another replica and not yet loaded here by the background reload.
-    /// Register it, so that a later reload or `DROP CLUSTER` removes it once it is gone from the metadata storage.
-    stored_cluster_names.insert(query.cluster_name);
 }
 
 void SQLClusterFactory::dropFromSQL(const ASTDropSQLClusterQuery & query)
