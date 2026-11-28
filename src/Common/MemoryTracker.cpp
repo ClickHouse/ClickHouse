@@ -99,14 +99,31 @@ inline std::string_view toDescription(OvercommitResult result)
     }
 }
 
+static thread_local bool memory_samples_blocked = false;
+
 bool shouldTrackAllocation(Float64 probability, void * ptr)
 {
+    if (memory_samples_blocked)
+        return false;
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
     return static_cast<double>(intHash64(uintptr_t(ptr))) < static_cast<double>(std::numeric_limits<uint64_t>::max()) * probability;
 #pragma clang diagnostic pop
 }
 
+}
+
+MemorySamplingBlockerInThread::MemorySamplingBlockerInThread(bool block)
+    : was_blocked(memory_samples_blocked)
+{
+    if (block)
+        memory_samples_blocked = true;
+}
+
+MemorySamplingBlockerInThread::~MemorySamplingBlockerInThread()
+{
+    memory_samples_blocked = was_blocked;
 }
 
 void AllocationTrace::onAllocImpl(void * ptr, size_t size) const
