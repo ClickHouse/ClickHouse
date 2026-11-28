@@ -253,6 +253,9 @@ CONFIRM_END_RESERVE_SEC = 600
 # The tests and the log export of a `master_head` run that is not nightly end this long before `job_end`,
 # so that the report fits into the job timeout.
 TESTS_END_RESERVE_SEC = 600
+# The dashboard confirmation's reruns end this long before its timeout: compare.sh then stops a cut rerun
+# (`timeout -k 10`) and the servers and computes the statistics of the placements it measured.
+DASHBOARD_CONFIRM_END_RESERVE_SEC = 30
 # Longest pause between the attempts of an upload in `DASHBOARD_INPUT_TABLES` that CIDB failed.
 CIDB_UPLOAD_RETRY_INTERVAL_SEC = 60
 # Pause between the log export flushes of a nightly run.
@@ -2418,7 +2421,7 @@ def confirm_dashboard_regressions(regressions, pr_number, workdir, end=None):
     if not selected:
         return rows
     timeout = 1500 if end is None else min(1500, end - time.monotonic())
-    if timeout <= 0:
+    if timeout <= DASHBOARD_CONFIRM_END_RESERVE_SEC:
         for row in selected.values():
             row["confirmation"] = "Not rerun: no time left before the job timeout; remains blocking"
         return rows
@@ -2442,6 +2445,8 @@ def confirm_dashboard_regressions(regressions, pr_number, workdir, end=None):
         stage="confirm_dashboard",
         PR_TO_TEST=str(pr_number),
         CHPC_CONFIRM_QUERIES=str(query_file),
+        # compare.sh counts `CHPC_CONFIRM_DEADLINE_SEC` from its own start, like `SECONDS`.
+        CHPC_CONFIRM_DEADLINE_SEC=str(int(timeout - DASHBOARD_CONFIRM_END_RESERVE_SEC)),
     )
     exit_code = Shell.run(
         quote(str(script)),
