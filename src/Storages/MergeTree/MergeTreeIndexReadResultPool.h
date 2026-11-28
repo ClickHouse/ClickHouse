@@ -87,6 +87,12 @@ public:
     /// Prunes by the global row index `_part_starting_offset + _part_offset` with the predicate the builder makes on it.
     void setGlobalRowIndexPruning(DynamicPredicateBuilder predicate_builder);
 
+    /// Tells whether all JOIN runtime filters `read` prunes by are built.
+    void setRuntimeFiltersReadyCheck(std::function<bool()> check) { runtime_filters_ready_check = std::move(check); }
+
+    /// Whether `read` would see every JOIN runtime filter it prunes by built (always true if it prunes by none).
+    bool areRuntimeFiltersReady() const;
+
     void cancel() noexcept { is_cancelled = true; }
 
 private:
@@ -112,6 +118,9 @@ private:
     TopKThresholdTrackerPtr top_k_threshold_tracker;
     ContextPtr context;
     LoggerPtr log;
+
+    std::function<bool()> runtime_filters_ready_check;
+    mutable std::atomic_bool runtime_filters_ready = false;
 
     std::atomic_bool is_cancelled = false;
 };
@@ -289,8 +298,8 @@ public:
     /// Whether index read results may include a skip index part (for any part of the query).
     bool hasSkipIndexReader() const { return skip_index_reader != nullptr; }
 
-    /// Whether index read results depend on JOIN runtime filters (see MergeTreeSkipIndexReader::hasRuntimeFilters).
-    bool hasRuntimeFilters() const { return skip_index_reader && skip_index_reader->hasRuntimeFilters(); }
+    /// See MergeTreeSkipIndexReader::areRuntimeFiltersReady.
+    bool areRuntimeFiltersReady() const { return !skip_index_reader || skip_index_reader->areRuntimeFiltersReady(); }
 
     void cancel() noexcept;
 

@@ -22,6 +22,7 @@ using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext
 /// The first `refine` call for a part builds the index read results (reads the skip indexes
 /// and/or the projection), which is the same work the first reading thread for the part would
 /// have done; subsequent calls reuse the per-part cached result from `MergeTreeIndexReadResultPool`.
+/// For a read pruned by JOIN runtime filters, nothing is refined until all of them are built.
 class IndexReadRangesRefiner : public IMergeTreeReadRangesRefiner
 {
 public:

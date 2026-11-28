@@ -109,6 +109,17 @@ bool MergeTreeSkipIndexReader::hasRuntimeFilters() const
     return (dynamic_predicate_builder && (prune_primary_key || !dynamic_skip_indexes.empty())) || global_row_index_predicate_builder;
 }
 
+bool MergeTreeSkipIndexReader::areRuntimeFiltersReady() const
+{
+    if (!hasRuntimeFilters() || runtime_filters_ready.load(std::memory_order_acquire))
+        return true;
+    /// A built filter stays built, so the answer is kept once it is true.
+    if (!runtime_filters_ready_check || !runtime_filters_ready_check())
+        return false;
+    runtime_filters_ready.store(true, std::memory_order_release);
+    return true;
+}
+
 SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     const MergeTreeDataPartInfoForReaderPtr & part_info,
     const SkipIndexReadInput & input,

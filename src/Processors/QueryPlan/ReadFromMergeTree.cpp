@@ -742,11 +742,6 @@ static MergeTreeReadRangesRefinerPtr createIndexReadRangesRefiner(
     if (!settings[Setting::use_indexes_refiner_in_read_pools])
         return nullptr;
 
-    /// Refining at task-cut time could snapshot JOIN runtime filters before they are published.
-    /// Keep the build at reader initialization instead.
-    if (index_build_context->index_reader_pool->hasRuntimeFilters())
-        return nullptr;
-
     return std::make_shared<IndexReadRangesRefiner>(index_build_context, metadata_snapshot);
 }
 
@@ -6567,6 +6562,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     if (skip_index_reader && runtime_prune_global_row_index && global_row_index_predicate_builder)
         skip_index_reader->setGlobalRowIndexPruning(std::move(global_row_index_predicate_builder));
+
+    if (skip_index_reader && runtime_filter_lookup && !runtime_filters_for_data_read.empty()
+        && context->getSettingsRef()[Setting::use_indexes_refiner_in_read_pools])
+        skip_index_reader->setRuntimeFiltersReadyCheck(
+            [lookup = runtime_filter_lookup, descriptors = runtime_filters_for_data_read]
+            { return areRuntimeFiltersReady(*lookup, descriptors); });
 
     if (skip_index_reader && top_k_primary_key_column_position)
         skip_index_reader->setTopKPrimaryKeyPruning(*top_k_primary_key_column_position, top_k_filter_info->threshold_tracker);

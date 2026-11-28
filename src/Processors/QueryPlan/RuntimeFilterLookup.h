@@ -613,4 +613,7 @@ const ActionsDAG::Node * buildRuntimeRangePredicate(
     ActionsDAG & dag,
     const ContextPtr & context);
 
+/// Whether every filter of the descriptors is registered and built, see `RuntimeFilter::isReady`.
+bool areRuntimeFiltersReady(const IRuntimeFilterLookup & lookup, const RuntimeFilterIndexAnalysisDescriptors & descriptors);
+
 }
