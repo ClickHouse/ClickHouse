@@ -1112,7 +1112,8 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 # `StorageFileLog` + `The absolute data path should be inside` is expected:
 #       `04202_filelog_attach_path_outside_user_files` has an explicit `ATTACH` query for a path outside `user_files_path`.
 # `StorageFileLog::StorageFileLog` + `neither a regular file, nor a directory` (a file path) or
-#       `The directory ... of the path ... does not exist` (a glob path) is a `FileLog` table left behind without its
+#       `The directory ... of the path ... does not exist` or `Globs are supported only in the file name of the path`
+#       (a glob path; the second when the directory name has glob characters) is a `FileLog` table left behind without its
 #       files by an interrupted test. Scoped to the tests that do this, so a missing path of any other table still fails.
 # `PartMovesBetweenShardsOrchestrator` + `NO_SUCH_DATA_PART` on the shard of `05565_part_move_to_shard_source_part_removed`
 #       is that test's move, whose part it removes on purpose: the stress phase can stop the file before its
@@ -1214,7 +1215,8 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "backup_database.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "03277_database_backup_database_file_engine.*_restore.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "StorageFileLog (.*): The absolute data path should be inside" \
-    | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: The path .*/user_files/\(05316_file_log_copytruncate\|05316_file_log_error_does_not_lock_table\|05317_file_log_partial_last_line\|05318_file_log_one_bad_file\|05394_filelog_engine_file_source_grant\|05395_filelog_drop_idle_while_other_busy\)_.* neither a regular file, nor a directory" \
+    | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: The path .*/user_files/\(05316_file_log_copytruncate\|05316_file_log_error_does_not_lock_table\|05317_file_log_partial_last_line\|05318_file_log_one_bad_file\|05394_file_log_modify_after_rename_recreate\|05394_filelog_engine_file_source_grant\|05395_filelog_drop_idle_while_other_busy\)_.* neither a regular file, nor a directory" \
+    | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: Globs are supported only in the file name of the path .*/user_files/05316_file_log_globs_" \
     | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: The directory .*/user_files/05316_file_log_globs_.* of the path .* does not exist" \
     | grep -av -e "(PartMovesBetweenShardsOrchestrator): .*Code: 232\. DB::Exception: Part [^ ]* is not active on replica [^ ]*, it cannot be attached on shard /clickhouse/05565_part_move_to_shard_source_part_removed_[^/]*/dst\. (NO_SUCH_DATA_PART)" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
