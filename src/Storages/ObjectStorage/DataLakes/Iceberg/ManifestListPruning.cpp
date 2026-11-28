@@ -10,6 +10,7 @@
 
 #include <base/unaligned.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/convertFieldToType.h>
@@ -107,11 +108,19 @@ ManifestListPruner::ManifestListPruner(
     Int32 current_schema_id_,
     Int32 partition_schema_id_,
     const Poco::JSON::Array::Ptr & partition_specs,
+    const DB::ManifestFileCacheKeys & manifest_list_entries,
     const DB::ActionsDAG * filter_dag,
     DB::ContextPtr context,
     bool require_ready_sets)
 {
     if (filter_dag == nullptr || !partition_specs || partition_specs->size() == 0)
+        return;
+
+    UnorderedSetWithMemoryTracking<Int32> prunable_spec_ids;
+    for (const auto & entry : manifest_list_entries)
+        if (entry.content_type == ManifestFileContentType::DATA && !entry.partition_summaries.empty())
+            prunable_spec_ids.insert(entry.partition_spec_id);
+    if (prunable_spec_ids.empty())
         return;
 
     std::vector<Int32> used_columns_in_filter;
@@ -123,6 +132,10 @@ ManifestListPruner::ManifestListPruner(
     {
         auto spec = partition_specs->getObject(i);
         if (!spec->has(f_spec_id) || !spec->has(f_fields))
+            continue;
+
+        const auto spec_id = spec->getValue<Int32>(f_spec_id);
+        if (!prunable_spec_ids.contains(spec_id))
             continue;
 
         auto fields = spec->get(f_fields).extract<Poco::JSON::Array::Ptr>();
@@ -145,7 +158,7 @@ ManifestListPruner::ManifestListPruner(
         auto int32_truncate_wraparounds
             = getInt32TruncateWraparounds(partition_key.partition_specification, schema_processor_, partition_schema_id_);
         conditions_by_spec_id.emplace(
-            spec->getValue<Int32>(f_spec_id),
+            spec_id,
             SpecCondition{*partition_key.key_description, std::move(condition), std::move(int32_truncate_wraparounds)});
     }
 }

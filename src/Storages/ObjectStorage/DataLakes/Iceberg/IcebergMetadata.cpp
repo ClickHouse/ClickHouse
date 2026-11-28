@@ -1779,6 +1779,7 @@ IcebergMetadata::estimateRead(
             table_state_snapshot->schema_id,
             data_snapshot->schema_id_on_snapshot_commit,
             data_snapshot->partition_specs,
+            data_snapshot->manifest_list_entries,
             pruning_filter,
             context,
             /* require_ready_sets */ true);
