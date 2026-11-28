@@ -285,38 +285,29 @@ struct ScatteredBlock : private boost::noncopyable
         selector = Selector(std::move(new_selector));
     }
 
-    /// Creates ColumnReplicated to lazily apply index from `selector` to the `block`
-    void filterBySelectorLazily()
+    /// Gather in the supplied order, even when every row survives.
+    void gather(IColumn::Offsets && rows_to_keep, bool lazy)
     {
-        if (block.empty() || !wasScattered())
-            return;
-
+        auto indexes = Indexes::create();
+        auto & positions = indexes->getData();
+        positions = std::move(rows_to_keep);
         if (selector.isContinuousRange())
         {
-            filterBySelector();
-            return;
+            if (const auto first = selector.getRange().first)
+                for (auto & pos : positions)
+                    pos += first;
         }
-
-        /// The general case when `selector` is non-trivial (likely the result of applying a filter)
-        auto indexes_col = selector.getIndexes().getPtr();
-        auto columns = block.getColumns();
-        transformColumnsWithSharedIndex(
-            columns,
-            [&](const ColumnPtr & index) { return index->index(selector.getIndexes(), /*limit*/ 0); },
-            [&](ColumnPtr & col)
-            {
-                if (col->isConst())
-                    col = col->index(selector.getIndexes(), /*limit*/ 0);
-                else
-                    col = ColumnReplicated::create(col, indexes_col);
-            }
-        );
-        block.setColumns(columns);
-        selector = Selector(block.rows());
+        else
+        {
+            const auto & source_rows = selector.getIndexes().getData();
+            for (auto & pos : positions)
+                pos = source_rows[pos];
+        }
+        applyIndexes(std::move(indexes), lazy);
     }
 
-    /// Applies `selector` to the `block` in-place
-    void filterBySelector()
+    /// Applies `selector` to the `block` in-place.
+    void filterBySelector(bool lazy = false)
     {
         if (block.empty() || !wasScattered())
             return;
@@ -332,14 +323,7 @@ struct ScatteredBlock : private boost::noncopyable
             selector = Selector(block.rows());
             return;
         }
-
-        /// The general case when `selector` is non-trivial (likely the result of applying a filter)
-        auto columns = block.getColumns();
-        transformColumnsWithSharedIndex(
-            columns,
-            [&](const ColumnPtr & col) { return col->index(selector.getIndexes(), /*limit*/ 0); });
-        block.setColumns(columns);
-        selector = Selector(block.rows());
+        applyIndexes(selector.getIndexes().getPtr(), lazy);
     }
 
     /// Cuts first `num_rows` rows from `block` in place and returns a block with the remaining rows
@@ -364,6 +348,21 @@ struct ScatteredBlock : private boost::noncopyable
     }
 
 private:
+    void applyIndexes(ColumnPtr indexes, bool lazy)
+    {
+        auto columns = block.getColumns();
+        auto select = [&](const ColumnPtr & col) { return col->index(*indexes, 0); };
+        transformColumnsWithSharedIndex(columns, select, [&](ColumnPtr & col)
+        {
+            if (lazy && !col->isConst())
+                col = ColumnReplicated::create(col, indexes);
+            else
+                col = select(col);
+        });
+        block.setColumns(columns);
+        selector = Selector(block.rows());
+    }
+
     Block block;
     Selector selector;
 };

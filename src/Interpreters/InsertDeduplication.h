@@ -101,7 +101,9 @@ public:
     /// must not reject the insert. It is trailing and defaults to the fail-close value (`true`, the
     /// check active) so that the signature stays source-compatible with the previous one - the unit
     /// tests are compiled against the code without this fix by the bugfix validation job.
-    Ptr filterToPartition(const PaddedPODArray<UInt64> & row_to_partition, size_t partition_index, bool deduplication_enabled = true) const;
+    /// `Id` is `UInt16` or `UInt64`.
+    template <typename Id>
+    Ptr filterToPartition(const PaddedPODArray<Id> & row_to_partition, size_t partition_index, bool deduplication_enabled = true) const;
 
     std::vector<DeduplicationHash> getDeduplicationHashes(const std::string & partition_id, bool deduplication_enabled) const;
 

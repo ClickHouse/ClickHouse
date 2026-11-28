@@ -17,6 +17,7 @@
 #include <base/Decimal.h>
 #include <base/sort.h>
 #include <base/types.h>
+#include <Common/CacheLine.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/RadixSort.h>
@@ -120,6 +121,17 @@ public:
         row_refs.emplace_back(RowRef(block_no, row_num));
     }
 
+    void insertValue(const char * value, UInt32 block_no, size_t row_num) override
+    {
+        TKey key{};
+        memcpy(&key, value, sizeof(TKey));
+
+        chassert(!sorted.load(std::memory_order_acquire));
+
+        entries.emplace_back(key, static_cast<UInt32>(row_refs.size()));
+        row_refs.emplace_back(RowRef(block_no, row_num));
+    }
+
     /// Unrolled version of upper_bound and lower_bound
     /// Loosely based on https://web.archive.org/web/20190917063426/https://academy.realm.io/posts/how-we-beat-cpp-stl-binary-search/
     /// In the future it'd interesting to replace it with a B+Tree Layout as described
@@ -159,6 +171,14 @@ public:
 
 #undef BOUND_ITERATION
         return low;
+    }
+
+    void prefetchSearch() const override
+    {
+        /// Lazy sorting can move entries within the array, but both arrays keep their addresses after the build.
+        __builtin_prefetch(entries.data() + entries.size() / 2, 0, 3);
+        if (row_refs.size() <= CH_CACHE_LINE_SIZE / sizeof(RowRef))
+            __builtin_prefetch(row_refs.data(), 0, 3);
     }
 
     const RowRef * findAsof(const IColumn & asof_column, size_t row_num) override

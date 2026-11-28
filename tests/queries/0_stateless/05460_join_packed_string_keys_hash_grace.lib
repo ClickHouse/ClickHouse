@@ -262,10 +262,10 @@ rm -f "$OUT_OFF" "$OUT_ON"
 # with the `Join` engine. A join with one condition, not ASOF, on a non-nullable `LowCardinality(String)` key may use
 # the hash table of its dictionary instead, depending on the plan. Its `expected` is NULL, so either way passes.
 #
-# The spilling joins that keep every right row must switch to `grace_hash` after they have inserted rows with packed
-# keys. The others keep a smaller hash table, which may stay below the threshold. Fewer than all the rows of `b_big` go
-# in before the switch, and `grace_hash` inserts all of them again with packed keys. So a join that switched inserts
-# more packed keys than `b_big` has rows. A join with `OR` inserts a key for each of its two conditions.
+# The spilling joins that keep every right row must switch to `grace_hash`. The others keep a smaller hash table, which
+# may stay below the threshold. Fewer than all the rows of `b_big` go in before the switch, possibly none, and
+# `grace_hash` inserts all of them again with packed keys. So a join that switched inserts at least as many packed keys
+# as `b_big` has rows. A join with `OR` inserts a key for each of its two conditions.
 $CLICKHOUSE_CLIENT -q "
     SYSTEM FLUSH LOGS query_log;
 
@@ -292,7 +292,7 @@ $CLICKHOUSE_CLIENT -q "
     WHERE algorithm = 'hspill' AND NOT spilled AND (config LIKE '%_ALL' OR config LIKE '%:RIGHT_%')
     ORDER BY ALL;
     SELECT 'grace after the switch kept exact keys', config FROM used
-    WHERE expected = 1 AND algorithm = 'hspill' AND spilled AND inline_keys + hashed_keys <= (SELECT count() FROM b_big)
+    WHERE expected = 1 AND algorithm = 'hspill' AND spilled AND inline_keys + hashed_keys < (SELECT count() FROM b_big)
     ORDER BY ALL;
     SELECT 'OR keys', config, inline_keys + hashed_keys FROM used
     WHERE mode = 'on' AND (startsWith(config, 's:hash:or_') AND inline_keys + hashed_keys != 2 * (SELECT count() FROM b_s)

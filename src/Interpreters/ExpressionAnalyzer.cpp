@@ -1047,8 +1047,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
               context->getSettingsRef()[Setting::hash_join_layout],
               /*rhs_size_estimation=*/std::nullopt,
               context->getSettingsRef()[Setting::parallel_hash_join_threshold])
-        ? HashJoinBuildLayout::twoLevel(context->getSettingsRef()[Setting::max_threads])
-        : HashJoinBuildLayout::oneBucket(1);
+        ? HashJoinBuildLayout::parallelLayout(context->getSettingsRef()[Setting::max_threads])
+        : HashJoinBuildLayout::serialLayout(1);
 
     if (algorithm == JoinAlgorithm::HASH ||
         /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash

@@ -36,29 +36,36 @@ struct JoinOnKeyColumns
     /// Only rows where mask == true can be joined
     JoinCommon::JoinMask join_mask_column;
 
+    /// For a key type that builds its keys: `ready_keys` points to the keys that the last prepare step
+    /// (`JoinProbe::PrepareKeysFn`) made for the key search that follows it. They are in `ready_keys_buffer`, or in the kept
+    /// key getter when it packed the keys of the whole block. The buffer only grows.
+    mutable const void * ready_keys = nullptr;
+    mutable std::vector<UInt64> ready_keys_buffer;
+
     JoinOnKeyColumns(
         const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, bool keep_lowcardinality = false);
-
-    [[nodiscard]] bool isRowFiltered(size_t i) const
-    {
-        return join_mask_column.isRowFiltered(i);
-    }
 
     /// A row with a NULL key and a row filtered out by the ON-section mask have the same
     /// effect - the row matches nothing - so the probe loop needs a single skip byte per
     /// row instead of two checks. Returns the skip bytes (indexed by source-block row,
-    /// 1 = skip), prepared once per call: without an ON-section condition the null map is
-    /// returned directly, no copy (nullptr when the keys are not nullable either = no row
-    /// is skipped); with one, `buffer` is filled with the merged null-and-mask bytes.
-    /// Only the positions the caller will probe are written (continuation chunks
-    /// visit a subset of the source block); the rest of `buffer` stays
-    /// uninitialized and must not be read.
+    /// 1 = skip). Without an ON-section condition it returns the null map itself, with no
+    /// copy, or nullptr when the keys are not nullable either: then no row is skipped.
+    /// With a condition it resizes `buffer` to the size of the block and writes the merged
+    /// null-and-mask bytes of the rows `[range_begin, range_begin + range_size)`. The
+    /// other bytes of `buffer` are not initialized and must not be read.
     const UInt8 * buildRowSkipData(IColumn::Filter & buffer, size_t range_begin, size_t range_size) const;
 };
 
 /// `JoinOnKeyColumns::buildRowSkipData` for the given NULL key map and ON-section mask.
 const UInt8 * buildRowSkipData(
     ConstNullMapPtr null_map, const JoinCommon::JoinMask & mask, IColumn::Filter & buffer, size_t range_begin, size_t range_size);
+
+enum class ProbeOutput : UInt8
+{
+    Default,
+    FilteredOffsets, /// Each left row contributes zero or one output row.
+    Selected, /// Left row indexes and right refs are paired in completion order.
+};
 
 struct LazyOutput
 {
@@ -84,6 +91,7 @@ struct LazyOutput
 
     bool join_data_sorted = false;
     bool output_by_row_list = false;
+    ProbeOutput probe_output = ProbeOutput::Default;
 
     ColumnAccessIndexes output_access_indexes;
     std::optional<size_t> row_store_row_length;
@@ -152,18 +160,19 @@ public:
         const Block & block_with_columns_to_add,
         const Block & saved_block_sample,
         const HashJoin & join,
-        std::vector<JoinOnKeyColumns> && join_on_keys_,
+        const IColumn * left_asof_key_,
         ExpressionActionsPtr additional_filter_expression_,
         const std::vector<std::pair<size_t, size_t>> & additional_filter_required_rhs_pos_,
         bool is_asof_join,
         bool is_join_get_,
         bool record_refs_for_stats)
         : left_block(left_block_.getSourceBlock())
-        , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
         , additional_filter_required_rhs_pos(additional_filter_required_rhs_pos_)
         , rows_to_add(left_block_.rows())
         , enable_prefetch(join.enableSoftwarePrefetch())
+        , amac_mode(join.getTableJoin().hashJoinAmacMode())
+        , allow_reordering(!is_join_get_ && !join.preservesLeftBlockOrder())
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -194,10 +203,10 @@ public:
 
         if (is_asof_join)
         {
-            chassert(join_on_keys.size() == 1);
+            chassert(left_asof_key_);
             const ColumnWithTypeAndName & right_asof_column = join.rightAsofKeyColumn();
             addColumn(right_asof_column);
-            left_asof_key = join_on_keys[0].key_columns.back();
+            left_asof_key = left_asof_key_;
         }
 
         for (auto & tn : lazy_output.type_name)
@@ -233,13 +242,21 @@ public:
     ALWAYS_INLINE void appendFromBlock(UInt64 ref_word)
     {
 #ifndef NDEBUG
-        /// `ref_word` may be an inline single ref or a list word (pointer + count); firstWord yields
-        /// the head ref of either, whose block is valid for the column-structure assertion.
-        checkColumns(*lazy_output.stored_columns[refWordBlockNo(RowRefList::fromWord(ref_word).firstWord())]);
+        checkColumnsOfRef(ref_word);
 #endif
         if (record_row_refs)
             lazy_output.addRef(ref_word);
     }
+
+#ifndef NDEBUG
+    /// Checks that the columns of the stored block of `ref_word` fit the added columns.
+    void checkColumnsOfRef(UInt64 ref_word)
+    {
+        /// `ref_word` may be an inline single ref or a list word (pointer + count); firstWord yields
+        /// the head ref of either, whose block is valid for the column-structure assertion.
+        checkColumns(*lazy_output.stored_columns[refWordBlockNo(RowRefList::fromWord(ref_word).firstWord())]);
+    }
+#endif
 
     void appendDefaultRow()
     {
@@ -249,11 +266,7 @@ public:
 
     [[nodiscard]] const IColumn & leftAsofKey() const { return *left_asof_key; }
 
-    /// `PreSelectedRows` returns false. It keeps one ref per right row for the additional filter.
-    static constexpr bool appendsWholeKey() { return true; }
-
     Block left_block;
-    std::vector<JoinOnKeyColumns> join_on_keys;
     ExpressionActionsPtr additional_filter_expression;
     const std::vector<std::pair<size_t, size_t>> & additional_filter_required_rhs_pos;
 
@@ -261,11 +274,13 @@ public:
     size_t rows_to_add;
     bool need_filter = false;
     bool enable_prefetch = true;
+    HashJoinAmacMode amac_mode;
+    bool allow_reordering;
 
     MutableColumns columns;
     IColumn::Offsets offsets_to_replicate;
     IColumn::Filter filter;
-    /// For every row with a match, if we set filter[row] = 1, we also add this row to `matched_rows` for faster ScatteredBlock::filter().
+    /// Left row positions in output order. `ProbeOutput::Selected` may permute them.
     IColumn::Offsets matched_rows;
 
     /// for lazy

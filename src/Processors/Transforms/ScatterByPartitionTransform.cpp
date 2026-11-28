@@ -1,3 +1,4 @@
+#include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 #include <Columns/replaceNegativeZeros.h>
 #include <Core/ColumnNumbers.h>
@@ -35,6 +36,9 @@ ScatterByPartitionTransform::ScatterByPartitionTransform(SharedHeader header, si
     hash_input_types.reserve(key_columns.size());
     for (const auto & column_number : key_columns)
         hash_input_types.push_back(header->getByPosition(column_number).type);
+
+    if (output_size > 65536)
+        selector.emplace<IColumn::Selector>();
 }
 
 std::shared_ptr<ScatterByPartitionTransform> ScatterByPartitionTransform::createRoundRobin(SharedHeader header, size_t output_size_, size_t start_bucket)
@@ -181,29 +185,24 @@ void ScatterByPartitionTransform::generateOutputChunks()
         return;
     }
 
+    const auto scatter_to_outputs = [&](const auto & ids)
+    {
+        auto scattered = scatterColumns(columns, output_size, ids);
+        for (size_t i = 0; i < output_size; ++i)
+            output_chunks[i].setColumns(std::move(scattered.pieces[i]), scattered.rows[i]);
+    };
+
     if (random_generator && num_rows > 0)
     {
         /// A uniformly random output for every row (the bias of the multiply-shift reduction is negligible).
-        selector.resize(num_rows);
-        for (auto & output_index : selector)
+        if (!std::holds_alternative<IColumn::Selector>(selector))
+            selector.emplace<IColumn::Selector>();
+        auto & random_selector = std::get<IColumn::Selector>(selector);
+        random_selector.resize(num_rows);
+        for (auto & output_index : random_selector)
             output_index = static_cast<UInt64>((static_cast<unsigned __int128>((*random_generator)()) * output_size) >> 64);
 
-        for (const auto & column : columns)
-        {
-            auto filtered_columns = column->scatter(output_size, selector);
-            for (size_t i = 0; i < output_size; ++i)
-                output_chunks[i].addColumn(std::move(filtered_columns[i]));
-        }
-
-        /// A chunk without columns: only the number of rows matters.
-        if (columns.empty())
-        {
-            VectorWithMemoryTracking<size_t> counts(output_size);
-            for (auto output_index : selector)
-                ++counts[output_index];
-            for (size_t i = 0; i < output_size; ++i)
-                output_chunks[i] = Chunk(Columns{}, counts[i]);
-        }
+        scatter_to_outputs(random_selector);
         return;
     }
 
@@ -244,15 +243,13 @@ void ScatterByPartitionTransform::generateOutputChunks()
             replaceNegativeZeros(column)->computeHashInto(0, num_rows, hash.data(), false);
     }
 
-    selector.resize(num_rows);
-    mapToRange(hash.data(), num_rows, static_cast<UInt32>(output_size), selector.data());
-
-    for (const auto & column : columns)
+    std::visit([&](auto & ids)
     {
-        auto filtered_columns = column->scatter(output_size, selector);
-        for (size_t i = 0; i < output_size; ++i)
-            output_chunks[i].addColumn(std::move(filtered_columns[i]));
-    }
+        ids.resize(num_rows);
+        mapToRange(hash.data(), num_rows, static_cast<UInt32>(output_size), ids.data());
+
+        scatter_to_outputs(ids);
+    }, selector);
 
     /// A shuffle of partial aggregation states splits a chunk by the keys, and the merge on the other
     /// side needs the bucket number of each part. A two-level bucket is a function of the key, so the

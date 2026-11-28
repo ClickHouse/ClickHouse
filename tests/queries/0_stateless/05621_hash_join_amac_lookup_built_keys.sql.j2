@@ -1,0 +1,32 @@
+-- Tags: long
+-- long: with a sanitizer the joins below take minutes, and a flaky check runs copies of the test at the same time.
+-- Compare forced AMAC and ordinary lookup on ten million packed string keys in the parallel layout.
+-- Tests 05873 and 05874 cover smaller tables in both layouts.
+
+SET join_algorithm = 'hash', join_use_nulls = 0, query_plan_join_swap_table = 0, enable_join_runtime_filters = 0;
+SET enable_join_fixed_hash_table_conversion = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
+SET enable_robin_hood_hash_for_joins = 1, enable_software_prefetch_in_join = 1;
+-- A single `String` key is packed whatever the estimate of the right rows is.
+SET enable_packed_string_keys_in_hash_join = 1, min_rows_for_packed_string_keys_in_hash_join = 0;
+
+CREATE TABLE results (name String, rows UInt64, checksum UInt64) ENGINE = Memory;
+
+{% set pairs = 'count(), sum(cityHash64(l.x, r.v))' -%}
+-- 10 million keys, about 39 thousand in each of the 256 buckets of the `parallel` layout. With
+-- `enable_robin_hood_hash_for_joins`, every bucket is in the Robin Hood mode. Half of the left keys are not in the table, so
+-- their search stops by the Robin Hood rule.
+{% set big_l = '(SELECT toString(intHash64(number) % 20000000) AS s, number AS x FROM numbers(1000000)) AS l' -%}
+{% set big_r = '(SELECT toString(number * 2) AS s, number AS v FROM numbers(10000000)) AS r' -%}
+{% set big_cases = [
+    ('10 million string keys, inner', pairs, big_l ~ ' INNER JOIN ' ~ big_r ~ ' ON l.s = r.s'),
+    ('10 million string keys, left', pairs, big_l ~ ' LEFT JOIN ' ~ big_r ~ ' ON l.s = r.s'),
+] -%}
+
+{% for mode in ['on', 'off'] -%}
+SET enable_amac_in_hash_join = '{{ mode }}', hash_join_layout = 'parallel';
+{% for name, columns, join in big_cases -%}
+INSERT INTO results SELECT '{{ name }}', {{ columns }} FROM {{ join }};
+{% endfor -%}
+{% endfor %}
+-- The name of the join, its runs, their distinct results, and the result.
+SELECT name, count(), uniqExact((rows, checksum)), any(rows), any(checksum) FROM results GROUP BY name ORDER BY name;

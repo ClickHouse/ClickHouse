@@ -196,16 +196,15 @@ struct LowCardinalityKeyGetterForJoin
 ///   key of row `i` for the rows [begin, end). `skip` is the skip bytes of the block: the keys of the rows `i` with
 ///   `skip[i] != 0` may be left unset.
 /// `getKeyHolder` builds the key of a row, or reads keys built ahead:
-/// - after `buildAllKeys` or `usePrebuiltKeys`, the keys of the rows that the slot scatter of a parallel build routed.
-///   The scatter calls `buildAllKeys`, and the slot inserts pass the keys it built to `usePrebuiltKeys`;
-/// - after `prepareRows`, the keys of a continuous range of rows, built 256 rows at a time when a read goes past the
-///   built ones. A range that starts after the first row is the rest of a block that an earlier call left because of
-///   `max_joined_block_rows`. The call for the rest can stop early too, so its chunks start at 8 rows and double up to
-///   256. Each join loop calls it for its first map. A prefetching loop also calls it for every other map that it
-///   prefetches for each row: then each key is built once for both the prefetch and the lookup. A loop that stops early
-///   at `max_joined_block_rows` pays only for the chunks it reached.
-///   The loop of an `OR` join with a condition in `ON` calls it for every map. For a list of rows in ascending order, it
-///   builds the keys of the listed rows at once.
+/// - after `buildAllKeys`, the keys of the rows of a selector. The fill pass of a partitioned build calls it and keeps the
+///   keys in the record of the block;
+/// - after `prepareRange`, the keys of a continuous range of rows, built 256 rows at a time when a read goes past the
+///   built ones. Each insert of the build and each key search of the probe prepares its rows before it creates its
+///   prefetcher, so each key is built once for both the prefetch and the lookup: a range with `prepareRange`, a row list
+///   with `prepareAscendingRows`. A search that is likely to stop early at `max_joined_block_rows` starts with chunks of
+///   8 rows that double up to 256, so that it pays only for the chunks it reached. `prepareAscendingRows` builds the keys
+///   of all the listed rows at once.
+/// The caller must not read the key of a row that the skip bytes mark, not even to prefetch it.
 template <typename Derived>
 struct PreparedJoinKeys
 {
@@ -218,13 +217,14 @@ struct PreparedJoinKeys
     /// `ready_keys` is empty, each key is built where it is read.
     size_t ready_begin = 0;
     std::span<const UInt128> ready_keys;
-    /// After `prepareRows`: the buffer that `ready_keys` views, the end of the rows to prepare, the rows of the next chunk,
+    /// After `prepareRange`: the buffer that `ready_keys` views, the end of the rows to prepare, the rows of the next chunk,
     /// and the skip bytes.
     PaddedPODArray<UInt128> prepared_keys;
     size_t prepare_end = 0;
     size_t next_chunk_rows = max_chunk_rows;
     const UInt8 * skip_rows = nullptr;
-    /// A caller can build the skip bytes for `prepareRows` here. They must stay valid while the key getter reads keys.
+    /// A caller can build the skip bytes for `prepareRange` and `prepareAscendingRows` here. They must stay valid while the
+    /// key getter reads keys.
     IColumn::Filter skip_buffer;
     /// After `prepareAscendingRows`: the skip bytes of the rows that are not listed, or that `skip` marks.
     IColumn::Filter unlisted_skip;
@@ -247,10 +247,14 @@ struct PreparedJoinKeys
         return all_selected.data();
     }
 
-    /// Returns skip bytes for the rows [0, end): 1 for each row that `rows` does not list, and `skip` for each listed row.
-    const UInt8 * skipUnlisted(const PaddedPODArray<UInt64> & rows, size_t end, const UInt8 * skip)
+    /// Returns skip bytes for the rows [begin, end): 1 for each row that `rows` does not list, and `skip` for each listed row.
+    /// Every row of `rows` must be in [begin, end). The bytes of the rows before `begin` are not set.
+    const UInt8 * skipUnlisted(std::span<const UInt64> rows, size_t begin, size_t end, const UInt8 * skip)
     {
-        unlisted_skip.assign(end, UInt8(1));
+        /// From `begin`, not from row 0: the probe calls this for every batch of a block, and a fill from row 0 each time is
+        /// quadratic in the block size.
+        unlisted_skip.resize(end);
+        std::fill(unlisted_skip.begin() + begin, unlisted_skip.end(), UInt8(1));
         for (const auto row : rows)
             unlisted_skip[row] = skip[row];
         return unlisted_skip.data();
@@ -268,49 +272,19 @@ struct PreparedJoinKeys
         if (selector.isContinuousRange())
             std::tie(begin, end) = selector.getRange();
         else
-            skip = skipUnlisted(selector.getIndexes().getData(), num_rows, skip);
+            skip = skipUnlisted(selector.getIndexes().getData(), 0, num_rows, skip);
         derived().buildKeys(begin, end, keys.data() + begin, skip);
         ready_begin = 0;
         ready_keys = {keys.data(), keys.size()};
     }
 
-    /// `keys[row]` is the key of each row that `buildAllKeys` listed. The key of `check_row`, a listed row, is built again
-    /// to check that they are the keys of this column.
-    void usePrebuiltKeys(std::span<const UInt128> keys, size_t check_row)
-    {
-        if (check_row >= keys.size() || keys[check_row] != derived().buildKey(check_row))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The join key built for row {} is not the key of that row", check_row);
-        ready_begin = 0;
-        ready_keys = keys;
-    }
-
-    /// Prepares the keys of the rows of `selector` if they are a continuous range, or if they are in ascending order;
-    /// otherwise each key is built where it is read. It builds the first chunk here, so that a prefetcher created after
-    /// this call times only the lookups when it calibrates its look-ahead. `skip` is the skip bytes of the block, as in
-    /// `buildKeys`. The caller must not read the key of a row that `skip` marks, not even to prefetch it.
-    template <typename Selector>
-    void prepareRows(const Selector & selector, const UInt8 * skip)
-    {
-        if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Selector>)
-        {
-            if (selector.isContinuousRange())
-                prepareRange(selector.getRange(), skip);
-            else
-                prepareRows(selector.getIndexes(), skip);
-        }
-        else if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Selector::Range>)
-            prepareRange(selector, skip);
-        else if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Selector::Indexes>)
-            prepareAscendingRows(selector.getData(), skip);
-    }
-
-    void prepareAscendingRows(const PaddedPODArray<UInt64> & rows, const UInt8 * skip)
+    void prepareAscendingRows(std::span<const UInt64> rows, const UInt8 * skip)
     {
         if (rows.empty() || !std::is_sorted(rows.begin(), rows.end()))
             return;
         ready_begin = rows.front();
         prepare_end = rows.back() + 1;
-        skip_rows = skipUnlisted(rows, prepare_end, skip);
+        skip_rows = skipUnlisted(rows, ready_begin, prepare_end, skip);
         /// All at once, not in chunks: the rows between the listed ones are left out, so the look-ahead of a
         /// prefetching loop can span more rows than `buildNextKeys` keeps.
         prepared_keys.resize(prepare_end - ready_begin);
@@ -319,11 +293,13 @@ struct PreparedJoinKeys
     }
 
     /// Drops the keys prepared before. With an empty range, each key is built where it is read again.
-    void prepareRange(ScatteredBlock::Selector::Range range, const UInt8 * skip)
+    /// `small_first_chunks`: for a search that is likely to stop before the end of the range, at `max_joined_block_rows`.
+    /// The default is for a search that visits every row of the range.
+    void prepareRange(ScatteredBlock::Selector::Range range, const UInt8 * skip, bool small_first_chunks = false)
     {
         ready_begin = range.first;
         prepare_end = range.second;
-        next_chunk_rows = range.first == 0 ? max_chunk_rows : min_chunk_rows;
+        next_chunk_rows = small_first_chunks ? min_chunk_rows : max_chunk_rows;
         skip_rows = skip;
         prepared_keys.clear();
         ready_keys = {};
@@ -361,7 +337,7 @@ struct PreparedJoinKeys
 
     ALWAYS_INLINE UInt128 getKeyHolder(size_t row, Arena &)
     {
-        /// `prepareRows` does not build the keys of skipped rows.
+        /// The prepared keys of skipped rows are not built.
         chassert(!skip_rows || !skip_rows[row]);
         if (ready_keys.empty())
             return derived().buildKey(row);
@@ -378,7 +354,7 @@ private:
 template <typename KeyGetter>
 concept PreparedKeyGetter = std::derived_from<KeyGetter, PreparedJoinKeys<KeyGetter>>;
 
-/// The key of a row in the `hashed` and `two_level_hashed` maps: `ColumnsHashing::hash128` of its key columns. The build
+/// The key of a row in the `hashed` maps: `ColumnsHashing::hash128` of its key columns. The build
 /// and the probe of one map can see different column types for one key, for example `Tuple(LowCardinality(String))` and
 /// `Tuple(String)`, so every way of building a key must give exactly `hash128`.
 class HashedJoinKey
@@ -440,7 +416,7 @@ private:
     PaddedPODArray<UInt8> buffer;
 };
 
-/// Key getter of `hashed` and `two_level_hashed`. It builds the `HashedJoinKey` of a row, or reads keys built ahead, see
+/// Key getter of `hashed`. It builds the `HashedJoinKey` of a row, or reads keys built ahead, see
 /// `PreparedJoinKeys`.
 template <typename Value, typename Mapped>
 struct HashMethodHashedJoinKey : public ColumnsHashing::columns_hashing_impl::HashMethodBase<
@@ -451,8 +427,8 @@ struct HashMethodHashedJoinKey : public ColumnsHashing::columns_hashing_impl::Ha
                                      use_offset>,
                                  public PreparedJoinKeys<HashMethodHashedJoinKey<Value, Mapped>>
 {
-    /// Hashing a key is not cheap, but `true` lets the join loops prefetch: after `prepareRows`, they build each key
-    /// once.
+    /// Hashing a key is not cheap, but `true` lets the join loops prefetch: after `prepareRange` or `prepareAscendingRows`,
+    /// they build each key once.
     static constexpr bool has_cheap_key_calculation = true;
 
     HashedJoinKey key;
@@ -468,7 +444,7 @@ struct HashMethodHashedJoinKey : public ColumnsHashing::columns_hashing_impl::Ha
     void buildKeys(size_t begin, size_t end, UInt128 * keys, const UInt8 * skip) { key.buildRange(begin, end, keys, skip); }
 };
 
-/// The 16-byte key of a single `String` join key in the `key_packed_string` and `two_level_key_packed_string` maps.
+/// The 16-byte key of a single `String` join key in the `key_packed_string` maps.
 ///
 /// - Up to 15 bytes: the `UnhashedPackedStringRef` of the string. It is exact: byte 15 holds the length, and the bytes
 ///   past the end are zero. The empty string is the zero key.
@@ -502,7 +478,7 @@ struct PackedStringJoinKey
         const char * chars, const IColumn::Offset * offsets, size_t begin, size_t end, UInt128 * __restrict keys, const UInt8 * skip);
 };
 
-/// Key getter of `key_packed_string` and `two_level_key_packed_string`. It builds the `PackedStringJoinKey` of a row,
+/// Key getter of `key_packed_string`. It builds the `PackedStringJoinKey` of a row,
 /// or reads keys built ahead, see `PreparedJoinKeys`.
 template <typename Value, typename Mapped>
 struct HashMethodPackedStringJoinKey : public ColumnsHashing::columns_hashing_impl::HashMethodBase<
@@ -516,8 +492,8 @@ struct HashMethodPackedStringJoinKey : public ColumnsHashing::columns_hashing_im
     using Base = ColumnsHashing::columns_hashing_impl::
         HashMethodBase<HashMethodPackedStringJoinKey<Value, Mapped>, Value, Mapped, false, use_offset>;
 
-    /// Hashing a long string is not cheap, but `true` lets the join loops prefetch: after `prepareRows`, they build
-    /// each key once.
+    /// Hashing a long string is not cheap, but `true` lets the join loops prefetch: after `prepareRange` or
+    /// `prepareAscendingRows`, they build each key once.
     static constexpr bool has_cheap_key_calculation = true;
 
     const IColumn::Offset * offsets;
@@ -613,54 +589,6 @@ template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin:
 {
     using Type = LowCardinalityKeyGetterForJoin<
         ColumnsHashing::HashMethodFixedString<Value, Mapped, true, false, use_offset>, Mapped>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key32, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt32, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key64, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt64, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key_string, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodString<Value, Mapped, true, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key_fixed_string, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodFixedString<Value, Mapped, true, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_keys32, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt32, Mapped, false, false, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_keys64, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt64, Mapped, false, false, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_keys128, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt128, Mapped, false, false, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_keys256, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt256, Mapped, false, false, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_hashed, Value, Mapped>
-{
-    using Type = HashMethodHashedJoinKey<Value, Mapped>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key8, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt8, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key16, Value, Mapped>
-{
-    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt16, false, use_offset>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::two_level_key_packed_string, Value, Mapped>
-{
-    using Type = HashMethodPackedStringJoinKey<Value, Mapped>;
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key_packed_string, Value, Mapped>
 {

@@ -1,0 +1,37 @@
+SET enable_analyzer = 1, join_algorithm = 'hash', max_threads = 1, query_plan_join_swap_table = 0,
+    enable_parallel_replicas = 0, enable_join_runtime_filters = 0, enable_join_fixed_hash_table_conversion = 0,
+    any_join_distinct_right_table_keys = 0, query_plan_read_in_order = 1, optimize_read_in_order = 1,
+    query_plan_read_in_order_through_join = 'force', explain_query_plan_default = 'legacy',
+    max_bytes_ratio_before_external_join = 0;
+
+CREATE TABLE amac_probe (t UInt64, k UInt64) ENGINE = MergeTree ORDER BY t;
+INSERT INTO amac_probe SELECT number, cityHash64(number) FROM numbers(4096);
+CREATE TABLE amac_build (k UInt64, v UInt64) ENGINE = Memory;
+INSERT INTO amac_build SELECT cityHash64(2 * number), 2 * number + 1 FROM numbers(2048);
+
+-- A nonzero threshold installs the spilling wrapper. The build stays in memory.
+{% for threshold in [0, 1000000000] %}
+SET max_bytes_before_external_join = {{ threshold }};
+
+{% for strictness in ['ANY', 'ALL'] %}
+{% set ordered_join -%}
+SELECT l.t AS t, r.k AS k, r.v AS v FROM amac_probe AS l INNER {{ strictness }} JOIN amac_build AS r ON l.k = r.k
+ORDER BY t LIMIT 257
+{%- endset %}
+SELECT countIf(trim(explain) = 'ReadType: InOrder') > 0 FROM
+(
+    EXPLAIN PLAN actions = 1
+    {{ ordered_join }}
+);
+
+{% for mode in ['on', 'off', 'auto'] %}
+SELECT groupArray((t, k, v)) = arrayMap(i -> (2 * i, cityHash64(2 * i), 2 * i + 1), range(257)) FROM
+(
+    {{ ordered_join }}
+) SETTINGS enable_amac_in_hash_join = '{{ mode }}';
+{% endfor %}
+{% endfor %}
+{% endfor %}
+
+DROP TABLE amac_probe;
+DROP TABLE amac_build;

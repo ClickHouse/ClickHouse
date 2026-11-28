@@ -73,6 +73,7 @@ namespace Setting
     extern const SettingsUInt64 max_joined_block_size_bytes;
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_rows_in_join;
+    extern const SettingsUInt64 parallel_hash_join_threshold;
     extern const SettingsBool parallel_non_joined_rows_processing;
     extern const SettingsUInt64 partial_merge_join_left_table_buffer_bytes;
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
@@ -80,6 +81,7 @@ namespace Setting
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool enable_software_prefetch_in_join;
+    extern const SettingsHashJoinAmacMode enable_amac_in_hash_join;
     extern const SettingsBool legacy_join_size_limits_trigger_spilling;
     extern const SettingsUInt64 max_bytes_before_external_join;
     extern const SettingsDouble max_bytes_ratio_before_external_join;
@@ -230,6 +232,7 @@ TableJoin::TableJoin(
     , allow_dynamic_type_in_join_keys(settings[Setting::allow_dynamic_type_in_join_keys])
     , enable_lazy_columns_replication(settings[Setting::enable_lazy_columns_replication])
     , enable_software_prefetch_in_join(settings[Setting::enable_software_prefetch_in_join])
+    , enable_amac_in_hash_join(settings[Setting::enable_amac_in_hash_join])
     , legacy_join_size_limits_trigger_spilling(settings[Setting::legacy_join_size_limits_trigger_spilling])
     , max_bytes_before_external_join(JoinSettings::getMaxBytesBeforeExternalJoin(
           settings[Setting::max_bytes_before_external_join],
@@ -240,6 +243,7 @@ TableJoin::TableJoin(
     , join_runtime_filter_from_fixed_hash_table(settings[Setting::join_runtime_filter_from_fixed_hash_table])
     , enable_packed_string_keys_in_hash_join(settings[Setting::enable_packed_string_keys_in_hash_join])
     , max_memory_usage(settings[Setting::max_memory_usage])
+    , hash_join_parallel_threshold(settings[Setting::parallel_hash_join_threshold])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
     , analyze_mode(analyze_mode_)
@@ -269,6 +273,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , allow_dynamic_type_in_join_keys(settings.allow_dynamic_type_in_join_keys)
     , enable_lazy_columns_replication(settings.enable_lazy_columns_replication)
     , enable_software_prefetch_in_join(settings.enable_software_prefetch_in_join)
+    , enable_amac_in_hash_join(settings.enable_amac_in_hash_join)
     , legacy_join_size_limits_trigger_spilling(settings.legacy_join_size_limits_trigger_spilling)
     , max_bytes_before_external_join(settings.getEffectiveMaxBytesBeforeExternalJoin())
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
@@ -277,6 +282,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)
     , enable_packed_string_keys_in_hash_join(settings.enable_packed_string_keys_in_hash_join)
     , max_memory_usage(settings.max_bytes_in_join)
+    , hash_join_parallel_threshold(settings.parallel_hash_join_threshold)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
     , analyze_mode(settings.join_analyze_mode)

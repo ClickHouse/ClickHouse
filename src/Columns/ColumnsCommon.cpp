@@ -1,5 +1,6 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
+#include <Core/Block.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/HashSet.h>
@@ -10,6 +11,13 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int PARAMETER_OUT_OF_BOUND;
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+}
 
 namespace
 {
@@ -129,6 +137,56 @@ VectorWithMemoryTracking<size_t> countColumnsSizeInSelector(size_t num_columns, 
     return counts;
 }
 
+VectorWithMemoryTracking<size_t> countColumnsSizeInSelector(size_t num_columns, const IColumn::SmallSelector & selector)
+{
+    if (num_columns > 65536)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scatter into {} pieces with 16-bit piece ids", num_columns);
+
+    VectorWithMemoryTracking<size_t> counts(num_columns);
+    for (auto idx : selector)
+        ++counts[idx];
+
+    return counts;
+}
+
+template <typename SourceColumns, typename SelectorType>
+ScatteredColumns scatterColumns(const SourceColumns & columns, size_t num_pieces, const SelectorType & selector)
+{
+    ScatteredColumns result;
+    result.rows = countColumnsSizeInSelector(num_pieces, selector);
+    result.pieces.resize(num_pieces);
+    for (auto & piece : result.pieces)
+        piece.reserve(columns.size());
+
+    for (const auto & column : columns)
+    {
+        auto column_pieces = column->scatterWithCounts(selector, result.rows);
+        for (size_t i = 0; i < num_pieces; ++i)
+            result.pieces[i].push_back(std::move(column_pieces[i]));
+    }
+
+    return result;
+}
+
+template ScatteredColumns scatterColumns(const Columns &, size_t, const IColumn::Selector &);
+template ScatteredColumns scatterColumns(const Columns &, size_t, const IColumn::SmallSelector &);
+template ScatteredColumns scatterColumns(const ColumnRawPtrs &, size_t, const IColumn::Selector &);
+template ScatteredColumns scatterColumns(const ColumnRawPtrs &, size_t, const IColumn::SmallSelector &);
+
+template <typename SelectorType>
+Blocks scatterBlock(const Block & block, size_t num_pieces, const SelectorType & selector)
+{
+    auto scattered = scatterColumns(block.getColumns(), num_pieces, selector);
+    Blocks blocks;
+    blocks.reserve(num_pieces);
+    for (auto & piece : scattered.pieces)
+        blocks.push_back(block.cloneWithColumns(std::move(piece)));
+    return blocks;
+}
+
+template Blocks scatterBlock(const Block &, size_t, const IColumn::Selector &);
+template Blocks scatterBlock(const Block &, size_t, const IColumn::SmallSelector &);
+
 bool memoryIsByte(const void * data, size_t start, size_t end, uint8_t byte)
 {
     size_t size = end - start;
@@ -141,13 +199,6 @@ bool memoryIsByte(const void * data, size_t start, size_t end, uint8_t byte)
 bool memoryIsZero(const void * data, size_t start, size_t end)
 {
     return memoryIsByte(data, start, end, 0x0);
-}
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int PARAMETER_OUT_OF_BOUND;
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 void throwIndexesSizeTooSmall(size_t indexes_size, size_t limit)

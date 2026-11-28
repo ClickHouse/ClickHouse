@@ -1,0 +1,96 @@
+<test>
+    <!-- Hash joins whose output `max_joined_block_size_rows` splits, so that the probe of one left block takes several
+         calls. Every left key is in the right table, each right key has 4 rows, and the left table is stored in blocks of
+         65409 rows. A left block then takes about 4 calls at the default limit, about 32 at a limit of 8192, and about 8
+         with two `OR` disjuncts. The additional filter shapes are `LEFT`, because `INNER JOIN ... AND l.t <= r.t` is
+         planned as a `Filter` step after the join and never resumes.
+
+         The right table has fewer rows than `parallel_hash_join_threshold` and `min_rows_for_packed_string_keys_in_hash_join`,
+         so the hash table is built as one part, a `String` key is not packed, and the `LowCardinality(String)` key of one
+         disjunct uses its dictionary. -->
+
+    <settings>
+        <join_algorithm>parallel_hash</join_algorithm>
+        <!-- The right table is the build side. -->
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+        <!-- Otherwise the joins of one disjunct run inside `SpillingHashJoin`. -->
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>keys</name>
+            <values>
+                <value>l.k = r.k</value>
+                <value>l.k = r.k AND l.k2 = r.k2</value>
+                <value>l.k = r.k AND l.s = r.s</value>
+                <value>l.s = r.s</value>
+                <value>l.lc = r.lc</value>
+                <value>l.nk = r.k AND l.nk2 = r.k2</value>
+                <value>l.k = r.k AND l.c = r.c</value>
+            </values>
+        </substitution>
+        <!-- The same keys, with a second disjunct on the next key. -->
+        <substitution>
+            <name>keys_or_next_keys</name>
+            <values>
+                <value>(l.k = r.k) OR (l.kn = r.k)</value>
+                <value>(l.k = r.k AND l.k2 = r.k2) OR (l.kn = r.k AND l.k2n = r.k2)</value>
+                <value>(l.k = r.k AND l.s = r.s) OR (l.kn = r.k AND l.sn = r.s)</value>
+                <value>(l.s = r.s) OR (l.sn = r.s)</value>
+                <value>(l.lc = r.lc) OR (l.lcn = r.lc)</value>
+                <value>(l.nk = r.k AND l.nk2 = r.k2) OR (l.nkn = r.k AND l.nk2n = r.k2)</value>
+                <value>(l.k = r.k AND l.c = r.c) OR (l.kn = r.k AND l.c = r.c)</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE r (k UInt64, k2 UInt32, s String, lc LowCardinality(String), c UInt32, t UInt32, v UInt64) ENGINE = Memory
+    </create_query>
+    <!-- `kn` and the other `n` columns hold the next key. -->
+    <create_query>
+        CREATE TABLE l
+        (
+            x UInt64, t UInt32,
+            k UInt64, k2 UInt32, s String, lc LowCardinality(String), nk Nullable(UInt64), nk2 Nullable(UInt32),
+            kn UInt64, k2n UInt32, sn String, lcn LowCardinality(String), nkn Nullable(UInt64), nk2n Nullable(UInt32)
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <!-- 20000 keys with 4 rows each, `t` from 0 to 3. -->
+    <fill_query>
+        INSERT INTO r
+        SELECT intDiv(number, 4) AS k, intHash32(k), toString(k), toString(k), 5, toUInt32(number % 4), number
+        FROM numbers(80000)
+    </fill_query>
+    <!-- 72 blocks of 65409 rows, the keys in random order. -->
+    <fill_query>
+        INSERT INTO l
+        SELECT number, toUInt32(number % 4),
+            a, intHash32(a), toString(a), toString(a), a, intHash32(a),
+            an, intHash32(an), toString(an), toString(an), an, intHash32(an)
+        FROM (SELECT number, intHash64(number) % 20000 AS a, (a + 1) % 20000 AS an FROM numbers_mt(4709448))
+        SETTINGS max_block_size = 65409, max_insert_block_size = 65409, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <!-- `c` is a constant column, the key of the last family. A constant stored as an `ALIAS` column would not reach the
+         join as a key. The subquery does not change the plan of the other families. -->
+    <query>
+        SELECT count(), sum(cityHash64(l.x, r.v))
+        FROM (SELECT *, 5 AS c FROM l) AS l LEFT JOIN r AS r ON {keys} AND l.t &lt;= r.t
+    </query>
+    <query>
+        SELECT count(), sum(cityHash64(l.x, r.v))
+        FROM (SELECT *, 5 AS c FROM l) AS l LEFT JOIN r AS r ON {keys} AND l.t &lt;= r.t
+        SETTINGS max_joined_block_size_rows = 8192
+    </query>
+    <query>
+        SELECT count(), sum(cityHash64(l.x, r.v))
+        FROM (SELECT *, 5 AS c FROM l) AS l INNER JOIN r AS r ON {keys_or_next_keys}
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS l</drop_query>
+    <drop_query>DROP TABLE IF EXISTS r</drop_query>
+</test>

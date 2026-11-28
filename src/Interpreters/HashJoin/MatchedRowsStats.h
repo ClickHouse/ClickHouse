@@ -174,15 +174,13 @@ static std::optional<UInt64> countMatchedLeftRows(const AddedColumns & added_col
             not_matched += ref_word == 0;
         return probed_rows - not_matched;
     }
-    else if constexpr (source == LeftMatchedSource::OutputFilter)
+    else if constexpr (source == LeftMatchedSource::OutputFilter || source == LeftMatchedSource::OutputFilterComplement)
     {
         chassert(added_columns.need_filter);
-        return countBytesInFilter(added_columns.filter);
-    }
-    else if constexpr (source == LeftMatchedSource::OutputFilterComplement)
-    {
-        chassert(added_columns.need_filter);
-        return probed_rows - countBytesInFilter(added_columns.filter);
+        /// These joins emit at most one row per input. The probe either selects those rows or gives them 0/1 replication counts.
+        const auto & offsets = added_columns.offsets_to_replicate;
+        const size_t kept = offsets.empty() ? added_columns.matched_rows.size() : offsets.back();
+        return source == LeftMatchedSource::OutputFilter ? kept : probed_rows - kept;
     }
     else
     {

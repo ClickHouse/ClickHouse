@@ -146,6 +146,7 @@ DECLARE_SETTING_MULTI_ENUM_WITH_RENAME(JoinAlgorithm, QueryPlanJoinAlgorithm)
 DECLARE_SETTING_MULTI_ENUM(JoinOrderAlgorithm)
 DECLARE_SETTING_ENUM(JoinOrderConflictDetector)
 DECLARE_SETTING_ENUM(HashJoinLayout)
+DECLARE_SETTING_ENUM(HashJoinAmacMode)
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode : uint8_t

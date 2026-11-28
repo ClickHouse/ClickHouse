@@ -21,6 +21,8 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
@@ -29,6 +31,11 @@ namespace CurrentMetrics
 {
     extern const Metric MergeJoinBlocksCacheBytes;
     extern const Metric MergeJoinBlocksCacheCount;
+}
+
+namespace ProfileEvents
+{
+    extern const Event JoinBuildPostProcessingMicroseconds;
 }
 
 namespace DB
@@ -750,6 +757,7 @@ void MergeJoin::setTotals(const Block & totals_block)
 /// pipeline.
 void MergeJoin::runPostBuildPhase()
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinBuildPostProcessingMicroseconds);
     mergeRightBlocks();
 
     if (is_right || is_full || (is_all_join && table_join->collectExactMatches()))
@@ -1185,8 +1193,7 @@ std::shared_ptr<MergeJoin::OrderedProbeState> MergeJoin::matchInOrder(const Bloc
             {
                 /// INNER ANY: one output row per key
                 any_inner_matched += range.left_length;
-                if (inner_any_used_flags->setUsedOnce</*use_flags=*/true, /*flag_per_row=*/true>(
-                        static_cast<UInt32>(i), range.right_start, /*offset=*/0))
+                if (inner_any_used_flags->setUsedOnce</*use_flags=*/true>(static_cast<UInt32>(i), range.right_start))
                     runs.push_back({range.left_start, /*left_length=*/1, i, range.right_start, /*right_length=*/1});
                 right_cursor.nextN(range.right_length);
                 left_cursor.nextN(range.left_length);
@@ -1700,8 +1707,8 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
         if (inner_any_used_flags)
         {
             /// INNER ANY: one output row per key.
-            if (inner_any_used_flags->setUsedOnce</*use_flags=*/true, /*flag_per_row=*/true>(
-                    static_cast<UInt32>(right_block_info.block_number), range.right_start, /*offset=*/0))
+            if (inner_any_used_flags->setUsedOnce</*use_flags=*/true>(
+                    static_cast<UInt32>(right_block_info.block_number), range.right_start))
             {
                 MergeJoinEqualRange one_row_range{range.left_start, range.right_start, /*left_length=*/1, /*right_length=*/1};
                 joinEquals<false>(left_block, r_columns_to_add, left_columns, right_columns, one_row_range, 0);

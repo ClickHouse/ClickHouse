@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Joins on keys that use the `hashed` and `two_level_hashed` maps, on a table with 150000 rows, so that they prefetch. A
+# Joins on keys that use the `hashed` map, with both layouts, on a table with 150000 rows, so that they prefetch. A
 # prefetching join must neither build nor prefetch the key of a row that it skips.
 
 $CLICKHOUSE_CLIENT -q "

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/HashJoin/AddedColumns.h>
-#include <Interpreters/HashJoin/BuildSlots.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
@@ -9,24 +8,14 @@
 #include <Columns/IColumn.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Prefetching.h>
-#include <Common/ProfileEvents.h>
-#include <base/scope_guard.h>
 
 #include <absl/functional/function_ref.h>
 
-#include <algorithm>
 #include <any>
 #include <functional>
 #include <optional>
 #include <span>
 #include <unordered_set>
-
-namespace ProfileEvents
-{
-extern const Event HashJoinPreallocatedElementsInHashTables;
-extern const Event JoinPackedStringKeysInline;
-extern const Event JoinPackedStringKeysHashed;
-}
 
 namespace DB
 {
@@ -39,74 +28,6 @@ extern const int LOGICAL_ERROR;
 /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
 /// Returns the threshold (in bytes) above which prefetching is enabled in JOIN.
 size_t getMinBytesForPrefetchInJoin();
-
-/// Inserting an element into a hash table of the form `key -> reference to a row`, which will then be used by JOIN.
-template <typename HashMap, typename KeyGetter>
-struct Inserter
-{
-    /// `any_take_last_row` is read from the join once, before the loop that calls this. Reading it here
-    /// costs a load per row: the map this writes to lives inside the join object, so the compiler cannot
-    /// prove that the write leaves the flag alone and has to reload it.
-    static ALWAYS_INLINE bool insertOne(
-        bool any_take_last_row, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool, size_t & new_keys)
-    {
-        auto emplace_result = key_getter.emplaceKey(map, i, pool);
-        new_keys += emplace_result.isInserted();
-
-        const bool store_row = emplace_result.isInserted() || any_take_last_row;
-        if (store_row)
-            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_block_no, i);
-        return store_row;
-    }
-
-    /// A set map holds no reference to a right row, so there is nothing to do beyond adding the key.
-    /// The key is still counted: `~HashJoin` statistics and the runtime filter read the key count.
-    static ALWAYS_INLINE void insertKeyOnly(HashMap & map, KeyGetter & key_getter, size_t i, Arena & pool, size_t & new_keys)
-    {
-        new_keys += key_getter.emplaceKey(map, i, pool).isInserted();
-    }
-
-    static ALWAYS_INLINE bool
-    insertAll(HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool, size_t & new_keys)
-    {
-        auto emplace_result = key_getter.emplaceKey(map, i, pool);
-        new_keys += emplace_result.isInserted();
-
-        if (emplace_result.isInserted())
-            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_block_no, i);
-        else
-        {
-            /// A single ref is stored inline in the value of the hash table; the first duplicate
-            /// switches the value to a pointer to an arena-allocated list of refs.
-            emplace_result.getMapped().insert(RowRef(stored_block_no, i).encode(), pool);
-        }
-        return emplace_result.isInserted();
-    }
-
-    /// `asof_type` and `asof_inequality` are read from the join once, before the loop, for the reason
-    /// given above `insertOne`: reading them here would be a load per row, and the type is behind an
-    /// `std::optional` that was dereferenced on every row even though only an insert needs it.
-    static ALWAYS_INLINE bool insertAsof(
-        TypeIndex asof_type,
-        ASOFJoinInequality asof_inequality,
-        HashMap & map,
-        KeyGetter & key_getter,
-        UInt32 stored_block_no,
-        size_t i,
-        Arena & pool,
-        size_t & new_keys,
-        const IColumn & asof_column)
-    {
-        auto emplace_result = key_getter.emplaceKey(map, i, pool);
-        new_keys += emplace_result.isInserted();
-        typename HashMap::mapped_type * time_series_map = &emplace_result.getMapped();
-
-        if (emplace_result.isInserted())
-            time_series_map = new (time_series_map) typename HashMap::mapped_type(createAsofRowRef(asof_type, asof_inequality));
-        (*time_series_map)->insert(asof_column, stored_block_no, i);
-        return emplace_result.isInserted();
-    }
-};
 
 /// Check if the hash table type supports the prefetch interface.
 template <typename Map, typename KeyHolder>
@@ -132,15 +53,6 @@ ALWAYS_INLINE bool shouldUseJoinPrefetch(bool enable_prefetch, const Map * map)
 {
     return enable_prefetch && map != nullptr
         && map->getBufferSizeInBytes() > getMinBytesForPrefetchInJoin();
-}
-
-template <typename Selector>
-ALWAYS_INLINE size_t selectorIndexAt(const Selector & selector, size_t k)
-{
-    if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Indexes>)
-        return selector.getData()[k];
-    else
-        return selector.first + k;
 }
 
 /// Drives the adaptive software prefetch logic in the hash join probe loop.
@@ -175,46 +87,6 @@ ALWAYS_INLINE auto makeJoinPrefetcher(bool use_prefetch, size_t total, PrefetchA
         use_prefetch, total, std::forward<PrefetchAction>(prefetch_action)};
 }
 
-/// Counts the map lookups of a sample of the probe rows of a multi-disjunct join. A row looks the maps up in order, and
-/// a join that stops at the first match may never reach the later maps. Prefetching a map that few rows look up costs
-/// more than it saves. So after every `period_samples` sampled rows the probe prefetches only the leading maps that at
-/// least a quarter of those rows looked up. One row in every `sample_stride` is sampled, at an offset that cycles through
-/// the stride, so data that repeats every few rows does not bias the sample.
-class MultiMapLookupSampler
-{
-public:
-    explicit MultiMapLookupSampler(size_t num_maps) : lookups(num_maps) {}
-
-    static size_t nextSampledRow(size_t row)
-    {
-        const size_t stride_idx = row / sample_stride + 1;
-        return stride_idx * sample_stride + stride_idx % sample_stride;
-    }
-
-    void countLookup(size_t map_idx) { ++lookups[map_idx]; }
-
-    /// Returns true when this sampled row ends a period.
-    bool sampleDone() { return ++samples % period_samples == 0; }
-
-    /// Returns the number of maps to prefetch, at most `max_maps`, and starts a new period.
-    NO_INLINE size_t takeLimit(size_t max_maps)
-    {
-        size_t limit = 1;
-        while (limit < max_maps && lookups[limit] >= min_lookups)
-            ++limit;
-        std::ranges::fill(lookups, 0);
-        return limit;
-    }
-
-private:
-    static constexpr size_t sample_stride = 16;
-    static constexpr size_t period_samples = 128;
-    static constexpr size_t min_lookups = period_samples / 4;
-
-    std::vector<UInt32> lookups;
-    size_t samples = 0;
-};
-
 /// For a direct-addressed map: the minimum key and the range size from the minimum to the maximum key.
 struct JoinKeyRange
 {
@@ -248,8 +120,49 @@ KeyGetter createJoinKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & k
     return getter;
 }
 
+/// The table object of the key type `TYPE`: a `JoinMapForms`, or a map that has only the single form.
 template <HashJoin::Type TYPE, typename Maps>
-using JoinMapOf = typename std::remove_cvref_t<decltype(std::declval<Maps &>().template mapOf<TYPE>())>::element_type;
+using JoinTableOf = typename std::remove_cvref_t<decltype(std::declval<Maps &>().template mapOf<TYPE>())>::element_type;
+
+namespace detail
+{
+template <typename Table>
+struct JoinFormsOf
+{
+    using Single = Table;
+    using Partitioned = void;
+};
+template <typename Single_, typename Partitioned_>
+struct JoinFormsOf<JoinMapForms<Single_, Partitioned_>>
+{
+    using Single = Single_;
+    using Partitioned = Partitioned_;
+};
+template <typename Form>
+struct JoinPartMapOfForm
+{
+    using Type = Form;
+};
+template <typename Map>
+struct JoinPartMapOfForm<JoinPartitionedView<Map>>
+{
+    using Type = Map;
+};
+
+}
+
+/// The single form of the key type `TYPE`: a `JoinSingleView` of a hash map, or a direct-addressed map.
+template <HashJoin::Type TYPE, typename Maps>
+using JoinMapOf = typename detail::JoinFormsOf<JoinTableOf<TYPE, Maps>>::Single;
+
+/// The partitioned form of the key type `TYPE`: a `JoinPartitionedView`, or `void` for a key type that has no partitioned
+/// form.
+template <HashJoin::Type TYPE, typename Maps>
+using JoinPartitionedFormOf = typename detail::JoinFormsOf<JoinTableOf<TYPE, Maps>>::Partitioned;
+
+/// The map of one partition of the key type `TYPE`.
+template <HashJoin::Type TYPE, typename Maps>
+using JoinPartMapOf = typename detail::JoinPartMapOfForm<JoinPartitionedFormOf<TYPE, Maps>>::Type;
 
 namespace detail
 {
@@ -297,191 +210,25 @@ std::string_view keyBytes(const Key & key)
 
 void insertKey(MutableColumns & columns, const KeyLayout & layout, std::string_view key, size_t times);
 
-template <
-    typename KeyGetter,
-    typename Map,
-    bool fast_path,
-    bool stops_at_first_match,
-    bool prefetch_later_maps,
-    typename RowState,
-    bool lazy_row_filter,
-    typename OnMatch,
-    typename OnRowEnd>
-NO_INLINE size_t probeAllRows(
-    std::vector<KeyGetter> && key_getter_vector,
-    const std::vector<const Map *> & mapv,
-    std::span<const JoinOnKeyColumns> keys,
-    const ScatteredBlock::Selector::Range & selector,
-    bool enable_prefetch,
-    IColumn::Offset max_offset,
-    IColumn::Offset & offset,
-    OnMatch on_match,
-    OnRowEnd on_row_end)
+}
+
+namespace detail
 {
-    static_assert(
-        !lazy_row_filter || (!fast_path && !stops_at_first_match), "`lazy_row_filter` excludes `fast_path` and `stops_at_first_match`");
 
-    size_t rows = ScatteredBlock::Selector::size(selector);
-    const size_t num_clauses = keys.size();
-
-    /// Per-clause skip bytes, prepared once per call (see `JoinOnKeyColumns::buildRowSkipData`).
-    std::vector<const UInt8 *> skip_datas;
-    std::vector<IColumn::Filter> skip_buffers;
-    if constexpr (!fast_path && !lazy_row_filter)
-    {
-        skip_datas.resize(num_clauses);
-        skip_buffers.resize(num_clauses);
-        for (size_t d = 0; d < num_clauses; ++d)
-            skip_datas[d] = keys[d].buildRowSkipData(skip_buffers[d], selector.first, rows);
-    }
-
-    Arena pool;
-
-    /// Raw pointers: a hardened `operator[]` computes the vector size on every lookup, which takes registers this memory-bound loop needs.
-    chassert(mapv.size() == num_clauses && key_getter_vector.size() == num_clauses);
-    const Map * const * maps = mapv.data();
-    KeyGetter * key_getters = key_getter_vector.data();
-    /// A prepared key getter builds no key for a row that its skip bytes mark, so it always has skip bytes: also on the fast
-    /// path, and with `lazy_row_filter`, whose loop still checks each row itself.
-    constexpr bool prepared = PreparedKeyGetter<KeyGetter>;
-    if constexpr (prepared)
-    {
-        skip_datas.resize(num_clauses);
-        for (size_t d = 0; d < num_clauses; ++d)
-        {
-            if constexpr (lazy_row_filter)
-                skip_datas[d] = keys[d].buildRowSkipData(key_getters[d].skip_buffer, selector.first, rows);
-            skip_datas[d] = key_getters[d].skipOrAllSelected(skip_datas[d]);
-        }
-    }
-    const UInt8 * const * skip_data = skip_datas.data();
-
-    /// Software prefetch for multi-map variant. A one-bucket map prefetches only the first map. With `prefetch_later_maps`, a
-    /// two-level map also prefetches the later maps that are not cache-resident and that `MultiMapLookupSampler` allows, because
-    /// a lookup there loads the bucket header before the cell. A sampled limit starts at one map: `PrefetchingHelper` sets the
-    /// look-ahead from the first rows, and a look-ahead measured while prefetching more maps is too short once the limit drops.
-    chassert(!mapv.empty());
-    constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, Map>;
-
-    bool use_prefetch = false;
-    size_t max_prefetched_maps = 1;
-    if constexpr (can_prefetch)
-    {
-        use_prefetch = shouldUseJoinPrefetch(enable_prefetch, mapv[0]);
-        /// A later map of a two-level layout counts only when it does not fit in the cache.
-        if constexpr (prefetch_later_maps && Map::NUM_BUCKETS > 1)
-            while (use_prefetch && max_prefetched_maps < mapv.size()
-                   && mapv[max_prefetched_maps]->getBufferSizeInBytes() > getMinBytesForPrefetchInJoin())
-                ++max_prefetched_maps;
-    }
-    const bool samples_lookups = stops_at_first_match && max_prefetched_maps > 1;
-    size_t num_prefetched_maps = samples_lookups ? 1 : max_prefetched_maps;
-    MultiMapLookupSampler sampler(samples_lookups ? num_clauses : 0);
-    size_t next_sampled_row = samples_lookups ? 0 : rows;
-
-    /// Before the prefetcher is created, see `PreparedJoinKeys::prepareRows`: the first map, and the other maps that are
-    /// prefetched from the start. The maps that a sampled limit adds later are prepared then. With `lazy_row_filter` the loop
-    /// looks up every row that it does not skip in every map, so the keys of every map are prepared.
-    if constexpr (prepared)
-    {
-        const size_t num_prepared_maps = lazy_row_filter ? num_clauses : num_prefetched_maps;
-        for (size_t map_idx = 0; map_idx < num_prepared_maps; ++map_idx)
-            key_getters[map_idx].prepareRows(selector, skip_data[map_idx]);
-    }
-
-    auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
-        [&](size_t k) __attribute__((always_inline))
-        {
-            if constexpr (can_prefetch)
-            {
-                const size_t row = selectorIndexAt(selector, k);
-                constexpr bool check_skip = prepared && !fast_path;
-                if (!check_skip || !skip_data[0][row])
-                    maps[0]->prefetch(key_getters[0].getKeyHolder(row, pool));
-                if constexpr (Map::NUM_BUCKETS > 1)
-                    for (size_t map_idx = 1; map_idx < num_prefetched_maps; ++map_idx)
-                        if (!check_skip || !skip_data[map_idx][row])
-                            maps[map_idx]->prefetch(key_getters[map_idx].getKeyHolder(row, pool));
-            }
-        });
-
-    IColumn::Offset current_offset = offset;
-    size_t i = 0;
-    for (; i < rows && current_offset < max_offset; ++i)
-    {
-        if constexpr (can_prefetch)
-            prefetcher.prefetchAt(i);
-
-        const size_t ind = selectorIndexAt(selector, i);
-
-        bool right_row_found = false;
-        RowState row_state;
-        size_t onexpr_idx = 0;
-        for (; onexpr_idx < num_clauses; ++onexpr_idx)
-        {
-            bool skip_row = false;
-            if constexpr (lazy_row_filter)
-                skip_row = (keys[onexpr_idx].null_map && (*keys[onexpr_idx].null_map)[ind]) || keys[onexpr_idx].isRowFiltered(ind);
-            else if constexpr (!fast_path)
-                skip_row = (prepared || skip_data[onexpr_idx]) && skip_data[onexpr_idx][ind];
-
-            if (!skip_row)
-            {
-                auto find_result = key_getters[onexpr_idx].findKey(*maps[onexpr_idx], ind, pool);
-
-                if (find_result.isFound())
-                {
-                    right_row_found = true;
-                    on_match(i, ind, find_result, onexpr_idx + 1 == num_clauses, row_state, current_offset);
-
-                    if constexpr (stops_at_first_match)
-                        break;
-                }
-            }
-        }
-
-        if constexpr (stops_at_first_match && Map::NUM_BUCKETS > 1)
-        {
-            if (i == next_sampled_row) [[unlikely]]
-            {
-                /// The row looked up every map up to the one it stopped at, except where its key is skipped.
-                const size_t reached_maps = std::min(onexpr_idx + 1, num_clauses);
-                for (size_t map_idx = 0; map_idx < reached_maps; ++map_idx)
-                {
-                    if constexpr (!fast_path)
-                        if (skip_data[map_idx] && skip_data[map_idx][ind])
-                            continue;
-                    sampler.countLookup(map_idx);
-                }
-                if (sampler.sampleDone())
-                {
-                    const size_t limit = sampler.takeLimit(max_prefetched_maps);
-                    /// The prefetch reads the keys of the maps that it prefetches, so the keys of an added map are prepared
-                    /// from the next row on. A dropped map builds each key where it is read again, because few rows read it.
-                    if constexpr (prepared)
-                    {
-                        for (size_t map_idx = num_prefetched_maps; map_idx < limit; ++map_idx)
-                            key_getters[map_idx].prepareRange({ind + 1, selector.second}, skip_data[map_idx]);
-                        for (size_t map_idx = limit; map_idx < num_prefetched_maps; ++map_idx)
-                            key_getters[map_idx].prepareRange({}, nullptr);
-                    }
-                    num_prefetched_maps = limit;
-                }
-                next_sampled_row = MultiMapLookupSampler::nextSampledRow(i);
-            }
-        }
-
-        on_row_end(i, right_row_found, current_offset);
-    }
-
-    offset = current_offset;
-    return i;
-}
+/// A map whose grower can be stepped through the sizes the map takes as it grows.
+template <typename Map>
+concept GrowerCanBeStepped = requires(typename Map::grower_type grower)
+{
+    grower.overflow(size_t{});
+    grower.increaseSize();
+    typename Map::cell_type;
+};
 
 }
 
-/// The hash table of one `ON` disjunct of a `HashJoin`. All the tables of a join have one key type. `probe` and `probeAll` take
-/// that type as a template argument, so `HashJoin` switches on it once per block. The other methods switch on the stored type.
+/// The hash table of one `ON` disjunct of a `HashJoin`. All the tables of a join have one key type. `visitForm` takes that type
+/// as a template argument, so the probe switches on it and on the form (single or partitioned) once per block. The other
+/// methods switch on the stored type.
 class HashJoinTable
 {
 public:
@@ -489,9 +236,8 @@ public:
     /// Where a walk over the cells resumes.
     using Cursor = std::any;
 
-    /// `key_class` is the key type of a one-bucket map. A two-level `layout` turns it into the two-level type.
-    /// `robin_hood_allowed` is the setting `enable_robin_hood_hash_for_joins`: a two-level map may switch to the Robin Hood mode
-    /// when it grows large.
+    /// The table starts with one empty map in the single form. `robin_hood_allowed` is the setting
+    /// `enable_robin_hood_hash_for_joins`: the map of a partition may switch to the Robin Hood mode when it grows large.
     HashJoinTable(
         Type key_class,
         Sizes key_sizes_,
@@ -507,8 +253,73 @@ public:
     /// The key range of a direct-addressed map. Only `tryConvertToFixedHashMap` sets it.
     const JoinKeyRange & keyRange() const { return key_range; }
 
+    /// The sizes of the key columns, the `ASOF` column last.
+    const Sizes & keySizes() const { return key_sizes; }
+
     /// The number of keys inserted so far. Other threads may be inserting.
     size_t keys() const { return num_keys.load(std::memory_order_relaxed); }
+    /// Adds `n` to the key count, for a filler that inserts into the maps directly.
+    void addKeys(size_t n) { num_keys.fetch_add(n, std::memory_order_relaxed); }
+
+    /// Switches an empty table to the partitioned form with `2^partition_bits` partitions. The maps of the partitions are
+    /// created by their fillers, and the rest by `freezeForProbing`. A table of a LowCardinality key keeps the single form.
+    void usePartitions(size_t partition_bits);
+    bool isPartitioned() const { return num_partitions > 1; }
+    size_t numPartitions() const { return num_partitions; }
+    size_t publishedPartitionCapacity() const { return partition_capacity.load(std::memory_order_acquire); }
+    size_t publishedPartitionBytes() const { return partition_bytes.load(std::memory_order_relaxed); }
+    void publishPartitionCapacity(size_t cells, size_t bytes)
+    {
+        partition_bytes.store(bytes, std::memory_order_relaxed);
+        partition_capacity.store(cells, std::memory_order_release);
+    }
+    /// Called after all fill streams have stopped, while a spill is still possible.
+    void addPartitionNonzeroCounts(std::span<size_t> counts) const;
+
+    /// The partitioned form of the key type `TYPE`, a `JoinPartitionedView`. Only when `isPartitioned`.
+    template <Type TYPE, typename Maps>
+    auto & partitionedView()
+    {
+        chassert(key_type == TYPE && isPartitioned());
+        return *tableOf<TYPE, Maps>(*this).partitioned;
+    }
+    /// The single form of the key type `TYPE`. Only when not `isPartitioned`.
+    template <Type TYPE, typename Maps>
+    auto & singleView()
+    {
+        chassert(key_type == TYPE && !isPartitioned());
+        auto & table = tableOf<TYPE, Maps>(*this);
+        if constexpr (is_join_map_forms<std::remove_cvref_t<decltype(table)>>)
+            return *table.single;
+        else
+            return table;
+    }
+    /// Calls `f(form)` with the form of the key type `TYPE` that the table has, a const reference.
+    template <Type TYPE, typename Maps, typename F>
+    ALWAYS_INLINE decltype(auto) visitForm(F && f) const
+    {
+        chassert(key_type == TYPE);
+        const auto & table = tableOf<TYPE, Maps>(*this);
+        if constexpr (is_join_map_forms<std::remove_cvref_t<decltype(table)>>)
+            return table.visit(std::forward<F>(f));
+        else
+            return std::forward<F>(f)(table);
+    }
+
+    /// Calls `f.template operator()<TYPE>()` with the key type of the table.
+    template <typename F>
+    decltype(auto) dispatchType(F && f) const
+    {
+        switch (key_type)
+        {
+#define M(TYPE) \
+    case Type::TYPE: \
+        return f.template operator()<Type::TYPE>();
+            APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
+        }
+        UNREACHABLE();
+    }
 
     template <typename Maps>
     bool holds() const { return std::holds_alternative<Maps>(maps); }
@@ -516,6 +327,11 @@ public:
     /// The arena of build stream `stream`. No other call may use it at the same time.
     Arena & arena(size_t stream) { return *arenas[stream]; }
     size_t arenaBytes() const;
+    /// Notes the chunk that each arena that holds memory allocates next. Only while no stream uses an arena.
+    void noteNextArenaChunks();
+    /// The sum of the chunks that the arenas of build streams [0, `streams`) allocate next, as of the last
+    /// `noteNextArenaChunks`. Can be called while the arenas grow.
+    size_t nextArenaChunks(size_t streams) const;
     /// Moves out the arenas that hold memory. They are freed when the caller drops the result.
     std::vector<std::unique_ptr<Arena>> releaseArenas();
 
@@ -539,21 +355,110 @@ public:
         ASOFJoinInequality asof_inequality;
     };
 
-    /// Routes `rows` over the slots and inserts the rows of each slot under its lock. Keys and row lists go to the arena of
-    /// build stream `stream`, which no other call uses at the same time. Calls `add_bytes` under the lock with the growth of
-    /// the slot's buffers, and again after the insert with the growth of the arena.
+    /// Inserts `rows` from one build stream. On the partitioned form, each row goes to the partition of its hash. Keys and row
+    /// lists go to the arena of build stream `stream`, which no other call uses at the same time. Calls `add_bytes` with the
+    /// growth of the maps and of the arena. Defined in `InsertKeys.h` and instantiated in `InsertKeysMaps*.cpp`, one file per map.
     template <typename Maps>
-    BuildResult insert(const InsertSettings & settings, const InsertRows & rows, size_t stream, absl::FunctionRef<void(size_t)> add_bytes)
+    BuildResult insert(const InsertSettings & settings, const InsertRows & rows, size_t stream, absl::FunctionRef<void(size_t)> add_bytes);
+
+    /// Reserves `keys_to_reserve` keys in the map of the single form.
+    void reserve(size_t keys_to_reserve);
+
+    /// The keys that the map of each partition reserves when it is created; 0 for none.
+    void setPartitionReserveOnFirstInsert(size_t keys_per_partition);
+
+    /// The bytes that the scatter of a partitioned build copies per row: the key of a partition map, or the saved hash and the
+    /// offset of a `String` key, whose characters come on top; a row locator or a retained set block number; and the
+    /// `ASOF` value. 0 for a key type without a partitioned view.
+    size_t scatterBytesPerRow(bool keep_right_blocks) const
     {
-        return dispatchType([&]<Type TYPE>() { return insertTyped<TYPE, Maps>(settings, rows, arena(stream), add_bytes); });
+        return std::visit(
+            [&]<typename Maps>(const Maps &) -> size_t
+            {
+                return dispatchType(
+                    [&]<Type TYPE>() -> size_t
+                    {
+                        using Form = JoinPartitionedFormOf<TYPE, Maps>;
+                        if constexpr (!is_join_partitioned_view<Form>)
+                            return 0;
+                        else
+                        {
+                            constexpr bool string_key = TYPE == Type::key_string || TYPE == Type::key_fixed_string;
+                            size_t bytes = string_key ? 2 * sizeof(UInt64) : sizeof(typename Form::map_type::key_type);
+                            if constexpr (Maps::has_mapped)
+                                bytes += sizeof(UInt64);
+                            else if (keep_right_blocks)
+                                bytes += sizeof(UInt32);
+                            if constexpr (std::is_same_v<Maps, HashJoin::MapsAsof>)
+                                bytes += key_sizes.empty() ? sizeof(UInt64) : key_sizes.back();
+                            return bytes;
+                        }
+                    });
+            },
+            maps);
     }
 
-    /// Each slot reserves its share of `keys_to_reserve` at its first insert.
-    void reserve(size_t keys_to_reserve) { slots.setReserve(keys_to_reserve); }
+    /// The buffer bytes that the map of one partition allocates when it reserves `keys` keys, with or without the Robin Hood
+    /// mode, for `choosePartitionPlan`. Null for a key type without a partitioned view (the range and LowCardinality maps).
+    using BufferBytesForReserve = size_t (*)(size_t keys, bool robin_hood);
+    BufferBytesForReserve partitionBufferBytesForReserve() const
+    {
+        return std::visit(
+            [&]<typename Maps>(const Maps &) -> BufferBytesForReserve
+            {
+                return dispatchType([]<Type TYPE>() -> BufferBytesForReserve
+                {
+                    using Form = JoinPartitionedFormOf<TYPE, Maps>;
+                    if constexpr (is_join_partitioned_view<Form>)
+                        return [](size_t keys, bool robin_hood) -> size_t
+                        {
+                            using Map = typename Form::map_type;
+                            typename Map::grower_type grower;
+                            /// The grower's own default allows the Robin Hood mode, which fits more keys in a buffer.
+                            if constexpr (GrowerWithRobinHood<typename Map::grower_type>)
+                                grower.setRobinHoodAllowed(robin_hood);
+                            grower.set(keys);
+                            return grower.bufSize() * sizeof(typename Map::cell_type);
+                        };
+                    else
+                        return nullptr;
+                });
+            },
+            maps);
+    }
 
-    /// Scans for the non-joined rows of a join with a used flag per cell. Walks the buckets `b` with `b % num_shares == share`
-    /// from `cursor`. Appends to `words` the refs of the cells whose flag is unset, and stops once `max_rows` rows are appended.
-    /// Skips the walk when every key of these buckets is used. Returns the rows appended.
+    /// Project the growth of a single hash map from its initial reserve. Direct-addressed maps allocate all cells at creation.
+    using BufferBytesForGrowth = size_t (*)(size_t keys, size_t reserved_keys);
+    BufferBytesForGrowth singleBufferBytesForGrowth() const
+    {
+        return std::visit(
+            [&]<typename Maps>(const Maps &) -> BufferBytesForGrowth
+            {
+                return dispatchType([]<Type TYPE>() -> BufferBytesForGrowth
+                {
+                    using Map = JoinMapOf<TYPE, Maps>;
+                    if constexpr (detail::GrowerCanBeStepped<Map>)
+                        return [](size_t keys, size_t reserved_keys)
+                        {
+                            typename Map::grower_type grower;
+                            if (reserved_keys)
+                                grower.set(reserved_keys);
+                            while (grower.overflow(keys))
+                                grower.increaseSize();
+                            return grower.bufSize() * sizeof(typename Map::cell_type);
+                        };
+                    else
+                        return nullptr;
+                });
+            },
+            maps);
+    }
+
+    /// Scans for the non-joined rows of a join with a used flag per cell, as share `share` of `num_shares`. With at least as
+    /// many partitions as shares, a share walks a contiguous group of partitions and skips a partition whose keys are all used;
+    /// otherwise it walks a contiguous range of cells, and the share skips when every key of the table is used. Appends to
+    /// `words` the refs of the cells whose flag is unset, from `cursor`, and stops once `max_rows` rows are appended. Returns
+    /// the rows appended.
     template <typename Maps>
     size_t scanNotJoined(
         Cursor & cursor,
@@ -594,472 +499,77 @@ public:
     template <typename Maps, typename F>
     void forEachMapped(F && f)
     {
-        dispatchType([&]<Type TYPE>() { typedMap<TYPE, Maps>(*this).forEachMapped(std::forward<F>(f)); });
+        dispatchType([&]<Type TYPE>() { tableOf<TYPE, Maps>(*this).forEachMapped(f); });
     }
 
-    /// Computes the cell prefix sums and the min/max bounds of a direct-addressed map. Call it after the last insert.
+    /// Publish the cell pointers and shared mask of a partitioned map, or the bounds of a single map, after the last insert.
     void freezeForProbing();
+
+    bool shouldUseAmacLookup(HashJoinAmacMode mode) const
+    {
+        if (mode == HashJoinAmacMode::OFF)
+            return false;
+        if (mode == HashJoinAmacMode::ON)
+            return amac_support != AmacSupport::Unsupported;
+        return amac_support == AmacSupport::LargeTable;
+    }
+
+    bool partitionsAreRobinHood() const { return partitions_are_robin_hood; }
 
     size_t bufferBytes() const;
     size_t bufferSizeInCells() const;
     size_t cellSize() const;
 
-    /// Replaces the map of a `key32` or `key64` table with a direct-addressed one if its keys span a small enough range. That
-    /// map reads keys relative to the key range. Sets the key type and the key range of the table, and returns whether it did.
+    /// Replaces the map of a `key32` or `key64` table in the single form with a direct-addressed one if its keys span a small
+    /// enough range. That map reads keys relative to the key range. Sets the key type and the key range of the table, and returns
+    /// whether it did. A `key8` or `key16` table built in partitions moves its keys to its direct-addressed single form.
     bool tryConvertToFixedHashMap(bool is_signed);
 
     /// For a direct-addressed map, returns a function that tells which values of a column are keys of the map, for a
     /// `SharedFixedHashTableRuntimeFilter`. For any other map, returns an empty function.
     std::function<ColumnPtr(const ColumnWithTypeAndName &)> makeSharedRuntimeFilter(bool build_signed) const;
 
-    /// The buckets and keys that `clearInParallel` splits. An `ASOF` cell owns a heap lookup, so a large `ASOF` map is worth
-    /// clearing in parallel. Zero for any other map, and for a map whose buckets share one buffer.
+    /// The partitions and keys that `clearInParallel` splits. An `ASOF` cell owns a heap lookup, so a large `ASOF` map is worth
+    /// clearing in parallel. Zero for any other map, and for a table in the single form.
     struct ParallelClearWork
     {
-        size_t buckets = 0;
+        size_t partitions = 0;
         size_t keys = 0;
     };
     ParallelClearWork parallelClearWork() const;
 
-    /// Clears the buckets of an `ASOF` map in `num_jobs` jobs and passes them to `schedule`.
+    /// Clears the partitions of an `ASOF` map in `num_jobs` jobs and passes them to `schedule`.
     /// `schedule` must run them before the table is destroyed.
     void clearInParallel(size_t num_jobs, absl::FunctionRef<void(std::function<void()>)> schedule);
 
     /// Frees the maps. The table stays, so that a concurrent `keys` stays valid.
     void releaseMaps();
 
-    /// Looks up the key of every row of `selector`. For each row, calls `on_row(i, ind, find_result, offset)` with the position `i`,
-    /// the row `ind`, and the output offset. The loop keeps the offset so that it stays in a register. A row with a `NULL` key
-    /// or one the `ON`-section mask filters out gets a result that is not found; `fast_path` assumes there is none. `TYPE` is `type()`.
-    template <Type TYPE, typename Maps, bool fast_path, typename OnRow>
-    ALWAYS_INLINE void probe(
-        const JoinOnKeyColumns & keys,
-        const ScatteredBlock::Selector::Range & selector,
-        bool enable_prefetch,
-        IColumn::Offset & offset,
-        OnRow && on_row) const
+    /// The single form of the key type `TYPE`, which must be `type()`. Only when not `isPartitioned`.
+    template <Type TYPE, typename Maps>
+    const JoinMapOf<TYPE, Maps> & mapOf() const
     {
-        using Map = const JoinMapOf<TYPE, Maps>;
-        using KeyGetter = typename KeyGetterForType<TYPE, Map>::Type;
-        using FindResult = typename KeyGetter::FindResult;
-        constexpr bool is_asof_join = std::is_same_v<Maps, HashJoin::MapsAsof>;
-
-        chassert(key_type == TYPE);
-        const Map & map = typedMap<TYPE, Maps>(*this);
-        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(keys.key_columns, key_sizes, key_range);
-
-        size_t rows = ScatteredBlock::Selector::size(selector);
-
-        /// The skip pointer is a local so that it can stay in a register across the calls in
-        /// the loop body (see `JoinOnKeyColumns::buildRowSkipData`).
-        const UInt8 * skip_data = nullptr;
-        IColumn::Filter skip_buffer;
-        if constexpr (!fast_path)
-            skip_data = keys.buildRowSkipData(skip_buffer, selector.first, rows);
-
-        Arena pool;
-
-        /// Software prefetch during the probe phase.
-        constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, Map>;
-
-        bool use_prefetch = false;
-        if constexpr (can_prefetch)
-            use_prefetch = shouldUseJoinPrefetch(enable_prefetch, &map);
-
-        constexpr bool prepared = PreparedKeyGetter<KeyGetter>;
-        /// Before the prefetcher is created, see `PreparedJoinKeys::prepareRows`.
-        if constexpr (prepared)
-        {
-            skip_data = key_getter.skipOrAllSelected(skip_data);
-            key_getter.prepareRows(selector, skip_data);
-        }
-
-        auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
-            [&](size_t k) __attribute__((always_inline))
-            {
-                if constexpr (can_prefetch)
-                {
-                    const size_t row = selectorIndexAt(selector, k);
-                    if (prepared && !fast_path && skip_data[row])
-                        return;
-                    map.prefetch(key_getter.getKeyHolder(row, pool));
-                }
-            });
-
-        for (size_t i = 0; i < rows; ++i)
-        {
-            if constexpr (can_prefetch)
-                prefetcher.prefetchAt(i);
-
-            const size_t ind = selectorIndexAt(selector, i);
-
-            bool skip_row = false;
-            if constexpr (!fast_path)
-                skip_row = (prepared || skip_data) && skip_data[ind];
-
-            on_row(i, ind, skip_row ? FindResult() : key_getter.findKey(map, ind, pool), offset);
-        }
-    }
-
-    /// Looks up the key of every row of `selector` in `tables`, in order. For each table that has the key, calls
-    /// `on_match(i, ind, find_result, is_last_disjunct, row_state, offset)`, where `row_state` is a `RowState` made for the row.
-    /// Then calls `on_row_end(i, found, offset)`. Skips the `NULL` and masked keys as `probe` does. With `stops_at_first_match`, a
-    /// row stops at its first match. The loop stops before a row once `offset` reaches `max_offset`, and returns the rows processed.
-    /// It prefetches the first table. With `prefetch_later_maps` it also prefetches the two-level tables after the first, up to
-    /// the first one that fits in the cache. With `stops_at_first_match` it prefetches only as many as `MultiMapLookupSampler` allows.
-    /// `lazy_row_filter` checks the `NULL` key and the mask of each row when the loop visits it, instead of building skip bytes
-    /// for all of `selector`. That is cheaper when a call visits few rows, as a join with a residual condition does, and costs
-    /// two checks per row otherwise. A key getter that builds its keys ahead (the `hashed` and packed `String` keys) still gets
-    /// the skip bytes of all of `selector`. `lazy_row_filter` excludes `fast_path`, which has nothing to check, and
-    /// `stops_at_first_match`, whose sampler reads the prepared bytes. `TYPE` is the `type()` of every table.
-    template <
-        Type TYPE,
-        typename Maps,
-        bool fast_path,
-        bool stops_at_first_match,
-        bool prefetch_later_maps,
-        typename RowState,
-        bool lazy_row_filter = false,
-        typename OnMatch,
-        typename OnRowEnd>
-    static ALWAYS_INLINE size_t probeAll(
-        std::span<const std::unique_ptr<HashJoinTable>> tables,
-        std::span<const JoinOnKeyColumns> keys,
-        const ScatteredBlock::Selector::Range & selector,
-        bool enable_prefetch,
-        IColumn::Offset max_offset,
-        IColumn::Offset & offset,
-        OnMatch on_match,
-        OnRowEnd on_row_end)
-    {
-        using Map = const JoinMapOf<TYPE, Maps>;
-        using KeyGetter = typename KeyGetterForType<TYPE, Map>::Type;
-
-        chassert(std::ranges::all_of(tables, [](const auto & table) { return table->key_type == TYPE; }));
-        std::vector<const Map *> mapv;
-        std::vector<KeyGetter> key_getter_vector;
-        prepareProbeAll<TYPE, Maps>(tables, keys, mapv, key_getter_vector);
-        return detail::probeAllRows<KeyGetter, Map, fast_path, stops_at_first_match, prefetch_later_maps, RowState, lazy_row_filter>(
-            std::move(key_getter_vector), mapv, keys, selector, enable_prefetch, max_offset, offset, std::move(on_match),
-            std::move(on_row_end));
+        return const_cast<HashJoinTable &>(*this).singleView<TYPE, Maps>();
     }
 
 private:
+    /// The table object of the key type `TYPE`: a `JoinMapForms`, or a map with the single form only.
     template <Type TYPE, typename Maps, typename Self>
-    static auto & typedMap(Self & self)
+    static auto & tableOf(Self & self)
     {
         return *std::get<Maps>(self.maps).template mapOf<TYPE>();
     }
 
-    /// Calls `f.template operator()<TYPE>()` with the key type of the table.
-    template <typename F>
-    decltype(auto) dispatchType(F && f) const
-    {
-        switch (key_type)
-        {
-#define M(TYPE) \
-    case Type::TYPE: \
-        return f.template operator()<Type::TYPE>();
-            APPLY_FOR_JOIN_VARIANTS(M)
-#undef M
-        }
-        UNREACHABLE();
-    }
-
     [[noreturn]] static void throwKeysNotRecoverable(Type type);
 
-    /// Kept out of line: with the libc++ 23 headers the inliner folds every instantiation into `insertFromBlockImpl`
-    /// (5 KB to 43 KB), and the build loop then overlaps fewer of its independent cache misses with join software
-    /// prefetch on (TPC-H Q9 1.3x slower at 4 to 16 threads on aarch64). The call runs once per block.
+    /// Does `insert` for the key type `TYPE`, which must be `type()`. Keys and row lists go to `arena`.
     template <Type TYPE, typename Maps>
-    NO_INLINE BuildResult insertTyped(
-        const InsertSettings & settings, const InsertRows & rows, Arena & arena, absl::FunctionRef<void(size_t)> add_bytes)
-    {
-        using HashMap = JoinMapOf<TYPE, Maps>;
-        using KeyGetter = typename KeyGetterForType<TYPE, HashMap>::Type;
-        [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename Maps::MappedType, RowRef>;
-        constexpr bool is_set = SetJoinMaps<Maps>;
-        constexpr bool is_asof_join = std::is_same_v<Maps, HashJoin::MapsAsof>;
-
-        HashMap & map = typedMap<TYPE, Maps>(*this);
-
-        std::vector<ScatteredBlock::Selector> scattered;
-        std::span<const ScatteredBlock::Selector> per_slot(&rows.selector, 1);
-        /// If the key getter can build its keys ahead, the scatter builds them here once, for the inserts of all slots.
-        PaddedPODArray<UInt128> prebuilt_keys;
-        /// Only the parallel layout has more than one slot, and only its maps have more than one bucket.
-        if constexpr (HashMap::NUM_BUCKETS > 1)
-        {
-            if (slots.size() > 1)
-            {
-                scattered = scatterBySlot<TYPE, is_asof_join>(map, rows, prebuilt_keys);
-                per_slot = scattered;
-            }
-        }
-        else
-            chassert(slots.size() == 1);
-        if constexpr (!PreparedKeyGetter<KeyGetter>)
-            chassert(prebuilt_keys.empty(), "Join keys were built ahead for a key getter that does not read them");
-        if (!prebuilt_keys.empty() && prebuilt_keys.size() != rows.key_columns.at(0)->size())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "{} join keys were built ahead for a block of {} rows",
-                prebuilt_keys.size(),
-                rows.key_columns.at(0)->size());
-
-        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(rows.key_columns, key_sizes);
-
-        /// The skip bytes of the block, for the inserts of all slots.
-        const UInt8 * skip = nullptr;
-        if constexpr (PreparedKeyGetter<KeyGetter>)
-            skip = key_getter.skipOrAllSelected(
-                buildRowSkipData(rows.null_map, rows.join_mask, key_getter.skip_buffer, 0, key_getter.num_rows));
-
-        /// No other call allocates in `arena` meanwhile. The guard also counts what was allocated before a throw, as the slots do below.
-        const size_t arena_bytes_before = arena.allocatedBytes();
-        SCOPE_EXIT({ add_bytes(arena.allocatedBytes() - arena_bytes_before); });
-
-        BuildResult result;
-        /// For ALL and ASOF join always insert values. The other maps keep the block only if a slot needs it.
-        if constexpr (!is_set)
-            result.is_inserted = !mapped_one || is_asof_join;
-        auto insert_slot = [&](size_t slot)
-        {
-            const ScatteredBlock::Selector & selector = per_slot[slot];
-            const size_t bytes_before = slots.slotBytes(map, slot);
-            /// Under the slot lock so a concurrent limit check cannot miss this slot. Also when an insert throws: the
-            /// rows before it stay in the map, and `StorageJoin` keeps serving them.
-            SCOPE_EXIT({ add_bytes(slots.slotBytes(map, slot) - bytes_before); });
-
-            if (const size_t reserved = slots.reserveOnFirstInsert(map, slot))
-                ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserved);
-
-            auto insert_rows = [&](const auto & slot_rows)
-            {
-                return insertSlotRows<Maps>(
-                    settings,
-                    map,
-                    key_getter,
-                    rows.key_columns,
-                    rows.stored_block_no,
-                    slot_rows,
-                    rows.null_map,
-                    rows.join_mask,
-                    arena,
-                    prebuilt_keys.empty() ? nullptr : &prebuilt_keys,
-                    skip);
-            };
-            const BuildResult slot_result
-                = selector.isContinuousRange() ? insert_rows(selector.getRange()) : insert_rows(selector.getIndexes());
-
-            result.is_inserted |= slot_result.is_inserted;
-            result.all_values_unique &= slot_result.all_values_unique;
-        };
-
-        slots.insert(per_slot, insert_slot);
-
-        /// `insertSlotRows` takes a key getter that is not trivially copyable by reference, so these counts cover all slots.
-        if constexpr (requires { key_getter.hashed_keys; })
-        {
-            ProfileEvents::increment(ProfileEvents::JoinPackedStringKeysInline, key_getter.emplaced_keys - key_getter.hashed_keys);
-            ProfileEvents::increment(ProfileEvents::JoinPackedStringKeysHashed, key_getter.hashed_keys);
-        }
-        return result;
-    }
-
-    /// Inserts the rows of one slot. The `is_inserted` it returns comes from these rows only.
-    /// If set, `prebuilt_keys[row]` is the key of each row that the slot scatter routed, built with the key getter's
-    /// `buildAllKeys`. `skip` is the skip bytes of the block for a prepared key getter.
-    template <typename Maps, typename KeyGetter, typename HashMap, typename Selector>
-    BuildResult insertSlotRows(
-        const InsertSettings & settings,
-        HashMap & map,
-        KeyGetter & key_getter_,
-        const ColumnRawPtrs & key_columns,
-        UInt32 stored_block_no,
-        const Selector & selector,
-        ConstNullMapPtr null_map,
-        const JoinCommon::JoinMask & join_mask,
-        Arena & pool,
-        [[maybe_unused]] const PaddedPODArray<UInt128> * prebuilt_keys,
-        [[maybe_unused]] const UInt8 * skip)
-    {
-        [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename Maps::MappedType, RowRef>;
-        constexpr bool is_set = SetJoinMaps<Maps>;
-        constexpr bool is_asof_join = std::is_same_v<Maps, HashJoin::MapsAsof>;
-        constexpr bool prepared = PreparedKeyGetter<KeyGetter>;
-
-        /// Copy the getter when that is cheap: the loop reloads a getter behind a reference after every out-of-line `RowRefList::insert`.
-        std::conditional_t<std::is_trivially_copyable_v<KeyGetter>, KeyGetter, KeyGetter &> key_getter = key_getter_;
-
-        const IColumn * asof_column [[maybe_unused]] = nullptr;
-        [[maybe_unused]] TypeIndex asof_type{};
-        [[maybe_unused]] ASOFJoinInequality asof_inequality{};
-        if constexpr (is_asof_join)
-        {
-            asof_column = key_columns.back();
-            /// Hoisted out of the loop below, see `Inserter::insertAsof`.
-            asof_type = *settings.asof_type;
-            asof_inequality = settings.asof_inequality;
-        }
-
-        const size_t rows = ScatteredBlock::Selector::size(selector);
-        /// Hoisted out of the loop below, see `Inserter::insertOne`.
-        [[maybe_unused]] const bool any_take_last_row = settings.any_take_last_row;
-
-        BuildResult result;
-        /// Also counts the keys inserted before a throw, as the caller does for the bytes.
-        size_t new_keys = 0;
-        SCOPE_EXIT({ num_keys.fetch_add(new_keys, std::memory_order_relaxed); });
-
-        /// Software prefetch during the build phase.
-        constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, HashMap>;
-
-        /// A two-level map always prefetches here: summing its buckets would race with the resizes other threads do under
-        /// their own slot locks.
-        bool use_prefetch = false;
-        if constexpr (can_prefetch)
-            use_prefetch = HashMap::NUM_BUCKETS > 1 ? settings.enable_software_prefetch
-                                                    : shouldUseJoinPrefetch(settings.enable_software_prefetch, &map);
-
-        if constexpr (prepared)
-        {
-            /// Before the prefetcher is created, see `PreparedJoinKeys::prepareRows`.
-            if (prebuilt_keys && rows)
-                key_getter.usePrebuiltKeys(*prebuilt_keys, selectorIndexAt(selector, 0));
-            else
-                key_getter.prepareRows(selector, skip);
-
-            /// The loop below skips the rows with a `NULL` key. As with the other key getters, such a row still keeps the block.
-            /// ALL and ASOF maps keep every block anyway.
-            if constexpr (mapped_one && !is_asof_join)
-            {
-                UInt8 any_null = 0;
-                if (null_map)
-                    for (size_t i = 0; i < rows; ++i)
-                        any_null |= (*null_map)[selectorIndexAt(selector, i)];
-                result.is_inserted = any_null != 0;
-            }
-        }
-
-        auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
-            [&](size_t k) __attribute__((always_inline))
-            {
-                if constexpr (can_prefetch)
-                {
-                    const size_t row = selectorIndexAt(selector, k);
-                    if (prepared && skip[row])
-                        return;
-                    map.prefetch(key_getter.getKeyHolder(row, pool));
-                }
-            });
-
-        for (size_t i = 0; i < rows; ++i)
-        {
-            if constexpr (can_prefetch)
-                prefetcher.prefetchAt(i);
-
-            const size_t ind = selectorIndexAt(selector, i);
-
-            if constexpr (prepared)
-            {
-                if (skip[ind])
-                    continue;
-            }
-            else
-            {
-                chassert(!null_map || ind < null_map->size());
-                if (null_map && (*null_map)[ind])
-                {
-                    /// nulls are not inserted into hash table,
-                    /// keep them for RIGHT and FULL joins - a set map is never used by one of those
-                    if constexpr (!is_set)
-                        result.is_inserted = true;
-                    continue;
-                }
-
-                /// Check condition for right table from ON section
-                if (join_mask.isRowFiltered(ind))
-                    continue;
-            }
-
-            if constexpr (is_asof_join)
-                Inserter<HashMap, KeyGetter>::insertAsof(
-                    asof_type, asof_inequality, map, key_getter, stored_block_no, ind, pool, new_keys, *asof_column);
-            else if constexpr (is_set)
-                Inserter<HashMap, KeyGetter>::insertKeyOnly(map, key_getter, ind, pool, new_keys);
-            else if constexpr (mapped_one)
-                result.is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(
-                    any_take_last_row, map, key_getter, stored_block_no, ind, pool, new_keys);
-            else
-                result.all_values_unique
-                    &= Inserter<HashMap, KeyGetter>::insertAll(map, key_getter, stored_block_no, ind, pool, new_keys);
-        }
-
-        /// A set map needs the block only for another algorithm, and only when the block added a key.
-        if constexpr (is_set)
-            result.is_inserted = new_keys != 0 && settings.must_keep_right_blocks;
-        return result;
-    }
-
-    /// Routes each row the way `map` places its key: by `map.hash` and `getBucketOfKey`.
-    template <Type TYPE, bool is_asof_join, typename Map>
-    std::vector<ScatteredBlock::Selector> scatterBySlot(
-        const Map & map, const InsertRows & rows, [[maybe_unused]] PaddedPODArray<UInt128> & prebuilt_keys) const
-    {
-        using KeyGetter = KeyGetterForType<TYPE, Map>::Type;
-
-        if constexpr (requires { KeyGetter::has_pre_computed_hashes; })
-            static_assert(!KeyGetter::has_pre_computed_hashes, "Bucket routing assumes the map computes the hash it places by");
-
-        const auto & key_columns = rows.key_columns;
-        const auto & selector = rows.selector;
-
-        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
-
-        /// The rows are routed by these keys below, and the slot inserts read them too.
-        if constexpr (PreparedKeyGetter<KeyGetter>)
-            key_getter.buildAllKeys(selector, prebuilt_keys);
-
-        /// Nothing here outlives the call: the key holders are read for their hash, never persisted.
-        Arena scratch_pool;
-
-        const size_t num_rows = selector.size();
-        const size_t num_slots = slots.size();
-
-        PODArray<UInt32> row_to_slot(num_rows);
-        std::vector<size_t> counts(num_slots, 0);
-        for (size_t i = 0; i < num_rows; ++i)
-        {
-            auto key_holder = key_getter.getKeyHolder(selector[i], scratch_pool);
-            const auto & key = keyHolderGetKey(key_holder);
-
-            const size_t bucket = getBucketOfKey<Map>(key, map.hash(key));
-            /// The slot count is a power of two, so this is `bucket % num_slots`.
-            const auto slot = static_cast<UInt32>(bucket & (num_slots - 1));
-            row_to_slot[i] = slot;
-            ++counts[slot];
-        }
-
-        std::vector<ScatteredBlock::Selector::IndexesPtr> indexes;
-        indexes.reserve(num_slots);
-        for (size_t slot = 0; slot < num_slots; ++slot)
-        {
-            auto column = ScatteredBlock::Selector::Indexes::create();
-            column->getData().reserve(counts[slot]);
-            indexes.push_back(std::move(column));
-        }
-
-        for (size_t i = 0; i < num_rows; ++i)
-            indexes[row_to_slot[i]]->getData().push_back(selector[i]);
-
-        std::vector<ScatteredBlock::Selector> result;
-        result.reserve(num_slots);
-        for (auto & column : indexes)
-            result.emplace_back(std::move(column));
-
-        return result;
-    }
+    BuildResult
+    insertTyped(const InsertSettings & settings, const InsertRows & rows, Arena & arena, absl::FunctionRef<void(size_t)> add_bytes);
+    /// Inserts into `map`, the single or the partitioned form of the table. Defined in `InsertKeys.h`.
+    template <Type TYPE, typename Maps, typename Map>
+    BuildResult insertInto(
+        Map & map, const InsertSettings & settings, const InsertRows & rows, Arena & arena, absl::FunctionRef<void(size_t)> add_bytes);
 
     template <Type TYPE, typename Maps>
     size_t scanNotJoinedTyped(
@@ -1070,30 +580,67 @@ private:
         size_t max_rows,
         PaddedPODArray<UInt64> & words) const;
 
+    /// Where a walk over the partitioned form resumes: the partition, and the cell in its map.
+    template <typename Iterator>
+    struct PartitionCursor
+    {
+        size_t partition = 0;
+        Iterator it;
+    };
+
     template <Type TYPE, typename Maps, typename F>
     size_t forEachCellTyped(Cursor & cursor, size_t max_rows, F && f) const
     {
-        using Map = JoinMapOf<TYPE, Maps>;
-        using Iterator = typename Map::const_iterator;
-
-        const auto & map_ptr = std::get<Maps>(maps).template mapOf<TYPE>();
-        if (!map_ptr)
+        const auto & table_ptr = std::get<Maps>(maps).template mapOf<TYPE>();
+        if (!table_ptr)
             return 0;
-        const Map & map = *map_ptr;
+        return visitForm<TYPE, Maps>(
+            [&]<typename Form>(const Form & form) -> size_t
+            {
+                if constexpr (is_join_partitioned_view<Form>)
+                {
+                    using Iterator = typename Form::map_type::const_iterator;
+                    if (!cursor.has_value())
+                        cursor = std::make_any<PartitionCursor<Iterator>>();
+                    auto & pc = std::any_cast<PartitionCursor<Iterator> &>(cursor);
+                    size_t rows = 0;
+                    for (; pc.partition < form.numPartitions(); ++pc.partition)
+                    {
+                        const auto * map = form.partitionOrNull(pc.partition);
+                        if (!map)
+                            continue;
+                        /// A default-constructed iterator marks a partition that the walk has not entered yet.
+                        if (pc.it == Iterator())
+                            pc.it = map->begin();
+                        for (auto end = map->end(); pc.it != end;)
+                        {
+                            rows += f(pc.it->getKey(), pc.it->getMapped());
+                            ++pc.it;
+                            if (rows >= max_rows)
+                                return rows;
+                        }
+                        pc.it = Iterator();
+                    }
+                    return rows;
+                }
+                else
+                {
+                    using Iterator = typename Form::const_iterator;
+                    if (!cursor.has_value())
+                        cursor = std::make_any<Iterator>(form.begin());
+                    Iterator & it = std::any_cast<Iterator &>(cursor);
 
-        if (!cursor.has_value())
-            cursor = std::make_any<Iterator>(map.begin());
-        Iterator & it = std::any_cast<Iterator &>(cursor);
-
-        size_t rows = 0;
-        for (auto end = map.end(); it != end;)
-        {
-            rows += f(it->getKey(), it->getMapped());
-            ++it;
-            if (rows >= max_rows)
-                break;
-        }
-        return rows;
+                    size_t rows = 0;
+                    for (auto end = form.end(); it != end;)
+                    {
+                        rows += f(it->getKey(), it->getMapped());
+                        ++it;
+                        if (rows >= max_rows)
+                            break;
+                    }
+                    return rows;
+                }
+            });
     }
 
     template <Type TYPE, typename Maps>
@@ -1155,28 +702,11 @@ private:
             });
     }
 
-    /// The map pointers and the key getters of `probeAll`. Out of line, so that the callers of one key type share one copy.
-    template <Type TYPE, typename Maps>
-    static NO_INLINE void prepareProbeAll(
-        std::span<const std::unique_ptr<HashJoinTable>> tables,
-        std::span<const JoinOnKeyColumns> keys,
-        std::vector<const JoinMapOf<TYPE, Maps> *> & mapv,
-        std::vector<typename KeyGetterForType<TYPE, const JoinMapOf<TYPE, Maps>>::Type> & key_getter_vector)
-    {
-        using KeyGetter = typename KeyGetterForType<TYPE, const JoinMapOf<TYPE, Maps>>::Type;
-        constexpr bool is_asof_join = std::is_same_v<Maps, HashJoin::MapsAsof>;
-
-        mapv.resize(keys.size());
-        for (size_t d = 0; d < keys.size(); ++d)
-        {
-            mapv[d] = &typedMap<TYPE, Maps>(*tables[d]);
-            key_getter_vector.push_back(
-                createJoinKeyGetter<KeyGetter, is_asof_join>(keys[d].key_columns, tables[d]->key_sizes, tables[d]->key_range));
-        }
-    }
-
     template <bool is_signed, typename Key, typename Maps>
     bool tryConvertToFixedHashMapImpl(Maps & maps_);
+
+    template <Type TYPE, typename Maps>
+    bool collapsePartitions(Maps & maps_);
 
     Type key_type;
     JoinKeyRange key_range;
@@ -1186,8 +716,23 @@ private:
     /// and calls of one stream never overlap. Neither kind of allocation needs contiguity or rollback, so a key and its list can
     /// be in different arenas. The arenas are behind pointers so that `releaseArenas` can move them out and free them alone.
     std::vector<std::unique_ptr<Arena>> arenas;
-    BuildSlots slots;
+    /// One per arena, see `noteNextArenaChunks`.
+    std::unique_ptr<std::atomic<size_t>[]> next_arena_chunks;
     std::atomic<size_t> num_keys = 0;
+    /// 1 in the single form.
+    size_t num_partitions = 1;
+    std::atomic<size_t> partition_capacity = 0;
+    std::atomic<size_t> partition_bytes = 0;
+    bool robin_hood_allowed = false;
+    size_t partition_reserve_keys = 0;
+    enum class AmacSupport : uint8_t
+    {
+        Unsupported,
+        SmallTable,
+        LargeTable,
+    };
+    AmacSupport amac_support = AmacSupport::Unsupported;
+    bool partitions_are_robin_hood = false;
 };
 
 }

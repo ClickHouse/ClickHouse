@@ -14,12 +14,14 @@
 #include <IO/WriteBuffer.h>
 
 #include <algorithm>
+#include <atomic>
 #include <bit>
 #include <cmath>
 #include <cstring>
 #include <limits>
 #include <string>
 #include <type_traits>
+#include <utility>
 
 namespace DB
 {
@@ -321,6 +323,36 @@ NO_SANITIZE_UNSIGNED_OVERFLOW UInt64 maxOfGroups(UInt64 lhs, UInt64 rhs, UInt64 
     return max_even | max_odd << width;
 }
 
+/// The registers of the live mode of `HyperLogLogCounter`: one byte each, so that a register is one atomic object. One thread
+/// writes them with relaxed stores while any thread reads them with relaxed loads; such a byte access is a plain load or store.
+template <size_t bucket_count>
+class LiveRegisters
+{
+public:
+    [[nodiscard]] UInt8 ALWAYS_INLINE get(size_t bucket) const
+    {
+        return std::atomic_ref<UInt8>(ranks[bucket]).load(std::memory_order_relaxed);
+    }
+
+    void ALWAYS_INLINE set(size_t bucket, UInt8 rank)
+    {
+        std::atomic_ref<UInt8>(ranks[bucket]).store(rank, std::memory_order_relaxed);
+    }
+
+    /// Set with release after a register rises; cleared by `consumeChange`.
+    std::atomic<bool> changed = false;
+
+private:
+    /// Mutable because `std::atomic_ref` takes a non-const reference, also for a load.
+    mutable UInt8 ranks[bucket_count] = {};
+};
+
+/// Takes the place of the denominator and of the zero count in the live mode of `HyperLogLogCounter`, which keeps neither.
+struct NoIncrementalState
+{
+    constexpr NoIncrementalState(size_t) {} /// NOLINT
+};
+
 }
 
 
@@ -333,11 +365,24 @@ enum class HyperLogLogMode : uint8_t
     FullFeatured    /// LinearCounting or HyperLogLog++ error correction (depending).
 };
 
+/// Sets how HyperLogLog keeps its registers.
+enum class HyperLogLogStorage : uint8_t
+{
+    /// `rank_width` bits per register, with the denominator and the number of zero registers kept up to date by every insert.
+    Packed,
+    /// One byte per register. One thread inserts while other threads call `size` and `mergeLive`. `size` computes the
+    /// denominator from the registers, and a change flag tells a reader that a register rose. Not serializable, not copyable,
+    /// only for 32-bit hashes; `DenominatorType` and `denominator_mode` are not used.
+    Live,
+};
+
 /// Estimation of number of unique values using HyperLogLog algorithm.
 ///
 /// Theoretical relative error is ~1.04 / sqrt(2^precision), where
 /// precision is size of prefix of hash-function used for indexing (number of buckets M = 2^precision).
 /// Recommended values for precision are: 3..20.
+///
+/// `storage` selects the packed registers (the default) or the live mode, see `HyperLogLogStorage`.
 ///
 /// Source: "HyperLogLog: The analysis of a near-optimal cardinality estimation algorithm"
 /// (P. Flajolet et al., AOFA '07: Proceedings of the 2007 International Conference on Analysis
@@ -350,10 +395,13 @@ template <
     typename DenominatorType = double,
     typename BiasEstimator = TrivialBiasEstimator,
     HyperLogLogMode mode = HyperLogLogMode::FullFeatured,
-    DenominatorMode denominator_mode = DenominatorMode::StableIfBig>
+    DenominatorMode denominator_mode = DenominatorMode::StableIfBig,
+    HyperLogLogStorage storage = HyperLogLogStorage::Packed>
 class HyperLogLogCounter : private Hash
 {
 private:
+    static constexpr bool live = storage == HyperLogLogStorage::Live;
+
     /// Number of buckets.
     static constexpr size_t bucket_count = 1ULL << precision;
 
@@ -362,8 +410,11 @@ private:
     static constexpr size_t register_values = 1ULL << rank_width;
     static constexpr UInt64 register_mask = register_values - 1;
 
-    using Value = UInt64;
-    using RankStore = DB::CompactArray<HashValueType, rank_width, bucket_count>;
+    using Value = std::conditional_t<live, Key, UInt64>;
+    using RankStore = std::conditional_t<
+        live,
+        details::LiveRegisters<bucket_count>,
+        DB::CompactArray<HashValueType, rank_width, bucket_count>>;
 
 public:
     using value_type = Value;
@@ -379,7 +430,10 @@ public:
         UInt8 rank = calculateRank(tail);
 
         /// Update maximum rank for current bucket.
-        update(bucket, rank);
+        if constexpr (live)
+            updateLive(bucket, rank);
+        else
+            update(bucket, rank);
     }
 
     void ALWAYS_INLINE prefetch(Value value) const
@@ -402,9 +456,17 @@ public:
         /// Harmonic mean for all buckets of 2^rank values is: bucket_count / ∑ 2^-rank_i,
         /// where ∑ 2^-rank_i - is denominator.
 
-        double raw_estimate = alpha_m * bucket_count * bucket_count / denominator.get();
-
-        double final_estimate = fixRawEstimate(raw_estimate);
+        double final_estimate = 0;
+        if constexpr (live)
+        {
+            const auto [live_denominator, live_zeros] = sumLiveRegisters();
+            final_estimate = fixRawEstimate(alpha_m * bucket_count * bucket_count / live_denominator, live_zeros);
+        }
+        else
+        {
+            double raw_estimate = alpha_m * bucket_count * bucket_count / denominator.get();
+            final_estimate = fixRawEstimate(raw_estimate, zeros);
+        }
 
         if (final_estimate < 0)
             throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Corrupted HyperLogLog state: the estimate {} is negative", final_estimate);
@@ -416,6 +478,7 @@ public:
 
     void merge(const HyperLogLogCounter & rhs)
     {
+        static_assert(!live, "The live mode merges with `mergeLive`");
         if constexpr (details::isBigRankStore(precision) && denominator_mode == DenominatorMode::StableIfBig)
             mergeGroups(rhs);
         else
@@ -426,8 +489,35 @@ public:
         }
     }
 
+    /// Raises every register to the one of `rhs`, like `merge`. Another thread may insert into `rhs` meanwhile: each register
+    /// of `rhs` is read once, so this counter gets every rank that `rhs` had when the call started, and maybe some that came
+    /// later. This counter must have no other writer during the call. Sets the change flag when a register rises.
+    void mergeLive(const HyperLogLogCounter & rhs) requires live
+    {
+        bool raised = false;
+        for (size_t bucket = 0; bucket < bucket_count; ++bucket)
+        {
+            const UInt8 rank = rhs.rank_store.get(bucket);
+            if (rank > rank_store.get(bucket))
+            {
+                rank_store.set(bucket, rank);
+                raised = true;
+            }
+        }
+        if (raised)
+            rank_store.changed.store(true, std::memory_order_release);
+    }
+
+    /// Returns whether a register rose since the previous call, and clears that. Any thread may call it while the writer
+    /// inserts. After `true`, a `mergeLive` from this counter sees every rise that set the flag.
+    bool consumeChange() requires live
+    {
+        return rank_store.changed.exchange(false, std::memory_order_acquire);
+    }
+
     void read(DB::ReadBuffer & in)
     {
+        static_assert(!live, "The live mode has no serialized state");
         auto rank_state = rank_store.getSerializableState();
         in.readStrict(reinterpret_cast<char *>(rank_state.data()), rank_state.size());
 
@@ -471,6 +561,7 @@ public:
 
     void write(DB::WriteBuffer & out) const
     {
+        static_assert(!live, "The live mode has no serialized state");
         auto rank_state = rank_store.getSerializableState();
         out.write(reinterpret_cast<const char *>(rank_state.data()), rank_state.size());
 
@@ -580,6 +671,32 @@ private:
             denominator.update(cur_rank, rank);
             rank_store.set(bucket, rank);
         }
+    }
+
+    /// The registers have one writer, so the load and the store cannot lose a rise.
+    void ALWAYS_INLINE updateLive(HashValueType bucket, UInt8 rank)
+    {
+        if (rank > rank_store.get(bucket))
+        {
+            rank_store.set(bucket, rank);
+            rank_store.changed.store(true, std::memory_order_release);
+        }
+    }
+
+    /// The denominator ∑ 2^-rank_i and the number of zero registers of the live mode. ∑ 2^(max_rank - rank_i) is an integer
+    /// below 2^(precision + max_rank) = 2^33, so the sum is exact and equals the denominator of `Denominator<StableIfBig>` for
+    /// the same registers.
+    [[nodiscard]] std::pair<double, size_t> sumLiveRegisters() const
+    {
+        UInt64 sum = 0;
+        size_t zero_count = 0;
+        for (size_t bucket = 0; bucket < bucket_count; ++bucket)
+        {
+            const UInt8 rank = rank_store.get(bucket);
+            sum += 1ULL << (max_rank - rank);
+            zero_count += rank == 0;
+        }
+        return {static_cast<double>(sum) * (1.0 / static_cast<double>(1ULL << max_rank)), zero_count};
     }
 
     /// 8 registers take exactly `rank_width` bytes, a block of 8 such groups holds 64 registers.
@@ -702,12 +819,12 @@ private:
         }
     }
 
-    [[nodiscard]] double fixRawEstimate(double raw_estimate) const
+    [[nodiscard]] double fixRawEstimate(double raw_estimate, size_t zero_count) const
     {
         if ((mode == HyperLogLogMode::Raw) || ((mode == HyperLogLogMode::BiasCorrected) && BiasEstimator::isTrivial()))
             return raw_estimate;
         if (mode == HyperLogLogMode::LinearCounting)
-            return applyLinearCorrection(raw_estimate);
+            return applyLinearCorrection(raw_estimate, zero_count);
         if ((mode == HyperLogLogMode::BiasCorrected) && !BiasEstimator::isTrivial())
             return applyBiasCorrection(raw_estimate);
         if (mode == HyperLogLogMode::FullFeatured)
@@ -719,14 +836,14 @@ private:
             if (raw_estimate > (pow2_32 / 30.0))
                 fixed_estimate = raw_estimate;
             else
-                fixed_estimate = applyCorrection(raw_estimate);
+                fixed_estimate = applyCorrection(raw_estimate, zero_count);
 
             return fixed_estimate;
         }
         throw Poco::Exception("Internal error", DB::ErrorCodes::LOGICAL_ERROR);
     }
 
-    [[nodiscard]] double applyCorrection(double raw_estimate) const
+    [[nodiscard]] double applyCorrection(double raw_estimate, size_t zero_count) const
     {
         double fixed_estimate = 0;
 
@@ -735,7 +852,7 @@ private:
             if (raw_estimate <= (2.5 * bucket_count))
             {
                 /// Correction in case of small estimate.
-                fixed_estimate = applyLinearCorrection(raw_estimate);
+                fixed_estimate = applyLinearCorrection(raw_estimate, zero_count);
             }
             else
                 fixed_estimate = raw_estimate;
@@ -743,7 +860,7 @@ private:
         else
         {
             fixed_estimate = applyBiasCorrection(raw_estimate);
-            double linear_estimate = applyLinearCorrection(fixed_estimate);
+            double linear_estimate = applyLinearCorrection(fixed_estimate, zero_count);
 
             if (linear_estimate < BiasEstimator::getThreshold())
                 fixed_estimate = linear_estimate;
@@ -770,12 +887,12 @@ private:
     /// Calculation of unique values using LinearCounting algorithm.
     /// Source: "A Linear-time Probabilistic Counting Algorithm for Database Applications"
     /// (Whang et al., ACM Trans. Database Syst., pp. 208-229, 1990).
-    [[nodiscard]] double applyLinearCorrection(double raw_estimate) const
+    [[nodiscard]] double applyLinearCorrection(double raw_estimate, size_t zero_count) const
     {
         double fixed_estimate = 0;
 
-        if (zeros != 0)
-            fixed_estimate = bucket_count * (getLogLUT().getLog(bucket_count) - getLogLUT().getLog(zeros));
+        if (zero_count != 0)
+            fixed_estimate = bucket_count * (getLogLUT().getLog(bucket_count) - getLogLUT().getLog(zero_count));
         else
             fixed_estimate = raw_estimate;
 
@@ -787,12 +904,15 @@ private:
 
     RankStore rank_store;
 
-    /// Expression's denominator for HyperLogLog algorithm.
-    using DenominatorCalculatorType = details::Denominator<precision, max_rank, HashValueType, DenominatorType, denominator_mode>;
+    /// Expression's denominator for HyperLogLog algorithm. The live mode has none: `size` sums the registers.
+    using DenominatorCalculatorType = std::conditional_t<
+        live,
+        details::NoIncrementalState,
+        details::Denominator<precision, max_rank, HashValueType, DenominatorType, denominator_mode>>;
     DenominatorCalculatorType denominator{bucket_count};
 
-    /// Number of zeros in rank storage.
-    using ZerosCounterType = typename details::MinCounterType<bucket_count>::Type;
+    /// Number of zeros in rank storage. The live mode has none: `size` counts them.
+    using ZerosCounterType = std::conditional_t<live, details::NoIncrementalState, typename details::MinCounterType<bucket_count>::Type>;
     ZerosCounterType zeros = bucket_count;
 
     /// Built on first use rather than by a static initializer per instantiation.
@@ -804,6 +924,7 @@ private:
 
     /// Checks.
     static_assert(precision < (sizeof(HashValueType) * 8), "Invalid parameter value");
+    static_assert(!live || std::is_same_v<HashValueType, UInt32>, "The live mode sums its registers in 64 bits");
 };
 
 
@@ -819,3 +940,16 @@ using HLL12 = HyperLogLogCounter<
     HyperLogLogMode::FullFeatured,
     DenominatorMode::Compact
 >;
+
+/// A distinct count that other threads can read while one thread inserts. The input is a 32-bit hash, which `fmix32` spreads
+/// before the low 12 bits pick the register. 4 KiB.
+using LiveHyperLogLogCounter = HyperLogLogCounter<
+    12,
+    UInt32,
+    FMix32Hash,
+    UInt32,
+    double,
+    TrivialBiasEstimator,
+    HyperLogLogMode::FullFeatured,
+    DenominatorMode::StableIfBig,
+    HyperLogLogStorage::Live>;

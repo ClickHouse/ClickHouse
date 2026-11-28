@@ -18,13 +18,17 @@ JoinSwitcher::JoinSwitcher(
     , table_join(table_join_)
     , right_sample_block(right_sample_block_->cloneEmpty())
 {
-    join = HashJoin::create(
-        table_join, right_sample_block_, HashJoinBuildLayout::oneBucket(1), any_take_last_row_, stats_collecting_params_);
+    auto hash_join = HashJoin::create(
+        table_join, right_sample_block_, HashJoinBuildLayout::serialLayout(1), any_take_last_row_, stats_collecting_params_);
     /// Until the build phase ends this join may have to hand its right blocks to `MergeJoin`.
-    assert_cast<HashJoin *>(join.get())->keepRightBlocksForAnotherAlgorithm();
+    hash_join->keepRightBlocksForAnotherAlgorithm();
 
     if (!limits.hasLimits())
         limits.max_bytes = table_join->defaultMaxBytes();
+
+    /// The join waits for its blocks: these limits end the wait before the `softCheck` of `addBlockToJoin` could fail.
+    hash_join->setWaitLimits(limits);
+    join = std::move(hash_join);
 }
 
 bool JoinSwitcher::addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context)
@@ -39,7 +43,8 @@ bool JoinSwitcher::addBlockToJoin(const Block & block, size_t num_rows, JoinBuil
 
     join->addBlockToJoin(block, num_rows, context.callerChecksLimits());
     size_t rows = join->getTotalRowCount();
-    size_t bytes = join->getTotalByteCount();
+    /// While the join waits, its tables do not exist yet: the projection counts them.
+    size_t bytes = assert_cast<const HashJoin &>(*join).getProjectedByteCount();
 
     if (!limits.softCheck(rows, bytes))
         return switchJoin(context);

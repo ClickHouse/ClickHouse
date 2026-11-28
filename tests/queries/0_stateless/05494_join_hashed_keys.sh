@@ -6,8 +6,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Joins on keys that use the `hashed` and `two_level_hashed` maps, where a key is the `sipHash128` of the key columns of
-# a row, built for many rows at a time. The keys must be equal to those that `hash128` builds row by row.
+# Joins on keys that use the `hashed` map, with both layouts, where a key is the `sipHash128` of the key columns of a
+# row, built for many rows at a time. The keys must be equal to those that `hash128` builds row by row.
 #
 # Every key column is a function of `g`. A row of `r` or `l` has a unique `id`. `r` has the keys of g = 1 to 2400, those
 # up to 800 twice. `l` has those of g = 301 to 3300, those up to 600 twice. A `String` key has 0 to 102 bytes, some with

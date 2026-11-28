@@ -266,6 +266,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_B
 /// First query-plan serialization version that carries the `hash_join_layout` plan setting. Gates writing it in
 /// `JoinSettings::updatePlanSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_LAYOUT = 21;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ENABLE_AMAC_IN_HASH_JOIN = 21;
 /// First query-plan serialization version that knows `min_string_column_bytes_for_hash_join_row_store`. Below it, the
 /// name is not written: the older peer does not store `String` columns in the hash join row store, so the setting has
 /// no effect there.

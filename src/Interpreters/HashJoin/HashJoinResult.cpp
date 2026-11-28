@@ -175,7 +175,7 @@ static void appendRightColumns(
         else
         {
             const auto & left_column = block.getByName(properties.required_right_keys_sources[i]);
-            const auto * filter_ptr = properties.need_filter ? nullptr : &filter;
+            const auto * filter_ptr = properties.need_filter || filter.empty() ? nullptr : &filter;
             right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column, filter_ptr);
         }
         block.insert(std::move(right_col));
@@ -396,6 +396,8 @@ HashJoinResult::HashJoinResult(
     , matched_rows(std::move(matched_rows_))
     , matched_right_rows(matched_right_rows_)
 {
+    if (lazy_output.probe_output == ProbeOutput::Selected)
+        scattered_block->gather(std::move(matched_rows), properties.enable_lazy_columns_indexing);
 }
 
 HashJoinResult::~HashJoinResult() = default;
@@ -447,14 +449,10 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
 
     if (num_lhs_rows == 0 || (next_row == 0 && num_lhs_rows >= scattered_block->rows()))
     {
-        /// Note: need_filter flag cannot be replaced with !added_columns.need_filter.empty()
-        /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
-        if (properties.need_filter)
+        /// A `LEFT ALL JOIN` uses its filter to fill unmatched right keys with defaults and keeps those left rows.
+        if (properties.need_filter && lazy_output.probe_output == ProbeOutput::Default)
             scattered_block->filter(std::span<UInt64>{matched_rows});
-        if (properties.enable_lazy_columns_indexing)
-            scattered_block->filterBySelectorLazily();
-        else
-            scattered_block->filterBySelector();
+        scattered_block->filterBySelector(properties.enable_lazy_columns_indexing);
 
         current_row_state.emplace(GenerateCurrentRowState{
             .block = std::move(*scattered_block).getSourceBlock(),
@@ -464,7 +462,6 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             .columns = std::move(columns),
             .offsets = std::move(offsets),
             .filter = std::move(filter),
-            .matched_rows = std::span<UInt64>{matched_rows},
             .is_last = true,
             .state_row_limit = limit_rows_per_key,
             .state_bytes_limit = limit_bytes_per_key,
@@ -475,6 +472,8 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         return {std::move(block), next_block_ptr, !current_row_state.has_value()};
     }
 
+    /// Only an expanding join can split a block here. Its offsets already select the left rows.
+    chassert(!properties.need_filter);
     const size_t prev_offset = next_row ? offsets[static_cast<ssize_t>(next_row) - 1] : 0;
     size_t num_rhs_rows = offsets[static_cast<ssize_t>(next_row + num_lhs_rows) - 1] - prev_offset;
 
@@ -518,15 +517,10 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     }
 
     IColumn::Filter partial_filter;
-    std::span<UInt64> partial_matched_rows;
     if (!filter.empty())
     {
         partial_filter.resize(num_lhs_rows);
         memcpySmallAllowReadWriteOverflow15(partial_filter.data(), filter.data() + next_row, num_lhs_rows);
-        const auto old_selector_it = next_matched_rows_it;
-        while (next_matched_rows_it < matched_rows.size() && matched_rows[next_matched_rows_it] < next_row + num_lhs_rows)
-            ++next_matched_rows_it;
-        partial_matched_rows = std::span<UInt64>{&matched_rows[old_selector_it], &matched_rows[next_matched_rows_it]};
     }
 
     const auto row_ref_start = next_row_ref;
@@ -575,15 +569,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         }
     }
 
-
-    /// Note: need_filter flag cannot be replaced with !added_columns.need_filter.empty()
-    /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
-    if (properties.need_filter)
-        current_scattered_block.filter(partial_matched_rows);
-    if (properties.enable_lazy_columns_indexing)
-        current_scattered_block.filterBySelectorLazily();
-    else
-        current_scattered_block.filterBySelector();
+    current_scattered_block.filterBySelector(properties.enable_lazy_columns_indexing);
 
     current_row_state.emplace(GenerateCurrentRowState{
         .block = std::move(current_scattered_block).getSourceBlock(),
@@ -593,7 +579,6 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         .columns = std::move(rhs_columns),
         .offsets = std::move(partial_offsets),
         .filter = std::move(partial_filter),
-        .matched_rows = partial_matched_rows,
         .is_last = is_last,
         .state_row_limit = limit_rows_per_key,
         .state_bytes_limit = limit_bytes_per_key,

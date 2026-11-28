@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <string>
@@ -112,13 +113,28 @@ public:
 
     /// The same stream, but the join does not check `max_rows_in_join` and `max_bytes_in_join`. For a
     /// caller that checks the limits itself, or that re-inserts blocks the limits already admitted.
-    [[nodiscard]] JoinBuildContext callerChecksLimits() const { return JoinBuildContext(stream, num_streams, /*join_checks_limits_=*/false); }
+    [[nodiscard]] JoinBuildContext callerChecksLimits() const
+    {
+        JoinBuildContext res = *this;
+        res.join_checks_limits = false;
+        return res;
+    }
+
+    /// The same stream, with the cancel flag of the processor that fills the join: a long build stops when it is set.
+    [[nodiscard]] JoinBuildContext withCancellationFlag(const std::atomic<bool> & flag) const
+    {
+        JoinBuildContext res = *this;
+        res.cancellation_flag = &flag;
+        return res;
+    }
 
     [[nodiscard]] size_t getStream() const { return stream; }
     /// The number of streams the pipeline started; 1 for `serial`. Wrappers forward it, so it is not the
     /// receiver's real concurrency.
     [[nodiscard]] size_t getNumStreams() const { return num_streams; }
     [[nodiscard]] bool joinChecksLimits() const { return join_checks_limits; }
+    /// Null when no processor fills the join.
+    [[nodiscard]] const std::atomic<bool> * getCancellationFlag() const { return cancellation_flag; }
 
 private:
     JoinBuildContext(UInt32 stream_, UInt32 num_streams_, bool join_checks_limits_)
@@ -129,6 +145,7 @@ private:
     UInt32 stream;
     UInt32 num_streams;
     bool join_checks_limits;
+    const std::atomic<bool> * cancellation_flag = nullptr;
 };
 
 class IJoin
@@ -219,7 +236,9 @@ public:
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
     [[nodiscard]] virtual bool hasDelayedBlocks() const { return false; }
     /// Runtime counterpart of `hasDelayedBlocks`: whether the delayed blocks are processed at all.
-    /// Decided at latest in `onBuildPhaseFinish`, after that the returned value should not change.
+    /// Decided before the first probe block, after that the returned value should not change. A spill
+    /// between `onBuildPhaseFinish` and the build can still change it; its readers run only after the
+    /// build side has finished.
     [[nodiscard]] virtual bool isDelayedBlocksProcessingEnabled() const { return hasDelayedBlocks(); }
 
     [[nodiscard]] virtual IBlocksStreamPtr
@@ -229,7 +248,7 @@ public:
     /// This serves as a runtime check in JoiningTransform to decide whether to utilize the parallel processing of
     /// non-joined blocks. Only relevant for joins that support parallel processing of non-joined blocks.
     /// If the join supports parallel processing, it can still decide during build phase whether to utilize it or not.
-    /// The decision should be done at latest in onBuildPhaseFinish, after that the returned value should not change.
+    /// The decision is made before the first probe block, after that the returned value should not change.
     /// This is important for SpillingHashJoin, which can change algorithms runtime, and parallel non-joined blocks
     /// processing depends on the algorithm used.
     [[nodiscard]] virtual bool isParallelNonJoinedProcessingEnabled() const { return supportParallelNonJoinedBlocksProcessing(); }
@@ -259,6 +278,9 @@ public:
     /// Notify the join that the query plan requires the left stream's row order. Must be called
     /// only when `canPreserveLeftBlockOrder` is true.
     virtual void keepLeftPipelineInOrder() {}
+
+    /// Ordinary join pipelines may opt in. Filled joins and positional lookups such as `joinGet` keep input order.
+    virtual void allowLeftRowsReordering() {}
 
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
     virtual void onBuildPhaseFinish() { }

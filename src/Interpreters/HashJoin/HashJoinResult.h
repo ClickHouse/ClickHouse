@@ -59,7 +59,6 @@ private:
     IColumn::Offsets matched_rows;
 
     size_t next_row = 0;
-    size_t next_matched_rows_it = 0;
     size_t next_row_ref = 0;
     size_t num_joined_rows = 0;
     std::optional<size_t> matched_right_rows;
@@ -74,8 +73,6 @@ private:
 
         IColumn::Offsets offsets;
         IColumn::Filter filter;
-
-        std::span<UInt64> matched_rows;
 
         bool is_last;
 
