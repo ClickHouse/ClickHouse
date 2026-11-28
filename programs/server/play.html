@@ -17162,6 +17162,25 @@ async function namedReplayAccountVerified(server_address, account, password) {
     return !!json && json.u === account;
 }
 
+/// Does the server authenticate a request sent with the connection fields `user` and `password` as
+/// `account`? This is the request of the startup auto-run of a `run=1` link of an implicit run whose
+/// user field is filled by the time it starts (`runDeferredStartupQuery`). The fields are sent as they
+/// are, so the answer describes the request the run is going to send, and a handler configured with
+/// its own user, which ignores them, is detected. False as well when the request is rejected or the
+/// server cannot be reached, so the auto-run is refused rather than started with an authentication that
+/// was not verified. Sent outside of the connection's HTTP session and admitted like the required
+/// verification of `replayConnectionUser`.
+async function launchAccountVerified(server_address, user, password, account) {
+    const probe_address = serverAddressWithoutSession(server_address);
+    if (!probe_address) return false;
+    const json = await admitImplicitUserProbe(server_address, () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), IMPLICIT_USER_PROBE_TIMEOUT_MS);
+        return getServerStatus(probe_address, user, password, controller.signal).finally(() => clearTimeout(timer));
+    }, /* required = */ true);
+    return !!json && json.u === account;
+}
+
 /// The authentication parameters of an export (Download) that reproduces an implicit connection sent
 /// with no password, or `null` if the export must be refused. `account` is the name the stamp of the
 /// result denotes (`resolvedImplicitUser`), empty if not known. The export is a form submission, and
@@ -22220,6 +22239,11 @@ const implicit_user_from_url = current_url.searchParams.get('implicit_user') || 
 /// A user that is named explicitly by the time the auto-run starts (e.g. silently refilled by the
 /// password manager, which fires no `input` event) must be that same account: a refill of another
 /// saved login would otherwise run the linked query as a different user than the link records.
+/// A matching name is not enough either: a handler configured with its own user (`handler.user` of
+/// a `dynamic_query_handler`) authenticates every request as that user and ignores the `user`
+/// parameter, so the linked query would run as the account of the handler. The server is therefore
+/// asked which account it authenticates the launch credentials as (`launchAccountVerified`), under
+/// the same cancellation conditions, and the auto-run is refused unless it is the linked account.
 function runDeferredStartupQuery() {
     if (!implicit_user_from_url) {
         postAll();   /// saves history itself on completion
@@ -22227,13 +22251,9 @@ function runDeferredStartupQuery() {
     }
     const tab = getActiveTab();
     const explicit_user = effectiveConnectionUser(url_elem.value, user_elem.value);
-    if (explicit_user) {
-        if (explicit_user === implicit_user_from_url) {
-            postAll();
-        } else {
-            tab.runnableUrl = false;
-            refreshCurrentHistoryEntry(tab);
-        }
+    if (explicit_user && explicit_user !== implicit_user_from_url) {
+        tab.runnableUrl = false;
+        refreshCurrentHistoryEntry(tab);
         return;
     }
     const connection = connectionTuple();
@@ -22243,12 +22263,15 @@ function runDeferredStartupQuery() {
     /// but binds the editor to another cell's parameters; it bumps `activation_num`.
     const activation = activation_num;
     const cell = activeCell(tab);
-    learnImplicitUser(url_elem.value, password_elem.value).then(name => {
+    const confirmed = explicit_user
+        ? launchAccountVerified(url_elem.value, user_elem.value, password_elem.value, implicit_user_from_url)
+        : learnImplicitUser(url_elem.value, password_elem.value).then(name => name === implicit_user_from_url);
+    confirmed.then(is_linked_account => {
         const unchanged = connectionTuple() === connection && getActiveTab() === tab && query_area.value === query
             && tab.reqNum === request_num && activation_num === activation && activeCell(tab) === cell
             && !deferred_run_cancelled && !bootstrap_dirty;
         if (!unchanged || activeInFlight()) return;
-        if (name === implicit_user_from_url) {
+        if (is_linked_account) {
             postAll();
         } else {
             tab.runnableUrl = false;

@@ -1891,10 +1891,20 @@ async function main() {
     /// Guard (silent password-manager refill before a `run=1` link of an implicit run): the password
     /// manager may fill the user field with a saved login without an `input` event, so nothing cancels
     /// the deferred auto-run. The query runs only when that explicit user is the linked account;
-    /// a refill of another login leaves the query in the editor and drops `run=1`.
-    for (const [refilled_user, expect_run] of [['alice', true], ['bob', false]]) {
+    /// a refill of another login leaves the query in the editor and drops `run=1`. A matching name is
+    /// not enough: a handler configured with its own user (`handler.user`) ignores the `user`
+    /// parameter and authenticates every request as that user, so the query runs only once the
+    /// server confirms that the request with the refilled login is authenticated as the linked
+    /// account. A server that cannot be asked refuses the auto-run as well.
+    for (const [refilled_user, server_user, expect_run, what] of [
+        ['alice', 'alice', true, 'refilled with the linked account'],
+        ['bob', 'bob', false, 'refilled with another account'],
+        ['alice', 'bob', false, 'refilled with the linked account, authenticated as the user of the handler'],
+        ['alice', null, false, 'refilled with the linked account, the server does not answer'],
+    ]) {
         const q = 'DELETE FROM target WHERE id = 1';
         const run_users = [];
+        const probes = [];
         const r = await runScenario(js, {
             href: base + '?run=1&implicit_user=alice#' + Buffer.from(q, 'utf8').toString('base64'),
             historyState: null,
@@ -1903,25 +1913,77 @@ async function main() {
             afterBoot: (sandbox) => {
                 vm.runInContext(`user_elem.value = ${JSON.stringify(refilled_user)};`, sandbox);
                 sandbox.postAll = async () => { run_users.push(vm.runInContext('user_elem.value', sandbox)); };
-                sandbox.fetch = async () => ({
-                    ok: false,
-                    status: 503,
-                    headers: { get: () => null },
-                    text: async () => '',
-                    json: async () => ({}),
-                });
+                sandbox.fetch = async (url, options) => {
+                    probes.push({ url: String(url), body: options && options.body });
+                    return {
+                        ok: server_user !== null,
+                        status: server_user !== null ? 200 : 503,
+                        headers: { get: () => null },
+                        text: async () => '',
+                        json: async () => ({ v: 'test', t: 0, u: server_user }),
+                    };
+                };
             },
         });
         await sleep(50);
-        const what = expect_run ? 'refilled with the linked account' : 'refilled with another account';
         check('run-link-silent-refill', `the query is auto-run only as the linked account (${what})`,
             JSON.stringify(run_users) === JSON.stringify(expect_run ? ['alice'] : []), run_users);
+        if (refilled_user === 'alice') {
+            check('run-link-silent-refill', `the server is asked which account the refilled login is (${what})`,
+                probes.some(p => String(p.body).includes('currentUser()') && /[?&]user=alice(&|$)/.test(p.url)), probes);
+        }
         if (!expect_run) {
-            check('run-link-silent-refill', 'the refused link no longer carries run=1',
+            check('run-link-silent-refill', `the refused link no longer carries run=1 (${what})`,
                 new URL(r.sandbox.location.href).searchParams.get('run') === null, r.sandbox.location.href);
-            check('run-link-silent-refill', 'the query stays in the editor',
+            check('run-link-silent-refill', `the query stays in the editor (${what})`,
                 vm.runInContext('query_area.value', r.sandbox) === q, vm.runInContext('query_area.value', r.sandbox));
         }
+    }
+
+    /// Guard (cancellation while the refilled login is verified): the verification of a matching
+    /// refill is asynchronous, so an action that cancels a deferred auto-run while it is pending
+    /// must cancel the auto-run once the server answers, as for the implicit account below.
+    for (const [interaction, act] of [
+        ['none', () => {}],
+        ['database', (sandbox) => vm.runInContext("commitSelectedDatabase('changed_by_user')", sandbox)],
+    ]) {
+        const probes = [];
+        let respond;
+        const responded = new Promise(resolve => { respond = resolve; });
+        let runs = 0;
+        const r = await runScenario(js, {
+            href: base + '?run=1&implicit_user=alice&database=original#' + Buffer.from('SELECT 7', 'utf8').toString('base64'),
+            historyState: null,
+            seedTabs: [],
+            seedMeta: null,
+            afterBoot: (sandbox) => {
+                vm.runInContext("user_elem.value = 'alice';", sandbox);
+                sandbox.postAll = async () => { ++runs; };
+                sandbox.fetch = async (url, options) => {
+                    const is_probe = String(options && options.body).includes('currentUser()');
+                    if (is_probe) {
+                        probes.push(String(url));
+                        await responded;
+                    }
+                    return {
+                        ok: is_probe,
+                        status: is_probe ? 200 : 503,
+                        headers: { get: () => null },
+                        text: async () => '',
+                        json: async () => ({ v: 'test', t: 0, u: 'alice' }),
+                    };
+                };
+            },
+        });
+        for (let i = 0; i < 100 && !probes.length; ++i) await sleep(10);
+        check('run-link-silent-refill-cancel', `the server is asked which account the refilled login is (${interaction})`,
+            probes.some(url => /[?&]user=alice(&|$)/.test(url)), probes);
+        act(r.sandbox);
+        await sleep(20);
+        respond();
+        await sleep(50);
+        check('run-link-silent-refill-cancel', `the query is auto-run only without an interaction (${interaction})`,
+            runs === (interaction === 'none' ? 1 : 0), runs);
     }
 
     /// Guard (cancellation while the implicit account is asked): an action that cancels a deferred
