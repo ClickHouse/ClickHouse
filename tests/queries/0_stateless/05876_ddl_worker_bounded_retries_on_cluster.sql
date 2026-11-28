@@ -9,17 +9,17 @@ CREATE TABLE t_mem ON CLUSTER test_shard_localhost ENGINE = Memory
 AS SELECT groupArray(number) AS a FROM numbers(20000000) SETTINGS max_memory_usage = 20000000 FORMAT Null; -- { serverError MEMORY_LIMIT_EXCEEDED }
 
 -- An exception that is not a DB::Exception is retriable too.
-CREATE TABLE t_bad_uri ON CLUSTER test_shard_localhost (a String) ENGINE = URL('http://[::1/x', 'CSV') FORMAT Null; -- { serverError POCO_EXCEPTION }
+CREATE TABLE t_refused ON CLUSTER test_shard_localhost ENGINE = URL('http://127.0.0.1:1/', 'CSV') AS SELECT 'a' AS a FORMAT Null; -- { serverError POCO_EXCEPTION }
 
 CREATE TABLE t_after ON CLUSTER test_shard_localhost (x Int8) ENGINE = MergeTree ORDER BY x FORMAT Null;
 
-SELECT name FROM system.tables WHERE database = currentDatabase() AND name IN ('t_mem', 't_bad_uri', 't_after');
+SELECT name FROM system.tables WHERE database = currentDatabase() AND name IN ('t_mem', 't_refused', 't_after');
 
 -- Each failing entry is executed 4 times: the first attempt and 3 retries.
 SYSTEM FLUSH LOGS query_log;
 SELECT
     countIf(position(query, concat(currentDatabase(), '.t_mem ')) > 0),
-    countIf(position(query, concat(currentDatabase(), '.t_bad_uri ')) > 0)
+    countIf(position(query, concat(currentDatabase(), '.t_refused ')) > 0)
 FROM system.query_log
 WHERE event_date >= yesterday() AND type != 'QueryStart' AND startsWith(query, '/* ddl_entry=');
 
