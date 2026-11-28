@@ -28,7 +28,7 @@ public:
         /// The size of the tasks that `MergeTreeReadPool` cuts at the end of the read (see
         /// `MergeTreeReadPool::adjustTaskSizeToReadEnd`), or zero when the end of the read is cut like the
         /// rest. The caller guarantees that it is below `min_marks_for_concurrent_read` and not below
-        /// `merge_tree_min_read_task_size`.
+        /// `merge_tree_min_read_task_size`, unless the marks are heavy (see `merge_tree_min_read_task_bytes`).
         size_t min_marks_per_task_at_read_end = 0;
         size_t preferred_block_size_bytes = 0;
 
