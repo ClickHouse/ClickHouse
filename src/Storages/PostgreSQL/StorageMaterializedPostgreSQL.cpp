@@ -10,6 +10,7 @@
 #include <Common/assert_cast.h>
 
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Core/PostgreSQL/Connection.h>
 
 #include <DataTypes/DataTypeFactory.h>
@@ -50,6 +51,11 @@ namespace Setting
     extern const SettingsBool enable_materialized_postgresql_table;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool load_tables_readonly;
 }
 
 namespace MaterializedPostgreSQLSetting
@@ -106,7 +112,11 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             /* is_materialized_postgresql_database */false);
 
     replication_handler->addStorage(remote_table_name, this);
-    replication_handler->startup(/* delayed */is_attach);
+
+    /// Startup creates the publication and the replication slot on the PostgreSQL server if they are missing, which
+    /// `load_tables_readonly` must not do: the table is only loaded, it does not replicate.
+    if (!getContext()->getServerSettings()[ServerSetting::load_tables_readonly])
+        replication_handler->startup(/* delayed */is_attach);
 }
 
 

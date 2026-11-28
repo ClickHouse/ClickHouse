@@ -1,0 +1,29 @@
+--- the default session ---
+default: dump rc=0
+SET allow_lossy_numeric_supertype = 0
+CREATE TABLE d.a_src
+SET allow_lossy_numeric_supertype = 1
+CREATE TABLE d.b_lossy
+SET allow_lossy_numeric_supertype = 0
+CREATE MATERIALIZED VIEW d.mv
+default: replay rc=0
+--- a session with numeric promotion ---
+lossy: dump rc=0
+SET allow_lossy_numeric_supertype = 0
+CREATE TABLE d.a_src
+SET allow_lossy_numeric_supertype = 1
+CREATE TABLE d.b_lossy
+SET allow_lossy_numeric_supertype = 0
+CREATE MATERIALIZED VIEW d.mv
+lossy: replay rc=0
+--- a table that picks no typing setting ---
+merge: dump rc=0
+SET allow_lossy_numeric_supertype = 0
+CREATE TABLE d.a_src
+SET allow_lossy_numeric_supertype = 1
+CREATE TABLE d.b_lossy
+SET allow_lossy_numeric_supertype = 0
+CREATE TABLE d.c_merge
+SET allow_lossy_numeric_supertype = 0
+CREATE MATERIALIZED VIEW d.mv
+merge: replay rc=0

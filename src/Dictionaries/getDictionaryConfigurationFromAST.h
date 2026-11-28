@@ -17,6 +17,7 @@ namespace DB
 {
 
 class ASTCreateQuery;
+class ASTDictionaryAttributeDeclaration;
 using DictionaryConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
 /// Convert dictionary AST to Poco::AbstractConfiguration
@@ -24,6 +25,9 @@ using DictionaryConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfigurati
 /// Can throw exception if query is ill-formed
 DictionaryConfigurationPtr
 getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr context, const std::string & database_ = "");
+
+/// The expression the source of the dictionary computes for the attribute: the SQL in a string, or the expression itself.
+String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_attr);
 
 struct ClickHouseDictionarySourceInfo
 {

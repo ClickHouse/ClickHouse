@@ -1,0 +1,29 @@
+--- a constraint subquery is not run, and the table is dumped ---
+constraint_table: dump rc=0
+constraint_table: table dumped: 1
+constraint_table: no command ran
+1
+constraint_dictionary: dump rc=0
+constraint_dictionary: table dumped: 1
+constraint_dictionary: no command ran
+--- a subquery in the arguments of a table function is refused ---
+argument_subquery: dump rc=210
+Code: 48
+argument_subquery: table dumped: 0
+argument_subquery: no command ran
+--- a subquery inside the table function that a remote table reads through is not run, and the table is dumped ---
+nested_query: dump rc=0
+nested_query: table dumped: 1
+nested_query: no command ran
+nested_argument: dump rc=0
+nested_argument: table dumped: 1
+nested_argument: no command ran
+--- a TTL GROUP BY SET that would load a dictionary is refused ---
+ttl_set: dump rc=210
+Code: 48
+ttl_set: table dumped: 0
+ttl_set: no command ran
+--- a TTL GROUP BY SET that looks a column up in a dictionary is dumped ---
+ttl_set_column: dump rc=0
+ttl_set_column: table dumped: 1
+ttl_set_column: no command ran

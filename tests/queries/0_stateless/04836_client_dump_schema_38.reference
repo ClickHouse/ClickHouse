@@ -1,0 +1,6 @@
+dump rc=0
+source query warned: 1
+source condition warned: 1
+cache disk warned: 1
+inner cache disk warned: 1
+collections emitted: 0

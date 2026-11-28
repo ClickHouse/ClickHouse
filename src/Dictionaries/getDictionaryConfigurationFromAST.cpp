@@ -49,6 +49,8 @@ struct AttributeConfiguration
 
 using AttributeNameToConfiguration = UnorderedMapWithMemoryTracking<std::string, AttributeConfiguration>;
 
+}
+
 String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_attr)
 {
     if (!dict_attr->expression)
@@ -63,6 +65,9 @@ String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_att
 
     return expression_str;
 }
+
+namespace
+{
 
 
 using namespace Poco;

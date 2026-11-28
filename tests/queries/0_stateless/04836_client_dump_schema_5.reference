@@ -1,0 +1,2 @@
+--- a Backup database is rejected instead of emitting an unreplayable CREATE ---
+Backup database refusal is explicit: 1

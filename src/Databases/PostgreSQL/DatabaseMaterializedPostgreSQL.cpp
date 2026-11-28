@@ -19,6 +19,7 @@
 #include <IO/WriteHelpers.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -45,6 +46,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool load_tables_readonly;
 }
 
 namespace MaterializedPostgreSQLSetting
@@ -196,7 +202,10 @@ LoadTaskPtr DatabaseMaterializedPostgreSQL::startupDatabaseAsync(AsyncLoader & a
         fmt::format("startup MaterializedPostgreSQL database {}", getDatabaseName()),
         [this] (AsyncLoader &, const LoadJobPtr &)
         {
-            startup_task->activateAndSchedule();
+            /// The synchronization creates the publication and the replication slot on the PostgreSQL server if they
+            /// are missing, which `load_tables_readonly` must not do: the database is only loaded, it does not replicate.
+            if (!getContext()->getServerSettings()[ServerSetting::load_tables_readonly])
+                startup_task->activateAndSchedule();
         });
     std::scoped_lock lock(mutex);
     return startup_postgresql_database_task = makeLoadTask(async_loader, {job});
@@ -382,7 +391,9 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
 {
     /// An existing table is described by its nested table: its columns and sorting key are fixed when it is
     /// created and can differ from the current PostgreSQL table.
-    if (!local_context->hasQueryContext() || DatabaseAtomic::tryGetTable(table_name, getContext()))
+    /// With `load_tables_readonly` there is no replication handler to ask, so the stored definition is returned.
+    if (!local_context->hasQueryContext() || getContext()->getServerSettings()[ServerSetting::load_tables_readonly]
+        || DatabaseAtomic::tryGetTable(table_name, getContext()))
         return DatabaseAtomic::getCreateTableQueryImpl(table_name, local_context, throw_on_error);
 
     std::lock_guard lock(handler_mutex);

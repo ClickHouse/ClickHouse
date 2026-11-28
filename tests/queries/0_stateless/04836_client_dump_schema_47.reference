@@ -1,0 +1,20 @@
+--- a quoted flag ---
+quoted_secure: dump rc=0
+quoted_secure: order zzz_src aaa_dict
+quoted_secure: replay rc=0
+--- the first of two queries is the one that runs ---
+repeated_query: dump rc=0
+repeated_query: order zzz_src aaa_dict
+repeated_query: replay rc=0
+repeated_query_unread: dump rc=0
+repeated_query_unread: order aaa_dict zzz_src
+repeated_query_unread: replay rc=0
+--- a table that only a setting of the dictionary reads ---
+dictionary_setting: dump rc=0
+dictionary_setting: order zzz_src aaa_dict
+dictionary_setting: replay rc=0
+--- a host that is not shown to be this server only warns ---
+unknown_host: dump rc=0
+unknown_host: order aaa_dict zzz_src
+unknown_host: replay rc=0
+Warning: d.aaa_dict reads d.zzz_src, which is in this dump, through the dictionary source CLICKHOUSE(HOST '192.0.2.1' ...)

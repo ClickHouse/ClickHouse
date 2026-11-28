@@ -46,9 +46,11 @@ StatusFile::FillFunction StatusFile::write_full_info = [](WriteBuffer & out)
 
 StatusFile::StatusFile(std::string path_, FillFunction fill)
     : path(std::move(path_))
+    , lock_only(!fill)
 {
     /// If file already exists. NOTE Minor race condition.
-    if (fs::exists(path))
+    existed = fs::exists(path);
+    if (existed)
     {
         std::string contents;
         {
@@ -63,7 +65,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill)
             LOG_INFO(getLogger("StatusFile"), "Status file {} already exists and is empty - probably unclean hardware restart.", path);
     }
 
-    fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
+    fd = ::open(path.c_str(), (lock_only ? O_RDONLY : O_WRONLY) | O_CREAT | O_CLOEXEC, 0666);
 
     if (-1 == fd)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {}", path);
@@ -77,6 +79,9 @@ StatusFile::StatusFile(std::string path_, FillFunction fill)
                 throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot lock file {}. Another server instance in same directory is already running.", path);
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot lock file {}", path);
         }
+
+        if (lock_only)
+            return;
 
         if (0 != ftruncate(fd, 0))
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot ftruncate file {}", path);
@@ -112,7 +117,7 @@ StatusFile::~StatusFile()
     if (0 != close(fd))
         LOG_ERROR(getLogger("StatusFile"), "Cannot close file {}, {}", path, errnoToString());
 
-    if (0 != unlink(path.c_str()))
+    if ((!lock_only || !existed) && 0 != unlink(path.c_str()))
         LOG_ERROR(getLogger("StatusFile"), "Cannot unlink file {}, {}", path, errnoToString());
 }
 

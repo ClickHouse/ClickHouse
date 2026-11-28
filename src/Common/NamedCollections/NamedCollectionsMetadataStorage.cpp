@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/FileEncryptionKeys.h>
@@ -41,6 +42,11 @@ namespace Setting
     extern const SettingsBool fsync_metadata;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool load_tables_readonly;
 }
 
 namespace ErrorCodes
@@ -124,7 +130,8 @@ public:
         : WithContext(context_)
         , root_path(path_)
     {
-        if (fs::exists(root_path))
+        /// `load_tables_readonly` keeps the temporary files.
+        if (fs::exists(root_path) && !getContext()->getServerSettings()[ServerSetting::load_tables_readonly])
             cleanup();
     }
 

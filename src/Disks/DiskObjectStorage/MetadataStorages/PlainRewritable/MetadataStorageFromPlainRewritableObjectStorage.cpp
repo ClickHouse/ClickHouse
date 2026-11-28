@@ -14,6 +14,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 
@@ -56,6 +57,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool load_tables_readonly;
+}
 
 namespace ErrorCodes
 {
@@ -207,6 +213,18 @@ PlainRewritableRemoteLayout MetadataStorageFromPlainRewritableObjectStorage::get
             result.emplace(path, std::move(*info));
     }
     return result;
+}
+
+namespace
+{
+
+/// `load_tables_readonly` loads the disk like a `readonly` one, so it writes no snapshot and removes no object.
+bool loadsTablesReadonly()
+{
+    const auto global_context = Context::getGlobalContextInstance();
+    return global_context && global_context->getServerSettings()[ServerSetting::load_tables_readonly];
+}
+
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::SnapshotRole MetadataStorageFromPlainRewritableObjectStorage::chooseSnapshotRole() const
@@ -1323,7 +1341,7 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
     , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
     , hard_links_enabled(hard_links_enabled_)
     , snapshot_settings(snapshot_settings_)
-    , read_only_disk(read_only_disk_)
+    , read_only_disk(read_only_disk_ || loadsTablesReadonly())
     , snapshot_role(chooseSnapshotRole())
     , fs(metrics->directory_map_size, metrics->file_count)
     , layout(std::make_shared<PlainRewritableLayout>(object_storage->getCommonKeyPrefix()))

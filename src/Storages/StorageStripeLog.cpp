@@ -10,6 +10,7 @@
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
 #include <IO/WriteBufferFromFileBase.h>
@@ -58,6 +59,11 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_compress_block_size;
     extern const SettingsSeconds max_execution_time;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool load_tables_readonly;
 }
 
 namespace ErrorCodes
@@ -339,7 +345,8 @@ StorageStripeLog::StorageStripeLog(
         /// create directories if they do not exist
         disk->createDirectories(table_path);
     }
-    else
+    /// `repair` truncates the files of an interrupted INSERT, which `load_tables_readonly` does not allow.
+    else if (!context_->getServerSettings()[ServerSetting::load_tables_readonly])
     {
         try
         {

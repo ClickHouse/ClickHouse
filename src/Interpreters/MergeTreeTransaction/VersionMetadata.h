@@ -313,6 +313,9 @@ protected:
     /// Returns `TOO_OLD_VERSION` if the storing version of `new_info` does not match the persisted version.
     virtual std::expected<Int32, StaleVersion> storeInfo(const VersionInfo & new_info) = 0;
 
+    /// True when the object is loaded only to be read, so loading keeps its persisted metadata as it is.
+    virtual bool loadsPassively() const { return false; }
+
     /// Read persisted metadata and validate it matches `current_info`. Throws on mismatch.
     /// Shared by `hasValidMetadata` and its `VersionMetadataOnDisk` override so they can
     /// install different catch blocks without duplicating the comparison logic.

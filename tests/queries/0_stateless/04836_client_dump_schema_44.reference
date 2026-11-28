@@ -1,0 +1,15 @@
+Warning: the storage expressions of d.t also need allow_lossy_numeric_supertype = 1 in the replaying server's settings profile.
+SET allow_lossy_numeric_supertype = 1;
+bloom_filter: replay rc=0 
+bloom_filter: same table
+Warning: the storage expressions of d.t also need allow_lossy_numeric_supertype = 1 in the replaying server's settings profile.
+SET allow_lossy_numeric_supertype = 1;
+bloom_filter_array: replay rc=0 
+bloom_filter_array: same table
+Warning: the storage expressions of d.t also need allow_lossy_numeric_supertype = 1 in the replaying server's settings profile.
+SET allow_lossy_numeric_supertype = 1;
+vector_similarity: replay rc=0 
+vector_similarity: same table
+SET allow_lossy_numeric_supertype = 0;
+set: replay rc=0 
+set: same table

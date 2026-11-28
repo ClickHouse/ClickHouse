@@ -6,6 +6,7 @@
 #include <span>
 #include <unordered_map>
 #include <unordered_set>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsFields.h>
 #include <Core/UUID.h>
@@ -24,9 +25,19 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/misc.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
@@ -46,6 +57,9 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Poco/String.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Common/ThreadPool.h>
 
 
@@ -67,6 +81,12 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool load_tables_readonly;
 }
 
 namespace ErrorCodes
@@ -89,6 +109,231 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+
+namespace
+{
+
+/// The expressions of the table's `ALIAS` columns, which a projection or an index that names one analyzes in its place.
+using AliasColumns = std::unordered_map<String, const IAST *>;
+
+AliasColumns getAliasColumns(const ASTCreateQuery & create)
+{
+    AliasColumns res;
+    if (create.columns_list && create.columns_list->columns)
+        for (const auto & column : create.columns_list->columns->children)
+            if (const auto * declaration = column->as<ASTColumnDeclaration>();
+                declaration && declaration->default_specifier == ColumnDefaultSpecifier::Alias && declaration->getDefaultExpression())
+                res.emplace(declaration->name, declaration->getDefaultExpression().get());
+    return res;
+}
+
+/// Whether an argument of the call, other than a dictionary name, reads a column, so the call is not folded.
+/// An `ALIAS` column reads what its expression reads.
+bool readsColumn(const ASTFunction & call, const AliasColumns & aliases)
+{
+    if (!call.arguments)
+        return false;
+    const auto & arguments = call.arguments->children;
+    std::vector<const IAST *> stack;
+    for (size_t i = (Poco::toLower(call.name).starts_with("dict") || functionIsDictGet(call.name)) ? 1 : 0; i < arguments.size(); ++i)
+        stack.push_back(arguments[i].get());
+    std::unordered_set<String> expanded;
+    while (!stack.empty())
+    {
+        const IAST * node = stack.back();
+        stack.pop_back();
+        if (const auto * identifier = node->as<ASTIdentifier>())
+        {
+            const auto alias = aliases.find(identifier->name());
+            if (alias == aliases.end())
+                return true;
+            if (expanded.insert(alias->first).second)
+                stack.push_back(alias->second);
+        }
+        for (const auto & child : node->children)
+            stack.push_back(child.get());
+    }
+    return false;
+}
+
+/// Whether a subquery reads no table and names no column or alias, so it computes from literals only.
+/// It must not call `assignCentroid` either, which is never folded but loads its dictionary when the subquery runs.
+bool computesFromLiterals(const IAST & subquery)
+{
+    std::vector<const IAST *> stack{&subquery};
+    while (!stack.empty())
+    {
+        const IAST * node = stack.back();
+        stack.pop_back();
+        if (const auto * call = node->as<ASTFunction>(); call && call->name == "assignCentroid")
+            return false;
+        if (node->as<ASTTablesInSelectQuery>() || node->as<ASTIdentifier>())
+            return false;
+        for (const auto & child : node->children)
+            stack.push_back(child.get());
+    }
+    return true;
+}
+
+/// Whether folding the call loads a dictionary or runs a user-defined function.
+bool runsWhenFolded(const ASTFunction & call, const ContextPtr & context)
+{
+    return Poco::toLower(call.name).starts_with("dict") || functionIsDictGet(call.name) || call.name == "predictXGBoost"
+        || UserDefinedSQLFunctionFactory::instance().has(call.name) || UserDefinedExecutableFunctionFactory::has(call.name, context);
+}
+
+/// Refuses a structure string whose column defaults would run, since a table function parses it with the parser and limits
+/// of `parseColumnsListFromString` and folds them (a string that does not parse fails the table function first).
+void checkStructureLoadsPassively(const String & structure, const ASTCreateQuery & create, const ASTFunction & function, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    ParserColumnDeclarationList parser(true, true);
+    String error;
+    const char * begin = structure.data();
+    const ASTPtr columns = tryParseQuery(parser, begin, structure.data() + structure.size(), error, false, "columns declaration list",
+        false, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+    if (!columns)
+        return;
+    AliasColumns aliases;
+    std::vector<const IAST *> stack;
+    for (const auto & column : columns->children)
+        if (const auto * declaration = column->as<ASTColumnDeclaration>(); declaration && declaration->getDefaultExpression())
+        {
+            stack.push_back(declaration->getDefaultExpression().get());
+            if (declaration->default_specifier == ColumnDefaultSpecifier::Alias)
+                aliases.emplace(declaration->name, declaration->getDefaultExpression().get());
+        }
+    while (!stack.empty())
+    {
+        const IAST * node = stack.back();
+        stack.pop_back();
+        if (const auto * call = node->as<ASTFunction>(); call && runsWhenFolded(*call, context) && !readsColumn(*call, aliases))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot load {} with `load_tables_readonly`: {} in the structure of {} would run when the table is loaded",
+                backQuote(create.getTable()), call->formatForErrorMessage(), function.name);
+        if (node->as<ASTSubquery>())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot load {} with `load_tables_readonly`: the subquery {} in the structure of {} would run when the table is loaded",
+                backQuote(create.getTable()), node->formatForErrorMessage(), function.name);
+        for (const auto & child : node->children)
+            stack.push_back(child.get());
+    }
+}
+
+/// With `load_tables_readonly`, refuses an argument that loads a dictionary or runs a user-defined function when it is folded.
+void checkArgumentsLoadPassively(const ASTFunction * function, const ASTCreateQuery & create, const ContextPtr & context)
+{
+    if (!function || !function->arguments || !context->getServerSettings()[ServerSetting::load_tables_readonly])
+        return;
+    const auto & arguments = function->arguments->children;
+    static const std::unordered_set<String> remote_names{"Remote", "RemoteSecure", "remote", "remoteSecure", "cluster", "clusterAllReplicas"};
+    const bool reads_through_table_function = remote_names.contains(function->name);
+    /// A table created `AS` a table function reads a structure from a string, also a folded one, when it is loaded.
+    const bool reads_structure = create.as_table_function && create.as_table_function->as<ASTFunction>() == function;
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        /// The sharding key of `Distributed` runs per row, so only its calls on constants are folded at load.
+        const bool per_row = function->name == "Distributed" && i == 3;
+        /// The table function that `remote` and its like read through is not run at load, and neither is a query inside an argument.
+        const auto * nested = arguments[i]->as<ASTFunction>();
+        const bool not_run = i == 1 && reads_through_table_function && nested
+            && TableFunctionFactory::instance().isTableFunctionName(nested->name);
+        std::vector<std::pair<const IAST *, bool>> stack{{arguments[i].get(), not_run}};
+        while (!stack.empty())
+        {
+            const auto [node, in_not_run] = stack.back();
+            stack.pop_back();
+            if (const auto * call = node->as<ASTFunction>(); call && runsWhenFolded(*call, context) && !(per_row && readsColumn(*call, {})))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot load {} with `load_tables_readonly`: the argument {} of {} would run when the table is loaded",
+                    backQuote(create.getTable()), call->formatForErrorMessage(), function->name);
+            if (!in_not_run && node->as<ASTSubquery>())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot load {} with `load_tables_readonly`: the subquery {} in the arguments of {} would run when the table is loaded",
+                    backQuote(create.getTable()), node->formatForErrorMessage(), function->name);
+            if (const auto * literal = node->as<ASTLiteral>(); reads_structure && literal && literal->value.getType() == Field::Types::String)
+                checkStructureLoadsPassively(literal->value.safeGet<String>(), create, *function, context);
+            const bool child_not_run = in_not_run || node->as<ASTSelectWithUnionQuery>() || node->as<ASTSelectQuery>();
+            for (const auto & child : node->children)
+                stack.emplace_back(child.get(), child_not_run);
+        }
+        /// The table function folds the argument, or the value of a `key = value` one, before it reads a structure from it.
+        const auto * computed = arguments[i]->as<ASTFunction>();
+        if (computed && computed->name == "equals" && computed->arguments && computed->arguments->children.size() == 2
+            && computed->arguments->children[0]->as<ASTIdentifier>())
+            computed = computed->arguments->children[1]->as<ASTFunction>();
+        if (!reads_structure || !computed || TableFunctionFactory::instance().isTableFunctionName(computed->name))
+            continue;
+        ASTPtr folded;
+        try
+        {
+            folded = evaluateConstantExpressionAsLiteral(computed->clone(), context);
+        }
+        catch (const Exception &) // NOLINT(bugprone-empty-catch)
+        {
+            /// Not a constant, so the table function cannot fold it into a structure either.
+        }
+        if (const auto * literal = folded ? folded->as<ASTLiteral>() : nullptr; literal && literal->value.getType() == Field::Types::String)
+            checkStructureLoadsPassively(literal->value.safeGet<String>(), create, *function, context);
+    }
+}
+
+/// With `load_tables_readonly`, refuses a TTL, a projection or a secondary index whose call on constants or subquery would run the same way,
+/// also through an `ALIAS` column it reads.
+void checkExpressionsLoadPassively(const ASTCreateQuery & create, const ContextPtr & context)
+{
+    if (!context->getServerSettings()[ServerSetting::load_tables_readonly])
+        return;
+    std::vector<const IAST *> stack;
+    if (create.storage && create.storage->ttl_table)
+        stack.push_back(create.storage->ttl_table);
+    if (create.columns_list && create.columns_list->projections)
+        stack.push_back(create.columns_list->projections);
+    if (create.columns_list && create.columns_list->columns)
+        for (const auto & column : create.columns_list->columns->children)
+            if (const auto * declaration = column->as<ASTColumnDeclaration>(); declaration && declaration->getTTL())
+                stack.push_back(declaration->getTTL().get());
+    if (create.columns_list && create.columns_list->indices)
+        for (const auto & index : create.columns_list->indices->children)
+            if (const auto * declaration = index->as<ASTIndexDeclaration>(); declaration)
+                stack.push_back(declaration->getExpression().get());
+    const auto aliases = getAliasColumns(create);
+    std::unordered_set<String> expanded;
+    while (!stack.empty())
+    {
+        const IAST * node = stack.back();
+        stack.pop_back();
+        if (const auto * call = node->as<ASTFunction>(); call && runsWhenFolded(*call, context) && !readsColumn(*call, aliases))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot load {} with `load_tables_readonly`: {} would run when the table is loaded",
+                backQuote(create.getTable()), call->formatForErrorMessage());
+        /// `x IN t` reads the table `t` when the expression is analyzed.
+        if (const auto * call = node->as<ASTFunction>(); call && functionIsInOrGlobalInOperator(call->name) && call->arguments
+            && call->arguments->children.size() == 2 && call->arguments->children[1]->as<ASTIdentifier>())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot load {} with `load_tables_readonly`: the read of the table in {} would run when the table is loaded",
+                backQuote(create.getTable()), call->formatForErrorMessage());
+        if (node->as<ASTSubquery>() && !computesFromLiterals(*node))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot load {} with `load_tables_readonly`: the subquery {} would run when the table is loaded",
+                backQuote(create.getTable()), node->formatForErrorMessage());
+        if (const auto * identifier = node->as<ASTIdentifier>())
+            if (const auto alias = aliases.find(identifier->name()); alias != aliases.end() && expanded.insert(alias->first).second)
+                stack.push_back(alias->second);
+        for (const auto & child : node->children)
+            stack.push_back(child.get());
+        /// The key and the assignments of `GROUP BY ... SET` are kept apart from the children.
+        if (const auto * ttl_element = node->as<ASTTTLElement>())
+        {
+            for (const auto & key : ttl_element->group_by_key)
+                stack.push_back(key.get());
+            for (const auto & assignment : ttl_element->group_by_assignments)
+                stack.push_back(assignment.get());
+        }
+    }
+}
+
+}
 
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
@@ -116,8 +361,13 @@ std::pair<String, StoragePtr> createTableFromAST(
     if (ast_create_query.select && ast_create_query.isView())
         ApplyWithSubqueryVisitor::visit(*ast_create_query.select, /*max_expanded_ast_elements=*/ 0); /// Bounded when it was created.
 
+    if (ast_create_query.storage)
+        checkArgumentsLoadPassively(ast_create_query.storage->engine, ast_create_query, context);
+    checkExpressionsLoadPassively(ast_create_query, context);
+
     if (ast_create_query.as_table_function)
     {
+        checkArgumentsLoadPassively(ast_create_query.as_table_function->as<ASTFunction>(), ast_create_query, context);
         const auto & factory = TableFunctionFactory::instance();
         auto table_function_ast = ast_create_query.as_table_function->ptr();
         auto table_function = factory.get(table_function_ast, context, /* is_replayed_definition = */ true);
@@ -167,7 +417,11 @@ std::pair<String, StoragePtr> createTableFromAST(
         else
         {
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list, context, mode);
-            constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints, columns, context);
+            /// Analyzing a constraint runs its scalar subqueries, so `load_tables_readonly` takes the stored constraints as they are.
+            if (!context->getServerSettings()[ServerSetting::load_tables_readonly])
+                constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints, columns, context);
+            else if (ast_create_query.columns_list->constraints)
+                constraints = ConstraintsDescription{ast_create_query.columns_list->constraints->clone()->children};
         }
     }
 
@@ -784,6 +1038,8 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
 
     /// Metadata files to load: name and flag for .tmp_drop files
     std::vector<std::pair<String, bool>> metadata_files;
+    /// `load_tables_readonly` removes, renames and restores no file here.
+    const bool load_readonly = getContext()->getServerSettings()[ServerSetting::load_tables_readonly];
 
     for (const auto it = db_disk->iterateDirectory(metadata_path); it->isValid(); it->next())
     {
@@ -804,16 +1060,27 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         if (endsWith(file_name, ".sql.tmp_drop"))
         {
             /// There are files that we tried to delete previously
-            metadata_files.emplace_back(file_name, false);
+            if (!load_readonly)
+                metadata_files.emplace_back(file_name, false);
+            /// Loading restores such an object by renaming its file, or removes the file of one without data.
+            else if (const String object_name = file_name.substr(0, file_name.size() - strlen(".sql.tmp_drop"));
+                     db_disk->existsFileOrDirectory(fs::path(data_path) / object_name))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot load database {} with `load_tables_readonly`: object {} was not dropped completely, and loading it "
+                    "restores its metadata file {}", backQuote(getDatabaseName()), backQuote(object_name), getMetadataPath() + file_name);
         }
         else if (endsWith(file_name, ".tmp_move_from") || endsWith(file_name, ".tmp_move_to"))
         {
+            if (load_readonly)
+                continue;
             /// There are temp files generated in MetadataStorageFromPlainObjectStorageMoveFileOperation
             LOG_INFO(log, "Removing file {}", sub_path.string());
             db_disk->removeFileIfExists(sub_path);
         }
         else if (endsWith(file_name, ".sql.tmp"))
         {
+            if (load_readonly)
+                continue;
             /// There are files .sql.tmp - delete
             LOG_INFO(log, "Removing file {}", sub_path.string());
             db_disk->removeFileIfExists(sub_path);
@@ -871,7 +1138,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
                 continue;
 
             stale_files.insert(file_name);
-            if (db_disk->isReadOnly())
+            if (db_disk->isReadOnly() || load_readonly)
             {
                 LOG_WARNING(log, "Skipping {}: it is a copy of {}", path, *copy);
                 continue;
