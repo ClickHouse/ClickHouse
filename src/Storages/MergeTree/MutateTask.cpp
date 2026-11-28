@@ -2255,6 +2255,7 @@ static NameToNameVector collectFilesForRenames(
     StorageMetadataPtr metadata_snapshot,
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::DataPartPtr new_part,
+    const Block & updated_header,
     const MutationCommands & commands_for_renames,
     const NameSet & updated_columns_in_patches,
     const String & mrk_extension,
@@ -2322,6 +2323,34 @@ static NameToNameVector collectFilesForRenames(
                 remove_stream(IMergeTreeDataPart::getStreamNameForColumn(
                     column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings()));
             });
+        }
+    };
+
+    /// Remove the streams of the columns that the source part has but the new part does not, e.g. after MODIFY COLUMN
+    /// to a type with fewer streams (LowCardinality -> String) or a rewrite of a column with a dynamic structure.
+    auto remove_streams_not_in_new_part = [&](const Names & column_names)
+    {
+        auto old_streams = getStreamCounts(source_part, source_part->checksums, column_names);
+        auto new_streams = getStreamCounts(new_part, source_part->checksums, column_names);
+
+        for (const auto & [old_stream, _] : old_streams)
+        {
+            if (new_streams.contains(old_stream))
+                continue;
+
+            /// Every such command walks all streams of the source part, so with several of them
+            /// the count of a stream can already have reached zero (and the stream been removed)
+            /// on behalf of an earlier command. Do not decrement it below zero.
+            auto stream_it = stream_counts.find(old_stream);
+            if (stream_it == stream_counts.end() || stream_it->second == 0)
+                continue;
+
+            --stream_it->second;
+            if (stream_it->second == 0)
+            {
+                add_rename(old_stream + ".bin", "");
+                add_rename(old_stream + mrk_extension, "");
+            }
         }
     };
     NameSet columns_renamed_to_not_stored;
@@ -2413,6 +2442,9 @@ static NameToNameVector collectFilesForRenames(
             if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
                 remove_column_streams(command.column_name);
+                /// CLEAR recomputes the MATERIALIZED columns depending on the cleared one.
+                if (command.clear)
+                    remove_streams_not_in_new_part(updated_header.getNames());
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
@@ -2499,31 +2531,7 @@ static NameToNameVector collectFilesForRenames(
             }
             else if (command.type == MutationCommand::Type::UPDATE || command.type == MutationCommand::Type::READ_COLUMN || command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
-                /// Remove files for streams that exist in source_part,
-                /// but were removed in new_part by MODIFY COLUMN or MATERIALIZE COLUMN from
-                /// type with higher number of streams (e.g. LowCardinality -> String).
-                auto old_streams = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
-                auto new_streams = getStreamCounts(new_part, source_part->checksums, source_part->getColumns().getNames());
-
-                for (const auto & [old_stream, _] : old_streams)
-                {
-                    if (new_streams.contains(old_stream))
-                        continue;
-
-                    /// Every such command walks all streams of the source part, so with several of them
-                    /// the count of a stream can already have reached zero (and the stream been removed)
-                    /// on behalf of an earlier command. Do not decrement it below zero.
-                    auto stream_it = stream_counts.find(old_stream);
-                    if (stream_it == stream_counts.end() || stream_it->second == 0)
-                        continue;
-
-                    --stream_it->second;
-                    if (stream_it->second == 0)
-                    {
-                        add_rename(old_stream + ".bin", "");
-                        add_rename(old_stream + mrk_extension, "");
-                    }
-                }
+                remove_streams_not_in_new_part(source_part->getColumns().getNames());
             }
         }
     }
@@ -5889,6 +5897,7 @@ bool MutateTask::prepare()
             ctx->metadata_snapshot,
             ctx->source_part,
             ctx->new_data_part,
+            ctx->updated_header,
             ctx->for_file_renames,
             updated_columns_in_patches,
             ctx->mrk_extension,
