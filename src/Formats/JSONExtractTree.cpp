@@ -241,8 +241,7 @@ bool tryGetNumericValueFromJSONElement(
 
                 if constexpr (is_signed_v<NumberType>)
                 {
-                    /// `tryReadIntText` rejects a decimal integer literal only when it is out of range, and `Float64`
-                    /// would round one just below the minimum into the range.
+                    /// `tryReadIntText` rejects a decimal integer literal only when it is out of range.
                     std::string_view digits = element.getString();
                     if (!digits.empty() && (digits.front() == '-' || digits.front() == '+'))
                         digits.remove_prefix(1);
