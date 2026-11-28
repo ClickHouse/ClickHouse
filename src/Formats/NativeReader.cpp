@@ -308,15 +308,6 @@ Block NativeReader::read()
 
                 if (!header_column.type->equals(*column.type))
                 {
-                    /// In the event of the same aggregate function but of a different variant (e.g. Window vs Aggregate),
-                    /// we should try to convert and read, since the difference in `Window` vs `Aggregate` is not a
-                    /// user-facing type difference but rather an internal implementation detail.
-                    /// This can happen when external sort spills blocks to disk: the header carries the Window variant from the query plan,
-                    /// but `NativeReader` deserializes the type name and resolves it via `AggregateFunctionFactory`, which always produces the
-                    /// Aggregation variant.
-                    const auto * header_agg_type = typeid_cast<const DataTypeAggregateFunction *>(header_column.type.get());
-                    bool convertible_agg_variant = header_agg_type && header_agg_type->equalsIgnoringVariant(*column.type);
-
                     /// Named tuples keep the pairing of `CAST`: this is also the receiving side of every Native INSERT.
                     /// Without type conversion LowCardinality may still differ, to support inserts from old clients without it.
                     castColumnToRequestedType(
@@ -324,8 +315,7 @@ Block NativeReader::read()
                         header_column.type,
                         {.null_as_default = format_settings && format_settings->null_as_default,
                          .tuple_elements_by_name = false,
-                         .allow_types_conversion
-                         = (format_settings && format_settings->native.allow_types_conversion) || convertible_agg_variant},
+                         .allow_types_conversion = format_settings && format_settings->native.allow_types_conversion},
                         header.getPositionByName(column.name),
                         block_missing_values);
                 }
