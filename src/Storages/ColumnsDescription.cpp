@@ -1406,9 +1406,10 @@ void collectAliasDependenciesFromAST(
 
     if (const auto * identifier = node->as<ASTIdentifier>())
     {
-        const auto & column_name = identifier->name();
-        if (candidate_names.contains(column_name))
-            dependencies.insert(column_name);
+        /// A subcolumn access such as `b.x` or `` `b.x` `` (a single quoted token) depends on the whole column `b`,
+        /// unless a column is literally named `b.x`.
+        if (auto column_name = Nested::tryGetColumnNameInStorage(identifier->name(), candidate_names))
+            dependencies.insert(std::move(*column_name));
         return;
     }
 
