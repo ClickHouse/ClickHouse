@@ -886,6 +886,7 @@ void registerStorageMemory(StorageFactory & factory)
         .supports_parallel_insert = true,
         .has_builtin_setting_fn = MemorySettings::hasBuiltin,
         .supports_temporary = true,
+        .supports_drop_without_loading = true,
     },
     Documentation{
         .description = R"DOCS_MD(

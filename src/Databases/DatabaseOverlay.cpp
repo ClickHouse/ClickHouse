@@ -110,6 +110,29 @@ void DatabaseOverlay::dropTable(ContextPtr context_, const String & table_name, 
         getEngineName());
 }
 
+ASTPtr DatabaseOverlay::tryGetCreateQueryOfTableFailedToLoad(const String & name) const
+{
+    for (const auto & db : databases)
+    {
+        if (auto create_query = db->tryGetCreateQueryOfTableFailedToLoad(name))
+            return create_query;
+    }
+    return nullptr;
+}
+
+void DatabaseOverlay::dropTableFailedToLoad(ContextPtr context_, const String & name, bool sync)
+{
+    for (auto & db : databases)
+    {
+        if (db->tryGetCreateQueryOfTableFailedToLoad(name))
+        {
+            db->dropTableFailedToLoad(context_, name, sync);
+            return;
+        }
+    }
+    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuote(getDatabaseName()), backQuote(name));
+}
+
 void DatabaseOverlay::attachTable(
     ContextPtr context_, const String & table_name, const StoragePtr & table, const String & relative_table_path)
 {

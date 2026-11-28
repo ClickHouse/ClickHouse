@@ -70,6 +70,9 @@ public:
 
     void dropTable(ContextPtr local_context, const String & name, bool sync) override;
 
+    /// A DROP must also drop the nested table and update the replication state, which needs the storage.
+    ASTPtr tryGetCreateQueryOfTableFailedToLoad(const String & /*name*/) const override { return nullptr; }
+
     void drop(ContextPtr local_context) override;
 
     bool hasReplicationThread() const override { return true; }
