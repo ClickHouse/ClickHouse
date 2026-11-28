@@ -37,11 +37,15 @@ static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_sna
     return {non_virtual_header, virtual_header};
 }
 
-static Block getSampleBlock(const Block & non_virtual_header, const Block & virtual_header)
+static Block getSampleBlock(const Block & non_virtual_header, const Block & virtual_header, const ColumnsDescription & columns)
 {
     auto header = non_virtual_header;
     for (const auto & column : virtual_header)
-        header.insert(column);
+    {
+        /// A MATERIALIZED column overrides the virtual column with the same name.
+        if (!columns.tryGetColumn(GetColumnsOptions::Materialized, column.name))
+            header.insert(column);
+    }
 
     return header;
 }
@@ -67,7 +71,7 @@ NATSSource::NATSSource(
     size_t max_block_size_,
     StreamingHandleErrorMode handle_error_mode_,
     std::optional<UInt64> cancel_epoch_)
-    : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
+    : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second, storage_snapshot_->metadata->getColumns())))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
@@ -308,8 +312,10 @@ Chunk NATSSource::generateImpl()
         return {};
 
     auto result_columns = executor.getResultColumns();
-    for (auto & column : virtual_columns)
-        result_columns.push_back(std::move(column));
+    const auto & header = getPort().getHeader();
+    for (size_t i = 0; i < virtual_columns.size(); ++i)
+        if (header.has(virtual_header.getByPosition(i).name))
+            result_columns.push_back(std::move(virtual_columns[i]));
 
     return Chunk(std::move(result_columns), total_rows);
 }
