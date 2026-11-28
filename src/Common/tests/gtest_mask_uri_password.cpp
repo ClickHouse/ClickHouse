@@ -280,3 +280,16 @@ TEST(MaskS3URLCredentials, MasksUserinfoAndPresignedParameters)
     EXPECT_TRUE(maskPresignedURLParameters(url));
     EXPECT_EQ(url, "https://[HIDDEN]@bucket/path?X-Amz-Signature=[HIDDEN]&sig=[HIDDEN]&format=CSV");
 }
+
+TEST(MaskS3URLCredentials, MasksInPlaceOrIntoACopy)
+{
+    const std::string url = "https://key:secret@bucket/path?X-Amz-Signature=abcdef&format=CSV";
+    const std::string masked = "https://[HIDDEN]@bucket/path?X-Amz-Signature=[HIDDEN]&format=CSV";
+
+    EXPECT_EQ(maskURICredentials(url), masked);
+    EXPECT_EQ(url, "https://key:secret@bucket/path?X-Amz-Signature=abcdef&format=CSV");
+
+    std::string in_place = url;
+    EXPECT_TRUE(maskURICredentials(in_place));
+    EXPECT_EQ(in_place, masked);
+}
