@@ -76,6 +76,9 @@ public:
 
     void unlock();
 
+    /// Removes the nodes of the locks that are still held with pipelined requests instead of one round trip per lock.
+    static void unlockAll(std::vector<EphemeralLockInZooKeeper> & locks);
+
     /// Adds actions equivalent to `unlock()` to the list.
     void getUnlockOp(Coordination::Requests & ops) const;
 
