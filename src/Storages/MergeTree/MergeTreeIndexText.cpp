@@ -648,7 +648,7 @@ bool isPatternScanCostlierThanReadableRows(
 String makeIndexIdForCaches(const IMergeTreeDataPartInfoForReader & part_info, const IMergeTreeIndex & index)
 {
     const auto & part_storage = *part_info.getDataPartStorage();
-    return fmt::format("{}:{}:{}", part_storage.getDiskName(), part_storage.getFullPath(), index.getFileName());
+    return fmt::format("{}:{}:{}{}", part_storage.getDiskName(), part_storage.getFullPath(), index.getFileName(), part_info.getCacheKeySuffix());
 }
 
 std::shared_ptr<TextIndexHeader> loadHeader(

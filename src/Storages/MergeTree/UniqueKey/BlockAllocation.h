@@ -22,7 +22,7 @@ public:
     BlockAllocation(
         LoggerPtr log,
         std::unique_ptr<PlainCommittingBlockHolder> block_holder_,
-        MergeTreeDeduplicationLog * deduplication_log_,
+        std::shared_ptr<MergeTreeDeduplicationLog> deduplication_log_,
         IMergeTreeDataPart & part,
         const std::vector<DeduplicationHash> & deduplication_hashes);
 
@@ -35,7 +35,7 @@ public:
 
 private:
     std::unique_ptr<PlainCommittingBlockHolder> block_holder;
-    MergeTreeDeduplicationLog * deduplication_log;
+    std::shared_ptr<MergeTreeDeduplicationLog> deduplication_log;
     MergeTreePartInfo part_info;
     std::vector<std::string> dedup_conflicts;
     bool registered = false;

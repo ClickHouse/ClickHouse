@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -276,6 +277,13 @@ public:
         /// The default no-op implementation when the state in memory cannot be out of sync of the actual state.
     }
 
+    /// For a storage whose state in memory is built by listing an object storage that other servers write to
+    /// (see `refresh`): a moment of the steady clock of this server that is not later than the start of the listing
+    /// the current state was built from. Everything another server had committed to the object storage before that
+    /// moment is in the state; a `refresh` that was skipped or failed does not move it. `std::nullopt` if the state
+    /// was not built this way, so nothing is known about its age.
+    [[nodiscard]] virtual std::optional<std::chrono::steady_clock::time_point> getListedStateTime() const { return std::nullopt; }
+
     virtual ~IMetadataStorage() = default;
 
     /// ==== More specific methods. Previous were almost general purpose. ====
@@ -326,6 +334,11 @@ public:
     {
         return false;
     }
+
+    /// Whether this process publishes a snapshot of the whole metadata of the disk to the object storage for the readers of
+    /// the disk (see `metadata_snapshot_enabled` of `plain_rewritable`). The publication is not coordinated with other
+    /// processes that write to the same disk.
+    [[nodiscard]] virtual bool writesMetadataSnapshot() const { return false; }
 
     /// Whether a hard link created by `createHardLink` really shares the blob between the two files,
     /// instead of copying it. The write-once (`plain`) metadata cannot represent hard links at all,

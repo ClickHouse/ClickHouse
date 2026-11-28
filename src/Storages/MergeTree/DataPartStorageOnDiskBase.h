@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Disks/IDisk.h>
 #include <Disks/IVolume.h>
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -18,6 +19,7 @@ class DataPartStorageOnDiskBase : public IDataPartStorage
 {
 public:
     DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_);
+    ~DataPartStorageOnDiskBase() override;
 
     std::string getFullPath() const override;
     std::string getRelativePath() const override;
@@ -42,6 +44,7 @@ public:
     bool isStoredOnRemoteDisk() const override;
     std::optional<String> getCacheName() const override;
     bool supportZeroCopyReplication() const override;
+    bool supportsHardLinks() const override;
     bool supportParallelWrite() const override;
     bool isBroken() const override;
     bool isReadonly() const override;
@@ -150,7 +153,8 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         LoggerPtr log,
-        const std::function<void()> & cancellation_hook
+        const std::function<void()> & cancellation_hook,
+        const std::function<bool()> & may_remove_after_failure
         ) const override;
 
     void rename(
@@ -181,7 +185,37 @@ public:
 
     bool isCaseInsensitive() const override;
 
+    /// The identity of a part directory, by its disk and path. Works before a storage object exists.
+    static std::optional<String> getSharedStorageIdentity(const IDisk & disk, const String & directory);
+
+    std::optional<String> getSharedStorageIdentity() const override;
+    void pinSharedStorageIdentity(const String & identity) override;
+    bool isPinnedToSharedStorageIdentity() const override;
+    void assertSharedStorageIdentityUnchanged() const override;
+
 protected:
+    /// Checks that a directory is still the one a storage was bound to (see `pinSharedStorageIdentity`).
+    /// Self-contained, so that a read prepared now and built later can run the check after it has opened its files.
+    struct SharedStorageIdentityCheck
+    {
+        DiskPtr disk;
+        String directory;
+        String identity;
+
+        void operator()() const;
+    };
+
+    /// The check for the current location of the part, `std::nullopt` if the storage is not bound to a directory.
+    ///
+    /// It has to run AFTER the files are resolved to objects, never before: the mapping of a name to a directory
+    /// changes atomically and never returns to a directory it has left (every directory has a unique key prefix),
+    /// so a name that still refers to the bound directory after the resolution referred to it during the resolution
+    /// too. A check before the resolution proves nothing about the mapping the resolution will see.
+    [[nodiscard]] std::optional<SharedStorageIdentityCheck> getSharedStorageIdentityCheck() const;
+
+    /// Binds a storage created for a projection of this part to the directory of that projection, if this storage
+    /// is bound itself.
+    void pinProjectionStorage(DataPartStorageOnDiskBase & projection_storage) const;
 
     DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);
     virtual MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const = 0;
@@ -256,6 +290,18 @@ protected:
     mutable std::shared_ptr<const PackedFilesReader> skip_indices_packed_reader TSA_GUARDED_BY(skip_indices_packed_mutex);
     /// The archive exists but has an unsupported format version; the reader then has an empty index.
     mutable bool skip_indices_packed_unsupported TSA_GUARDED_BY(skip_indices_packed_mutex) = false;
+
+    /// See `pinSharedStorageIdentity`. It is null for the storages that are not bound, which is all of them outside
+    /// of `leader_election`, and it is a single pointer on purpose: a storage is allocated for every part of every
+    /// table, and a few more bytes here move the object to the next size class of the allocator.
+    /// An identity is immutable once it is published. Binding the storage again keeps the previous identity alive
+    /// until the storage is destroyed, so that a thread that has just loaded the pointer can still read it.
+    struct PinnedSharedStorageIdentity
+    {
+        String identity;
+        std::unique_ptr<const PinnedSharedStorageIdentity> previous;
+    };
+    std::atomic<const PinnedSharedStorageIdentity *> pinned_shared_storage_identity{nullptr};
 
     template <typename Op>
     void executeWriteOperation(Op && op)

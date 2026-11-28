@@ -1,0 +1,2 @@
+The `leader_election` setting cannot be used with a table that has a `UNIQUE KEY`
+0

@@ -61,6 +61,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
+    extern const int DATA_PART_CHANGED_ON_SHARED_STORAGE;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int TIMEOUT_EXCEEDED;
@@ -133,7 +134,11 @@ bool isRetryableException(std::exception_ptr exception_ptr)
             || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
             || e.code() == ErrorCodes::ABORTED
             || e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM
-            || e.code() == ErrorCodes::CACHE_CANNOT_WRITE_TO_CACHE_DISK;
+            || e.code() == ErrorCodes::CACHE_CANNOT_WRITE_TO_CACHE_DISK
+            /// Another server removed or replaced the directory of the part on the shared storage (`leader_election`).
+            /// This says nothing about the data: the files of the part were not read, and the part is reloaded
+            /// or retired by the next refresh. It must not be detached or removed as a broken one.
+            || e.code() == ErrorCodes::DATA_PART_CHANGED_ON_SHARED_STORAGE;
     }
     catch (const std::filesystem::filesystem_error & e)
     {
@@ -419,8 +424,16 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     if (require_checksums || data_part_storage.existsFile("checksums.txt"))
     {
         auto buf = read_file(data_part_storage, "checksums.txt");
-        checksums_txt.read(*buf);
-        assertEOF(*buf);
+
+        /// An existing but empty `checksums.txt` (left by an interrupted repair) lists nothing, the same
+        /// as an absent one, unless the caller requires the checksums. `IMergeTreeDataPart::loadChecksums`
+        /// relies on it to recalculate the checksums of such a part without removing the file first:
+        /// under `leader_election` a part that is being loaded leaves the file in place.
+        if (require_checksums || !buf->eof())
+        {
+            checksums_txt.read(*buf);
+            assertEOF(*buf);
+        }
     }
 
     NameSet projections_on_disk;

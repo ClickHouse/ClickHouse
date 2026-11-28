@@ -519,8 +519,7 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             /// apply_mutations_on_fly = 0 query.
             if (!current_task.appliesMutationsBeforePrewhere())
             {
-                String part_name
-                    = data_part_info->isProjectionPart() ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName()) : data_part_info->getPartName();
+                String part_name = data_part_info->getDataPart()->getNameForQueryConditionCache();
                 chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(
                     /// QueryConditionCache is a coordinator feature; concrete part present here.
                     data_part_info->getDataPart()->storage.getStorageID().uuid,
@@ -653,9 +652,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                     auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                     const auto & data_part_info = task->getInfo().data_part_info;
 
-                    String part_name = data_part_info->isProjectionPart()
-                        ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
-                        : data_part_info->getPartName();
+                    String part_name = data_part_info->getDataPart()->getNameForQueryConditionCache();
                     query_condition_cache->write(
                         /// QueryConditionCache is a coordinator feature; concrete part present here.
                         data_part_info->getDataPart()->storage.getStorageID().uuid,

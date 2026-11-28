@@ -3064,6 +3064,53 @@ the whole duration of that `ALTER`: it accepts writes again only once the statem
 This setting is not supported for `ReplicatedMergeTree`.
 )", 0, \
         {"26.3", false, false, "New setting to mark table as read-only, preventing inserts and modifications"}) \
+    DECLARE(Bool, leader_election, false, R"(
+Enable leader election for non-replicated MergeTree tables on shared `S3` object storage.
+When enabled, the table uses conditional writes on the object storage to elect a single leader among
+multiple server instances sharing the same data. Only the leader can perform writes and merges.
+Heavy mutations (`ALTER TABLE ... UPDATE`/`DELETE`) need hard links, which the required disks do not have,
+so they are rejected even on the leader.
+Follower instances act as read-only replicas. Every follower keeps a small object next to the lease on the
+object storage and rewrites it at every heartbeat. It tells the leader how recent the follower's set of parts is
+and which outdated parts the queries on the follower still read. The leader removes a part replaced by a merge or
+a partition operation from storage only after `old_parts_lifetime` has passed, every follower has refreshed its set
+of parts past the replacement, and no follower reports a query that still reads the part, so a query on a follower
+can run longer than `old_parts_lifetime`. A follower that has not rewritten its object for
+`leader_election_session_timeout` (it was stopped, or it stalled) is ignored: a query that is still running on
+such a follower can fail with an exception after the leader has removed the parts it reads.
+Requires every disk in the storage policy to be an `S3`
+object storage disk with `metadata_type = plain_rewritable` — the only metadata layout currently
+accepted — so that after a failover the new leader sees the parts written by the previous leader.
+The disks must also have hard links disabled (`enable_hard_links = false`, which is not the default),
+because the link counts of blobs shared between directories are not coordinated between nodes,
+and the metadata snapshot disabled (`metadata_snapshot_enabled = false`, which is not the default either),
+because every node that writes to the disk publishes the snapshot of the whole disk without coordination.
+Tables on disks with any other metadata layout, including the default per-replica
+`metadata_type = local`, are rejected at creation.
+(`Azure` object storage is implemented but not yet test-covered, so it is rejected for now.)
+This setting is not supported for `ReplicatedMergeTree`: such a table is rejected at create and attach whenever its
+effective value of the setting is on, including when it is only inherited from a server-wide default. Do not enable it
+in the server-wide `merge_tree` section on a server that also has `ReplicatedMergeTree` tables: they would fail to
+attach on the next restart. Enable it per table in the `SETTINGS` clause instead (or override it back to `0` in the
+`replicated_merge_tree` section).
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting to enable leader election for non-replicated MergeTree tables on shared object storage"}) \
+    DECLARE(Seconds, leader_election_heartbeat_interval, 10, R"(
+Interval in seconds between leader election heartbeats. The leader renews its lease at this interval,
+and followers check for an expired lease at this interval. Only takes effect when `leader_election` is enabled.
+)", EXPERIMENTAL, \
+        {"26.12", 10, 10, "New setting to control leader lease renewal interval"}) \
+    DECLARE(Seconds, leader_election_session_timeout, 30, R"(
+Session timeout in seconds for leader election. If the leader does not renew its lease within this period,
+a follower will assume that the leader is dead and try to claim leadership. Must be at least 3x
+`leader_election_heartbeat_interval`. Only takes effect when `leader_election` is enabled.
+Expiry is measured on each node's own monotonic clock, from the moment it first observed the
+current version of the lease, so the wall clocks of the participating nodes do not need to be
+synchronized. A node that has just started waits a full session timeout before it can take over
+an orphaned lease. The lease records the session timeout of the node that wrote it, and if the nodes
+sharing the table use different values, a node waits for the longer of its own and the writer's.
+)", EXPERIMENTAL, \
+        {"26.12", 30, 30, "New setting to control leader lease expiry threshold"}) \
     DECLARE(Bool, materialize_projections_on_insert, true, R"(
 When enabled, INSERTs create new parts with projections.
 Otherwise, they can be created by explicit [MATERIALIZE PROJECTION](/reference/statements/alter/projection#materialize-projection)
@@ -3204,6 +3251,17 @@ void MergeTreeSettingsImpl::loadFromQuery(
 
     APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(ADD_IF_ABSENT)
 #undef ADD_IF_ABSENT
+
+    /// `leader_election` decides who owns the table's shared data: a node that loads the same table with
+    /// it disabled accepts unfenced writes and deletes the shared data on `DROP TABLE`. So when a new
+    /// definition inherits it enabled from the server's `merge_tree` section, record it in the definition,
+    /// and later changes of the server default do not change the ownership mode of the existing table.
+    /// Only the enabled value is recorded, so the definitions of all other tables stay as they were.
+    /// Definitions loaded from existing metadata are left as they are.
+    if (!is_loading_from_existing_metadata && (*this)[MergeTreeSetting::leader_election]
+        && std::find_if(changes.begin(), changes.end(), [](const SettingChange & c) { return c.name == "leader_election"; })
+            == changes.end())
+        changes.push_back(SettingChange{"leader_election", Field(true)});
 }
 
 void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const
@@ -3396,6 +3454,35 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool backg
 
         if (!(*this)[MergeTreeSetting::enable_block_offset_column])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
+    }
+
+    if ((*this)[MergeTreeSetting::leader_election])
+    {
+        if ((*this)[MergeTreeSetting::leader_election_heartbeat_interval].totalSeconds() <= 0)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The value of `leader_election_heartbeat_interval` must be a positive number of seconds, got {} s",
+                (*this)[MergeTreeSetting::leader_election_heartbeat_interval].totalSeconds());
+        }
+
+        if ((*this)[MergeTreeSetting::leader_election_session_timeout].totalSeconds() <= 0)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The value of `leader_election_session_timeout` must be a positive number of seconds, got {} s",
+                (*this)[MergeTreeSetting::leader_election_session_timeout].totalSeconds());
+        }
+
+        if ((*this)[MergeTreeSetting::leader_election_session_timeout].totalSeconds() < (*this)[MergeTreeSetting::leader_election_heartbeat_interval].totalSeconds() * 3)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The value of `leader_election_session_timeout` ({} s) must be at least 3x"
+                " the value of `leader_election_heartbeat_interval` ({} s)",
+                (*this)[MergeTreeSetting::leader_election_session_timeout].totalSeconds(),
+                (*this)[MergeTreeSetting::leader_election_heartbeat_interval].totalSeconds());
+        }
     }
 
     /// The marks, primary key and default compression codec settings are applied without a column data type, so
@@ -3822,6 +3909,9 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "add_minmax_index_for_block_number_column"
         || name == "add_minmax_index_for_block_offset_column"
         || name == "table_disk"
+        || name == "leader_election"
+        || name == "leader_election_heartbeat_interval"
+        || name == "leader_election_session_timeout"
         || name == "allow_tuple_element_aggregation"
         || name == "share_nested_offsets"
     ;

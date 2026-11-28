@@ -71,6 +71,8 @@ public:
     bool isTransactional() const override;
     bool isPlain() const override;
     bool isWriteOnce() const override;
+    bool writesMetadataSnapshot() const override;
+    std::optional<std::chrono::steady_clock::time_point> getListedStateTime() const override;
     bool supportsHardLinks() const override;
     bool supportWritingWithAppend() const override;
 

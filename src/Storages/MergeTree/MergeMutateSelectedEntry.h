@@ -50,6 +50,12 @@ struct MergeMutateSelectedEntry
     /// Taken by `StorageMergeTree::selectPartsToMerge` when the selected merge is a merge with TTL,
     /// and given back when this entry dies - which happens whether the merge ran or was dropped.
     MergeList::TTLMergeSlot ttl_merge_slot;
+    /// Leadership epoch of a `MergeTree` with `leader_election`, sampled before the source parts
+    /// were selected. The task that executes this entry re-checks it before publishing the result,
+    /// so a selection made under one lease cannot publish after a leadership loss and reacquire,
+    /// even if the task is prepared only after the reacquire (a foreground `OPTIMIZE` that pauses
+    /// between selection and execution). 0 when `leader_election` is disabled.
+    UInt64 leadership_epoch = 0;
     bool finalized{false};
     MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_,
                              MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR,

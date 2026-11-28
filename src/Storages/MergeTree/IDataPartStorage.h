@@ -205,6 +205,9 @@ public:
     [[nodiscard]] virtual std::optional<String> getCacheName() const { return std::nullopt; }
     [[nodiscard]] virtual bool supportZeroCopyReplication() const { return false; }
     [[nodiscard]] virtual bool supportParallelWrite() const = 0;
+    /// Whether files of this storage can be hardlinked (see `IDisk::supportsHardLinks`). False for
+    /// metadata layouts with deterministic object keys (`plain`, `plain_rewritable`) and write-once disks.
+    [[nodiscard]] virtual bool supportsHardLinks() const = 0;
     [[nodiscard]] virtual bool isBroken() const = 0;
     [[nodiscard]] virtual bool isReadonly() const = 0;
 
@@ -221,6 +224,27 @@ public:
     /// Return some uniq string for file.
     /// Required for distinguish different copies of the same part on remote FS.
     [[nodiscard]] virtual String getUniqueId() const = 0;
+
+    /// The identity of the directory of the part on a shared object storage: the key prefix under which the object
+    /// storage keeps the files of the directory, taken from the key of any of its files. Another directory created
+    /// later under the same name has another identity, even if its part has the same name (see
+    /// `MergeTreeData::getPartSharedStorageIncarnation`). `std::nullopt` if the part is not stored on a remote disk
+    /// or the directory has no files.
+    [[nodiscard]] virtual std::optional<String> getSharedStorageIdentity() const { return std::nullopt; }
+
+    /// Binds this storage to the directory with the given identity (see `getSharedStorageIdentity`), which must be
+    /// the one it refers to now. Files are opened by the name of the directory, and on a storage shared between
+    /// servers (a `MergeTree` table with `leader_election`) another server can remove the directory and create a new
+    /// one with the same name while a query still reads the part. From now on, opening a file throws
+    /// `DATA_PART_CHANGED_ON_SHARED_STORAGE` if the name no longer refers to the directory with this identity, so
+    /// that a reader cannot combine the files of two different parts. A projection storage created from this one
+    /// is bound to the directory of the projection that belongs to this directory.
+    virtual void pinSharedStorageIdentity(const String & /*identity*/) {}
+    [[nodiscard]] virtual bool isPinnedToSharedStorageIdentity() const { return false; }
+
+    /// Throws `DATA_PART_CHANGED_ON_SHARED_STORAGE` if this storage is bound to a directory
+    /// (see `pinSharedStorageIdentity`) and its name no longer refers to it. Does nothing otherwise.
+    virtual void assertSharedStorageIdentityUnchanged() const {}
 
     /// Represents metadata which is required for fetching of part.
     struct ReplicatedFilesDescription
@@ -315,6 +339,9 @@ public:
     const ClonePartParams & params) const = 0;
 
     /// Make a full copy of a data part into 'to/dir_path' (possibly to a different disk).
+    /// If the copy fails, the partially copied directory is removed, unless `may_remove_after_failure`
+    /// is set and returns false (the destination may then belong to someone else, see
+    /// `MergeTreePartsMover::clonePart`).
     virtual std::shared_ptr<IDataPartStorage> clonePart(
         const std::string & to,
         const std::string & dir_path,
@@ -322,7 +349,8 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         LoggerPtr log,
-        const std::function<void()> & cancellation_hook
+        const std::function<void()> & cancellation_hook,
+        const std::function<bool()> & may_remove_after_failure
         ) const = 0;
 
     /// Change part's root. from_root should be a prefix path of current root path.

@@ -192,6 +192,10 @@ public:
 
     [[nodiscard]] bool appliesOperationsEagerly() const override { return delegate->appliesOperationsEagerly(); }
 
+    [[nodiscard]] bool writesMetadataSnapshot() const override { return delegate->writesMetadataSnapshot(); }
+
+    [[nodiscard]] std::optional<std::chrono::steady_clock::time_point> getListedStateTime() const override { return delegate->getListedStateTime(); }
+
     [[nodiscard]] bool areBlobPathsRandom() const override
     {
         return delegate->areBlobPathsRandom();

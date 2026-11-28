@@ -42,6 +42,8 @@ std::string_view getRemovalStateDescription(DB::DataPartRemovalState state)
         return "Part maybe visible for transactions";
     case DB::DataPartRemovalState::NON_UNIQUE_OWNERSHIP:
         return "Part ownership is not unique";
+    case DB::DataPartRemovalState::MAY_BE_USED_BY_OTHER_SERVERS:
+        return "Part may be used by queries on other servers that read the table from the shared storage";
     case DB::DataPartRemovalState::NOT_REACHED_REMOVAL_TIME:
         return "Part hasn't reached removal time yet";
     case DB::DataPartRemovalState::HAS_SKIPPED_MUTATION_PARENT:

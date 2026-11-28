@@ -926,7 +926,10 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
             continue;
         }
 
-        remote_layout[std::move(result.local_path)] = std::move(result.info);
+        /// The logical path in `prefix.path` ends with a slash, while the directories reused from the base above are keyed
+        /// by the normalized path. Key both the same way, so that two `prefix.path` objects claiming the same directory
+        /// (written by different servers sharing the disk) collapse into one entry instead of being recorded twice.
+        remote_layout[normalizePath(result.local_path).string()] = std::move(result.info);
     }
 
     /// Root folder is a special case. Files are stored as /__root/{file-name}, unless the root has switched to the explicit file list.
@@ -1063,6 +1066,9 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
     LOG_DEBUG(log, "Loading metadata");
 
+    /// See `getListedStateTime`: sampled before the object storage is looked at.
+    const auto load_started = std::chrono::steady_clock::now();
+
     if (snapshot_role != chooseSnapshotRole())
         LOG_WARNING(log, "The `readonly` setting of the disk was changed after the disk was created. The disk keeps working as a "
             "{} of the metadata snapshot until the server is restarted", isSnapshotWriter() ? "writer" : "reader");
@@ -1191,6 +1197,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
             PlainRewritableRemoteLayout remote_layout;
             remote_layout[""] = makeRootDirectoryInfo();
             fs.applyLayout(std::move(remote_layout));
+            listed_state_time.store(load_started, std::memory_order_release);
             return;
         }
     }
@@ -1204,6 +1211,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
 
     const bool empty = loadRemoteLayout(base ? &base.value() : nullptr, /*is_initial_load=*/ mode == LoadMode::Initial, log);
     state_loaded_from_snapshot = false;
+    listed_state_time.store(load_started, std::memory_order_release);
 
     if (isSnapshotReader())
         superseded_snapshot_etag = std::move(snapshot_etag_to_supersede);
@@ -1355,6 +1363,10 @@ void MetadataStorageFromPlainRewritableObjectStorage::dropCache()
 
 void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
 {
+    /// An explicit request (zero) must not be skipped: its caller relies on a reload that starts after the
+    /// call, e.g. a `MergeTree` table with `leader_election` taking over writes needs to see every part the
+    /// previous leader committed. So it bypasses the throttle and waits for a concurrent refresh (which may
+    /// have listed the storage before the request) instead of returning, then reloads on its own.
     const bool explicit_request = not_sooner_than_milliseconds == 0;
     if (explicit_request)
         previous_refresh.restart();
@@ -1376,6 +1388,14 @@ void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_
         return;
 
     load(LoadMode::Incremental);
+}
+
+std::optional<std::chrono::steady_clock::time_point> MetadataStorageFromPlainRewritableObjectStorage::getListedStateTime() const
+{
+    const auto time = listed_state_time.load(std::memory_order_acquire);
+    if (time == std::chrono::steady_clock::time_point{})
+        return std::nullopt;
+    return time;
 }
 
 void MetadataStorageFromPlainRewritableObjectStorage::shutdown()

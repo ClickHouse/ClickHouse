@@ -307,7 +307,7 @@ MarkCache::Key MergeTreeMarksLoader::getCacheKey() const
 {
     auto data_part_storage = data_part_reader->getDataPartStorage();
     auto path = fs::path(data_part_storage->getFullRootPath()) / data_part_reader->getPartName() / mrk_path;
-    return MarkCache::hash(data_part_storage->getDiskName() + ":" + path.string());
+    return MarkCache::hash(data_part_storage->getDiskName() + ":" + path.string() + data_part_reader->getCacheKeySuffix());
 }
 
 MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
@@ -404,7 +404,7 @@ void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & c
     for (const auto & [stream_name, marks] : cached_marks)
     {
         auto mark_path = part.index_granularity_info.getMarksFilePath(stream_name);
-        auto key = MarkCache::hash(part.getDataPartStorage().getDiskName() + ":" + (fs::path(part.getRelativePathOfActivePart()) / mark_path).string());
+        auto key = MarkCache::hash(part.getDataPartStorage().getDiskName() + ":" + (fs::path(part.getRelativePathOfActivePart()) / mark_path).string() + part.getCacheKeySuffix());
         mark_cache->set(key, MarksInCompressedFile::create(*marks));
     }
 }
