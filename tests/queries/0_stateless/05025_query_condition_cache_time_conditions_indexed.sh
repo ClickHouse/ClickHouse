@@ -18,7 +18,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-settings="use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = true"
+settings="use_query_condition_cache = true, use_query_condition_cache_for_changing_bounds = true"
 
 # A single part ordered by `time`, mixing 'old' rows (which no current-time condition matches, and
 # which fill whole granules of their own at the front of the part) with recent rows. A separate
