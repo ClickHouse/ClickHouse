@@ -48,8 +48,9 @@ namespace
 }
 
 MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_, ResourceCost min_bytes_to_spill_,
-                                     std::chrono::steady_clock::time_point admission_deadline_)
-    : ResourceAllocation(*link.allocation_queue, id_)
+                                     std::chrono::steady_clock::time_point admission_deadline_,
+                                     Int32 eviction_score_)
+    : ResourceAllocation(*link.allocation_queue, id_, eviction_score_)
     , reserved_size(reserved_size_)
     , min_bytes_to_spill(min_bytes_to_spill_)
     , approved_increment(CurrentMetrics::MemoryReservationApproved, 0)

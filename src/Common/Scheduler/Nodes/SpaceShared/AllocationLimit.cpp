@@ -1,11 +1,14 @@
 #include <Common/Scheduler/CostUnit.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationLimit.h>
 #include <Common/Scheduler/IAllocationQueue.h>
+#include <Common/Scheduler/ResourceAllocation.h>
 #include <Common/Scheduler/Debug.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <base/scope_guard.h>
 #include <utility>
+
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -93,8 +96,25 @@ ISchedulerNode * AllocationLimit::getChild(const String & child_name)
     return nullptr;
 }
 
+ResourceAllocation * AllocationLimit::selectSelfKill(IncreaseRequest & killer, ResourceCost limit, String & details)
+{
+    // The ordering key is the requester's allocated size plus its pending increase minus outstanding spill requests,
+    // so a key above `limit` cannot fit even with the whole subtree freed. Query threads update the key under the
+    // queue lock (e.g. on spill settlement), so read a locked snapshot.
+    if (killer.allocation.queue.getFairKey(killer.allocation) <= limit)
+        return nullptr;
+    details = fmt::format("Evicting allocation (eviction_score {}) to satisfy its own increase, its reservation exceeds the limit", killer.allocation.eviction_score);
+    return &killer.allocation;
+}
+
 ResourceAllocation * AllocationLimit::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
 {
+    // If the requester's own reservation would exceed the limit, no eviction anywhere in the subtree can make
+    // it admissible. Fail its own request here instead of descending into a (possibly lower-precedence)
+    // sibling workload — and, for a `reserve_memory = 0` first grow that is not yet a running child, instead
+    // of leaving the increase blocked forever.
+    if (ResourceAllocation * self = selectSelfKill(killer, limit, details))
+        return self;
     if (!child)
         return nullptr;
     return child->selectAllocationToKill(killer, limit, details);
@@ -155,8 +175,14 @@ void AllocationLimit::approveDecrease()
     apply(*decrease);
 
     // Check if allocation being killed released all its resources
-    if (&decrease->allocation == allocation_to_kill && decrease->removing_allocation)
-        allocation_to_kill = nullptr;
+    if (decrease->removing_allocation)
+    {
+        // A requester that failed itself meanwhile is still releasing: wait for it as for a selected victim.
+        if (&decrease->allocation == allocation_to_kill)
+            allocation_to_kill = std::exchange(self_killed, nullptr);
+        else if (&decrease->allocation == self_killed)
+            self_killed = nullptr;
+    }
 
     {
         // Descendant spill registration must not evaluate this limit with an incomplete decrease chain.
@@ -207,6 +233,7 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
         // next `setIncrease(..., reapply_constraint=true)` below picks a fresh victim. The
         // previously-issued `killAllocation` is harmless if its target has already cleaned up.
         allocation_to_kill = nullptr;
+        self_killed = nullptr;
         reapply_constraint = true;
     }
     // Publish the decrease BEFORE evaluating the increase: the eviction decision in `setIncrease` skips
@@ -221,7 +248,8 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
     }
     if (update.increase || reapply_constraint)
     {
-        if (setIncrease(update.increase ? *update.increase : increase, reapply_constraint))
+        // Without an explicit increase, re-evaluate the child's current one: a blocked increase is not in `increase`.
+        if (setIncrease(update.increase ? *update.increase : child->increase, reapply_constraint))
             update.setIncrease(increase);
         else
             update.resetIncrease();
@@ -233,22 +261,37 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
         checkSoftLimit();
 }
 
+void AllocationLimit::kill(IncreaseRequest & killer, ResourceAllocation & victim, const String & details)
+{
+    // Another limit, or an earlier decision of this one, may have already asked this allocation to release.
+    if (!victim.requestKill())
+        return;
+    SCHED_DBG("{} -- killing(allocated={}, increase_size={}, max={}, increasing={}, killing={})",
+        getPath(), allocated, killer.size, max_allocated, killer.allocation.id, victim.id);
+    victim.killAllocation(std::make_exception_ptr(
+        Exception(ErrorCodes::RESOURCE_LIMIT_EXCEEDED,
+            "Workload '{}' limit is hit for resource '{}': {}", getWorkloadName(), getResourceName(), details)));
+
+    // Introspection
+    killer.allocation.queue.countKiller(*this);
+    victim.queue.countVictim(*this);
+}
+
 bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_constraint)
 {
     if (!new_increase)
     {
         // There is no increase request to satisfy anymore, so forget any victim we were
         // reclaiming from. The killer increase that selected `allocation_to_kill` is gone — its
-        // requester finished, was killed, or (for a never-admitted self-kill, e.g. a query with no
-        // `reserve_memory` that hits the limit on its first increase) was removed via the local
-        // path in `AllocationQueue::processActivation`, which never drives a `removing_allocation`
-        // decrease up to `approveDecrease`. Leaving the pointer set would make the next over-limit
-        // increase see a non-null `allocation_to_kill`, skip issuing a fresh kill, and block forever
-        // (observed as a 600s timeout in `test_scheduler_memory::test_max_memory_limit`). This must
-        // run before the early return below, because in the self-kill case both `increase` and
-        // `new_increase` are already `nullptr`. Any previously-issued `killAllocation` is harmless
-        // if its target has already cleaned up.
+        // requester finished, was killed, was cancelled, or had its subtree detached. Leaving the
+        // pointer set would make the next over-limit increase see a non-null `allocation_to_kill`,
+        // skip issuing a fresh kill, and block forever (observed as a 600s timeout in
+        // `test_scheduler_memory::test_max_memory_limit`). This must run before the early return
+        // below, because in the self-kill case both `increase` and `new_increase` are already
+        // `nullptr`. Any previously-issued `killAllocation` is harmless if its target has already
+        // cleaned up.
         allocation_to_kill = nullptr;
+        self_killed = nullptr;
     }
 
     if (!reapply_constraint && increase == new_increase)
@@ -263,21 +306,24 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
             // memory that is about to be released, so the eviction may be unnecessary. The increase
             // stays blocked, and every decrease approval re-runs this via `reapply_constraint`; once
             // the releases prove insufficient and no decrease is pending, the eviction fires.
-            if (!allocation_to_kill && decrease == nullptr)
+            if (decrease == nullptr)
             {
                 String details;
-                allocation_to_kill = selectAllocationToKill(*new_increase, max_allocated, details);
-                if (allocation_to_kill)
+                if (!allocation_to_kill)
                 {
-                    SCHED_DBG("{} -- killing(allocated={}, increase_size={}, max={}, increasing={}, killing={})",
-                        getPath(), allocated, new_increase->size, max_allocated, new_increase->allocation.id, allocation_to_kill->id);
-                    allocation_to_kill->killAllocation(std::make_exception_ptr(
-                        Exception(ErrorCodes::RESOURCE_LIMIT_EXCEEDED,
-                            "Workload '{}' limit is hit for resource '{}': {}", getWorkloadName(), getResourceName(), details)));
-
-                    // Introspection
-                    new_increase->allocation.queue.countKiller(*this);
-                    allocation_to_kill->queue.countVictim(*this);
+                    allocation_to_kill = selectAllocationToKill(*new_increase, max_allocated, details);
+                    if (allocation_to_kill)
+                        kill(*new_increase, *allocation_to_kill, details);
+                }
+                else if (!self_killed && &new_increase->allocation != allocation_to_kill)
+                {
+                    // An eviction is still in flight. Keep waiting for its release, unless this request cannot fit
+                    // even then. One such self-kill at a time, so no allocation is killed twice.
+                    if (ResourceAllocation * self = selectSelfKill(*new_increase, max_allocated, details))
+                    {
+                        self_killed = &new_increase->allocation;
+                        kill(*new_increase, *self, details);
+                    }
                 }
             }
             // Block until there is enough resource to process child's increase request

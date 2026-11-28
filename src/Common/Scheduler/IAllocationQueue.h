@@ -54,6 +54,10 @@ public:
     /// Publish reservation decreases before this reply; increase approval need not precede the reply.
     virtual void finishSpill(ResourceAllocation & allocation, ResourceCost settled_bytes, ResourceCost reclaimable_total) = 0;
 
+    /// Returns a consistent snapshot of the allocation's ordering key: its size plus pending increase minus
+    /// outstanding spill requests. Locks the queue; must not be called while the queue is locked.
+    virtual ResourceCost getFairKey(const ResourceAllocation & allocation) = 0;
+
     /// Requests to remove an allocation from the queue.
     /// The removal is processed asynchronously by the scheduler thread.
     /// For pending allocations, `ResourceAllocation::allocationFailed` will be called.
