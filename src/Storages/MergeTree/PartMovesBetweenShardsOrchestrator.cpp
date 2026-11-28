@@ -436,10 +436,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                     auto drop_part_info = MergeTreePartInfo::fromPartName(attach_log_entry->new_part_name, storage.format_version);
 
-                    storage.getClearBlocksInPartitionOps(
-                        ops, *zk, drop_part_info.getPartitionId(), drop_part_info.min_block, drop_part_info.max_block);
-                    size_t clear_block_ops_size = ops.size();
-
+                    /// The attached part has no deduplication blocks on the destination, and the source part stays.
                     attach_rollback_log_entry.type = ReplicatedMergeTreeLogEntryData::DROP_RANGE;
                     attach_rollback_log_entry.log_entry_id = attach_rollback_log_entry_barrier_path;
                     attach_rollback_log_entry.source_replica = storage.replica_name;
@@ -450,15 +447,14 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                     ops.emplace_back(
                         zkutil::makeCreateRequest(attach_rollback_log_entry_barrier_path, attach_rollback_log_entry.toString(), -1));
+                    ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
                     ops.emplace_back(zkutil::makeCreateRequest(
                         entry.to_shard + "/log/log-", attach_rollback_log_entry.toString(), zkutil::CreateMode::PersistentSequential));
-                    ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
                     Coordination::Responses responses;
                     Coordination::Error rc = zk->tryMulti(ops, responses);
                     zkutil::KeeperMultiException::check(rc, ops, responses);
 
-                    String log_znode_path
-                        = dynamic_cast<const Coordination::CreateResponse &>(*responses[clear_block_ops_size]).path_created;
+                    String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
                     attach_rollback_log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
                     LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
