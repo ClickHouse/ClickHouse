@@ -8,6 +8,7 @@
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
 #include <future>
 #include <queue>
+#include <tuple>
 #include <expected>
 
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -459,7 +460,7 @@ struct TraversalTask : public std::enable_shared_from_this<TraversalTask<UserCtx
 
     struct Ctx
     {
-        std::deque<TraversalTaskPtr> new_tasks; /// Tasks for newly discovered children, that hasn't been started yet
+        std::vector<TraversalTaskPtr> new_tasks; /// Tasks for newly discovered children, that haven't been started yet.
         std::deque<std::function<void(Ctx &)>> in_flight_list_requests;  /// In-flight getChildren requests
         std::deque<std::function<void(Ctx &)>> finish_callbacks;    /// Callbacks to be called
         KeeperClientBase * client;
@@ -502,10 +503,10 @@ public:
         if (traverse_children)
         {
             /// Schedule traversal of each child
-            for (const auto & child : response.names)
+            for (const auto & child : response.names | std::views::reverse)
             {
                 auto task = std::make_shared<TraversalTask>(path / child, this->shared_from_this());
-                ctx.new_tasks.push_back(task);
+                ctx.new_tasks.push_back(std::move(task));
             }
             child_tasks = response.names.size();
         }
@@ -565,11 +566,11 @@ void parallelized_traverse(const fs::path & path, KeeperClientBase * client, siz
             callback(ctx);
         }
 
-        /// Make new requests if there are less than max in flight
+        /// Make new requests if there are less than max in flight, starting with the children of the most recently listed node
         while (!ctx.new_tasks.empty() && ctx.in_flight_list_requests.size() < max_in_flight_requests)
         {
-            auto task = std::move(ctx.new_tasks.front());
-            ctx.new_tasks.pop_front();
+            auto task = std::move(ctx.new_tasks.back());
+            ctx.new_tasks.pop_back();
             task->onStart(ctx);
         }
 
@@ -696,23 +697,46 @@ void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClientBase * cli
     auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
     auto n = query->args[1].safeGet<UInt64>();
 
+    using Family = std::pair<Int64, String>; /// (number of nodes in the subtree, path)
+
     struct
     {
-        std::vector<std::tuple<Int64, String>> result;
+        /// The `limit` biggest families seen so far, the smallest of them is on top.
+        std::priority_queue<Family, std::vector<Family>, std::greater<>> biggest;
+        size_t limit;
 
         bool onListChildren(const fs::path &, const Strings &, const KeeperClientBase *) const { return true; }
 
         void onFinishChildrenTraversal(const fs::path & path, Int64 nodes_in_subtree)
         {
-            result.emplace_back(nodes_in_subtree, path.string());
+            if (limit == 0)
+                return;
+
+            if (biggest.size() == limit)
+            {
+                const auto & smallest = biggest.top();
+                if (std::tie(nodes_in_subtree, path.native()) <= std::tie(smallest.first, smallest.second))
+                    return;
+                biggest.pop();
+            }
+
+            biggest.emplace(nodes_in_subtree, path.native());
         }
-    } ctx;
+    } ctx {.biggest = {}, .limit = n};
 
     parallelized_traverse(path, client, /* max_in_flight_requests */ 50, ctx);
 
-    std::sort(ctx.result.begin(), ctx.result.end(), std::greater());
-    for (UInt64 i = 0; i < std::min(ctx.result.size(), static_cast<size_t>(n)); ++i)
-        client->cout << std::get<1>(ctx.result[i]) << "\t" << std::get<0>(ctx.result[i]) << "\n";
+    std::vector<Family> result;
+    result.reserve(ctx.biggest.size());
+    while (!ctx.biggest.empty())
+    {
+        result.push_back(ctx.biggest.top());
+        ctx.biggest.pop();
+    }
+
+    /// From the biggest to the smallest
+    for (const auto & [nodes_in_subtree, family_path] : result | std::views::reverse)
+        client->cout << family_path << "\t" << nodes_in_subtree << "\n";
 }
 
 bool RMCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
@@ -899,30 +923,25 @@ void GetAllChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperCl
 {
     auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
 
-    std::queue<fs::path> queue;
-    queue.push(path);
-    Coordination::Stat stat;
-    client->zookeeper->get(path, &stat);
+    /// Throws if the node doesn't exist
+    client->zookeeper->get(path);
 
-    int total_num_children = stat.numChildren;
-    while (!queue.empty())
+    struct
     {
-        auto next_path = queue.front();
-        queue.pop();
+        UInt64 total_num_children = 0;
 
-        auto children = client->zookeeper->getChildren(next_path);
-        for (auto & child : children)
-            child = next_path / child;
-        auto response = client->zookeeper->get(children);
-
-        for (size_t i = 0; i < response.size(); ++i)
+        bool onListChildren(const fs::path &, const Strings & children, const KeeperClientBase *)
         {
-            total_num_children += response[i].stat.numChildren;
-            queue.push(children[i]);
+            total_num_children += children.size();
+            return true;
         }
-    }
 
-    client->cout << total_num_children << "\n";
+        void onFinishChildrenTraversal(const fs::path &, Int64) const {}
+    } ctx;
+
+    parallelized_traverse(path, client, /* max_in_flight_requests */ 50, ctx);
+
+    client->cout << ctx.total_num_children << "\n";
 }
 
 namespace
