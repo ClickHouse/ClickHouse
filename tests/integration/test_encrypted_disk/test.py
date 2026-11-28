@@ -434,8 +434,33 @@ def test_append_to_file_without_payload():
             user="root",
         )
 
-    truncate_to(f"{plain_path}id.bin", 0)
-    truncate_to(backing_file("encrypted_test"), 64)
+    # The header that the first write of the data file produced. It is put back below as the whole
+    # contents of the file, which is what that write would have left had it been interrupted right
+    # after the header.
+    node.exec_in_container(
+        ["bash", "-c", f"head -c 64 {backing_file('encrypted_test')} > /tmp/encrypted_test_header"],
+        privileged=True,
+        user="root",
+    )
+
+    def start_over():
+        # A writer finishes the rollback of an unfinished write before it starts, and refuses a data
+        # file which is shorter than its committed size. So the leftovers below are put into tables
+        # with no committed rows, as an interrupted first write finds them: `TRUNCATE` removes the
+        # files and records their sizes as zero.
+        node.query("TRUNCATE TABLE encrypted_test")
+        node.query("TRUNCATE TABLE plain_test")
+        truncate_to(f"{plain_path}id.bin", 0)
+
+    start_over()
+    node.exec_in_container(
+        ["bash", "-c", f"cp /tmp/encrypted_test_header {backing_file('encrypted_test')}"],
+        privileged=True,
+        user="root",
+    )
+    assert node.exec_in_container(
+        ["bash", "-c", f"stat -c %s {backing_file('encrypted_test')}"], privileged=True, user="root"
+    ).strip() == "64"
     old_header = header_of(backing_file("encrypted_test"))
     assert old_header.startswith("454e43")  # "ENC"
 
@@ -445,6 +470,7 @@ def test_append_to_file_without_payload():
     node.query("INSERT INTO plain_test SELECT number FROM numbers(30)")
 
     # No `UNKNOWN_CODEC`: the file holds one header, and the rows read back.
+    assert node.query("SELECT count(), sum(id) FROM encrypted_test") == "30\t435\n"
     assert node.query("SELECT count(), sum(id) FROM encrypted_test") == node.query(
         "SELECT count(), sum(id) FROM plain_test"
     )
@@ -455,8 +481,8 @@ def test_append_to_file_without_payload():
     )
     assert second_header != "ENC"
 
-    # The header is a fresh one, with a fresh initialization vector: the payload that was there before the
-    # truncation was encrypted with the old one, and encrypting the new payload with it from the same offset
+    # The header is a fresh one, with a fresh initialization vector: the payload that was there before
+    # was encrypted with the old one, and encrypting the new payload with it from the same offset
     # would reuse the keystream.
     new_header = header_of(backing_file("encrypted_test"))
     assert new_header.startswith("454e43")
@@ -464,6 +490,7 @@ def test_append_to_file_without_payload():
 
     # A 64 byte file which does not hold a valid encryption header is not taken for a header-only file:
     # it is not ours to start over, and is refused.
+    start_over()
     node.exec_in_container(
         ["bash", "-c", f"head -c 64 /dev/zero > {backing_file('encrypted_test')}"],
         privileged=True,
@@ -476,6 +503,11 @@ def test_append_to_file_without_payload():
     truncate_to(backing_file("encrypted_test"), 30)
     with pytest.raises(QueryRuntimeException, match="less than the 64 bytes of an encryption header"):
         node.query("INSERT INTO encrypted_test SELECT number FROM numbers(5)")
+
+    # Once the remains are gone, the table works again.
+    start_over()
+    node.query("INSERT INTO encrypted_test SELECT number FROM numbers(5)")
+    assert node.query("SELECT count(), sum(id) FROM encrypted_test") == "5\t10\n"
 
     node.query("DROP TABLE plain_test SYNC")
 
