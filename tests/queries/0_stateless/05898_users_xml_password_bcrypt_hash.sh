@@ -40,6 +40,11 @@ load_users <<'EOF' | grep -o -m1 'must be 59 or 60 bytes'
 <u_bad><password_bcrypt_hash>not_a_bcrypt_hash</password_bcrypt_hash></u_bad>
 EOF
 
+echo "-- 64-byte hash without zero padding"
+load_users <<'EOF' | grep -o -m1 'has length 64 but must be 59 or 60 bytes'
+<u_long><password_bcrypt_hash>$2a$04$5nQvqncp7WGRfBG.nGaU/O59eNFFYuWXpp.sjFAhbwYgxSywzWa3iabcd</password_bcrypt_hash></u_long>
+EOF
+
 echo "-- together with another flat method"
 load_users <<'EOF' | grep -o -m1 'Cannot specify multiple authentication methods'
 <u_both>

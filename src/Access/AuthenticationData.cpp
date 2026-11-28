@@ -303,7 +303,9 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, std::optiona
             /// However the library we use to encode it requires hash string to be 64 characters long,
             ///  so we also allow the hash of this length.
 
-            if (validate && hash.size() != 59 && hash.size() != 60 && hash.size() != 64)
+            /// A 64-byte hash is the library's buffer and must contain its zero padding: libbcrypt reads it as a C string.
+            const bool is_zero_padded_buffer = hash.size() == 64 && std::ranges::contains(hash, 0);
+            if (validate && hash.size() != 59 && hash.size() != 60 && !is_zero_padded_buffer)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Password hash for the 'BCRYPT_PASSWORD' authentication type has length {} "
                                 "but must be 59 or 60 bytes.", hash.size());
