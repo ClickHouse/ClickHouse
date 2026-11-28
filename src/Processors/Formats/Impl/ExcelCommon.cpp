@@ -773,6 +773,9 @@ bool parseISO8601Cell(std::string_view text, bool date1904, Cell & cell)
 
     if (!has_date)
     {
+        /// The time `24:00:00` would be the same number as `00:00:00`. Keep it as a string, which is the type of the times anyway.
+        if (hours == 24)
+            return false;
         cell.type = CellType::Number;
         cell.format = NumberFormatKind::Time;
         cell.number = seconds_of_day / 86400.0;
@@ -1072,7 +1075,10 @@ RangeReader::RangeReader(std::unique_ptr<ISheetReader> sheet_reader_, const Form
     , date1904(sheet_reader->isDate1904())
 {
     if (!format_settings.excel.range.empty())
+    {
         range = parseCellRange(format_settings.excel.range);
+        explicit_range = true;
+    }
     else if (auto dimension = sheet_reader->getDimension())
         /// Use only the top-left corner of the used range: the cells to the left of it are empty.
         range.first_column = dimension->first_column;
@@ -1120,18 +1126,40 @@ bool RangeReader::next(VectorWithMemoryTracking<Cell> & cells)
         return true;
     }
 
+    if (reached_end)
+    {
+        finished = true;
+        return false;
+    }
+
     if (!has_pending_row)
     {
+        /// The index of the row that follows the previous one. The rows of an explicit range start at its first row,
+        /// while the default range starts at the first row with a value.
+        std::optional<UInt64> next_row_index;
+        if (previous_row_index)
+            next_row_index = *previous_row_index + 1;
+        else if (explicit_range)
+            next_row_index = range.first_row;
+
         if (!readNonEmptyRow())
         {
+            reached_end = true;
+            /// Empty rows at the end of an explicit range with the last row.
+            if (!skip_empty_rows && explicit_range && range.last_row && *next_row_index <= *range.last_row)
+            {
+                pending_empty_rows = *range.last_row - *next_row_index;
+                cells.clear();
+                return true;
+            }
             finished = true;
             return false;
         }
 
-        /// Empty rows between non-empty rows: rows that are missing in the file or have only empty cells.
-        if (!skip_empty_rows && seen_non_empty_row && row.index > *previous_row_index + 1)
+        /// Empty rows before a non-empty row: rows that are missing in the file or have only empty cells.
+        if (!skip_empty_rows && next_row_index && row.index > *next_row_index)
         {
-            pending_empty_rows = row.index - *previous_row_index - 1;
+            pending_empty_rows = row.index - *next_row_index;
             has_pending_row = true;
             previous_row_index = row.index;
             --pending_empty_rows;
@@ -1142,16 +1170,18 @@ bool RangeReader::next(VectorWithMemoryTracking<Cell> & cells)
     }
 
     has_pending_row = false;
-    seen_non_empty_row = true;
 
     /// The cells of a row are not necessarily ordered by column: the cells of `XLSX` with explicit references
     /// are in the order of the file. So the width is determined by the maximum column, not by the last cell.
     /// The width is the last column with a value: cells without a value (that have only formatting) between the values
-    /// are kept as empty cells, but trailing ones do not add columns.
+    /// are kept as empty cells, but trailing ones do not add columns. A range with the last column has all its columns.
     size_t width = 0;
-    for (const auto & [column, cell] : row.cells)
-        if (cell.type != CellType::Empty && column >= range.first_column && (!range.last_column || column <= *range.last_column))
-            width = std::max<size_t>(width, column - range.first_column + 1);
+    if (range.last_column)
+        width = *range.last_column - range.first_column + 1;
+    else
+        for (const auto & [column, cell] : row.cells)
+            if (cell.type != CellType::Empty && column >= range.first_column)
+                width = std::max<size_t>(width, column - range.first_column + 1);
 
     cells.resize(width);
     for (auto & [column, cell] : row.cells)

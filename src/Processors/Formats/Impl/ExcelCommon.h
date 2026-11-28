@@ -199,7 +199,10 @@ private:
     Row row;
     bool has_pending_row = false;
     bool finished = false;
-    bool seen_non_empty_row = false;
+    /// The range is set by the `input_format_excel_range` setting, rather than the default range of the used cells.
+    bool explicit_range = false;
+    /// The sheet has no more rows of the range, but the empty rows at the end of the range may be pending.
+    bool reached_end = false;
     std::optional<UInt64> previous_row_index;
     UInt64 pending_empty_rows = 0;
 };
