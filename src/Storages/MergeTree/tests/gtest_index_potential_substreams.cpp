@@ -78,5 +78,6 @@ TEST(MergeTreeIndexPotentialSubstreams, TextCoversPositionsWhenDefinitionHasNone
     EXPECT_TRUE(hasSubstream(potential, MergeTreeIndexSubstream::Type::Regular, "", ".idx"));
     EXPECT_TRUE(hasSubstream(potential, MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"));
     EXPECT_TRUE(hasSubstream(potential, MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"));
-    EXPECT_EQ(potential.size(), 4);
+    EXPECT_TRUE(hasSubstream(potential, MergeTreeIndexSubstream::Type::TextIndexDocLengths, ".dl", ".idx"));
+    EXPECT_EQ(potential.size(), 5);
 }

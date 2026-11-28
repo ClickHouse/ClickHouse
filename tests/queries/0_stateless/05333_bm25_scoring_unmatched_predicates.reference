@@ -1,0 +1,32 @@
+-- beta AND zeta: the part without beta still counts in the document frequency of zeta
+5	OK
+8	OK
+-- hasAllTokens(beta, zeta) OR gamma: the part without beta still counts in the document frequency of zeta
+4	OK
+5	OK
+8	OK
+-- hasAllTokens(aa, bb, cc) OR dd: the conjunction with disjoint postings adds nothing
+200	OK
+201	OK
+202	OK
+203	OK
+-- hasAnyTokens(yy, zz) AND id > 320: zz is absent from the rows left by the primary key
+321	OK
+322	OK
+323	OK
+324	OK
+325	OK
+326	OK
+327	OK
+328	OK
+329	OK
+330	OK
+331	OK
+332	OK
+333	OK
+334	OK
+335	OK
+336	OK
+337	OK
+338	OK
+339	OK

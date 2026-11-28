@@ -24,6 +24,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+const IndexReadTask * tryGetIndexReadTask(const IndexReadTasks & index_read_tasks, const String & index_name)
+{
+    auto it = index_read_tasks.find(index_name);
+    return it != index_read_tasks.end() ? &it->second : nullptr;
+}
 NamesAndTypesList IndexReadTask::getNamesAndTypesList() const
 {
     NamesAndTypesList res;

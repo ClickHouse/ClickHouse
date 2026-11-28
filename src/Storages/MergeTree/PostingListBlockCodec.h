@@ -17,6 +17,9 @@ namespace DB
 /// The surrounding segment / Index Section layout is identical across codecs; only the per-block payload differs:
 ///   - Bitpacking: [1 byte bits][bitpacked payload]
 ///   - PFor:  [PFor block]
+///
+/// A segment carries two interleaved block streams: the row-id deltas, encoded by the codec its header names,
+/// and (when scoring is on) the per-row weights, encoded by an `IPostingListWeightsCodec` right after each block's deltas.
 class IPostingListBlockCodec
 {
 public:

@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Formats/MarkInCompressedFile.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -28,6 +30,7 @@ class IMergeTreeIndexCondition;
 class IMergeTreeDataPartInfoForReader;
 struct IMergeTreeIndex;
 struct MarkRanges;
+struct IndexReadTask;
 
 /// Represents a substream of a merge tree index.
 /// By default skip indexes have one substream (skp_idx_<name>.idx),
@@ -41,6 +44,7 @@ struct MergeTreeIndexSubstream
         TextIndexDictionary,
         TextIndexPostings,
         TextIndexPositions,
+        TextIndexDocLengths,
     };
 
     Type type;
@@ -53,7 +57,8 @@ struct MergeTreeIndexSubstream
     {
         /// Text index postings and positions are not compressed by write buffer,
         /// because the compression is implicitly applied during building them.
-        return type != Type::TextIndexPostings && type != Type::TextIndexPositions;
+        /// Document lengths are quantized `SmallFloat` bytes, which also cannot be compressed efficiently.
+        return type != Type::TextIndexPostings && type != Type::TextIndexPositions && type != Type::TextIndexDocLengths;
     }
 };
 
@@ -66,10 +71,24 @@ struct MergeTreeIndexFormat
     MergeTreeIndexSubstreams substreams;
 
     explicit operator bool() const { return version != 0; }
+
+    [[nodiscard]] bool hasSubstream(MergeTreeIndexSubstream::Type type) const
+    {
+        return std::ranges::any_of(substreams, [type](const auto & substream) { return substream.type == type; });
+    }
 };
 
 using MergeTreeIndexWriterStream = MergeTreeWriterStream;
 using MergeTreeIndexOutputStreams = std::map<MergeTreeIndexSubstream::Type, MergeTreeIndexWriterStream *>;
+
+class MergeTreeIndexGranularity;
+
+struct MergeTreeIndexSerializationState
+{
+    const MergeTreeIndexGranularity * index_granularity = nullptr;
+    bool can_use_adaptive_granularity = false;
+    PlainMarksByName * cached_marks = nullptr;
+};
 
 using MergeTreeIndexReaderStream = MergeTreeReaderStream;
 using MergeTreeIndexInputStreams = std::map<MergeTreeIndexSubstream::Type, MergeTreeIndexReaderStream *>;
@@ -82,6 +101,8 @@ struct MergeTreeIndexDeserializationState
     const IMergeTreeIndex & index;
     const MarkRanges * readable_ranges = nullptr;
     bool text_index_read_postings = true;
+    /// The read task of the index if the query reads its virtual columns.
+    const IndexReadTask * index_read_task = nullptr;
     const MergeTreeReaderSettings & reader_settings;
 };
 

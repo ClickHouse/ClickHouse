@@ -1,0 +1,14 @@
+-- hasPhrase uses the positions of the scoring index
+[1,5]
+[2]
+[]
+-- the same after a merge of multiple parts
+[1,5,6]
+-- bm25() after the merge matches the index built without a merge
+1	0.3747	OK
+2	0.3747	OK
+3	0.3747	OK
+5	0.3297	OK
+6	0.3747	OK
+-- hasPhrase filters, hasToken provides the scoring tokens
+1	0.5754	OK

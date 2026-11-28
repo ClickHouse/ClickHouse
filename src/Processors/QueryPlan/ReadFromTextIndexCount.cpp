@@ -84,7 +84,13 @@ public:
             }
 
             auto block = MergeTreeIndexGranuleText::readPostingsBlock(
-                postings_stream, state, token_info, block_idx, serialization, index_id);
+                postings_stream,
+                state,
+                token_info,
+                block_idx,
+                serialization,
+                index_id,
+                /*with_term_frequencies=*/ false).postings;
 
             if (block)
                 postings |= *block;
@@ -187,6 +193,7 @@ UInt64 computeCountForPart(
         .index = *index.index,
         .readable_ranges = nullptr,
         .text_index_read_postings = !single_token,
+        .index_read_task = nullptr,
         .reader_settings = reader_settings,
     };
 
@@ -272,6 +279,7 @@ UInt64 computeCountForPart(
             cursors.push_back(std::make_shared<PostingListCursor>(
                 *cursor_streams.back(),
                 *token_info,
+                granule->getScoringKind(),
                 resolved.condition->postingsCache().get(),
                 granule->getIndexIdForCaches()));
         }
@@ -288,7 +296,8 @@ UInt64 computeCountForPart(
 
     auto postings_serialization = PostingsSerialization(
         PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType()),
-        granule->getSerializationVersion());
+        granule->getSerializationVersion(),
+        granule->getScoringKind());
 
     /// The blocks of a list are read one by one after a seek each, so the buffer fits the largest segment among the lists.
     size_t largest_segment_bytes = 0;

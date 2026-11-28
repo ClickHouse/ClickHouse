@@ -58,6 +58,9 @@ public:
     /// Mutable state across calls: callers must clone per thread rather than share.
     [[nodiscard]] virtual bool isStateful() const { return false; }
 
+    /// Whether the tokenizer can be used with BM25 scoring in the text index.
+    [[nodiscard]] virtual bool supportsScoring() const { return true; }
+
     virtual ~ITokenizer() = default;
     [[nodiscard]] virtual std::unique_ptr<ITokenizer> clone() const = 0;
 
@@ -195,6 +198,7 @@ struct NgramsTokenizer final : public ITokenizerHelper<NgramsTokenizer>
     [[nodiscard]] size_t getN() const { return n; }
 
     [[nodiscard]] bool supportsStringLike() const override { return true; }
+    [[nodiscard]] bool supportsScoring() const override { return false; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
@@ -495,6 +499,7 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
 
     [[nodiscard]] bool supportsStringLike() const override { return false; }
+    [[nodiscard]] bool supportsScoring() const override { return false; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 };
@@ -543,6 +548,7 @@ struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsToken
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
 
     [[nodiscard]] bool supportsStringLike() const override { return false; }
+    [[nodiscard]] bool supportsScoring() const override { return false; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 };
@@ -563,6 +569,7 @@ struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer
 
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
     bool supportsStringLike() const override { return true; }
+    bool supportsScoring() const override { return false; }
     bool isStateful() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;

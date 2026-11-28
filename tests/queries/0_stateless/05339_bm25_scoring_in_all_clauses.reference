@@ -1,0 +1,109 @@
+-- SELECT
+1	1.2913
+2	0.7421
+3	0.7549
+4	1.1359
+6	0.6527
+7	1.0099
+8	0.3495
+-- WHERE
+1
+4
+7
+1
+4
+7
+3	0.7549
+2	0.7421
+6	0.6527
+8	0.3495
+-- the filter agrees with the scores of the SELECT list
+1
+-- a condition on the score in a nested conjunction is not part of its mask
+1	1.2913
+4	1.1359
+5	1.6976
+7	1.0099
+8	1.2585
+1	1.2913
+5	1.6976
+8	0.909
+-- the scores without the conditions on the score
+1	1.2913
+2	0.7421
+3	0.7549
+4	1.1359
+5	1.6976
+6	0.6527
+7	1.0099
+8	1.2585
+1	1.2913
+4	1.1359
+5	1.6976
+8	0.909
+-- WHERE with ORDER BY bm25() LIMIT and the dynamic top-k filter
+4	1.1359
+7	1.0099
+1
+-- PREWHERE
+1
+4
+7
+1
+4
+7
+1	1.2913
+4	1.1359
+7	1.0099
+-- HAVING and QUALIFY without aggregation
+1
+4
+7
+1
+4
+7
+-- GROUP BY, aggregate functions and HAVING
+a	3	1.2913	3.0432
+b	3	1.1359	2.2403
+c	1	0.6527	0.6527
+a
+0	4
+1	3
+-- WINDOW and QUALIFY
+1	a	1
+2	a	3
+3	b	2
+4	b	1
+6	c	1
+7	a	2
+8	b	3
+1	a
+4	b
+6	c
+-- LIMIT BY
+a	1
+b	4
+c	6
+-- subquery and WITH alias
+1	1.2913
+4	1.1359
+7	1.0099
+1	1.2913
+4	1.1359
+7	1.0099
+1	1
+4	1
+7	1
+1	1
+4	1
+7	1
+a	1.0144
+b	0.7468
+c	0.6527
+1	1.2913
+4	1.1359
+7	1.0099
+-- a condition on the score does not use the query condition cache
+1
+2
+4
