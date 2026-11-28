@@ -10,6 +10,7 @@
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/IDataType.h>
 #    include <DataTypes/Serializations/ISerialization.h>
+#    include <Databases/SQLite/SQLiteUtils.h>
 #    include <Formats/FormatSettings.h>
 #    include <IO/ReadBuffer.h>
 #    include <IO/ReadBufferFromFileBase.h>
@@ -66,7 +67,7 @@ inline void checkSQLiteStatus(sqlite3 * db, int status, std::string_view message
 inline SQLitePtr openSQLiteDatabaseWithFlags(const String & path, int flags, std::string_view message)
 {
     sqlite3 * db = nullptr;
-    int status = sqlite3_open_v2(path.c_str(), &db, flags, nullptr);
+    int status = openSQLiteHandle(path, flags, &db);
     if (status != SQLITE_OK)
     {
         String sqlite_message = db ? sqlite3_errmsg(db) : sqlite3_errstr(status);
