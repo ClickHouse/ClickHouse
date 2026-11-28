@@ -22,6 +22,7 @@ ObjectStorageQueueExclusiveFileMetadata::ObjectStorageQueueExclusiveFileMetadata
           max_loading_retries_,
           metadata_ref_count_,
           /* use_persistent_processing_nodes */ false,
+          /* lock_owner */ {},
           processing_state_cache_ttl_seconds_,
           log_)
     , metadata(metadata_)

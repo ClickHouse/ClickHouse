@@ -128,6 +128,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , buckets_num(use_buckets_for_processing ? metadata->getBucketsNum() : 0)
     , shutdown_called(shutdown_called_)
     , log(logger_)
+    , lock_owner(metadata->getLockOwner())
 {
     if (configuration->isNamespaceWithGlobs())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
@@ -176,9 +177,14 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 }
 
+bool ObjectStorageQueueSource::FileIterator::isInvalidated() const
+{
+    return iterator_invalidated || metadata->getLockOwnerGeneration() != lock_owner.generation;
+}
+
 bool ObjectStorageQueueSource::FileIterator::isFinished()
 {
-    if (iterator_invalidated)
+    if (isInvalidated())
         return true;
 
     std::lock_guard lock(mutex);
@@ -297,7 +303,8 @@ ObjectStorageQueueSource::FileIterator::next()
                 {
                     file_metadatas[i] = metadata->getFileMetadata(
                         new_batch[i]->getPath(),
-                        /* bucket_info */ {}); /// No buckets for Unordered mode.
+                        /* bucket_info */ {}, /// No buckets for Unordered mode.
+                        lock_owner);
 
                     auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests, processing_id);
                     if (set_processing_result.has_value())
@@ -319,6 +326,10 @@ ObjectStorageQueueSource::FileIterator::next()
                         file_metadatas[i] = nullptr;
                     }
                 }
+
+                /// One check for the whole batch: an owner which was considered dead must not take new locks.
+                if (num_successful_objects && !lock_owner.path.empty())
+                    requests.push_back(zkutil::makeCheckRequest(lock_owner.path, -1));
 
                 Coordination::Responses responses;
                 Coordination::Error code = {};
@@ -556,7 +567,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
             std::lock_guard lock(mutex);
 
-            if (iterator_invalidated)
+            if (isInvalidated())
             {
                 LOG_WARNING(log, "Bucket lock refresh failed, stopping the file iterator");
                 return {};
@@ -596,7 +607,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (!file_metadata)
         {
-            file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info);
+            file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info, lock_owner);
             try
             {
                 if (!file_metadata->trySetProcessing())
@@ -780,7 +791,7 @@ ObjectStorageQueueSource::BucketHolderPtr ObjectStorageQueueSource::FileIterator
             bucket_info.processor.value(), processor);
     }
 
-    auto holder = metadata->tryAcquireBucket(bucket);
+    auto holder = metadata->tryAcquireBucket(bucket, lock_owner);
     if (!holder)
     {
         LOG_TEST(log, "Bucket {} is already locked for processing (keys: {})", bucket, bucket_info.keys.size());
@@ -835,7 +846,8 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
         {
             auto zk_client = metadata->getZooKeeper();
-            chassert(current_bucket_holder->checkBucketOwnership(zk_client));
+            /// Cleanup releases the lock of an owner which was considered dead.
+            chassert(current_bucket_holder->checkBucketOwnership(zk_client) || !current_bucket_holder->isLockOwnerAlive(zk_client));
         });
     }
 #endif

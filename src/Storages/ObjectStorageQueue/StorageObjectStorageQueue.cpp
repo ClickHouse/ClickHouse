@@ -146,6 +146,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsBool commit_on_select;
     extern const ObjectStorageQueueSettingsBool deduplication_v2;
     extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_ttl_seconds;
+    extern const ObjectStorageQueueSettingsUInt32 lock_owner_timeout_seconds;
     extern const ObjectStorageQueueSettingsUInt32 processing_state_cache_ttl_seconds;
     extern const ObjectStorageQueueSettingsUInt32 after_processing_retries;
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
@@ -523,6 +524,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
+        (*queue_settings_)[ObjectStorageQueueSetting::lock_owner_timeout_seconds],
         (*queue_settings_)[ObjectStorageQueueSetting::processing_state_cache_ttl_seconds],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
@@ -1036,6 +1038,17 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         catch (...)
         {
             LOG_ERROR(log, "Failed to process data: {}", getCurrentExceptionMessage(true));
+
+            /// The failure can mean that the lock owner of this server was considered dead.
+            /// Find it out now, to not take new locks under an owner which no longer exists.
+            try
+            {
+                metadata->updateLockOwner();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log);
+            }
         }
     }
 
@@ -2147,6 +2160,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings(const ObjectSt
     settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = static_cast<UInt32>(cleanup_interval_ms.first);
     settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = static_cast<UInt32>(cleanup_interval_ms.second);
     settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(metadata->getPersistentProcessingNodeTTLSeconds());
+    settings[ObjectStorageQueueSetting::lock_owner_timeout_seconds] = static_cast<UInt32>(metadata->getLockOwnerTimeoutSeconds());
     settings[ObjectStorageQueueSetting::processing_state_cache_ttl_seconds] = static_cast<UInt32>(metadata->getProcessingStateCacheTTLSeconds());
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = metadata->usePersistentProcessingNode();
     const auto & file_statuses_cache = metadata->getFileStatusesCache();

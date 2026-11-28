@@ -127,11 +127,13 @@ public:
             std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> keys;
             std::optional<size_t> processor;
         };
+        /// We store a vector of holders, because we cannot release them until processed files are committed.
+        /// Declared before the keys cache: a cached key can hold a processing node, and the destructor
+        /// must release it before the lock of its bucket.
+        std::unordered_map<size_t, std::shared_ptr<BucketHolders>> bucket_holders TSA_GUARDED_BY(mutex);
+
         /// A cache of keys which were iterated via glob_iterator, but not taken for processing.
         std::unordered_map<Bucket, std::unique_ptr<BucketInfo>> keys_cache_per_bucket TSA_GUARDED_BY(mutex);
-
-        /// We store a vector of holders, because we cannot release them until processed files are committed.
-        std::unordered_map<size_t, std::shared_ptr<BucketHolders>> bucket_holders TSA_GUARDED_BY(mutex);
 
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;
@@ -139,6 +141,12 @@ public:
         /// Set when a bucket lock refresh or release fails (e.g. lost ownership):
         /// next() stops returning keys, isFinished returns true.
         std::atomic_bool iterator_invalidated = false;
+
+        /// The owner of every lock which the iterator takes, taken once together with its generation.
+        /// The iterator is also invalid once this owner was considered dead: cleanup releases
+        /// all the locks which the iterator holds.
+        const ObjectStorageQueueLockOwner lock_owner;
+        bool isInvalidated() const;
 
         bool is_path_with_hive_partitioning = false;
 
