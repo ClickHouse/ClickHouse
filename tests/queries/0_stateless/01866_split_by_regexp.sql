@@ -13,7 +13,7 @@ select splitByRegexp('$', 'a$b$c');
 select splitByRegexp('+', 'a+b+c'); -- { serverError CANNOT_COMPILE_REGEXP }
 select splitByRegexp('?', 'a?b?c'); -- { serverError CANNOT_COMPILE_REGEXP }
 select splitByRegexp('(', 'a(b(c'); -- { serverError CANNOT_COMPILE_REGEXP }
-select splitByRegexp(')', 'a)b)c');
+select splitByRegexp(')', 'a)b)c'); -- { serverError CANNOT_COMPILE_REGEXP }
 select splitByRegexp('[', 'a[b[c'); -- { serverError CANNOT_COMPILE_REGEXP }
 select splitByRegexp(']', 'a]b]c');
 select splitByRegexp('{', 'a{b{c');
