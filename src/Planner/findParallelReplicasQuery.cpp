@@ -507,7 +507,10 @@ static const QueryNode * findQueryForParallelReplicas(
                 const auto * filter = typeid_cast<FilterStep *>(step);
 
                 const auto * creating_sets = typeid_cast<DelayedCreatingSetsStep *>(step);
-                const bool allowed_creating_sets = settings[Setting::parallel_replicas_allow_in_with_subquery] && creating_sets;
+                /// A subquery is planned on the replicas with its own `SETTINGS`.
+                const bool allowed_creating_sets = settings[Setting::parallel_replicas_allow_in_with_subquery]
+                    && subquery_node->getContext()->getSettingsRef()[Setting::parallel_replicas_allow_in_with_subquery]
+                    && creating_sets;
 
                 const auto * sorting = typeid_cast<SortingStep *>(step);
                 /// Sorting for merge join is supposed to be done locally before join itself, so it doesn't need finalization.

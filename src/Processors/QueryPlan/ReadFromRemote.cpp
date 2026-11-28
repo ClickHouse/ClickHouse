@@ -77,6 +77,7 @@ namespace Setting
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool parallel_replicas_filter_pushdown;
+    extern const SettingsBool parallel_replicas_allow_in_with_subquery;
 }
 
 namespace ErrorCodes
@@ -265,7 +266,8 @@ ASTPtr tryBuildAdditionalFilterAST(
     const UnorderedMapWithMemoryTracking<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
     ContextMutablePtr & context,
-    VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts)
+    VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts,
+    bool convert_sets_from_subqueries)
 {
     UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, ASTPtr> node_to_ast;
 
@@ -353,7 +355,12 @@ ASTPtr tryBuildAdditionalFilterAST(
         {
             const auto & data_column = node->column->getDataColumnPtr();
             if (const auto * col_set = typeid_cast<const ColumnSet *>(data_column.get()))
-                node_to_ast[node] = col_set->getData()->getSourceAST();
+            {
+                if (convert_sets_from_subqueries || !typeid_cast<const FutureSetFromSubquery *>(col_set->getData().get()))
+                    node_to_ast[node] = col_set->getData()->getSourceAST();
+                else
+                    node_to_ast[node] = nullptr;
+            }
 
             stack.pop();
             continue;
@@ -547,6 +554,7 @@ static bool addFilters(
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     const ActionsDAG & pushed_down_filters,
+    bool to_parallel_replicas,
     VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts = nullptr)
 {
     if (!query_tree || !planner_context)
@@ -555,6 +563,9 @@ static bool addFilters(
     const auto & settings = rewrite_context->getSettingsRef();
     if (!settings[Setting::allow_push_predicate_ast_for_distributed_subqueries])
         return false;
+
+    /// A replica plans an IN with a subquery without parallel replicas if the setting forbids it, reading the whole table.
+    const bool convert_sets_from_subqueries = !to_parallel_replicas || settings[Setting::parallel_replicas_allow_in_with_subquery];
 
     const auto * query_node = query_tree->as<QueryNode>();
     if (!query_node)
@@ -572,7 +583,8 @@ static bool addFilters(
         execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
 
     ASTPtr predicate = tryBuildAdditionalFilterAST(
-        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context, dropped_conjuncts);
+        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context, dropped_conjuncts,
+        convert_sets_from_subqueries);
     if (!predicate)
         return false;
 
@@ -656,7 +668,7 @@ ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
     ContextMutablePtr no_context;
     VectorWithMemoryTracking<const ActionsDAG::Node *> dropped;
     if (!query_ast || !dag
-        || !addFilters(nullptr, no_context, rewrite_context, query_ast->clone(), query_tree, planner_context, *dag, &dropped))
+        || !addFilters(nullptr, no_context, rewrite_context, query_ast->clone(), query_tree, planner_context, *dag, true, &dropped))
         return atoms;
 
     auto copied_atoms = ActionsDAG::extractConjunctionAtoms(dag->getOutputs().front());
@@ -743,7 +755,7 @@ void ReadFromRemote::addLazyPipe(
     if (filter_actions_dag)
     {
         remote_query = shard.query->clone();
-        addFilters(&external_tables, context, context, remote_query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+        addFilters(&external_tables, context, context, remote_query, shard.query_tree, shard.planner_context, *filter_actions_dag, false);
     }
 
     auto lazily_create_stream = [
@@ -968,7 +980,7 @@ void ReadFromRemote::addPipe(
     else
     {
         if (filter_actions_dag)
-            addFilters(&external_tables, context, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+            addFilters(&external_tables, context, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag, false);
 
         const String query_string = formattedAST(shard.query);
         auto stage_to_use = shard.query_plan ? QueryProcessingStage::QueryPlan : stage;
@@ -1252,7 +1264,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     /// same context. Not when the replicas are sent a plan: this text is then only the fallback for a
     /// replica too old to receive it, and a condition read out of it could order that replica's read.
     if (filter_actions_dag && !query_plan && filter_rewrite_context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
-        addFilters(&external_tables, context, filter_rewrite_context, query_ast, query_tree, planner_context, *filter_actions_dag);
+        addFilters(&external_tables, context, filter_rewrite_context, query_ast, query_tree, planner_context, *filter_actions_dag, true);
 
     Pipes pipes = addPipes(query_ast, output_header);
 
