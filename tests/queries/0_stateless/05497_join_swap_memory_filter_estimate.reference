@@ -1,0 +1,10 @@
+WHERE	1	0	1
+PREWHERE	1	0	1
+row policy	1	0	1
+temporary table	1	0	1
+no condition	0	1	0
+empty table	1	0	1
+keyless aggregate	1	0	1
+1
+1
+1
