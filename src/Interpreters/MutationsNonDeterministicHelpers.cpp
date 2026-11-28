@@ -1,4 +1,6 @@
+#include <Analyzer/Utils.h>
 #include <Core/Block.h>
+#include <Core/ConstantValue.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -108,12 +110,14 @@ public:
         if (builder->isDeterministic() || !builder->isDeterministicInScopeOfQuery())
             return;
 
-        Field field;
+        ColumnPtr column;
         DataTypePtr type;
 
         try
         {
-            std::tie(field, type) = evaluateConstantExpression(ast, data.context);
+            auto value = evaluateConstantExpressionAsColumn(ast, data.context);
+            column = value.getColumn()->convertToFullColumnIfConst();
+            type = value.getType();
         }
         catch (...)
         {
@@ -123,15 +127,9 @@ public:
             return;
         }
 
-        auto column = type->createColumn();
-        column->insert(field);
-
-        Block scalar{{std::move(column), type, "_constant"}};
+        Block scalar{{column, type, "_constant"}};
         if (worthConvertingScalarToLiteral(scalar, data.max_literal_size))
-        {
-            auto literal = make_intrusive<ASTLiteral>(std::move(field));
-            ast = addTypeConversionToAST(std::move(literal), type->getName());
-        }
+            ast = columnConstantToCompactExactLiteralAST(scalar.getByPosition(0).column, 0, type);
     }
 };
 
