@@ -141,6 +141,11 @@ void ColumnMapper::setStorageColumnEncoding(ColumnNameToFieldId && storage_encod
             throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Duplicate field id {}", field_id);
 }
 
+bool ColumnMapper::isReservedIcebergFieldId(Int64 field_id)
+{
+    return field_id > 2147483447; /// Integer.MAX_VALUE - 200
+}
+
 String ColumnMapper::getIcebergParentPath(const String & path) const
 {
     if (const String * struct_path = getIcebergStructPath(path))
@@ -150,20 +155,20 @@ String ColumnMapper::getIcebergParentPath(const String & path) const
     return pos == String::npos ? String{} : path.substr(0, pos);
 }
 
-String ColumnMapper::getIcebergFieldPath(const String & path) const
+String ColumnMapper::getIcebergFieldPath(const String & path, const String & root) const
 {
     /// A subcolumn path does not name list elements and map keys and values (`l.x` is the field `x` of the elements of `l`).
     auto is_reached_through_structs = [&](String field)
     {
         for (const String * struct_path = getIcebergStructPath(field); struct_path; struct_path = getIcebergStructPath(field))
         {
-            if (struct_path->empty())
+            if (*struct_path == root)
                 return true;
             field = *struct_path;
         }
         return false;
     };
-    for (size_t end = path.size(); end != String::npos && end > 0; end = path.rfind('.', end - 1))
+    for (size_t end = path.size(); end != String::npos && end > root.size(); end = path.rfind('.', end - 1))
     {
         String prefix = path.substr(0, end);
         if (storage_encoding.contains(prefix) && is_reached_through_structs(prefix))
@@ -384,6 +389,24 @@ std::optional<size_t> FormatFilterInfo::computeConditionHash(
 
 FormatFilterInfo::FormatFilterInfo() = default;
 
+FormatFilterInfo::SetHashes FormatFilterInfo::getOrComputeSetHashes(
+    const ColumnPtr & set_column, const String & hash_kind, const std::function<SetHashes()> & compute)
+{
+    std::shared_ptr<SetHashesEntry> entry;
+    {
+        std::lock_guard lock(set_hashes_mutex);
+        auto & slot = set_hashes[std::make_pair(set_column.get(), hash_kind)];
+        if (!slot)
+        {
+            slot = std::make_shared<SetHashesEntry>();
+            slot->set_column = set_column;
+        }
+        entry = slot;
+    }
+
+    std::call_once(entry->computed, [&] { entry->hashes = compute(); });
+    return entry->hashes;
+}
 
 bool FormatFilterInfo::hasFilter() const
 {

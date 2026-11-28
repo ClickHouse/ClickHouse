@@ -60,7 +60,26 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
      {"parallel_full_sorting_merge", JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE},
      {"grace_hash",           JoinAlgorithm::GRACE_HASH},
-     {"ie_join",              JoinAlgorithm::IE_JOIN}})
+     {"inequality",           JoinAlgorithm::INEQUALITY},
+     /// The former name of `inequality`, kept for compatibility. Listed after it, so `inequality` is the name it is shown with.
+     {"ie_join",              JoinAlgorithm::INEQUALITY}})
+
+/// Keep the names here in sync with `JoinAlgorithm` above. The difference is that `ie_join` goes before
+/// `inequality`, so it is the name written into a serialized query plan: a server released before the
+/// rename rejects `inequality`. Both names are read.
+IMPLEMENT_SETTING_MULTI_ENUM_WITH_RENAME(QueryPlanJoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
+    {{"default",              JoinAlgorithm::DEFAULT},
+     {"auto",                 JoinAlgorithm::AUTO},
+     {"hash",                 JoinAlgorithm::HASH},
+     {"partial_merge",        JoinAlgorithm::PARTIAL_MERGE},
+     {"prefer_partial_merge", JoinAlgorithm::PREFER_PARTIAL_MERGE},
+     {"parallel_hash",        JoinAlgorithm::HASH},
+     {"direct",               JoinAlgorithm::DIRECT},
+     {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
+     {"parallel_full_sorting_merge", JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE},
+     {"grace_hash",           JoinAlgorithm::GRACE_HASH},
+     {"ie_join",              JoinAlgorithm::INEQUALITY},
+     {"inequality",           JoinAlgorithm::INEQUALITY}})
 
 
 IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
@@ -478,8 +497,7 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"basic", MergeTreeSerializationInfoVersion::BASIC},
      {"with_types", MergeTreeSerializationInfoVersion::WITH_TYPES},
-     {"with_missing_columns", MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS},
-     {"with_subcolumns", MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS}})
+     {"with_missing_columns", MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeStringSerializationVersion,

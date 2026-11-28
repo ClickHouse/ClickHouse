@@ -17,8 +17,6 @@ public:
     void cleanup(bool throw_if_error);
 
 private:
-    void cleanupImpl(bool throw_if_error, WithRetries::Kind retries_kind);
-
     const bool is_restore;
     const String zookeeper_path;
 

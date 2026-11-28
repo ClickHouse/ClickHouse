@@ -27,14 +27,17 @@ ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "
     SETTINGS cluster_function_wait_for_replica_ms = 60000, max_execution_time = 2, timeout_overflow_mode = 'break', log_comment = '05839_break'
     FORMAT Null"
 
-# Another branch of the query fails, or satisfies the LIMIT, while the replica waits.
+# Another branch of the query fails, or satisfies the LIMIT, while the replica waits. That branch needs its own
+# thread, which the concurrency control can delay and low free memory can take away.
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "
     SELECT sum(x) FROM (SELECT x FROM ${SOURCE} UNION ALL SELECT throwIf(number = 9) + sleepEachRow(0.2) FROM numbers(10))
-    SETTINGS cluster_function_wait_for_replica_ms = 60000, max_threads = 2, max_block_size = 1, log_comment = '05839_sibling'" 2>/dev/null
+    SETTINGS cluster_function_wait_for_replica_ms = 60000, max_threads = 2, use_concurrency_control = 0,
+        max_threads_min_free_memory_per_thread = 0, max_block_size = 1, log_comment = '05839_sibling'" 2>/dev/null
 
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "
     SELECT x FROM (SELECT x FROM ${SOURCE} WHERE x > 100 UNION ALL SELECT number + sleepEachRow(0.2) FROM numbers(10)) LIMIT 10
-    SETTINGS cluster_function_wait_for_replica_ms = 60000, max_threads = 2, max_block_size = 1, log_comment = '05839_limit'
+    SETTINGS cluster_function_wait_for_replica_ms = 60000, max_threads = 2, use_concurrency_control = 0,
+        max_threads_min_free_memory_per_thread = 0, max_block_size = 1, log_comment = '05839_limit'
     FORMAT Null"
 
 KILL_QUERY_ID="${CLICKHOUSE_DATABASE}_05839_kill"

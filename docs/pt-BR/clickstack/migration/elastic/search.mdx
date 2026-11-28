@@ -7,42 +7,32 @@ doc_type: 'guide'
 keywords: ['clickstack', 'busca', 'logs', 'observabilidade', 'busca de texto completo']
 ---
 
-<div id="search-in-clickstack-and-elastic">
-  ## Busca no ClickStack e no Elastic
-</div>
+## Busca no ClickStack e no Elastic {#search-in-clickstack-and-elastic}
 
-O ClickHouse é um engine com SQL nativo, projetado desde o início para cargas de trabalho analíticas de alto desempenho. Em contraste, o Elasticsearch fornece uma interface semelhante a SQL, convertendo SQL para a query DSL subjacente do Elasticsearch — o que significa que ela não é uma funcionalidade nativa, e a [paridade de recursos](https://www.elastic.co/docs/explore-analyze/query-filter/languages/sql-limitations) é limitada.
+O ClickHouse é um motor com SQL nativo, projetado desde o início para cargas de trabalho analíticas de alto desempenho. Em contraste, o Elasticsearch fornece uma interface semelhante a SQL, convertendo SQL para a query DSL subjacente do Elasticsearch — o que significa que ela não é uma funcionalidade nativa, e a [paridade de recursos](https://www.elastic.co/docs/explore-analyze/query-filter/languages/sql-limitations) é limitada.
 
 O ClickHouse não apenas oferece suporte completo a SQL, como também o estende com uma variedade de funções voltadas para observabilidade, como [`argMax`](/pt-BR/reference/functions/aggregate-functions/argMax), [`histogram`](/pt-BR/reference/functions/aggregate-functions/parametric-functions#histogram) e [`quantileTiming`](/pt-BR/reference/functions/aggregate-functions/quantileTiming), que simplificam consultas em logs, métricas e traces estruturados.
 
-Para exploração simples de logs e traces, a UI do ClickStack (HyperDX) fornece uma [sintaxe no estilo Lucene](/pt-BR/clickstack/features/search) para filtragem textual intuitiva em consultas de campo-valor, intervalos, wildcard e muito mais. Isso é comparável à [sintaxe Lucene](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) no Elasticsearch e a elementos da [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql).
+Para exploração simples de logs e traces, a UI do ClickStack fornece uma [sintaxe no estilo Lucene](/pt-BR/clickstack/features/search) para filtragem textual intuitiva em consultas de campo-valor, intervalos, wildcard e muito mais. Isso é comparável à [sintaxe Lucene](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) no Elasticsearch e a elementos da [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql).
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Busca](/images/use-cases/observability/hyperdx-search.webp)
-
-</Frame>
-
+  <Frame>
+    ![Busca](/images/use-cases/observability/hyperdx-search.webp)
+  </Frame>
 </div>
 
 A interface de busca oferece suporte a essa sintaxe familiar, mas a traduz nos bastidores em cláusulas SQL `WHERE` eficientes, tornando a experiência familiar para usuários do Kibana e, ao mesmo tempo, permitindo aproveitar o poder do SQL quando necessário. Isso permite que você explore toda a gama de [funções de busca de string](/pt-BR/reference/functions/regular-functions/string-search-functions), [funções de similaridade](/pt-BR/reference/functions/regular-functions/string-functions#stringJaccardIndex) e [funções de data e hora](/pt-BR/reference/functions/regular-functions/date-time-functions) no ClickHouse.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![SQL](/images/use-cases/observability/hyperdx-sql.webp)
-
-</Frame>
-
+  <Frame>
+    ![SQL](/images/use-cases/observability/hyperdx-sql.webp)
+  </Frame>
 </div>
 
 Abaixo, comparamos as linguagens de consulta Lucene do ClickStack e do Elasticsearch.
 
 <div id="clickstack-vs-elasticsearch-query-string">
-  ## Sintaxe de busca do ClickStack vs. query string do Elasticsearch
+  ## Sintaxe de busca do ClickStack vs. query string do Elasticsearch {#clickstack-vs-elasticsearch-query-string}
 </div>
 
 Tanto o ClickStack quanto o Elasticsearch oferecem linguagens de consulta flexíveis para permitir uma filtragem intuitiva de logs e traces. Enquanto a query string do Elasticsearch é fortemente integrada ao seu DSL e mecanismo de indexação, o ClickStack oferece uma sintaxe inspirada no Lucene que é traduzida em ClickHouse SQL nos bastidores. A tabela abaixo mostra como padrões de busca comuns se comportam nos dois sistemas, destacando semelhanças de sintaxe e diferenças na execução no backend.
@@ -70,7 +60,7 @@ Tanto o ClickStack quanto o Elasticsearch oferecem linguagens de consulta flexí
 | Caracteres especiais com escape       | Escape reserved characters with `\` | Same                              | Escape obrigatório para símbolos reservados.                                                                                                                                                                                                                                                                                                        |
 
 <div id="empty-value-differences">
-  ## Diferenças entre existência/ausência
+  ## Diferenças entre existência/ausência {#empty-value-differences}
 </div>
 
 Diferentemente do Elasticsearch, em que um campo pode ser totalmente omitido de um evento e, portanto, realmente &quot;não existir&quot;, o ClickHouse exige que todas as colunas em um esquema de tabela existam. Se um campo não for fornecido em um evento de inserção:

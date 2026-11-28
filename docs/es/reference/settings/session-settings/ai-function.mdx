@@ -58,7 +58,7 @@ Número máximo de solicitudes HTTP que las funciones de IA pueden realizar por 
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "8"},{"label": "nueva configuración"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "nueva configuración"}]}]} />
 
 Número máximo de solicitudes al provider que un thread de consulta puede tener en curso simultáneamente. Con `1`, las solicitudes se envían de una en una.
 
@@ -79,9 +79,9 @@ Un valor superior a `1` relaja dos garantías:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000000"},{"label": "Nueva configuración"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Las cuotas por consulta de las funciones de IA están desactivadas de forma predeterminada: 0 significa sin límite."}]}]} />
 
-Número máximo total de tokens de entrada (prompt) sumados entre todas las llamadas a la API de función de IA en una sola consulta. 0 (valor predeterminado) desactiva el límite. Se contabiliza de forma acumulativa a partir de las respuestas del proveedor. Tenga en cuenta que este límite puede superarse hasta en la cantidad de tokens de entrada de una llamada por cada solicitud en curso, ya que los tokens de entrada de una llamada no se conocen hasta que llega su respuesta. Al igual que las demás cuotas de IA, se aplica por servidor / fragmento de consulta, no se suma en una consulta distribuida y debe establecerse en la consulta de nivel superior; se ignora una sobrescritura de `SETTINGS` en una subconsulta.
+Número máximo total de tokens de entrada (prompt) sumados entre todas las llamadas a la API de función de IA en una sola consulta, incluidas las lecturas y escrituras de caché. 0 (valor predeterminado) desactiva el límite. Se contabiliza de forma acumulativa a partir de las respuestas del provider. Tenga en cuenta que este límite puede superarse hasta en la cantidad de tokens de entrada de una llamada por cada solicitud en curso, ya que los tokens de entrada de una llamada no se conocen hasta que llega su respuesta. Al igual que las demás cuotas de IA, se aplica por servidor / fragmento de consulta, no se suma en una consulta distribuida y debe establecerse en la consulta de nivel superior; se ignora una sobrescritura de `SETTINGS` en una subconsulta.
 
-Este límite solo se aplica a los proveedores que informan un objeto `usage` en su respuesta (OpenAI, Anthropic, vLLM). Los proveedores que omiten el uso de tokens (en particular, HuggingFace TEI) hacen que el contador permanezca en 0; use `ai_function_max_api_calls_per_query` en su lugar para limitar esas llamadas.
+Este límite solo se aplica a los providers que informan un objeto `usage` en su respuesta (OpenAI, Anthropic, vLLM). Los providers que omiten el uso de tokens (en particular, HuggingFace TEI) hacen que el contador permanezca en 0; use `ai_function_max_api_calls_per_query` en su lugar para limitar esas llamadas.
 
 ## ai_function_max_output_tokens_per_query {#ai_function_max_output_tokens_per_query}
 
@@ -101,9 +101,9 @@ Este límite solo se aplica a los proveedores que informan un objeto `usage` en 
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Reintenta un error transitorio de la API una vez de forma predeterminada, para que un único error 429 o 5xx del provider no haga fallar la consulta."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nueva configuración"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "3"},{"label": "Reintenta un error transitorio de la API hasta tres veces de forma predeterminada, para reducir la carga sobre un provider sobrecargado y con límite de tasa cuando hay solicitudes concurrentes."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Reintenta un error transitorio de la API una vez de forma predeterminada, para que un único error 429 o 5xx del provider no haga fallar la consulta."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nueva configuración"}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "3"},{"label": "Reintenta un error transitorio de la API hasta tres veces de forma predeterminada, para reducir la carga sobre un provider sobrecargado y con límite de tasa cuando hay solicitudes concurrentes."}]}]} />
 
-Número máximo de reintentos por errores transitorios para cada solicitud individual a la API. Cada reintento usa backoff exponencial a partir de `ai_function_retry_initial_delay_ms`.
+Número máximo de reintentos por errores transitorios para cada solicitud individual a la API. Cada reintento usa backoff exponencial a partir de `ai_function_retry_initial_delay_ms`. Como máximo, 5.
 
 ## ai_function_request_timeout_sec {#ai_function_request_timeout_sec}
 
@@ -123,7 +123,7 @@ Tiempo de espera, en segundos, para cada solicitud HTTP realizada por funciones 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "Nueva configuración"}]}]} />
 
-Retraso inicial, en milisegundos, antes del primer reintento de una solicitud a la API de una función de IA que ha fallado. El retraso se duplica en cada intento posterior (backoff exponencial). Por ejemplo, con la configuración predeterminada: 1000ms, 2000ms, 4000ms.
+Retraso inicial, en milisegundos, antes del primer reintento de una solicitud a la API de una función de IA que ha fallado. El retraso se duplica en cada intento posterior (backoff exponencial). Por ejemplo, con la configuración predeterminada: 1000ms, 2000ms, 4000ms. Como máximo, 10000.
 
 ## ai_function_text_default_credentials {#ai_function_text_default_credentials}
 

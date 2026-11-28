@@ -7,10 +7,6 @@ keywords: ['managed postgres', 'rust', 'sqlx', 'sqlx-cli', 'axum', 'tokio', 'rus
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-rust-beta" />
-
 [sqlx](https://github.com/launchbadge/sqlx) は、接続poolと移行機能を標準で備えた、純粋な Rust 実装の非同期 SQL ツールキットです。このガイドでは、`sqlx-cli` の移行を使って `todos` テーブルを作成し、小さな [axum](https://github.com/tokio-rs/axum) サーバーで作成・読み取り・更新・削除のクエリを処理します。すべての接続で、証明書を完全に検証する TLS を使用します。
 
 ## 前提条件 {#prerequisites}

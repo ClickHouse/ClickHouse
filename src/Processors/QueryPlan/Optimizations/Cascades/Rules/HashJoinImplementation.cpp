@@ -58,7 +58,12 @@ public:
 
     [[nodiscard]] bool hasEquiKeys() const { return !equi_keys.empty(); }
     [[nodiscard]] bool hasMultipleEquiKeys() const { return equi_keys.size() >= 2; }
-    [[nodiscard]] bool isBroadcastSafe() const { return left_preserved; }
+    /// A set-operation join removes duplicates only among the rows it sees, so its left side must not be split.
+    [[nodiscard]] bool isBroadcastSafe() const
+    {
+        return JoinCommon::canSplitLeftInput(join_step.getJoinOperator().kind, join_step.getJoinOperator().strictness)
+            && join_step.getJoinOperator().set_operation == JoinSetOperation::None;
+    }
 
 private:
     /// `hash_type_name` is the least supertype both sides are cast to before hashing when
@@ -298,6 +303,11 @@ void HashJoinImplementation::StrategyEnumerator::addBroadcastJoins(size_t node_c
             return;
     }
 
+    /// The join does not move the left rows, so it also keeps a partitioning whose keys are cast before hashing
+    /// (`Nullable(Int32)` joined with `Int32`).
+    keyed_left_dist.hash_type_names = required_properties.distribution.hash_type_names;
+    keyed_output_dist.hash_type_names = required_properties.distribution.hash_type_names;
+
     addAlternative(strategySingleton<BroadcastJoinStrategy>(), keyed_left_dist, right_dist, keyed_output_dist);
 }
 
@@ -468,10 +478,8 @@ GroupExpressions HashJoinImplementation::applyImpl(GroupExpressionPtr expression
     /// Enumerate distributed strategies at each candidate node count.
     for (size_t candidate_node_count : candidate_node_counts)
     {
-        /// Broadcast replicates the right side, so it is only safe when every output row is
-        /// driven by the partitioned left side: `RIGHT` and `FULL` emit unmatched right-side rows
-        /// on every node, and `PASTE` pairs rows by position. `JoinCommutativity` can turn `RIGHT`
-        /// Semi/Anti/Any into `LEFT`, but not `RIGHT ALL` or `FULL`.
+        /// Broadcast replicates the right side (see `JoinCommon::canSplitLeftInput`).
+        /// `JoinCommutativity` can turn `RIGHT` Semi/Anti/Any into `LEFT`, but not `RIGHT ALL` or `FULL`.
         if (strategies.isBroadcastSafe())
             strategies.addBroadcastJoins(candidate_node_count);
 

@@ -8,41 +8,33 @@ doc_type: 'guide'
 
 Dans ClickHouse, un dictionnaire fournit une représentation en mémoire en [clé-valeur](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) des données provenant de diverses [sources internes et externes](/fr/reference/statements/create/dictionary/sources/overview#dictionary-sources), optimisée pour des requêtes de consultation à très faible latence.
 
-Les dictionnaires sont utiles pour :
+Les dictionnaires sont utiles pour :
 
 * Améliorer les performances des requêtes, en particulier avec les `JOIN`
 * Enrichir les données ingérées à la volée sans ralentir le processus d&#39;ingestion
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Cas d'utilisation des dictionnaires dans ClickHouse](/images/dictionary/dictionary-use-cases.webp)
-
-</Frame>
-
+  <Frame>
+    ![Cas d’utilisation des dictionnaires dans ClickHouse](/images/dictionary/dictionary-use-cases.webp)
+  </Frame>
 </div>
 
 ## Accélérer les jointures à l’aide d’un dictionnaire {#speeding-up-joins-using-a-dictionary}
 
-Les dictionnaires peuvent être utilisés pour accélérer un type spécifique de `JOIN` : le [type `LEFT ANY`](/fr/reference/statements/select/join#supported-types-of-join), dans lequel la clé de jointure doit correspondre à l’attribut clé du stockage clé-valeur sous-jacent.
+Les dictionnaires peuvent être utilisés pour accélérer un type spécifique de `JOIN` : le [type `LEFT ANY`](/fr/reference/statements/select/join#supported-types-of-join), dans lequel la clé de jointure doit correspondre à l’attribut clé du stockage clé-valeur sous-jacent.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Utilisation d’un dictionnaire avec LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
-
-</Frame>
-
+  <Frame>
+    ![Utilisation d’un dictionnaire avec LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
+  </Frame>
 </div>
 
-Dans ce cas, ClickHouse peut exploiter le dictionnaire pour effectuer une [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). Il s’agit de l’algorithme de jointure le plus rapide de ClickHouse. Il s’applique lorsque le [moteur de table](/fr/reference/engines/table-engines/index) sous-jacent de la table de droite prend en charge des requêtes clé-valeur à faible latence. ClickHouse propose trois moteurs de table qui le permettent : [Join](/fr/reference/engines/table-engines/special/join) (qui est essentiellement une table de hachage précalculée), [EmbeddedRocksDB](/fr/reference/engines/table-engines/integrations/embedded-rocksdb) et [Dictionary](/fr/reference/engines/table-engines/special/dictionary). Nous allons décrire l’approche basée sur les dictionnaires, mais le mécanisme est le même pour ces trois moteurs.
+Dans ce cas, ClickHouse peut exploiter le dictionnaire pour effectuer une [jointure directe](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). Il s’agit de l’algorithme de jointure le plus rapide de ClickHouse. Il s’applique lorsque le [moteur de table](/fr/reference/engines/table-engines/index) sous-jacent de la table de droite prend en charge des requêtes clé-valeur à faible latence. ClickHouse propose trois moteurs de table qui le permettent : [Join](/fr/reference/engines/table-engines/special/join) (qui est essentiellement une table de hachage précalculée), [EmbeddedRocksDB](/fr/reference/engines/table-engines/integrations/embedded-rocksdb) et [Dictionary](/fr/reference/engines/table-engines/special/dictionary). Nous allons décrire l’approche basée sur les dictionnaires, mais le mécanisme est le même pour ces trois moteurs.
 
 L’algorithme de jointure directe exige que la table de droite repose sur un dictionnaire, afin que les données à joindre de cette table soient déjà présentes en mémoire sous la forme d’une structure de données clé-valeur à faible latence.
 
 <div id="example">
-  ### Exemple
+  ### Exemple {#example}
 </div>
 
 En utilisant le [jeu de données Stack Overflow](/fr/get-started/sample-datasets/stackoverflow), répondons à la question :
@@ -99,11 +91,9 @@ Peak memory usage: 3.18 GiB.
 
 Bien que cette requête soit rapide, elle nous oblige à écrire le `JOIN` avec soin pour obtenir de bonnes performances. Dans l&#39;idéal, nous filtrerions simplement les posts pour ne conserver que ceux contenant &quot;SQL&quot;, avant d&#39;examiner les nombres de `UpVote` et de `DownVote` pour le sous-ensemble de blogs afin de calculer notre métrique.
 
-<div id="applying-a-dictionary">
-  #### Utilisation d’un dictionnaire
-</div>
+#### Utilisation d’un dictionnaire {#applying-a-dictionary}
 
-Pour illustrer ces concepts, nous utilisons un dictionnaire pour nos données de vote. Comme les dictionnaires sont généralement stockés en mémoire ([ssd&#95;cache](/fr/reference/statements/create/dictionary/layouts/ssd-cache) faisant exception), vous devez prêter attention à la taille des données. Vérifions la taille de notre table `votes` :
+Pour illustrer ces concepts, nous utilisons un dictionnaire pour nos données de vote. Comme les dictionnaires sont généralement stockés en mémoire ([ssd&#95;cache](/fr/reference/statements/create/dictionary/layouts/ssd-cache) faisant exception), vous devez prêter attention à la taille des données. Vérifions la taille de notre table `votes` :
 
 ```sql
 SELECT table,
@@ -121,11 +111,11 @@ GROUP BY table
 └─────────────────┴─────────────────┴───────────────────┴───────┘
 ```
 
-Les données seront stockées sans compression dans notre dictionnaire. Nous avons donc besoin d&#39;au moins 4 Go de mémoire si nous stockons toutes les colonnes (ce que nous ne ferons pas) dans un dictionnaire. Le dictionnaire sera répliqué sur l&#39;ensemble de notre cluster ; cette quantité de mémoire doit donc être réservée *par nœud*.
+Les données seront stockées sans compression dans notre dictionnaire. Nous avons donc besoin d&#39;au moins 4 Go de mémoire si nous stockons toutes les colonnes (ce que nous ne ferons pas) dans un dictionnaire. Le dictionnaire sera répliqué sur l&#39;ensemble de notre cluster ; cette quantité de mémoire doit donc être réservée *par nœud*.
 
 > Dans l&#39;exemple ci-dessous, les données de notre dictionnaire proviennent d&#39;une table ClickHouse. S&#39;il s&#39;agit de la source de dictionnaire la plus courante, [plusieurs sources](/fr/reference/statements/create/dictionary/sources/overview#dictionary-sources) sont prises en charge, notamment des fichiers, http et des bases de données, y compris [Postgres](/fr/reference/statements/create/dictionary/sources/postgresql). Comme nous allons le montrer, les dictionnaires peuvent être actualisés automatiquement, ce qui en fait un moyen idéal de garantir que de petits jeux de données fréquemment modifiés sont disponibles pour des jointures directes.
 
-Notre dictionnaire nécessite une clé primaire sur laquelle les recherches seront effectuées. Conceptuellement, elle est identique à la clé primaire d&#39;une base de données transactionnelle et doit être unique. Notre requête ci-dessus nécessite une recherche sur la clé de jointure, `PostId`. Le dictionnaire doit ensuite être alimenté avec le total des votes positifs et négatifs par `PostId` à partir de notre table `votes`. Voici la requête permettant d&#39;obtenir les données de ce dictionnaire :
+Notre dictionnaire nécessite une clé primaire sur laquelle les recherches seront effectuées. Conceptuellement, elle est identique à la clé primaire d&#39;une base de données transactionnelle et doit être unique. Notre requête ci-dessus nécessite une recherche sur la clé de jointure, `PostId`. Le dictionnaire doit ensuite être alimenté avec le total des votes positifs et négatifs par `PostId` à partir de notre table `votes`. Voici la requête permettant d&#39;obtenir les données de ce dictionnaire :
 
 ```sql
 SELECT PostId,
@@ -135,7 +125,11 @@ FROM votes
 GROUP BY PostId
 ```
 
-La création de notre dictionnaire nécessite l’instruction DDL suivante ; notez l’utilisation de la requête ci-dessus :
+<Note title="ClickHouse Cloud">
+  Lors de la création d’un dictionnaire qui lit les données d’une table ClickHouse, indiquez le nom d’utilisateur et le mot de passe d’un utilisateur dédié dans la clause `SOURCE`. Cet utilisateur doit disposer de la permission `SELECT` sur la table source. Consultez l’[exemple de source de dictionnaire ClickHouse](/fr/reference/statements/create/dictionary/sources/clickhouse).
+</Note>
+
+La création de notre dictionnaire nécessite l’instruction DDL suivante ; notez l’utilisation de la requête ci-dessus :
 
 ```sql
 CREATE DICTIONARY votes_dict
@@ -156,7 +150,7 @@ LAYOUT(HASHED())
 
 > Dans une installation OSS autogérée, la commande ci-dessus doit être exécutée sur tous les nœuds. Dans ClickHouse Cloud, le dictionnaire sera automatiquement répliqué sur tous les nœuds. L’exemple ci-dessus a été exécuté sur un nœud ClickHouse Cloud avec 64GB de RAM, et le chargement a pris 36s.
 
-Pour vérifier la mémoire consommée par notre dictionnaire :
+Pour vérifier la mémoire consommée par notre dictionnaire :
 
 ```sql
 SELECT formatReadableSize(bytes_allocated) AS size
@@ -170,7 +164,7 @@ WHERE name = 'votes_dict'
 └──────────┘
 ```
 
-La récupération des votes positifs et négatifs pour un `PostId` donné peut désormais se faire à l’aide d’une simple fonction `dictGet`. Ci-dessous, nous récupérons les valeurs pour le post `11227902` :
+La récupération des votes positifs et négatifs pour un `PostId` donné peut désormais se faire à l’aide d’une simple fonction `dictGet`. Ci-dessous, nous récupérons les valeurs pour la publication `11227902` :
 
 ```sql
 SELECT dictGet('votes_dict', ('UpVotes', 'DownVotes'), '11227902') AS votes
@@ -182,7 +176,7 @@ SELECT dictGet('votes_dict', ('UpVotes', 'DownVotes'), '11227902') AS votes
 └────────────┘
 ```
 
-En tirant parti de cela dans notre requête précédente, nous pouvons supprimer le JOIN :
+En tirant parti de cela dans notre requête précédente, nous pouvons supprimer le JOIN :
 
 ```sql
 WITH PostIds AS
@@ -206,10 +200,10 @@ LIMIT 3
 Peak memory usage: 552.26 MiB.
 ```
 
-Non seulement cette requête est beaucoup plus simple, mais elle est aussi plus de deux fois plus rapide ! Il serait possible de l’optimiser davantage en ne chargeant dans le dictionnaire que les posts ayant reçu plus de 10 votes positifs et négatifs, et en n’y stockant qu’une valeur de controverse précalculée.
+Non seulement cette requête est beaucoup plus simple, mais elle est aussi plus de deux fois plus rapide ! Il serait possible de l’optimiser davantage en ne chargeant dans le dictionnaire que les publications ayant reçu plus de 10 votes positifs et négatifs, et en n’y stockant qu’une valeur de controverse précalculée.
 
 <div id="query-time-enrichment">
-  ## Enrichissement à l’exécution de la requête
+  ## Enrichissement à l’exécution de la requête {#query-time-enrichment}
 </div>
 
 Les dictionnaires peuvent être utilisés pour rechercher des valeurs à l’exécution de la requête. Ces valeurs peuvent être renvoyées dans les résultats ou utilisées dans des agrégations. Supposons que nous créions un dictionnaire pour associer des ID utilisateur à leur lieu :
@@ -356,13 +350,13 @@ Peak memory usage: 666.82 MiB.
 ```
 
 <div id="advanced-dictionary-topics">
-  ## Aspects avancés des dictionnaires
+  ## Aspects avancés des dictionnaires {#advanced-dictionary-topics}
 </div>
 
 Pour savoir comment choisir les layout de dictionnaire, quand utiliser des dictionnaires plutôt que des JOIN, et comment surveiller l’utilisation des dictionnaires, consultez [Bonnes pratiques pour les dictionnaires](/fr/concepts/features/dictionaries/best-practices).
 
 <div id="refreshing-dictionaries">
-  ### Actualisation des dictionnaires
+  ### Actualisation des dictionnaires {#refreshing-dictionaries}
 </div>
 
 Nous avons spécifié un `LIFETIME` pour le dictionnaire de `MIN 600 MAX 900`. LIFETIME est l’intervalle de mise à jour du dictionnaire ; les valeurs indiquées ici entraînent un rechargement périodique à un intervalle aléatoire compris entre 600 et 900 s. Cet intervalle aléatoire est nécessaire afin de répartir la charge sur la source du dictionnaire lors des mises à jour sur un grand nombre de serveurs. Pendant les mises à jour, l’ancienne version d’un dictionnaire peut toujours être interrogée ; seul le chargement initial bloque les requêtes. Notez que définir `(LIFETIME(0))` empêche la mise à jour des dictionnaires.
@@ -371,7 +365,7 @@ Les dictionnaires peuvent être rechargés de force à l’aide de la commande `
 Pour les sources de base de données telles que ClickHouse et Postgres, vous pouvez configurer une requête qui mettra à jour les dictionnaires uniquement s’ils ont réellement changé (c’est la réponse de la requête qui le détermine), plutôt qu’à intervalles périodiques. Vous trouverez plus de détails [ici](/fr/reference/statements/create/dictionary/lifetime).
 
 <div id="other-dictionary-types">
-  ### Autres types de dictionnaires
+  ### Autres types de dictionnaires {#other-dictionary-types}
 </div>
 
 ClickHouse prend également en charge les dictionnaires [hiérarchiques](/fr/reference/statements/create/dictionary/layouts/hierarchical), [Polygon](/fr/reference/statements/create/dictionary/layouts/polygon) et [à expression régulière](/fr/reference/statements/create/dictionary/layouts/regexp-tree).

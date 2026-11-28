@@ -37,6 +37,8 @@ using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 class LazilyReadFromMergeTree;
 class RuntimeFilterReadRangesRefiner;
 struct QueryIdHolder;
+struct QueryConditionCacheReadRanges;
+using QueryConditionCacheReadRangesPtr = std::shared_ptr<const QueryConditionCacheReadRanges>;
 
 struct MergeTreeDataSelectSamplingData
 {
@@ -179,6 +181,9 @@ public:
         /// Set only on a parallel replicas follower: it kept every part, and the coordinator chooses its ranges
         /// from the analysis done on the initiator.
         bool index_analysis_was_already_done_on_initiator = false;
+        /// Set only with parallel replicas: the ranges this replica's query condition cache narrowed. The coordinator
+        /// assigns ranges from another replica's analysis, so the read pool drops the granules outside of them.
+        QueryConditionCacheReadRangesPtr query_condition_cache_read_ranges;
         /// The filter constrains the primary key of the analyzed parts (the same criterion the
         /// `force_primary_key` check uses). A projection whose own key is not used may not serve
         /// the read.
@@ -206,6 +211,7 @@ public:
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
+            , query_condition_cache_read_ranges(other.query_condition_cache_read_ranges)
             , pk_condition_useful(other.pk_condition_useful)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
@@ -229,6 +235,7 @@ public:
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
+            , query_condition_cache_read_ranges(std::move(other.query_condition_cache_read_ranges))
             , pk_condition_useful(other.pk_condition_useful)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
@@ -334,8 +341,7 @@ public:
         std::optional<std::unordered_set<String>> part_values; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- returned by `MergeTreeDataSelectExecutor::filterPartsByVirtualColumns`
     };
 
-    void addJoinRuntimeFilterIndexAnalysisOnDataRead(
-        const String & filter_id, const String & column_name, const DataTypePtr & column_type, bool is_global_row_index = false);
+    void addJoinRuntimeFilterIndexAnalysisOnDataRead(const RuntimeFilterIndexAnalysisDescriptor & descriptor);
     const VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> & getJoinRuntimeFiltersForIndexAnalysis() const
     {
         return join_runtime_filters_for_index_analysis;
@@ -485,6 +491,7 @@ public:
 
         filter_actions_dag = other.filter_actions_dag;
         query_info.filter_actions_dag = filter_actions_dag;
+        filter_actions_dag_conditions = other.filter_actions_dag_conditions;
 
         limit = other.limit;
         no_rows_needed = other.no_rows_needed;
@@ -529,8 +536,8 @@ public:
     /// Announce an empty read set to the parallel-replicas coordinator (what initializePipeline() sends
     /// when there are no ranges). Callable from the projection optimizer when it replaces this step and
     /// initializePipeline() will not run. No-op unless this is the initiator local plan; returns whether
-    /// an announcement was sent.
-    bool announceEmptyReadRangesToCoordinatorIfInitiator();
+    /// an announcement was sent. `mode` overrides the coordination mode the read order implies.
+    bool announceEmptyReadRangesToCoordinatorIfInitiator(std::optional<CoordinationMode> mode = {});
 
     bool isParallelReplicasLocalPlanForInitiator() const;
     bool isParallelReplicasLocalPlanForFollower() const;
@@ -689,6 +696,11 @@ public:
     {
         if (top_k_filter_info.has_value())
             top_k_filter_info->dynamic_filter_pending = false;
+    }
+
+    bool filterActionsDAGWasBuiltFrom(const String & filter_column_name) const
+    {
+        return filter_actions_dag_conditions.contains(filter_column_name);
     }
 
     /// Carries the TopK stamp and the query condition cache gate over from a read step that this
@@ -860,6 +872,9 @@ private:
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
+
+    /// Names of the filter conditions `filter_actions_dag` was built from, as of the call that built it.
+    UnorderedSetWithMemoryTracking<String> filter_actions_dag_conditions;
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
@@ -1045,6 +1060,9 @@ private:
     /// reading paths support gating, installed on their read pools, and fed by the
     /// SealGatedReadTransforms they build. Null means the read is not gated.
     std::shared_ptr<RuntimeFilterReadRangesRefiner> seal_gate_refiner;
+
+    /// Taken from the analysis result by initializePipeline, see `AnalysisResult::query_condition_cache_read_ranges`.
+    QueryConditionCacheReadRangesPtr query_condition_cache_read_ranges;
 
     ProjectionIndexReadDescription projection_index_read_desc;
     /// Number of tasks when this leaf read is distributed; each worker reads the lanes described by its

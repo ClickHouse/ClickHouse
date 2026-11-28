@@ -2,7 +2,7 @@
 sidebarTitle: 'Введение'
 description: 'Выполняйте аналитические запросы в ClickHouse прямо из PostgreSQL без переписывания SQL'
 slug: '/cloud/managed-postgres/extensions/pg_clickhouse'
-title: 'Справочник по pg_clickhouse'
+title: 'Документация по pg_clickhouse'
 doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'обёртка внешних данных', 'pg_clickhouse', 'расширение']
 ---
@@ -65,6 +65,8 @@ docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhous
 | [Запрос 20] |     473 мс |             28 мс |          |
 | [Запрос 21] |    1145 мс |           4470 мс |          |
 | [Запрос 22] |     270 мс |             45 мс |     ✼    |
+
+## Установка {#installation}
 
 ### Сборка из исходного кода {#compile-from-source}
 
@@ -206,6 +208,42 @@ ERROR:  must be owner of database regression
 make installcheck PGUSER=postgres
 ```
 
+### CloudNativePG {#cloudnativepg}
+
+Добавьте pg&#95;clickhouse в кластер [CloudNativePG] с помощью [ExtensionConfiguration]:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cluster-example
+spec:
+  # ... <snip>
+  postgresql:
+    # ExtensionConfiguration
+    extensions:
+      - name: pg_clickhouse
+        image:
+        reference: ghcr.io/ClickHouse/cnpg-pg_clickhouse:{pg_major_version}-{pg_clickhouse_version}
+```
+
+Чтобы загрузить его в базу данных, используйте [ExtensionSpec]:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: pg_clickhouse-cluster
+spec:
+  name: app
+  owner: app
+  cluster:
+    name: pg_clickhouse-cluster
+  extensions:
+    - name: pg_clickhouse
+      version: {pg_clickhouse_version}
+```
+
 ### Подключение {#loading}
 
 После установки `pg_clickhouse` его можно подключить к базе данных, подключившись
@@ -241,8 +279,6 @@ make] и [CMake].
 * Разрешить настройки ClickHouse на уровне сервера и сеанса через CREATE SERVER
   и GUC
 * Поддержать все типы данных ClickHouse
-* Поддержать легковесные DELETE и UPDATE
-* Поддержать батч-вставку через COPY
 * Добавить функцию для выполнения произвольного запроса к ClickHouse и возврата его
   результатов в виде таблицы
 * Добавить поддержку pushdown для запросов UNION, если все они обращаются к удалённой
@@ -253,6 +289,7 @@ make] и [CMake].
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 * [Josh Ventura](https://github.com/JoshDreamland)
+* [Kaushik Iska](https://github.com/iskakaushik)
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 
@@ -277,9 +314,9 @@ make] и [CMake].
 
 [PGXN client]: https://pgxn.github.io/pgxnclient/ "Документация клиента PGXN"
 
-[Homebrew]: https://formulae.brew.sh/formula/pgxnclient#default "PGXN client в Homebrew"
+[Homebrew]: https://formulae.brew.sh/formula/pgxnclient#default "Клиент PGXN в Homebrew"
 
-[Apt]: https://tracker.debian.org/pkg/pgxnclient "PGXN client в Debian Apt"
+[Apt]: https://tracker.debian.org/pkg/pgxnclient "Клиент PGXN в Debian Apt"
 
 [`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
 
@@ -298,6 +335,14 @@ make] и [CMake].
 [TPC-H]: https://www.tpc.org/tpch/
 
 [re2]: https://github.com/ClickHouse/pg_re2 "pg_re2: совместимые с ClickHouse функции регулярных выражений на базе RE2"
+
+[CloudNativePG]: https://cloudnative-pg.io/ "PostgreSQL по-кубернетесовски"
+
+[ExtensionConfiguration]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionconfiguration
+
+&quot;Документация CloudNativePG: ExtensionConfiguration:
+[ExtensionSpec]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionspec
+&quot;Документация CloudNativePG: ExtensionSpec:
 
 [Запрос 1] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/1.sql
 [Запрос 2] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/2.sql

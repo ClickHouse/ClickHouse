@@ -8,7 +8,6 @@ import math
 import string
 import sys
 import threading
-import traceback
 import uuid
 import pyarrow as pa
 from pyspark.sql import Row, SparkSession
@@ -1523,6 +1522,5 @@ class LakeDataGenerator:
                     self.run_query(spark, stmt)
         except Exception as e:
             # If an error happens, ignore it, but log it
-            traceback.print_exc()
             self.logger.exception(e)
         return True

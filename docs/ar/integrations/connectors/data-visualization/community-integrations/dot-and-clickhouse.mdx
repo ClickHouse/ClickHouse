@@ -18,24 +18,18 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 ويتصل مباشرةً بـ ClickHouse لتتمكن من طرح أسئلة عن البيانات بلغة طبيعية، واستكشاف البيانات، واختبار الفرضيات، والإجابة عن أسئلة &quot;لماذا&quot; — مباشرةً من Slack أو Microsoft Teams أو ChatGPT أو واجهة الويب الأصلية.
 
 <div id="pre-requisites">
-  ## المتطلبات الأساسية
+  ## المتطلبات الأساسية {#pre-requisites}
 </div>
 
 * قاعدة بيانات ClickHouse، سواء كانت مستضافة ذاتيًا أو على [ClickHouse Cloud](https://clickhouse.com/cloud)
 * حساب على [Dot](https://www.getdot.ai/)  
 
-<div id="connecting-dot-to-clickhouse">
-  ## ربط Dot بـ ClickHouse
-</div>
+## ربط Dot بـ ClickHouse {#connecting-dot-to-clickhouse}
 
 <div className="ch-image-md">
-
-<Frame>
-
-![تهيئة اتصال ClickHouse في Dot (الوضع الفاتح)](/images/integrations/data-visualization/dot_01.webp)
-
-</Frame>
-
+  <Frame>
+    ![تهيئة اتصال ClickHouse في Dot (الوضع الفاتح)](/images/integrations/data-visualization/dot_01.webp)
+  </Frame>
 </div>
 
 <br />
@@ -46,23 +40,19 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
    * **Host**: اسم مضيف خادم ClickHouse أو endpoint الخاص بـ ClickHouse Cloud
    * **Port**: `8443` (HTTPS لـ ClickHouse Cloud) أو `8123` (HTTP لمستضافة ذاتيًا)
    * **Username / Password**: مستخدم لديه صلاحية قراءة
-   * **Database**: يمكن اختياريًا تعيين schema افتراضي
+   * **Database**: يمكن اختياريًا تعيين مخطط افتراضي
 4. انقر على **Connect**.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![الاتصال بـ ClickHouse](/images/integrations/data-visualization/dot_02.webp)
-
-</Frame>
-
+  <Frame>
+    ![الاتصال بـ ClickHouse](/images/integrations/data-visualization/dot_02.webp)
+  </Frame>
 </div>
 
 يستخدم Dot أسلوب **query-pushdown**: إذ يتولى ClickHouse عمليات المعالجة الحسابية المكثفة على نطاق واسع، بينما يضمن Dot تقديم إجابات دقيقة وموثوقة.
 
 <div id="highlights">
-  ## أبرز الميزات
+  ## أبرز الميزات {#highlights}
 </div>
 
 يجعل Dot البيانات في متناولك عبر المحادثة:
@@ -74,7 +64,7 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 * **قابل للتوسع**: يعتمد على query-pushdown، جامعًا بين ذكاء Dot وسرعة ClickHouse.
 
 <div id="security">
-  ## الأمان والحوكمة
+  ## الأمان والحوكمة {#security}
 </div>
 
 Dot جاهز للاستخدام على مستوى المؤسسات:
@@ -86,7 +76,7 @@ Dot جاهز للاستخدام على مستوى المؤسسات:
 * **الامتثال**: معتمد وفق SOC 2 Type I
 
 <div id="additional-resources">
-  ## موارد إضافية
+  ## موارد إضافية {#additional-resources}
 </div>
 
 * موقع Dot: [https://www.getdot.ai/](https://www.getdot.ai/)

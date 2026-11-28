@@ -1,9 +1,9 @@
 ---
-title: 'Compute à la demande ClickHouse'
-sidebarTitle: 'Compute à la demande'
+title: 'On-Demand Compute ClickHouse'
+sidebarTitle: 'On-Demand Compute'
 sidebar_label: 'On-Demand Compute'
 slug: /cloud/features/on-demand-compute
-description: 'Ajoutez du compute pour vos workloads ClickHouse Cloud sans redimensionner votre primary service. La prise en charge en private preview est limitée à certaines queries.'
+description: 'Ajoutez du compute pour vos charges de travail ClickHouse Cloud sans redimensionner votre primary service. La prise en charge en private preview est limitée à certaines requêtes.'
 keywords: ['on-demand compute', 'workload isolation', 'stateless workers', 'private preview']
 doc_type: 'guide'
 ---
@@ -18,17 +18,17 @@ import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge
   [Inscrivez-vous sur la liste d&#39;attente](https://clickhouse.com/cloud/on-demand-compute-waitlist).
 </Note>
 
-On-Demand Compute est une fonctionnalité de ClickHouse Cloud qui met à disposition de votre cloud service (un tenant) une capacité supplémentaire et instantanée pour les workloads pris en charge, sans avoir à redimensionner ni à provisionner un autre service. Ce travail s&#39;exécute sur des workers ClickHouse situés en dehors du compute propre à votre service. Les workers proviennent d&#39;un pool géré partagé entre les tenants d&#39;une même region, mais chaque worker n&#39;est affecté qu&#39;à un seul tenant à la fois.
+On-Demand Compute est une fonctionnalité de ClickHouse Cloud qui met à disposition de votre cloud service (un tenant) une capacité supplémentaire et instantanée pour les charges de travail prises en charge, sans avoir à redimensionner ni à provisionner un autre service. Ce travail s&#39;exécute sur des workers ClickHouse situés en dehors du compute propre à votre service. Les workers proviennent d&#39;un pool géré partagé entre les tenants d&#39;une même région, mais chaque worker n&#39;est affecté qu&#39;à un seul tenant à la fois.
 
-Pendant la private preview, On-Demand Compute ne prend en charge que les requêtes `SELECT`. Vous activez cette option pour une query au moyen de settings au niveau query/session/user, et ClickHouse affecte des workers du pool pour l&#39;exécuter via votre service et votre endpoint existants.
+Pendant la private preview, On-Demand Compute ne prend en charge que les requêtes `SELECT`. Vous activez cette option pour une requête au moyen de settings au niveau requête/session/user, et ClickHouse affecte des workers du pool pour l&#39;exécuter via votre service et votre endpoint existants.
 
 Cela se distingue de la [compute-compute separation](/fr/products/cloud/features/infrastructure/warehouses). Un warehouse fournit du compute dédié et durable via plusieurs services qui partagent les mêmes données. On-Demand Compute fournit des workers temporaires issus d&#39;un pool partagé via votre service existant.
 
 On-Demand Compute s&#39;appuie sur des fonctionnalités entièrement nouvelles :
 
-* L&#39;exécution stateless des queries avec le compute à la demande
+* L&#39;exécution stateless des requêtes avec On-Demand Compute
 * Un nouveau [CBO](https://github.com/ClickHouse/ClickHouse/pull/86353) (cost-based optimizer)
-* Une nouvelle [distributed query execution](https://clickhouse.com/blog/multi-stage-distributed-query-execution-clickhouse-cloud)
+* Une nouvelle [distributed requête execution](https://clickhouse.com/blog/multi-stage-distributed-query-execution-clickhouse-cloud)
 
 ## Quand utiliser le compute à la demande {#when-to-use-on-demand-compute}
 
@@ -247,23 +247,19 @@ Rien ne change dans la façon dont vous accédez à ClickHouse. Les clients cont
 
 ### Isolation réseau {#network-isolation}
 
-Tant qu&#39;un worker est loué à votre service, la plateforme autorise le trafic réseau entre ce worker et votre service, et bloque tout le reste. La restriction s&#39;applique au niveau de la couche réseau plutôt que dans le query engine : elle ne dépend donc ni de la query, ni de ses paramètres, ni du plan produit par l&#39;optimizer.
+Tant qu&#39;un worker est loué à votre service, la plateforme autorise le trafic réseau entre ce worker et votre service, et bloque tout le reste. La restriction s&#39;applique au niveau de la couche réseau plutôt que dans le moteur de requêtes : elle ne dépend donc ni de la requête, ni de ses paramètres, ni du plan produit par l&#39;optimizer.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Schéma explicatif de l'isolation réseau](/images/cloud/reference/on-demand-compute-worker-isolation.svg)
-
-</Frame>
-
+  <Frame>
+    ![Schéma explicatif de l'isolation réseau](/images/cloud/reference/on-demand-compute-worker-isolation.svg)
+  </Frame>
 </div>
 
-* **Seul votre service peut atteindre vos workers.** Le chemin n&#39;existe que pour la location en cours du worker, et pour ce seul service.
+* **Seul votre service peut atteindre vos workers.** Le chemin n&#39;existe que pour le lease en cours du worker, et pour ce seul service.
 * **Les workers non attribués sont injoignables.** Un worker en attente dans le pool n&#39;a aucun chemin réseau vers ou depuis un service tant qu&#39;il n&#39;est pas loué.
-* **Les workers loués à des services différents ne peuvent pas se joindre entre eux.** Les workers d&#39;une même location échangent entre eux des étapes de plan et des résultats intermédiaires. Les workers appartenant à des locations différentes restent isolés les uns des autres, même s&#39;ils partagent un pool.
-* **Le chemin disparaît avec le worker.** Mettre fin à une location détruit le worker, ce qui supprime la seule cible que le trafic était autorisé à atteindre.
-* **Le chemin des requests reste restreint.** Votre service contacte le service d&#39;attribution des workers pour louer et renouveler des workers. Ce chemin ne transporte aucune donnée de query et se limite à l&#39;API d&#39;attribution.
+* **Les workers loués à des services différents ne peuvent pas se joindre entre eux.** Les workers d&#39;un même lease échangent entre eux des étapes de plan et des résultats intermédiaires. Les workers appartenant à des leases différents restent isolés les uns des autres, même s&#39;ils partagent un pool.
+* **Le chemin disparaît avec le worker.** Mettre fin à un lease détruit le worker, ce qui supprime la seule cible que le trafic était autorisé à atteindre.
+* **Le chemin des requests reste restreint.** Votre service contacte le service d&#39;attribution des workers pour louer et renouveler des workers. Ce chemin ne transporte aucune donnée de requête et se limite à l&#39;API d&#39;attribution.
 
 ### Authentification et autorisation internes {#authentication-and-authorization}
 

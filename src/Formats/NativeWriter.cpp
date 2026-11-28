@@ -13,12 +13,8 @@
 #include <Formats/FormatSettings.h>
 
 #include <Common/typeid_cast.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnObject.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
-#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -30,61 +26,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
-namespace
-{
-
-ColumnPtr materializeObjectTypedPaths(const ColumnPtr & column)
-{
-    if (const auto * replicated = typeid_cast<const ColumnReplicated *>(column.get()))
-    {
-        return ColumnReplicated::create(
-            materializeObjectTypedPaths(replicated->getNestedColumn()),
-            replicated->getIndexesColumn());
-    }
-
-    if (const auto * array = typeid_cast<const ColumnArray *>(column.get()))
-    {
-        auto nested = materializeObjectTypedPaths(array->getDataPtr());
-        if (nested.get() == array->getDataPtr().get())
-            return column;
-        return ColumnArray::create(nested, array->getOffsetsPtr());
-    }
-
-    if (const auto * tuple = typeid_cast<const ColumnTuple *>(column.get()))
-    {
-        if (tuple->tupleSize() == 0)
-            return column;
-
-        auto columns = tuple->getColumnsCopy();
-        bool changed = false;
-        for (auto & element : columns)
-        {
-            auto materialized = materializeObjectTypedPaths(element);
-            changed |= materialized.get() != element.get();
-            element = std::move(materialized);
-        }
-        if (!changed)
-            return column;
-        return ColumnTuple::create(columns);
-    }
-
-    if (const auto * nullable = typeid_cast<const ColumnNullable *>(column.get()))
-    {
-        auto nested = materializeObjectTypedPaths(nullable->getNestedColumnPtr());
-        if (nested.get() == nullable->getNestedColumnPtr().get())
-            return column;
-        return ColumnNullable::create(nested, nullable->getNullMapColumnPtr());
-    }
-
-    if (typeid_cast<const ColumnObject *>(column.get()))
-        return recursiveRemoveSparse(column);
-
-    return column;
-}
-
-}
 
 NativeWriter::NativeWriter(WriteBuffer & ostr_, UInt64 client_revision_, SharedHeader header_)
     : NativeWriter(ostr_, client_revision_, std::move(header_), std::nullopt)
@@ -169,12 +113,11 @@ void NativeWriter::flush()
 
 std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getSerializationAndColumn(UInt64 client_revision, const ColumnWithTypeAndName & column)
 {
-    ColumnPtr result_column = column.column->convertToFullColumnIfConst()->decompress();
-    if (client_revision < DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION)
-        result_column = result_column->convertToFullColumnIfReplicated();
-
     if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
     {
+        ColumnPtr result_column = column.column;
+        if (client_revision < DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION)
+            result_column = result_column->convertToFullColumnIfReplicated();
         if (client_revision < DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
             result_column = recursiveRemoveSparse(result_column);
         if (client_revision < DBMS_MIN_REVISION_WITH_NULLABLE_SPARSE_SERIALIZATION)
@@ -183,15 +126,11 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
                 result_column = recursiveRemoveSparse(result_column);
         }
 
-        /// Typed paths in `JSON` are materialized because the `Native` wire format has no
-        /// recursive serialization-info entry for them.
-        result_column = materializeObjectTypedPaths(result_column);
-
         auto info = column.type->getSerializationInfo(*result_column, getSerializationInfoSettings(client_revision));
         return {column.type->getSerialization(*info), info, result_column};
     }
 
-    return {column.type->getDefaultSerialization(), nullptr, removeSpecialRepresentations(result_column)};
+    return {column.type->getDefaultSerialization(), nullptr, removeSpecialRepresentations(column.column)};
 }
 
 SerializationInfoSettings NativeWriter::getSerializationInfoSettings(UInt64 client_revision)
@@ -245,6 +184,16 @@ size_t NativeWriter::write(const Block & block)
     /// Dimensions
     size_t columns = block.columns();
     size_t rows = block.rows();
+
+    /// A block with no columns can still carry rows. A receiver below the revision rejects such a block,
+    /// and sending zero rows instead would lose them.
+    if (columns == 0 && rows > 0 && client_revision < DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot write {} rows that carry no columns at protocol revision {}: it requires revision {}",
+            rows,
+            client_revision,
+            DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT);
 
     writeVarUInt(columns, ostr);
     writeVarUInt(rows, ostr);
@@ -336,10 +285,6 @@ size_t NativeWriter::write(const Block & block)
             SerializationInfoPtr info;
             if (cached_type)
             {
-                /// Typed paths in `JSON` are materialized, as in `getSerializationAndColumn`. The column is
-                /// made full first, as `writeData` does: a constant or compressed column hides the `JSON`
-                /// column, so its typed paths would stay sparse and the kinds would not match the data.
-                column.column = materializeObjectTypedPaths(column.column->convertToFullColumnIfConst()->decompress());
                 info = column.type->getSerializationInfo(*column.column, getSerializationInfoSettings(client_revision));
                 serialization = getCachedSerialization(*cached_type, *info);
             }

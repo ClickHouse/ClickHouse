@@ -1,16 +1,23 @@
 #pragma once
-#include <DataTypes/Serializations/SerializationInfoNamed.h>
+#include <Core/Names.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 namespace DB
 {
 
-class SerializationInfoTuple final : public SerializationInfoNamed
+class SerializationInfoTuple : public SerializationInfo
 {
 public:
-    SerializationInfoTuple(MutableSerializationInfos elems_, Names names_, const Settings & settings_ = {});
+    SerializationInfoTuple(MutableSerializationInfos elems_, Names names_);
 
+    [[nodiscard]] bool hasCustomSerialization() const override;
     [[nodiscard]] bool structureEquals(const SerializationInfo & rhs) const override;
+
     void add(const IColumn & column) override;
+    void add(const SerializationInfo & other) override;
+    void remove(const SerializationInfo & other) override;
+    void addDefaults(size_t length) override;
+    void replaceData(const SerializationInfo & other) override;
 
     [[nodiscard]] MutableSerializationInfoPtr clone() const override;
 
@@ -19,7 +26,24 @@ public:
         const IDataType & new_type,
         const Settings & new_settings) const override;
 
+    void serialializeKindStackBinary(WriteBuffer & out) const override;
+    void deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds) override;
+
+    void toJSON(Poco::JSON::Object & object) const override;
+    void fromJSON(const Poco::JSON::Object & object) override;
+
+    [[nodiscard]] const MutableSerializationInfoPtr & getElementInfo(size_t i) const { return elems[i]; }
     [[nodiscard]] ISerialization::KindStack getElementKindStack(size_t i) const { return elems[i]->getKindStack(); }
+
+protected:
+    void writeJSONFields(WriteBuffer & out, const String * name) const override;
+
+private:
+    MutableSerializationInfos elems;
+    Names names;
+
+    using NameToElem = std::unordered_map<String, MutableSerializationInfoPtr>;
+    NameToElem name_to_elem;
 };
 
 }
