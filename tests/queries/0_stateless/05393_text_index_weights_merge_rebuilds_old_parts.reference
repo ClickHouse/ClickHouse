@@ -1,0 +1,14 @@
+-- plain filtering on the old part still works
+4
+-- before the merge, the old part has no weights
+[0,3]
+[0,1]
+-- the merged part has the index with the weights
+raft	0	2
+raft	3	1
+raft	4	1
+raft	5	3
+consensus	0	1
+consensus	1	1
+consensus	2	2
+consensus	5	1
