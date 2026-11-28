@@ -82,7 +82,7 @@ void registerCodecZXC(CompressionCodecFactory & factory)
                     arguments->children.size());
 
             const auto * literal = arguments->children[0]->as<ASTLiteral>();
-            if (!literal)
+            if (!literal || !isInt64OrUInt64orBoolFieldType(literal->value.getType()))
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "ZXC codec argument must be integer");
 
             level = static_cast<int>(literal->value.safeGet<UInt64>());
