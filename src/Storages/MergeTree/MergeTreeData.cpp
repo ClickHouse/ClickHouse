@@ -12089,6 +12089,8 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     {
         execution_context = Context::createCopy(getContext()->getBackgroundContext());
         execution_context->makeQueryContextForMutate(*getSettings());
+        /// The analysis runs on behalf of the submitting query, so its table locks share that query's key.
+        execution_context->setInitialQueryId(query_context->getInitialQueryId());
     }
     else
     {

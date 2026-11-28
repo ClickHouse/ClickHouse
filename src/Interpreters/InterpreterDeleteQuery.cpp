@@ -127,7 +127,7 @@ BlockIO InterpreterDeleteQuery::execute()
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = true}, std::move(guard));
     }
 
-    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+    auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
     /// For DataLake tables with lazy initialization (e.g. from DatabaseDataLake / REST catalog),
     /// metadata is not loaded until the first access.  Initialize it now so that
     /// supportsDelete() and subsequent mutation checks see valid metadata.
@@ -145,7 +145,7 @@ BlockIO InterpreterDeleteQuery::execute()
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE ... ON CLUSTER is not supported on UNIQUE KEY tables");
 
         /// A lazy stand-in neither forwards `deleteByUniqueKey` nor shares its lock with the loaded table.
-        auto resolved_table_lock = resolved_table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+        auto resolved_table_lock = resolved_table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
         resolved_table->deleteByUniqueKey(query_ptr, getContext());
         return {};
     }
