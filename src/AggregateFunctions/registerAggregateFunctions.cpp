@@ -118,6 +118,7 @@ void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFact
 void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorTuple(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory);
+void registerAggregateFunctionCombinatorSparkbar(AggregateFunctionCombinatorFactory & factory);
 
 
 void registerAggregateFunctions()
@@ -236,6 +237,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorMap(factory);
         registerAggregateFunctionCombinatorTuple(factory);
         registerAggregateFunctionCombinatorsArgMinArgMax(factory);
+        registerAggregateFunctionCombinatorSparkbar(factory);
     }
 }
 
