@@ -1,12 +1,12 @@
-file glob		hello
-s3 glob		hello
-s3Cluster glob		hello
-file two		hello
-file two		world
-s3 two		hello
-s3 two		world
-s3Cluster two		hello
-s3Cluster two		world
+file glob	data	hello
+s3 glob	data	hello
+s3Cluster glob	data	hello
+file two	data	hello
+file two	data	world
+s3 two	data	hello
+s3 two	data	world
+s3Cluster two	data	hello
+s3Cluster two	data	world
 file count	4
 file rows	1	\N
 file rows	\N	2
