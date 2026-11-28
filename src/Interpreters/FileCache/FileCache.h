@@ -249,6 +249,13 @@ public:
 
     IFileCachePriority::PriorityDumpPtr dumpQueue();
 
+    /// See `IFileCachePriority::observeFilesystemCache`.
+    FileSegmentSummaryInfoList observeFilesystemCache(
+        UInt64 query_max_elements,
+        UInt64 query_max_total_size,
+        IFileCachePriority::IterationOrder query_order,
+        const std::atomic<bool> * cancellation_flag = nullptr);
+
     IFileCachePriority::Type getEvictionPolicyType();
 
     using UsageStat = IFileCachePriority::UsageStat;
@@ -289,6 +296,7 @@ private:
     const size_t boundary_alignment;
     std::atomic<size_t> reserve_granularity;
     std::atomic<size_t> background_download_max_file_segment_size;
+    std::atomic<size_t> max_observed_elements;
     UInt64 load_metadata_threads;
     const bool load_metadata_asynchronously;
     std::atomic<bool> stop_loading_metadata = false;
