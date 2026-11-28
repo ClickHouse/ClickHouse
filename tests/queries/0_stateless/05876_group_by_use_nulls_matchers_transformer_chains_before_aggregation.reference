@@ -1,0 +1,79 @@
+-- function, function
+0
+1
+2
+3
+0
+1
+2
+3
+-- lambda, function
+0
+1
+2
+3
+-- lambda, lambda
+0
+1
+2
+3
+-- replace, function
+0
+1
+2
+3
+-- a transformer after the aggregate function
+0
+1
+2
+3
+-- inside and outside of the aggregate function
+(0,0,'Nullable(Int64)')
+(1,1,'Nullable(Int64)')
+(2,2,'Nullable(Int64)')
+(3,NULL,'Nullable(Int64)')
+(0,0)
+(1,1)
+(2,2)
+(3,NULL)
+Tuple(UInt64, Nullable(UInt64))
+Tuple(UInt64, Nullable(UInt64))
+Tuple(UInt64, Nullable(UInt64))
+Tuple(UInt64, Nullable(UInt64))
+-- a longer chain
+(0,'Nullable(UInt64)')
+(1,'Nullable(UInt64)')
+(2,'Nullable(UInt64)')
+(2,'Nullable(UInt64)')
+0
+1
+2
+2
+-- a window function is computed after the aggregation
+3
+3
+3
+3
+-- aggregate functions in several transformers
+(0,1)
+(1,1)
+(2,1)
+(3,3)
+(0,0,0)
+(1,0,1)
+(2,0,2)
+(3,1,NULL)
+-- independent matchers in the transformers of a postponed matcher
+(99)
+(100)
+(99)
+(100)
+(99)
+(100)
+(99)
+(100)
+-- an alias defined by an equivalent expression in WITH
+1
+1
+1
+1

@@ -1,0 +1,32 @@
+dup matcher
+1	1
+1	1
+1	1
+dup matcher with
+1
+1
+1
+cross join qualifier
+0	0	1
+0	0	\N
+1	0	1
+1	0	\N
+2	0	1
+2	0	\N
+\N	1	\N
+nested dropped
+0	0	1
+1	0	1
+2	0	1
+\N	1	3
+alias retry
+0
+0
+0
+1
+window retry
+1
+3
+3
+3
+conflict still detected

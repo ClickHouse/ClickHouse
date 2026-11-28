@@ -124,7 +124,7 @@ MatcherNode::MatcherNode(MatcherNodeType matcher_type_,
         columns_identifiers_set.insert(column_identifier.getFullName());
 }
 
-bool MatcherNode::isMatchingColumn(const std::string & column_name)
+bool MatcherNode::isMatchingColumn(const std::string & column_name) const
 {
     if (matcher_type == MatcherNodeType::ASTERISK)
         return true;

@@ -87,6 +87,20 @@ public:
         return aggregate_or_grouping_functions_counter > 0;
     }
 
+    /** Resolve the following expressions as the arguments of an aggregate function, although no aggregate function
+      * is on the stack. It is used for a transformer of a matcher whose result is consumed by an aggregate function
+      * of a following transformer, as `toInt64` in `SELECT * APPLY toInt64 APPLY sum`.
+      */
+    void enterAggregateFunctionArguments()
+    {
+        ++aggregate_or_grouping_functions_counter;
+    }
+
+    void leaveAggregateFunctionArguments()
+    {
+        --aggregate_or_grouping_functions_counter;
+    }
+
     [[nodiscard]] QueryTreeNodePtr getExpressionWithAlias(const std::string & alias) const
     {
         auto expression_it = alias_name_to_expressions.find(alias);
