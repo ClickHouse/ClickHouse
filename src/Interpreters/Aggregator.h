@@ -571,8 +571,9 @@ public:
     /// `bucket_groups`, the groups of the bucket just merged, to `merged_groups`, the running total of the
     /// threads that merge the buckets, and checks the total. The buckets partition the key space, so the
     /// total never exceeds the final group count: once it crosses the limit, so does the final count. The
-    /// producers' checks miss what this catches: the baseline producers check their tables one by one, so
-    /// they cannot see the merged cardinality, and the adaptive producers cannot see the staged keys at all.
+    /// producers' checks miss what this catches: each producer checks only its own keys, a baseline one by
+    /// the size of its table and an adaptive one by an estimate that leaves an excess within its margin to
+    /// this check (see `checkEstimatedGroupLimit`), so no producer sees the merged cardinality.
     /// The total covers only the groups that the merge builds: a merge that prunes by the top-K (the
     /// threshold merge, the adaptive top-K pruning, the settled adaptive merge of an ascending top-K) skips
     /// the groups that the top does not need, and a merge that stops early, as under a `LIMIT` without
@@ -949,7 +950,13 @@ private:
     void destroyAllAggregateStates(AggregatedDataVariants & result) const;
 
     /// `for_sub_range`: the rows are one run of a block aggregated run by run (`executeOnBlockSmall`), so the
-    /// hashing state is a `ColumnsHashing::SubRangeState` built over those rows only.
+    /// hashing state is a `ColumnsHashing::SubRangeState` built over those rows only. `distinct_key_counter`,
+    /// which an adaptive producer under a throw-mode limit passes, takes every key that the table inserts, by
+    /// the hash of the key in the table: the routing hash of its staged records (see
+    /// `AdaptiveDistinctKeyCounter`). A state that precomputes the hashes of its rows gives the hash without
+    /// hashing the key again: after the emplace of a row, `getPrecomputedHash` returns its hash while
+    /// `can_precompute_hashes` holds. A `PackedStringRef` key stores its hash, so the table hashes it without
+    /// reading the string.
     template <bool for_sub_range = false>
     void executeImpl(
         AggregatedDataVariants & result,
@@ -959,7 +966,8 @@ private:
         AggregateFunctionInstruction * aggregate_instructions,
         bool no_more_keys = false,
         bool all_keys_are_const = false,
-        AggregateDataPtr overflow_row = nullptr) const;
+        AggregateDataPtr overflow_row = nullptr,
+        AdaptiveDistinctKeyCounter * distinct_key_counter = nullptr) const;
 
     /// Process one data block, aggregate the data into a hash table.
     template <bool for_sub_range, typename Method>
@@ -973,7 +981,8 @@ private:
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,
         bool all_keys_are_const,
-        AggregateDataPtr overflow_row) const;
+        AggregateDataPtr overflow_row,
+        AdaptiveDistinctKeyCounter * distinct_key_counter) const;
 
     template <typename Method, typename State>
     void executeImpl(
@@ -986,7 +995,8 @@ private:
         AggregateFunctionInstruction * aggregate_instructions,
         bool no_more_keys,
         bool all_keys_are_const,
-        AggregateDataPtr overflow_row) const;
+        AggregateDataPtr overflow_row,
+        AdaptiveDistinctKeyCounter * distinct_key_counter) const;
 
     /// The learning consume path of the adaptive aggregation, taken for a block that can push
     /// the table past the freeze threshold: aggregates like `executeImpl`, but in slices, and
@@ -999,7 +1009,8 @@ private:
         size_t row_begin,
         size_t row_end,
         ColumnRawPtrs & key_columns,
-        AggregateFunctionInstruction * aggregate_instructions) const;
+        AggregateFunctionInstruction * aggregate_instructions,
+        AdaptiveDistinctKeyCounter * distinct_key_counter) const;
 
     /// Specialization for a particular value no_more_keys.
     template <bool prefetch, bool top_k = false, typename Method, typename State>
@@ -1015,7 +1026,8 @@ private:
         bool no_more_keys,
         bool all_keys_are_const,
         bool use_compiled_functions,
-        AggregateDataPtr overflow_row) const;
+        AggregateDataPtr overflow_row,
+        AdaptiveDistinctKeyCounter * distinct_key_counter) const;
 
     struct DestroyedState
     {
@@ -1040,7 +1052,8 @@ private:
         bool no_more_keys,
         bool all_keys_are_const,
         bool use_compiled_functions,
-        AggregateDataPtr overflow_row) const;
+        AggregateDataPtr overflow_row,
+        AdaptiveDistinctKeyCounter * distinct_key_counter) const;
 
     /// The map methods' batch when the only aggregate is `count()`, kept in the hash table cell.
     template <bool prefetch, bool top_k, typename Method, typename State>
@@ -1053,7 +1066,8 @@ private:
         size_t row_end,
         bool no_more_keys,
         bool all_keys_are_const,
-        AggregateDataPtr overflow_row) const;
+        AggregateDataPtr overflow_row,
+        AdaptiveDistinctKeyCounter * distinct_key_counter) const;
 
     template <bool prefetch, typename Method, typename State>
     void executeImplBatchCountPositions(
@@ -1076,13 +1090,15 @@ private:
         Arena * aggregates_pool,
         size_t row_begin,
         size_t row_end,
-        bool all_keys_are_const) const;
+        bool all_keys_are_const,
+        AdaptiveDistinctKeyCounter * distinct_key_counter) const;
 
-    /// Advances an adaptive producer's phase between blocks, in place of the baseline's conversion: writes its staged
-    /// records to disk when the query is `over_external_threshold`, thaws a frozen table whose staged stream repeats,
-    /// and freezes a learning table at its bounds. A learning table counts the block's `rows` toward the end of its
-    /// slicing (see `adaptiveLearningSlices`). Returns false once the producer is on the baseline path, whose checks
-    /// then apply.
+    /// Advances an adaptive producer's phase between blocks, in place of the baseline's conversion: writes
+    /// its staged records to disk when the query is `over_external_threshold`, thaws a frozen table whose
+    /// staged stream repeats, drops the distinct key counter of a thawed producer whose table holds nearly
+    /// all of its keys, and freezes a learning table at its bounds. A learning table counts the block's
+    /// `rows` toward the end of its slicing (see `adaptiveLearningSlices`). Returns false once the producer
+    /// is on the baseline path, whose checks then apply.
     bool advanceAdaptiveProducer(
         AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t rows, bool over_external_threshold) const;
 
@@ -2001,6 +2017,12 @@ private:
       * - sets the variable no_more_keys to true.
       */
     bool checkLimits(size_t result_size, bool & no_more_keys) const;
+
+    /// Holds a throw-mode `max_rows_to_group_by` against the keys of an adaptive producer, which the size of
+    /// its table stops counting once the table freezes: throws `TOO_MANY_ROWS` when `counter`, the distinct
+    /// key counter of the producer, puts its keys over the limit by more than the error margin of the
+    /// estimate.
+    void checkEstimatedGroupLimit(const AdaptiveDistinctKeyCounter & counter) const;
 
     /// Arbitration between an external-aggregation spill and the kept-keys cutoff
     /// (see `Params::SharedKeptKeysControl`). Always true when the cutoff is not armed.

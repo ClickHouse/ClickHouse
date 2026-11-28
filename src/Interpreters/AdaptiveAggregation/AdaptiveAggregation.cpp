@@ -102,6 +102,12 @@ void Aggregator::accountStagedBatch(
 
     adaptive.total_staged_records += total;
 
+    /// The routing hash of a staged record is the hash of its key in the producer's table (see
+    /// `AdaptiveDistinctKeyCounter`).
+    if (adaptive.distinct_key_counter)
+        for (size_t i = 0; i < total; ++i)
+            adaptive.distinct_key_counter->add(hashes[i]);
+
     /// The thaw evidence of the thread (see `adaptiveStagingRepeats`). A batch updates:
     ///
     /// - `staged_records` grows by the batch's record count.
@@ -204,7 +210,23 @@ bool Aggregator::advanceAdaptiveProducer(
     if (adaptive.isFrozen() && adaptiveStagingRepeats(adaptive) && !adaptiveTopKPruningFreesStaging(result, adaptive))
         thawAdaptive(result, adaptive);
     if (adaptive.isBaseline())
+    {
+        /// A thawed producer stages no more keys, and its table takes back the staged keys as they repeat.
+        /// Once the keys outside the table are within the error margin of the counter, the exact check of
+        /// the table takes over: a producer over the limit by more than them has a table over the limit.
+        const size_t table_keys = result.sizeWithoutOverflowRow();
+        if (adaptive.distinct_key_counter)
+        {
+            const UInt64 keys = adaptive.distinct_key_counter->getCount();
+            if (keys <= table_keys || keys - table_keys <= adaptive.distinct_key_counter->getErrorMargin())
+            {
+                LOG_TRACE(
+                    log, "Adaptive aggregation: dropped the distinct key counter at {} table keys, estimated {}", table_keys, keys);
+                adaptive.distinct_key_counter.reset();
+            }
+        }
         return false;
+    }
 
     /// In place of the baseline's two-level conversion, a learning table freezes at its own bounds: from then on it
     /// only updates the keys it already holds, so it stays single-level and bounded, and the frozen kernel pairs it

@@ -17,6 +17,7 @@
 #include <Common/PartitionedRecordBuffer.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregation.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveDistinctKeyCounter.h>
 #include <Interpreters/AdaptiveAggregation/AdaptivePartitionLayout.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveTopKNullKey.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveTopKPruning.h>
@@ -486,7 +487,13 @@ struct AdaptiveLocalProbes
 /// phase-owned counters, its staged records, and the current block's misses.
 struct AdaptiveAggregationProducer
 {
-    explicit AdaptiveAggregationProducer(AdaptiveAggregationSessionPtr shared_) : session(std::move(shared_)) { }
+    /// A `max_rows_to_group_by` gives the producer its distinct key counter. The gate admits the limit only
+    /// in throw mode.
+    explicit AdaptiveAggregationProducer(AdaptiveAggregationSessionPtr shared_, UInt64 max_rows_to_group_by = 0)
+        : session(std::move(shared_))
+        , distinct_key_counter(max_rows_to_group_by ? std::make_unique<AdaptiveDistinctKeyCounter>(max_rows_to_group_by) : nullptr)
+    {
+    }
 
     /// The thread starts learning: the local table inserts as usual while the freeze rule
     /// watches its growth (see `executeOnBlock`). A frozen table that was written to disk
@@ -608,6 +615,11 @@ struct AdaptiveAggregationProducer
     void standDown() { phase = BaselineState{}; }
 
     AdaptiveAggregationSessionPtr session;
+
+    /// The keys of the thread under a throw-mode `max_rows_to_group_by`, from its start: the keys that its
+    /// tables insert and those that it stages (see `Aggregator::checkEstimatedGroupLimit`). A thawed producer
+    /// drops the counter once its table holds nearly all of them (see `Aggregator::advanceAdaptiveProducer`).
+    std::unique_ptr<AdaptiveDistinctKeyCounter> distinct_key_counter;
 
     /// The records this producer staged, created by its freeze; a producer that stands down keeps them for the
     /// merge. Handed over to the session when the producer finishes.

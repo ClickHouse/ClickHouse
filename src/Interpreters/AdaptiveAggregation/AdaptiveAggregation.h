@@ -65,6 +65,9 @@ using AdaptiveAggregationSessionPtr = std::shared_ptr<AdaptiveAggregationSession
 /// per-block staging of the missed rows.
 struct AdaptiveAggregationProducer;
 
+/// The distinct-key estimate of an adaptive aggregation thread under a throw-mode `max_rows_to_group_by`.
+class AdaptiveDistinctKeyCounter;
+
 /// The record layout of the aggregate arguments that general payloads stage.
 struct AdaptiveArgumentLayout;
 
