@@ -1,5 +1,6 @@
 #include <chrono>
 #include <variant>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
 #include <Core/Block.h>
@@ -138,8 +139,8 @@ SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
 
 FutureSetFromTuple::FutureSetFromTuple(
     Hash hash_, ASTPtr ast_, ColumnsWithTypeAndName block,
-    bool transform_null_in, SizeLimits size_limits)
-    : hash(hash_), ast(std::move(ast_))
+    bool transform_null_in, SizeLimits size_limits, QueryTreeNodePtr source_node_)
+    : hash(hash_), ast(std::move(ast_)), source_node(std::move(source_node_))
 {
     ColumnsWithTypeAndName header = block;
     for (auto & elem : header)
@@ -171,6 +172,19 @@ FutureSetFromTuple::FutureSetFromTuple(
 
 DataTypes FutureSetFromTuple::getTypes() const { return set->getElementsTypes(); }
 FutureSet::Hash FutureSetFromTuple::getHash() const { return hash; }
+
+ASTPtr FutureSetFromTuple::getSourceAST() const
+{
+    callOnce(source_ast_once, [this]
+    {
+        if (source_node)
+        {
+            ast = source_node->toAST();
+            source_node.reset();
+        }
+    });
+    return ast;
+}
 
 void FutureSetFromTuple::fillSetElementsOnce() const
 {
@@ -777,12 +791,13 @@ String PreparedSets::toString(const PreparedSets::Hash & key, const DataTypes & 
     return buf.str();
 }
 
-FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings)
+FutureSetFromTuplePtr PreparedSets::addFromTuple(
+    const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings, QueryTreeNodePtr source_node)
 {
     const FutureSetSettings set_settings(settings);
     auto from_tuple = std::make_shared<FutureSetFromTuple>(
         key, std::move(ast), std::move(block),
-        set_settings.transform_null_in, set_settings.size_limits);
+        set_settings.transform_null_in, set_settings.size_limits, std::move(source_node));
 
     const auto & set_types = from_tuple->getTypes();
     auto & sets_by_hash = sets_from_tuple[key];
