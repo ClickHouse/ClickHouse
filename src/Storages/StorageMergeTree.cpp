@@ -2541,7 +2541,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     const CommittingBlocksSet committing_blocks_snapshot = getCommittingBlocks();
 
     std::vector<Int64> pending_update_blocks;
-    if (supportsLightweightUpdate())
+    if (supportsPatchParts())
     {
         for (const auto & block : committing_blocks_snapshot)
         {
@@ -3986,7 +3986,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
 
         /// Only the base part is detached; the pending patch is left behind, so re-attaching would
         /// silently revert the update. Reject instead (same guard as the Replicated engine).
-        if (detach && supportsLightweightUpdate())
+        if (detach && supportsPatchParts())
         {
             if (auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active}))
             {
@@ -4074,7 +4074,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
 
         /// Only base parts are detached; pending patches are left behind, so re-attaching would
         /// silently revert the update. Reject instead (same guard as the Replicated engine).
-        if (detach && supportsLightweightUpdate())
+        if (detach && supportsPatchParts())
         {
             auto data_parts_lock = lockParts();
             DataPartsVector parts_to_detach;
