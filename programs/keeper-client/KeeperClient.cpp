@@ -20,6 +20,7 @@
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/AcceptCertificateHandler.h>
 #include <Poco/Net/RejectCertificateHandler.h>
+#include <Poco/Net/SecureStreamSocket.h>
 #endif
 
 #include <algorithm>
@@ -88,13 +89,32 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 String KeeperClient::executeFourLetterCommand(const String & command)
 {
     /// We need to create a new socket every time because ZooKeeper forcefully shuts down the connection after a four-letter-word command.
+    constexpr std::string_view secure_scheme = "secure://";
+    std::string_view host_and_port = zk_args.hosts[0];
+    const bool secure = host_and_port.starts_with(secure_scheme);
+    if (secure)
+        host_and_port.remove_prefix(secure_scheme.size());
+    const auto [host, port] = DNSResolver::splitHostAndPort(String(host_and_port));
+
     Poco::Net::StreamSocket socket;
-    const auto [host, port] = DNSResolver::splitHostAndPort(zk_args.hosts[0]);
+    if (secure)
+    {
+#if USE_SSL
+        Poco::Net::SecureStreamSocket secure_socket;
+        /// The certificate names the host, while the socket connects to the address it resolves to.
+        secure_socket.setPeerHostName(host);
+        socket = secure_socket;
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cannot use a secure connection, because clickhouse-keeper-client was built without SSL support");
+#endif
+    }
+
     try
     {
         socket.connect(DNSResolver::instance().resolveAddress(host, port), zk_args.connection_timeout_ms * 1000);
@@ -666,26 +686,28 @@ void KeeperClient::connectToKeeper()
 
     zkutil::ZooKeeperArgs new_zk_args;
 
-    if (!config().has("host") && !config().has("port") && !keys.empty())
+    if (!config().has("host") && !config().has("port"))
     {
-        LOG_INFO(getLogger("KeeperClient"), "Found keeper node in {}, will use it for connection", config_path);
-
         for (const auto & key : keys)
         {
-            if (key != "node")
+            if (!key.starts_with("node"))
                 continue;
 
             String prefix = "zookeeper." + key;
             String host = clickhouse_config.configuration->getString(prefix + ".host");
-            String port = clickhouse_config.configuration->getString(prefix + ".port");
+            String port = clickhouse_config.configuration->getString(prefix + ".port", "2181");
 
-            if (clickhouse_config.configuration->has(prefix + ".secure") || config().has("secure"))
+            if (clickhouse_config.configuration->getBool(prefix + ".secure", false) || config().has("secure"))
                 host = "secure://" + host;
 
             new_zk_args.hosts.push_back(host + ":" + port);
         }
+
+        if (!new_zk_args.hosts.empty())
+            LOG_INFO(getLogger("KeeperClient"), "Found keeper node in {}, will use it for connection", config_path);
     }
-    else
+
+    if (new_zk_args.hosts.empty())
     {
         String host = config().getString("host", "localhost");
         String port = config().getString("port", "9181");
