@@ -1,5 +1,7 @@
 #include <DataTypes/Utils.h>
 #include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -8,6 +10,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/TypeTree.h>
 
 namespace DB
 {
@@ -384,6 +388,58 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
     if (from_array && to_array)
         return conversionPreservesOrder(*from_array->getNestedType(), *to_array->getNestedType());
 
+    return false;
+}
+
+/// The names a relabelling cast must not change, one per node; it relabels the state versions of outer states only.
+static void appendNamesKeptByRelabelling(const IDataType & type, bool in_arguments, std::vector<String> & names)
+{
+    forEachInTypeTree(type, [&](const IDataType & child)
+    {
+        if (const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&child))
+        {
+            String name = aggregate_type->getFunctionName() + DataTypeAggregateFunction::formatParameters(aggregate_type->getParameters());
+            if (in_arguments)
+                name += " version " + std::to_string(aggregate_type->getVersion());
+            names.push_back(std::move(name));
+            for (const auto & argument : aggregate_type->getArgumentsDataTypes())
+                appendNamesKeptByRelabelling(*argument, /*in_arguments=*/ true, names);
+        }
+        else if (WhichDataType(child).isUInt8())
+            names.push_back(child.getName() == "Bool" || isSimpleAggregateFunctionOfBool(child) ? child.getName() : "");
+        else if (const auto * variant = typeid_cast<const DataTypeVariant *>(&child);
+                 variant && hasEqualsAmbiguousAlternatives(variant->getVariants()))
+            names.push_back(child.getName());
+        else
+            names.emplace_back();
+    });
+}
+
+static std::vector<String> getNamesKeptByRelabelling(const IDataType & type)
+{
+    std::vector<String> names;
+    appendNamesKeptByRelabelling(type, /*in_arguments=*/ false, names);
+    return names;
+}
+
+bool isRelabellingCast(const IDataType & from, const IDataType & to)
+{
+    return from.equals(to) && getNamesKeptByRelabelling(from) == getNamesKeptByRelabelling(to);
+}
+
+bool needsConvertingCast(const IDataType & from, const IDataType & to)
+{
+    if (!from.equals(to))
+        return true;
+    return from.getName() != to.getName() && getNamesKeptByRelabelling(from) == getNamesKeptByRelabelling(to);
+}
+
+bool hasEqualsAmbiguousAlternatives(const DataTypes & alternatives)
+{
+    for (size_t i = 0; i + 1 < alternatives.size(); ++i)
+        for (size_t j = i + 1; j < alternatives.size(); ++j)
+            if (alternatives[i]->equals(*alternatives[j]))
+                return true;
     return false;
 }
 
