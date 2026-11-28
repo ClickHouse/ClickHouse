@@ -25,5 +25,8 @@ SELECT '' FROM t_pr_rows_before_limit WHERE id < 30 ORDER BY id LIMIT -1 OFFSET 
 SETTINGS parallel_replicas_local_plan = 1;
 SELECT '' FROM t_pr_rows_before_limit WHERE id < 10000 ORDER BY id LIMIT -1 OFFSET -3 FORMAT Template
 SETTINGS parallel_replicas_local_plan = 1;
+-- A projection lifted above the sort.
+SELECT '', id * 2 FROM t_pr_rows_before_limit WHERE id < 30 ORDER BY id LIMIT -1 OFFSET 3 FORMAT Template
+SETTINGS parallel_replicas_local_plan = 1;
 
 DROP TABLE t_pr_rows_before_limit;

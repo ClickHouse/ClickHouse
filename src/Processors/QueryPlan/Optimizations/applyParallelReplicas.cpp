@@ -765,7 +765,16 @@ private:
         if (stack.size() < 3)
             return std::nullopt;
 
+        /// A projection lifted above the sort (`liftUpFunctions`) does not change the rows.
         size_t index = stack.size() - 3;
+        while (index > 0)
+        {
+            const auto * expression = typeid_cast<const ExpressionStep *>(stack[index].node->step.get());
+            if (!expression || expression->getExpression().hasArrayJoin())
+                break;
+            --index;
+        }
+
         UInt64 offset = 0;
         const auto * offset_step = typeid_cast<const OffsetStep *>(stack[index].node->step.get());
         if (offset_step)
