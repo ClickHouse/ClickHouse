@@ -2501,7 +2501,7 @@ Defines storage time for values. Can be specified only for MergeTree-family tabl
 <a id="aes-256-gcm-siv"></a>
 <a id="adaptive-codec-selection"></a>
 
-By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud. You can also define the compression method for each individual column in the `CREATE TABLE` query:
+By default, ClickHouse compresses data with `ZSTD(3)`. Parts of `MergeTree` tables that are smaller than 100 MiB when written are compressed with the faster `LZ4`, and merges recompress them with `ZSTD(3)` once they grow larger (see the [compression](/reference/settings/server-settings/settings/other#compression) server setting). You can also define the compression method for each individual column in the `CREATE TABLE` query:
 
 ```sql
 CREATE TABLE codec_example
@@ -2839,7 +2839,7 @@ SELECT * FROM base.t1;
     documentation["CODEC"] =
     {
         .description = R"DOCS_MD(
-By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud.
+By default, ClickHouse compresses data with `ZSTD(3)`. Parts of `MergeTree` tables that are smaller than 100 MiB when written are compressed with the faster `LZ4`, and merges recompress them with `ZSTD(3)` once they grow larger (see the [compression](/reference/settings/server-settings/settings/other#compression) server setting).
 
 For `MergeTree`-engine family you can change the default compression method in the [compression](/reference/settings/server-settings/settings/other#compression) section of a server configuration.
 
@@ -2879,7 +2879,7 @@ You can't decompress ClickHouse database files with external utilities like `lz4
 Compression is supported for the following table engines:
 
 - [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) family. Supports column compression codecs and selecting the default compression method by [compression](/reference/settings/server-settings/settings/other#compression) settings.
-- [Log](/reference/engines/table-engines/log-family/index) family. Uses the `lz4` compression method by default and supports column compression codecs.
+- [Log](/reference/engines/table-engines/log-family/index) family. Uses `ZSTD(3)` by default and supports column compression codecs.
 - [Set](/reference/engines/table-engines/special/set). Only supported the default compression.
 - [Join](/reference/engines/table-engines/special/join). Only supported the default compression.
 
@@ -2893,7 +2893,7 @@ ClickHouse supports general purpose codecs and specialized codecs.
 
 ### LZ4 {#lz4}
 
-`LZ4` — Lossless [data compression algorithm](https://github.com/lz4/lz4) used by default. Applies LZ4 fast compression.
+`LZ4` — Lossless [data compression algorithm](https://github.com/lz4/lz4). Applies LZ4 fast compression. It is used by default for small `MergeTree` parts.
 
 ### LZ4HC {#lz4hc}
 
@@ -2911,7 +2911,7 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 `ZXC[(level)]` — asymmetric [`zxc` compression algorithm](https://github.com/hellobertrand/zxc) with configurable `level`. Possible levels: \[1, 7\]. Default level: 3.
 
-`ZXC` trades slow compression for very fast decompression, at a compression ratio between `LZ4` and `ZSTD`. It is a good fit for the compress-once, decompress-many pattern, and decompresses fastest on modern ARM cores. Higher levels mean better compression and slower compression, while decompression stays fast.
+`ZXC` is a codec of the same kind as `LZ4`, made for the compress-once, decompress-many pattern: it spends more CPU time on compression and decompresses faster than `LZ4`. Higher levels mean better compression and slower compression, while decompression stays fast. For a comparison with `LZ4` and `ZSTD` and for the choice of a level, see [Choosing between LZ4, ZXC and ZSTD](#choosing-between-lz4-zxc-and-zstd).
 
 <Note>
 This codec is in beta and requires `SET enable_zxc_codec = 1` to use.
@@ -2936,6 +2936,104 @@ This codec is experimental and requires `SET enable_gdeflate_codec = 1` to use.
 ### Obsolete: DEFLATE_QPL {#deflate_qpl}
 
 <CloudNotSupportedBadge/>
+
+### Choosing between LZ4, ZXC and ZSTD {#choosing-between-lz4-zxc-and-zstd}
+
+- `LZ4` compresses and decompresses fast, with a moderate compression ratio. It is used by default for small `MergeTree` parts.
+- `ZSTD` (`ZSTD(3)` is the default codec) is a good combination of compression ratio and speed when the size of the data matters. With `ZSTD(1)`, the data is 33% to 47% smaller than with `LZ4`, while the `hits` table below is compressed 1.5 to 1.7 times slower and decompressed about two times slower.
+- `ZXC` with the default level 3 has a compression ratio close to `LZ4`: the data is 1% to 22% smaller. It is compressed about three times slower than with `LZ4` and decompressed 1.3 to 2.4 times faster, which suits data that is written once and read many times.
+
+These numbers are from the measurements below. They depend on the data, so try a codec on your own tables before switching to it.
+
+#### Detailed comparison on five tables {#detailed-comparison-on-five-tables}
+
+The compression ratio of five tables, where every column is compressed with the same codec:
+
+| Codec | `hits` | Amazon reviews | OnTime | NOAA | Bluesky |
+|---|---:|---:|---:|---:|---:|
+| `LZ4` | 4.12 | 1.71 | 2.20 | 6.65 | 2.07 |
+| `LZ4HC` | 5.70 | 2.41 | 3.49 | 7.91 | 2.29 |
+| `ZXC(1)` | 3.42 | 1.20 | 2.05 | 5.96 | 1.83 |
+| `ZXC(2)` | 3.70 | 1.51 | 2.20 | 6.11 | 1.98 |
+| `ZXC(3)` | 4.45 | 1.85 | 2.81 | 6.85 | 2.09 |
+| `ZXC(4)` | 4.66 | 2.04 | 2.93 | 6.94 | 2.15 |
+| `ZXC(5)` | 5.02 | 2.16 | 3.22 | 7.63 | 2.20 |
+| `ZXC(6)` | 5.78 | 2.63 | 3.62 | 7.98 | 3.10 |
+| `ZXC(7)` | 6.31 | 2.85 | 4.22 | 11.13 | 3.26 |
+| `ZSTD(1)` | 6.16 | 2.63 | 4.14 | 11.10 | 3.31 |
+| `ZSTD(3)` | 6.68 | 2.93 | 4.27 | 11.23 | 3.34 |
+
+The tables are `hits` of [ClickBench](https://github.com/ClickHouse/ClickBench) (web analytics, 100 million rows, 105 columns), [Amazon reviews](/get-started/sample-datasets/amazon-reviews) of 2015 (42 million rows, mostly text), [OnTime](/get-started/sample-datasets/ontime) of 2013–2022 (56 million rows, 109 columns, mostly numbers and `LowCardinality` strings), [NOAA](/get-started/sample-datasets/noaa) (1.07 billion rows of weather measurements) and 10 million Bluesky events of [JSONBench](https://github.com/ClickHouse/JSONBench) in a `JSON` column.
+
+Compression speed on the `hits` table, in MB of uncompressed data per second on one CPU core:
+
+| Codec | Intel Xeon 6975P-C | AMD EPYC 9R45 | AWS Graviton4 | AWS Graviton3 |
+|---|---:|---:|---:|---:|
+| `LZ4` | 1180 | 1425 | 1127 | 961 |
+| `LZ4HC` | 40.1 | 50.3 | 42.6 | 33.3 |
+| `ZXC(1)` | 979 | 1233 | 988 | 825 |
+| `ZXC(2)` | 838 | 1050 | 846 | 707 |
+| `ZXC(3)` | 417 | 515 | 443 | 353 |
+| `ZXC(4)` | 328 | 408 | 350 | 277 |
+| `ZXC(5)` | 179 | 217 | 183 | 145 |
+| `ZXC(6)` | 14.6 | 18.4 | 13.7 | 10.6 |
+| `ZXC(7)` | 9.1 | 11.6 | 8.5 | 6.6 |
+| `ZSTD(1)` | 737 | 924 | 677 | 577 |
+| `ZSTD(3)` | 711 | 865 | 659 | 526 |
+
+Decompression speed on the `hits` table, in the same units:
+
+| Codec | Intel Xeon 6975P-C | AMD EPYC 9R45 | AWS Graviton4 | AWS Graviton3 |
+|---|---:|---:|---:|---:|
+| `LZ4` | 4217 | 5249 | 4035 | 3416 |
+| `LZ4HC` | 5377 | 6642 | 5041 | 4333 |
+| `ZXC(1)` | 6219 | 7726 | 7008 | 5710 |
+| `ZXC(2)` | 6285 | 7780 | 6966 | 5683 |
+| `ZXC(3)` | 6096 | 7447 | 6696 | 5606 |
+| `ZXC(4)` | 5895 | 7130 | 6481 | 5420 |
+| `ZXC(5)` | 6050 | 7337 | 6625 | 5542 |
+| `ZXC(6)` | 5540 | 6596 | 5755 | 4776 |
+| `ZXC(7)` | 4859 | 5734 | 4844 | 3991 |
+| `ZSTD(1)` | 2006 | 2502 | 2010 | 1742 |
+| `ZSTD(3)` | 2579 | 3188 | 2447 | 2081 |
+
+On the other four tables, `ZXC(3)` decompresses 1.3 to 2.1 times faster than `LZ4` on x86-64 and 1.5 to 2.4 times faster on ARM.
+
+<Accordion title="The effect on a table as a whole">
+
+The effect on the `hits` table as a whole, relative to the same table with `LZ4`, as the range over the four machines. `INSERT` is `INSERT ... SELECT` of the whole table in 16 threads, merges are the merges of the parts it wrote (not measured for every level), the scan reads all the columns in one thread, and the time of the ClickBench queries is the sum over the 43 queries with a warm page cache:
+
+| Codec | Size | `INSERT`, CPU time | Merges, CPU time | Scan, CPU time | ClickBench queries, time |
+|---|---:|---:|---:|---:|---:|
+| `LZ4HC` | 0.72 | 8.1–10.1 | 11–15 | 0.84–0.87 | 0.95–0.98 |
+| `ZXC(1)` | 1.20 | 1.07–1.17 | 1.02–1.11 | 0.81–0.88 | 0.97–1.00 |
+| `ZXC(2)` | 1.11 | 1.09–1.13 | — | 0.82–0.87 | 0.95–1.00 |
+| `ZXC(3)` | 0.93 | 1.48–1.58 | 1.59–1.92 | 0.82–0.89 | 0.95–0.99 |
+| `ZXC(4)` | 0.88 | 1.67–1.83 | — | 0.83–0.89 | 0.95–1.00 |
+| `ZXC(5)` | 0.82 | 2.4–2.8 | 3.1–4.0 | 0.81–0.86 | 0.94–0.98 |
+| `ZXC(6)` | 0.71 | 21–31 | — | 0.87–0.91 | 0.96–0.99 |
+| `ZXC(7)` | 0.65 | 32–49 | — | 0.94–0.99 | 0.99–1.02 |
+| `ZSTD(1)` | 0.67 | 1.15–1.21 | 1.36–1.44 | 1.52–1.70 | 1.07–1.13 |
+| `ZSTD(3)` | 0.62 | 1.22–1.27 | 1.34–1.42 | 1.32–1.40 | 1.07–1.13 |
+
+</Accordion>
+
+<Accordion title="The levels of ZXC and other details">
+
+The levels of `ZXC` form three groups:
+
+- Level 1 compresses at 0.7 to 2.4 of the speed of `LZ4`, and level 2 at 0.6 to 0.9 of it, but the data is larger than with `LZ4`: by 7% to 42% with level 1 and by up to 13% with level 2. They are useful only for the decompression speed.
+- Levels 3, 4 and 5 compress better than `LZ4`, typically at a third, a quarter and a seventh of its speed. With `LZ4HC`, the data is 4% to 12% smaller than with level 5, but it is compressed 1.5 to 7 times slower.
+- Levels 6 and 7 add entropy coding. Level 6 compresses better than `LZ4HC`, and level 7 about as well as `ZSTD(1)`, while both decompress 2 to 4 times faster than `ZSTD(1)`. Their compression is the slowest among these codecs: 6 to 50 MB/s per CPU core, which is slower than `LZ4HC` and 20 to 90 times slower than `ZSTD(1)`.
+
+Take into account:
+
+- Decompression is only a part of the work of a query. A query that reads all the columns of `hits` in one thread uses 11% to 18% less CPU time with `ZXC(3)` than with `LZ4`, and the 43 queries of ClickBench take 1% to 5% less time. When all the CPU cores read all the columns at once, the difference shrinks: between 9% less and 3% more CPU time than with `LZ4`.
+- `ZXC` has a fixed cost per compressed block: about 35 bytes, one to three microseconds on compression and about half a microsecond on decompression. It is negligible for the blocks of 64 KiB to 1 MiB that `MergeTree` writes for large parts. For blocks below 16 KiB, `ZXC` has no advantage over `LZ4`, and blocks below 1 KiB are compressed worse and several times slower than with `LZ4`. Such blocks appear in small parts and in the sparse subcolumns of `JSON`.
+- The Bluesky table is the worst case among the five: more than half of it are identifiers and content hashes, and `ZXC(3)` compresses it five to seven times slower than `LZ4`, to the same size. On the hashes, which are a third of the table and are written in base32, `ZXC(3)` is six to nine times slower than `LZ4`.
+- The numbers were obtained with ClickHouse 26.12 and `zxc` 1.0.1 on AWS `m8i`, `m8a`, `m8g` and `r7g` instances, on the blocks of data as `MergeTree` compresses them. They depend on the data, so try the codec on your own tables before switching to it.
+
+</Accordion>
 
 ## Specialized Codecs {#specialized-codecs}
 
@@ -3161,7 +3259,7 @@ INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number
 OPTIMIZE TABLE adaptive FINAL;
 ```
 
-You can observe how it works with the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/mergeTreeCodecBlockCounts) table function. Here `time` grows steadily, so `T64`, which stores only the bits that vary within a block, followed by the default `LZ4` squeezing the regular pattern those bits form, beat the default alone on every block. `user_id` holds hashes that no codec can shrink, so its blocks were stored raw:
+You can observe how it works with the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/mergeTreeCodecBlockCounts) table function. Here `time` grows steadily, so `T64`, which stores only the bits that vary within a block, followed by `LZ4` (the default for a part this small) squeezing the regular pattern those bits form, beat the default alone on every block. `user_id` holds hashes that no codec can shrink, so its blocks were stored raw:
 
 ```sql
 SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase(), 'adaptive');
