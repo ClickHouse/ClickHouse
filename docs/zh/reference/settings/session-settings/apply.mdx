@@ -56,11 +56,15 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 过滤掉本应在 ReplacingMergeTree 或类似引擎中用于去重的行时，可能会导致结果不同。
 
 如果行策略表达式是确定性的，并且仅依赖 ORDER BY 中的非浮点列，出于优化考虑，它仍会
-在 FINAL 之前应用，因为这种过滤不会影响去重结果。浮点列
+在 FINAL 之前应用，因为这种过滤不会影响去重结果。对整个查询只计算一次的值
+(例如 `currentUser()`、`now()` 或 `IN (subquery)` 的集合) 不会妨碍此
+优化；而 `Set` 表的集合可能在查询运行期间发生变化，因此会妨碍此优化。浮点列
 或包含浮点数的列 (例如 `Tuple(Float64, ...)`、`Array(Float64)`、`Nullable(Float64)` 等)
 会被排除在外，因为 `-0.0` 和 `0.0` 在去重时被视为同一个键，而策略条件却能区分二者。
+`GraphiteMergeTree` 会将不同时间的行汇总为一行，因此对它而言只考虑 path 列，并且仅
+当该列是第一个 `ORDER BY` 列时才适用。
 
-可能的值：
+可选值：
 
 * 0 — 行策略在 FINAL 之前应用。
 * 1 — 行策略在 FINAL 之后应用 (默认) 。
@@ -81,9 +85,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 ## apply_string_filters_during_scan {#apply_string_filters_during_scan}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置：将 String 列上的子串搜索条件从 PREWHERE 下推到列扫描中。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置：将 `String` 列上的子串搜索条件从 `PREWHERE` 下推到列扫描中，默认启用。将 `compatibility` 设置为 26.10 之前的版本会禁用该设置。"}]}]} />
 
 将 `String` 列上的子串搜索条件从 `PREWHERE` 下推到列扫描中。
 
@@ -93,13 +97,15 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 可以加快读取速度并降低内存使用量。查询结果不受影响，
 因为包含不匹配值的行必然会被 `PREWHERE` 过滤掉，而此类条件永远不会匹配空字符串。
 
-如果运行时发现该过滤器的选择性不高，则会自适应地将其禁用。
+如果运行时发现该过滤器的选择性不高，或者不匹配的值过短、跳过其数据得不偿失，
+则会自适应地将其禁用。
 
 此外，该设置还允许 `WHERE` 到 `PREWHERE` 优化移动子串搜索条件 (`LIKE`、`position`、`startsWith`、`endsWith`) ，
 即使这些条件用到了查询中的所有列 (通常这样做没有意义，但启用此设置后，扫描本身的开销会降低) 。
 基于同样的原因，与常量字符串的相等比较不会被移动：若它已位于 `PREWHERE` 中，仍会在扫描期间应用。
 
-支持从 `MergeTree` 表以及 `Parquet` 格式读取数据。
+支持从 `MergeTree` 表以及 `Parquet` 格式读取数据。在 `Parquet` 中，该过滤器适用于采用
+`PLAIN`、`DELTA_LENGTH_BYTE_ARRAY`、`DELTA_BYTE_ARRAY` 编码以及字典编码的页。
 
 请注意，为自动决定是否使用并行副本而收集的输入字节数估算值
 (`RuntimeDataflowStatisticsInputBytes`) 基于已读取块在内存中的大小，因此当值被替换为空字符串时，

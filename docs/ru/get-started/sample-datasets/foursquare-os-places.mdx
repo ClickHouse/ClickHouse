@@ -7,18 +7,16 @@ keywords: ['демонстрационный набор данных', 'Foursqua
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Foursquare OS Places содержит более 100 миллионов коммерческих точек интереса (POI), включая магазины, рестораны, парки, игровые площадки и памятники. В этом руководстве вы подключите ClickHouse к каталогу Iceberg Foursquare, изучите набор данных и загрузите его в таблицу, оптимизированную для геопространственных запросов.
 
 Набор данных доступен на [портале Foursquare Places](https://places.foursquare.com/) и бесплатен для использования по лицензии Apache 2.0.
 
 <Note>
-  Foursquare изменил способ доступа к OS Places. В предыдущих версиях этого руководства выполнялись запросы к файлам с фиксированной датой в публичном S3 бакете; теперь доступ предоставляется через портал Foursquare Places и аутентифицированный каталог Iceberg. Подробнее см. [документацию Foursquare по доступу к OS Places](https://docs.foursquare.com/data-products/docs/access-fsq-os-places).
+  Foursquare изменил способ доступа к OS Places. В предыдущих версиях этого руководства выполнялись запросы к date-pinned-файлам в публичном S3 бакете; теперь доступ предоставляется через портал Foursquare Places и аутентифицированный каталог Iceberg. Подробнее см. [документацию Foursquare по доступу к OS Places](https://docs.foursquare.com/data-products/docs/access-fsq-os-places).
 </Note>
 
 <div id="before-you-begin">
-  ## Перед началом работы
+  ## Перед началом работы {#before-you-begin}
 </div>
 
 Перед выполнением запросов из этого руководства вам потребуются:
@@ -27,7 +25,7 @@ Foursquare OS Places содержит более 100 миллионов комм
 * токен доступа, созданный на вкладке **Access Data** набора данных **OS Places**
 
 <div id="connect-to-the-foursquare-catalog">
-  ## Подключение к каталогу Foursquare
+  ## Подключение к каталогу Foursquare {#connect-to-the-foursquare-catalog}
 </div>
 
 Не разглашайте свой токен доступа. Запустите клиент ClickHouse, затем замените
@@ -51,7 +49,7 @@ SETTINGS
 строки выборки, чем показанные в этом руководстве результаты.
 
 <div id="verify-the-connection">
-  ## Проверьте подключение
+  ## Проверьте подключение {#verify-the-connection}
 </div>
 
 Выполните запрос, возвращающий одну строку из Iceberg-таблицы `places_os`:
@@ -95,7 +93,7 @@ bbox:                (NULL,NULL,NULL,NULL)
 ```
 
 <div id="explore-the-data">
-  ## Изучение данных
+  ## Изучение данных {#explore-the-data}
 </div>
 
 Пример строки содержит несколько полей со значением null. Добавьте фильтры, чтобы получить более полную строку:
@@ -182,7 +180,7 @@ DESCRIBE places.`datasets.places_os`;
 ```
 
 <div id="loading-the-data">
-  ## Загрузите данные в ClickHouse
+  ## Загрузите данные в ClickHouse {#loading-the-data}
 </div>
 
 Чтобы сохранить данные, создайте таблицу на сервере `clickhouse-server` или в ClickHouse Cloud.
@@ -356,9 +354,7 @@ WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
 не нужен локальной таблице, и отфильтровывает строки без координат, так как их
 нельзя разместить на карте. Другие допускающие NULL значения источника остаются NULL в локальной таблице.
 
-<div id="data-visualization">
-  ## Визуализируйте данные
-</div>
+## Визуализируйте данные {#data-visualization}
 
 <Note>
   Модель доступа Foursquare изменилась с момента создания этих визуализаций.
@@ -370,10 +366,26 @@ WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
 Во время корпоративного хакатона сооснователь и CTO ClickHouse Алексей Миловидов использовал ClickHouse,
 чтобы создать следующие визуализации на основе набора данных Foursquare.
 
-<Image img="/images/getting-started/example-datasets/visualization_1.webp" size="md" alt="Карта плотности точек интереса в Европе" />
+<div className="ch-image-md">
+  <Frame>
+    ![Карта плотности точек интереса в Европе](/images/getting-started/example-datasets/visualization_1.webp)
+  </Frame>
+</div>
 
-<Image img="/images/getting-started/example-datasets/visualization_2.webp" size="md" alt="Саке-бары в Японии" />
+<div className="ch-image-md">
+  <Frame>
+    ![Саке-бары в Японии](/images/getting-started/example-datasets/visualization_2.webp)
+  </Frame>
+</div>
 
-<Image img="/images/getting-started/example-datasets/visualization_3.webp" size="md" alt="Банкоматы" />
+<div className="ch-image-md">
+  <Frame>
+    ![Банкоматы](/images/getting-started/example-datasets/visualization_3.webp)
+  </Frame>
+</div>
 
-<Image img="/images/getting-started/example-datasets/visualization_4.webp" size="md" alt="Карта Европы с точками интереса, распределёнными по странам" />
+<div className="ch-image-md">
+  <Frame>
+    ![Карта Европы с точками интереса, распределёнными по странам](/images/getting-started/example-datasets/visualization_4.webp)
+  </Frame>
+</div>

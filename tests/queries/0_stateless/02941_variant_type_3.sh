@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tags: long, no-azure-blob-storage
+# Tags: long, no-azure-blob-storage, no-msan
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1 --allow_suspicious_variant_types=1"
+CH_CLIENT="$CLICKHOUSE_CLIENT --allow_suspicious_variant_types=1"
 
 function test5_insert()
 {

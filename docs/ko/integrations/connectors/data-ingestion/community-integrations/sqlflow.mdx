@@ -1,0 +1,528 @@
+---
+sidebarTitle: 'SQLFlow'
+keywords: ['clickhouse', 'sqlflow', 'duckdb', 'kafka', 'streaming', 'stream processing', 'sink', 'data ingestion', 'integrate', 'websocket']
+slug: /integrations/sqlflow
+description: 'SQLFlow를 사용하여 Kafka, WebSocket, 웹훅 데이터를 DuckDB SQL로 변환한 뒤 ClickHouse로 스트리밍합니다'
+title: 'SQLFlow와 ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://turbolytics.io'
+---
+
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<a href="https://github.com/turbolytics/sql-flow" target="_blank">SQLFlow</a>는 오픈 소스(MIT) 스트림 처리 엔진입니다. 스트림(Kafka, WebSocket 또는 웹훅)을 소비하여 각 마이크로 배치에 DuckDB SQL을 실행한 뒤, 그 결과를 ClickHouse 테이블(table)에 삽입합니다. 파이프라인은 YAML 파일 하나로 정의되며, SQLFlow는 단일 바이너리와 단일 Docker 이미지로 제공되므로 별도의 클러스터를 운영할 필요가 없습니다.
+
+이 페이지에서는 ClickHouse 싱크를 다룹니다. ClickHouse Cloud 및 자체 호스팅 ClickHouse에 연결하는 방법, 타입 매핑, NYC 택시 샘플 데이터셋을 사용한 엔드투엔드 예시, 그리고 추정치가 아닌 실제 측정으로 확인한 제한 사항을 설명합니다.
+
+## 사전 요구 사항 {#prerequisites}
+
+* SQLFlow **[v2026.10.08](https://github.com/turbolytics/sql-flow/releases/tag/v2026.10.08)** 이상이 필요합니다. 별도로 명시하지 않는 한, 이 페이지의 모든 결과는 해당 릴리스에서 측정했습니다.
+* ClickHouse Cloud 또는 자체 호스팅 ClickHouse가 필요합니다. 이 페이지의 내용은 자체 호스팅 26.8.1과 Cloud 26.6.1 환경에서 실행했습니다. 이보다 낮은 버전에서의 동작은 확인되지 않았습니다.
+* 예시에서 사용하는 Kafka 소스를 위해 파이프라인에서 접근할 수 있는 Kafka 브로커가 필요합니다. WebSocket 소스와 웹훅 소스에는 브로커가 필요하지 않습니다.
+* `confluent-kafka` 패키지(`pip install confluent-kafka`)가 설치된 Python 3가 필요합니다. 이는 예시에서 샘플 데이터를 Kafka에 발행하는 스크립트를 실행할 때만 사용됩니다. SQLFlow 자체는 Python 없이 동작합니다.
+* 가장 간단한 설치 방법은 Docker를 사용하는 것입니다. `turbolytics/sql-flow`는 `linux/amd64` 및 `linux/arm64`를 지원하는 멀티 아키텍처 이미지로 발행됩니다. SQLFlow를 소스 코드로부터 빌드할 수도 있으며, 이 경우 Go와 C 툴체인이 필요하고 런타임에 `libduckdb`가 설치되어 있어야 합니다.
+
+## 설정 {#setup}
+
+SQLFlow는 단일 DSN으로 연결합니다. 스킴(scheme)에 따라 프로토콜과 TLS 사용 여부가 결정되며, 포트를 생략하면 스킴별 기본 포트가 사용됩니다.
+
+| 스킴                           | 프로토콜 | TLS | 기본 포트 | 용도                                            |
+| ---------------------------- | ---- | --- | ----- | --------------------------------------------- |
+| `clickhouses://`, `https://` | HTTP | 예   | 8443  | ClickHouse Cloud 또는 TLS 종료가 적용된 모든 HTTP 엔드포인트 |
+| `clickhouse://`, `http://`   | HTTP | 아니요 | 8123  | 자체 호스팅 ClickHouse                             |
+| `natives://`                 | 네이티브 | 예   | 9440  | native protocol을 사용하는 ClickHouse Cloud        |
+| `tcp://`, `native://`        | 네이티브 | 아니요 | 9000  | 자체 호스팅, native protocol                       |
+
+대상 테이블은 미리 생성되어 있어야 합니다. SQLFlow는 테이블을 생성하지 않으며 스키마(schemas)를 자동으로 변경하지도 않습니다. SQLFlow는 SQL이 생성하는 컬럼 이름(Column Names)을 기준으로 `INSERT`의 컬럼을 지정하므로, **핸들러 SQL이 출력하는 컬럼은 테이블의 컬럼 이름과 일치해야 합니다**. 컬럼 이름을 바꾸려면 SQL에서 별칭을 사용하십시오.
+
+### ClickHouse Cloud에 연결 {#connect-to-clickhouse-cloud}
+
+<ConnectionDetails />
+
+위 정보를 사용한 DSN은 다음과 같습니다.
+
+```
+clickhouses://default:<password>@<host>.clickhouse.cloud:8443/<database>
+```
+
+이 값은 YAML에 직접 넣지 말고 환경 변수로 전달하십시오. 구성의 `dsn` 필드는 템플릿 형식을 지원합니다:
+
+```yaml
+sink:
+  type: clickhouse
+  clickhouse:
+    dsn: {{ SQLFLOW_CLICKHOUSE_DSN }}
+    table: trips_small
+```
+
+```bash
+export SQLFLOW_CLICKHOUSE_DSN='clickhouses://default:<password>@<host>.clickhouse.cloud:8443/nyc_taxi'
+```
+
+<Warning>
+  Cloud에서는 `clickhouses://`(`s` 포함)를 사용하십시오. `clickhouse://`를 사용하면 8443 포트로 일반 HTTP가 전송되어, 요청을 보내기도 전에 연결이 초기화됩니다. 자세한 내용은 [문제 해결](#troubleshooting)을 참조하십시오.
+</Warning>
+
+### 자체 호스팅 ClickHouse에 연결 {#connect-to-self-hosted-clickhouse}
+
+DSN이 HTTP 인터페이스(기본 포트 8123)를 가리키도록 설정하십시오:
+
+```bash
+export SQLFLOW_CLICKHOUSE_DSN='clickhouse://default:<password>@clickhouse.internal:8123/nyc_taxi'
+```
+
+HTTP 인터페이스 앞단에 TLS를 구성했다면 Cloud와 동일하게 `clickhouses://`를 사용하십시오. native protocol을 사용하려면 `tcp://`(9000) 또는 `natives://`(9440)를 사용하십시오.
+
+SQLFlow를 Docker에서 실행하면 컨테이너 내부의 `localhost`는 사용자의 머신이 아니라 해당 컨테이너 자체를 가리킵니다. SQLFlow와 ClickHouse를 동일한 Docker 네트워크에 연결하고, ClickHouse 컨테이너의 이름을 호스트로 지정하십시오.
+
+## 인증 {#authentication}
+
+사용자 이름과 비밀번호는 DSN에 포함되며, `clickhouses://` 또는 `natives://`를 사용하면 TLS를 통해 전송됩니다. 서버 인증서는 시스템 트러스트 스토어를 기준으로 검증되며, 검증을 건너뛰는 옵션은 제공되지 않습니다.
+
+* **비밀번호의 특수 문자.** DSN은 URL로 파싱되므로 `/`, `#`, `?`는 percent-encoded 형식(`%2F`, `%23`, `%3F`)으로 변환해야 합니다. 인코딩하지 않고 원시 문자 그대로 두면 `invalid port ":p" after host`라는 이해하기 어려운 오류가 발생합니다. `@`와 `:`는 인코딩 여부와 관계없이 올바르게 처리됩니다.
+* **Cloud IP 액세스 목록.** 서비스에서 소스 IP를 제한하는 경우, SQLFlow가 접속하는 주소를 목록에 추가해야 합니다.
+* **지원되지 않음:** 상호 TLS / 클라이언트 인증서와 사용자 정의 CA 번들은 지원되지 않습니다. 사용자 이름과 비밀번호를 사용하십시오.
+
+## 예시: Kafka에서 NYC Taxi 데이터 세트 스트리밍하기 {#example-nyc-taxi}
+
+이 예시에서는 [NYC Taxi 샘플 데이터 세트](/ko/get-started/sample-datasets/nyc-taxi)를 Kafka를 통해 ClickHouse로 수집하며, 이 과정에서 SQLFlow로 데이터를 변환합니다. Cloud와 자체 호스팅 환경 모두에서 동일하게 재현할 수 있으며, DSN만 바꾸면 됩니다.
+
+### 1. 대상 테이블 생성 {#example-create-table}
+
+샘플 데이터셋 페이지에서 정의한 것과 동일한 테이블을 생성합니다:
+
+```sql
+CREATE DATABASE IF NOT EXISTS nyc_taxi;
+
+CREATE TABLE IF NOT EXISTS nyc_taxi.trips_small (
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = MergeTree
+PRIMARY KEY (pickup_datetime, dropoff_datetime);
+```
+
+### 2. Kafka에 데이터 발행하기 {#example-publish}
+
+이 데이터셋은 gzip으로 압축된 TSV 형식으로 제공됩니다. 이 단계에서는 파일 하나(약 100만 행)를 줄바꿈으로 구분된 JSON으로 변환한 후 `nyc-taxi-trips`라는 토픽에 발행합니다.
+
+발행 스크립트에 필요한 의존성을 설치하고 파일을 다운로드하십시오.
+
+```bash
+pip install confluent-kafka
+curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz
+```
+
+토픽을 생성하십시오. 기본 설정의 Apache Kafka 브로커는 처음 메시지를 발행할 때 토픽을 자동으로 생성하지만, 관리형 클러스터나 운영 환경 클러스터에서는 일반적으로 `auto.create.topics.enable=false`로 설정되어 있습니다. 이때 토픽을 미리 생성하지 않으면 ClickHouse에 행이 하나도 도달하기 전에 예시가 실패합니다:
+
+```bash
+kafka-topics.sh --bootstrap-server localhost:9092 \
+  --create --topic nyc-taxi-trips --partitions 1 --replication-factor 1
+```
+
+Confluent image에서는 이 명령의 이름이 `.sh`가 붙지 않은 `kafka-topics`입니다.
+
+발행기(publisher) 코드를 `publish.py`로 저장하십시오. 브로커가 `localhost:9092`에서 실행되고 있지 않다면 `bootstrap.servers`를 변경하십시오.
+
+```python
+import gzip, json
+from confluent_kafka import Producer
+
+COLUMNS = ["trip_id", "pickup_datetime", "dropoff_datetime", "pickup_longitude",
+           "pickup_latitude", "dropoff_longitude", "dropoff_latitude", "passenger_count",
+           "trip_distance", "fare_amount", "extra", "tip_amount", "tolls_amount",
+           "total_amount", "payment_type", "pickup_ntaname", "dropoff_ntaname"]
+INTS = {"trip_id", "passenger_count"}
+FLOATS = {"pickup_longitude", "pickup_latitude", "dropoff_longitude", "dropoff_latitude",
+          "trip_distance", "fare_amount", "extra", "tip_amount", "tolls_amount", "total_amount"}
+
+producer = Producer({"bootstrap.servers": "localhost:9092"})
+
+def send(topic, value):
+    # The producer's queue holds 100,000 messages by default, and this file
+    # has a million rows; poll() drains it as it fills.
+    while True:
+        try:
+            producer.produce(topic, value)
+            return
+        except BufferError:
+            producer.poll(0.5)
+
+with gzip.open("trips_0.gz", "rb") as f:
+    header = f.readline().decode().rstrip("\n").split("\t")
+    index = {name: i for i, name in enumerate(header)}
+    for raw in f:
+        # Split on the raw bytes and decode only the columns being published.
+        # The file carries columns this example does not use that are not
+        # valid UTF-8, and decoding the whole line would have to corrupt them.
+        parts = raw.rstrip(b"\n").split(b"\t")
+        row = {}
+        for col in COLUMNS:
+            value = parts[index[col]].decode()
+            if value == "":
+                row[col] = None
+            elif col in INTS:
+                row[col] = int(float(value))
+            elif col in FLOATS:
+                row[col] = float(value)
+            else:
+                row[col] = value
+        send("nyc-taxi-trips", json.dumps(row))
+producer.flush()
+```
+
+스크립트를 실행하십시오. 100만 개의 행(rows)을 발행하는 데 1분도 걸리지 않습니다.
+
+```bash
+python publish.py
+```
+
+### 3. 파이프라인 작성 {#example-pipeline}
+
+다음 내용을 `taxi.yml`로 저장하십시오. 핸들러 SQL은 JSON 메시지 배치마다 DuckDB에서 실행되며, 형변환으로 생성된 Arrow 타입은 테이블의 ClickHouse 타입에 매핑됩니다([타입 매핑](#type-mapping) 참조).
+
+```yaml
+pipeline:
+  name: nyc-taxi-clickhouse
+  batch_size: 20000
+
+  source:
+    type: kafka
+    kafka:
+      brokers: [{{ SQLFLOW_KAFKA_BROKERS|default('localhost:9092') }}]
+      group_id: nyc-taxi
+      auto_offset_reset: earliest
+      topics:
+        - nyc-taxi-trips
+
+  handler:
+    type: 'handlers.InferredMemBatch'
+    sql: |
+      SELECT
+        CAST(trip_id AS UINTEGER)            AS trip_id,
+        CAST(pickup_datetime AS TIMESTAMP)   AS pickup_datetime,
+        CAST(dropoff_datetime AS TIMESTAMP)  AS dropoff_datetime,
+        pickup_longitude,
+        pickup_latitude,
+        dropoff_longitude,
+        dropoff_latitude,
+        CAST(passenger_count AS UTINYINT)    AS passenger_count,
+        CAST(trip_distance AS FLOAT)         AS trip_distance,
+        CAST(fare_amount AS FLOAT)           AS fare_amount,
+        CAST(extra AS FLOAT)                 AS extra,
+        CAST(tip_amount AS FLOAT)            AS tip_amount,
+        CAST(tolls_amount AS FLOAT)          AS tolls_amount,
+        CAST(total_amount AS FLOAT)          AS total_amount,
+        payment_type,
+        pickup_ntaname,
+        dropoff_ntaname
+      FROM batch
+
+  sink:
+    type: clickhouse
+    clickhouse:
+      dsn: {{ SQLFLOW_CLICKHOUSE_DSN }}
+      table: trips_small
+```
+
+`batch_size`는 DuckDB 배치 하나와 ClickHouse `INSERT` 한 번에 포함되는 메시지 수입니다. 20,000으로 설정한 이유는 [성능](#performance)을 참조하십시오.
+
+### 4. 실행하기 {#example-run}
+
+```bash
+docker run --rm \
+  --network <the broker's docker network> \
+  -v "$(pwd)":/conf \
+  -e SQLFLOW_CLICKHOUSE_DSN \
+  -e SQLFLOW_KAFKA_BROKERS=<broker address as advertised inside that network> \
+  turbolytics/sql-flow:v2026.10.08 \
+  run /conf/taxi.yml --max-msgs=1000000
+```
+
+<Warning>
+  **브로커 주소는 컨테이너에서 접근할 수 있는 주소여야 합니다.** Kafka 클라이언트는 직접 접속한 주소가 아니라 브로커가 *광고(advertise)하는* 주소로 리디렉션됩니다. 브로커가 외부 클라이언트용으로 `127.0.0.1:9092`를 광고하면 컨테이너는 결국 자기 자신에게 접속하게 되므로, 같은 주소가 셸에서는 정상적으로 동작하더라도 모든 가져오기가 `dial tcp 127.0.0.1:9092: connect: connection refused` 오류로 실패합니다. 컨테이너를 브로커와 같은 네트워크에 배치하고 해당 네트워크에서 광고되는 주소를 사용하거나, 컨테이너 대신 호스트에서 바이너리를 직접 실행하십시오:
+
+  ```bash
+  sqlflow run taxi.yml --max-msgs=1000000
+  ```
+</Warning>
+
+`--max-msgs`를 지정하면 해당 개수만큼 메시지를 처리한 후 중지합니다. 계속 실행하려면 이 옵션을 생략하십시오. Kafka 오프셋(offset)은 각 `INSERT`에 대해 ClickHouse의 확인 응답을 받은 후에만 커밋되며, 실제로 처리된 마지막 메시지까지만 커밋됩니다.
+
+### 5. 확인 {#example-verify}
+
+```sql
+SELECT payment_type, count() AS trips, round(avg(total_amount), 2) AS avg_total
+FROM nyc_taxi.trips_small
+GROUP BY payment_type
+ORDER BY trips DESC;
+```
+
+```
+┌─payment_type─┬──trips─┬─avg_total─┐
+│ CSH          │ 617237 │     17.82 │
+│ CRE          │ 377897 │     13.91 │
+│ NOC          │   3573 │     13.89 │
+│ DIS          │   1293 │     12.09 │
+└──────────────┴────────┴───────────┘
+```
+
+동일한 쿼리를 Cloud와 자체 호스팅 환경에서 실행하면 같은 개수가 반환되므로, 어느 경로에서도 데이터가 누락되거나 강제 변환되지 않았음을 어느 정도 확인할 수 있습니다. Cloud에서는 아직 최신 파트를 가져오지 않은 레플리카가 읽기 요청을 처리하면, 실행이 끝난 직후 잠시 동안 실제보다 적게 집계될 수 있습니다. 합계가 예상보다 적게 나오면 쿼리에 `SETTINGS select_sequential_consistency = 1`을 추가하십시오.
+
+### 두 번째 예시: Kafka 없이 WebSocket 소스 사용하기 {#example-websocket}
+
+WebSocket 소스는 브로커가 필요하지 않으며, 이 예시에서는 `Array(String)` 컬럼을 네이티브 방식으로 기록하고 조회하는 과정을 보여 줍니다. 데이터는 퍼블릭 Bluesky firehose에서 소비합니다.
+
+```sql
+CREATE TABLE bluesky_posts (
+    ts    DateTime,
+    did   String,
+    langs Array(String),
+    text  String
+) ENGINE = MergeTree ORDER BY ts;
+```
+
+```yaml
+pipeline:
+  batch_size: 200
+  source:
+    type: websocket
+    websocket:
+      uri: 'wss://jetstream2.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post'
+  handler:
+    type: 'handlers.InferredMemBatch'
+    sql: |
+      SELECT
+        to_timestamp(time_us / 1000000)          AS ts,
+        did,
+        COALESCE(commit.record.langs, [])       AS langs,
+        COALESCE(commit.record.text, '')        AS text
+      FROM batch
+  sink:
+    type: clickhouse
+    clickhouse:
+      dsn: {{ SQLFLOW_CLICKHOUSE_DSN }}
+      table: bluesky_posts
+```
+
+이 파일을 `bluesky.yml`로 저장한 후 실행하세요. 이 예제에서는 `SQLFLOW_KAFKA_BROKERS`를 사용하지 않습니다. 소스는 WebSocket이며, 파이프라인이 읽는 변수는 DSN 하나뿐입니다.
+
+```bash
+docker run --rm \
+  -v "$(pwd)":/conf \
+  -e SQLFLOW_CLICKHOUSE_DSN \
+  turbolytics/sql-flow:v2026.10.08 \
+  run /conf/bluesky.yml --max-msgs=2000
+```
+
+ClickHouse가 같은 머신의 Docker에서 실행 중이라면 Kafka 예시와 마찬가지로 `--network`를 추가하세요. image 대신 바이너리를 사용하는 경우는 다음과 같습니다.
+
+```bash
+sqlflow run bluesky.yml --max-msgs=2000
+```
+
+파이어호스(firehose)는 초당 약 50개의 게시물을 전달하므로 메시지 2,000개를 받는 데 1분이 채 걸리지 않습니다. 그런 다음 다음을 실행합니다.
+
+```sql
+SELECT lang, count() AS posts
+FROM (SELECT arrayJoin(langs) AS lang FROM bluesky_posts)
+GROUP BY lang ORDER BY posts DESC LIMIT 5;
+```
+
+## 타입 매핑 {#type-mapping}
+
+SQLFlow는 DuckDB가 생성한 Arrow 테이블(Arrow Table)을 바탕으로 행을 구성하여 각 배치를 ClickHouse에 전달합니다. 따라서 중요한 것은 각 SQL 컬럼이 최종적으로 어떤 Arrow 타입이 되는지입니다. 이를 제어하려면 핸들러 SQL에서 CAST를 사용하십시오.
+
+아래의 모든 행은 엔진의 타입 매트릭스에서 생성되었으며, 값을 쓰고 서버를 통해 다시 읽어 비교하는 통합 테스트로 검증되었습니다. 매트릭스와 테스트는 [SQLFlow 리포지토리](https://github.com/turbolytics/sql-flow/blob/main/docs/coverage/clickhouse-types.mdx)에서 확인할 수 있습니다. 표에 있는 조합은 검증이 완료된 것입니다. 표에 없는 조합은 거부된 것이 아니라 아직 테스트되지 않은 것입니다. 거부되는 조합은 [지원되지 않음](#unsupported)에 나열되어 있으며, 이 경우 해당 배치는 오류 코드와 함께 실패합니다. 매개변수화된 컬럼 타입은 테스트에서 실제로 사용한 인스턴스로 표기했습니다.
+
+| DuckDB SQL 타입(캐스트 대상)   | 허용되는 ClickHouse 컬럼 타입                                                                                                                                   | 참고                                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `BOOLEAN`               | `Bool`, `UInt8`                                                                                                                                         |                                                                                                                    |
+| `TINYINT`               | `Int8`                                                                                                                                                  |                                                                                                                    |
+| `SMALLINT`              | `Int16`                                                                                                                                                 |                                                                                                                    |
+| `INTEGER`               | `Int32`                                                                                                                                                 |                                                                                                                    |
+| `BIGINT`                | `Int64`                                                                                                                                                 |                                                                                                                    |
+| `UTINYINT`              | `UInt8`                                                                                                                                                 |                                                                                                                    |
+| `USMALLINT`             | `UInt16`                                                                                                                                                |                                                                                                                    |
+| `UINTEGER`              | `UInt32`                                                                                                                                                |                                                                                                                    |
+| `UBIGINT`               | `UInt64`                                                                                                                                                |                                                                                                                    |
+| `REAL`                  | `Float32`                                                                                                                                               |                                                                                                                    |
+| `DOUBLE`                | `Float64`                                                                                                                                               |                                                                                                                    |
+| `VARCHAR`               | `String`, `LowCardinality(String)`, `DateTime64(3)`, `DateTime`, `Enum8('' = 0, 'a' = 1, 'b' = 2)`, `FixedString(36)`, `UUID`, `IPv4`, `Decimal(10, 2)` | 문자열이 이미 대상 타입의 텍스트 형식이어야 합니다. 아래 참고 사항을 확인하십시오. `UUID`와 `JSON`은 `VARCHAR`로 싱크에 전달됩니다                               |
+| `BLOB`, `BIT`, `VARINT` | `String`                                                                                                                                                |                                                                                                                    |
+| `DATE`                  | `Date`, `Date32`                                                                                                                                        |                                                                                                                    |
+| `TIMESTAMP_S`           | `DateTime`                                                                                                                                              |                                                                                                                    |
+| `TIMESTAMP_MS`          | `DateTime64(3)`                                                                                                                                         |                                                                                                                    |
+| `TIMESTAMP`             | `DateTime64(6)`, `DateTime`                                                                                                                             | DateTime은 초 단위까지만 보존하고, DateTime64(6)은 소수점 이하 6자리를 모두 보존합니다                                                        |
+| `TIMESTAMP_NS`          | `DateTime64(9)`                                                                                                                                         |                                                                                                                    |
+| `TIMESTAMPTZ`           | `DateTime64(6)`, `DateTime`                                                                                                                             | 동일한 UTC 시점으로 저장됩니다. 시간대 정보는 삭제되며, 렌더링 시에는 컬럼 자체의 시간대가 적용됩니다. DateTime은 초 단위까지만 보존합니다                               |
+| `BOOLEAN[]`             | `Array(Bool)`                                                                                                                                           |                                                                                                                    |
+| `TINYINT[]`             | `Array(Int8)`                                                                                                                                           |                                                                                                                    |
+| `SMALLINT[]`            | `Array(Int16)`                                                                                                                                          |                                                                                                                    |
+| `INTEGER[]`             | `Array(Int32)`                                                                                                                                          |                                                                                                                    |
+| `BIGINT[]`              | `Array(Int64)`                                                                                                                                          |                                                                                                                    |
+| `UTINYINT[]`            | `Array(UInt8)`                                                                                                                                          |                                                                                                                    |
+| `USMALLINT[]`           | `Array(UInt16)`                                                                                                                                         |                                                                                                                    |
+| `UINTEGER[]`            | `Array(UInt32)`                                                                                                                                         |                                                                                                                    |
+| `UBIGINT[]`             | `Array(UInt64)`                                                                                                                                         |                                                                                                                    |
+| `REAL[]`                | `Array(Float32)`                                                                                                                                        |                                                                                                                    |
+| `DOUBLE[]`              | `Array(Float64)`                                                                                                                                        |                                                                                                                    |
+| `VARCHAR[]`             | `Array(String)`                                                                                                                                         |                                                                                                                    |
+| `BLOB[]`                | `Array(String)`                                                                                                                                         |                                                                                                                    |
+| `DATE[]`                | `Array(Date32)`                                                                                                                                         |                                                                                                                    |
+| `TIMESTAMP_S[]`         | `Array(DateTime)`                                                                                                                                       |                                                                                                                    |
+| `TIMESTAMP_MS[]`        | `Array(DateTime64(3))`                                                                                                                                  |                                                                                                                    |
+| `TIMESTAMP[]`           | `Array(DateTime64(6))`                                                                                                                                  |                                                                                                                    |
+| `TIMESTAMP_NS[]`        | `Array(DateTime64(9))`                                                                                                                                  |                                                                                                                    |
+| `TIMESTAMPTZ[]`         | `Array(DateTime64(6))`                                                                                                                                  | 동일한 UTC 시점으로 저장됩니다. 시간대 정보는 삭제되며, 렌더링 시에는 컬럼 자체의 시간대가 적용됩니다                                                        |
+| `BIGINT[][]`            | `Array(Array(Int64))`                                                                                                                                   |                                                                                                                    |
+| 모든 컬럼의 `NULL`           | 해당 컬럼의 타입                                                                                                                                               | 컬럼 타입의 0 값이 저장됩니다. 생성되는 모든 컬럼이 INSERT에 명시되므로 DEFAULT 표현식은 평가되지 않습니다. 단, `Enum`은 예외입니다. 아래 참고 사항을 확인하십시오 |
+| `LIST` 내부의 `NULL`       | 해당 원소의 타입                                                                                                                                               | 원소 타입의 0 값이 저장됩니다. ClickHouse의 Array(T)는 T가 Nullable이 아니면 NULL을 담을 수 없기 때문입니다                           |
+
+<Note>
+  **`VARCHAR`는 `String`이 아닌 컬럼에 해당 컬럼이 파싱할 수 있는 텍스트로 전달됩니다.** 매트릭스는 모든 대상에 동일한 값 하나를 쓰지 않고, 대상마다 해당 대상의 텍스트 형식에 맞는 값을 사용하여 검증합니다. UUID 문자열이 `DateTime`으로 변환되지는 않습니다. 테스트한 형식은 다음과 같습니다.
+
+  | 대상                                 | 테스트에서 기록한 텍스트                          |
+  | ---------------------------------- | -------------------------------------- |
+  | `String`, `LowCardinality(String)` | `L'Œil 👁 "quoted" back\slash` 및 탭 문자  |
+  | `DateTime64(3)`                    | `2026-09-01 12:00:00.123`              |
+  | `DateTime`                         | `2026-09-01 12:00:00`                  |
+  | `Enum8(...)`                       | `a`와 같은 멤버 이름                          |
+  | `FixedString(36)`, `UUID`          | `0b7e2c9a-4d31-4f6e-9a02-7c1de3f10b45` |
+  | `IPv4`                             | `192.168.1.1`                          |
+  | `Decimal(10, 2)`                   | `1234.56`                              |
+</Note>
+
+<Warning>
+  **`0` 멤버가 없는 non-`Nullable` `Enum`에 `NULL`을 넣으면 읽을 수 없는 행이 기록됩니다.** 싱크는 0 값인 `0`을 저장합니다. `INSERT`는 성공하지만, 이후 해당 컬럼을 조회하는 모든 `SELECT`가 `UNKNOWN_ELEMENT_OF_ENUM` 오류로 실패합니다. `Enum8('a' = 1, 'b' = 2)`로 측정했습니다. `NULL`이 들어올 수 있는 enum 컬럼은 `Enum8('' = 0, 'a' = 1, 'b' = 2)`처럼 `0` 멤버를 두거나 `Nullable(Enum8(...))`로 정의해야 합니다. 그렇지 않으면 핸들러 SQL에서 값에 `coalesce`를 적용하십시오.
+</Warning>
+
+값은 위치가 아니라 **이름을 기준으로** 컬럼에 매핑됩니다.
+
+<Note>
+  **타임스탬프를 문자열로 전달하지 말고 `CAST(ts AS TIMESTAMP)`를 사용하십시오.** SQLFlow가 `DateTime` 컬럼에 `VARCHAR`를 보내면 문자열을 파싱하는 주체는 서버가 아니라 Go 드라이버입니다. 드라이버는 다음 두 가지 형태만 허용합니다.
+
+  * `'2026-09-01 12:00:00'`: UTC로 해석됩니다. 서버 시간대나 컬럼의 시간대와 관계없이 저장되는 시점은 달라지지 않습니다. `Asia/Tokyo`로 실행 중인 서버에서 측정한 결과, 해당 행은 `2026-09-01 12:00:00 UTC`로 저장되었으며 이는 `DateTime('UTC')` 컬럼에 저장된 시점과 같습니다.
+  * `'2026-09-01 12:00:00 +09:00'`: 오프셋이 적용됩니다. 이 행은 `2026-09-01 03:00:00 UTC`로 저장됩니다.
+
+  그 외의 형태는 `T` 구분자나 `Z` 접미사를 사용하는 ISO 8601을 포함하여 모두 배치 실패를 일으킵니다. `'2026-09-01T12:00:00Z'`는 `parsing time "2026-09-01T12:00:00Z" as "2006-01-02 15:04:05"` 오류와 함께 거부됩니다.
+
+  이는 같은 리터럴(Literal)을 `INSERT` SQL 문에 직접 작성할 때와 다릅니다. 이 경우 ClickHouse는 대상 컬럼의 시간대를 기준으로 문자열을 파싱하며, 시간대가 지정되지 않은 `DateTime` 컬럼은 서버 시간대를 사용합니다. 핸들러 SQL에서 캐스팅하면 두 규칙 모두에 영향을 받지 않습니다.
+
+  필드가 `NULL`일 수 있다면 `DateTime` 컬럼에는 `1970-01-01 00:00:00`으로 저장됩니다. `Nullable(DateTime)`을 사용하거나 핸들러 SQL에서 `coalesce(CAST(ts AS TIMESTAMP), now()::TIMESTAMP)`를 사용하십시오.
+</Note>
+
+<Note>
+  `Decimal` 컬럼은 값을 `DOUBLE`이 아닌 **문자열**로 받습니다. `CAST(amount AS VARCHAR)`는 정상 동작하지만, `CAST(amount AS DOUBLE)`은 `converting float64 to Decimal(10, 2) is unsupported` 오류와 함께 배치 실패를 일으킵니다.
+</Note>
+
+### 지원되지 않음 {#unsupported}
+
+다음 유형은 테이블에 기록되지 않고 `user.sink.type_unsupported` 오류와 함께 배치 전체를 실패시킵니다. 핸들러 SQL에서 해당 값을 CAST하거나 평탄화하십시오.
+
+* `DECIMAL(p, s)`, `HUGEINT`, `UHUGEINT`
+* `TIME`, `TIMETZ`
+* `TIME_NS`
+* `INTERVAL`
+* `DECIMAL(p, s)[]`, `HUGEINT[]`
+* `TIME[]`
+* `STRUCT(...)[]`
+* `INTEGER[3]`
+* `STRUCT(...)`
+* `MAP(K, V)`
+* `UNION(...)`
+* `ENUM`
+
+## 알려진 제한 사항 {#known-limits}
+
+* **지원되지 않는 유형:** [Unsupported](#unsupported)에 나열되어 있습니다. 이 중 핸들러에서 주로 사용하게 되는 유형은 `DECIMAL`, `STRUCT`, `MAP`, `TIME`, `INTERVAL`입니다. 이러한 유형이 포함되면 행이 하나도 기록되기 전에 배치가 `user.sink.type_unsupported` 오류로 실패합니다. `STRUCT` 또는 `MAP`은 핸들러 SQL에서 스칼라 컬럼으로 평탄화하거나, `to_json()`으로 직렬화하여 `String` 컬럼에 저장하십시오. `DECIMAL`은 `VARCHAR`로 캐스트하십시오. `Nested` 컬럼은 테스트되지 않았습니다.
+* **테이블 생성 및 스키마 변경(schema evolution)은 지원하지 않습니다.** 테이블이 미리 존재해야 하며, 핸들러가 내보내는 컬럼이 테이블에 없으면 배치가 실패합니다([문제 해결](#troubleshooting) 참조). 핸들러가 생략한 컬럼에는 테이블의 `DEFAULT`가 적용됩니다.
+* **`Nullable`이 아닌 컬럼에 기록된 `NULL`은 해당 유형의 0 값으로 저장되며**, 컬럼의 `DEFAULT` 표현식은 적용되지 않고 오류도 발생하지 않습니다. 해결 방법은 [타입 매핑](#type-mapping)을 참조하십시오. `0` 멤버가 없는 `Enum`에서는 이 값이 유효한 멤버가 아니므로 해당 행을 다시 읽을 수 없습니다. [타입 매핑](#type-mapping)의 경고를 참조하십시오.
+* **최소 한 번(at-least-once) 전달.** Kafka 오프셋(offset)은 `INSERT`가 확인(acknowledge)된 후에 커밋됩니다. 그 사이에 장애가 발생하면 배치가 재적용되므로 중복이 발생할 수 있습니다.
+
+  행을 식별하는 값을 키로 하는 `ReplacingMergeTree`를 사용하면 백그라운드 머지 시점에 이러한 중복이 **결국** 제거됩니다. 머지가 일어나기 전까지는 일반 읽기에서 두 복사본이 모두 조회됩니다. 자체 호스팅 26.8.1에서 측정한 결과, 재적용된 블록은 4개 행으로 읽혔고 `FINAL`을 사용하면 2개 행으로 읽혔습니다. 즉시 정확한 결과가 필요하다면 `FINAL`로 쿼리하십시오.
+
+  insert-time 블록 중복 제거는 블록이 바이트 단위로 동일한 경우에만 두 번째 복사본을 제거합니다. 복제된 테이블(Replicated Table)에서는 기본적으로 수행되며, 모든 Cloud 테이블이 이에 해당합니다. 복제되지 않은 테이블에서는 `non_replicated_deduplication_window`로 활성화할 수 있습니다. 그러나 재적용 시에는 커밋된 오프셋부터 배치를 다시 나누므로, 플러시 인터벌 때문에 짧게 잘린 배치는 같은 경계로 다시 생성되지 않습니다. 따라서 insert-time 중복 제거는 보장이 아닌 부분적인 대책으로 간주하십시오.
+* **일시적인 장애는 재시도됩니다.** ClickHouse 연결이 거부, 재설정 또는 시간 초과되면 제한 시간 내에서 지수 백오프로 재시도하며, 이는 싱크의 `retry` 블록(`max_attempts`, `initial_backoff_ms`, `max_backoff_ms`, `deadline_seconds`)에서 설정합니다. 서버가 이미 수신한 뒤 거부한 `INSERT`는 재시도하지 않습니다. 앞서 언급한 ISO 8601 타임스탬프처럼 드라이버 자체가 인코딩할 수 없는 값도 재시도하지 않으며, 즉시 `user.sink.encode_failed`로 실패하고 프로세스는 코드 10으로 종료됩니다. 또한 싱크는 시작 시 ClickHouse에 한 번 연결을 시도하므로, 호스트에 연결할 수 없으면 메시지를 소비하기 전에 실패합니다.
+* **연결 1개, 배치당 `INSERT` 1회.** 병렬 기록기는 없으며, 처리량은 `batch_size`에 따라 결정됩니다. 아래를 참조하십시오.
+* **스트리밍 집계**(텀블링 윈도우)를 지원합니다. 윈도우는 벽시계 시간이 아니라 엔진이 확정하는 이벤트 시간 워터마크를 기준으로 닫힙니다. 레코드의 이벤트 시간은 소스의 `event_time`이 지정한 페이로드 필드이며, 지정하지 않은 경우 Kafka 타임스탬프가 사용됩니다. 핸들러는 `time_bucket(INTERVAL '<size>', event_time)`으로 버킷을 나눕니다. 따라서 실제 시간보다 뒤처져 실행되는 재적용에서도 각 버킷은 완전한 상태로 한 번만 발행됩니다. 예를 들어 지난 1분 버킷 하나에 속한 이벤트 1,000개를 100개씩 10개 배치로 읽으면 값이 1,000인 행 하나가 발행됩니다. `allowed_lateness_seconds`를 0보다 크게 설정하면 늦게 도착한 행이 해당 버킷의 전체 값을 다시 발행하므로, 대상 테이블은 `ReplacingMergeTree`를 사용하고 `FINAL`로 읽어 키 기준으로 행을 교체해야 합니다. README의 [Tumbling windows](https://github.com/turbolytics/sql-flow#tumbling-windows)를 참조하십시오.
+
+## 성능 {#performance}
+
+위 예시를 기준으로 측정했습니다. 17개 컬럼으로 구성된 100만 개의 행, SQLFlow 프로세스 1개, SQLFlow와 같은 위치에 배치된 Kafka 환경에서 측정했으며, 표의 각 항목마다 2회씩 실행했습니다.
+
+| 대상                                                                       | 초당 행 수          |
+| ------------------------------------------------------------------------ | --------------- |
+| 자체 호스팅 ClickHouse, SQLFlow와 Kafka가 동일한 Docker 네트워크에 위치, v2026.10.08      | 57,900 및 55,900 |
+| ClickHouse Cloud (us-east-2), SQLFlow가 브로커 옆에 위치, 공용 인터넷 경유, v2026.10.08 | 13,700 및 13,300 |
+
+Cloud 수치를 결정하는 것은 SQLFlow가 아니라 머신과 서비스 사이의 네트워크입니다. 같은 시간대에 동일한 연결에서 이전 릴리스인 v2026.09.17.1은 초당 12,500개와 12,900개의 행을 처리했으며, 동일한 파이프라인을 같은 Docker 네트워크에 있는 자체 호스팅 서버를 대상으로 실행하면 4배 빠릅니다. 자체 호스팅 수치에 가까운 결과를 얻으려면 SQLFlow를 서비스와 가까운 곳, 즉 동일 리전, 가능하면 동일 VPC에서 실행하십시오.
+
+가까운 대상에서는 `batch_size`가 성능을 좌우하는 핵심 요소입니다. 다음은 동일한 Docker 네트워크에서 측정한 결과입니다.
+
+| `batch_size` | 초당 행 수 |
+| ------------ | ------ |
+| 5,000        | 34,000 |
+| 20,000       | 56,900 |
+| 50,000       | 57,600 |
+| 100,000      | 56,900 |
+
+배치당 약 20,000개 행 미만에서는 `INSERT`당 오버헤드가 대부분을 차지하고, 그 이상에서는 추가로 얻는 이점이 거의 없는 반면 배치당 메모리 사용량은 늘어납니다. 이 정도 너비의 행에는 20,000이 적절한 기본값이지만, 실제 데이터로 직접 검증하십시오.
+
+## 문제 해결 {#troubleshooting}
+
+### 메시지에 `...:8443?...`가 포함된 `connection reset by peer` 오류가 즉시 발생하는 경우 {#trouble-reset}
+
+DSN이 TLS 포트에 `clickhouse://`(일반 HTTP)를 사용하고 있습니다. 전체 오류 메시지는 `failed to query server hello: … Post "http://…:8443?…": … connection reset by peer`와 같은 형태입니다. 스킴을 `clickhouses://`로 변경하십시오.
+
+### `[HTTP 401] code: 194 … Authentication failed: password is incorrect, or there is no user with such name` {#trouble-auth}
+
+DSN의 자격 증명이 잘못되었거나, 비밀번호에 포함된 특수 문자가 URL 인코딩되지 않은 경우입니다. Cloud에서는 `default` 사용자의 비밀번호가 서비스 생성 시 한 번만 표시되며, 콘솔에서 초기화할 수 있습니다. 비밀번호가 올바르다면 서비스의 IP 액세스 목록을 확인하십시오.
+
+### `column <name> is not present in the table <table>` {#trouble-column}
+
+전체 오류 메시지는 `[system.sink.write_failed] clickhouse sink: prepare batch:`로 시작합니다. 이 오류는 핸들러 SQL이 target table에 없는 컬럼을 생성했음을 의미합니다. SQLFlow는 컬럼명을 기준으로 삽입하므로, SQL에서 해당 컬럼에 테이블 컬럼명과 일치하는 별칭을 지정하거나, `SELECT`에서 해당 컬럼을 삭제하거나, 테이블에 해당 컬럼을 추가하십시오.
+
+### `clickhouse sink: column "<name>": unsupported arrow type <type>` {#trouble-type}
+
+구조체나 맵 값처럼 해당 컬럼의 Arrow 타입에 대응하는 ClickHouse 매핑이 없는 경우입니다. 핸들러 SQL에서 CAST하거나 평탄화하십시오. 자세한 내용은 [타입 매핑](#type-mapping)을 참조하십시오.
+
+### `converting float64 to Decimal(10, 2) is unsupported` {#trouble-decimal}
+
+`DOUBLE` 값이 `Decimal` 컬럼으로 전송되었습니다. 대신 문자열로 CAST하십시오: `CAST(amount AS VARCHAR) AS amount`. 이렇게 하면 드라이버가 십진수 텍스트를 floating-point 반올림 없이 정확하게 파싱합니다.
+
+### `parsing time "…" as "2006-01-02 15:04:05"` {#trouble-timestamp}
+
+`VARCHAR` 타임스탬프가 드라이버에서 허용하지 않는 형태로 `DateTime` 컬럼에 전달되었습니다. 드라이버는 `'2006-01-02 15:04:05'` 형태와 이 형태의 끝에 오프셋(offset)이 붙은 값만 허용하며, 그 외의 형태는 모두 거부합니다. `T` 구분자나 `Z` 접미사가 포함된 ISO 8601 형식도 실패합니다. 핸들러 SQL에서 `CAST(ts AS TIMESTAMP)`로 변환하거나 문자열 형식을 변경하십시오. 자세한 내용은 [타입 매핑](#type-mapping)을 참조하십시오.
+
+이 오류의 코드는 `user.sink.encode_failed`이며, 프로세스는 종료 코드 10으로 종료됩니다. 해당 값은 몇 번을 시도해도 실패하므로 재시도하지 않습니다.
+
+### 파이프라인은 실행되지만 행이 나타나지 않는 경우 {#trouble-no-rows}
+
+일괄 처리 설정을 확인하십시오. 배치는 `batch_size`개의 메시지가 도착하거나, 부분 배치가 대기 중인 상태에서 `flush_interval_seconds`가 경과하면 실행되어 삽입됩니다. 두 조건 중 먼저 충족되는 쪽이 적용됩니다. `flush_interval_seconds`의 기본값은 `30`이므로, 메시지 유입량이 적은 토픽에서는 부분 배치가 최대 30초까지 대기할 수 있습니다. 메시지가 드문 토픽에서 더 빠르게 삽입하려면 `flush_interval_seconds`(초 단위의 정수 값 지정 가능)나 `batch_size`를 낮추십시오. `--max-msgs`를 사용하면 마지막 부분 배치는 종료 시점에 삽입됩니다.
+
+## 추가 자료 {#further-reading}
+
+* <a href="https://github.com/turbolytics/sql-flow" target="_blank">GitHub의 SQLFlow</a>: 구성 참고 자료, 전체 소스 및 싱크 목록, 오류 처리 정책, 윈도잉(windowing).
+* <a href="https://turbolytics.io/docs/sqlflow" target="_blank">SQLFlow 문서</a>: <a href="https://turbolytics.io/docs/sqlflow/tutorials/clickhouse-sink" target="_blank">더 자세한 ClickHouse 단계별 가이드</a>를 포함한 튜토리얼.

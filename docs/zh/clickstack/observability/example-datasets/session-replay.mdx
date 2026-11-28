@@ -1,0 +1,223 @@
+---
+slug: /clickstack/observability/example-datasets/session-replay
+title: '会话回放演示'
+description: '交互式演示应用，展示如何对 Web 应用进行插桩，以便在 ClickHouse Observability 中实现会话回放'
+doc_type: 'guide'
+keywords: ['clickstack', 'session replay', 'browser sdk', 'demo', 'observability', 'instrumentation']
+sidebarTitle: '会话回放演示'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<Note>
+  以下插桩示例使用 `@clickhouse/clickstack-browser`。演示代码仓库目前仍内置旧版浏览器 SDK，其 [SDK 迁移](https://github.com/ClickHouse/clickstack-session-replay-demo/pull/2) 尚待完成。在代码仓库更新之前，“克隆并运行”工作流仍将使用该内置 SDK。
+</Note>
+
+<Info>
+  **TL;DR**
+
+  本指南介绍如何使用浏览器 SDK，结合全托管或自管理的 ClickHouse Observability，对 Web 应用程序进行插桩以实现会话回放。与其他加载预生成数据的示例数据集不同，本演示提供一个交互式应用程序，您可以通过自己的交互操作生成会话数据。
+
+  所需时间：10-15 分钟
+</Info>
+
+## 概览 {#overview}
+
+[会话回放演示应用](https://github.com/ClickHouse/clickstack-session-replay-demo)是一个使用原生 JavaScript 构建的文档浏览器。它展示了会话回放插桩可以有多么简洁——只需一个 script 标签和一次初始化调用，即可自动捕获用户交互。
+
+该代码仓库包含两个分支：
+
+* **`main`** — 已完成全部插桩，开箱即用
+* **`pre-instrumented`** — 未插桩的干净版本，代码注释中标明了需要添加插桩的位置
+
+本指南首先使用 `main` 分支实际体验会话回放的效果，然后逐步讲解插桩代码，以便您将相同的模式应用到自己的应用中。
+
+如需了解会话回放的背景知识及其在 ClickStack 中的作用，请参阅[会话回放](/zh/clickstack/observability/features/session-replay)功能页面。
+
+## 前置条件 {#prerequisites}
+
+* 已安装并运行 Docker，且可使用 Docker Compose
+* 端口 3000 未被占用，可供演示应用使用
+* 已有一个全托管或自管理的 ClickHouse Observability 服务
+* 浏览器可通过网络访问下文所配置的遥测数据端点
+
+## 运行演示 {#running-the-demo}
+
+<Steps>
+  <Step title="克隆代码仓库" id="clone-repository">
+    ```shell
+    git clone https://github.com/ClickHouse/clickstack-session-replay-demo
+    cd clickstack-session-replay-demo
+    ```
+  </Step>
+
+  <Step title="配置连接" id="configure-connection">
+    选择您的部署模式：
+
+    <Tabs>
+      <Tab title="全托管">
+        <BetaBadge label="Beta 版产品" />
+
+        您需要已有一个[全托管服务](/zh/clickstack/observability/getting-started)。摄取采集器由 ClickHouse 提供。
+
+        在您的 ClickHouse Observability 服务中，打开 **团队设置 → 数据 → Managed Telemetry**，然后复制 **OTLP HTTP 端点** 和 **API key**。
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![Managed Telemetry 页面，显示已遮盖的 OTLP HTTP 端点和 API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+          </Frame>
+        </div>
+
+        将 `CLICKSTACK_UI_URL` 设置为托管服务的 UI URL。如需直接打开回放，请从 **Client Sessions** 复制浏览器地址栏中的 URL。将下方的占位符替换为您的连接详情，然后在终端中运行以下命令：
+
+        ```shell
+        export CLICKSTACK_OTEL_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+        export CLICKSTACK_API_KEY='Bearer YOUR_API_KEY'
+        export CLICKSTACK_UI_URL='YOUR_OBSERVABILITY_UI_URL'
+        ```
+
+        请保留 `https://` 前缀，并省略 `/v1/traces` 等信号路径。对于全托管摄取，请按上例所示保留 `Bearer ` 前缀。
+
+        `CLICKSTACK_UI_URL` 用于控制演示中的 **Open Observability** 链接，与遥测数据摄取端点无关。
+
+        服务器会将遥测数据端点和 API key 传递给浏览器 SDK。由于摄取密钥在浏览器中可见，请使用测试服务运行此演示。
+      </Tab>
+
+      <Tab title="自管理">
+        您需要已有一个[自管理服务](/zh/clickstack/self-configured/getting-started/managed)，以及一个已连接到该服务并正在运行的 ClickStack OpenTelemetry 采集器。有关连接说明，请参阅[使用 OpenTelemetry 摄取](/zh/clickstack/observability/ingesting-data/opentelemetry#installing-otel-collector-managed-self-configured)；如需启动采集器，请参阅[部署指南](/zh/clickstack/self-configured/deployment/managed#start-a-collector-existing)。
+
+        采集器的 OTLP HTTP 端点必须可从浏览器访问，且 CORS 须允许 `http://localhost:3000`。UI 必须支持在 Client Sessions 中使用新版 SDK 的 `session.id` 属性；请参阅 [SDK 兼容性要求](https://github.com/ClickHouse/clickstack-browser#clickstack-versions)。
+
+        将 `CLICKSTACK_OTEL_ENDPOINT` 设置为采集器的 OTLP HTTP 端点，不要包含 `/v1/traces` 等信号路径。将 `CLICKSTACK_UI_URL` 设置为从自管理服务 UI 中复制的 **Client Sessions** URL。
+
+        ```shell
+        export CLICKSTACK_OTEL_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+        export CLICKSTACK_API_KEY='YOUR_COLLECTOR_TOKEN'
+        export CLICKSTACK_UI_URL='YOUR_CLIENT_SESSIONS_URL'
+        ```
+
+        请使用采集器接收器上已配置的身份验证令牌。如果 ClickStack 采集器使用 `OTLP_AUTH_TOKEN` 进行保护，请直接使用该值，无需添加 `Bearer` 前缀。如果接收器无需身份验证，请将 `CLICKSTACK_API_KEY` 设置为空字符串。请勿在此处使用 ClickHouse 数据库密码。
+
+        摄取令牌会传递给浏览器 SDK，因此在浏览器中可见。采集器的 ClickHouse 数据库凭证则仅保留在采集器上。
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="启动演示应用" id="start-demo-app">
+    在代码仓库目录下，于之前导出连接变量的同一终端中运行以下命令：
+
+    ```shell
+    docker compose --profile demo up --build --no-deps demo-app
+    ```
+
+    `--no-deps` 仅启动演示应用，并使用您已配置的遥测数据端点，不会启动代码仓库中自带的本地 ClickStack 服务。
+
+    在浏览器中打开 [http://localhost:3000](http://localhost:3000)，并与应用进行交互：搜索主题、按类别筛选、查看代码示例以及收藏条目。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![会话回放演示应用](/images/clickstack/session-replay/demo-app.webp)
+      </Frame>
+    </div>
+
+    浏览器 SDK 会捕获该会话，并将其发送到您已配置的遥测数据端点。
+  </Step>
+
+  <Step title="查看您的会话回放" id="view-session-replay">
+    在演示中选择 **Open Observability**，然后在您的服务中打开 **Client Sessions**，并选择覆盖测试时段的时间范围，例如 **Last 15 minutes**。找到与您使用演示的时间相对应的匿名会话。SDK 会以服务名称 `clickhouse-session-replay-demo` 记录该会话。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![在 ClickHouse Observability 侧边栏中选中 Client Sessions，列表中显示一条已记录的会话](/images/clickstack/session-replay/observability-client-sessions.png)
+      </Frame>
+    </div>
+
+    打开您的会话并选择 **Play**，即可回放已记录的交互操作。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Observability 中 Documentation Explorer 的会话回放](/images/clickstack/session-replay/observability-session-replay.png)
+      </Frame>
+    </div>
+
+    可在 **Highlighted** 和 **All Events** 模式之间切换，调整时间线上显示的详细程度。
+  </Step>
+</Steps>
+
+## 插桩 {#instrumentation}
+
+该演示应用表明，启用会话回放所需的代码非常少，只需在应用中添加两处内容即可。以下示例使用了全新的 ClickStack 浏览器 SDK：
+
+**1. 引入 SDK (`app/public/index.html`) ：**
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js" integrity="sha384-NW4JhbuY4Thx4fMuqFwKvifcPn7ad9dJ7DU/MTxhkoHeadG27i4F38Yo1Gz6y0WA" crossorigin="anonymous"></script>
+```
+
+**2. 初始化浏览器 SDK (`app/public/js/app.js`) ：**
+
+```javascript
+window.ClickStack.init({
+  endpoint: window.CLICKSTACK_CONFIG.endpoint,
+  apiKey: window.CLICKSTACK_CONFIG.apiKey,
+  serviceName: 'clickhouse-session-replay-demo',
+  console: 'debug',
+});
+```
+
+`app/server.js` 根据 `CLICKSTACK_OTEL_ENDPOINT`、`CLICKSTACK_API_KEY` 和 `CLICKSTACK_UI_URL` 环境变量提供 `window.CLICKSTACK_CONFIG`。SDK 使用其中的端点和 API key，演示链接则使用 UI URL。SDK 可捕获会话回放、控制台日志、网络请求和错误，且无需修改应用程序的业务逻辑。
+
+默认情况下，文本和输入值会被脱敏。如需更改脱敏设置，请先参阅[浏览器 SDK 隐私控制](/zh/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy)。
+
+### 动手试一试 {#try-it-yourself}
+
+如需从头为应用插桩，请先按 `Ctrl+C` 停止正在运行的演示，然后切换到 `pre-instrumented` 分支：
+
+```shell
+git checkout pre-instrumented
+```
+
+此分支包含同一个应用程序，只是未启用浏览器 SDK。`app/public/index.html` 和 `app/public/js/app.js` 中的代码注释标明了上述两段代码片段应添加的位置。保留之前已配置的连接变量，然后重新构建并启动应用：
+
+```shell
+docker compose --profile demo up --build --no-deps demo-app
+```
+
+在浏览器中重新加载演示应用，并在其中进行一些操作，以生成新的会话。
+
+## 故障排查 {#troubleshooting}
+
+### 会话未显示 {#sessions-not-appearing}
+
+1. 检查浏览器控制台中是否有错误
+2. 确认演示应用正在运行：`docker compose ps demo-app`
+3. 确认已在用于启动应用的终端中设置 `CLICKSTACK_OTEL_ENDPOINT` 和 `CLICKSTACK_API_KEY`。如果修改了这些变量，请重新运行启动命令，并重新加载浏览器选项卡。
+4. 对于自管理部署，请检查采集器的导出错误、CORS 配置以及上文所述的 SDK 兼容性要求
+5. 在 Client Sessions 视图中调整时间范围 (可尝试 **Last 15 minutes**)
+6. 强制刷新浏览器：`Cmd+Shift+R` (Mac) 或 `Ctrl+Shift+R` (Windows/Linux)
+
+### 401 未授权错误 {#401-errors}
+
+API key 设置不正确。请确认您已：
+
+1. 在终端中使用与您的部署模式对应的值导出了 `CLICKSTACK_API_KEY`
+2. 在导出该变量的**同一终端**中启动了演示应用
+3. 全托管模式下，使用的是 **团队设置 → 数据 → Managed Telemetry** 中的摄取 API key，并带有 `Bearer ` 前缀；自管理模式下，使用的是采集器接收器的 token，且不带该前缀。
+
+## 清理 {#cleanup}
+
+关闭演示用的浏览器选项卡以停止采集浏览器遥测数据，然后在运行该应用的终端中按 `Ctrl+C`。如需在另一个终端中停止该应用，请在代码仓库目录下运行以下命令：
+
+```bash
+docker compose stop demo-app
+```
+
+此操作会停止本地应用，但已摄取到您服务中的遥测数据仍会保留。
+
+## 了解更多 {#learn-more}
+
+* [会话回放](/zh/clickstack/observability/features/session-replay) — 功能概览、SDK 选项和隐私控制
+* [Browser SDK 参考文档](/zh/clickstack/observability/ingesting-data/sdks/browser) — 完整的 SDK 选项和高级配置
+* [全托管入门指南](/zh/clickstack/observability/getting-started) — 连接您的第一个数据源
+* [自管理入门指南](/zh/clickstack/self-configured/getting-started/managed) — 连接采集器并摄取第一批数据
+* [所有示例数据集](/zh/clickstack/observability/example-datasets) — 其他示例数据集和指南

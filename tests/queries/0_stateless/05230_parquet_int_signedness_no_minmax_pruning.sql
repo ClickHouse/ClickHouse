@@ -1,4 +1,5 @@
 -- Tags: no-fasttest
+-- Random settings limits: input_format_parquet_filter_push_down=(1, 1); input_format_parquet_memory_high_watermark=(67108864, None); input_format_parquet_page_filter_push_down=(1, 1); output_format_parquet_data_page_size=(1048576, None); output_format_parquet_max_dictionary_size=(1048576, None); output_format_parquet_write_page_index=(1, 1)
 -- no-fasttest: the Parquet format is not built in the fast-test image.
 
 -- A Parquet integer column's min/max statistics are ordered as the stored type. Read with a type hint

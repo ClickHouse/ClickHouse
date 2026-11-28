@@ -970,7 +970,7 @@ age('unit', startdate, enddate[, timezone])
 
 * `startdate` — 減算される最初の時刻値 (減数) 。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 * `enddate` — そこから減算する 2 番目の時刻値 (被減数) 。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `timezone` — 任意。タイムゾーン名です。指定した場合は、startdate と enddate の両方に適用されます。指定しない場合は、startdate と enddate のタイムゾーンが使用されます。両者が同一でない場合、結果は未定です。[`String`](/ja/reference/data-types/string)
+* `timezone` — 任意。タイムゾーン名です。指定した場合は、startdate と enddate の両方に適用されます。指定しない場合は、startdate と enddate のタイムゾーンが使用されます。両者が同一でない場合、結果は未規定です。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -1225,7 +1225,7 @@ unit に `week` を指定した場合、`dateDiff` は週の開始日を月曜�
 dateDiff(unit, startdate, enddate[, timezone])
 ```
 
-**別名**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `date_diff`, `timestamp_diff`
+**別名**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `timestamp_diff`, `date_diff`
 
 **引数**
 
@@ -1247,7 +1247,7 @@ dateDiff(unit, startdate, enddate[, timezone])
 
 * `startdate` — 減算される最初の時刻値 (減数) 。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 * `enddate` — 減算元となる 2 番目の時刻値 (被減数) 。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `timezone` — 任意。タイムゾーン名。指定した場合は、`startdate` と `enddate` の両方に適用されます。指定しない場合は、`startdate` と `enddate` のタイムゾーンが使用されます。両者が同一でない場合、結果は未定義です。[`String`](/ja/reference/data-types/string)
+* `timezone` — 任意。タイムゾーン名。指定した場合は、`startdate` と `enddate` の両方に適用されます。指定しない場合は、`startdate` と `enddate` のタイムゾーンが使用されます。両者が同一でない場合、結果は未規定です。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -1407,11 +1407,11 @@ SELECT now(), dateTrunc('hour', now(), 'Asia/Istanbul');
 この関数の逆の操作を行うのは [`parseDateTime`](/ja/reference/functions/regular-functions/type-conversion-functions#parseDateTime) です。
 
 置換フィールドを使用すると、結果の文字列のパターンを定義できます。
-以下の表の Example カラムは、`2018-01-02 22:33:44` をフォーマットした結果を示しています。
+以下の表の 例 カラムは、`2018-01-02 22:33:44` をフォーマットした結果を示しています。
 
 **置換フィールド:**
 
-| Placeholder | Description                           | Example    |
+| プレースホルダー | 説明                           | 例    |
 | ----------- | ------------------------------------- | ---------- |
 | %a          | 省略形の曜日名 (Mon-Sun)                     | Mon        |
 | %b          | 省略形の月名 (Jan-Dec)                      | Jan        |
@@ -1528,7 +1528,7 @@ LIMIT 10
 
 ## formatDateTimeInJodaSyntax {#formatDateTimeInJodaSyntax}
 
-導入バージョン: v20.1.0
+導入バージョン: v23.1.0
 
 `formatDateTime`に似ていますが、MySQL形式ではなくJoda形式で日時をフォーマットする点が異なります。[Joda Timeのドキュメント](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html)を参照してください。
 
@@ -1570,6 +1570,8 @@ LIMIT 10
 formatDateTimeInJodaSyntax(datetime, format[, timezone])
 ```
 
+**別名**: `FORMAT_DATETIME`
+
 **引数**
 
 * `datetime` — フォーマットする日付または日時。[`DateTime`](/ja/reference/data-types/datetime) または [`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime64`](/ja/reference/data-types/datetime64)
@@ -1582,7 +1584,7 @@ formatDateTimeInJodaSyntax(datetime, format[, timezone])
 
 **例**
 
-**Joda構文を使用して datetime をフォーマットする**
+**Joda構文を使用して 日時 をフォーマットする**
 
 ```sql title=Query
 SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')
@@ -2158,7 +2160,7 @@ SELECT monthName(date_value)
 now([timezone])
 ```
 
-**別名**: `current_timestamp`, `localtimestamp`
+**別名**: `localtimestamp`, `current_timestamp`
 
 **引数**
 
@@ -3307,7 +3309,7 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 timezone()
 ```
 
-**別名**: `timeZone`
+**別名**: `current_timezone`, `timeZone`
 
 **引数**
 
@@ -3420,7 +3422,7 @@ timezoneOffset(Time) AS Offset_in_seconds,
 toDayOfMonth(datetime)
 ```
 
-**別名**: `DAYOFMONTH`, `DAY`
+**別名**: `DAYOFMONTH`, `DAY`, `DAY_OF_MONTH`
 
 **引数**
 
@@ -3466,7 +3468,7 @@ SELECT toDayOfMonth(toDateTime('2023-04-21 10:20:30'))
 toDayOfWeek(datetime[, mode[, timezone]])
 ```
 
-**別名**: `DAYOFWEEK`
+**別名**: `DAYOFWEEK`, `DAY_OF_WEEK`
 
 **引数**
 
@@ -3483,7 +3485,7 @@ toDayOfWeek(datetime[, mode[, timezone]])
 **使用例**
 
 ```sql title=Query
--- 以下の日付は2023年4月21日（金曜日）です:
+-- The following date is April 21, 2023, which was a Friday:
 SELECT
     toDayOfWeek(toDateTime('2023-04-21')),
     toDayOfWeek(toDateTime('2023-04-21'), 1)
@@ -3507,7 +3509,7 @@ SELECT
 toDayOfYear(datetime)
 ```
 
-**別名**: `DAYOFYEAR`
+**別名**: `DAYOFYEAR`, `DAY_OF_YEAR`
 
 **引数**
 
@@ -3662,6 +3664,8 @@ ISO 8601 では、週番号の範囲は 1 から 53 です。
 toISOWeek(datetime[, timezone])
 ```
 
+**別名**: `WEEK_OF_YEAR`
+
 **引数**
 
 * `datetime` — ISO 週番号を取得する対象の日付または日時。[`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime64`](/ja/reference/data-types/datetime64)
@@ -3709,6 +3713,8 @@ SELECT toDate('2025-12-29') AS date, toISOWeek(date) AS isoWeek, toYear(date) AS
 toISOYear(datetime)
 ```
 
+**別名**: `YEAR_OF_WEEK`
+
 **引数**
 
 * `datetime` — 日付または日時の値。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
@@ -3749,7 +3755,7 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 toLastDayOfMonth(value)
 ```
 
-**別名**: `LAST_DAY`
+**別名**: `LAST_DAY_OF_MONTH`, `LAST_DAY`
 
 **引数**
 
@@ -4718,10 +4724,12 @@ SELECT toStartOfISOYear(toDateTime('2023-04-21 10:20:30'))
 
 たとえば、
 
-* `toStartOfInterval(t, INTERVAL 1 YEAR)` は `toStartOfYear(t)` と同じ結果を返します。
-* `toStartOfInterval(t, INTERVAL 1 MONTH)` は `toStartOfMonth(t)` と同じ結果を返します。
-* `toStartOfInterval(t, INTERVAL 1 DAY)` は `toStartOfDay(t)` と同じ結果を返します。
-* `toStartOfInterval(t, INTERVAL 15 MINUTE)` は `toStartOfFifteenMinutes(t)` と同じ結果を返します。
+* `toStartOfInterval(t, INTERVAL 1 YEAR)` は `toStartOfYear(t)` と同じ境界に丸めます。
+* `toStartOfInterval(t, INTERVAL 1 MONTH)` は `toStartOfMonth(t)` と同じ境界に丸めます。
+* `toStartOfInterval(t, INTERVAL 1 DAY)` は `toStartOfDay(t)` と同じ境界に丸めます。
+* `toStartOfInterval(t, INTERVAL 15 MINUTE)` は `toStartOfFifteenMinutes(t)` と同じ境界に丸めます。
+
+結果の型は、これらの関数の結果の型と異なる場合があります (後述)。
 
 計算は、特定の時点を基準に行われます。
 
@@ -4745,6 +4753,13 @@ unit に `WEEK` を指定した場合、`toStartOfInterval` は週の開始日�
 
 2 番目のオーバーロードは、TimescaleDB の `time_bucket()` 関数、または PostgreSQL の `date_bin()` 関数をエミュレートします。
 
+結果は `value` 引数と同じ型になります。`Date` には `Date`、`Date32` には `Date32`、`DateTime` には `DateTime`、`DateTime64` には小数点以下の桁数が同じ `DateTime64` が返されます。
+唯一の例外は、`DateTime64` 引数の小数点以下の桁数より細かい秒未満の単位を指定した場合です (たとえば、`DateTime64(0)` に対する `INTERVAL 1500 MILLISECOND`)。この場合、結果はバケット境界を表現できるよう、単位に応じた小数点以下の桁数になります。
+`Date` または `DateTime` の範囲を下回る結果 (たとえば、`1970-01-01` を週単位で切り捨てた場合) は、その型の最小値に制限されます。
+設定 [`to_start_of_interval_preserves_argument_type`](/ja/reference/settings/session-settings#to_start_of_interval_preserves_argument_type) を無効化した場合、結果の型は 26.11 より前のバージョンと同様に、インターバルの単位によって決まります。
+`WEEK` 以上の単位では `Date`、`DAY` から `SECOND` までの単位では `DateTime`、秒未満の単位では単位に応じた小数点以下の桁数の `DateTime64` になります。
+これは `origin` を指定しないオーバーロードに適用されます。`origin` を指定するオーバーロードでは、この場合も引数の型が維持されます。ただし、`DateTime64` 引数に秒未満の単位を組み合わせた場合、結果は単位に応じた小数点以下の桁数になります。
+
 **構文**
 
 ```sql
@@ -4756,12 +4771,12 @@ toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 
 **引数**
 
-* `value` — 切り下げる日付または日時の値。[`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
+* `value` — 切り下げる日付または日時の値。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 * `x` — インターバルの長さを表す数値。- `unit` — インターバルの単位: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND. - `time_zone` — 任意。文字列で指定するタイムゾーン名。- `origin` — 任意。計算の始点 (2 番目のオーバーロードのみ)。
 
 **戻り値**
 
-入力値を含むインターバルの開始時点を返します。[`DateTime`](/ja/reference/data-types/datetime)
+入力値を含むインターバルの開始時点を、入力値と同じ型で返します。[`Date`](/ja/reference/data-types/date) または [`Date32`](/ja/reference/data-types/date32) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 
 **例**
 
@@ -4773,7 +4788,7 @@ SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
 
 ```response title=Response
 ┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
-│                                                               2023-01-01 │
+│                                                      2023-01-01 00:00:00 │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -5366,6 +5381,7 @@ int32samoa: 1546300800
 導入バージョン: v23.8.0
 
 日付または日時の値を、あるタイムゾーンから UTC タイムゾーンのタイムスタンプに変換します。この関数は主に、Apache Spark や同様のフレームワークとの互換性を確保するために用意されています。
+夏時間の切り替えによって 2 回現れるローカル時刻や存在しないローカル時刻は、`toDateTime` と同様に変換されます。
 
 **構文**
 
@@ -5748,7 +5764,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 today()
 ```
 
-**別名**: `current_date`, `curdate`
+**別名**: `curdate`, `current_date`
 
 **引数**
 

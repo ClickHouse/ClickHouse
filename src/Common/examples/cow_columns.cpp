@@ -11,6 +11,7 @@ class IColumn : public COW<IColumn>
 private:
     friend class COW<IColumn>;
     virtual MutablePtr clone() const = 0;
+    virtual size_t sizeOfObject() const = 0;
 
 public:
     IColumn() = default;
@@ -43,7 +44,6 @@ void print(const ColumnPtr & x, const ColPtr & y)
 {
     std::cerr << "values:    " << x->get()        << ", " << y->get()       << "\n";
     std::cerr << "refcounts: " << x->use_count()  << ", " << y->use_count() << "\n";
-    std::cerr << "addresses: " << x.get()         << ", " << y.get()        << "\n";
 }
 
 }

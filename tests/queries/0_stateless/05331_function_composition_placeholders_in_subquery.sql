@@ -1,7 +1,6 @@
 -- Placeholders are not looked for inside subqueries: an identifier there is resolved as usual,
 -- like the argument of an explicit lambda, which a subquery cannot reference either.
 
-SET enable_analyzer = 1;
 SET allow_correlated_subqueries = 1;
 
 -- A subquery alone is not a placeholder expression, so `_1` in it is an ordinary identifier.

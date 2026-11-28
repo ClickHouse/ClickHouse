@@ -231,17 +231,17 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<EncodeToBinaryRepresentation>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Mirrors the set of types the legacy `getReturnTypeImpl` accepted on
         /// master. Date / DateTime / DateTime64 are not handled explicitly in
@@ -257,12 +257,12 @@ public:
                " OR (AggregateFunction) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IColumn * column = arguments[0].column.get();
         ColumnPtr res_column;
@@ -634,25 +634,25 @@ public:
     static constexpr size_t word_size = Impl::word_size;
     static FunctionPtr create(ContextPtr) { return std::make_shared<DecodeFromBinaryRepresentation>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
     /// Not injective: decoding is deliberately tolerant. It is case-insensitive, and an incomplete leading
     /// group is padded, so `unhex('0a')`, `unhex('0A')` and `unhex('a')` all decode to the same byte.
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override { return "(StringOrFixedString) -> String"; }
+    [[nodiscard]] String getSignatureString() const override { return "(StringOrFixedString) -> String"; }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & column = arguments[0].column;
 
@@ -671,7 +671,7 @@ public:
             size_t max_out_len = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const size_t len = in_offsets[i] - in_offsets[i - 1];
+                const size_t len = in_offsets[i] - in_offsets[static_cast<ssize_t>(i) - 1];
                 max_out_len += (len + word_size - 1) / word_size;
             }
             out_vec.resize(max_out_len);

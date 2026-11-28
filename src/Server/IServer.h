@@ -22,16 +22,16 @@ class IServer
 {
 public:
     /// Returns the application's configuration.
-    virtual Poco::Util::LayeredConfiguration & config() const = 0;
+    [[nodiscard]] virtual Poco::Util::LayeredConfiguration & config() const = 0;
 
     /// Returns the application's logger.
-    virtual Poco::Logger & logger() const = 0;
+    [[nodiscard]] virtual Poco::Logger & logger() const = 0;
 
     /// Returns global application's context.
-    virtual ContextMutablePtr context() const = 0;
+    [[nodiscard]] virtual ContextMutablePtr context() const = 0;
 
     /// Returns true if shutdown signaled.
-    virtual bool isCancelled() const = 0;
+    [[nodiscard]] virtual bool isCancelled() const = 0;
 
     virtual ~IServer() = default;
 };

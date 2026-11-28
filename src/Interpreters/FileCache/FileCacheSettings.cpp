@@ -20,7 +20,7 @@ namespace fs = std::filesystem;
 
 /// Keys that belong to the disk configuration layer (IDisk), not to the cache layer.
 /// They must be skipped when loading cache settings to avoid UNKNOWN_SETTING errors.
-static const std::set<std::string> non_cache_keys = {"type", "disk", "name", "data_background_cleanup", "thread_pool_size", "skip_access_check"};
+[[clang::no_destroy]] static const std::set<std::string> non_cache_keys = {"type", "disk", "name", "data_background_cleanup", "thread_pool_size", "skip_access_check"};
 
 namespace DB
 {
@@ -47,6 +47,8 @@ namespace ErrorCodes
     DECLARE(UInt64, background_download_max_file_segment_size, FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE_WITH_BACKGROUND_DOWLOAD, "Alignment-rounded prefetch threshold for an already-started segment, not a cap on total segment size. Below this size, background download fills up to the value rounded up to boundary_alignment. Once downloaded_size reaches it, background download continues up to downloaded_size rounded up to boundary_alignment", 0) \
     DECLARE(NonZeroUInt64, load_metadata_threads, FILECACHE_DEFAULT_LOAD_METADATA_THREADS, "Maximum number of threads used to load cache metadata at server startup", 0) \
     DECLARE(Bool, load_metadata_asynchronously, false, "Enables asynchronous loading of metadata on server startup", 0) \
+    DECLARE(NonZeroUInt64, background_cleanup_threads, FILECACHE_DEFAULT_BACKGROUND_CLEANUP_THREADS, "Maximum number of background cleanup threads. The cleanup removes each key which has no file segments left: the key from the cache metadata, its directory on disk together with any files which the cache does not know, and then the key prefix directory and the user directory if they became empty. It also removes the empty key directories found at server startup. One thread always runs, the others are started when cleanup tasks pile up and stop when none is left", 0) \
+    DECLARE(NonZeroUInt64, background_cleanup_elements_per_thread, FILECACHE_DEFAULT_BACKGROUND_CLEANUP_ELEMENTS_PER_THREAD, "One more background cleanup thread is started when the number of keys waiting for cleanup reaches this value multiplied by the number of running cleanup threads", 0) \
     DECLARE(Double, keep_free_space_size_ratio, FILECACHE_DEFAULT_FREE_SPACE_SIZE_RATIO, "A ratio of free space which cache would try to uphold in the background", 0) \
     DECLARE(Double, keep_free_space_elements_ratio, FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO, "A ratio of free elements which cache would try to uphold in the background", 0) \
     DECLARE(UInt64, keep_free_space_remove_batch, FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH, "A remove batch size of cache elements made by background thread which upholds free space/elements ratio", 0) \
@@ -54,7 +56,7 @@ namespace ErrorCodes
     DECLARE(NonZeroUInt64, invalidated_entries_cleanup_interval_ms, 10000, "Idle interval in milliseconds of the background task which purges invalidated (lazily-removed) priority queue entries", 0) \
     DECLARE(NonZeroUInt64, invalidated_entries_cleanup_threshold, 1000, "Number of accumulated invalidated priority queue entries which triggers their background removal", 0) \
     DECLARE(NonZeroUInt64, invalidated_entries_cleanup_remove_batch, FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH, "Maximum number of invalidated priority queue entries removed under a single write lock per background iteration", 0) \
-    DECLARE(Bool, enable_filesystem_query_cache_limit, false, "Enable limiting maximum size of cache which can be written within a query", 0) \
+    DECLARE(Bool, enable_filesystem_query_cache_limit, false, "Deprecated setting, ignored. The per-query cache write limit was removed", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, cache_hits_threshold, 0, "Deprecated setting", 0) \
     DECLARE(Bool, enable_bypass_cache_with_threshold, false, "Undocumented. Not recommended for use", 0) \
     DECLARE(UInt64, bypass_cache_threshold, FILECACHE_BYPASS_THRESHOLD, "Undocumented. Not recommended for use", 0) \
@@ -310,6 +312,38 @@ void FileCacheSettings::validate()
             settings[FileCacheSetting::max_size_ratio_to_total_space].value,
             settings[FileCacheSetting::path].value,
             settings[FileCacheSetting::max_size].value, total_space);
+    }
+
+    /// With an SLRU policy, a file segment must fit whole into each SLRU queue
+    /// (of both the data and the system part with `use_split_cache`).
+    const auto policy = settings[FileCacheSetting::cache_policy].value;
+    if (policy == FileCachePolicy::SLRU || policy == FileCachePolicy::SLRU_OVERCOMMIT)
+    {
+        /// The same rounding as in `SplitFileCachePriority` and `SLRUFileCachePriority`.
+        auto get_ratio = [](size_t total, double ratio)
+        {
+            return static_cast<size_t>(std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0)));
+        };
+
+        const size_t max_size = settings[FileCacheSetting::max_size];
+        const double ratio = settings[FileCacheSetting::slru_size_ratio];
+        auto get_smallest_queue_size = [&](size_t size) { return std::min(get_ratio(size, ratio), get_ratio(size, 1 - ratio)); };
+
+        size_t smallest_queue_size = get_smallest_queue_size(max_size);
+        if (settings[FileCacheSetting::use_split_cache])
+        {
+            const double system_ratio = settings[FileCacheSetting::split_cache_ratio];
+            smallest_queue_size = std::min(
+                get_smallest_queue_size(get_ratio(max_size, 1 - system_ratio)),
+                get_smallest_queue_size(get_ratio(max_size, system_ratio)));
+        }
+
+        if (settings[FileCacheSetting::max_file_segment_size] > smallest_queue_size)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`max_file_segment_size` ({}) must not exceed the size of each SLRU queue ({} with `max_size` {}): "
+                "a file segment must fit whole into the protected and the probationary queue",
+                settings[FileCacheSetting::max_file_segment_size].value, smallest_queue_size, max_size);
     }
 }
 

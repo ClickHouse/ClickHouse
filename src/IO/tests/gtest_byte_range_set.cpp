@@ -2,6 +2,9 @@
 
 #include <IO/ByteRangeSet.h>
 
+#include <algorithm>
+#include <random>
+
 using namespace DB;
 
 TEST(ByteRangeSet, AddMergesOverlapAndAdjacency)
@@ -132,4 +135,65 @@ TEST(ByteRangeSet, RemoveTrimsSplitsAndClears)
 
     s.remove({0, 100});   /// remove everything
     EXPECT_EQ(s.totalBytes(), 0u);
+}
+
+TEST(ByteRangeSet, IntervalEndAheadFindsTheIntervalOrTheNextOne)
+{
+    ByteRangeSet s;
+    s.add({10, 10});   /// [10, 20)
+    s.add({50, 10});   /// [50, 60)
+
+    EXPECT_EQ(s.intervalEndAhead(10, 5), 20u);   /// in an interval
+    EXPECT_EQ(s.intervalEndAhead(19, 5), 20u);
+    EXPECT_EQ(s.intervalEndAhead(45, 5), 60u);   /// 5 bytes before [50, 60)
+    EXPECT_EQ(s.intervalEndAhead(44, 5), std::nullopt);   /// 6 bytes before it
+    EXPECT_EQ(s.intervalEndAhead(20, 0), std::nullopt);   /// just past [10, 20)
+    EXPECT_EQ(s.intervalEndAhead(60, 100), std::nullopt);   /// past the last interval
+    EXPECT_EQ(ByteRangeSet{}.intervalEndAhead(0, 100), std::nullopt);
+}
+
+TEST(ByteRangeSet, MergeGapsUpToJoinsNarrowGaps)
+{
+    ByteRangeSet s;
+    s.add({10, 10});   /// [10, 20)
+    s.add({25, 5});    /// [25, 30), 5 bytes after
+    s.add({50, 10});   /// [50, 60), 20 bytes after
+    const ByteRangeSet runs = s.mergeGapsUpTo(5);
+    ASSERT_EQ(runs.ranges().size(), 2u);
+    EXPECT_EQ(runs.ranges()[0].offset, 10u);
+    EXPECT_EQ(runs.ranges()[0].end(), 30u);
+    EXPECT_EQ(runs.ranges()[1].offset, 50u);
+    EXPECT_EQ(runs.ranges()[1].end(), 60u);
+    EXPECT_TRUE(ByteRangeSet{}.mergeGapsUpTo(100).empty());
+}
+
+TEST(ByteRangeSet, RunEndOnMergedSetMatchesWalk)
+{
+    /// `ReaderExecutor` finds a run end as `mergeGapsUpTo(gap).intervalEndAhead(offset, gap)`. The walk over the original
+    /// intervals: start at the interval that holds `offset` or starts at most `gap` after it, then join every next
+    /// interval at most `gap` away.
+    auto walk = [](const ByteRangeSet & set, size_t offset, size_t gap) -> std::optional<size_t>
+    {
+        const auto & ranges = set.ranges();
+        auto it = std::partition_point(ranges.begin(), ranges.end(), [&](const ByteRange & r) { return r.end() <= offset; });
+        if (it == ranges.end() || (it->offset > offset && it->offset - offset > gap))
+            return std::nullopt;
+        size_t end = it->end();
+        for (++it; it != ranges.end() && it->offset - end <= gap; ++it)
+            end = it->end();
+        return end;
+    };
+
+    std::mt19937 rng(42); /// NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
+    for (size_t round = 0; round < 200; ++round)
+    {
+        ByteRangeSet set;
+        for (size_t i = 0; i < 20; ++i)
+            set.add({rng() % 1000, 1 + rng() % 30});
+        const size_t max_gap = rng() % 40;
+        const ByteRangeSet merged = set.mergeGapsUpTo(max_gap);
+        for (size_t offset = 0; offset < 1100; ++offset)
+            ASSERT_EQ(merged.intervalEndAhead(offset, max_gap), walk(set, offset, max_gap))
+                << "round " << round << ", offset " << offset << ", max_gap " << max_gap << ", set " << set.describe();
+    }
 }

@@ -34,7 +34,6 @@ INSERT INTO t_ord1 SELECT upper(_part) FROM t_src;
 CREATE TABLE t_nat (y UInt64) ENGINE = MergeTree PARTITION BY y ORDER BY y;
 INSERT INTO t_nat VALUES (1);
 
-SET enable_analyzer = 1;
 SET analyzer_compatibility_join_using_top_level_identifier = 1;
 
 -- The two fixtures must differ, otherwise every assertion below is degenerate.

@@ -1,0 +1,5 @@
+--- collection disabled: 0
+--- collection enabled: 1
+1	bob-agent
+bob sees the connection: 1
+alice sees the connection: 0

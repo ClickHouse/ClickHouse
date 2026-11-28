@@ -68,11 +68,11 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     statistics.reset(new_statistics);
 
     if (!configuration.username.empty() && !configuration.password.empty())
-        natsOptions_SetUserInfo(options.get(), configuration.username.c_str(), configuration.password.c_str());
+        natsOptions_SetUserInfo(options.get(), configuration.username.c_str(), String(configuration.password).c_str());
     if (!configuration.token.empty())
-        natsOptions_SetToken(options.get(), configuration.token.c_str());
+        natsOptions_SetToken(options.get(), String(configuration.token).c_str());
     if (!configuration.credentials.empty())
-        natsOptions_SetUserCredentialsFromMemory(options.get(), configuration.credentials.c_str());
+        natsOptions_SetUserCredentialsFromMemory(options.get(), String(configuration.credentials).c_str());
     else if (!configuration.credential_file.empty())
         natsOptions_SetUserCredentialsFromFiles(options.get(), configuration.credential_file.c_str(), nullptr);
 
@@ -230,7 +230,7 @@ void NATSConnection::connectImpl(const Lock &)
     }
     connection.reset(new_conection);
 
-    LOG_DEBUG(log, "New connection {} is connected to {}", static_cast<void*>(this), connectionInfoForLog());
+    LOG_DEBUG(log, "New connection is connected to {}", connectionInfoForLog());
 }
 
 void NATSConnection::disconnectImpl(const Lock & connection_lock)
@@ -241,25 +241,24 @@ void NATSConnection::disconnectImpl(const Lock & connection_lock)
     natsConnection_Close(connection.get());
 }
 
-void NATSConnection::reconnectedCallback(natsConnection *, void * connection)
+void NATSConnection::reconnectedCallback(natsConnection *, void *)
 {
-    LOG_DEBUG(callback_logger, "Connection {} got reconnected to NATS server", static_cast<void*>(connection));
+    LOG_DEBUG(callback_logger, "Connection got reconnected to NATS server");
 }
 
-void NATSConnection::disconnectedCallback(natsConnection *, void * connection)
+void NATSConnection::disconnectedCallback(natsConnection *, void *)
 {
-    LOG_DEBUG(callback_logger, "Connection {} got disconnected from NATS server", connection);
+    LOG_DEBUG(callback_logger, "Connection got disconnected from NATS server");
 }
 
-void NATSConnection::errorCallback(natsConnection * nats_connection, natsSubscription *, natsStatus status, void * connection)
+void NATSConnection::errorCallback(natsConnection * nats_connection, natsSubscription *, natsStatus status, void *)
 {
     const char * last_error = nullptr;
     natsConnection_GetLastError(nats_connection, &last_error);
 
     LOG_ERROR(
         callback_logger,
-        "Connection {} got an asynchronous error from the NATS client. Nats status text: {}. Last error message: {}",
-        connection,
+        "Connection got an asynchronous error from the NATS client. Nats status text: {}. Last error message: {}",
         natsStatus_GetText(status),
         last_error && *last_error ? last_error : "none");
 }

@@ -24,27 +24,27 @@ public:
     {
     public:
         virtual ~Argument() = default;
-        virtual std::unique_ptr<AbstractFunction> getFunction() const = 0;
-        virtual bool isIdentifier() const = 0;
+        [[nodiscard]] virtual std::unique_ptr<AbstractFunction> getFunction() const = 0;
+        [[nodiscard]] virtual bool isIdentifier() const = 0;
         virtual bool tryGetString(String * res, bool allow_identifier) const = 0;
         /// The exact literal text of any scalar literal (`1`, `true`, `1.5`), with strings quoted.
         /// Lets a reconstructor keep non-string values like `use_environment_credentials = 1` visible.
         virtual bool tryGetLiteralText(String * res) const = 0;
         /// A `SETTINGS` clause among the arguments (`remote(..., SETTINGS ...)`): not a positional
         /// argument, and it hides its own secret values when formatted.
-        virtual bool isSettings() const { return false; }
+        [[nodiscard]] virtual bool isSettings() const { return false; }
     };
     class Arguments
     {
     public:
         virtual ~Arguments() = default;
-        virtual size_t size() const = 0;
-        virtual std::unique_ptr<Argument> at(size_t n) const = 0;
+        [[nodiscard]] virtual size_t size() const = 0;
+        [[nodiscard]] virtual std::unique_ptr<Argument> at(size_t n) const = 0;
     };
 
     virtual ~AbstractFunction() = default;
-    virtual String name() const = 0;
-    bool hasArguments() const { return !!arguments; }
+    [[nodiscard]] virtual String name() const = 0;
+    [[nodiscard]] bool hasArguments() const { return !!arguments; }
 
     std::unique_ptr<Arguments> arguments;
 };
@@ -78,8 +78,10 @@ struct SecretArgumentsResult
     /// after `format`), which a single contiguous span cannot represent without hiding the
     /// non-secret arguments in between.
     std::map<size_t, bool> masked_arguments;
+    /// Whether every value of the parameter list `f(...)(...)` is hidden.
+    bool hide_parameters = false;
 
-    bool hasSecrets() const
+    [[nodiscard]] bool hasSecrets() const
     {
         return count != 0 || !nested_maps.empty() || !replaced_arguments.empty() || !masked_arguments.empty();
     }
@@ -91,27 +93,27 @@ class ISecretArgumentsFinder
 {
 public:
     virtual ~ISecretArgumentsFinder() = default;
-    virtual SecretArgumentsResult find(ASTFunction::Kind kind, const AbstractFunction & function) const = 0;
+    [[nodiscard]] virtual SecretArgumentsResult find(ASTFunction::Kind kind, const AbstractFunction & function) const = 0;
     /// The SQL text hiding the value of a secret engine setting, or `nullopt` when there is nothing to hide.
-    virtual std::optional<String> renderSecretSetting(const String & name, const Field & value) const = 0;
+    [[nodiscard]] virtual std::optional<String> renderSecretSetting(const String & name, const Field & value) const = 0;
     /// Masks the formatted value of a key of a dictionary `SOURCE(...)` in place. Returns whether it is secret.
     virtual bool maskDictionarySourceValue(const String & key, String & value) const = 0;
 };
 
-/// Finds no secrets. For the programs that don't register the engines (the client, the WebAssembly parser):
+/// Finds no secrets. For the programs that don't register the engines (the WebAssembly parser):
 /// they show the secrets of engine arguments.
 class NoSecretArgumentsFinder final : public ISecretArgumentsFinder
 {
 public:
     static const NoSecretArgumentsFinder & instance();
 
-    SecretArgumentsResult find(ASTFunction::Kind, const AbstractFunction &) const override { return {}; }
-    std::optional<String> renderSecretSetting(const String &, const Field &) const override { return {}; }
+    [[nodiscard]] SecretArgumentsResult find(ASTFunction::Kind, const AbstractFunction &) const override { return {}; }
+    [[nodiscard]] std::optional<String> renderSecretSetting(const String &, const Field &) const override { return {}; }
     bool maskDictionarySourceValue(const String &, String &) const override { return false; }
 };
 
 /// Installed once at startup by every program that formats an AST hiding its secrets: `SecretArgumentsRegistry`
-/// where the engines are registered (`server`, `local`, `format`), `NoSecretArgumentsFinder` elsewhere.
+/// where the engines are registered (`server`, `local`, `client`, `format`), `NoSecretArgumentsFinder` elsewhere.
 void setSecretArgumentsFinder(const ISecretArgumentsFinder * finder);
 /// Throws `LOGICAL_ERROR` if no finder is installed, so a program that forgets to install one can't show secrets.
 const ISecretArgumentsFinder & getSecretArgumentsFinder();

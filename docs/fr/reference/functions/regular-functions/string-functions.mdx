@@ -195,7 +195,7 @@ SELECT ascii('234')
 
 ## base32Decode {#base32Decode}
 
-Introduit dans : v25.6.0
+Introduit dans : v25.6.0
 
 Décode une chaîne [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6) (RFC 4648).
 Si la chaîne n’est pas encodée en Base32 correctement, une exception est levée.
@@ -205,6 +205,8 @@ Si la chaîne n’est pas encodée en Base32 correctement, une exception est lev
 ```sql
 base32Decode(encoded)
 ```
+
+**Alias** : `from_base32`
 
 **Arguments**
 
@@ -230,7 +232,7 @@ SELECT base32Decode('IVXGG33EMVSA====');
 
 ## base32Encode {#base32Encode}
 
-Introduit dans : v25.6.0
+Introduit dans : v25.6.0
 
 Encode une chaîne à l’aide de [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6).
 
@@ -239,6 +241,8 @@ Encode une chaîne à l’aide de [Base32](https://datatracker.ietf.org/doc/html
 ```sql
 base32Encode(plaintext)
 ```
+
+**Alias** : `to_base32`
 
 **Arguments**
 
@@ -412,7 +416,7 @@ SELECT base64Encode('clickhouse')
 
 ## base64URLDecode {#base64URLDecode}
 
-Introduit dans : v24.6.0
+Introduit dans : v24.6.0
 
 Décode une chaîne à partir d’une représentation [Base64](https://en.wikipedia.org/wiki/Base64) en utilisant un alphabet compatible avec les URL, conformément à la RFC 4648.
 L’alphabet standard (`+` et `/`) est également accepté lors du décodage.
@@ -424,6 +428,8 @@ Lève une exception en cas d’erreur.
 ```sql
 base64URLDecode(encoded)
 ```
+
+**Alias** : `from_base64url`
 
 **Arguments**
 
@@ -449,7 +455,7 @@ SELECT base64URLDecode('aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ')
 
 ## base64URLEncode {#base64URLEncode}
 
-Introduit dans : v18.16.0
+Introduit dans : v18.16.0
 
 Encode une chaîne à l’aide de la représentation [Base64](https://datatracker.ietf.org/doc/html/rfc4648#section-4) (RFC 4648) en utilisant un alphabet compatible avec les URL.
 
@@ -458,6 +464,8 @@ Encode une chaîne à l’aide de la représentation [Base64](https://datatracke
 ```sql
 base64URLEncode(plaintext)
 ```
+
+**Alias** : `to_base64url`
 
 **Arguments**
 
@@ -1086,9 +1094,85 @@ SELECT editDistance('clickhouse', 'mouse')
 └─────────────────────────────────────┘
 ```
 
+## editDistanceRatio {#editDistanceRatio}
+
+Introduit dans : v26.11.0
+
+Calcule la similarité normalisée fondée sur la [distance d’édition](https://en.wikipedia.org/wiki/Edit_distance) entre deux chaînes d’octets :
+`1 - editDistance(s1, s2) / max(length(s1), length(s2))`.
+Renvoie une valeur comprise entre `0` (la distance d’édition est égale à la longueur de la chaîne la plus longue, comme pour `'ab'` et `'ba'`) et `1` (chaînes identiques). Deux chaînes vides sont considérées comme identiques.
+
+**Syntaxe**
+
+```sql
+editDistanceRatio(s1, s2)
+```
+
+**Alias** : `levenshteinRatio`
+
+**Arguments**
+
+* `s1` — Première chaîne d’entrée. [`String`](/fr/reference/data-types/string)
+* `s2` — Seconde chaîne d’entrée. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie la similarité entre les deux chaînes, fondée sur la distance d’édition normalisée. [`Float64`](/fr/reference/data-types/float)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT editDistanceRatio('kitten', 'sitting')
+```
+
+```response title=Response
+┌─editDistanceRatio('kitten', 'sitting')─┐
+│                     0.5714285714285714 │
+└────────────────────────────────────────┘
+```
+
+## editDistanceRatioUTF8 {#editDistanceRatioUTF8}
+
+Introduit dans : v26.11.0
+
+Comme [`editDistanceRatio`](#editDistanceRatio), mais pour les chaînes de caractères encodées en UTF8 : la distance d’édition et les longueurs sont mesurées en points de code.
+
+**Syntaxe**
+
+```sql
+editDistanceRatioUTF8(s1, s2)
+```
+
+**Alias** : `levenshteinRatioUTF8`
+
+**Arguments**
+
+* `s1` — Première chaîne d’entrée UTF8. [`String`](/fr/reference/data-types/string)
+* `s2` — Seconde chaîne d’entrée UTF8. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie la similarité entre les deux chaînes UTF8, calculée à partir de la distance d’édition normalisée. [`Float64`](/fr/reference/data-types/float)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT editDistanceRatioUTF8('我是谁', '我是我') AS ratio
+```
+
+```response title=Response
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
+```
+
 ## editDistanceUTF8 {#editDistanceUTF8}
 
-Disponible depuis : v24.6.0
+Introduit dans : v24.6.0
 
 Calcule la [distance d’édition](https://en.wikipedia.org/wiki/Edit_distance) entre deux chaînes UTF8.
 
@@ -1098,7 +1182,7 @@ Calcule la [distance d’édition](https://en.wikipedia.org/wiki/Edit_distance) 
 editDistanceUTF8(s1, s2)
 ```
 
-**Alias** : `levenshteinDistanceUTF8`
+**Alias** : `levenshteinDistanceUTF8`, `levenshtein_distance`
 
 **Arguments**
 
@@ -1161,7 +1245,7 @@ SELECT
 
 ## endsWith {#endsWith}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Indique si une chaîne se termine par le suffixe fourni.
 
@@ -1170,6 +1254,8 @@ Indique si une chaîne se termine par le suffixe fourni.
 ```sql
 endsWith(s, suffix)
 ```
+
+**Alias** : `ends_with`
 
 **Arguments**
 
@@ -1305,19 +1391,19 @@ SELECT endsWithUTF8('данных', 'ых');
 
 ## extractTextFromHTML {#extractTextFromHTML}
 
-Introduit dans : v21.3.0
+Introduit dans : v21.3.0
 
 Extrait le contenu texte de documents HTML ou XHTML.
 
-Cette fonction supprime les balises HTML, les commentaires ainsi que les éléments script/style, pour ne conserver que le contenu texte. Elle prend en charge :
+Cette fonction supprime les balises HTML, les commentaires ainsi que les éléments script/style, pour ne conserver que le contenu texte. Elle prend en charge :
 
 * La suppression de toutes les balises HTML/XML
-* La suppression des commentaires (`{/* */}`)
+* La suppression des commentaires (`<!-- -->`)
 * La suppression des éléments script et style avec leur contenu
 * Le traitement des sections CDATA (copiées telles quelles)
-* La gestion correcte des espaces et leur normalisation
+* La gestion correcte des caractères d’espacement et leur normalisation
 
-Remarque : les entités HTML ne sont pas décodées et doivent être traitées avec une fonction distincte si nécessaire.
+Remarque : les entités HTML ne sont pas décodées et doivent être traitées avec une fonction distincte si nécessaire.
 
 **Syntaxe**
 
@@ -1331,7 +1417,7 @@ extractTextFromHTML(html)
 
 **Valeur renvoyée**
 
-Renvoie le contenu textuel extrait avec des espaces blancs normalisés. [`String`](/fr/reference/data-types/string)
+Renvoie le contenu textuel extrait avec des caractères d’espacement normalisés. [`String`](/fr/reference/data-types/string)
 
 **Exemples**
 
@@ -2682,7 +2768,7 @@ SELECT soundex('aksel')
 
 ## space {#space}
 
-Introduite dans : v23.5.0
+Introduite dans : v23.5.0
 
 Concatène un espace (` `) avec lui-même autant de fois que spécifié.
 
@@ -2874,7 +2960,7 @@ SELECT sparseGramsUTF8('алиса', 3)
 
 ## startsWith {#startsWith}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Vérifie si une chaîne commence par la chaîne indiquée.
 
@@ -2883,6 +2969,8 @@ Vérifie si une chaîne commence par la chaîne indiquée.
 ```sql
 startsWith(s, prefix)
 ```
+
+**Alias** : `starts_with`
 
 **Arguments**
 
@@ -3152,6 +3240,92 @@ SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ┌─jaccard_index─┐
 │          0.75 │
 └───────────────┘
+```
+
+## stringSimilarityRatio {#stringSimilarityRatio}
+
+Introduit dans : v26.11.0
+
+Calcule la similarité indel normalisée entre deux chaînes d’octets, c’est-à-dire la même valeur que `Levenshtein.ratio` en Python :
+`2 * LCS / (length(s1) + length(s2))`, où `LCS` est la longueur de la [plus longue sous-séquence commune](https://en.wikipedia.org/wiki/Longest_common_subsequence).
+De manière équivalente : `1 - (insertions + deletions) / (length(s1) + length(s2))`.
+Renvoie une valeur comprise entre `0` (aucun élément en commun) et `1` (chaînes identiques). Deux chaînes vides sont considérées comme égales.
+
+**Syntaxe**
+
+```sql
+stringSimilarityRatio(s1, s2)
+```
+
+**Arguments**
+
+* `s1` — Première chaîne d’entrée. [`String`](/fr/reference/data-types/string)
+* `s2` — Deuxième chaîne d’entrée. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie la similarité indel normalisée entre les deux chaînes de caractères. [`Float64`](/fr/reference/data-types/float)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT stringSimilarityRatio('kitten', 'sitting')
+```
+
+```response title=Response
+┌─stringSimilarityRatio('kitten', 'sitting')─┐
+│                         0.6153846153846154 │
+└────────────────────────────────────────────┘
+```
+
+**Correspondance approximative de noms**
+
+```sql title=Query
+SELECT name FROM (SELECT arrayJoin(['Equinix', 'Equinix Inc.', 'Digital Realty']) AS name) WHERE stringSimilarityRatio(lower(name), 'equinix inc') > 0.7
+```
+
+```response title=Response
+┌─name─────────┐
+│ Equinix      │
+│ Equinix Inc. │
+└──────────────┘
+```
+
+## stringSimilarityRatioUTF8 {#stringSimilarityRatioUTF8}
+
+Introduit dans : v26.11.0
+
+Comme [`stringSimilarityRatio`](#stringSimilarityRatio), mais pour les chaînes de caractères encodées en UTF8 : les longueurs sont mesurées en points de code.
+
+**Syntaxe**
+
+```sql
+stringSimilarityRatioUTF8(s1, s2)
+```
+
+**Arguments**
+
+* `s1` — Première chaîne d’entrée UTF8. [`String`](/fr/reference/data-types/string)
+* `s2` — Seconde chaîne d’entrée UTF8. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie la similarité indel normalisée entre les deux chaînes de caractères UTF8. [`Float64`](/fr/reference/data-types/float)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT stringSimilarityRatioUTF8('我是谁', '我是我') AS ratio
+```
+
+```response title=Response
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
 ```
 
 ## substring {#substring}

@@ -2,7 +2,6 @@
 -- the filter renames it, and the expression above read it through an input with no column in the header. Removing
 -- unused columns rejected that input with a logical error. Found by the AST fuzzer.
 
-SET enable_analyzer = 1;
 SET query_plan_merge_expressions = 1;
 SET query_plan_split_filter = 1;
 SET query_plan_remove_unused_columns = 1;

@@ -1,14 +1,8 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionStepRange.h>
 
-#include <Common/Exception.h>
 #include <Core/DecimalFunctions.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
-
-
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
-}
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 
 
 namespace DB::PrometheusQueryToSQL
@@ -20,14 +14,7 @@ SQLQueryPiece fromFunctionStepRange(
     const auto & function_name = function_node->function_name;
     chassert(isFunctionStepRange(function_name));
 
-    if (!arguments.empty())
-    {
-        throw Exception(
-            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-            "Function '{}' expects no arguments, but was called with {} arguments",
-            function_name,
-            arguments.size());
-    }
+    checkNumberOfArguments(function_node, arguments, 0);
 
     const auto & node_range = context.node_range_getter.get(function_node);
     if (node_range.empty())

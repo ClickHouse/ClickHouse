@@ -2,7 +2,6 @@
 -- A value that is not in the Enum has no name, hence no key subcolumn, and must not be
 -- rewritten to one: it reads as the default value, like a key that is missing from the map.
 
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS t_map_enum_numeric;
@@ -12,7 +11,9 @@ CREATE TABLE t_map_enum_numeric
     id UInt64,
     m Map(Enum8('a' = 1, 'b' = 2, 'c' = 3), Int64)
 )
-ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree ORDER BY id
+-- The key subcolumn rewrite applies only to bucketed Maps.
+SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 
 INSERT INTO t_map_enum_numeric VALUES (1, map('a', 10, 'c', 30)), (2, map('b', 20));
 

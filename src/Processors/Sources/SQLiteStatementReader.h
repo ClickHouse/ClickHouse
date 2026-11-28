@@ -73,11 +73,11 @@ private:
         bool requires_exact_storage_class = false;
     };
 
-    ColumnReadInfo createColumnReadInfoForNative(
+    [[nodiscard]] ColumnReadInfo createColumnReadInfoForNative(
         const ColumnWithTypeAndName & column,
         ValueType native_value_type,
         bool is_nullable) const;
-    ColumnReadInfo createColumnReadInfoForText(const ColumnWithTypeAndName & column) const;
+    [[nodiscard]] ColumnReadInfo createColumnReadInfoForText(const ColumnWithTypeAndName & column) const;
 
     /// A result column with a declared SQLite type (a direct column of a table) carries a contract for its
     /// cells: the declared affinity, or the STRICT table, fixes what the ClickHouse type mapped from it

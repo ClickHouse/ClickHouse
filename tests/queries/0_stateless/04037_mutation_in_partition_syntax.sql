@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-parallel
+-- Tags: no-replicated-database
 -- Test parsing and error handling for multi-partition IN PARTITION syntax.
 
 SET mutations_sync = 1;

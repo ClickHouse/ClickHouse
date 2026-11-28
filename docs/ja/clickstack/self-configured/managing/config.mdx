@@ -1,0 +1,296 @@
+---
+slug: /clickstack/self-configured/managing/config
+title: '設定オプション'
+description: 'Self-managed ClickHouse Observability の設定オプション'
+keywords: ['ClickStack の設定', 'オブザーバビリティの設定', 'ClickStack UI の設定', 'コレクター設定', '環境変数']
+doc_type: 'reference'
+sidebarTitle: '設定オプション'
+---
+
+<Note>
+  このページでは **Self-managed ClickHouse Observability** について説明します。推奨される完全マネージド型の環境については、[こちら](/ja/clickstack/observability/managing/config)のドキュメントを参照してください。
+</Note>
+
+このガイドでは、Self-managed ClickHouse Observability におけるデータソースの設定、自身で運用する collector、およびデータベーススキーマの設定について説明します。
+
+## ユーザーインターフェイス {#hyperdx}
+
+### データソース設定 {#datasource-settings}
+
+UI を利用するには、オブザーバビリティの各データ型 (柱) ごとに、ユーザーがソースを定義しておく必要があります。
+
+* `Logs`
+* `Traces`
+* `Metrics`
+* `Sessions`
+
+ソースを設定するには、**Team Settings → Data → Sources** を開きます。追加の設定を表示するには、**Configure Optional Fields** を選択します。以下はログの例です。
+
+<div className="ch-image-md">
+  <Frame>
+    ![Configure Optional Fields が強調表示されたログソース設定](/images/clickstack/source-settings-optional-fields.png)
+  </Frame>
+</div>
+
+UI が各ソースのデータをクエリするには、テーブルとカラムのマッピングが必要です。OTel のメトリクスソースでは、メトリクスの種類ごとに別々のテーブルを使用するため、収集しているメトリクスを含むテーブルを選択してください。
+
+ClickStack に同梱されている[デフォルトの OpenTelemetry (OTel) スキーマ](/ja/guides/use-cases/observability/build-your-own/integrating-opentelemetry#out-of-the-box-schema)を使用している場合、これらのカラムは各ソースについて自動的に推論されます。[スキーマを変更する](#clickhouse)場合やカスタムスキーマを使用する場合は、ユーザー自身がこれらのマッピングを指定・更新する必要があります。
+
+<Note>
+  ClickStack コレクターは、同梱のスキーマ移行によってデフォルトのテーブルを作成します。これらのスキーマは、[OTel collector 向けの ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) と [OpenTelemetry データモデル](https://opentelemetry.io/docs/specs/otel/logs/data-model/)をベースにしています。
+</Note>
+
+以下の表にソース設定を示します。推論される値は、データベース内に存在するカラムとテーブルによって異なります。任意のマッピングを設定すると、トレースの相関付けなどの対応する機能が有効になりますが、ソースの保存には必須ではありません。
+
+#### ログ {#logs}
+
+| 設定                               | 説明                                                                                                                                                                                                                                                                                                                                        | 必須  | デフォルトスキーマで推論可能      | 推論された値                                                           |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ------------------- | ---------------------------------------------------------------- |
+| `Name`                           | ソース名。                                                                                                                                                                                                                                                                                                                                     | はい  | いいえ                 | –                                                                |
+| `Section`                        | ソースセレクターでソースをグループ化するための任意のラベル。同じセクションに属するソースはまとめて表示され、検索ではソース名に加えてセクション名も対象になります。                                                                                                                                                                                                                                                         | いいえ | いいえ                 | –                                                                |
+| `Server Connection`              | サーバー接続名。                                                                                                                                                                                                                                                                                                                                  | はい  | いいえ                 | Cloud サービスへの接続を選択してください                                          |
+| `Database`                       | ClickHouseデータベース名。                                                                                                                                                                                                                                                                                                                        | はい  | いいえ                 | `default` (フォームのデフォルト値)                                          |
+| `Table`                          | 対象のテーブル名。デフォルトのスキーマを使用する場合は `otel_logs` に設定します。                                                                                                                                                                                                                                                                                           | はい  | いいえ                 | –                                                                |
+| `Query Settings`                 | このログソースに対して発行されるすべてのクエリに追加される、最大 10 個の query-level の [session settings](/ja/reference/settings/session-settings)。各設定は設定名と値の組で指定します。                                                                                                                                                                                                          | いいえ | いいえ                 | –                                                                |
+| `Enabled`                        | 無効なログソースは保持されますが、ソースセレクターには表示されず、自動的に選択されることもありません。                                                                                                                                                                                                                                                                                       | いいえ | いいえ                 | 有効                                                               |
+| `Timestamp Column`               | 主キーの一部を構成する日時カラムまたはexpression。                                                                                                                                                                                                                                                                                                            | はい  | はい                  | `Timestamp` (古いスキーマでは `TimestampTime`)                           |
+| `Default Select`                 | デフォルトの検索結果に表示されるカラム。                                                                                                                                                                                                                                                                                                                      | はい  | はい                  | `Timestamp, ServiceName as service, SeverityText as level, Body` |
+| `Service Name Expression`        | サービス名を表す式またはカラム。                                                                                                                                                                                                                                                                                                                          | いいえ | はい                  | `ServiceName`                                                    |
+| `Service Version Expression`     | サービスの稼働中のリリースを識別する式またはカラム。ダッシュボードのチャート上に[リリースマーカー](/ja/clickstack/observability/features/dashboards/release-markers)を描画するために使用されます。空欄の場合は、デフォルトで OpenTelemetry の `service.version` リソース属性が使用されます。                                                                                                                                            | いいえ | いいえ                 | `ResourceAttributes['service.version']`                          |
+| `Log Level Expression`           | ログレベルを表す式またはカラム。                                                                                                                                                                                                                                                                                                                          | いいえ | はい                  | `SeverityText`                                                   |
+| `Severity Number Expression`     | OpenTelemetryの重大度を数値 (1–24) で表す式。該当する値がない場合は空欄にしてください。                                                                                                                                                                                                                                                                                    | いいえ | 整数型のカラムが存在する場合      | `SeverityNumber`                                                 |
+| `Body Expression`                | ログメッセージを表す式またはカラム。                                                                                                                                                                                                                                                                                                                        | いいえ | はい                  | `Body`                                                           |
+| `Event Name Expression`          | OpenTelemetry のログイベント名を指定する式。該当するものがない場合は空欄にしてください。                                                                                                                                                                                                                                                                                       | いいえ | String 型のカラムが存在する場合 | `EventName`                                                      |
+| `Log Attributes Expression`      | カスタムログ属性を指定する式またはカラム。                                                                                                                                                                                                                                                                                                                     | いいえ | はい                  | `LogAttributes`                                                  |
+| `Resource Attributes Expression` | リソースレベルの属性を指定する式またはカラム。                                                                                                                                                                                                                                                                                                                   | いいえ | はい                  | `ResourceAttributes`                                             |
+| `Displayed Timestamp Column`     | UIの表示に使用する、より高精度なタイムスタンプカラム (任意) 。未指定の場合は、タイムスタンプ列を使用します。                                                                                                                                                                                                                                                                                 | いいえ | はい                  | `Timestamp`                                                      |
+| `Correlated Metric Source`       | 関連付けられたメトリクスのログソース (例：ClickStack UI のメトリクス) 。                                                                                                                                                                                                                                                                                             | いいえ | いいえ                 | –                                                                |
+| `Correlated Trace Source`        | 関連付けられたトレースソース (例：ClickStack UI のトレース) 。                                                                                                                                                                                                                                                                                                  | いいえ | いいえ                 | –                                                                |
+| `Trace Id Expression`            | トレースIDの抽出に使用する式またはカラム。                                                                                                                                                                                                                                                                                                                    | いいえ | はい                  | `TraceId`                                                        |
+| `Span Id Expression`             | スパンIDの抽出に使用する式またはカラム。                                                                                                                                                                                                                                                                                                                     | いいえ | はい                  | `SpanId`                                                         |
+| `Implicit Column Expression`     | フィールドを指定しない全文検索 (Lucene形式) で使用するカラム。通常はログ本文です。                                                                                                                                                                                                                                                                                            | いいえ | はい                  | `Body`                                                           |
+| `Known Columns List`             | [`Distributed`](/ja/reference/engines/table-engines/special/distributed) テーブルまたは [`Merge`](/ja/reference/engines/table-engines/special/merge) テーブルを対象とするソースで、宛先テーブル間のカラム構成が一致しない場合に使用します。すべての宛先テーブルに共通して存在するカラムをカンマ区切りで列挙したリストで、行データ全体を取得する際 (例: 行のサイドパネル) に `SELECT *` の代わりに使用されます。すべてのカラムを選択する場合は空欄のままにしてください。指定できるのはカラム名のみで、式やエイリアスは使用できません。 | いいえ | いいえ                 | –                                                                |
+| `Use Text Index`                 | 暗黙的カラムを検索する際に、Lucene ベースの検索で `hasAllTokens` を生成するかどうか。                                                                                                                                                                                                                                                                                    | いいえ | いいえ                 | `Auto (detect from schema)`                                      |
+| `強調表示する属性`                       | ログの詳細を開いたときに表示される式またはカラム。URLを返す式はリンクとして表示されます。                                                                                                                                                                                                                                                                                            | いいえ | いいえ                 | –                                                                |
+| `Highlighted Trace Attributes`   | トレース内の各ログから抽出され、トレースのウォーターフォールの上部に表示される式またはカラム。URLを返す式はリンクとして表示されます。                                                                                                                                                                                                                                                                      | いいえ | いいえ                 | –                                                                |
+| `Materialized Views`             | このログソースに登録された事前集計済みの [materialized view](/ja/clickstack/self-configured/managing/materialized-views) です。対象となるクエリの高速化に自動的に使用されます。詳細は [Materialized views](#materialized-views-settings) を参照してください。                                                                                                                                            | いいえ | いいえ                 | –                                                                |
+| `Metadata Materialized Views`    | フィールドのディスカバリーと値の自動補完を高速化するための materialized view です。詳細は [メタデータ materialized view](#metadata-materialized-views-settings) を参照してください。                                                                                                                                                                                                        | いいえ | ロールアップテーブルが存在する場合   | `<table>_kv_rollup_15m`                                          |
+| `Default Order By`               | 検索結果のデフォルトの並び順をオーバーライドする `ORDER BY` 式です。空欄のままにすると、自動検出されたデフォルトが使用されます。この設定は、後から検索ごとにカスタマイズできます。                                                                                                                                                                                                                                           | いいえ | いいえ                 | –                                                                |
+
+#### トレース {#traces}
+
+| 設定                               | 説明                                                                                                                                                                                                                                                                                                                         | 必須  | デフォルトスキーマで推論可能    | 推論される値                                                                                                |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ----------------- | ----------------------------------------------------------------------------------------------------- |
+| `Name`                           | ソース名。                                                                                                                                                                                                                                                                                                                      | はい  | いいえ               | –                                                                                                     |
+| `Section`                        | ソースセレクターでソースをグループ化するための任意のラベル。同じセクションに属するソースはまとめて表示され、検索ではソース名に加えてセクション名も照合されます。                                                                                                                                                                                                                                           | いいえ | いいえ               | –                                                                                                     |
+| `Server Connection`              | サーバー接続名。                                                                                                                                                                                                                                                                                                                   | はい  | いいえ               | Cloud サービスの接続を選択                                                                                      |
+| `Database`                       | ClickHouse のデータベース名。                                                                                                                                                                                                                                                                                                       | はい  | いいえ               | `default`(フォームのデフォルト値)                                                                                |
+| `Table`                          | ターゲットテーブル名。デフォルトスキーマを使用する場合は `otel_traces` に設定します。                                                                                                                                                                                                                                                                         | はい  | いいえ               | –                                                                                                     |
+| `Query Settings`                 | このソースに対して発行されるすべてのクエリに追加される、クエリレベルの [session 設定](/ja/reference/settings/session-settings)(最大 10 個)。それぞれ設定名と値の組で指定します。                                                                                                                                                                                                         | いいえ | いいえ               | –                                                                                                     |
+| `Enabled`                        | 無効化されたソースは保持されますが、ソースセレクターには表示されず、自動的に選択されることもありません。                                                                                                                                                                                                                                                                       | いいえ | いいえ               | 有効                                                                                                    |
+| `Timestamp Column`               | プライマリキーに含まれる日時カラムまたは式。                                                                                                                                                                                                                                                                                                     | はい  | はい                | `Timestamp`                                                                                           |
+| `Default Select`                 | デフォルトの検索結果に表示されるカラム。                                                                                                                                                                                                                                                                                                       | はい  | はい                | `Timestamp, ServiceName as service, StatusCode as level, round(Duration / 1e6) as duration, SpanName` |
+| `Duration Expression`            | スパンの所要時間を計算する式。                                                                                                                                                                                                                                                                                                            | はい  | はい                | `Duration`                                                                                            |
+| `Duration Precision`             | 所要時間の式の精度(例: ナノ秒、マイクロ秒)。                                                                                                                                                                                                                                                                                                   | はい  | はい                | ns                                                                                                    |
+| `Trace Id Expression`            | トレース ID を表す式またはカラム。                                                                                                                                                                                                                                                                                                        | はい  | はい                | `TraceId`                                                                                             |
+| `Span Id Expression`             | スパン ID を表す式またはカラム。                                                                                                                                                                                                                                                                                                         | はい  | はい                | `SpanId`                                                                                              |
+| `Parent Span Id Expression`      | 親スパン ID を表す式またはカラム。                                                                                                                                                                                                                                                                                                        | はい  | はい                | `ParentSpanId`                                                                                        |
+| `Span Name Expression`           | スパン名を表す式またはカラム。                                                                                                                                                                                                                                                                                                            | はい  | はい                | `SpanName`                                                                                            |
+| `Span Kind Expression`           | スパンの種類(例: client、server)を表す式またはカラム。                                                                                                                                                                                                                                                                                        | はい  | はい                | `SpanKind`                                                                                            |
+| `Correlated Log Source`          | 任意。関連付けられたログソース(例: ClickStack UI のログ)。                                                                                                                                                                                                                                                                                     | いいえ | いいえ               | –                                                                                                     |
+| `Correlated Session Source`      | 任意。関連付けられたセッションソース。                                                                                                                                                                                                                                                                                                        | いいえ | いいえ               | –                                                                                                     |
+| `Correlated Metric Source`       | 任意。関連付けられたメトリクスソース(例: ClickStack UI のメトリクス)。                                                                                                                                                                                                                                                                               | いいえ | いいえ               | –                                                                                                     |
+| `Status Code Expression`         | スパンのステータスコードを表す式。                                                                                                                                                                                                                                                                                                          | いいえ | はい                | `StatusCode`                                                                                          |
+| `Status Message Expression`      | スパンのステータスメッセージを表す式。                                                                                                                                                                                                                                                                                                        | いいえ | はい                | `StatusMessage`                                                                                       |
+| `Service Name Expression`        | サービス名を表す式またはカラム。                                                                                                                                                                                                                                                                                                           | いいえ | はい                | `ServiceName`                                                                                         |
+| `Service Version Expression`     | サービスで稼働中のリリースを識別する式またはカラム。ダッシュボードのチャートに[リリースマーカー](/ja/clickstack/observability/features/dashboards/release-markers)を描画するために使用されます。空欄の場合は、OpenTelemetry の `service.version` リソース属性がデフォルトで使用されます。                                                                                                                               | いいえ | いいえ               | `ResourceAttributes['service.version']`                                                               |
+| `Resource Attributes Expression` | リソースレベルの属性を表す式またはカラム。                                                                                                                                                                                                                                                                                                      | いいえ | はい                | `ResourceAttributes`                                                                                  |
+| `Event Attributes Expression`    | イベント属性を表す式またはカラム。                                                                                                                                                                                                                                                                                                          | いいえ | はい                | `SpanAttributes`                                                                                      |
+| `Sample Rate Expression`         | 上流のサンプリング重み(`1/N`)を保持するカラムまたは式。設定すると、集計(`count`、`avg`、`sum`、`quantile`)がサンプリングを考慮して補正されます。その際、パーセンタイルには近似手法である `quantileTDigestWeighted` が使用されるため、正確な値とわずかに異なる場合があります。スパンがサンプリングされていない場合は空欄のままにします。                                                                                                                        | いいえ | いいえ               | –                                                                                                     |
+| `Span Events Expression`         | スパンイベントを抽出する式。通常は `Nested` 型のカラムです。これにより、対応する言語の SDK で例外のスタックトレースを表示できます。                                                                                                                                                                                                                                                  | いいえ | ネストされたカラムが存在する場合  | `Events`                                                                                              |
+| `Span Links Expression`          | スパンリンクを抽出する式。スパンから他のトレース内のスパンへのリンクを取得するために使用されます。型は `Nested(TraceId String, SpanId String, TraceState String, Attributes Map(LowCardinality(String), String))` であることが想定されています。                                                                                                                                             | いいえ | ネストされたカラムが存在する場合  | `Links`                                                                                               |
+| `Implicit Column Expression`     | フィールドを指定しない全文検索(Lucene 形式)で使用されるカラム。通常はスパン名です。                                                                                                                                                                                                                                                                             | いいえ | はい                | `SpanName`                                                                                            |
+| `Known Columns List`             | 宛先テーブル間でカラム構成が一致しない [`Distributed`](/ja/reference/engines/table-engines/special/distributed) または [`Merge`](/ja/reference/engines/table-engines/special/merge) テーブルを対象とするソース向けの設定です。すべての宛先テーブルで利用可能なカラムをカンマ区切りで列挙したもので、行データ全体を取得する際(例: 行のサイドパネル)に `SELECT *` の代わりに使用されます。すべてのカラムを選択する場合は空欄のままにします。指定できるのはカラム名のみで、式やエイリアスは使用できません。 | いいえ | いいえ               | –                                                                                                     |
+| `Use Text Index`                 | 暗黙的なカラムを検索する際に、Lucene ベースの検索で `hasAllTokens` を使用するかどうか。                                                                                                                                                                                                                                                                    | No  | No                | `Auto (detect from schema)`                                                                           |
+| `Displayed Timestamp Column`     | UI の表示に使用する、より高精度なタイムスタンプカラム(任意)。指定しない場合は Timestamp Column が使用されます。                                                                                                                                                                                                                                                        | No  | Yes               | `Timestamp`                                                                                           |
+| `Highlighted Attributes`         | スパンの詳細を開いたときに表示される式またはカラム。URL を返す式はリンクとして表示されます。                                                                                                                                                                                                                                                                           | No  | No                | –                                                                                                     |
+| `Highlighted Trace Attributes`   | トレース内の各スパンから抽出され、トレースのウォーターフォールの上に表示される式またはカラム。URL を返す式はリンクとして表示されます。                                                                                                                                                                                                                                                      | No  | No                | –                                                                                                     |
+| `Materialized Views`             | このログソースに登録された事前集計済みの [materialized view](/ja/clickstack/self-configured/managing/materialized-views)。対象となるクエリの高速化に自動的に使用されます。詳細は [materialized view](#materialized-views-settings) を参照してください。                                                                                                                                 | No  | No                | –                                                                                                     |
+| `Metadata Materialized Views`    | フィールドのディスカバリーと値の自動補完を高速化するための materialized view。詳細は [メタデータ materialized view](#metadata-materialized-views-settings) を参照してください。                                                                                                                                                                                            | No  | ロールアップテーブルが存在する場合 | `<table>_kv_rollup_15m`                                                                               |
+| `Default Order By`               | 検索結果のデフォルトの並び順をオーバーライドする `ORDER BY` 式。空欄のままにすると、自動検出されたデフォルトが使用されます。この設定は後から検索ごとにカスタマイズできます。                                                                                                                                                                                                                               | No  | No                | –                                                                                                     |
+
+#### メトリクス {#metrics}
+
+| 設定                            | 説明                                                                                                                          | 必須  | デフォルトスキーマで推論可能 | 推論される値                               |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------- | --- | -------------- | ------------------------------------ |
+| `Name`                        | ソース名。                                                                                                                       | はい  | いいえ            | –                                    |
+| `Section`                     | ソースセレクターでソースをグループ化するための任意のラベル。同じセクションのソースはまとめて表示され、検索ではソース名に加えてセクション名も照合されます。                                               | いいえ | いいえ            | –                                    |
+| `Server Connection`           | サーバー接続名。                                                                                                                    | はい  | いいえ            | Cloud サービスの接続を選択                     |
+| `Database`                    | ClickHouseデータベース名。                                                                                                          | はい  | いいえ            | `default` (フォームのデフォルト値)              |
+| `Query Settings`              | 最大 10 個の query-level [session settings](/ja/reference/settings/session-settings)。それぞれ設定名と値の組で指定し、このソースに対して発行されるすべてのクエリに付加されます。 | いいえ | いいえ            | –                                    |
+| `Enabled`                     | ソースフォーム上部のトグル。無効化したソースは保持されますが、ソースセレクターには表示されず、自動的に選択されることもありません。既存のソースを編集する場合にのみ表示されます。                                    | いいえ | いいえ            | 有効                                   |
+| `Gauge Table`                 | Gauge 型メトリクスを格納するテーブル。                                                                                                      | いいえ | はい             | `otel_metrics_gauge`                 |
+| `Histogram Table`             | ヒストグラム型メトリクスを格納するテーブル。                                                                                                      | いいえ | はい             | `otel_metrics_histogram`             |
+| `Sum Table`                   | Sum 型 (カウンター) メトリクスを格納するテーブル。                                                                                               | いいえ | はい             | `otel_metrics_sum`                   |
+| `Exponential Histogram Table` | 指数ヒストグラム型メトリクスを格納するテーブル。現時点では完全にはサポートされていません。                                                                               | いいえ | はい             | `otel_metrics_exponential_histogram` |
+| `Summary Table`               | Summary 型メトリクスを格納するテーブル。現時点では完全にはサポートされていません。                                                                               | いいえ | はい             | `otel_metrics_summary`               |
+| `Minimum auto granularity`    | 自動選択されるチャート粒度の下限。メトリクスのスクレイプ間隔またはレポート間隔に合わせて設定します。明示的に選択したチャート粒度をオーバーライドすることはありません。                                         | いいえ | いいえ            | 最小値なし                                |
+| `Correlated Log Source`       | 任意。関連付けるログソース (例: ClickStack UI のログ) 。                                                                                      | いいえ | いいえ            | –                                    |
+
+#### セッション {#settings}
+
+| 設定                               | 説明                                                                                                                               | 必須  | デフォルトスキーマで推論可能 | 推論される値                  |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --- | -------------- | ----------------------- |
+| `Name`                           | ソース名。                                                                                                                            | はい  | いいえ            | –                       |
+| `Section`                        | ソースセレクター内でソースをグループ化するための任意のラベル。同じセクションに属するソースはまとめて表示され、検索ではソース名に加えてセクション名も照合されます。                                                | いいえ | いいえ            | –                       |
+| `Server Connection`              | サーバー接続名。                                                                                                                         | はい  | いいえ            | Cloud サービスの接続を選択        |
+| `Database`                       | ClickHouseデータベース名。                                                                                                               | はい  | いいえ            | `default` (フォームのデフォルト)  |
+| `Table`                          | セッションデータのターゲットテーブル。デフォルトスキーマを使用する場合は `hyperdx_sessions` を指定します。                                                                  | はい  | いいえ            | –                       |
+| `Query Settings`                 | このソースに対して発行されるすべてのクエリに付加される query-level の [session settings](/ja/reference/settings/session-settings) (最大 10 個) 。それぞれ設定名と値の組で指定します。 | いいえ | いいえ            | –                       |
+| `Enabled`                        | ソースフォーム上部にあるトグル。無効化したソースは保持されますが、ソースセレクターには表示されず、自動的に選択されることもありません。既存のソースを編集する場合にのみ表示されます。                                       | いいえ | いいえ            | 有効                      |
+| `Correlated Trace Source`        | セッションの相関付けに使用する、リンク先のトレースソース。                                                                                                    | はい  | いいえ            | –                       |
+| `Timestamp Column`               | 主キーに含まれる日時カラムまたは式。                                                                                                               | はい  | はい             | `TimestampTime`         |
+| `Resource Attributes Expression` | リソースレベルのメタデータを抽出するための式。                                                                                                          | いいえ | はい             | `ResourceAttributes`    |
+
+#### materialized view {#materialized-views-settings}
+
+materialized view をログおよびトレースのデータソースに登録すると、対象となる集計クエリには、ソーステーブルではなく事前集約済みのビューから結果が返されます。ビューの作成と登録の方法については、[&quot;Materialized views&quot;](/ja/clickstack/self-configured/managing/materialized-views) を参照してください。
+
+登録した各ビューには、次の設定を行います。
+
+| 設定                       | 説明                                                                                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Database`               | materialized view のターゲットテーブルが存在する ClickHouseデータベース。                                                                                                     |
+| `Table`                  | materialized view のターゲットテーブル (ビュー自体ではありません) 。                                                                                                           |
+| `Timestamp Column`       | ターゲットテーブルのタイムスタンプ列。                                                                                                                                     |
+| `Granularity`            | ターゲットテーブルのタイムスタンプ列の時間バケット (例: `1 minute`) 。クエリがビューを使用できるのは、そのクエリ自体の時間バケットがこれと同じか、より粗い場合に限られます。                                                          |
+| `Minimum Date`           | 任意。ビューがデータを保持している最も古い日付と時刻。指定しない場合、ClickStack は、ソーステーブルにデータが存在するすべての日付についてビューにもデータが存在するものとみなします。                                                        |
+| `Dimension Columns`      | ビューで事前集約されていないカラムのカンマ区切りリスト。これらのカラムはフィルタリングやグループ化に使用できます。                                                                                               |
+| `Pre-aggregated Columns` | ビューで事前集約されているカラム。各エントリでは、集約関数 (`avg`、`count`、`max`、`min`、`quantile`、`sum`、`histogram`) とソーステーブルのカラムの組み合わせを、ビュー内の対応するカラムにマッピングします。`count` の場合、ソース列は不要です。 |
+
+ターゲットテーブルを選択すると、UI がビューのスキーマからこれらの設定を推論します。推論された値を確認し、欠損フィールドを入力してください。
+
+#### メタデータ用 materialized view {#metadata-materialized-views-settings}
+
+メタデータ用 materialized view は、フィルタや自動補完で使用するフィールドの検出を高速化する materialized view です。ログおよびトレースのデータソースで設定できます。
+
+| 設定                 | 説明                                        |
+| ------------------ | ----------------------------------------- |
+| `Key Rollup Table` | 任意 (非推奨)。ソーステーブルに含まれるキーのロールアップテーブルです。     |
+| `KV Rollup Table`  | ソーステーブルに含まれるキーと値のペアのロールアップテーブルです。         |
+| `Granularity`      | ロールアップテーブルで使用する時間バケットです (例: `15 minute`)。 |
+
+#### 強調表示する属性 {#highlighted-attributes}
+
+強調表示する属性と強調表示するトレース属性は、ログおよびトレースのデータソースで設定できます。
+
+* 強調表示する属性は、ログまたはスパンの詳細を表示する際に、各ログまたはスパンに対して表示されるカラムまたは式です。
+* 強調表示するトレース属性は、トレース内の各ログまたはスパンからクエリされ、トレースのウォーターフォールの上部に表示されるカラムまたは式です。
+
+これらの属性はソースの設定で定義し、任意のSQL式を指定できます。SQL式がURL形式の値を返す場合、その属性はリンクとして表示されます。値が空の場合は表示されません。
+
+各属性では、以下の項目を設定します。
+
+| 設定                  | 説明                                      |
+| ------------------- | --------------------------------------- |
+| `SQL Expression`    | クエリ対象のカラムまたは任意のSQL式。必須。                 |
+| `Alias`             | 任意。SQL式の代わりに属性名として表示されるラベル。             |
+| `Lucene Expression` | 任意。この属性の値で検索する際に使用される、SQL式に相当するLucene式。 |
+
+例えば、次のトレースソースには、強調表示する属性と強調表示するトレース属性がそれぞれ設定されています。
+
+<div className="ch-image-md">
+  <Frame>
+    ![強調表示する属性と強調表示するトレース属性の設定](/images/clickstack/highlighted-attributes-config.png)
+  </Frame>
+</div>
+
+これらの属性は、ログまたはスパンをクリックすると表示されるサイドパネルに表示されます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![選択したスパンのDB Latencyとウォーターフォール上部のclickpy_linkを表示するトレースビュー](/images/clickstack/highlighted-attributes-trace.png)
+  </Frame>
+</div>
+
+属性をクリックすると、その属性を検索値として使用するためのオプションが表示されます。属性の設定でオプションのLucene式が指定されている場合は、SQL式ではなくLucene式が検索に使用されます。
+
+<div className="ch-image-md">
+  <Frame>
+    ![Add to SearchとSearch This Valueを表示するDB Latency属性メニュー](/images/clickstack/highlighted-attributes-search.png)
+  </Frame>
+</div>
+
+### 相関ソース {#correlated-sources}
+
+ソース間の相関を最大限に活用するには、ログ、トレース、メトリクス、セッションの各ソースに相関ソースを設定する必要があります。これにより、UI は関連するデータを紐付け、イベントのレンダリング時に充実したコンテキストを提供できるようになります。
+
+* `Logs`: トレースおよびメトリクスと相関付けることができます。
+* `Traces`: ログ、セッション、メトリクスと相関付けることができます。
+* `Metrics`: ログと相関付けることができます。
+* `Sessions`: トレースと相関付けることができます。
+
+これらの相関を設定すると、さまざまな機能が利用可能になります。たとえば、UI 上でトレースと並べて関連するログを表示したり、関連するソース間を行き来したりできます。なお、相関には適切な ID および属性のマッピングも必要です。ソースを選択するだけでは、これらのリレーションシップは作成されません。
+
+例として、相関ソースを設定したログソースを以下に示します。
+
+<div className="ch-image-md">
+  <Frame>
+    ![TraceId および SpanId の式を使用して相関付けられたメトリクスソースとトレースソース](/images/clickstack/correlated-sources.png)
+  </Frame>
+</div>
+
+## OpenTelemetry collector {#otel-collector}
+
+詳細については、[&quot;ClickStack OpenTelemetry Collector&quot;](/ja/clickstack/self-configured/ingesting-data/collector) を参照してください。
+
+* `CLICKHOUSE_ENDPOINT`
+  * **デフォルト:** スタンドアロンの collector イメージでは *None (必須)&#x20;*。
+  * **説明:** エクスポーターが使用する ClickHouse 接続 URL。
+  * **ガイダンス:**
+    * `https://<host>:8443` や `tcp://<host>:9440?secure=true` などの、セキュアな ClickHouse Cloud エンドポイントを使用してください
+    * collector が ClickHouse にデータを送信するために必要です
+
+* `CLICKHOUSE_USER`
+  * **デフォルト:** 移行ツールでは `default`。スタンドアロンの collector では明示的に設定してください。
+  * **説明:** ClickHouseインスタンスでの認証に使用するユーザー名。
+  * **ガイダンス:**
+    * このユーザーには、テレメトリーを挿入するアクセス許可が必要です。スキーマ作成または移行が有効な場合は、必要なデータベースオブジェクトを作成・変更するアクセス許可も必要です
+    * インジェスト専用のユーザーを作成することを推奨します
+
+* `CLICKHOUSE_PASSWORD`
+  * **デフォルト:** *None (認証が有効な場合は必須)&#x20;*
+  * **説明:** 指定した ClickHouse ユーザーのパスワード。
+  * **ガイダンス:**
+    * ユーザーアカウントにパスワードが設定されている場合は必須です
+    * 本番環境のデプロイメントでは、シークレットを使用して安全に保管してください
+
+* `HYPERDX_LOG_LEVEL`
+  * **デフォルト:** デプロイメントによって異なります。`info` などの値を明示的に設定してください。
+  * **説明:** collector のログ出力の詳細レベル。
+  * **ガイダンス:**
+    * `debug`、`info`、`warn`、`error` などの値を指定できます
+    * トラブルシューティング時は `debug` を使用してください
+
+* `OTLP_AUTH_TOKEN`
+  * **デフォルト:** *None*。スタンドアロンイメージでのみ使用されます。
+  * **説明:** スタンドアロンでの OTLP インジェストに必要なトークンを設定します。現行の collector は、`Authorization` ヘッダーの値として、トークンをそのまま、または `Bearer` プレフィックス付きで受け付けます。古いバージョンの collector では、プレフィックスなしのトークンのみ受け付ける場合があります。OIDC 認証が設定されている場合は無視されます。
+  * **ガイダンス:**
+    * collector を外部に公開する前に認証を設定してください。トークンも OIDC も設定されていない場合、スタンドアロンの OTLP レシーバーは認証なしのリクエストを受け付けてしまいます。
+
+* `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`
+  * **デフォルト:** 移行ツールでは `default`。スタンドアロンの collector では明示的に設定してください。
+  * **説明:** collector がテレメトリデータを書き込む ClickHouseデータベース。
+  * **ガイダンス:**
+    * カスタムのデータベース名を使用する場合に設定してください
+    * 指定したユーザーがこのデータベースへのアクセス権を持っていることを確認してください
+
+## ClickHouse {#clickhouse}
+
+ClickHouse を効果的にチューニングするには、[パーツ](/ja/concepts/core-concepts/parts)、[パーティション](/ja/concepts/core-concepts/partitions)、[分片とレプリカ](/ja/guides/oss/deployment-and-scaling/shards)といった主要なストレージの概念に加え、挿入時に[マージ](/ja/concepts/core-concepts/merges)がどのように行われるかを理解しておく必要があります。[プライマリインデックス](/ja/concepts/core-concepts/primary-indexes)、[スパースなセカンダリ索引](/ja/concepts/features/performance/skip-indexes/skipping-indexes)、データスキッピングインデックスの基礎に加え、TTL ライフサイクルの利用など[データライフサイクルの管理](/ja/guides/use-cases/observability/build-your-own/managing-data)の手法についても確認しておくことを推奨します。
+
+[スキーマのカスタマイズ](/ja/guides/use-cases/observability/build-your-own/schema-design)も可能です。カラム型の変更、 (ログなどからの) 新しいフィールドの抽出、コーデックや Dictionary の適用、プロジェクションによるクエリの高速化などを行えます。
+
+さらに、materialized view を使用すると、[インジェスト時にデータを変換またはフィルタリング](/ja/guides/use-cases/observability/build-your-own/schema-design#materialized-views)できます。ただし、データはビューのソーステーブルに書き込み、アプリケーションはターゲットテーブルから読み取る必要があります。また、materialized view はサービス内で[クエリをネイティブに高速化](/ja/clickstack/self-configured/managing/materialized-views)する用途にも使用できます。
+
+詳細については、スキーマ設計、インデックス作成戦略、データ管理のベストプラクティスに関する ClickHouse のドキュメントを参照してください。その大部分は、セルフマネージドのデプロイメントにもそのまま当てはまります。

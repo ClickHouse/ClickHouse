@@ -9,6 +9,8 @@ ENGINE = MergeTree()
 ORDER BY tuple()
 SETTINGS disk = disk(type = cache,
                      max_size = '1Mi',
+                     max_file_segment_size = '256Ki',
+                     boundary_alignment = '256Ki',
                      path = '/kek',
                      disk = 'local_disk'); -- {serverError BAD_ARGUMENTS}
 
@@ -17,6 +19,8 @@ ENGINE = MergeTree()
 ORDER BY tuple()
 SETTINGS disk = disk(type = cache,
                      max_size = '1Mi',
+                     max_file_segment_size = '256Ki',
+                     boundary_alignment = '256Ki',
                      path = '/var/lib/clickhouse/filesystem_caches/../kek',
                      disk = 'local_disk'); -- {serverError BAD_ARGUMENTS}
 
@@ -25,6 +29,8 @@ ENGINE = MergeTree()
 ORDER BY tuple()
 SETTINGS disk = disk(type = cache,
                      max_size = '1Mi',
+                     max_file_segment_size = '256Ki',
+                     boundary_alignment = '256Ki',
                      path = '../kek',
                      disk = 'local_disk'); -- {serverError BAD_ARGUMENTS}
 
@@ -33,6 +39,8 @@ ENGINE = MergeTree()
 ORDER BY tuple()
 SETTINGS disk = disk(type = cache,
                      max_size = '1Mi',
+                     max_file_segment_size = '256Ki',
+                     boundary_alignment = '256Ki',
                      path = '/var/lib/clickhouse/filesystem_caches/kek',
                      disk = 'local_disk');
 
@@ -41,5 +49,7 @@ ENGINE = MergeTree()
 ORDER BY tuple()
 SETTINGS disk = disk(type = cache,
                      max_size = '1Mi',
+                     max_file_segment_size = '256Ki',
+                     boundary_alignment = '256Ki',
                      path = 'kek2',
                      disk = 'local_disk');

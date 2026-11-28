@@ -30,17 +30,17 @@ Si está actualizando desde la versión 0.15.x o anterior, consulte la [guía de
 
 ## Requisitos y compatibilidad {#requirements-and-compatibility}
 
-| Componente  | Versiones compatibles                                                                                                                                                                                                      |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Python      | De 3.10 a 3.14. Las compilaciones free-threaded, como 3.14t, tienen soporte experimental.                                                                                                                                  |
-| ClickHouse  | Versiones de ClickHouse con soporte activo. CI realiza pruebas con las [series de releases LTS y stable que se indican aquí](https://github.com/ClickHouse/clickhouse-connect/blob/main/.github/clickhouse-versions.json). |
-| SQLAlchemy  | 1.4.40 o posterior, inferior a 3.0, para el dialecto síncrono. 2.0.44 o posterior, inferior a 3.0, para el dialecto async.                                                                                                 |
-| Pandas      | 2.x y 3.x                                                                                                                                                                                                                  |
-| Polars      | 1.0 o posterior                                                                                                                                                                                                            |
-| aiohttp     | 3.9 o posterior                                                                                                                                                                                                            |
-| Plataformas | Linux, macOS y Windows en las arquitecturas para las que se publican wheels de cada versión de Python                                                                                                                      |
+| Componente  | Versiones compatibles                                                                                                                                                                                                       |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Python      | De 3.10 a 3.15. Las compilaciones free-threaded, como 3.14t y 3.15t, tienen soporte experimental.                                                                                                                           |
+| ClickHouse  | Versiones de ClickHouse con soporte activo. CI realiza pruebas con las [series de versiones LTS y stable que se indican aquí](https://github.com/ClickHouse/clickhouse-connect/blob/main/.github/clickhouse-versions.json). |
+| SQLAlchemy  | 1.4.40 o posterior, inferior a 3.0, para el dialecto síncrono. 2.0.44 o posterior, inferior a 3.0, para el dialecto async.                                                                                                  |
+| Pandas      | 2.x y 3.x                                                                                                                                                                                                                   |
+| Polars      | 1.0 o posterior                                                                                                                                                                                                             |
+| aiohttp     | 3.9 o posterior                                                                                                                                                                                                             |
+| Plataformas | Linux, macOS y Windows en las arquitecturas para las que se publican wheels de cada versión de Python                                                                                                                       |
 
-El package incluye wheels compilados cuando están disponibles y recurre a una implementación en pure Python cuando no se pueden compilar las extensiones de Cython. PyArrow es compatible con Python de 3.10 a 3.14. Python 3.14 requiere PyArrow 22 o posterior.
+El paquete incluye wheels compilados cuando están disponibles y recurre a una implementación en pure Python cuando no se pueden compilar las extensiones de Cython. PyArrow es compatible con Python de 3.10 a 3.15. Python 3.14 requiere PyArrow 22 o posterior, y Python 3.15 requiere PyArrow 26 o posterior. En Python 3.14 y posteriores, `lz4` es un extra opcional y la compresión predeterminada utiliza el módulo zstd de la biblioteca estándar. `lz4` todavía no publica wheels para CPython 3.15 ni para compilaciones free-threaded de Python 3.14+, por lo que, al instalar el extra `lz4` en esas versiones, se compila a partir del código fuente y se requiere un compilador de C.
 
 ## Instalación {#installation}
 
@@ -62,10 +62,11 @@ pip install "clickhouse-connect[sqlalchemy-async]" # Async SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
 pip install "clickhouse-connect[rust]"       # Experimental Rust codec
+pip install "clickhouse-connect[lz4]"        # lz4 compression on Python 3.14+
 pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
 ```
 
-ClickHouse Connect también puede instalarse desde el código fuente:
+ClickHouse Connect también puede instalarse a partir del código fuente:
 
 * Haz `git clone` del [repositorio de GitHub](https://github.com/ClickHouse/clickhouse-connect).
 * Ve a la raíz del proyecto y ejecuta `pip install .`. El sistema de compilación instala Cython automáticamente para compilar las extensiones C opcionales.
@@ -88,10 +89,10 @@ Los wheels de fallback predeterminados no contienen extensiones compiladas, pero
 pip cache remove clickhouse_connect
 ```
 
-Compruebe si los tres módulos de extensión están presentes. Si lo están, se imprime `True`:
+Compruebe si los cuatro módulos de extensión están presentes. Si lo están, se imprime `True`:
 
 ```bash
-python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in ('clickhouse_connect.driverc.buffer', 'clickhouse_connect.driverc.dataconv', 'clickhouse_connect.driverc.npconv')))"
+python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in ('clickhouse_connect.driverc.buffer', 'clickhouse_connect.driverc.dataconv', 'clickhouse_connect.driverc.npconv', 'clickhouse_connect.driverc.sqlscan')))"
 ```
 
 Importar directamente `clickhouse_connect.driverc.npconv` también requiere que NumPy esté instalado.

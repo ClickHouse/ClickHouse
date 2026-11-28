@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/55647
-SET enable_analyzer=1;
 
 SELECT
 *

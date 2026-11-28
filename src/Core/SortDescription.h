@@ -37,6 +37,13 @@ struct FillColumnDescription
     std::optional<IntervalKind> step_kind;
     Field fill_staleness;   /// Default = Null - should not be considered
     std::optional<IntervalKind> staleness_kind;
+    DataTypePtr fill_column_type;
+    /// The inclusive range of the values a fill column of `fill_column_type` can hold - the range of the storage
+    /// type intersected with the calendar window for `Date32`/`DateTime64` - precomputed once so that the per-row
+    /// representability check is two comparisons. Null bounds mean the type is not checked (see
+    /// `fillRepresentableRangeOfColumnType`).
+    Field fill_representable_min;
+    Field fill_representable_max;
 
     using StepFunction = std::function<void(Field &, Int64 jumps_count)>;
     StepFunction step_func;
@@ -147,11 +154,17 @@ public:
     size_t min_count_to_compile_sort_description = 3;
     bool compile_sort_description = false;
 
-    bool hasPrefix(const SortDescription & prefix) const;
+    [[nodiscard]] bool hasPrefix(const SortDescription & prefix) const;
 };
 
 /// Returns a copy of lhs containing only the prefix of columns matching rhs's columns.
 SortDescription commonPrefix(const SortDescription & lhs, const SortDescription & rhs);
+
+/// True if comparison can declare equal the values that hash equality - the equality of `GROUP BY`,
+/// `DISTINCT`, `LIMIT BY` and `IN` - keeps apart, and that functions can tell apart: `-0.0` and `0.0`,
+/// and the `NaN` payloads. `Dynamic`, `Variant` and `Object` are only known at run time and may hold
+/// such a value. Nested types are checked too.
+bool comparisonCanMergeDistinctValues(const IDataType & type);
 
 /// The leading run of `description` whose column names all belong to `columns` (compared as a set) and
 /// are ordered by value. A collated column is ordered by its collation key, not by value, so equal
@@ -162,6 +175,9 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
 /// If the result has `columns.size()` entries, then `columns` -- in any order -- form such a prefix, so
 /// grouping by them yields contiguous groups.
 SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns, const Block & header);
+
+/// True when every key of `description` is constant in `header`, so all rows compare equal under it.
+bool sortDescriptionIsAllConstant(const SortDescription & description, const Block & header);
 
 /** Compile sort description for header_types.
   * Description is compiled only if compilation attempts to compile identical description is more than min_count_to_compile_sort_description.

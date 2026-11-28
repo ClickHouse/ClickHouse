@@ -5,6 +5,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseHDFS.h>
 
+#include <IO/parseURI.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -90,7 +91,7 @@ bool DatabaseHDFS::checkUrl(const std::string & url, ContextPtr context_, bool t
     try
     {
         checkHDFSURL(url);
-        context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url));
+        context_->getGlobalContext()->getRemoteHostFilter().checkURL(parseURI(url));
     }
     catch (...)
     {
@@ -191,7 +192,7 @@ ASTPtr DatabaseHDFS::getCreateDatabaseQueryImpl() const
     const auto & settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
 
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS('{}')", backQuoteIfNeed(database_name), source);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS({})", backQuoteIfNeed(database_name), quoteString(source));
     ASTPtr ast
         = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
@@ -272,7 +273,7 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
           * such as `PARALLEL WITH` and `RESTORE DATABASE` run user-controlled statements as internal ones.
           */
         if (!args.is_metadata_replay && !source_url.empty())
-            args.context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(source_url));
+            args.context->getGlobalContext()->getRemoteHostFilter().checkURL(parseURI(source_url));
 
         return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);
     };

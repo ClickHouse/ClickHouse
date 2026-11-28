@@ -9,7 +9,6 @@
 -- Both sides stay under a thousand rows. Above that a count prints as `1.00 thousand`, which the
 -- regex below reads as 1.
 
-SET enable_analyzer = 1;
 -- Swapping the sides makes the join add the other side's columns, and the output is no longer empty.
 SET query_plan_join_swap_table = 0;
 -- A runtime filter would drop the non-matching left rows before the probe.

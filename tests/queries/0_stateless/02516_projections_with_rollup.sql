@@ -45,7 +45,7 @@ INSERT INTO video_log SELECT
     (bytes_raw % 1024) + 128,
     (duration_raw % 300) + 100
 FROM rng
-LIMIT 1728000;
+LIMIT 172800;
 
 INSERT INTO video_log SELECT
     toUnixTimestamp('2022-07-22 01:00:00') + (rowNumberInAllBlocks() / 20000),

@@ -28,83 +28,83 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 
 ### AdaptiveAggregationBucketsRetired {#adaptiveaggregationbucketsretired}
 
-전체 머지가 완료되기 전에, 해당 버킷의 머지 및 변환이 끝난 직후 작업 메모리(arena 슬롯, 스테이지된 청크 참조)가 해제된 two-level 버킷의 수입니다.
+버킷의 마지막 단위가 변환된 직후 적응형 집계의 머지가 arena 슬롯을 해제한 2단계 버킷의 수입니다. 이 슬롯은 한 번에 한 단위의 머지된 상태(state)만 보관하므로, 앞선 단위들의 상태는 각 단위의 변환이 끝난 후 해제됩니다.
+
+### AdaptiveAggregationCountFirstUnits {#adaptiveaggregationcountfirstunits}
+
+적응형 집계의 머지 단위 중, 그룹별 개수를 먼저 집계한 뒤 개수 기준 상위 그룹에 대해서만 나머지 집계 상태(aggregate states)를 생성한 단위의 수입니다. 이는 집계 결과가 `ORDER BY count() LIMIT n`으로 전달되며, 최종 변환 단계에서 해당 그룹만 유지되기 때문입니다.
 
 ### AdaptiveAggregationDrainedRecords {#adaptiveaggregationdrainedrecords}
 
-적응형(adaptive) 집계가 머지 시점에 공유 테이블로 내보낸 지연 레코드 수입니다.
+적응형(adaptive) 집계가 머지 대상 테이블(tables)로 비운 임시 준비된 레코드 수입니다.
 
-### AdaptiveAggregationGiveUps {#adaptiveaggregationgiveups}
+### AdaptiveAggregationFrozenTableSpills {#adaptiveaggregationfrozentablespills}
 
-스트림에 포함된 고유 키가 적어 적응형(adaptive) 집계에서 프리징(freezing)을 포기한 스레드 수입니다.
+적응형 집계 스레드가 고정된 로컬 테이블을 디스크에 기록한 횟수입니다. 테이블의 집계 상태(aggregate states)가 계속 늘어나는 상황에서 쿼리가 외부 집계 임계값을 초과했거나, 메모리 스케줄러가 디스크 유출(spill)을 요청한 경우에 기록이 발생합니다.
 
 ### AdaptiveAggregationLocalFreezes {#adaptiveaggregationlocalfreezes}
 
 적응형(adaptive) 집계가 동결(freeze) 임계값에서 동결한 로컬 해시 테이블의 개수입니다.
 
-### AdaptiveAggregationPressureDrainedRecords {#adaptiveaggregationpressuredrainedrecords}
+### AdaptiveAggregationMergeUnits {#adaptiveaggregationmergeunits}
 
-메모리 부족(memory pressure) 상황에서 적응형 집계가 조기에 비운 스테이징 레코드 수입니다.
-
-### AdaptiveAggregationPressureStandDowns {#adaptiveaggregationpressurestanddowns}
-
-적응형 집계에서 memory pressure가 external aggregation threshold를 넘어서면서 학습 단계를 영구적으로 벗어난 스레드의 수입니다. 이후 해당 스레드의 로컬 테이블은 일반적인 external aggregation 방식으로 디스크에 spill됩니다.
-
-### AdaptiveAggregationPressureSweeps {#adaptiveaggregationpressuresweeps}
-
-적응형 집계가 memory pressure로 인해 스테이징된 레코드를 조기에 비운 횟수입니다.
+적응형 집계가 머지하고 변환한 머지 단위의 수입니다. 머지 단위는 하나의 테이블로 머지된 2단계 버킷 파티션의 구간을 말합니다.
 
 ### AdaptiveAggregationProbeBypasses {#adaptiveaggregationprobebypasses}
 
 적응형 집계에서 행이 거의 적중하지 않아 고정된(frozen) 로컬 테이블에 대한 probe를 중단한 스레드 수입니다.
 
-### AdaptiveAggregationResidueReleases {#adaptiveaggregationresiduereleases}
+### AdaptiveAggregationPrunedRecords {#adaptiveaggregationprunedrecords}
 
-기준(baseline) 알고리즘으로 되돌아간 스레드가 이로 인해 디스크로 spill할 상황이 되어, 적응형 집계가 공유 드레인 테이블을 기록해 내보낸 횟수입니다.
+`count`, `uniqExact` 또는 `uniqExactIf` 기준 top-K 계산에 해당 레코드의 그룹이 전혀 필요하지 않아 적응형 집계의 머지 과정에서 건너뛴 임시 준비된 레코드 수입니다.
 
-### AdaptiveAggregationSealedChunks {#adaptiveaggregationsealedchunks}
+### AdaptiveAggregationPrunedUnits {#adaptiveaggregationprunedunits}
 
-적응형 집계가 버퍼링된 스테이징 배치에서 병합하여 확정(seal)한 청크의 수입니다.
+적응형 집계(adaptive aggregation)가 비우지 않고 건너뛴 머지(merge) 단위의 수입니다. `count`, `uniqExact` 또는 `uniqExactIf` 기준의 top-K에 해당 단위의 그룹이 하나도 필요하지 않아 건너뛴 경우를 집계합니다. 즉, 해당 단위의 카운트 bin 값의 경계가 내림차순 top-K의 임계값보다 낮았거나, 오름차순 top-K가 가능한 최소 순위를 가진 그룹을 이미 충분히 찾은 경우입니다.
 
-### AdaptiveAggregationSealNormalizations {#adaptiveaggregationsealnormalizations}
+### AdaptiveAggregationSpilledBytes {#adaptiveaggregationspilledbytes}
 
-적응형 집계 seal이 래핑된 표현(Const, Replicated, Sparse, LowCardinality)을 drain이 소비하는 밀집(dense) 형태로 정규화한 스테이징 인수 컬럼의 개수입니다.
+메모리 부족(memory pressure) 상황에서 적응형 집계가 디스크에 기록한 임시 준비된 레코드의 압축 전 바이트 수입니다.
 
-### AdaptiveAggregationSharedTableSpills {#adaptiveaggregationsharedtablespills}
+### AdaptiveAggregationSpilledRecords {#adaptiveaggregationspilledrecords}
 
-적응형 집계가 메모리 압박 상황에서 파트 경계에 도달하여 공유 드레인 테이블을 디스크에 기록한 횟수입니다.
+메모리 부족(memory pressure) 상황에서 적응형 집계가 디스크에 기록한 임시 준비된 레코드 수입니다.
 
-### AdaptiveAggregationSpillBacklogSheds {#adaptiveaggregationspillbacklogsheds}
+### AdaptiveAggregationSpills {#adaptiveaggregationspills}
 
-스테이징된 레코드가 아직 메모리에 남아 있는 상태에서 baseline 알고리즘으로 동작하던 스레드(thaw로 다시 되돌려진 스레드 또는 스스로 물러난 스레드)가 spill을 시도하려 했기 때문에, 적응형 집계가 스테이징된 백로그를 버린 횟수입니다.
+쿼리가 외부 집계 임계값을 초과했거나 메모리 스케줄러가 디스크 유출(spill)을 요청하여 적응형 집계 스레드가 임시 준비된 레코드를 디스크에 기록한 횟수입니다.
 
 ### AdaptiveAggregationStagedBytes {#adaptiveaggregationstagedbytes}
 
-적응형 집계가 머지 시점 드레인을 위해 스테이징한 키 바이트 수입니다.
-
-### AdaptiveAggregationStagedChunkPiecesOverBound {#adaptiveaggregationstagedchunkpiecesoverbound}
-
-적응형 집계가 분할한 스테이징 청크의 조각 중, 맞추려던 경계를 여전히 초과한 채로 발행된 조각의 수입니다. 청크는 버킷 경계를 따라 분할되며, 그 자체만으로 경계를 초과하는 버킷 내부에서는 레코드 단위로 분할됩니다. 따라서 이 값은 스테이징된 바이트만으로도 경계를 초과하는 단일 레코드에 해당합니다. 이러한 조각은 통째로 클레임되므로, 드레인 과정에서 압력 파트를 그만큼 초과할 수 있습니다.
-
-### AdaptiveAggregationStagedChunkSplits {#adaptiveaggregationstagedchunksplits}
-
-한 청크의 드레인이 압력 파트 경계를 초과할 것으로 추정되어, 적응형 집계가 publication 시점에 버킷 경계를 따라 분할한 스테이징 청크의 수입니다.
-
-### AdaptiveAggregationStagedClaimsClosedAtBound {#adaptiveaggregationstagedclaimsclosedatbound}
-
-적응형 집계의 드레인이 스테이징된 청크에 대해 수행한 클레임 중, 추가할 경우 배치가 pressure 파트 경계에 도달하게 되는 청크 직전에 종료되어 그 청크를 다음 클레임으로 넘긴 횟수입니다. 이 경계는 드레인된 상태의 배치를 기준으로 적용되므로, 각각 경계에 아주 근접한 두 청크(절반 파트를 단 몇 레코드만 초과하는, 잘린 청크의 두 조각)는 하나가 아닌 두 개의 테이블로 드레인됩니다. 첫 번째 청크가 단독으로 경계를 초과하는 경우에만 무조건 클레임됩니다.
+적응형 집계가 파티션 버퍼에 스테이징한 키 바이트 수입니다.
 
 ### AdaptiveAggregationStagedRecords {#adaptiveaggregationstagedrecords}
 
-적응형 집계가 중복 제거 전에 스테이징한 지연 레코드 수입니다.
-
-### AdaptiveAggregationStagedRecordsMerged {#adaptiveaggregationstagedrecordsmerged}
-
-적응형 집계가 publish 시점과 seal 시점에 중복 키로 판단하여 머지로 제거한 스테이징된 레코드 수입니다.
+적응형 집계가 파티션 버퍼에 스테이징한 지연 레코드 수입니다.
 
 ### AdaptiveAggregationThaws {#adaptiveaggregationthaws}
 
 스테이징된 스트림이 반복 값 위주로 확인되어 적응형 집계가 로컬 테이블을 해제(thaw)한 횟수입니다.
+
+### AdaptiveCodecBlocksPriced {#adaptivecodecblockspriced}
+
+적응형 코덱 선택이 처음부터 비용을 산정한 블록(blocks)의 수입니다. 이 블록은 모든 후보 코덱으로 각각 압축한 뒤 출력이 가장 작은 결과를 유지합니다.
+
+### AdaptiveCodecBlocksRepriced {#adaptivecodecblocksrepriced}
+
+기억해 둔 최적 코덱의 우위가 줄어든 블록(blocks)에 대해 적응형 코덱 선택이 비용을 다시 산정한 블록 수입니다.
+
+### AdaptiveCodecBlocksReused {#adaptivecodecblocksreused}
+
+적응형 코덱 선택(Adaptive Codec Selection)이 이전에 기억해 둔 최적 코덱만으로 압축한 블록(blocks) 수입니다.
+
+### AdaptiveCodecBytesDefault {#adaptivecodecbytesdefault}
+
+적응형 코덱 선택(Adaptive Codec Selection)의 표본(sample) 블록(blocks)에 대해 기본 코덱(Default Codec)이 생성한 압축된 바이트 수입니다. `adaptive_codec_selection_period`개 블록으로 구성된 윈도우마다 하나씩 기록됩니다.
+
+### AdaptiveCodecBytesWritten {#adaptivecodecbyteswritten}
+
+적응형 코덱 선택(Adaptive Codec Selection)이 표본(sample) 블록(blocks)에 기록한 압축된 바이트 수입니다. `AdaptiveCodecBytesDefault`와의 비율은 기본 코덱(Default Codec) 대비 절감 효과를 나타냅니다.
 
 ### AddressesDiscovered {#addressesdiscovered}
 
@@ -138,6 +138,10 @@ HTTP 연결에서 연결 오류로 인해 비정상으로 표시된 주소의 �
 
 집계(aggregation)의 2단계 버킷을 변환하는 과정에서, 그룹 자체의 count()에 대한 HAVING 경계 조건에 의해 이미 제외되어 키 컬럼이 구체화되지 않은 그룹의 수입니다(aggregationHavingPrefilter 계획 최적화).
 
+### AggregationIndexedTables {#aggregationindexedtables}
+
+해시 파티션 단위로 셀이 인덱싱된 단일 수준 집계 해시 테이블(hash tables)의 수입니다. 이렇게 인덱싱되면 머지 시 테이블을 2단계로 변환하거나 테이블 전체를 순회하지 않고도 테이블 일부의 셀만 읽을 수 있습니다. 적응형 집계는 각 스레드가 작업을 마치면 해당 스레드의 단일 수준 테이블을 인덱싱합니다.
+
 ### AggregationOptimizedEqualRangesOfKeys {#aggregationoptimizedequalrangesofkeys}
 
 키의 동일 범위 최적화가 적용된 블록 수
@@ -152,7 +156,19 @@ HTTP 연결에서 연결 오류로 인해 비정상으로 표시된 주소의 �
 
 ### AggregationSharedKeptKeysSpillReseeds {#aggregationsharedkeptkeysspillreseeds}
 
-단순 GROUP BY LIMIT의 제한 기준에 따라 유지되는 공유 키 집합으로 범위가 제한된 해시 테이블이 외부 집계 과정에서 임시 파일로 플러시된 뒤, 해당 키로 다시 채워진 횟수입니다(`optimize_trivial_group_by_limit_query` 설정 참조).
+`group_by_overflow_mode = any` 설정에 따라 새 키를 더 이상 받아들이지 않게 된 해시 테이블이 외부 집계 과정에서 임시 파일로 플러시된 뒤, 유지하던 키로 다시 채워진 횟수입니다. 이렇게 다시 채워지므로 해당 키의 나머지 행도 계속 집계됩니다. 단순 GROUP BY LIMIT 최적화의 컷오프에서 사용하는 공유 키 집합(`optimize_trivial_group_by_limit_query` 설정 참조)과 일반 `max_rows_to_group_by` 제한에서 사용하는 스트림별 키 집합을 모두 포함합니다.
+
+### AggregationThresholdTopKMergedGroups {#aggregationthresholdtopkmergedgroups}
+
+top-K 임계값 머지에서 실제로 머지되어 후보로 순위가 매겨진 그룹 수입니다.
+
+### AggregationThresholdTopKMerges {#aggregationthresholdtopkmerges}
+
+모든 그룹을 일반 방식으로 머지하는 대신 top-K 임계값 머지(Fagin&#39;s Threshold Algorithm)로 머지된 2단계 버킷의 수입니다.
+
+### AggregationThresholdTopKPrunedCells {#aggregationthresholdtopkprunedcells}
+
+top-K 임계값 머지 과정에서 한 번도 접근하지 않은 스레드별 해시 테이블 셀의 수입니다. 해당 셀에 속한 어떤 그룹도 상위 K개에 들 수 없어 접근 대상에서 제외된 셀입니다.
 
 ### AggregationTopKHeapsFrozen {#aggregationtopkheapsfrozen}
 
@@ -174,9 +190,29 @@ top-K 집계 힙이 동결되어 일반 집계로 폴백된 횟수입니다. 힙
 
 AI 프로바이더로 전송된 HTTP 요청 수입니다.
 
+### AIAPICallsFailed {#aiapicallsfailed}
+
+모든 재시도를 거친 후에도 실패한 AI 프로바이더 요청 수입니다.
+
+### AIAPICallsRetried {#aiapicallsretried}
+
+일시적인 장애로 인해 재시도된 AI 프로바이더 요청 수입니다.
+
+### AIAPICallsThrottled {#aiapicallsthrottled}
+
+HTTP 429(Too Many Requests)로 거부된 AI 프로바이더 요청 수입니다.
+
+### AICacheReadTokens {#aicachereadtokens}
+
+AI 채팅 서비스 제공업체가 보고한, 제공업체 캐시에서 읽은 프롬프트 토큰 수입니다. AIInputTokens에 포함됩니다.
+
+### AICacheWriteTokens {#aicachewritetokens}
+
+AI 채팅 서비스 제공업체가 보고한 값으로, provider 캐시에 기록된 프롬프트 토큰 수입니다. AIInputTokens에 포함됩니다.
+
 ### AIInputTokens {#aiinputtokens}
 
-쿼리의 모든 AI 함수 호출에서 사용된 총 prompt 토큰 수입니다.
+캐시 읽기 및 쓰기 작업을 포함하여, 쿼리의 모든 AI 함수 호출에서 사용된 총 프롬프트 토큰 수입니다.
 
 ### AIORead {#aioread}
 
@@ -198,6 +234,14 @@ Linux 또는 FreeBSD의 AIO 인터페이스를 통한 쓰기 횟수
 
 Linux 또는 FreeBSD AIO 인터페이스를 통해 기록된 바이트 수
 
+### AIRequestMicroseconds {#airequestmicroseconds}
+
+AI 프로바이더 요청에 소요된 총 시간입니다. 실패한 시도와 응답 파싱 시간은 포함하고, 재시도 백오프 시간은 제외합니다. 모든 스레드의 값을 합산합니다.
+
+### AIRetryBackoffMicroseconds {#airetrybackoffmicroseconds}
+
+실패한 AI 프로바이더 요청을 재시도하기 전에 대기한 총 시간입니다. 모든 스레드의 값을 합산합니다.
+
 ### AIRowsProcessed {#airowsprocessed}
 
 AI 결과가 반환된 행 수입니다.
@@ -213,6 +257,38 @@ AI 결과가 반환된 행 수입니다.
 ### AllUsersThrottlerSleepMicroseconds {#allusersthrottlersleepmicroseconds}
 
 쿼리가 &#39;max&#95;network&#95;bandwidth&#95;for&#95;all&#95;users&#39; 스로틀링에 맞추기 위해 대기한 총 시간입니다.
+
+### AmberConnectionsCreated {#amberconnectionscreated}
+
+Amber용으로 생성된 연결 수
+
+### AmberConnectionsElapsedMicroseconds {#amberconnectionselapsedmicroseconds}
+
+Amber 연결을 생성하는 데 소요된 총 시간
+
+### AmberConnectionsErrors {#amberconnectionserrors}
+
+Amber 연결 생성에 실패한 횟수
+
+### AmberConnectionsExpired {#amberconnectionsexpired}
+
+Amber의 만료된 연결 수
+
+### AmberConnectionsPreserved {#amberconnectionspreserved}
+
+Amber에 대해 유지된 연결 수
+
+### AmberConnectionsReset {#amberconnectionsreset}
+
+Amber에서 재설정(reset)된 연결 수
+
+### AmberConnectionsReused {#amberconnectionsreused}
+
+Amber에서 재사용된 연결 수
+
+### AmberFailedPromotions {#amberfailedpromotions}
+
+이 노드가 amber 마스터 잠금을 획득했으나 볼륨을 펜싱(fencing)하고 복구하지 못해 잠금을 반납한 횟수입니다.
 
 ### AnalyzePatchRangesMicroseconds {#analyzepatchrangesmicroseconds}
 
@@ -261,6 +337,10 @@ Arena 메모리에 할당된 바이트 수입니다(GROUP BY 및 유사한 작�
 ### ASTFuzzerSkippedReplicatedDDLInternal {#astfuzzerskippedreplicatedddlinternal}
 
 Context에서 내부 복제된 데이터베이스 DDL 실행(활성 ZooKeeperMetadataTransaction)이 진행 중이어서 서버 측 AST 퍼저가 퍼징을 건너뛴 횟수입니다.
+
+### ASTFuzzerSkippedSecondaryQuery {#astfuzzerskippedsecondaryquery}
+
+다른 노드에서 전송된 보조 쿼리라는 이유로 서버 측 AST 퍼저가 퍼징을 건너뛴 횟수입니다.
 
 ### AsynchronousReaderIgnoredBytes {#asynchronousreaderignoredbytes}
 
@@ -342,9 +422,73 @@ syslog의 비동기 큐로 전송된 메시지 수(수락되었거나 삭제된 
 
 text&#95;log의 비동기 큐로 전송된 메시지 수(수락되었거나 폐기된 메시지 포함)
 
+### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
+
+자동 병렬 레플리카 기능이 비용 산정용 후보 계획을 빌드하지 않고, 이전 실행에서 기억해 둔 경계를 근거로 병렬 레플리카를 사용하지 않기로 결정한 횟수입니다. 그 이유를 나타내는 이벤트(예: `AutoParallelReplicasRejectedByCostModel`)도 함께 집계됩니다.
+
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
-자동 병렬 레플리카 기능이 단일 노드 계획과 비교하기 위해 병렬 레플리카를 사용하는 후보 계획을 생성한 횟수입니다. 이렇게 생성된 계획이 모두 사용되지는 않습니다. 이 계획은 비용을 산정하기 위해 생성되며, 단일 노드 계획이 더 유리하다고 판단되면 폐기됩니다
+자동 병렬 레플리카 기능이 병렬 레플리카 사용이 이득인지 판단하기 위해 병렬 레플리카를 사용하는 계획을 생성한 횟수입니다
+
+### AutoParallelReplicasApplied {#autoparallelreplicasapplied}
+
+자동 병렬 레플리카 기능이 쿼리 실행 계획(query plan)을 병렬 레플리카를 사용하는 계획으로 대체한 횟수입니다
+
+### AutoParallelReplicasBytesPerReplica {#autoparallelreplicasbytesperreplica}
+
+자동 병렬 복제본(Automatic Parallel Replicas)이 산정한 이 쿼리의 레플리카당 읽기 바이트 수입니다. 결정 결과와 관계없이 항상 기록되므로, 이 분포에는 `automatic_parallel_replicas_min_bytes_per_replica`로 인해 제외된 쿼리와 통과한 쿼리가 모두 포함됩니다.
+
+### AutoParallelReplicasCostModelEvaluated {#autoparallelreplicascostmodelevaluated}
+
+자동 병렬 레플리카 기능이 비용 모델 단계에 도달하여 로컬 실행 계획(local plan)과 병렬 레플리카 실행 계획을 비교한 횟수입니다
+
+### AutoParallelReplicasNoStatistics {#autoparallelreplicasnostatistics}
+
+자동 병렬 레플리카 기능에 아직 통계가 없어 결정을 내리는 대신 통계를 수집한 횟수입니다
+
+### AutoParallelReplicasOptimizationMicroseconds {#autoparallelreplicasoptimizationmicroseconds}
+
+자동 병렬 복제본(Automatic Parallel Replicas) 최적화에 소요된 시간으로, 병렬 레플리카를 사용하는 계획을 빌드하는 데 걸린 시간은 제외합니다.
+
+### AutoParallelReplicasPlanBuildMicroseconds {#autoparallelreplicasplanbuildmicroseconds}
+
+자동 병렬 복제본(Automatic Parallel Replicas)이 로컬 실행 계획(local plan)과 비교하기 위해 병렬 레플리카를 사용하는 실행 계획을 빌드하는 데 소요된 시간입니다.
+
+### AutoParallelReplicasPlansNotComparable {#autoparallelreplicasplansnotcomparable}
+
+자동 병렬 복제본(Automatic Parallel Replicas)이 병렬 복제본을 사용하는 계획을 빌드한 후, 또는 이전 빌드 시 기억해 둔 경계 지점에서 해당 계획을 로컬 계획과 충분히 대응시키지 못해 비교하거나 사용할 수 없어 쿼리를 건너뛴 횟수입니다. 예를 들어 두 계획의 읽기 단계를 서로 짝지을 수 없거나, 복제본이 어떤 읽기를 분할할지 판단할 수 없는 경우가 이에 해당합니다. 구체적인 사유는 `AutoParallelReplicas` 로거에 기록됩니다
+
+### AutoParallelReplicasPlanWithoutParallelReplicas {#autoparallelreplicasplanwithoutparallelreplicas}
+
+자동 병렬 복제본(Automatic Parallel Replicas)이 병렬 복제본을 사용하는 계획을 빌드한 후 쿼리를 건너뛴 횟수입니다. 레플리카당 행(rows) 수가 너무 적거나 상관 서브쿼리(correlated subquery)가 있는 경우처럼, 플래너가 해당 계획에서 병렬 복제본을 사용하지 않았을 때 발생합니다. 구체적인 이유는 `Planner` 로거에서 확인할 수 있습니다.
+
+### AutoParallelReplicasRejectedByCostModel {#autoparallelreplicasrejectedbycostmodel}
+
+비용 모델이 로컬 실행 계획(local plan)이 병렬 레플리카 실행 계획보다 빠르거나 적어도 같은 속도라고 추정하여, 자동 병렬 레플리카 기능이 병렬 레플리카 사용을 거부한 횟수입니다.
+
+### AutoParallelReplicasRejectedByDuplicatedReads {#autoparallelreplicasrejectedbyduplicatedreads}
+
+비용 모델은 병렬 복제본(parallel replica) 사용이 유리하다고 판단했지만, 읽은 바이트 중 레플리카 간에 분할되지 않고 모든 레플리카가 전체를 읽어야 하는 비율이 `automatic_parallel_replicas_max_duplicated_read_ratio`를 초과하여 자동 병렬 복제본(Automatic Parallel Replicas) 사용이 거부된 횟수입니다.
+
+### AutoParallelReplicasRejectedByThreshold {#autoparallelreplicasrejectedbythreshold}
+
+비용 모델은 병렬 레플리카가 유리하다고 판단했으나, 읽기량이 `automatic_parallel_replicas_min_bytes_per_replica` 미만이어서 자동 병렬 복제본(Automatic Parallel Replicas)이 거부된 횟수입니다.
+
+### AutoParallelReplicasSkippedDueToQuery {#autoparallelreplicasskippedduetoquery}
+
+자동 병렬 복제본(Automatic Parallel Replicas)이 병렬 복제본을 사용하는 쿼리 계획을 빌드하기 전에 쿼리를 건너뛴 횟수입니다. 병렬 복제본으로 읽을 수 없는 조인이나 통계를 수집할 수 없는 단계처럼, 자동 병렬 복제본이 처리할 수 없는 기능이 쿼리에 포함된 경우에 해당합니다. 구체적인 원인은 `AutoParallelReplicas` 로거에서 확인할 수 있습니다
+
+### AutoParallelReplicasSkippedDueToSettings {#autoparallelreplicasskippedduetosettings}
+
+자동 병렬 복제본(Automatic Parallel Replicas)이 병렬 복제본을 사용하는 계획을 빌드하기 전에, 주어진 설정 때문에 쿼리를 건너뛴 횟수입니다. 구체적인 사유는 `AutoParallelReplicas` 로거에서 확인할 수 있습니다. 자동 병렬 복제본 자체를 끄는 설정은 집계되지 않습니다. `enable_parallel_replicas`가 비활성화되었거나 강제 설정되었을 때, 또는 `parallel_replicas_mode`가 `read_tasks`가 아닐 때는 `automatic_parallel_replicas_mode = 0`일 때와 마찬가지로 최적화가 아예 실행되지 않습니다
+
+### AutoParallelReplicasSkippedEarly {#autoparallelreplicasskippedearly}
+
+인덱스 분석(Index Analysis) 단계에서 이미 계획상 가장 큰 읽기 작업의 데이터 양이 복제본당 `automatic_parallel_replicas_min_bytes_per_replica`보다 적은 것으로 확인되어, 자동 병렬 복제본(Automatic Parallel Replicas)이 병렬 복제본을 사용하는 계획을 아예 빌드하지 않은 횟수입니다.
+
+### AutoParallelReplicasStatisticsDrifted {#autoparallelreplicasstatisticsdrifted}
+
+저장소에서 읽은 행(rows) 수가 캐시된 통계와 `automatic_parallel_replicas_statistics_drift_ratio` 넘게 차이 나서, 자동 병렬 복제본(Automatic Parallel Replicas)이 결정을 내리지 않고 통계를 다시 수집한 횟수입니다
 
 ### AzureClients {#azureclients}
 
@@ -550,17 +694,33 @@ BlobCopier 스레드 실행 횟수
 
 BlobKiller가 실행되는 동안 발생한 blob 잠금 오류 수
 
+### BlobKillerThreadLockedBatchedBlobs {#blobkillerthreadlockedbatchedblobs}
+
+메타데이터 저장소에서 배치 단위로 반환된 바이너리 대형 객체(BLOB) 수
+
 ### BlobKillerThreadLockedBlobs {#blobkillerthreadlockedblobs}
 
 메타데이터 저장소에서 반환된 blob의 수
+
+### BlobKillerThreadLockedSingleBlobs {#blobkillerthreadlockedsingleblobs}
+
+메타데이터 저장소에서 하나씩 반환된 바이너리 대형 객체(BLOB) 수
 
 ### BlobKillerThreadRecordBlobsErrors {#blobkillerthreadrecordblobserrors}
 
 BlobKiller 실행 중 발생한 blob 기록 관련 오류 수
 
+### BlobKillerThreadRecordedBatchedBlobs {#blobkillerthreadrecordedbatchedblobs}
+
+배치 단위로 삭제된 바이너리 대형 객체(BLOB) 중 BlobKiller의 삭제 내역이 메타데이터 저장소에 기록된 객체의 수
+
 ### BlobKillerThreadRecordedBlobs {#blobkillerthreadrecordedblobs}
 
 메타데이터 저장소에 BlobKiller가 제거한 것으로 기록된 blob 수
+
+### BlobKillerThreadRecordedSingleBlobs {#blobkillerthreadrecordedsingleblobs}
+
+개별적으로 삭제된 바이너리 대형 객체(BLOB) 중 BlobKiller에 의한 삭제가 메타데이터 저장소에 기록된 바이너리 대형 객체(BLOB)의 수입니다.
 
 ### BlobKillerThreadRemoveBlobsErrors {#blobkillerthreadremoveblobserrors}
 
@@ -754,9 +914,25 @@ Common executor에서 완료될 때까지 대기하는 데 소요된 시간입�
 
 압축된 블록의 체크섬 불일치가 단일 비트 차이로 인해 발생한 횟수입니다.
 
+### CompressedWriteBufferBlocks {#compressedwritebufferblocks}
+
+`CompressedWriteBuffer`(파일, 네트워크, 임시 데이터)가 기록한 압축 블록(서로 독립적으로 압축되는 데이터 블록)의 수입니다.
+
+### CompressedWriteBufferBytes {#compressedwritebufferbytes}
+
+`CompressedWriteBuffer`가 압축 코덱(compression codecs)에 전달한 비압축 바이트 수(압축 전 바이트 수)입니다.
+
+### CompressedWriteBufferCompressMicroseconds {#compressedwritebuffercompressmicroseconds}
+
+`CompressedWriteBuffer`에서 압축 코덱(compression codecs) 내부 처리에 소요된 총 시간입니다.
+
 ### ConcurrencyControlDownscales {#concurrencycontroldownscales}
 
 CPU 다운스케일링 이벤트 총 횟수
+
+### ConcurrencyControlParks {#concurrencycontrolparks}
+
+블로킹 I/O나 실행할 작업이 없는 경우처럼 CPU를 사용하지 않는 대기로 인해 스레드가 CPU 슬롯을 반환(파킹)한 총 횟수입니다.
 
 ### ConcurrencyControlPreemptedMicroseconds {#concurrencycontrolpreemptedmicroseconds}
 
@@ -785,6 +961,10 @@ CPU 슬롯 용량 부족으로 지연된 쿼리 수입니다. 경합 지표로, 
 ### ConcurrencyControlSlotsGranted {#concurrencycontrolslotsgranted}
 
 쿼리당 1개의 thread를 보장하는 기준과 `use_concurrency_control` = 0으로 설정된 쿼리에 대해 부여된 CPU 슬롯 수
+
+### ConcurrencyControlUnparks {#concurrencycontrolunparks}
+
+CPU 이외의 대기 후 스레드가 CPU 슬롯을 다시 획득한 총 횟수입니다.
 
 ### ConcurrencyControlUpscales {#concurrencycontrolupscales}
 
@@ -920,6 +1100,10 @@ ReplicatedMergeTree에서 파트 변경을 위한 로그 항목을 성공적으�
 ### DataAfterMutationDiffersFromReplica {#dataaftermutationdiffersfromreplica}
 
 mutation 이후 데이터가 다른 레플리카의 데이터와 바이트 단위까지 동일하지 않은 횟수입니다. &#39;DataAfterMergeDiffersFromReplica&#39;에 설명된 이유 외에도, 비결정적인 mutation으로 인해 발생할 수도 있습니다.
+
+### DatabaseTablesEnumerated {#databasetablesenumerated}
+
+데이터베이스가 테이블 반복자(iterator)를 통해 넘겨준 테이블 수입니다. 여기에는 `SHOW TABLES`, 테이블 목록을 보여주는 시스템 테이블, 그 밖에 데이터베이스를 순회하는 모든 작업이 포함됩니다. 이러한 시스템 테이블을 대상으로 하는 쿼리에서 테이블 이름(table name)에 조건을 지정하면 열거 범위가 좁혀지며, 이 카운터를 통해 범위가 얼마나 좁혀졌는지 확인할 수 있습니다.
 
 ### NULL에 대한 기본 구현이 처리한 행 수 {#defaultimplementationfornullsrows}
 
@@ -1173,6 +1357,18 @@ S3ObjectStorage용 &#39;plain&#95;rewritable&#39; 메타데이터 저장소가 �
 
 S3ObjectStorage에서 &#39;plain&#95;rewritable&#39; 메타데이터 저장소가 제거한 디렉터리 수입니다.
 
+### DiskPlainRewritableSnapshotRead {#diskplainrewritablesnapshotread}
+
+읽기 전용 &#39;plain&#95;rewritable&#39; 디스크가 객체 스토리지 목록 조회 대신 스냅샷 파일에서 상태를 로드한 횟수입니다(갱신 시 스냅샷이 변경되지 않은 것으로 확인되면 스냅샷을 읽지 않으므로 집계에 포함되지 않습니다).
+
+### DiskPlainRewritableSnapshotWriteFailed {#diskplainrewritablesnapshotwritefailed}
+
+&#39;plain&#95;rewritable&#39; 디스크의 스냅샷 파일 쓰기 시도가 실패한 횟수입니다(쓰기는 재시도됩니다).
+
+### DiskPlainRewritableSnapshotWritten {#diskplainrewritablesnapshotwritten}
+
+&#39;plain&#95;rewritable&#39; 디스크가 기록한 스냅샷 파일 수입니다.
+
 ### DiskPlainRewritableUndoStageRetries {#diskplainrewritableundostageretries}
 
 실패한 &#39;plain&#95;rewritable&#39; 메타데이터 트랜잭션을 되돌리는 단계가 객체 스토리지에서 거부되어 다시 수행해야 했던 횟수입니다.
@@ -1319,7 +1515,7 @@ write syscall을 대기하는 데 소요된 총 시간입니다. 여기에는 �
 
 ### DistinctTransformsSwitchedToPassThrough {#distincttransformsswitchedtopassthrough}
 
-쿼리 메모리가 external `DISTINCT` 임계값을 초과했거나 예상되는 해싱 할당량이 남은 임계값 예산을 초과할 것으로 판단되어(`max_bytes_before_external_distinct` 참조), 해시 테이블을 해제하고 모든 행을 그대로 통과시키기 시작한 사전 `DISTINCT` 변환의 개수입니다. 이 경우 중복 제거는 디스크로 spill하는 최종 `DISTINCT` 단계에서 처리됩니다.
+쿼리 메모리가 뒤따르는 연산자의 디스크 유출 임계값(spill threshold)을 초과했거나 예상되는 해싱 할당량이 남은 임계값 예산을 초과할 것으로 판단되어, 해시 테이블을 해제하고 모든 행을 그대로 통과시키기 시작한 예비 `DISTINCT` 변환의 개수입니다. `DISTINCT` 앞에서는 임계값이 `max_bytes_before_external_distinct`이며, 이 경우 중복 제거는 디스크로 spill하는 최종 `DISTINCT` 단계에서 처리됩니다. `IN`의 집합(set) 앞에서는 해당 집합의 디스크 유출 임계값(`max_bytes_before_external_set` 참조)이 적용되며, 중복 제거는 집합에서 처리됩니다.
 
 ### DistrCacheBackgroundWrites {#distrcachebackgroundwrites}
 
@@ -1336,6 +1532,14 @@ Distributed Cache 클라이언트 이벤트입니다. 요청을 생성하기 전
 ### DistrCacheConnectMicroseconds {#distrcacheconnectmicroseconds}
 
 Distributed Cache 연결 이벤트입니다. Distributed Cache에 연결하는 데 소요된 시간입니다.
+
+### DistrCacheEndRequestMicroseconds {#distrcacheendrequestmicroseconds}
+
+Distributed Cache 클라이언트 이벤트입니다. Distributed Cache로 EndRequest 패킷을 전송하는 데 소요된 시간입니다.
+
+### DistrCacheEndRequestNotSentSocketNotWritable {#distrcacheendrequestnotsentsocketnotwritable}
+
+Distributed Cache 클라이언트 이벤트입니다. 소켓에 쓰기가 불가능하여(서버가 소켓 데이터를 더 이상 비우지 않음) 전송되지 않은 EndRequest 패킷 수입니다. 이 경우 패킷을 보내는 대신 연결을 끊으며, 서버는 EOF를 감지합니다
 
 ### DistrCacheEstimatedInflightBytesOnSeek {#distrcacheestimatedinflightbytesonseek}
 
@@ -1360,6 +1564,14 @@ Distributed Cache 레지스트리 이벤트입니다. Distributed Cache hash rin
 ### DistrCacheInlineWrites {#distrcacheinlinewrites}
 
 Distributed Cache 쓰기 버퍼 이벤트. 호출 스레드에서 인라인으로 실행된 캐시 쓰기 횟수(겹칠 객체 스토리지 쓰기가 없는 임시 데이터의 쓰기)
+
+### DistrCacheKeptConnectionsInflightBytes {#distrcachekeptconnectionsinflightbytes}
+
+분산 캐시 읽기 버퍼 이벤트입니다. DistrCacheKeptConnectionsWithInflightData에 집계된 연결에서 전송 중인 바이트의 추정치입니다(DistrCacheUnusedDataPacketsBytesUnknownRequest와 비교하십시오).
+
+### DistrCacheKeptConnectionsWithInflightData {#distrcachekeptconnectionswithinflightdata}
+
+분산 캐시 읽기 버퍼 이벤트입니다. 데이터가 아직 도착할 수 있는 상태에서 읽기 요청이 취소되었지만, 추정된 전송 중인 바이트가 `distributed_cache_min_inflight_bytes_to_discard_connection`을 초과하지 않아 연결이 풀에 유지된 횟수입니다.
 
 ### DistrCacheLockRegistryMicroseconds {#distrcachelockregistrymicroseconds}
 
@@ -1429,6 +1641,10 @@ Distributed Cache 클라이언트 이벤트. 읽기 요청 중 발생한 재시�
 
 Distributed Cache 클라이언트 이벤트. 읽기 요청 중 발생한 재시도 가능한 Distributed Cache 오류 수입니다(재시도로 복구된 경우를 포함해, 발생할 때마다 집계됨).
 
+### DistrCacheReadFinalAckFailed {#distrcachereadfinalackfailed}
+
+Distributed Cache 이벤트입니다. 최종 확인 응답을 받기 전에 연결이 끊어진 읽기 수이며, 이 경우 완전히 수신된 범위는 그대로 수락됩니다.
+
 ### DistrCacheReadMicroseconds {#distrcachereadmicroseconds}
 
 Distributed Cache 읽기 버퍼 이벤트. Distributed Cache에서 읽는 데 걸린 시간
@@ -1489,9 +1705,17 @@ Distributed Cache registry 이벤트입니다. Distributed Cache registry를 업
 
 Distributed Cache registry 이벤트. Distributed Cache registry 업데이트 횟수
 
+### DistrCacheRejectedRegistryRecords {#distrcacherejectedregistryrecords}
+
+Distributed Cache 레지스트리 이벤트입니다. 인증서를 신뢰할 수 없거나, 시그니처가 일치하지 않거나, 둘 중 하나가 누락되어 무시된 레지스트리 엔트리 수입니다.
+
 ### DistrCacheRemoveOutdatedMicroseconds {#distrcacheremoveoutdatedmicroseconds}
 
 Distributed Cache 연결 이벤트입니다. 연결 풀에서 더 이상 유효하지 않은 연결을 제거하는 데 걸린 시간입니다.
+
+### DistrCacheRequestsEndedOnRelease {#distrcacherequestsendedonrelease}
+
+Distributed Cache 클라이언트 이벤트입니다. 리더가 명시적으로 종료하지 않아 클라이언트가 해제 과정에서 직접 종료해야 했던 열린 요청의 수입니다(재연결을 수반한 재시도, 완료되지 않은 요청에 이어 새 요청이 발생한 경우, 또는 클라이언트가 사라진 경우).
 
 ### DistrCacheReusedConnections {#distrcachereusedconnections}
 
@@ -1557,6 +1781,10 @@ Distributed Cache 서버 이벤트입니다. 파일 시스템 캐시에서 읽�
 
 Distributed Cache server 이벤트입니다. 파일 시스템 캐시에서 읽는 동안 Distributed Cache의 객체 스토리지에서 읽어 온 바이트 수입니다.
 
+### DistrCacheServerCommittedTemporaryFilesLockWaitMicroseconds {#distrcacheservercommittedtemporaryfileslockwaitmicroseconds}
+
+Distributed Cache 서버 이벤트입니다. 경합 발생 시 커밋된 임시 파일 뮤텍스를 획득하기 위해 대기한 시간입니다.
+
 ### DistrCacheServerConnectionRegistryClientLockWaitMicroseconds {#distrcacheserverconnectionregistryclientlockwaitmicroseconds}
 
 Distributed Cache 서버 이벤트. 경합 발생 시 클라이언트별 연결 버킷 뮤텍스를 대기하는 데 소요된 시간(register/unregister/identify/eviction)
@@ -1597,6 +1825,10 @@ Distributed Cache 서버 이벤트입니다. DistributedCache 서버 측에서 �
 
 Distributed Cache 서버 이벤트입니다. DistributedCacheServer에서 수신한 RefreshCredentials 클라이언트 패킷 수입니다.
 
+### DistrCacheServerRequestsClosedWithoutEndRequest {#distrcacheserverrequestsclosedwithoutendrequest}
+
+Distributed Cache 서버 이벤트. 클라이언트가 EndRequest를 보내지 않고 연결을 닫아(강제 종료된 클라이언트, 소켓이 쓰기 가능 상태가 아닌 클라이언트 또는 구버전 클라이언트) 서버가 EOF 시점에 처리를 중단한 요청 수입니다. 이 서버가 직접 닫은 연결(서버 종료 또는 연결 eviction)은 집계되지 않습니다
+
 ### DistrCacheServerReusedS3CachedClients {#distrcacheserverreuseds3cachedclients}
 
 Distributed Cache 서버 이벤트입니다. 캐시된 S3 클라이언트 중 재사용된 수입니다.
@@ -1616,6 +1848,38 @@ Distributed Cache server 이벤트입니다. DistributedCacheServer에서 StartR
 ### DistrCacheServerSwitches {#distrcacheserverswitches}
 
 분산 캐시 읽기 버퍼 이벤트. 읽기/쓰기 스루 캐시에서 Distributed Cache 서버 간 서버 전환 횟수
+
+### DistrCacheServerTemporaryCleanupScheduleFailures {#distrcacheservertemporarycleanupschedulefailures}
+
+Distributed Cache 서버 이벤트입니다. 커밋된 임시 데이터 정리 예약에 실패한 횟수입니다.
+
+### DistrCacheServerTemporaryDataControlMicroseconds {#distrcacheservertemporarydatacontrolmicroseconds}
+
+Distributed Cache 서버 이벤트입니다. 커밋된 임시 데이터 제어(temporary-data control)를 처리하는 데 소요된 시간입니다.
+
+### DistrCacheServerTemporaryFilesExpired {#distrcacheservertemporaryfilesexpired}
+
+Distributed Cache 서버 이벤트입니다. 만료된 커밋됨 상태의 임시 파일 수입니다.
+
+### DistrCacheServerTemporaryFilesExtended {#distrcacheservertemporaryfilesextended}
+
+Distributed Cache 서버 이벤트. 커밋됨 상태의 임시 파일 TTL 연장 횟수입니다.
+
+### DistrCacheServerTemporaryFilesPublished {#distrcacheservertemporaryfilespublished}
+
+Distributed Cache 서버 이벤트입니다. 발행된 커밋됨 상태의 임시 파일 수입니다.
+
+### DistrCacheServerTemporaryFilesPublishRejected {#distrcacheservertemporaryfilespublishrejected}
+
+Distributed Cache 서버 이벤트. 커밋됨 상태의 임시 발행 중 거부된 발행 수
+
+### DistrCacheServerTemporaryFilesReleased {#distrcacheservertemporaryfilesreleased}
+
+Distributed Cache 서버 이벤트입니다. 해제된 커밋됨 상태의 임시 파일의 수입니다.
+
+### DistrCacheServerTemporaryReadRejected {#distrcacheservertemporaryreadrejected}
+
+Distributed Cache 서버 이벤트입니다. 커밋됨 상태의 임시 읽기 중 거부된 횟수입니다.
 
 ### DistrCacheServerUpdates {#distrcacheserverupdates}
 
@@ -1645,13 +1909,69 @@ Distributed Cache 레지스트리 이벤트입니다. 서버 레지스트리가 
 
 Distributed Cache 클라이언트 이벤트. 내부 검사용 시스템 테이블 요청(system.distributed&#95;cache, system.distributed&#95;cache&#95;metrics, system.distributed&#95;cache&#95;events) 중 발생한 Distributed Cache 오류 수입니다. 이러한 요청은 재시도되지 않으므로 재시도 가능한 오류와 재시도 불가능한 오류가 함께 집계됩니다.
 
+### DistrCacheTemporaryDataRegistryCallbackFailures {#distrcachetemporarydataregistrycallbackfailures}
+
+Distributed Cache의 커밋된 임시 데이터 이벤트입니다. 포함된 임시 데이터 레지스트리 콜백 실패 횟수를 나타냅니다.
+
+### DistrCacheTemporaryDataRegistryLockWaitMicroseconds {#distrcachetemporarydataregistrylockwaitmicroseconds}
+
+Distributed Cache에서 커밋된 임시 데이터 관련 이벤트입니다. 경합 발생 시 임시 데이터 레지스트리 뮤텍스를 대기하는 데 소요된 시간입니다
+
+### DistrCacheTemporaryDataRegistryScheduleFailures {#distrcachetemporarydataregistryschedulefailures}
+
+Distributed Cache의 커밋된 임시 데이터 이벤트입니다. 임시 데이터 레지스트리 작업의 예약에 실패한 횟수입니다.
+
+### DistrCacheTemporaryDataReleaseBatches {#distrcachetemporarydatareleasebatches}
+
+Distributed Cache의 커밋된 임시 데이터 이벤트입니다. 해제 배치 수입니다.
+
+### DistrCacheTemporaryDataReleaseBatchFailures {#distrcachetemporarydatareleasebatchfailures}
+
+Distributed Cache의 커밋된 임시 데이터 관련 이벤트입니다. 해제에 실패한 배치 수입니다.
+
+### DistrCacheTemporaryDataReleasesDropped {#distrcachetemporarydatareleasesdropped}
+
+Distributed Cache의 커밋된 임시 데이터 이벤트입니다. 복구 불가능한 오류가 발생했거나 재시도 중 서버 측 TTL이 경과하여 포기되고 TTL 정리에 맡겨진 해제 횟수입니다.
+
+### DistrCacheTemporaryDataRenewBatches {#distrcachetemporarydatarenewbatches}
+
+Distributed Cache의 커밋된 임시 데이터 이벤트입니다. 갱신 배치 수입니다.
+
+### DistrCacheTemporaryDataRenewBatchFailures {#distrcachetemporarydatarenewbatchfailures}
+
+Distributed Cache의 커밋된 임시 데이터 이벤트입니다. 실패한 갱신 배치 수입니다
+
 ### DistrCacheTemporaryFilesBytesWritten {#distrcachetemporaryfilesbyteswritten}
 
 Distributed Cache 연결 이벤트. Distributed Cache에서 생성된 임시 파일에 기록된 바이트 수
 
+### DistrCacheTemporaryFilesConfirmationFailed {#distrcachetemporaryfilesconfirmationfailed}
+
+Distributed Cache의 커밋된 임시 데이터 관련 이벤트입니다. 실패한 발행(publication) 확인 횟수입니다.
+
+### DistrCacheTemporaryFilesConfirmed {#distrcachetemporaryfilesconfirmed}
+
+Distributed Cache의 커밋된 임시 데이터 이벤트입니다. 원본 서버에서 확인된 발행 건수입니다.
+
 ### DistrCacheTemporaryFilesCreated {#distrcachetemporaryfilescreated}
 
 Distributed Cache 연결 이벤트. Distributed Cache에서 생성된 임시 파일의 수
+
+### DistrCacheTemporaryFilesHandoffFailed {#distrcachetemporaryfileshandofffailed}
+
+Distributed Cache의 커밋된 임시 데이터 관련 이벤트입니다. 실패한 소유자 핸드오프 횟수입니다
+
+### DistrCacheTemporaryFilesPublicationAmbiguous {#distrcachetemporaryfilespublicationambiguous}
+
+Distributed Cache의 커밋된 임시 데이터 이벤트입니다. 결과가 모호한 발행(publication) 응답의 수입니다.
+
+### DistrCacheTemporaryFilesPublished {#distrcachetemporaryfilespublished}
+
+Distributed Cache의 커밋된 임시 데이터 이벤트입니다. 클라이언트가 발행한 파일 수입니다.
+
+### DistrCacheUnexpectedServerCertificate {#distrcacheunexpectedservercertificate}
+
+Distributed Cache 연결 이벤트입니다. Distributed Cache 서버가 레지스트리 엔트리에 등록된 개인 키와 다른 개인 키의 인증서를 제시해, 클라이언트가 연결을 종료하고 해당 서버를 제외한 횟수입니다.
 
 ### DistrCacheUnsuccessfulConnectAttempts {#distrcacheunsuccessfulconnectattempts}
 
@@ -1680,6 +2000,10 @@ Distributed Cache 클라이언트 이벤트. Distributed Cache에서 사용되�
 ### DistrCacheUnusedPacketsBufferAllocations {#distrcacheunusedpacketsbufferallocations}
 
 Distributed Cache 클라이언트 이벤트입니다. 기존 버퍼를 재사용하지 못했을 때 발생한 추가 버퍼 할당 횟수입니다.
+
+### DistrCacheVerifiedServerCertificate {#distrcacheverifiedservercertificate}
+
+Distributed Cache 연결 이벤트입니다. 분산 캐시 서버(Distributed Cache server)가 자신의 레지스트리 엔트리에 등록된 키와 일치하는 인증서를 제시한 횟수입니다.
 
 ### DistrCacheWriteBytes {#distrcachewritebytes}
 
@@ -1865,6 +2189,10 @@ ReplicatedMergeTree 테이블에 삽입된 블록에서 중복 제거된 async i
 
 삽입된 블록이 *MergeTree 테이블에 중복으로 삽입되었는지 확인하는 데 소요된 총 시간입니다.
 
+### ElasticsearchPointInTimeCloseFailures {#elasticsearchpointintimeclosefailures}
+
+Elasticsearch PIT(Point in Time)를 닫는 데 실패한 시도 횟수입니다.
+
 ### EncryptionHeaderCacheHits {#encryptionheadercachehits}
 
 encryption header 바이트를 암호화 헤더 캐시에서 찾아 해당 헤더에 대한 source read를 생략한 횟수입니다.
@@ -1969,6 +2297,18 @@ File/S3/URL/HDFS처럼 파일을 사용하는 테이블 엔진에서 읽은 파�
 
 외부 메모리에서 JOIN을 위해 임시 파일이 디스크에 기록된 횟수입니다.
 
+### ExternalPackedPartWriterCompressedBytes {#externalpackedpartwritercompressedbytes}
+
+기록 중인 패킹 데이터 파트의 버퍼에 저장된 데이터가 점유한 메모리를 해제하기 위해 임시 파일에 기록된 압축된 바이트 수입니다.
+
+### ExternalPackedPartWriterUncompressedBytes {#externalpackedpartwriteruncompressedbytes}
+
+기록 중인 패킹 데이터 파트의 버퍼에 저장된 데이터가 점유한 메모리를 해제하기 위해 임시 파일에 기록된 데이터의 양(압축 전 비압축 크기 기준)입니다.
+
+### ExternalPackedPartWriterWritePart {#externalpackedpartwriterwritepart}
+
+메모리를 확보하기 위해, 기록 중인 패킹된 데이터 파트(data part)의 버퍼에 저장된 데이터를 해당 임시 파일로 옮긴 횟수입니다.
+
 ### ExternalProcessingCompressedBytesTotal {#externalprocessingcompressedbytestotal}
 
 외부 처리(정렬/집계/조인) 중 기록된 압축 바이트 수
@@ -1980,6 +2320,46 @@ File/S3/URL/HDFS처럼 파일을 사용하는 테이블 엔진에서 읽은 파�
 ### ExternalProcessingUncompressedBytesTotal {#externalprocessinguncompressedbytestotal}
 
 외부 처리(정렬/집계/조인) 중 기록된 데이터의 양(비압축 상태, Compression 적용 전)
+
+### ExternalSetBloomFilterSkippedKeys {#externalsetbloomfilterskippedkeys}
+
+외부 메모리에 저장된 `IN` 집합(set)의 블룸 필터(Bloom filter)가 조회 시 제외한 키의 수입니다.
+
+### ExternalSetCacheHits {#externalsetcachehits}
+
+외부 메모리에 있는 `IN` 집합(set)을 조회할 때 임시 파일에서 읽지 않고 집합의 캐시에서 가져온 블록(blocks)의 수입니다.
+
+### ExternalSetCompressedBytes {#externalsetcompressedbytes}
+
+외부 메모리에 `IN` 집합(set)용으로 기록된 압축된 바이트 수입니다.
+
+### ExternalSetLookupKeys {#externalsetlookupkeys}
+
+외부 메모리에 있는 `IN` 집합(set)에서 조회 시 검색한 키의 수입니다.
+
+### ExternalSetMerge {#externalsetmerge}
+
+외부 메모리에서 `IN` 집합(set)을 처리하는 동안 임시 파일이 머지된 횟수입니다.
+
+### ExternalSetReadBlocks {#externalsetreadblocks}
+
+키 조회를 위해 외부 메모리에 있는 `IN` 집합(set)의 임시 파일에서 읽은 블록(blocks) 수입니다.
+
+### ExternalSetTailKeptKeys {#externalsettailkeptkeys}
+
+외부 메모리에 있는 `IN` 집합(set)의 최종 머지를 위해 메모리에 유지되는 키 개수입니다.
+
+### ExternalSetTailSpilledKeys {#externalsettailspilledkeys}
+
+외부 메모리에서 `IN` 집합(set)의 최종 머지가 디스크 유출 임계값(spill threshold)을 넘지 않도록, 최종 머지 전에 메모리에서 임시 파일로 기록된 키의 개수입니다.
+
+### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
+
+`IN` 집합(set)을 위해 외부 메모리에 기록된 데이터의 양(압축 전 비압축 크기 기준)입니다.
+
+### ExternalSetWritePart {#externalsetwritepart}
+
+외부 메모리를 사용하는 `IN` 집합(set)의 임시 파일이 디스크에 기록된 횟수입니다.
 
 ### ExternalSortCompressedBytes {#externalsortcompressedbytes}
 
@@ -2100,6 +2480,14 @@ DOWNLOADING 상태에서의 대기
 ### FileSegmentWaitTimeouts {#filesegmentwaittimeouts}
 
 DOWNLOADING 상태의 파일 세그먼트(file segment)를 대기하다가 타임아웃이 발생한 횟수입니다(`filesystem_cache_wait_for_concurrent_download_timeout_milliseconds` 참조)
+
+### FileSegmentWaitWithoutData {#filesegmentwaitwithoutdata}
+
+DOWNLOADING 상태의 파일 세그먼트에 대한 대기가, 다운로더가 기다리던 오프셋까지 다운로드하기 전에 세그먼트를 해제하여 종료된 횟수입니다.
+
+### FileSegmentWaitWithoutDataMicroseconds {#filesegmentwaitwithoutdatamicroseconds}
+
+`FileSegmentWaitWithoutData`에서 집계된 대기에 소요된 시간입니다
 
 ### FileSegmentWriteMicroseconds {#filesegmentwritemicroseconds}
 
@@ -2257,6 +2645,10 @@ moving 상태이어서 eviction이 건너뛴 파일 세그먼트 수
 
 우선순위 큐에 쓰기 위해 파일 시스템 캐시를 잠그는 시간
 
+### FilesystemCachePromotedFileSegments {#filesystemcachepromotedfilesegments}
+
+SLRU 캐시 정책에서 시험(probationary) 큐에서 보호 큐로 승격(이동)된 파일 세그먼트 수입니다.
+
 ### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
 
 사전 예약 방식의 파일 시스템 캐시 예약이 공간 부족으로 실패하여, 요청된 크기 그대로 다시 시도된 횟수입니다
@@ -2341,9 +2733,25 @@ Global Thread 풀에서 스레드를 제거해 크기가 줄어든 총 횟수를
 
 새 스레드가 시작될 때까지 대기한 총 시간입니다.
 
+### GranulesReadByPrewhereReaders {#granulesreadbyprewherereaders}
+
+PREWHERE 판독기가 읽은 그래뉼 수(PREWHERE 조건이 평가된 그래뉼 수)입니다. 하나의 그래뉼이 여러 개의 읽기 블록(Block)으로 분할되더라도 한 번만 집계됩니다.
+
+### GranulesSkippedByPrewhereReaders {#granulesskippedbyprewherereaders}
+
+PREWHERE에 의해 완전히 제외된 그래뉼의 수입니다. 즉, 그래뉼의 모든 행이 필터링된 경우를 의미합니다. 남아 있는 행이 하나라도 있는 그래뉼은 집계되지 않습니다. 하나의 그래뉼이 여러 읽기 블록(Block)으로 분할되더라도 한 번만 집계됩니다. 이는 논리적인 필터(filter) 집계 값이며, 메인 리더가 해당 그래뉼에서 아무것도 읽지 않았다는 의미는 아닙니다.
+
 ### HardPageFaults {#hardpagefaults}
 
 쿼리 실행 스레드에서 발생한 하드 페이지 폴트 수입니다. 값이 높으면 서버에서 스왑을 비활성화하지 않았거나, 메모리 압박이 매우 큰 상황에서 ClickHouse 실행 파일의 메모리 페이지가 축출되었거나, 테이블 데이터에 대해 &#39;mmap&#39; 읽기 메서드가 정상적으로 사용되고 있음을 의미합니다.
+
+### HashJoinBuiltWithParallelLayout {#hashjoinbuiltwithparallellayout}
+
+해시 조인(Hash Joins)을 위해 여러 파트로 나누어 구축된 해시 테이블(hash tables)의 수입니다. 최대 `max_threads`개의 스레드가 파트를 동시에 채우며, `max_threads = 1`이면 스레드 하나가 모든 파트를 채웁니다. 어떤 해시 조인을 이 방식으로 구축할지는 `parallel_hash_join_threshold` 설정으로 결정됩니다.
+
+### HashJoinBuiltWithSerialLayout {#hashjoinbuiltwithseriallayout}
+
+해시 조인(Hash Joins)을 위해 하나의 파트로, 한 번에 하나씩 삽입하여 구축한 해시 테이블(hash tables)의 수입니다. 각 해시 테이블은 한 번만 집계되므로, 그레이스 해시 조인(grace hash join)에서는 메모리에 로드하는 버킷마다 값이 1씩 증가합니다. HashJoinBuiltWithParallelLayout도 참조하십시오.
 
 ### HashJoinPreallocatedElementsInHashTables {#hashjoinpreallocatedelementsinhashtables}
 
@@ -2409,9 +2817,45 @@ Global Thread 풀에서 스레드를 제거해 크기가 줄어든 총 횟수를
 
 재사용된 서버의 HTTP 연결 수
 
+### IcebergCompactionCleanupDeferredByReaders {#icebergcompactioncleanupdeferredbyreaders}
+
+이 레플리카 또는 다른 레플리카의 쿼리가 Iceberg 압축 병합으로 대체된 데이터 파일을 참조하는 스냅샷을 아직 읽고 있어서 해당 데이터 파일의 삭제가 연기된 횟수입니다.
+
+### IcebergCompactionCleanupDeferredBySnapshotLifetime {#icebergcompactioncleanupdeferredbysnapshotlifetime}
+
+Iceberg 압축 병합으로 대체된 데이터 파일의 삭제가 연기된 횟수입니다. 해당 컴팩션 또는 컴팩션으로 대체된 스냅샷의 경과 시간이 `iceberg_outdated_snapshot_lifetime_seconds`보다 짧으면 삭제가 연기됩니다.
+
+### IcebergGetTableStateMicroseconds {#iceberggettablestatemicroseconds}
+
+Iceberg 테이블(Iceberg tables)의 현재 상태를 확인하는 데 소요된 총 시간입니다. 현재 메타데이터 파일을 찾고(버전 힌트 또는 목록 조회 사용) 해당 파일을 읽어 파싱하는 과정이 포함됩니다.
+
 ### IcebergIteratorInitializationMicroseconds {#icebergiteratorinitializationmicroseconds}
 
 Iceberg 데이터 이터레이터를 동기식으로 초기화하는 데 소요된 총 시간입니다.
+
+### IcebergManifestFileIteratorCreateMicroseconds {#icebergmanifestfileiteratorcreatemicroseconds}
+
+Iceberg 매니페스트 파일을 순회할 수 있도록 준비하는 데 소요된 총 시간입니다. 여기에는 파티션 명세와 스키마(schema) 헤더를 파싱하고, 스키마를 테이블 메타데이터와 대조하여 검사하는 작업이 포함됩니다. 이 비용은 모든 쿼리에서 매니페스트 파일마다 발생하며, 매니페스트 파일을 Iceberg 메타데이터 캐시에서 가져오는 경우에도 동일하게 발생합니다.
+
+### IcebergManifestFilesRead {#icebergmanifestfilesread}
+
+Iceberg 메타데이터 캐시를 거치지 않고 저장소에서 직접 읽은 Iceberg 매니페스트 파일 수입니다.
+
+### IcebergManifestFilesReadBytes {#icebergmanifestfilesreadbytes}
+
+스토리지에서 읽은 Iceberg 매니페스트 파일의 총 크기입니다.
+
+### IcebergManifestFilesReadMicroseconds {#icebergmanifestfilesreadmicroseconds}
+
+저장소에서 Iceberg 매니페스트 파일을 읽고 디코딩하는 데 소요된 총 시간입니다.
+
+### IcebergManifestListsRead {#icebergmanifestlistsread}
+
+Iceberg 메타데이터 캐시를 거치지 않고 저장소에서 직접 읽은 Iceberg 매니페스트 목록(manifest lists)의 수입니다.
+
+### IcebergManifestListsReadMicroseconds {#icebergmanifestlistsreadmicroseconds}
+
+저장소에서 Iceberg 매니페스트 목록(manifest lists)을 읽고 디코딩하는 데 소요된 총 시간입니다.
 
 ### IcebergMetadataFilesCacheHits {#icebergmetadatafilescachehits}
 
@@ -2428,6 +2872,30 @@ Iceberg 메타데이터 파일이 캐시에 있긴 했지만 오래된 것으로
 ### IcebergMetadataFilesCacheWeightLost {#icebergmetadatafilescacheweightlost}
 
 Iceberg 메타데이터 캐시에서 축출된 바이트의 대략적인 수입니다.
+
+### IcebergMetadataJSONParsedBytes {#icebergmetadatajsonparsedbytes}
+
+파싱된 Iceberg `metadata.json` 내용의 총 크기입니다.
+
+### IcebergMetadataJSONParseMicroseconds {#icebergmetadatajsonparsemicroseconds}
+
+Iceberg `metadata.json` 파일을 파싱하는 데 소요된 총 시간입니다.
+
+### IcebergMetadataJSONParses {#icebergmetadatajsonparses}
+
+Iceberg `metadata.json` 파일이 파싱된 횟수입니다. 파싱은 액세스할 때마다 수행되며, 파일 내용을 Iceberg 메타데이터 캐시에서 가져오는 경우에도 마찬가지입니다.
+
+### IcebergMetadataJSONReadMicroseconds {#icebergmetadatajsonreadmicroseconds}
+
+저장소에서 Iceberg `metadata.json` 파일을 읽는 데 소요된 총 시간입니다(압축 해제 시간 포함).
+
+### IcebergMetadataJSONReads {#icebergmetadatajsonreads}
+
+Iceberg 메타데이터 캐시를 거치지 않고 저장소에서 직접 읽은 Iceberg `metadata.json` 파일의 수입니다.
+
+### IcebergMetadataJSONValidations {#icebergmetadatajsonvalidations}
+
+Iceberg `metadata.json`에 Iceberg 명세에서 요구하는 필드가 있는지 검사한 횟수입니다. Iceberg 메타데이터 캐시에서 제공되는 파일은 한 번만 검사합니다.
 
 ### IcebergMetadataReadWaitTimeMicroseconds {#icebergmetadatareadwaittimemicroseconds}
 
@@ -2461,9 +2929,17 @@ Iceberg 파티션 프루닝 과정에서 건너뛴 파일 수
 
 manifest 목록의 파티션 요약 정보를 사용하여 읽지 않고 건너뛴 Iceberg manifest 파일 수
 
+### IcebergRuntimeFilterPrunedFiles {#icebergruntimefilterprunedfiles}
+
+매니페스트에 기록된 최솟값과 최댓값 범위에 JOIN 런타임 필터의 키가 포함될 수 없어 건너뛴 Iceberg 데이터 파일 수
+
 ### IcebergTrivialCountOptimizationApplied {#icebergtrivialcountoptimizationapplied}
 
 Iceberg에서 읽는 중 단순 count 최적화가 적용되었습니다
+
+### IcebergVersionHintReadMicroseconds {#icebergversionhintreadmicroseconds}
+
+Iceberg 테이블(Iceberg tables)의 `version-hint.text` 파일을 읽고 해석하는 데 소요된 총 시간입니다.
 
 ### IcebergVersionHintUsed {#icebergversionhintused}
 
@@ -2629,6 +3105,14 @@ DelayedJoinedBlocksWorkerTransform이 내보낸 블록 수입니다.
 
 DelayedJoinedBlocksWorkerTransform에서 출력된 행 수입니다.
 
+### JoinNonJoinedHashTableScans {#joinnonjoinedhashtablescans}
+
+RIGHT 또는 FULL 해시 조인에서 조인되지 않은 행(rows)을 찾기 위해 해시 테이블을 스캔한 횟수입니다.
+
+### JoinNonJoinedHashTableScansSkipped {#joinnonjoinedhashtablescansskipped}
+
+스캔한 파트에서 오른쪽 키가 모두 매칭되어, RIGHT 또는 FULL 해시 조인이 조인되지 않은 행을 찾기 위한 해시 테이블 스캔을 건너뛴 횟수입니다.
+
 ### JoinNonJoinedTransformBlockCount {#joinnonjoinedtransformblockcount}
 
 NonJoinedBlocksTransform에서 출력된 블록 수입니다.
@@ -2640,6 +3124,14 @@ NonJoinedBlocksTransform에서 내보낸 조인되지 않은 행의 수입니다
 ### JoinOptimizeMicroseconds {#joinoptimizemicroseconds}
 
 JOIN 계획 최적화 실행에 소요된 총 시간입니다.
+
+### JoinPackedStringKeysHashed {#joinpackedstringkeyshashed}
+
+해시 조인이 16바이트 이상인 단일 `String` 조인 키를 128비트 `SipHash` 값으로 해시 테이블에 삽입한 개수입니다(`enable_packed_string_keys_in_hash_join` 참조). `OR`가 포함된 조인은 조건마다 키를 하나씩 삽입합니다. 행이 다시 삽입되면 다시 집계됩니다. `grace_hash` 조인이 버킷을 분할한 후나 스필 중인 조인이 `grace_hash`로 전환된 후가 이에 해당합니다.
+
+### JoinPackedStringKeysInline {#joinpackedstringkeysinline}
+
+해시 조인(Hash Joins)이 해시 테이블(hash tables)에 인라인으로 삽입한, 최대 15바이트 길이의 단일 `String` 조인 키 개수입니다(`enable_packed_string_keys_in_hash_join` 참조). `OR`이 포함된 조인은 조건마다 키를 하나씩 삽입합니다. 행이 다시 삽입되면 다시 집계되며, 이는 `grace_hash` 조인이 버킷을 분할한 후나 스필 중인 조인이 `grace_hash`로 전환된 후에 발생합니다.
 
 ### JoinProbeTableRowCount {#joinprobetablerowcount}
 
@@ -2655,7 +3147,11 @@ JOIN 연산 결과의 총 행 수입니다.
 
 ### JoinSpillingHashJoinSwitchedToGraceJoin {#joinspillinghashjoinswitchedtogracejoin}
 
-SpillingHashJoin에서 메모리 한도에 도달해 (Concurrent)HashJoin이 GraceHashJoin으로 전환된 횟수입니다.
+SpillingHashJoin에서 메모리 제한에 도달해 HashJoin이 GraceHashJoin으로 전환된 횟수입니다.
+
+### JoinSpillingHashJoinSwitchedToMergeJoin {#joinspillinghashjoinswitchedtomergejoin}
+
+SpillingHashJoin에서 메모리 제한으로 인해 HashJoin이 MergeJoin으로 전환된 횟수입니다. 쿼리 실행 계획(query plan)상 조인이 왼쪽 스트림의 행 순서를 유지해야 하는 경우에는 GraceHashJoin 대신 MergeJoin이 선택됩니다.
 
 ### KafkaBackgroundReads {#kafkabackgroundreads}
 
@@ -3089,9 +3585,17 @@ Keeper read request 큐 잠금을 획득할 때까지 대기한 시간
 
 팔로워로 전송된 스냅샷 객체 수
 
+### KeeperReadSnapshotStreamingSeeks {#keeperreadsnapshotstreamingseeks}
+
+NuRaft가 바로 다음 객체가 아닌 다른 객체를 요청하여 스트리밍 스냅샷 전송 중 리더의 위치를 다시 지정한 횟수입니다
+
 ### KeeperReconfigRequest {#keeperreconfigrequest}
 
 구성 변경 요청 수
+
+### KeeperRejectedCommittedLogRollback {#keeperrejectedcommittedlogrollback}
+
+이미 커밋된 로그 항목을 롤백하게 될 요청을 Keeper가 거부한 횟수
 
 ### KeeperRemoveRequest {#keeperremoverequest}
 
@@ -3253,6 +3757,10 @@ Keeper가 배치 단위로 처리한 쓰기 요청의 총 개수
 
 기본 키가 로드된 행 수입니다.
 
+### LoadedStatistics {#loadedstatistics}
+
+선택도(Selectivity) 추정기에서 사용하기 위해 통계 캐시 또는 파트 자체로부터 컬럼 통계(Column Statistics)를 수집한 데이터 파트(data part) 수
+
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
 파트에서 통계를 로드하는 데 걸린 시간
@@ -3413,6 +3921,18 @@ OvercommitTracker에서 메모리가 해제될 때까지 기다린 총 시간입
 
 메모리 예약 강제 종료 신호의 총수
 
+### MemoryReservationReclaimableBytes {#memoryreservationreclaimablebytes}
+
+쿼리가 회수 가능(디스크 유출(spill) 가능) 상태로 전환한 메모리
+
+### MemoryReservationSpilledBytes {#memoryreservationspilledbytes}
+
+디스크로 내보내진 메모리의 총량
+
+### MemoryReservationSpillingMicroseconds {#memoryreservationspillingmicroseconds}
+
+스필에 소요된 시간
+
 ### MemoryWorkerRun {#memoryworkerrun}
 
 백그라운드에서 MemoryWorker가 실행된 횟수
@@ -3424,6 +3944,30 @@ MemoryWorker가 백그라운드 작업에 소요한 총 시간
 ### 머지 {#merge}
 
 시작된 백그라운드 머지 수입니다.
+
+### MergeCheckpointable {#mergecheckpointable}
+
+`enable_merge_checkpoints`가 활성화된 상태로 시작된 백그라운드 머지 중 체크포인트가 기록된 머지의 수입니다.
+
+### MergeCheckpointSaveMicroseconds {#mergecheckpointsavemicroseconds}
+
+머지 체크포인트를 저장하는 데 소요된 총 시간이며, 체크포인트 커밋 시간도 포함합니다.
+
+### MergeCheckpointsDiscarded {#mergecheckpointsdiscarded}
+
+해당 체크포인트에서 머지를 재개할 수 없어 제거된 머지 체크포인트 수입니다.
+
+### MergeCheckpointsRemoved {#mergecheckpointsremoved}
+
+정리 작업 또는 테이블 삭제로 인해 제거된 머지 체크포인트 수입니다.
+
+### MergeCheckpointsResumed {#mergecheckpointsresumed}
+
+머지 체크포인트에서 재개된 머지 수입니다.
+
+### MergeCheckpointsSaved {#mergecheckpointssaved}
+
+저장된 머지 체크포인트 수입니다.
 
 ### MergeCommitMilliseconds {#mergecommitmilliseconds}
 
@@ -3480,6 +4024,10 @@ MergeMutate 실행기에서 작업을 재설정하는 데 소요된 시간입니
 ### MergeMutateBackgroundExecutorWaitMicroseconds {#mergemutatebackgroundexecutorwaitmicroseconds}
 
 MergeMutate 실행기에서 완료될 때까지 대기한 시간입니다.
+
+### MergeNonCheckpointable {#mergenoncheckpointable}
+
+`enable_merge_checkpoints`가 설정된 상태로 시작되었으나 체크포인트를 생성할 수 없는 백그라운드 머지(예: 수평 머지)의 수입니다.
 
 ### MergePrewarmStageExecuteMilliseconds {#mergeprewarmstageexecutemilliseconds}
 
@@ -3845,17 +4393,49 @@ mutation을 실행하는 대신 빈 파트로 대체된 파트의 총수
 
 다른 레플리카가 로그를 동시에 업데이트하여 ReplicatedMergeTree에서 파트에 mutation을 적용하기 위한 로그 항목이 생성되지 않습니다.
 
+### ObjectStorageExclusiveLeasesAcquired {#objectstorageexclusiveleasesacquired}
+
+이 서버가 객체 스토리지에서 획득한 키에 대한 배타적 임대 횟수입니다. Iceberg 테이블(Iceberg table)의 컴팩션 등이 이에 해당합니다.
+
+### ObjectStorageExclusiveLeasesRefused {#objectstorageexclusiveleasesrefused}
+
+다른 레플리카가 해당 키에 대해 아직 유효한 임대를 보유하고 있어 객체 스토리지에서 배타적 임대 획득을 포기한 시도 횟수입니다.
+
+### ObjectStorageExpiredLeasesRemoved {#objectstorageexpiredleasesremoved}
+
+객체 스토리지에서 제거된, 만료된 임대 객체와 폐기 대상으로 지정된 마커의 수입니다.
+
 ### ObjectStorageGlobFilteredObjects {#objectstorageglobfilteredobjects}
 
 glob 또는 regex 패턴과 일치하지 않아 목록 조회 중 건너뛴 객체입니다.
+
+### ObjectStorageHiddenFilteredObjects {#objectstoragehiddenfilteredobjects}
+
+글롭이 아닌 접두사 아래에 숨김 경로 세그먼트(&#39;&#95;&#39; 또는 &#39;.&#39;로 시작)가 있어 목록 조회 중 건너뛴 객체입니다.
 
 ### ObjectStorageListedObjects {#objectstoragelistedobjects}
 
 필터링 전에 객체 스토리지 목록 조회 API가 반환한 총 객체 수입니다.
 
+### ObjectStorageMetadataFetchedForRead {#objectstoragemetadatafetchedforread}
+
+목록 조회 결과나 테이블 메타데이터로는 객체의 크기와 ETag를 알 수 없어, 객체를 읽기 위해 (객체 스토리지 소스, 해당 소스의 파일 반복자, 스키마 추론 과정에서) 전송한 객체 메타데이터 요청(예: S3 HEAD)의 수입니다.
+
+### ObjectStorageMetadataFetchMicroseconds {#objectstoragemetadatafetchmicroseconds}
+
+`ObjectStorageMetadataFetchedForRead`에 집계된 객체 메타데이터 요청에 소요된 총 시간입니다.
+
 ### ObjectStoragePredicateFilteredObjects {#objectstoragepredicatefilteredobjects}
 
 &#95;path/&#95;file에 대한 가상 컬럼 프레디케이트 필터링으로 제외된 객체입니다.
+
+### ObjectStorageQueryConditionCacheSkippedFiles {#objectstoragequeryconditioncacheskippedfiles}
+
+쿼리 조건 캐시를 통해 필터(filter)와 일치하는 행 그룹(row groups)이 하나도 없는 것으로 확인되어, 객체 스토리지 소스가 통째로 건너뛴 객체의 수입니다.
+
+### ObjectStorageQueryConditionCacheSkippedRowGroups {#objectstoragequeryconditioncacheskippedrowgroups}
+
+쿼리 조건 캐시를 통해 필터(filter)와 일치하지 않는 것으로 확인되어 객체 스토리지 소스에서 건너뛴 행 그룹(row groups)의 수입니다.
 
 ### ObjectStorageQueueBucketLockLostOwnership {#objectstoragequeuebucketlocklostownership}
 
@@ -3969,9 +4549,33 @@ Set 처리 요청을 보내려고 시도한 횟수
 
 실패한 Keeper 커밋 수
 
+### ObjectStorageReaderWaitMicroseconds {#objectstoragereaderwaitmicroseconds}
+
+객체 스토리지 소스가 백그라운드에서 준비되는 다음 객체의 리더를 기다리는 데 소요된 총 시간입니다.
+
 ### ObjectStorageReadObjects {#objectstoragereadobjects}
 
 객체 스토리지 소스에서 읽기 위해 실제로 연 객체 수입니다.
+
+### ObjectStorageSharedLeasesAcquired {#objectstoragesharedleasesacquired}
+
+이 서버의 쿼리가 아직 서버에 임대되지 않은 키를 획득할 때 객체 스토리지에 기록되는 키(예: 읽고 있는 Iceberg 스냅샷)의 공유 임대 수입니다.
+
+### ObjectStorageSharedLeasesCondemned {#objectstoragesharedleasescondemned}
+
+이 서버의 정리 작업(cleaner)이 객체 스토리지에서 폐기 대상으로 지정한 키의 수입니다. 이는 정리 작업이 해당 키가 보호하는 데이터를 제거하는 동안 어떤 레플리카도 이 키를 임대하지 못하도록 하기 위함입니다.
+
+### ObjectStorageSharedLeasesRefused {#objectstoragesharedleasesrefused}
+
+클리너가 키를 폐기 대상으로 지정하여 객체 스토리지의 해당 키에 대한 임대 시도가 거부된 횟수입니다. 예를 들어 컴팩션 이후 정리 작업에서 곧 제거될 Iceberg 스냅샷이 이에 해당합니다.
+
+### ObjectStorageSharedLeasesRenewed {#objectstoragesharedleasesrenewed}
+
+이 서버의 쿼리가 키를 보유한 동안 갱신 작업이 객체 스토리지에서 재작성한 공유 임대의 수입니다.
+
+### ObjectStorageSharedLeaseWriteFailures {#objectstoragesharedleasewritefailures}
+
+공유 임대를 획득하거나 갱신할 때 객체 스토리지에 공유 임대를 쓰는 작업이 실패한 횟수입니다.
 
 ### ObsoleteReplicatedParts {#obsoletereplicatedparts}
 
@@ -4115,7 +4719,7 @@ initiator에 전송된 요청 수입니다.
 
 ### ParallelReplicasQueryCount {#parallelreplicasquerycount}
 
-쿼리 실행 중 병렬 레플리카를 사용해 실행된 (하위)쿼리의 수
+쿼리 실행 중 병렬 레플리카를 사용해 실행되도록 계획된 (하위)쿼리의 수입니다. 자동 병렬 복제본(Automatic Parallel Replicas)도 사용 여부를 결정하려고 생성하는 계획에 대해 이 값을 증가시킵니다. 따라서 집계된 쿼리라도 실제로는 병렬 레플리카로 실행되지 않았을 수 있습니다. 실제 실행 내역은 `AutoParallelReplicasApplied` 및 `ParallelReplicasUsedCount`를 참조하십시오
 
 ### ParallelReplicasReadAssignedForStealingMarks {#parallelreplicasreadassignedforstealingmarks}
 
@@ -4153,6 +4757,14 @@ consistent hash에 의해 할당된 예정된 마크 수를 모든 레플리카�
 
 작업 기반 병렬 레플리카로 쿼리를 실행할 때 사용된 레플리카 수
 
+### ParquetBloomFilterPrunedRowGroups {#parquetbloomfilterprunedrowgroups}
+
+블룸 필터(Bloom filters)에 의해 프루닝으로 제외된 Parquet 행 그룹(row groups)의 총개수입니다.
+
+### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
+
+객체 스토리지 또는 URL에 있는 파일의 Parquet 리더가 max&#95;download&#95;threads 중 자신에게 할당된 몫 안에서, 디코딩이 예약되기 전에 미리 컬럼 데이터(Column Data) 읽기를 시작한 행 그룹(row groups)의 수입니다.
+
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 
 필터를 거친 컬럼의 총개수
@@ -4165,9 +4777,25 @@ Parquet 리더가 스레드 풀에 전달하는 작업 그룹
 
 Parquet 리더가 생성한 작업
 
+### ParquetDecompressedBytes {#parquetdecompressedbytes}
+
+Parquet 리더가 압축 해제한 Parquet 페이지(데이터 페이지 및 딕셔너리 페이지)의 압축되지 않은 크기의 총합입니다.
+
+### ParquetDictionaryFilterPrunedRowGroups {#parquetdictionaryfilterprunedrowgroups}
+
+딕셔너리(dictionary) 필터(filter)로 제외된 Parquet 행 그룹(row groups)의 총 개수입니다(딕셔너리가 프루닝 메모리 예산을 초과하는 컬럼에는 블룸 필터를 폴백으로 사용합니다).
+
 ### ParquetFetchWaitTimeMicroseconds {#parquetfetchwaittimemicroseconds}
 
 디코딩 스레드가 Parquet 파일 읽기를 기다린 시간(프리페치 스레드 제외)
+
+### ParquetFilesSkippedByCachedStatistics {#parquetfilesskippedbycachedstatistics}
+
+읽기 시 파일을 열지 않고 건너뛴 Parquet 파일의 수입니다. 동일한 파일 버전을 이전에 읽을 때 캐시된 파일 메타데이터와 함께 저장된 필터(filter) 컬럼의 min/max 통계에 따라 모든 row group이 제외되는 경우가 이에 해당합니다
+
+### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
+
+Parquet 파일 푸터(footer)를 읽고 역직렬화하는 데 소요된 총 시간입니다(parquet 메타데이터 캐시에서 가져오지 않은 경우에 한함).
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 
@@ -4181,6 +4809,14 @@ cache에서 Parquet 메타데이터를 찾은 횟수입니다.
 
 Parquet 메타데이터 캐시에서 제거된 바이트 수의 대략적인 값입니다.
 
+### ParquetPagesDecompressedToSkipRows {#parquetpagesdecompressedtoskiprows}
+
+PREWHERE로 필터링되어 제외된 행을 건너뛰는 과정에서 압축 해제가 트리거된 Parquet 데이터 페이지 수입니다(해당 페이지는 이후에 읽는 행에도 사용될 수 있습니다).
+
+### ParquetPrefetcherReadBytes {#parquetprefetcherreadbytes}
+
+DB::Parquet::Prefetcher가 Parquet 파일에서 읽은 총 바이트 수입니다. 최종적으로 사용되지 않는 범위까지 읽기가 병합되면 이 값은 `ParquetPrefetcherUsedBytes`보다 커집니다. 예를 들어 나중에 블룸 필터(Bloom filters)에 의해 제외되는 행 그룹(row groups)의 컬럼 청크가 이에 해당합니다.
+
 ### ParquetPrefetcherReadEntireFile {#parquetprefetcherreadentirefile}
 
 DB::Parquet::Prefetcher가 ReadMode::EntireFileIsInMemory로 읽은 총 횟수
@@ -4193,13 +4829,21 @@ DB::Parquet::Prefetcher에서 ReadMode::RandomRead로 수행한 총 읽기 횟�
 
 DB::Parquet::Prefetcher에서 ReadMode::SeekAndRead로 수행된 총 읽기 횟수
 
+### ParquetPrefetcherUsedBytes {#parquetprefetcherusedbytes}
+
+DB::Parquet::Prefetcher가 읽은 범위 중 Parquet 리더가 실제로 사용한 범위의 총 바이트 수입니다.
+
 ### ParquetPrunedPages {#parquetprunedpages}
 
 컬럼 인덱스를 통해 Parquet 데이터에서 프루닝된 총 페이지 수
 
 ### ParquetPrunedRowGroups {#parquetprunedrowgroups}
 
-Parquet 데이터에서 프루닝으로 제외된 row group의 총개수
+읽기 전에(min/max 통계 및 행 그룹(row groups) 선택을 통해) Parquet 데이터에서 프루닝으로 제외된 행 그룹(row groups)의 총개수입니다. 이후 단계에서 블룸 필터(Bloom filters)와 딕셔너리로 프루닝된 행 그룹(row groups)은 `ParquetBloomFilterPrunedRowGroups`와 `ParquetDictionaryFilterPrunedRowGroups`에서 집계됩니다.
+
+### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
+
+데이터를 읽지 않고 컬럼 청크 통계로부터 `min` / `max`를 계산한 Parquet 파일 수입니다(`optimize_min_max_from_files` 참조).
 
 ### ParquetReadPages {#parquetreadpages}
 
@@ -4209,9 +4853,25 @@ Parquet 데이터에서 프루닝으로 제외된 row group의 총개수
 
 Parquet 데이터에서 읽은 row groups의 총수
 
+### ParquetRowsDecodedAsDictionaryIndexes {#parquetrowsdecodedasdictionaryindexes}
+
+딕셔너리 인덱스(dictionary indexes)로 읽힌 Parquet PREWHERE 입력 컬럼의 행(rows) 수입니다. 이렇게 읽힌 컬럼에 적용되는 함수는 딕셔너리 값마다 한 번씩만 평가됩니다.
+
 ### ParquetRowsFilterExpression {#parquetrowsfilterexpression}
 
 필터를 통과한 전체 행 수
+
+### ParquetRuntimeFilterPrunedPages {#parquetruntimefilterprunedpages}
+
+페이지 인덱스상 JOIN 런타임 필터의 키를 포함할 수 없어 건너뛴 Parquet 페이지 수
+
+### ParquetRuntimeFilterPrunedRowGroups {#parquetruntimefilterprunedrowgroups}
+
+컬럼 통계(Column Statistics)로 보아 JOIN 런타임 필터의 키를 포함할 수 없어 건너뛴 Parquet 행 그룹(row groups)의 수
+
+### ParquetTopKRowGroupsBoundedByDictionary {#parquettopkrowgroupsboundedbydictionary}
+
+min/max 통계로 범위를 한정할 수 없어서, 필터(filter)를 통과할 수 있는 딕셔너리(dictionary) 값을 기반으로 `ORDER BY ... LIMIT` 정렬 컬럼의 범위를 구한 Parquet 행 그룹(row groups)의 수입니다(`use_top_k_dynamic_filtering` 참조).
 
 ### ParquetTopKSkippedRowGroups {#parquettopkskippedrowgroups}
 
@@ -4371,11 +5031,11 @@ Join 모드로 패치 파트를 적용할 때 해시 테이블에 추가된 행�
 
 ### PrimaryIndexCacheHits {#primaryindexcachehits}
 
-프라이머리 인덱스 캐시에서 항목을 찾아 인덱스 파일을 로드하지 않아도 되었던 횟수입니다.
+프라이머리 인덱스 캐시에서 엔트리를 찾아 인덱스 파일을 로드하지 않아도 되었던 횟수입니다.
 
 ### PrimaryIndexCacheMisses {#primaryindexcachemisses}
 
-프라이머리 인덱스 캐시에서 항목을 찾지 못한 횟수입니다. 이 경우 인덱스 파일을 메모리에 로드해야 하며, 이는 비용이 큰 작업이므로 쿼리 지연 시간을 증가시킵니다.
+프라이머리 인덱스 캐시에서 엔트리를 찾지 못한 횟수입니다. 이 경우 인덱스 파일을 메모리에 로드해야 하며, 이는 비용이 큰 작업이므로 쿼리 지연 시간을 증가시킵니다.
 
 ### 서브쿼리를 포함한 쿼리 {#querieswithsubqueries}
 
@@ -4577,6 +5237,10 @@ Azure에서 읽는 데 소요되는 시간입니다.
 
 Azure에서 읽는 중 발생한 예외 수
 
+### ReadBufferFromFileDescriptorPageCacheHitBytes {#readbufferfromfiledescriptorpagecachehitbytes}
+
+동기식 `pread`로 파일 디스크립터에서 읽은 데이터 중 OS 페이지 캐시에서 제공된 것으로 감지된 바이트 수입니다(이 감지는 대역폭 스로틀러가 적용된 읽기에서만 수행됩니다).
+
 ### ReadBufferFromFileDescriptorRead {#readbufferfromfiledescriptorread}
 
 파일 디스크립터에서 수행된 읽기(read/pread) 횟수입니다. 소켓은 포함되지 않습니다.
@@ -4601,6 +5265,10 @@ S3 연결을 초기화하는 데 걸린 시간입니다.
 
 S3에서 읽기에 소요된 시간입니다.
 
+### ReadBufferFromS3RequestsCut {#readbufferfroms3requestscut}
+
+디스크의 연결 그룹이 `disk_connections_soft_limit` 이상이어서 버퍼 1회 채우기 분량으로 잘린 S3 디스크 요청 수입니다.
+
 ### ReadBufferFromS3RequestsErrors {#readbufferfroms3requestserrors}
 
 S3에서 읽는 중 발생한 예외의 수입니다.
@@ -4616,6 +5284,10 @@ S3에서 읽는 중 발생한 예외의 수입니다.
 ### ReaderExecutorBytesFromSource {#readerexecutorbytesfromsource}
 
 모든 캐시 계층에서 데이터를 찾지 못한 후 ReaderExecutor가 소스에 요청한 실제 바이트 수입니다(포그라운드 및 백그라운드 프리페치를 포함하며, 이후 폐기로 인해 낭비된 프리페치 바이트도 포함). consumer가 제공한 바이트는 제외됩니다. ReaderExecutorDeliveredBytes를 참조하십시오.
+
+### ReaderExecutorBytesOutsideRequestMap {#readerexecutorbytesoutsiderequestmap}
+
+ReaderExecutorBytesFromSource 중 리더가 알린 요청 맵 범위를 벗어나는 부분입니다. 맵이 없는 읽기에서는 0입니다.
 
 ### ReaderExecutorCacheGetRequests {#readerexecutorcachegetrequests}
 
@@ -4913,13 +5585,25 @@ MergeTree 테이블에서 주 리더가 읽은 행 수(PREWHERE 단계 이후).
 
 Prewhere 리더가 MergeTree 테이블에서 읽은 전체 행 수입니다.
 
+### RowsSkippedByPrewhereReaders {#rowsskippedbyprewherereaders}
+
+PREWHERE에서 거부된 행 수, 즉 PREWHERE 조건이 false로 평가된 행의 수입니다. 이 값은 논리적 필터(filter) 기준으로 집계한 개수이며, 주 리더가 이러한 행을 실제로 읽지 않았음을 의미하지는 않습니다.
+
 ### RuntimeDataflowStatisticsInputBytes {#runtimedataflowstatisticsinputbytes}
 
 쿼리가 병렬 레플리카로 실행될 때 레플리카가 읽게 되는 바이트 수에 대한 수집 통계
 
+### RuntimeDataflowStatisticsInputNanoseconds {#runtimedataflowstatisticsinputnanoseconds}
+
+쿼리 실행(Query Execution) 중 자동 병렬 복제본(Automatic Parallel Replicas)을 위해 레플리카가 읽을 바이트 수에 대한 통계를 수집하는 데 소요된 시간입니다
+
 ### RuntimeDataflowStatisticsOutputBytes {#runtimedataflowstatisticsoutputbytes}
 
 쿼리가 병렬 레플리카로 실행될 경우 레플리카가 initiator에 전송할 바이트 수에 대해 수집된 통계
+
+### RuntimeDataflowStatisticsOutputNanoseconds {#runtimedataflowstatisticsoutputnanoseconds}
+
+자동 병렬 복제본(Automatic Parallel Replicas)에 사용하기 위해 쿼리 실행(Query Execution) 중 레플리카가 initiator로 전송할 바이트 수에 대한 통계를 수집하는 데 소요된 시간입니다.
 
 ### RuntimeFilterBlocksProcessed {#runtimefilterblocksprocessed}
 
@@ -4933,6 +5617,10 @@ JOIN Runtime Filters가 처리한 블록 수
 
 해시 테이블 통계의 빌드 측 key 개수로 예측했을 때 필터가 set bit 비율의 최대값을 초과할 것으로 판단되어 건너뛴 JOIN Runtime Filter 블룸 필터 빌드 수
 
+### RuntimeFilterDeliveriesAbandoned {#runtimefilterdeliveriesabandoned}
+
+수신 측의 연결이 끊어졌거나 수신 측이 읽기를 중단하여 전달이 중단된 JOIN Runtime Filter의 수입니다. 이 경우 해당 대상은 필터(filter)를 받지 못하므로, 그 행(rows)은 필터링되지 않고 그대로 통과합니다.
+
 ### RuntimeFilterGranulesConsidered {#runtimefiltergranulesconsidered}
 
 JOIN Runtime Filters가 읽기 시점 프루닝을 위해 검사한 그래뉼 수
@@ -4941,9 +5629,25 @@ JOIN Runtime Filters가 읽기 시점 프루닝을 위해 검사한 그래뉼 �
 
 JOIN Runtime Filters에 의해 읽기 시점에 프루닝된 그래뉼 수
 
+### RuntimeFilterIndexAnalysisReads {#runtimefilterindexanalysisreads}
+
+읽기 시점에 JOIN Runtime Filter로 그래뉼을 프루닝하도록 설정된 읽기 작업의 수입니다. 읽기 작업이 디스크립터를 가진 채 해당 파이프라인에 도달하고, 그래뉼을 프루닝하는 데 사용할 프라이머리 키 또는 스킵 인덱스가 있으면 집계됩니다. 이후 그래뉼이 실제로 검사되는지와 관계없이 집계되므로, 이 값은 읽기 단계가 재구성될 때마다 디스크립터가 유실되지 않고 유지되었음을 나타냅니다.
+
 ### RuntimeFilterLookupsBeforeBuildFinished {#runtimefilterlookupsbeforebuildfinished}
 
 빌드 측이 아직 완료되지 않은 상태에서 JOIN 런타임 필터(JOIN Runtime Filter)를 조회하여 필터링되지 않고 그대로 통과한 블록 수
+
+### RuntimeFilterOversizedStatesRejected {#runtimefilteroversizedstatesrejected}
+
+크기 제한을 초과하여 사용되지 않거나 전송되지 않은 JOIN Runtime Filter 상태의 수입니다. 이 경우 행은 필터링되지 않고 그대로 통과합니다.
+
+### RuntimeFilterReceiveBranchFailures {#runtimefilterreceivebranchfailures}
+
+다른 작업으로부터 JOIN Runtime Filter를 수신하지 못한 작업의 수입니다. 이 경우 해당 작업은 필터를 사용하지 않으며, 행(rows)은 필터링되지 않고 그대로 통과합니다.
+
+### RuntimeFilterReceivesAbandoned {#runtimefilterreceivesabandoned}
+
+연결이 수립된 후 스트림의 끝에 도달하기 전에 송신 측 연결이 끊긴 JOIN Runtime Filter 스트림의 수입니다. 송신 측 상태가 아직 도착하지 않았다면 해당 필터(filter)는 사용되지 않으며, 행은 필터링되지 않고 그대로 통과합니다
 
 ### RuntimeFilterRowsChecked {#runtimefilterrowschecked}
 
@@ -4960,6 +5664,22 @@ JOIN Runtime Filters로 건너뛴 블록 내 행 수
 ### RuntimeFiltersCreated {#runtimefilterscreated}
 
 쿼리 내에서 생성된 서로 다른 JOIN Runtime Filters의 수
+
+### RuntimeFilterStateBytesReceived {#runtimefilterstatebytesreceived}
+
+분산 쿼리 실행 계획의 다른 작업에서 수신한, 직렬화된 JOIN Runtime Filter 상태의 바이트 수
+
+### RuntimeFilterStateBytesSent {#runtimefilterstatebytessent}
+
+분산 쿼리 실행 계획의 다른 작업으로 전송된 직렬화된 JOIN Runtime Filter 상태의 바이트 수입니다. 대상 스트림마다 한 번씩 집계됩니다.
+
+### RuntimeFilterStatesReceived {#runtimefilterstatesreceived}
+
+분산 쿼리 실행 계획의 다른 작업에서 수신한 직렬화된 JOIN Runtime Filter 상태의 개수
+
+### RuntimeFilterStatesSent {#runtimefilterstatessent}
+
+분산 쿼리 실행 계획의 다른 작업으로 전송하기 위해 큐에 추가된 JOIN Runtime Filter 상태의 수입니다. 대상 스트림마다 하나씩 추가되며, 이후 전달이 중단된 경우도 포함됩니다.
 
 ### RWLockAcquiredReadLocks {#rwlockacquiredreadlocks}
 
@@ -5252,6 +5972,10 @@ ReplicatedMergeTree 테이블에 INSERT된 블록에서 자체 중복 제거된 
 ### SetsBuiltFromSubquery {#setsbuiltfromsubquery}
 
 서브쿼리를 실행하여 채워진 `IN`/`JOIN` Set의 개수입니다. 준비된 Set 캐시에서 가져온 Set이나 이미 빌드되어 재사용된 Set은 집계되지 않습니다.
+
+### SetsSpilledToDisk {#setsspilledtodisk}
+
+서브쿼리로부터 생성되는 동안 또는 쿼리에서 사용되는 동안 디스크로 유출된 `IN` 집합(Set)의 수입니다.
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -5577,6 +6301,10 @@ MergeTree 테이블에서 공유 데이터 파트 잠금을 획득한 횟수
 
 MergeTree 테이블에서 공유 데이터 파트 잠금을 대기한 총 시간
 
+### ShortCircuitArgumentsReordered {#shortcircuitargumentsreordered}
+
+`and` 또는 `or` 함수가 쿼리에 지정된 순서와 다른 순서로 인수를 평가한 블록(blocks)의 수입니다. 비용이 낮은 인수를 비용이 높은 인수보다 먼저 평가하거나, 이전 블록에서 수집한 통계에 따라 평가 순서를 정한 경우가 이에 해당합니다(`short_circuit_function_evaluation_reorder_arguments` 설정). `WHERE` / `HAVING`의 AND 연쇄를 구성하는 원자(atom)의 재정렬은 `FilterStep`이 파이프라인을 빌드할 때 한 번만 결정되므로 집계되지 않습니다.
+
 ### SleepFunctionCalls {#sleepfunctioncalls}
 
 sleep 함수(sleep, sleepEachRow)가 호출된 횟수입니다.
@@ -5825,6 +6553,14 @@ worker를 확보하기 위해 상태 비저장 워커 디스커버리 서비스�
 
 worker 임대를 갱신하기 위해 상태 비저장 워커 디스커버리 서비스로 전송된 update&#95;lease 요청 수입니다.
 
+### StatisticsCacheHits {#statisticscachehits}
+
+데이터 파트(data part)의 컬럼 통계를 통계 캐시에서 찾은 횟수입니다.
+
+### StatisticsCacheMisses {#statisticscachemisses}
+
+데이터 파트(data part)의 컬럼 통계를 통계 캐시에서 찾지 못해 파트에서 직접 로드해야 했던 횟수입니다.
+
 ### StorageBufferErrorOnFlush {#storagebuffererroronflush}
 
 &#39;Buffer&#39; 테이블(table)의 버퍼가 대상 테이블에 쓰는 과정에서 오류가 발생해 플러시에 실패한 횟수입니다.
@@ -5985,6 +6721,10 @@ OS kernel 모드에서 CPU 명령어를 실행하는 처리(쿼리 및 기타 �
 
 테이블 함수 호출 횟수입니다.
 
+### TextIndexDictionaryDFABuilds {#textindexdictionarydfabuilds}
+
+텍스트 인덱스의 사전 블록(dictionary block)을 건너뛰기 위해 LIKE 패턴에서 DFA를 빌드한 횟수입니다. 이미 빌드된 DFA를 재사용한 경우는 집계하지 않습니다.
+
 ### TextIndexDiscardHint {#textindexdiscardhint}
 
 텍스트 인덱스에서 직접 읽기가 힌트로 추가되었으나 선택도가 낮아 제외된 인덱스 그래뉼 수입니다.
@@ -5992,6 +6732,10 @@ OS kernel 모드에서 CPU 명령어를 실행하는 처리(쿼리 및 기타 �
 ### TextIndexDiscardPatternScan {#textindexdiscardpatternscan}
 
 텍스트 인덱스에서 패턴 기반 딕셔너리 스캔이 읽어야 하는 포스팅 리스트 수가 임계값을 초과해 폐기된 횟수입니다.
+
+### TextIndexFilledFromFoldedPostings {#textindexfilledfromfoldedpostings}
+
+텍스트 인덱스 가상 컬럼이 각 그래뉼(granule)별로 생성된 포스팅 리스트가 아니라, 인덱스 분석(Index Analysis) 과정에서 접힌 포스팅 리스트로부터 직접 읽기 작업의 모든 행(rows)에 대해 채워진 횟수입니다.
 
 ### TextIndexGenericExclusionSearchAlgorithm {#textindexgenericexclusionsearchalgorithm}
 
@@ -6061,6 +6805,14 @@ OS kernel 모드에서 CPU 명령어를 실행하는 처리(쿼리 및 기타 �
 
 candidate 기반 구문 검색에서 검사한 candidate 행(postings 교집합)입니다.
 
+### TextIndexPhraseCandidatesMicroseconds {#textindexphrasecandidatesmicroseconds}
+
+구문 검색의 후보 행을 찾는 데 소요된 총 시간으로, 구문을 구성하는 토큰들의 포스팅 리스트를 읽고 교집합을 구하는 시간이 포함됩니다.
+
+### TextIndexPhraseCursorSearches {#textindexphrasecursorsearches}
+
+비트맵 교집합 대신 포스팅 리스트 커서(Cursor)로 후보 행을 찾은 구문 검색 횟수입니다.
+
 ### TextIndexPhraseFallbacks {#textindexphrasefallbacks}
 
 구문(phrase)이 &#39;text&#95;index&#95;hint&#95;max&#95;selectivity&#39;보다 더 많은 행과 일치할 것으로 추정되어, 구문 쿼리가 텍스트 인덱스를 건너뛰고 대신 컬럼에서 직접 평가된 횟수입니다.
@@ -6071,7 +6823,7 @@ candidate 기반 구문 검색에서 검사한 candidate 행(postings 교집합)
 
 ### TextIndexPhraseSearches {#textindexphrasesearches}
 
-텍스트 인덱스에서 실행된 구문 검색 횟수입니다. 동일한 파트에서 동일한 구문을 반복 검색하면 캐시에서 처리되므로 집계되지 않습니다.
+텍스트 인덱스에서 실행된 구문 검색 횟수로, 그래뉼(granule)의 리더 하나당 1회씩 집계됩니다. 캐시에서 전부 처리된 리더는 집계되지 않습니다.
 
 ### TextIndexPositionsBlocksRead {#textindexpositionsblocksread}
 
@@ -6249,6 +7001,98 @@ ThreadPoolReader 내부의 읽기 작업이 페이지 캐시(page cache)에서 �
 
 Poco TLS 구현을 사용하는 서버 프로토콜(네이티브 TCP, HTTPS, MySQL, PostgreSQL)에서 수신 연결 시 완료된 TLS 핸드셰이크 횟수입니다. gRPC는 자체 TLS 스택을 사용하므로 집계 대상에서 제외됩니다. 세션을 재개할 때도 핸드셰이크가 수행되므로 이 횟수에 포함됩니다.
 
+### TopKGranulesSkippedByPrimaryKey {#topkgranulesskippedbyprimarykey}
+
+집계(`enable_group_by_top_k_dynamic_filtering` 참조) 또는 정렬(sorting)(`use_top_k_dynamic_filtering` 참조)에서 발행하는 실행 중 top-K 임계값과 비교했을 때, 프라이머리 인덱스상 모든 행(rows)이 임계값 범위 밖에 있는 것으로 확인되어 읽기 중에 건너뛴 그래뉼 수입니다.
+
+### TransactionBeginMicroseconds {#transactionbeginmicroseconds}
+
+명시적 또는 암시적 `BEGIN TRANSACTION`에 소요된 시간
+
+### TransactionBegins {#transactionbegins}
+
+명시적 또는 암시적으로 실행된 `BEGIN TRANSACTION`의 수
+
+### TransactionBeginSnapshotBehindLatest {#transactionbeginsnapshotbehindlatest}
+
+전역 워터마크(watermark)가 지연되어 최신 CSN보다 낮은 스냅샷으로 시작된 트랜잭션(transaction) 수
+
+### TransactionCommitAfterCSNMicroseconds {#transactioncommitaftercsnmicroseconds}
+
+CSN이 할당된 후 커밋된 트랜잭션(transaction)의 마무리 처리에 소요된 시간
+
+### TransactionCommitAllocateCSNMicroseconds {#transactioncommitallocatecsnmicroseconds}
+
+트랜잭션 커밋(transaction commit)이 시작된 시점부터 Keeper가 해당 CSN을 할당하기까지 걸린 시간
+
+### TransactionCommitConflicts {#transactioncommitconflicts}
+
+동시에 실행된 작업이 데이터 파트(part)를 변경하여 `SERIALIZATION_ERROR`로 실패한 트랜잭션 커밋(transaction commit) 수
+
+### TransactionCommitMicroseconds {#transactioncommitmicroseconds}
+
+CSN이 로드되기를 기다리는 시간을 제외하고 트랜잭션(Transactions)을 커밋하는 데 소요된 시간
+
+### TransactionCommits {#transactioncommits}
+
+시작된 트랜잭션 커밋(transaction commit) 수이며, 읽기 전용 커밋과 실패한 커밋도 포함됩니다
+
+### TransactionCommitsWithCSN {#transactioncommitswithcsn}
+
+Keeper가 CSN을 할당한 트랜잭션 커밋(transaction commit)의 수
+
+### TransactionCommitUnknownStatus {#transactioncommitunknownstatus}
+
+Keeper 하드웨어 오류로 인해 결과를 알 수 없는 트랜잭션 커밋(transaction commit) 수
+
+### TransactionCommitUnknownStatusWaitMicroseconds {#transactioncommitunknownstatuswaitmicroseconds}
+
+상태를 알 수 없는 커밋의 결과를 기다리는 데 소요된 시간
+
+### TransactionDeadReplicasMarked {#transactiondeadreplicasmarked}
+
+이 레플리카가 트랜잭션(transaction)과 관련하여 비활성(dead) 상태로 표시한 레플리카 수
+
+### TransactionLogLoadedEntries {#transactionlogloadedentries}
+
+Keeper에서 읽은 트랜잭션(transaction) 로그(`/log`) 항목 수
+
+### TransactionLogLoadMicroseconds {#transactionlogloadmicroseconds}
+
+Keeper에서 트랜잭션(transaction) 로그(`/log`)를 로딩하는 데 소요된 시간입니다. 로그 목록 조회, 새 엔트리 읽기 및 적용 작업이 포함됩니다.
+
+### TransactionLogLoads {#transactionlogloads}
+
+Keeper에서 트랜잭션(transaction) 로그(`/log`)를 로드한 횟수
+
+### TransactionsCommitted {#transactionscommitted}
+
+커밋된 트랜잭션(transaction) 수(읽기 전용 트랜잭션 포함)
+
+### TransactionsRolledBack {#transactionsrolledback}
+
+롤백된 트랜잭션(transaction) 수
+
+### TransactionTIDsInvalidated {#transactiontidsinvalidated}
+
+이 레플리카가 무효화한 트랜잭션(transaction) ID 수
+
+### TransactionWaitCSNLoaded {#transactionwaitcsnloaded}
+
+동기식 `COMMIT` 또는 `SYSTEM SYNC TRANSACTION LOG`가 CSN이 최신 스냅샷에 로드될 때까지 대기한 횟수
+
+### TransactionWaitCSNLoadedMicroseconds {#transactionwaitcsnloadedmicroseconds}
+
+CSN이 최신 스냅샷에 로드될 때까지 대기한 시간입니다
+
+### TransactionWaitWatermark {#transactionwaitwatermark}
+
+`wait_visible`을 지정한 `COMMIT` 또는 `SYSTEM SYNC TRANSACTION LOG`로 인해, 워터마크(watermark)가 CSN에 도달하여 이 레플리카의 새 트랜잭션(transaction)에서 해당 CSN이 보이게 될 때까지 대기한 횟수입니다.
+
+### TransactionWaitWatermarkMicroseconds {#transactionwaitwatermarkmicroseconds}
+
+워터마크(watermark)가 CSN에 도달할 때까지 대기한 시간
+
 ### UncompressedCacheHits {#uncompressedcachehits}
 
 데이터 블록이 비압축 캐시에서 발견되어 압축 해제를 피한 횟수입니다.
@@ -6261,9 +7105,17 @@ Poco TLS 구현을 사용하는 서버 프로토콜(네이티브 TCP, HTTPS, MyS
 
 비압축 캐시에서 제거된 바이트 수입니다.
 
+### UniqueKeyBitmapGranulesSkipped {#uniquekeybitmapgranulesskipped}
+
+UNIQUE KEY 테이블에서 인덱스 분석 단계에 삭제 비트맵을 통해 건너뛴, 모든 행이 삭제된 그래뉼의 수입니다.
+
 ### UniqueKeyBitmapLoadMicroseconds {#uniquekeybitmaploadmicroseconds}
 
 DeleteBitmapCache에서 캐시 미스가 발생했을 때 UNIQUE KEY 삭제 비트맵 사이드카 파일을 읽고 역직렬화하는 데 소요된 시간입니다.
+
+### UniqueKeyBitmapRowsSkipped {#uniquekeybitmaprowsskipped}
+
+PREWHERE 이전에 UNIQUE KEY 삭제 비트맵을 통해 행 수준(row-level)에서 필터링된 행(rows)의 수입니다.
 
 ### UniqueKeyConflictIgnoredRows {#uniquekeyconflictignoredrows}
 
@@ -6357,6 +7209,38 @@ usearch 인덱스 검색 시 방문한 노드 수입니다.
 
 정렬된 컬럼에서 버전 축약을 수행하는 데 소요된 총 시간
 
+### VortexConvertMicroseconds {#vortexconvertmicroseconds}
+
+Vortex 스캔(Scan)에서 전달된 Arrow 배열(arrays)을 ClickHouse 컬럼으로 변환하는 데 소요된 시간
+
+### VortexFilterPushdownConjunctsDropped {#vortexfilterpushdownconjunctsdropped}
+
+Vortex 스캔(Scan)에 맞게 변환할 수 없어 이후 ClickHouse에서만 적용되는 최상위 WHERE 논리 조건 항의 수입니다.
+
+### VortexFilterPushdownConjunctsPushed {#vortexfilterpushdownconjunctspushed}
+
+변환된 후 Vortex 스캔(Scan)으로 푸시다운된 최상위 WHERE 논리 조건 항의 수
+
+### VortexReadBytes {#vortexreadbytes}
+
+Vortex 스캔(Scan)이 ClickHouse 읽기 버퍼(read buffer)를 통해 읽은 바이트 수
+
+### VortexReadRequests {#vortexreadrequests}
+
+Vortex 스캔(Scan)이 ClickHouse 읽기 버퍼(read buffer)를 통해 보낸 읽기 요청 수
+
+### VortexReadWaitMicroseconds {#vortexreadwaitmicroseconds}
+
+파이프라인이 Vortex 스캔(Scan)으로부터 다음 분할을 전달받을 때까지 대기한 시간
+
+### VortexScanEmptySplits {#vortexscanemptysplits}
+
+푸시다운된 필터(filter)에 의해 모든 행(rows)이 제거된 Vortex 스캔(Scan) 분할의 수입니다. 이러한 분할은 스캔이 파일 순서를 유지하는 경우(`input_format_vortex_preserve_order`)에만 전달되므로 이 경우에만 집계됩니다. 이러한 분할을 처리하는 리더는 순서를 유지하는 리더뿐이기 때문입니다
+
+### VortexScanSplits {#vortexscansplits}
+
+Vortex 스캔(Scan)이 전달한 분할 수
+
 ### WaitMarksLoadMicroseconds {#waitmarksloadmicroseconds}
 
 마크 로딩에 소요된 시간
@@ -6420,6 +7304,10 @@ S3에 쓰기 작업 중 발생한 예외 수입니다.
 ### WriteBufferFromS3WaitInflightLimitMicroseconds {#writebufferfroms3waitinflightlimitmicroseconds}
 
 현재 요청 수가 s3&#95;max&#95;inflight&#95;parts&#95;for&#95;one&#95;file에 정의된 한도에 도달했을 때, 진행 중인 요청 일부가 완료될 때까지 대기하는 데 소요된 시간입니다.
+
+### YTsaurusLookupThrottled {#ytsauruslookupthrottled}
+
+YTsaurus에 대한 조회(lookup) 요청 중 스로틀링된 요청 수
 
 ### ZooKeeperBytesReceived {#zookeeperbytesreceived}
 

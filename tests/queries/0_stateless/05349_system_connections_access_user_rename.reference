@@ -1,0 +1,6 @@
+--- before the rename: the user sees both connections
+2
+--- a new user with the old name does not see the connections
+0
+--- the renamed user still sees the connections
+2

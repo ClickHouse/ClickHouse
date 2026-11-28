@@ -324,7 +324,10 @@ Chunk SQLiteStatementReader::readChunk(sqlite3 * db, sqlite3_stmt * statement, U
                         "Cannot insert NULL value into non-Nullable column {}",
                         info.name);
 
-                columns[column_index]->insertDefault();
+                if (!info.is_nullable && !info.data_type->isDefaultInsertTrivial())
+                    info.data_type->insertDefaultInto(*columns[column_index]);
+                else
+                    columns[column_index]->insertDefault();
                 continue;
             }
 

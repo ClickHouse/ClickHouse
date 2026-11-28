@@ -13,17 +13,13 @@ doc_type: 'reference'
 задан ранее. Изменение комментария отражается как в [`system.tables`](/ru/reference/system-tables/tables),
 так и в запросе `SHOW CREATE TABLE`.
 
-<div id="syntax">
-  ## Синтаксис
-</div>
+## Синтаксис {#syntax}
 
 ```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 ```
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples}
 
 Чтобы создать таблицу с комментарием:
 
@@ -78,9 +74,7 @@ WHERE database = currentDatabase() AND name = 'table_with_comment';
 └─────────┘
 ```
 
-<div id="caveats">
-  ## Ограничения
-</div>
+## Ограничения {#caveats}
 
 Для таблиц Replicated комментарий может различаться между репликами.
 Изменение комментария применяется только к одной реплике.
@@ -88,9 +82,7 @@ WHERE database = currentDatabase() AND name = 'table_with_comment';
 Эта возможность доступна начиная с версии 23.9. В предыдущих версиях
 ClickHouse она не работает.
 
-<div id="related-content">
-  ## Связанные материалы
-</div>
+## Связанные материалы {#related-content}
 
 * предложение [`COMMENT`](/ru/reference/statements/create/table#comment-clause)
 * [`ALTER DATABASE ... MODIFY COMMENT`](/ru/reference/statements/alter/database-comment)

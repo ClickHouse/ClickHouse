@@ -11,7 +11,6 @@
 -- path; this test isolates the PREWHERE write path by using a query with no WHERE at
 -- all: any query condition cache activity can then only come from the PREWHERE side.
 
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 SET use_query_condition_cache_for_top_k = 1;
 SET use_top_k_dynamic_filtering = 1;

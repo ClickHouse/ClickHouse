@@ -63,7 +63,7 @@ namespace
             return mv_from_dependency;
         }
 
-        bool needChildVisit(const ASTPtr & child) const { return !skip_asts.contains(child.get()); }
+        [[nodiscard]] bool needChildVisit(const ASTPtr & child) const { return !skip_asts.contains(child.get()); }
 
         void visit(const ASTPtr & ast)
         {
@@ -323,9 +323,10 @@ namespace
             }
             else if (functionIsInOrGlobalInOperator(function.name))
             {
-                /// x IN table_name.
+                /// x IN table_name. A literal, as in x IN ('db.table'), is a set of values, not a table name.
                 /// We set evaluate=false here because we don't want to evaluate a subquery in "x IN subquery".
-                addQualifiedNameFromArgument(function, 1, /* evaluate= */ false);
+                if (function.arguments && function.arguments->children.size() > 1 && !function.arguments->children[1]->as<ASTLiteral>())
+                    addQualifiedNameFromArgument(function, 1, /* evaluate= */ false);
             }
             else if (function.name == "dictionary")
             {
@@ -413,7 +414,7 @@ namespace
         }
 
         /// Gets an argument as a string, evaluates constants if necessary.
-        std::optional<String> tryGetStringFromArgument(const ASTFunction & function, size_t arg_idx, bool evaluate = true) const
+        [[nodiscard]] std::optional<String> tryGetStringFromArgument(const ASTFunction & function, size_t arg_idx, bool evaluate = true) const
         {
             if (!function.arguments)
                 return {};
@@ -441,7 +442,8 @@ namespace
                 /// We're just searching for dependencies here, it's not safe to execute subqueries now.
                 /// Use copy of the global_context and set current database, because expressions can contain currentDatabase() function.
                 ContextMutablePtr global_context_copy = Context::createCopy(global_context);
-                global_context_copy->setCurrentDatabase(current_database);
+                if (!current_database.empty())
+                    global_context_copy->setCurrentDatabase(current_database);
                 auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, global_context_copy);
                 const auto * literal = evaluated->as<ASTLiteral>();
                 if (!literal || (literal->value.getType() != Field::Types::String))
@@ -457,7 +459,7 @@ namespace
         /// Gets an argument as a qualified table name.
         /// Accepts forms db_name.table_name (as an identifier) and 'db_name.table_name' (as a string).
         /// The function doesn't replace an empty database name with the current_database (the caller must do that).
-        std::optional<QualifiedTableName> tryGetQualifiedNameFromArgument(
+        [[nodiscard]] std::optional<QualifiedTableName> tryGetQualifiedNameFromArgument(
             const ASTFunction & function, size_t arg_idx, bool evaluate = true, bool apply_current_database = true) const
         {
             if (!function.arguments)
@@ -521,7 +523,7 @@ namespace
         }
 
         /// Returns a database name and a table name extracted from two separate arguments.
-        std::optional<QualifiedTableName> tryGetDatabaseAndTableNameFromArguments(
+        [[nodiscard]] std::optional<QualifiedTableName> tryGetDatabaseAndTableNameFromArguments(
             const ASTFunction & function, size_t database_arg_idx, size_t table_arg_idx, bool apply_current_database = true) const
         {
             auto database = tryGetStringFromArgument(function, database_arg_idx);
@@ -549,7 +551,7 @@ namespace
                 dependencies.emplace(std::move(qualified_name).value());
         }
 
-        std::optional<String> tryGetClusterNameFromArgument(const ASTFunction & function, size_t arg_idx) const
+        [[nodiscard]] std::optional<String> tryGetClusterNameFromArgument(const ASTFunction & function, size_t arg_idx) const
         {
             if (!function.arguments)
                 return {};

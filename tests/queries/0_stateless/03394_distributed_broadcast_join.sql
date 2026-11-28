@@ -49,7 +49,7 @@ SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '------------';
 
--- Check with big table read bucket count not matching join bucket count
+-- A read bucket count that differs from the join bucket count: the left side keeps the read's buckets, so no exchange is needed below the join
 EXPLAIN SELECT count()
 FROM big, small
 WHERE (small.sid = (big.bid + 1) % 5000)

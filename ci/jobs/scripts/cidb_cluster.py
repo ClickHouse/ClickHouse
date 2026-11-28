@@ -280,6 +280,6 @@ class CIDBCluster:
 
 if __name__ == "__main__":
     CIDBCluster = CIDBCluster(
-        url="https://play.clickhouse.com?user=play", user="", pwd=""
+        url="https://xy8c38q4lw.us-east-2.aws.clickhouse-staging.com/?user=play", user="", pwd=""
     )
     assert CIDBCluster.is_ready()

@@ -84,10 +84,10 @@ SELECT toTypeName([toInt64(1), [1, 2]]);
 -- it resolves to the numeric supertype like the other conditionals.
 SELECT toTypeName(CASE WHEN materialize(1) THEN toDecimal64(1, 2) ELSE 0. END);
 -- But the expression form `CASE expr WHEN ... END` (function caseWithExpression) is outside the
--- setting: it computes its result type with plain getLeastSupertype, so mixed numeric branches
--- with no lossless common type still throw NO_COMMON_TYPE regardless of the setting.
-SELECT toTypeName(CASE materialize(1) WHEN 1 THEN toDecimal64(1, 2) ELSE 0. END); -- { serverError NO_COMMON_TYPE }
-SELECT sum(CASE materialize(1) WHEN 1 THEN toDecimal64(1, 2) ELSE 0. END); -- { serverError NO_COMMON_TYPE }
+-- setting: it follows use_variant_as_common_type, so mixed numeric branches with no lossless
+-- common type produce a Variant regardless of the setting, which value-combining aggregates reject.
+SELECT toTypeName(CASE materialize(1) WHEN 1 THEN toDecimal64(1, 2) ELSE 0. END);
+SELECT sum(CASE materialize(1) WHEN 1 THEN toDecimal64(1, 2) ELSE 0. END); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- The setting is independent of use_variant_as_common_type: with use_variant_as_common_type = 0
 -- the lossy numeric supertype still applies (previously these threw NO_COMMON_TYPE because the

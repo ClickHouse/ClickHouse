@@ -1,4 +1,8 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Analyzer/QueryNode.h>
@@ -52,6 +56,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 
 #include <fmt/format.h>
+#include <Common/StackWithMemoryTracking.h>
 
 namespace DB
 {
@@ -145,6 +150,18 @@ static void enableMemoryBoundMerging(QueryProcessingStage::Enum stage, const Clu
 
         aggregating_step->enableMemoryBoundMerging();
     }
+}
+
+/// The remote servers read the setting in `QueryPlanOptimizationSettings`, also for a serialized plan.
+static void enableGroupByTopK(QueryProcessingStage::Enum stage, size_t top_k_limit, Context & context)
+{
+    if (stage != QueryProcessingStage::WithMergeableState)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot enable GROUP BY top-K for remote reading up to stage {}",
+            QueryProcessingStage::toString(stage));
+
+    context.setSetting("distributed_group_by_top_k", top_k_limit);
 }
 
 static void enforceAggregationInOrder(
@@ -244,13 +261,13 @@ static ASTSelectQuery & getSelectQuery(ASTPtr ast)
 /// It should not be needed after we send a full plan for distributed queries.
 ASTPtr tryBuildAdditionalFilterAST(
     const ActionsDAG & dag,
-    const std::unordered_set<std::string> & projection_names,
-    const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
+    const NameSet & projection_names,
+    const UnorderedMapWithMemoryTracking<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
     ContextMutablePtr & context,
-    std::vector<const ActionsDAG::Node *> * dropped_conjuncts)
+    VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts)
 {
-    std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, ASTPtr> node_to_ast;
 
     /** Dropping a conjunct that cannot be converted weakens an `AND`, which is only sound where the
       * predicate is used with positive polarity. Under a `NOT` the weakened `AND` makes the whole
@@ -261,9 +278,9 @@ ASTPtr tryBuildAdditionalFilterAST(
       * place where the polarity is known to be positive. A node with more than one parent may also be
       * reachable through some other function, so require a single parent while descending.
       */
-    std::unordered_set<const ActionsDAG::Node *> conjuncts_safe_to_drop;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> conjuncts_safe_to_drop;
     {
-        std::unordered_map<const ActionsDAG::Node *, size_t> num_parents;
+        UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> num_parents;
         for (const auto & dag_node : dag.getNodes())
             for (const auto * child : dag_node.children)
                 ++num_parents[child];
@@ -274,7 +291,7 @@ ASTPtr tryBuildAdditionalFilterAST(
                 && candidate->function_base->getName() == "and";
         };
 
-        std::stack<const ActionsDAG::Node *> to_visit;
+        StackWithMemoryTracking<const ActionsDAG::Node *> to_visit;
         if (is_and(dag.getOutputs().front()))
             to_visit.push(dag.getOutputs().front());
 
@@ -297,7 +314,7 @@ ASTPtr tryBuildAdditionalFilterAST(
         const ActionsDAG::Node * node;
         size_t next_child = 0;
     };
-    std::stack<Frame> stack;
+    StackWithMemoryTracking<Frame> stack;
     stack.push({dag.getOutputs().front()});
     while (!stack.empty())
     {
@@ -530,7 +547,7 @@ static bool addFilters(
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     const ActionsDAG & pushed_down_filters,
-    std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr)
+    VectorWithMemoryTracking<const ActionsDAG::Node *> * dropped_conjuncts = nullptr)
 {
     if (!query_tree || !planner_context)
         return false;
@@ -546,11 +563,11 @@ static bool addFilters(
     /// We are building a set with projection names and a map with execution names here.
     /// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
 
-    std::unordered_set<std::string> projection_names;
+    NameSet projection_names;
     for (const auto & col : query_node->getProjectionColumns())
         projection_names.insert(col.name);
 
-    std::unordered_map<std::string, QueryTreeNodePtr> execution_name_to_projection_query_tree;
+    UnorderedMapWithMemoryTracking<std::string, QueryTreeNodePtr> execution_name_to_projection_query_tree;
     for (const auto & node : query_node->getProjection())
         execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
 
@@ -637,7 +654,7 @@ ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
     auto atoms = ActionsDAG::extractConjunctionAtoms(&condition);
     auto dag = ActionsDAG::buildFilterActionsDAG({&condition});
     ContextMutablePtr no_context;
-    std::vector<const ActionsDAG::Node *> dropped;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> dropped;
     if (!query_ast || !dag
         || !addFilters(nullptr, no_context, rewrite_context, query_ast->clone(), query_tree, planner_context, *dag, &dropped))
         return atoms;
@@ -660,6 +677,12 @@ ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
     return left_out;
 }
 
+static bool shardQueryHasTotals(const ClusterProxy::SelectStreamFactory::Shard & shard)
+{
+    const auto * select = shard.query->as<ASTSelectQuery>();
+    return select && select->group_by_with_totals;
+}
+
 void ReadFromRemote::addLazyPipe(
     Pipes & pipes,
     const ClusterProxy::SelectStreamFactory::Shard & shard,
@@ -675,12 +698,9 @@ void ReadFromRemote::addLazyPipe(
 
     if (stage == QueryProcessingStage::Complete)
     {
-        if (const auto * ast_select = shard.query->as<ASTSelectQuery>())
-            add_totals = ast_select->group_by_with_totals;
+        add_totals = shardQueryHasTotals(shard);
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
-
-    std::shared_ptr<const ActionsDAG> pushed_down_filters = filter_actions_dag;
 
     /// Override cluster_for_parallel_replicas to match the distributed table's cluster,
     /// same as addPipe() does. Without this, the _shard_num scalar from the distributed
@@ -717,17 +737,25 @@ void ReadFromRemote::addLazyPipe(
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Storage with id {} not found", resolved_id);
     }
 
+    /// The temporary table of a GLOBAL IN must be attached to its set before the set is built, which happens
+    /// before the lambda runs. So splice the filter now, as addPipe does; the local fallback keeps shard.query.
+    ASTPtr remote_query = shard.query;
+    if (filter_actions_dag)
+    {
+        remote_query = shard.query->clone();
+        addFilters(&external_tables, context, context, remote_query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+    }
+
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
             my_unavailable_shard_tracker = tracker, my_cluster_name = cluster_name,
-            query = shard.query, header = shard.header,
+            query = shard.query, remote_query, header = shard.header,
             my_context = context, my_throttler = throttler, my_log = log,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
             my_stage = stage, my_storage = storage, my_shard_scope_identity = shard_scope_identity,
             add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
-            query_tree = shard.query_tree, planner_context = shard.planner_context,
-            pushed_down_filters, parallel_marshalling_threads]() mutable
+            parallel_marshalling_threads]() mutable
         -> QueryPipelineBuilder
     {
         auto current_settings = my_context->getSettingsRef();
@@ -736,7 +764,7 @@ void ReadFromRemote::addLazyPipe(
 
         // In case reading from parallel replicas is allowed, lazy case is not triggered,
         // so in this case it's required to get only one connection from the pool
-        std::vector<ConnectionPoolWithFailover::TryResult> try_results;
+        std::vector<ConnectionPoolWithFailover::TryResult> try_results; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- assigned from `ConnectionPoolWithFailover::getManyChecked`, which returns std::vector
         std::exception_ptr exception_ptr;
         try
         {
@@ -814,18 +842,12 @@ void ReadFromRemote::addLazyPipe(
         if (exception_ptr)
             std::rethrow_exception(exception_ptr);
 
-        std::vector<IConnectionPool::Entry> connections;
+        ConnectionPoolEntries connections;
         connections.reserve(try_results.size());
         for (auto & try_result : try_results)
             connections.emplace_back(std::move(try_result.entry));
 
-        /// For the lazy case we are ignoring external tables.
-        /// This is because the set could be build before the lambda call,
-        /// and the temporary table which we are about to send would be empty.
-        /// So that GLOBAL IN would work as local IN in the pushed-down predicate.
-        if (pushed_down_filters)
-            addFilters(nullptr, my_context, my_context, query, query_tree, planner_context, *pushed_down_filters);
-        String query_string = formattedAST(query);
+        String query_string = formattedAST(remote_query);
         auto stage_to_use = my_shard.query_plan ? QueryProcessingStage::QueryPlan : my_stage;
 
         my_scalars["_shard_num"] = ClusterProxy::makeShardNumScalar(my_shard.shard_info.shard_num, my_shard_scope_identity);
@@ -865,8 +887,7 @@ void ReadFromRemote::addPipe(
     bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
     if (stage == QueryProcessingStage::Complete)
     {
-        if (const auto * ast_select = shard.query->as<ASTSelectQuery>())
-            add_totals = ast_select->group_by_with_totals;
+        add_totals = shardQueryHasTotals(shard);
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
@@ -971,6 +992,7 @@ void ReadFromRemote::addPipe(
         // Several connections to a shard are correct only when every replica reads its own part of the data,
         // which is the case only for the offset based modes (`SAMPLING_KEY`, `CUSTOM_KEY_SAMPLING`,
         // `CUSTOM_KEY_RANGE`), where the query sent to a replica carries the corresponding filter.
+        // The replicas then share one port, so a read whose consumer needs stream order uses one replica.
         //
         // In every other case a replica executes the whole query, so there should be a single connection
         // to a shard, otherwise the result of the shard is multiplied by the number of the connections:
@@ -980,7 +1002,7 @@ void ReadFromRemote::addPipe(
         //   * with parallel replicas disabled, or not applicable for any other reason (e.g. by
         //     `automatic_parallel_replicas_mode`), a replica just executes the query over all of its
         //     data.
-        if (context->canUseOffsetParallelReplicas())
+        if (context->canUseOffsetParallelReplicas() && allow_reading_shard_from_several_replicas)
             remote_query_executor->setPoolMode(PoolMode::GET_MANY);
         else
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
@@ -1004,7 +1026,8 @@ Pipes ReadFromRemote::addPipes(
     for (const auto & shard : used_shards)
     {
         const size_t parallel_marshalling_threads
-            = (context->getSettingsRef()[Setting::max_threads] + used_shards.size() - 1) / used_shards.size();
+            = context->getSettingsRef()[Setting::max_threads] / used_shards.size()
+            + (context->getSettingsRef()[Setting::max_threads] % used_shards.size() != 0);
         if (shard.lazy)
             addLazyPipe(pipes, shard, out_header, parallel_marshalling_threads, tracker);
         else
@@ -1016,6 +1039,9 @@ Pipes ReadFromRemote::addPipes(
 
 void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    if (context->canUseOffsetParallelReplicas() && !allow_reading_shard_from_several_replicas)
+        LOG_DEBUG(log, "Reading every shard from one replica, the consumers of the read may depend on the order of its streams");
+
     Pipes pipes = addPipes(shards, output_header, unavailable_shard_tracker);
 
     /// One pipe per executor, so the built pipes are this query's complete unit count.
@@ -1142,6 +1168,11 @@ bool ReadFromRemote::hasSerializedPlan() const
     return false;
 }
 
+bool ReadFromRemote::hasTotals() const
+{
+    return stage == QueryProcessingStage::Complete && std::ranges::any_of(shards, shardQueryHasTotals);
+}
+
 
 ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     ASTPtr query_ast_,
@@ -1159,7 +1190,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     Tables external_tables_,
     LoggerPtr log_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
-    std::vector<ConnectionPoolPtr> pools_to_use_,
+    VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use_,
     std::optional<size_t> exclude_pool_index_,
     ConnectionPoolWithFailoverPtr connection_pool_with_failover_,
     std::shared_ptr<const QueryPlan> query_plan_)
@@ -1185,7 +1216,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
 {
     chassert(cluster->getShardCount() == 1);
 
-    std::vector<String> replicas;
+    VectorWithMemoryTracking<String> replicas;
     replicas.reserve(pools_to_use.size());
 
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
@@ -1210,6 +1241,11 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
     DB::enforceAggregationInOrder(stage, nullptr, sort_description, *context);
 }
 
+void ReadFromParallelRemoteReplicasStep::enableGroupByTopK(size_t top_k_limit)
+{
+    DB::enableGroupByTopK(stage, top_k_limit, *context);
+}
+
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     /// The initiator's copy of the fragment took what this splice carries (see `tryPushDownFilter`), on the
@@ -1232,7 +1268,7 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const SharedHeade
 {
     Pipes pipes;
 
-    std::vector<std::string_view> addresses;
+    VectorWithMemoryTracking<std::string_view> addresses;
     addresses.reserve(pools_to_use.size());
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {
@@ -1244,7 +1280,7 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const SharedHeade
     LOG_DEBUG(getLogger("ReadFromParallelRemoteReplicasStep"), "Addresses to use: {}", fmt::join(addresses, ", "));
 
     using ProcessorWeakPtr = std::weak_ptr<IProcessor>;
-    std::unordered_map<size_t, ProcessorWeakPtr> remote_sources;
+    UnorderedMapWithMemoryTracking<size_t, ProcessorWeakPtr> remote_sources;
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {
         if (exclude_pool_index.has_value() && i == exclude_pool_index)
@@ -1262,7 +1298,8 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const SharedHeade
             pools_to_use[i]->getAddress());
 
         const size_t parallel_marshalling_threads
-            = (context->getSettingsRef()[Setting::max_threads] + pools_to_use.size() - 1) / pools_to_use.size();
+            = context->getSettingsRef()[Setting::max_threads] / pools_to_use.size()
+            + (context->getSettingsRef()[Setting::max_threads] % pools_to_use.size() != 0);
         Pipe pipe = createPipeForSingeReplica(pools_to_use[i], ast, replica_info, out_header, parallel_marshalling_threads);
         remote_sources.emplace(replica_info.number_of_current_replica, pipe.getProcessors().front());
         pipes.emplace_back(std::move(pipe));
@@ -1276,7 +1313,7 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const SharedHeade
     if (!wait_for_unused_replicas)
     {
         coordinator->setReadCompletedCallback(
-            [sources = std::move(remote_sources)](const std::set<size_t> & used_replicas)
+            [sources = std::move(remote_sources)](const SetWithMemoryTracking<size_t> & used_replicas)
             {
                 for (const auto & [replica_num, processor] : sources)
                 {

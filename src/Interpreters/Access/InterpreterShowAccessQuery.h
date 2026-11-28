@@ -19,13 +19,13 @@ public:
 
     BlockIO execute() override;
 
-    bool ignoreQuota() const override { return true; }
-    bool ignoreLimits() const override { return true; }
+    [[nodiscard]] bool ignoreQuota() const override { return true; }
+    [[nodiscard]] bool ignoreLimits() const override { return true; }
 
 private:
-    QueryPipeline executeImpl() const;
-    ASTs getCreateAndGrantQueries() const;
-    std::vector<AccessEntityPtr> getEntities() const;
+    [[nodiscard]] QueryPipeline executeImpl() const;
+    [[nodiscard]] ASTs getCreateAndGrantQueries() const;
+    [[nodiscard]] std::vector<AccessEntityPtr> getEntities() const;
 
     ASTPtr query_ptr;
 };

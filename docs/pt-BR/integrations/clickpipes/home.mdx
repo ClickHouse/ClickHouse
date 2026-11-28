@@ -10,11 +10,10 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import ClickPipesConnectors from '/snippets/pt-BR/_clickpipes_connectors.mdx';
 
 <div id="overview">
-  ## Visão geral
+  ## Visão geral {#overview}
 </div>
 
 [ClickPipes](/pt-BR/integrations/clickpipes/home) é uma plataforma de integração gerenciada que torna a ingestão de dados de um conjunto diverso de fontes tão simples quanto clicar em alguns botões. Projetada para as workloads mais exigentes, a arquitetura robusta e escalável do ClickPipes garante desempenho e confiabilidade consistentes. O ClickPipes pode ser usado para ingestão contínua de dados ou para uma carga de dados pontual.
@@ -22,7 +21,7 @@ import ClickPipesConnectors from '/snippets/pt-BR/_clickpipes_connectors.mdx';
 O ClickPipes pode ser implantado e gerenciado usando a UI do ClickPipes, bem como de forma programática com [OpenAPI](/pt-BR/integrations/clickpipes/programmatic-access/openapi) e [Terraform](/pt-BR/integrations/clickpipes/programmatic-access/terraform).
 
 <div id="clickpipes-connectors">
-  ## Conectores
+  ## Conectores {#clickpipes-connectors}
 </div>
 
 <ClickPipesConnectors />
@@ -30,7 +29,7 @@ O ClickPipes pode ser implantado e gerenciado usando a UI do ClickPipes, bem com
 Mais conectores serão adicionados ao ClickPipes. Para saber mais, [entre em contato conosco](https://clickhouse.com/company/contact?loc=clickpipes).
 
 <div id="aws-iam-database-authentication">
-  ## Autenticação de banco de dados com AWS IAM
+  ## Autenticação de banco de dados com AWS IAM {#aws-iam-database-authentication}
 </div>
 
 O ClickPipes oferece suporte à autenticação de banco de dados com AWS IAM para Amazon RDS e Aurora. A configuração varia de acordo com o mecanismo de banco de dados e o serviço da AWS, portanto escolha o guia de configuração da origem correspondente ao seu banco de dados:
@@ -44,14 +43,12 @@ O ClickPipes oferece suporte à autenticação de banco de dados com AWS IAM par
 | MariaDB                     | Amazon RDS     | [RDS para MariaDB](/pt-BR/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)                     |
 
 <div id="list-of-static-ips">
-  ## Lista de IPs estáticos
+  ## Lista de IPs estáticos {#list-of-static-ips}
 </div>
 
 A lista de IPs estáticos de NAT do ClickPipes foi movida para a [documentação de rede do ClickPipes](/pt-BR/integrations/clickpipes/networking/static-ips).
 
-<div id="adjusting-clickhouse-settings">
-  ## Ajustando as configurações do ClickHouse
-</div>
+## Ajustando as configurações do ClickHouse {#adjusting-clickhouse-settings}
 
 O ClickHouse Cloud fornece padrões adequados para a maioria dos casos de uso. No entanto, se você precisar ajustar algumas configurações do ClickHouse para as tabelas de destino do ClickPipes, uma função dedicada para o ClickPipes é a solução mais flexível.
 Etapas:
@@ -59,17 +56,17 @@ Etapas:
 1. crie uma função personalizada `CREATE ROLE my_clickpipes_role SETTINGS ...`. Consulte a sintaxe de [CREATE ROLE](/pt-BR/reference/statements/create/role) para mais detalhes.
 2. adicione a função personalizada ao usuário do ClickPipes na etapa `Details and Settings`, durante a criação do ClickPipes.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_custom_role.webp" alt="Atribuir uma função personalizada" size="lg" border />
-
-<div id="clickpipes-advanced-settings">
-  ## Ajustando as configurações avançadas do ClickPipes
+<div className="ch-image-lg">
+  <Frame>
+    ![Atribuir uma função personalizada](/images/integrations/data-ingestion/clickpipes/cp_custom_role.webp)
+  </Frame>
 </div>
 
-O ClickPipes oferece padrões sensatos que atendem aos requisitos da maioria dos casos de uso. Se o seu caso de uso exigir ajustes mais finos, você pode ajustar as seguintes configurações:
+## Ajustando as configurações avançadas do ClickPipes {#clickpipes-advanced-settings}
 
-<div id="clickpipes-advanced-settings-object-storage">
-  ### ClickPipes de armazenamento de objetos
-</div>
+O ClickPipes oferece valores padrão adequados que atendem aos requisitos da maioria dos casos de uso. Se o seu caso de uso exigir um Fine-tuning adicional, você pode ajustar as seguintes configurações:
+
+### ClickPipes de armazenamento de objetos {#clickpipes-advanced-settings-object-storage}
 
 | Configuração                         | Valor padrão | Descrição                                                                                                                                                                     |
 | ------------------------------------ | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -84,18 +81,20 @@ O ClickPipes oferece padrões sensatos que atendem aos requisitos da maioria dos
 | `Parallel view processing`           | false        | Define se o envio para views anexadas deve ser habilitado [de forma simultânea em vez de sequencial](/pt-BR/reference/settings/session-settings/parallel#parallel_view_processing). |
 | `Use cluster function`               | true         | Define se os arquivos devem ser processados em paralelo em vários nós.                                                                                                        |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Configurações avançadas do ClickPipes" size="lg" border />
-
-<div id="clickpipes-advanced-settings-streaming">
-  ### ClickPipes de streaming
+<div className="ch-image-lg">
+  <Frame>
+    ![Configurações avançadas do ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+  </Frame>
 </div>
 
-| Configuração                     | Valor padrão | Descrição                                                                            |
-| -------------------------------- | ------------ | ------------------------------------------------------------------------------------ |
-| `Streaming max insert wait time` | 5 s          | Define o tempo máximo de espera antes da inserção de dados no cluster do ClickHouse. |
+### ClickPipes de streaming {#clickpipes-advanced-settings-streaming}
+
+| Configuração                     | Valor default | Descrição                                                                            |
+| -------------------------------- | ------------- | ------------------------------------------------------------------------------------ |
+| `Streaming max insert wait time` | 5 s           | Define o período máximo de espera antes da inserção dos dados no cluster ClickHouse. |
 
 <div id="error-reporting">
-  ## Relatório de erros
+  ## Relatório de erros {#error-reporting}
 </div>
 
 O ClickPipes armazenará os erros em duas tabelas separadas, dependendo do tipo de erro encontrado durante o processo de ingestão.
@@ -105,13 +104,13 @@ O ClickPipes armazenará os erros em duas tabelas separadas, dependendo do tipo 
 </Note>
 
 <div id="record-errors">
-  ### Registrar erros
+  ### Registrar erros {#record-errors}
 </div>
 
 O ClickPipes criará uma tabela ao lado da sua tabela de destino com o sufixo `<destination_table_name>_clickpipes_error`. Essa tabela conterá todos os erros causados por dados malformados ou incompatibilidade de esquema e incluirá a mensagem inválida completa. Essa tabela tem um [TTL](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) de 7 dias.
 
 <div id="system-errors">
-  ### Erros do sistema
+  ### Erros do sistema {#system-errors}
 </div>
 
 Os erros relacionados à operação do ClickPipe serão armazenados na tabela `system.clickpipes_log`. Nela também serão armazenados todos os outros erros relacionados à operação do seu ClickPipe (rede, conectividade etc.). Essa tabela tem um [TTL](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) de 7 dias.
@@ -119,13 +118,13 @@ Os erros relacionados à operação do ClickPipe serão armazenados na tabela `s
 Se o ClickPipes não conseguir se conectar a uma fonte de dados após 15 min ou a um destino após 1 h, a instância do ClickPipes será interrompida, e uma mensagem apropriada será armazenada na tabela de erro do sistema (desde que a instância do ClickHouse esteja disponível).
 
 <div id="monitoring">
-  ## Monitoramento
+  ## Monitoramento {#monitoring}
 </div>
 
 Além do monitoramento no Console, ClickPipes expõe métricas em um [endpoint compatível com Prometheus](/pt-BR/products/cloud/features/monitoring/prometheus) para coleta. Essas métricas são publicadas junto com outras métricas do serviço ClickHouse Cloud e permitem integrar o monitoramento do ClickPipes à sua stack de observabilidade existente (por exemplo, [Grafana](/pt-BR/products/cloud/features/monitoring/prometheus#integrating-with-grafana), [Datadog](/pt-BR/products/cloud/features/monitoring/prometheus#integrating-with-datadog)). Consulte [Monitoramento do ClickPipes](/pt-BR/integrations/clickpipes/monitoring) para ver a lista completa de métricas disponíveis.
 
 <div id="faq">
-  ## FAQ
+  ## FAQ {#faq}
 </div>
 
 * **O que é ClickPipes?**

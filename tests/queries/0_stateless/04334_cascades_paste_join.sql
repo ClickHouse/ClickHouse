@@ -4,7 +4,6 @@
 -- rejects such plans up front (with and without Cascades) instead of returning wrongly
 -- paired rows.
 
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;

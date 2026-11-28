@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['MongoDB', 'logs', 'OTEL', 'ClickStack', 'monitoramento de banco de dados', 'consulta lenta']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -18,14 +16,14 @@ import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/Galaxy
 </Info>
 
 <div id="existing-mongodb">
-  ## Integração com MongoDB existente
+  ## Integração com MongoDB existente {#existing-mongodb}
 </div>
 
 Esta seção explica como configurar sua instalação existente do MongoDB para enviar logs para o ClickStack, modificando a configuração do OTel collector do ClickStack.
 Se você quiser testar a integração com MongoDB antes de configurar sua própria instalação, poderá testá-la com nossa configuração pré-configurada e dados de exemplo na seção [&quot;Dataset de demonstração&quot;](/pt-BR/clickstack/integration-examples/mongodb-logs#demo-dataset).
 
 <div id="prerequisites">
-  ### Pré-requisitos
+  ### Pré-requisitos {#prerequisites}
 </div>
 
 * Instância do ClickStack em execução
@@ -67,7 +65,7 @@ Se você quiser testar a integração com MongoDB antes de configurar sua própr
   </Step>
 
   <Step title="Criar uma configuração personalizada do OTel collector para MongoDB" id="custom-otel">
-    O ClickStack permite estender a configuração base do OpenTelemetry Collector montando um arquivo de configuração personalizado e definindo uma variável de ambiente. A configuração personalizada é mesclada à configuração base gerenciada pelo HyperDX via OpAMP.
+    O ClickStack permite estender a configuração base do OpenTelemetry Collector montando um arquivo de configuração personalizado e definindo uma variável de ambiente. A configuração personalizada é mesclada à configuração base gerenciada pela Interface do ClickStack via OpAMP.
 
     Crie um arquivo chamado `mongodb-monitoring.yaml` com a seguinte configuração:
 
@@ -174,18 +172,24 @@ Se você quiser testar a integração com MongoDB antes de configurar sua própr
     </Note>
   </Step>
 
-  <Step title="Verifique os logs no HyperDX" id="verifying-logs">
-    Após a configuração, faça login no HyperDX e verifique se os logs estão chegando:
+  <Step title="Verifique os logs na Interface do ClickStack" id="verifying-logs">
+    Após a configuração, faça login na Interface do ClickStack e verifique se os logs estão chegando:
 
-    <Image img="/images/clickstack/mongodb/search-view.webp" alt="Visualização de pesquisa dos logs do MongoDB" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Visualização de pesquisa dos logs do MongoDB](/images/clickstack/mongodb/search-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/mongodb/log-view.webp" alt="Visualização detalhada dos logs do MongoDB" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Visualização detalhada dos logs do MongoDB](/images/clickstack/mongodb/log-view.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="demo-dataset">
-  ## Dataset de demonstração
-</div>
+## Conjunto de dados de demonstração {#demo-dataset}
 
 Teste a integração com MongoDB usando um dataset de exemplo pré-gerado antes de configurar seus sistemas de produção.
 
@@ -269,23 +273,29 @@ Teste a integração com MongoDB usando um dataset de exemplo pré-gerado antes 
       clickhouse/clickstack-all-in-one:latest
     ```
 
-    ## Verifique os logs no HyperDX
+## Verifique os logs na Interface do ClickStack {#verify-demo-logs}
 
     Depois que o ClickStack estiver em execução:
 
-    1. Abra o [HyperDX](http://localhost:8080/) e faça login na sua conta (talvez seja necessário criar uma conta primeiro)
-    2. Acesse a Search view e defina a source como `Logs`
+    1. Abra a [Interface do ClickStack](http://localhost:8080/) e faça login na sua conta (talvez seja necessário criar uma conta primeiro)
+    2. Acesse a Visualização de pesquisa e defina a source como `Logs`
     3. Defina o intervalo de tempo para incluir **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**
 
-    <Image img="/images/clickstack/mongodb/search-view.webp" alt="Visualização de pesquisa de logs do MongoDB" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Visualização de pesquisa de logs do MongoDB](/images/clickstack/mongodb/search-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/mongodb/log-view.webp" alt="Visualização detalhada do log do MongoDB" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Visualização detalhada do log do MongoDB](/images/clickstack/mongodb/log-view.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## Dashboards e visualizações
-</div>
+## Dashboards e visualizações {#dashboards}
 
 <Steps>
   <Step title="Baixar a configuração do dashboard" id="download">
@@ -293,30 +303,40 @@ Teste a integração com MongoDB usando um dataset de exemplo pré-gerado antes 
   </Step>
 
   <Step title="Importar dashboard pré-configurado" id="import-dashboard">
-    1. Abra o HyperDX e navegue até a seção Dashboards.
-    2. Clique em &quot;Import Dashboard&quot; no canto superior direito, no menu de reticências.
+    1. Abra a Interface do ClickStack e navegue até a seção Dashboards.
+    2. Clique em &quot;Importar Painel&quot; no canto superior direito, no menu de reticências.
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Importar dashboard" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Importar Painel](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
     3. Faça upload do arquivo mongodb-logs-dashboard.json e clique em &quot;Finish Import&quot;.
 
-    <Image img="/images/clickstack/mongodb/finish-import.webp" alt="Concluir importação do dashboard de logs do MongoDB" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Concluir importação do dashboard de logs do MongoDB](/images/clickstack/mongodb/finish-import.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="O dashboard será criado com todas as visualizações pré-configuradas" id="created-dashboard">
-    Para o dataset de demonstração, defina o intervalo de tempo para abranger **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
+    Para o conjunto de dados de demonstração, defina o intervalo de tempo para abranger **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
-    <Image img="/images/clickstack/mongodb/example-dashboard.webp" alt="Dashboard de logs do MongoDB" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Dashboard de logs do MongoDB](/images/clickstack/mongodb/example-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## Solução de problemas
+  ## Solução de problemas {#troubleshooting}
 </div>
 
-<div id="no-logs">
-  ### Nenhum log aparece no HyperDX
-</div>
+### Nenhum log aparece na Interface do ClickStack {#no-logs}
 
 Verifique se a configuração efetiva inclui o receiver filelog:
 
@@ -331,7 +351,7 @@ docker exec <container> cat /etc/otel/supervisor-data/agent.log
 ```
 
 <div id="logs-not-parsing">
-  ### Logs não estão sendo interpretados corretamente
+  ### Logs não estão sendo interpretados corretamente {#logs-not-parsing}
 </div>
 
 Verifique se o MongoDB está gerando logs em JSON (4.4+):
@@ -343,14 +363,12 @@ tail -1 /var/log/mongodb/mongod.log | python3 -m json.tool
 Se a saída não for um JSON válido, sua versão do MongoDB pode estar usando o formato de log de texto legado (anterior à 4.4). Será necessário substituir o operador `json_parser` por `regex_parser` ou atualizar para o MongoDB 4.4+.
 
 <div id="next-steps">
-  ## Próximos passos
+  ## Próximos passos {#next-steps}
 </div>
 
 * Configure [alertas](/pt-BR/clickstack/features/alerts) para eventos críticos (picos de erro, limites para consultas lentas)
 * Crie [dashboards](/pt-BR/clickstack/features/dashboards/overview) adicionais para casos de uso específicos (monitoramento do conjunto de réplicas, rastreamento de conexões)
 
-<div id="going-to-production">
-  ## Preparando para produção
-</div>
+## Preparando para produção {#going-to-production}
 
 Este guia usa o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel collector e enviar dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.

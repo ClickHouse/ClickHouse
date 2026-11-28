@@ -10,7 +10,7 @@ $CLICKHOUSE_LOCAL --max_threads 3 --query "SELECT getSetting('max_threads')"
 $CLICKHOUSE_LOCAL --max-threads=4 -q "SELECT getSetting('max_threads')"
 $CLICKHOUSE_LOCAL --hilite=0 --format TSV --query "SELECT 5"
 $CLICKHOUSE_LOCAL --format_csv_delimite '|' --query "SELECT getSetting('format_csv_delimiter')"
-$CLICKHOUSE_LOCAL --enable_analyzer 1 --query "SELECT getSetting('allow_experimental_analyzer')"
+$CLICKHOUSE_LOCAL --replication_alter_partitions_sync 2 --query "SELECT getSetting('alter_sync')"
 $CLICKHOUSE_LOCAL --query "SELECT 6" "SELECT 7"
 $CLICKHOUSE_LOCAL --format_csv_null_representation='' --query "SELECT NULL FORMAT CSV"
 $CLICKHOUSE_LOCAL --query="SELECT 'value'" --format=TSV

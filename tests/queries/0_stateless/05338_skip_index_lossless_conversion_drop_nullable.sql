@@ -3,7 +3,6 @@
 -- The text index is not read directly instead of such a predicate, otherwise `NOT` would return the NULL row.
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 0;
 SET use_query_condition_cache = 0;

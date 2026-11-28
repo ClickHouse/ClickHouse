@@ -1,4 +1,5 @@
 #include <IO/MemoryReadWriteBuffer.h>
+#include <base/scope_guard.h>
 #include <boost/noncopyable.hpp>
 
 
@@ -39,7 +40,7 @@ private:
     {
         if (chunk_head != chunk_list.end())
         {
-            internalBuffer() = *chunk_head;
+            setInternalBuffer(*chunk_head);
 
             /// It is last chunk, it should be truncated
             if (std::next(chunk_head) != chunk_list.end())
@@ -51,7 +52,8 @@ private:
         }
         else
         {
-            buffer() = internalBuffer() = Buffer(nullptr, nullptr);
+            setInternalBuffer(Buffer(nullptr, nullptr));
+            buffer() = internalBuffer();
             position() = nullptr;
         }
 
@@ -117,7 +119,10 @@ void MemoryWriteBuffer::addChunk()
     }
 
     Position begin = reinterpret_cast<Position>(alloc(next_chunk_size));
+    bool added = false;
+    SCOPE_EXIT(if (!added) free(begin, next_chunk_size));
     chunk_tail = chunk_list.emplace_after(chunk_tail, begin, begin + next_chunk_size);
+    added = true;
     total_chunks_size += next_chunk_size;
 
     set(chunk_tail->begin(), chunk_tail->size());

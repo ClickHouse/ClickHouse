@@ -82,7 +82,7 @@ def test_keeper_invalid_digest(started_cluster):
         # The second node should detect the invalid digest and abort
         node1_zk.create_async("/test_invalid_digest", b"testdata")
 
-        node2.wait_for_log_line("Digest for nodes is not matching after preprocessing request of type 'Create' at log index")
+        node2.wait_for_log_line("Digest for nodes is not matching after preprocessing request batch at log index")
         node2.stop_clickhouse(kill=True)
 
         def get_last_committed_log_idx():
@@ -97,7 +97,7 @@ def test_keeper_invalid_digest(started_cluster):
 
         last_committed_log_idx = get_last_committed_log_idx()
         node2.start_clickhouse(expected_to_fail=True)
-        node2.wait_for_log_line("Digest for nodes is not matching after preprocessing request of type 'Create' at log index")
+        node2.wait_for_log_line("Digest for nodes is not matching after preprocessing request batch at log index")
         assert get_last_committed_log_idx() == last_committed_log_idx
     finally:
         # Clean up connections

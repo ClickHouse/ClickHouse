@@ -49,3 +49,11 @@ SELECT has(e, toFixedString('a', 2)), has(e, toFixedString('b', 2)), indexOf(e, 
 SELECT 'the same over a materialized array';
 WITH materialize(CAST(['a', 'c'], 'Array(Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3))')) AS e
 SELECT has(e, toFixedString('a', 2)), has(e, toFixedString('b', 2)), indexOf(e, toFixedString('c', 4));
+
+SELECT 'a Nullable(FixedString) needle';
+WITH CAST(['a', 'c'], 'Array(Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3))') AS e
+SELECT has(e, CAST('a', 'Nullable(FixedString(2))')), has(e, CAST(NULL, 'Nullable(FixedString(2))')), indexOf(e, CAST('c', 'Nullable(FixedString(4))'));
+
+SELECT 'a NULL element';
+WITH CAST(['a', NULL, 'c'], 'Array(Nullable(Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3)))') AS e
+SELECT has(e, 'c'), indexOf(e, 'c'), indexOf(e, CAST(NULL, 'Nullable(FixedString(2))')), indexOf(materialize(e), CAST(NULL, 'Nullable(FixedString(2))'));

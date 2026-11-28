@@ -26,17 +26,13 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
+# Run the setup over its own connection, so the 2 s idle timeout below cannot interrupt it.
+exec bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT -q 'DROP TABLE IF EXISTS t_04647; CREATE TABLE t_04647 (x UInt8) ENGINE = Memory; INSERT INTO t_04647 VALUES (1)'"
+
 # `idle_connection_timeout` has to be passed on the command line: the server picks it up when it
 # receives a query, so an in-session `SET` would only take effect from the query after it.
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --param_db=\$CLICKHOUSE_DATABASE --idle_connection_timeout=2 --history_file=$history_file"
 
-expect ":) "
-
-send -- "DROP TABLE IF EXISTS t_04647;\r"
-expect ":) "
-send -- "CREATE TABLE t_04647 (x UInt8) ENGINE = Memory;\r"
-expect ":) "
-send -- "INSERT INTO t_04647 VALUES (1);\r"
 expect ":) "
 
 send -- "USE {db:Identifier};\r"
@@ -56,9 +52,6 @@ expect {
     # cannot be resolved. Fail immediately instead of waiting for the timeout.
     "UNKNOWN_TABLE" { exit 1 }
 }
-expect ":) "
-
-send -- "DROP TABLE t_04647;\r"
 expect ":) "
 
 send -- "exit\r"

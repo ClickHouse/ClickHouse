@@ -5,13 +5,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
-
-
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
-}
 
 
 namespace DB::PrometheusQueryToSQL
@@ -63,15 +58,9 @@ SQLQueryPiece fromEvaluationTime(const PrometheusQueryTree::Node * node, Convert
 SQLQueryPiece fromFunctionTime(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
-    const auto & function_name = function_node->function_name;
-    chassert(isFunctionTime(function_name));
+    chassert(isFunctionTime(function_node->function_name));
 
-    if (!arguments.empty())
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Function '{}' expects no arguments, but was called with {} arguments",
-                        function_name, arguments.size());
-    }
+    checkNumberOfArguments(function_node, arguments, 0);
 
     return fromEvaluationTime(function_node, context);
 }

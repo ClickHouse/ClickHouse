@@ -15,9 +15,9 @@ BroadcastExchangeStep(SharedHeader input_header_, size_t result_bucket_count_)
     {
     }
 
-    String getName() const override { return "BroadcastExchange"; }
+    [[nodiscard]] String getName() const override { return "BroadcastExchange"; }
 
-    QueryPlanStepPtr clone() const override
+    [[nodiscard]] QueryPlanStepPtr clone() const override
     {
         return std::make_unique<BroadcastExchangeStep>(input_headers.front(), result_bucket_count);
     }
@@ -27,17 +27,17 @@ BroadcastExchangeStep(SharedHeader input_header_, size_t result_bucket_count_)
         /// Doesn't change the pipeline if executed directly
     }
 
-    size_t getSourceBucketCount() const override
+    [[nodiscard]] size_t getSourceBucketCount() const override
     {
         return 1;
     }
 
-    size_t getResultBucketCount() const override
+    [[nodiscard]] size_t getResultBucketCount() const override
     {
         return result_bucket_count;
     }
 
-    std::pair<QueryPlanStepPtr, QueryPlanStepPtr> createSinkAndSourcePair(const String & exchange_id, const Strings & source_shards) const override;
+    [[nodiscard]] std::pair<QueryPlanStepPtr, QueryPlanStepPtr> createSinkAndSourcePair(const String & exchange_id, const Strings & source_shards) const override;
 
 private:
     void updateOutputHeader() override

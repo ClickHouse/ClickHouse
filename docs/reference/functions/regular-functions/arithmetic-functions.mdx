@@ -253,7 +253,7 @@ Introduced in: v1.1.0
 
 Calculates the quotient of two values `a` and `b`. The `/` operator is equivalent to this function.
 For integer and floating-point arguments, the result type is [Float64](/reference/data-types/float) by default.
-With `exact_division_for_integers = 1`, two integer arguments instead produce an integer quotient truncated toward zero.
+With `sql_compatible_division_for_integers = 1`, two integer arguments instead produce an integer quotient truncated toward zero.
 The result has the width of the first argument and is signed if either argument is signed.
 Division by zero or a quotient outside the result type's range throws an exception in this mode.
 
@@ -368,9 +368,9 @@ Calculates the quotient of `x` and `y`. When both arguments are integers, the qu
 The result has the width of `x` and is signed if either argument is signed. Integer types through 256 bits are supported, including mixed signed and unsigned arguments.
 Division by zero or a quotient outside the result type's range throws `ILLEGAL_DIVISION`. Nullable arguments propagate `NULL`.
 
-For floating-point or `Decimal` arguments, the function follows the same rules as `divide` with `exact_division_for_integers = 0`.
+For floating-point or `Decimal` arguments, the function follows the same rules as `divide` with `sql_compatible_division_for_integers = 0`.
 
-The function's behavior does not depend on `exact_division_for_integers`.
+The function's behavior does not depend on `sql_compatible_division_for_integers`.
 When that setting is enabled, newly submitted `/` and `divide` expressions are rewritten to `divideExact`.
 This explicit name is preserved in stored expressions, such as table metadata and views, so changing the setting later does not change their division semantics.
 Existing stored `/` and `divide` expressions retain their historical behavior.
@@ -426,8 +426,8 @@ SELECT divideExact(5.0, 2) AS quotient, toTypeName(quotient)
 
 Introduced in: v25.5.0
 
-Same as `divide` with `exact_division_for_integers = 0`, but returns `NULL` when dividing by zero.
-The `exact_division_for_integers` setting does not affect this function.
+Same as `divide` with `sql_compatible_division_for_integers = 0`, but returns `NULL` when dividing by zero.
+The `sql_compatible_division_for_integers` setting does not affect this function.
     
 
 **Syntax**
@@ -790,8 +790,9 @@ Rounds a value down to a multiple of `roundTo`, as the Kusto Query Language's `b
 
 The rule depends on the argument types: a number is rounded arithmetically, a timespan (which
 is an `Interval`) is rounded by a timespan, and a datetime is rounded by a timespan. A KQL
-datetime is a `DateTime64`; the narrower `DateTime` and `Date` carriers are rejected, because
-they cannot represent every bin a KQL datetime can produce.
+datetime is a `DateTime64`; a value of the narrower `DateTime`, `Date` or `Date32` types is
+converted to `DateTime64` first, because they cannot represent every bin a KQL datetime can
+produce.
 
 This function backs `bin()` when `dialect = 'kusto'`. It is not meant to be called directly
 from SQL.
@@ -804,7 +805,7 @@ kqlBin(value, roundTo)
 
 **Arguments**
 
-- `value` — A number, a timespan, or a datetime (a `DateTime64`). - `roundTo` — The bin size. 
+- `value` — A number, a timespan, or a datetime (a `DateTime64`, `DateTime`, `Date` or `Date32`). - `roundTo` — The bin size. 
 
 **Returned value**
 
@@ -851,9 +852,9 @@ Language's `bin_at()` does. The bins may align before or after the fixed point.
 
 The rule depends on the argument types: a number is rounded arithmetically, a timespan (which
 is an `Interval`) is rounded by a timespan from a timespan, and a datetime is rounded by a
-timespan counted from a datetime fixed point. A KQL datetime is a `DateTime64`; the narrower
-`DateTime` and `Date` carriers are rejected, because they cannot represent every bin a KQL
-datetime can produce.
+timespan counted from a datetime fixed point. A KQL datetime is a `DateTime64`; a value or a
+fixed point of the narrower `DateTime`, `Date` or `Date32` types is converted to `DateTime64`
+first, because they cannot represent every bin a KQL datetime can produce.
 
 This function backs `bin_at()` when `dialect = 'kusto'`. It is not meant to be called directly
 from SQL.
@@ -866,7 +867,7 @@ kqlBinAt(value, binSize, fixedPoint)
 
 **Arguments**
 
-- `value` — A number, a timespan, or a datetime (a `DateTime64`). - `binSize` — The bin size. - `fixedPoint` — The point the bins are counted from. 
+- `value` — A number, a timespan, or a datetime (a `DateTime64`, `DateTime`, `Date` or `Date32`). - `binSize` — The bin size. - `fixedPoint` — The point the bins are counted from. 
 
 **Returned value**
 

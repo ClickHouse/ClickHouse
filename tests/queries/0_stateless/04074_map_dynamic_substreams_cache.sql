@@ -5,7 +5,6 @@
 -- reassigned the pointer to a cached column, the change was not written back
 -- to the Map column, leaving it empty while the Variant discriminators expected data.
 
-SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
 
 DROP TABLE IF EXISTS t_map_dynamic_cache;

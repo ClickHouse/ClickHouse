@@ -8,6 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -43,13 +44,13 @@ public:
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// (UInt64 value, [const NativeUInt epoch, [String tz]]). Note tz requires epoch, so the
         /// optional groups can't be flattened to `(UInt64, [const NativeUInt], [String])` — that
@@ -64,7 +65,7 @@ public:
             " OR (UInt64, [const NativeUInt]) -> DateTime";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & col_src = *arguments[0].column;
 
@@ -73,6 +74,8 @@ public:
         {
             const auto & col_epoch = *arguments[1].column;
             epoch = col_epoch.getUInt(0);
+            /// The epoch is an arbitrary `UInt64` from the caller, so adding it to the extracted
+            /// timestamp is modular, as everywhere else in ClickHouse arithmetic.
         }
 
         auto col_res = ColumnDateTime::create(input_rows_count);
@@ -82,13 +85,13 @@ public:
         {
             const auto & src_data = col_src_non_const->getData();
             for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = static_cast<UInt32>(((src_data[i] >> time_shift) + epoch) / 1000);
+                res_data[i] = static_cast<UInt32>(common::addIgnoreOverflow(src_data[i] >> time_shift, epoch) / 1000);
         }
         else if (const auto * col_src_const = typeid_cast<const ColumnConst *>(&col_src))
         {
             UInt64 src_val = col_src_const->getValue<UInt64>();
             for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = static_cast<UInt32>(((src_val >> time_shift) + epoch) / 1000);
+                res_data[i] = static_cast<UInt32>(common::addIgnoreOverflow(src_val >> time_shift, epoch) / 1000);
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for function {}", name);
@@ -111,13 +114,13 @@ public:
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if (allow_nonconst_timezone_arguments)
             return
@@ -129,7 +132,7 @@ public:
             " OR (UInt64, [const NativeUInt]) -> DateTime64(3)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & col_src = *arguments[0].column;
 
@@ -138,6 +141,8 @@ public:
         {
             const auto & col_epoch = *arguments[1].column;
             epoch = col_epoch.getUInt(0);
+            /// The epoch is an arbitrary `UInt64` from the caller, so adding it to the extracted
+            /// timestamp is modular, as everywhere else in ClickHouse arithmetic.
         }
 
         auto col_res = ColumnDateTime64::create(input_rows_count, 3);
@@ -147,13 +152,13 @@ public:
         {
             const auto & src_data = col_src_non_const->getData();
             for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = (src_data[i] >> time_shift) + epoch;
+                res_data[i] = common::addIgnoreOverflow(src_data[i] >> time_shift, epoch);
         }
         else if (const auto * col_src_const = typeid_cast<const ColumnConst *>(&col_src))
         {
             UInt64 src_val = col_src_const->getValue<UInt64>();
             for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = (src_val >> time_shift) + epoch;
+                res_data[i] = common::addIgnoreOverflow(src_val >> time_shift, epoch);
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for function {}", name);

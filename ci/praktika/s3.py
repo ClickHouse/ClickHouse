@@ -33,11 +33,15 @@ from .utils import Utils
 
 try:
     import boto3
+    from botocore import UNSIGNED
+    from botocore.config import Config
     from botocore.exceptions import ClientError, NoCredentialsError
 
     BOTO3_AVAILABLE = True
 except ImportError:
     BOTO3_AVAILABLE = False
+    Config = None
+    UNSIGNED = None
     ClientError = None
     NoCredentialsError = None
 
@@ -100,9 +104,10 @@ def _file_url(local_path: Path) -> str:
 
 class S3:
     _boto3_client = None
+    _boto3_client_anon = None
 
     @classmethod
-    def _get_boto3_client(cls):
+    def _get_boto3_client(cls, anonymous=False):
         # Honor Settings.AWS_PROFILE on developer machines so SSO / named
         # profiles work without having to export AWS_PROFILE in the shell.
         # On EC2 runners the configured profile typically isn't present in
@@ -112,8 +117,26 @@ class S3:
         # chain.
         if not BOTO3_AVAILABLE:
             return None
+        if anonymous:
+            # Unsigned requests for public read-only objects.
+            if cls._boto3_client_anon is None:
+                region = Settings.AWS_REGION or None
+                config = Config(
+                    signature_version=UNSIGNED,
+                    retries={"mode": "standard", "total_max_attempts": 13},
+                )
+                try:
+                    cls._boto3_client_anon = boto3.client(
+                        "s3", region_name=region, config=config
+                    )
+                except Exception as e:
+                    print(f"WARNING: Failed to initialize anonymous boto3 client: {e}")
+                    return None
+            return cls._boto3_client_anon
         if cls._boto3_client is None:
             region = Settings.AWS_REGION or None
+            # Standard mode caps a backoff at 20 s, so 13 attempts retry for up to about 3 minutes.
+            config = Config(retries={"mode": "standard", "total_max_attempts": 13})
             try:
                 if Settings.AWS_PROFILE:
                     import botocore.session
@@ -125,19 +148,23 @@ class S3:
                         cls._boto3_client = boto3.Session(
                             profile_name=Settings.AWS_PROFILE,
                             region_name=region,
-                        ).client("s3")
+                        ).client("s3", config=config)
                     else:
-                        cls._boto3_client = boto3.client("s3", region_name=region)
+                        cls._boto3_client = boto3.client(
+                            "s3", region_name=region, config=config
+                        )
                 else:
-                    cls._boto3_client = boto3.client("s3", region_name=region)
+                    cls._boto3_client = boto3.client(
+                        "s3", region_name=region, config=config
+                    )
             except Exception as e:
                 print(f"WARNING: Failed to initialize boto3 client: {e}")
                 return None
         return cls._boto3_client
 
     @classmethod
-    def _ensure_boto3(cls):
-        client = cls._get_boto3_client()
+    def _ensure_boto3(cls, anonymous=False):
+        client = cls._get_boto3_client(anonymous=anonymous)
         assert (
             BOTO3_AVAILABLE and client is not None
         ), "boto3 is required for S3 operations: install with `pip install boto3`"
@@ -420,6 +447,7 @@ class S3:
         include_pattern="",
         _skip_download_counter=False,
         no_strict=False,
+        anonymous=False,
     ):
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
 
@@ -450,7 +478,7 @@ class S3:
                 local_file.parent.mkdir(parents=True, exist_ok=True)
 
                 def _download():
-                    client = cls._ensure_boto3()
+                    client = cls._ensure_boto3(anonymous=anonymous)
                     client.download_file(bucket, key, str(local_file))
 
                 cls._retry_on_no_credentials(_download)
@@ -475,7 +503,7 @@ class S3:
 
         # Recursive / pattern download via list_objects_v2
         try:
-            client = cls._ensure_boto3()
+            client = cls._ensure_boto3(anonymous=anonymous)
             s3_path_clean = str(s3_path).removeprefix("s3://")
             bucket, prefix = s3_path_clean.split("/", maxsplit=1)
             assert Path(local_path).is_dir(), f"Path [{local_path}] is not a directory"

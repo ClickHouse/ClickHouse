@@ -14,7 +14,6 @@
 -- `makeUniqueColumnNamesInBlock` for the same reason — that pattern is now
 -- applied here too.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET prefer_localhost_replica = 0;
 SET allow_push_predicate_ast_for_distributed_subqueries = 1;

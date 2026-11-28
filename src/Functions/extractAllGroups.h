@@ -66,16 +66,16 @@ public:
         return std::make_shared<FunctionExtractAllGroups>(context, name, kind);
     }
 
-    String getName() const override { return function_name; }
+    [[nodiscard]] String getName() const override { return function_name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// The regexp must be a constant: `executeImpl` reads it via
         /// `typeid_cast<const ColumnConst &>(*column_needle).getValue<String>()`,
@@ -83,10 +83,8 @@ public:
         return "(StringOrFixedString, const StringOrFixedString) -> Array(Array(String))";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        static const auto MAX_GROUPS_COUNT = 128;
-
         const ColumnPtr column_haystack = arguments[0].column;
         const ColumnPtr column_needle = arguments[1].column;
 
@@ -96,22 +94,11 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Length of 'needle' argument must be greater than 0.");
 
         const OptimizedRegularExpression holder = Regexps::createRegexp<false, false, false, false>(needle);
+        const size_t groups_count = Regexps::getCapturingGroupsCount(holder, needle);
         const auto & regexp = holder.getRE2();
 
-        if (!regexp)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
-
-        const size_t groups_count = regexp->NumberOfCapturingGroups();
-
-        if (!groups_count)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
-
-        if (groups_count > MAX_GROUPS_COUNT - 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many groups in regexp: {}, max: {}",
-                            groups_count, std::to_string(MAX_GROUPS_COUNT - 1));
-
         // Including 0-group, which is the whole regexp.
-        PODArrayWithStackMemory<std::string_view, MAX_GROUPS_COUNT> matched_groups(groups_count + 1);
+        Regexps::MatchedGroups matched_groups(groups_count + 1);
 
         ColumnArray::ColumnOffsets::MutablePtr root_offsets_col = ColumnArray::ColumnOffsets::create();
         ColumnArray::ColumnOffsets::MutablePtr nested_offsets_col = ColumnArray::ColumnOffsets::create();
