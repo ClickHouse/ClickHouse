@@ -75,9 +75,10 @@ SELECT JSONExtract('{"t":["a","b"]}', 't', 'Nullable(Tuple(x String, y String))'
 SELECT JSONExtract('{"m":{"k1":["a","b"],"k2":{"x":"c","y":"d"}}}', 'm', 'Map(String, Tuple(x String, y String))');
 SELECT JSONExtractKeysAndValues('{"k1":["a","b"],"k2":{"x":"c","y":"d"}}', 'Tuple(x String, y String)');
 
--- The JSON data type is exempt from the setting, for typed and untyped paths
--- alike: extraction from a JSON column reads the column's subcolumns instead of
--- parsing a document, so it never reaches the code the setting governs.
+-- For the JSON data type, a tuple result is produced from the JSON text of the
+-- stored value, exactly as for a JSON string, so the setting applies to the
+-- values that are stored as arrays. A typed tuple path is stored as a tuple, and
+-- is written back as an object, so its extraction does not depend on the setting.
 
 -- A typed path keeps the positional array fill on insert and on extraction.
 CREATE TABLE t_05045_json (j JSON(t Tuple(x Int64, y Int64))) ENGINE = MergeTree ORDER BY tuple();
@@ -93,9 +94,8 @@ SELECT JSONExtract(j, 't', 'Tuple(x Int64, y Int64)') FROM t_05045_json ORDER BY
 SET json_extract_named_tuples_as_objects = 1;
 DROP TABLE t_05045_json;
 
--- An untyped path yields defaults for a tuple under both values of the setting,
--- whatever the JSON value's shape: the subcolumn is Dynamic, and the cast to a
--- tuple cannot produce one. Unaffected by this change, pinned to keep it that way.
+-- An untyped path gives the same tuple as the equivalent JSON string: an object
+-- fills a named tuple, and an array fills it only when the setting is disabled.
 CREATE TABLE t_05045_json_untyped (j JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_05045_json_untyped VALUES ('{"arr":[1,2],"obj":{"x":1,"y":2}}');
 SELECT
