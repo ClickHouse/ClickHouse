@@ -189,10 +189,9 @@ def test_keeper_deduplication_and_restart_idempotency(started_cluster):
     assert sorted([r1_count, r2_count]) == [0, 2]
 
     zk = cluster.get_kazoo_client("zoo1")
-    assert (
-        zk.exists("/clickhouse/metadata_change_log/snapshots/zk%2Dsnap%2D1/done")
-        is not None
-    )
+    completed_data, _ = zk.get("/clickhouse/metadata_change_log/snapshots/completed_tokens")
+    assert completed_data.decode("utf-8").splitlines() == ["zk-snap-1"]
+    assert zk.get_children("/clickhouse/metadata_change_log/snapshots") == ["completed_tokens"]
 
     # Restarting the node that emitted (or the peer) must not re-emit zk-snap-1.
     winner = replica1 if r1_count == 2 else replica2
@@ -205,3 +204,12 @@ def test_keeper_deduplication_and_restart_idempotency(started_cluster):
         ).strip()
     )
     assert post_restart_count == 2
+
+    # A second token reuses the same single completed_tokens znode (no unbounded per-token znodes).
+    set_snapshot_token(replica1, "zk-snap-2")
+    set_snapshot_token(replica2, "zk-snap-2")
+    wait_for_snapshot_rows([replica1, replica2], "zk-snap-2", expected_min=2)
+    time.sleep(1)
+    completed_data, _ = zk.get("/clickhouse/metadata_change_log/snapshots/completed_tokens")
+    assert completed_data.decode("utf-8").splitlines() == ["zk-snap-1", "zk-snap-2"]
+    assert zk.get_children("/clickhouse/metadata_change_log/snapshots") == ["completed_tokens"]

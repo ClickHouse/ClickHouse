@@ -122,6 +122,7 @@ private:
     void stopSnapshotTask();
     void runSnapshotTask();
     bool emitSnapshot(const String & snapshot_id);
+    void flushSnapshotBatch();
     void markSnapshotTokenCompleted(const String & token);
     void scheduleSnapshotRetry(const String & token, size_t delay_ms);
     bool isSnapshotShutdown() const;

@@ -10,7 +10,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/config_version.h>
-#include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeArray.h>
@@ -33,10 +32,17 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
 
+#include <config.h>
+#if CLICKHOUSE_CLOUD
+#    include <Interpreters/SharedDatabaseCatalog.h>
+#endif
+
+#include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <algorithm>
 #include <chrono>
+#include <ranges>
 
 
 namespace DB
@@ -161,6 +167,88 @@ std::vector<QualifiedTableName> collectTableDependencies(
 }
 
 constexpr size_t SNAPSHOT_RETRY_DELAY_MS = 5000;
+constexpr size_t SNAPSHOT_FLUSH_BATCH_SIZE = 1000;
+constexpr size_t MAX_REMEMBERED_SNAPSHOT_TOKENS = 16;
+
+std::vector<String> parseCompletedTokens(std::string_view data)
+{
+    std::vector<String> tokens;
+    size_t pos = 0;
+    while (pos < data.size())
+    {
+        const size_t newline = data.find('\n', pos);
+        const auto line = (newline == std::string_view::npos) ? data.substr(pos) : data.substr(pos, newline - pos);
+        if (!line.empty())
+            tokens.emplace_back(line);
+        if (newline == std::string_view::npos)
+            break;
+        pos = newline + 1;
+    }
+    return tokens;
+}
+
+String serializeCompletedTokens(const std::vector<String> & tokens)
+{
+    String out;
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        if (i > 0)
+            out.push_back('\n');
+        out.append(tokens[i]);
+    }
+    return out;
+}
+
+bool isSnapshotTokenRecorded(
+    const zkutil::ZooKeeperPtr & zookeeper, const String & completed_tokens_path, const String & token)
+{
+    String data;
+    if (!zookeeper->tryGet(completed_tokens_path, data))
+        return false;
+    const auto tokens = parseCompletedTokens(data);
+    return std::ranges::contains(tokens, token);
+}
+
+Coordination::Error recordCompletedSnapshotToken(
+    const zkutil::ZooKeeperPtr & zookeeper, const String & completed_tokens_path, const String & token)
+{
+    constexpr size_t MAX_CAS_ATTEMPTS = 8;
+    for (size_t attempt = 0; attempt < MAX_CAS_ATTEMPTS; ++attempt)
+    {
+        String data;
+        Coordination::Stat stat;
+        const bool exists = zookeeper->tryGet(completed_tokens_path, data, &stat);
+        auto tokens = exists ? parseCompletedTokens(data) : std::vector<String>{};
+
+        std::erase(tokens, token);
+        tokens.push_back(token);
+        if (tokens.size() > MAX_REMEMBERED_SNAPSHOT_TOKENS)
+            tokens.erase(
+                tokens.begin(),
+                tokens.begin() + static_cast<std::ptrdiff_t>(tokens.size() - MAX_REMEMBERED_SNAPSHOT_TOKENS));
+
+        const String new_data = serializeCompletedTokens(tokens);
+
+        if (!exists)
+        {
+            const auto code = zookeeper->tryCreate(completed_tokens_path, new_data, zkutil::CreateMode::Persistent);
+            if (code == Coordination::Error::ZOK)
+                return code;
+            if (code == Coordination::Error::ZNODEEXISTS)
+                continue;
+            return code;
+        }
+
+        const auto code = zookeeper->trySet(completed_tokens_path, new_data, stat.version);
+        if (code == Coordination::Error::ZOK)
+            return code;
+        if (code == Coordination::Error::ZBADVERSION || code == Coordination::Error::ZNONODE)
+            continue;
+        return code;
+    }
+
+    return Coordination::Error::ZBADVERSION;
+}
 
 }
 
@@ -266,7 +354,11 @@ bool MetadataChangeLog::isInternalDatabase(std::string_view database_name)
     return database_name == DatabaseCatalog::SYSTEM_DATABASE
         || database_name == DatabaseCatalog::INFORMATION_SCHEMA
         || database_name == DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE
-        || database_name == DatabaseCatalog::TEMPORARY_DATABASE;
+        || database_name == DatabaseCatalog::TEMPORARY_DATABASE
+#if CLICKHOUSE_CLOUD
+        || database_name == SharedDatabaseCatalog::INTERNAL_DATABASE_TO_DROP
+#endif
+        ;
 }
 
 void MetadataChangeLog::logTableEvent(
@@ -435,8 +527,14 @@ bool MetadataChangeLog::isSnapshotShutdown() const
 
 void MetadataChangeLog::reloadConfig(const Poco::Util::AbstractConfiguration & config)
 {
-    const String token = config.getString("metadata_change_log.snapshot_token", "");
-    const String keeper_path = config.getString("metadata_change_log.snapshot_keeper_path", DEFAULT_SNAPSHOT_KEEPER_PATH);
+    const String token = Poco::trim(config.getString("metadata_change_log.snapshot_token", ""));
+    const String keeper_path = Poco::trim(config.getString("metadata_change_log.snapshot_keeper_path", DEFAULT_SNAPSHOT_KEEPER_PATH));
+
+    if (token.find('\n') != String::npos || token.find('\r') != String::npos)
+    {
+        LOG_WARNING(log, "Ignoring metadata_change_log.snapshot_token because it contains line breaks");
+        return;
+    }
 
     std::lock_guard lock(snapshot_mutex);
     if (snapshot_shutdown)
@@ -478,6 +576,14 @@ void MetadataChangeLog::scheduleSnapshotRetry(const String & token, size_t delay
     snapshot_task->scheduleAfter(delay_ms);
 }
 
+void MetadataChangeLog::flushSnapshotBatch()
+{
+    const auto last_index = getLastLogIndex();
+    setManualFlushTargetIndex(last_index);
+    notifyFlush(last_index, /*should_prepare_tables_anyway=*/true);
+    flush(last_index, /*should_prepare_tables_anyway=*/true);
+}
+
 void MetadataChangeLog::runSnapshotTask()
 {
     String token;
@@ -500,10 +606,6 @@ void MetadataChangeLog::runSnapshotTask()
             if (!emitSnapshot(token))
                 return;
 
-            const auto last_index = getLastLogIndex();
-            setManualFlushTargetIndex(last_index);
-            notifyFlush(last_index, /*should_prepare_tables_anyway=*/true);
-            flush(last_index, /*should_prepare_tables_anyway=*/true);
             markSnapshotTokenCompleted(token);
             LOG_INFO(log, "Completed metadata catalog snapshot for token '{}'", token);
             return;
@@ -512,30 +614,33 @@ void MetadataChangeLog::runSnapshotTask()
         while (keeper_path.size() > 1 && keeper_path.back() == '/')
             keeper_path.pop_back();
 
-        const String token_path = keeper_path + "/" + escapeForFileName(token);
-        const String done_path = token_path + "/done";
-        const String lock_path = token_path + "/lock";
+        const String completed_tokens_path = keeper_path + "/completed_tokens";
+        const String lock_path = keeper_path + "/lock";
 
         auto zookeeper = global_context->getZooKeeper();
-        zookeeper->createAncestors(done_path);
+        zookeeper->createAncestors(completed_tokens_path);
 
-        if (zookeeper->exists(done_path))
+        if (isSnapshotTokenRecorded(zookeeper, completed_tokens_path, token))
         {
-            LOG_INFO(log, "Metadata catalog snapshot for token '{}' already completed (found {})", token, done_path);
+            LOG_INFO(
+                log,
+                "Metadata catalog snapshot for token '{}' already recorded in {}",
+                token,
+                completed_tokens_path);
             markSnapshotTokenCompleted(token);
             return;
         }
 
         const String host = getFQDNOrHostName();
-        const auto lock_code = zookeeper->tryCreate(lock_path, host, zkutil::CreateMode::Ephemeral);
+        const auto lock_code = zookeeper->tryCreate(lock_path, token + "\n" + host, zkutil::CreateMode::Ephemeral);
         if (lock_code == Coordination::Error::ZNODEEXISTS)
         {
-            if (zookeeper->exists(done_path))
+            if (isSnapshotTokenRecorded(zookeeper, completed_tokens_path, token))
             {
                 markSnapshotTokenCompleted(token);
                 return;
             }
-            LOG_INFO(log, "Metadata catalog snapshot for token '{}' is already in progress on another replica; will recheck", token);
+            LOG_INFO(log, "Metadata catalog snapshot is already in progress on another replica; will recheck token '{}'", token);
             scheduleSnapshotRetry(token, SNAPSHOT_RETRY_DELAY_MS);
             return;
         }
@@ -564,7 +669,7 @@ void MetadataChangeLog::runSnapshotTask()
             }
         });
 
-        if (zookeeper->exists(done_path))
+        if (isSnapshotTokenRecorded(zookeeper, completed_tokens_path, token))
         {
             markSnapshotTokenCompleted(token);
             return;
@@ -573,24 +678,19 @@ void MetadataChangeLog::runSnapshotTask()
         if (!emitSnapshot(token))
             return;
 
-        const auto last_index = getLastLogIndex();
-        setManualFlushTargetIndex(last_index);
-        notifyFlush(last_index, /*should_prepare_tables_anyway=*/true);
-        flush(last_index, /*should_prepare_tables_anyway=*/true);
-
-        const auto done_code = zookeeper->tryCreate(done_path, host, zkutil::CreateMode::Persistent);
-        if (done_code != Coordination::Error::ZOK && done_code != Coordination::Error::ZNODEEXISTS)
+        const auto record_code = recordCompletedSnapshotToken(zookeeper, completed_tokens_path, token);
+        if (record_code != Coordination::Error::ZOK)
         {
             LOG_WARNING(
                 log,
-                "Metadata snapshot for token '{}' was flushed, but creating Keeper marker {} failed (code: {})",
+                "Metadata snapshot for token '{}' was flushed, but updating Keeper marker {} failed (code: {})",
                 token,
-                done_path,
-                Coordination::errorMessage(done_code));
+                completed_tokens_path,
+                Coordination::errorMessage(record_code));
         }
 
         markSnapshotTokenCompleted(token);
-        LOG_INFO(log, "Completed metadata catalog snapshot for token '{}' (Keeper marker {})", token, done_path);
+        LOG_INFO(log, "Completed metadata catalog snapshot for token '{}' (Keeper marker {})", token, completed_tokens_path);
     }
     catch (...)
     {
@@ -607,6 +707,16 @@ bool MetadataChangeLog::emitSnapshot(const String & snapshot_id)
 
     size_t db_count = 0;
     size_t table_count = 0;
+    size_t pending_since_flush = 0;
+
+    auto maybe_flush_batch = [&]()
+    {
+        if (++pending_since_flush >= SNAPSHOT_FLUSH_BATCH_SIZE)
+        {
+            flushSnapshotBatch();
+            pending_since_flush = 0;
+        }
+    };
 
     for (const auto & [database_name, database] : databases)
     {
@@ -645,6 +755,7 @@ bool MetadataChangeLog::emitSnapshot(const String & snapshot_id)
             element.create_query = db_create_query;
         });
         ++db_count;
+        maybe_flush_batch();
 
         /// External databases (e.g. DataLakeCatalog, MySQL, PostgreSQL) require remote network
         /// requests to enumerate tables. Record only the database binding above.
@@ -709,6 +820,7 @@ bool MetadataChangeLog::emitSnapshot(const String & snapshot_id)
                     }
                 });
                 ++table_count;
+                maybe_flush_batch();
             }
         }
         catch (...)
@@ -717,8 +829,14 @@ bool MetadataChangeLog::emitSnapshot(const String & snapshot_id)
         }
     }
 
-    LOG_INFO(log, "Queued metadata snapshot '{}' with {} databases and {} tables", snapshot_id, db_count, table_count);
-    return !isSnapshotShutdown();
+    if (isSnapshotShutdown())
+        return false;
+
+    if (pending_since_flush > 0)
+        flushSnapshotBatch();
+
+    LOG_INFO(log, "Flushed metadata snapshot '{}' with {} databases and {} tables", snapshot_id, db_count, table_count);
+    return true;
 }
 
 }
