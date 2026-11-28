@@ -27,8 +27,11 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/hasNullable.h>
 #include <DataTypes/TypeTree.h>
@@ -219,6 +222,112 @@ static size_t sumEnumBytesPerValue(const IDataType & type)
     size_t res = 0;
     forEachEnumBytesPerValue(type, [&](size_t bytes) { res += bytes; });
     return res;
+}
+
+/// The memory that one value of the type takes in its column: `value` if set, otherwise the default value of the type,
+/// as `formOutputColumn` fills a missing column with. The `Enum` names are not counted, see `sumEnumBytesPerValue`.
+/// Computed from the type, not by inserting the value into a column: the default of a `FixedString` is as long as the
+/// type, e.g. 12 MiB for a `FixedString(12582912)`, and this is called before any row is filtered, for every missing
+/// column, even if no row is read. Only a value of a variable-size leaf type, such as `String`, is inserted into a
+/// column: it is not longer than `value`, which is already in memory.
+/// Nothing, if the output of the values is not bounded by their size, see `maxByteSizeWithExpandedValues`.
+static std::optional<size_t> defaultValueByteSize(const IDataType & type, const Field * value)
+{
+    if (value && value->isNull())
+        value = nullptr;
+
+    const TypeIndex kind = type.getTypeId();
+    if (kind == TypeIndex::Object || kind == TypeIndex::Dynamic)
+        return std::nullopt;
+
+    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(&type))
+    {
+        /// The default is `NULL`, which takes a discriminator and an offset. The member of a value is not known here,
+        /// so it is counted as the widest member, if all of them have a fixed size.
+        const size_t bytes = sizeof(ColumnVariant::Discriminator) + sizeof(ColumnVariant::Offset);
+        if (!value)
+            return bytes;
+        if (!variant_type->haveMaximumSizeOfValue())
+            return std::nullopt;
+        return bytes + variant_type->getMaximumSizeOfValueInMemory();
+    }
+
+    if (type.haveMaximumSizeOfValue())
+        return type.getMaximumSizeOfValueInMemory();
+
+    auto sum_of_elements = [](const DataTypes & element_types, const FieldVector * values) -> std::optional<size_t>
+    {
+        size_t res = 0;
+        for (size_t i = 0; i < element_types.size(); ++i)
+        {
+            const std::optional<size_t> bytes = defaultValueByteSize(*element_types[i], values ? &values->at(i) : nullptr);
+            if (!bytes)
+                return std::nullopt;
+            res += *bytes;
+        }
+        return res;
+    };
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+    {
+        const std::optional<size_t> nested_bytes = defaultValueByteSize(*nullable_type->getNestedType(), value);
+        if (!nested_bytes)
+            return std::nullopt;
+        return 1 + *nested_bytes;
+    }
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
+    {
+        const std::optional<size_t> dictionary_bytes = defaultValueByteSize(*low_cardinality_type->getDictionaryType(), value);
+        if (!dictionary_bytes)
+            return std::nullopt;
+        return sizeof(UInt8) + *dictionary_bytes;
+    }
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+        return sum_of_elements(tuple_type->getElements(), value ? &value->safeGet<Tuple>() : nullptr);
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+    {
+        /// The default is an empty array, which takes an offset.
+        size_t res = sizeof(ColumnArray::Offset);
+        if (value)
+        {
+            for (const Field & element : value->safeGet<Array>())
+            {
+                const std::optional<size_t> element_bytes = defaultValueByteSize(*array_type->getNestedType(), &element);
+                if (!element_bytes)
+                    return std::nullopt;
+                res += *element_bytes;
+            }
+        }
+        else if (!defaultValueByteSize(*array_type->getNestedType(), nullptr))
+            return std::nullopt;
+        return res;
+    }
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(&type))
+    {
+        const DataTypes key_value_types{map_type->getKeyType(), map_type->getValueType()};
+        size_t res = sizeof(ColumnArray::Offset);
+        if (value)
+        {
+            for (const Field & key_value : value->safeGet<Map>())
+            {
+                const std::optional<size_t> key_value_bytes = sum_of_elements(key_value_types, &key_value.safeGet<Tuple>());
+                if (!key_value_bytes)
+                    return std::nullopt;
+                res += *key_value_bytes;
+            }
+        }
+        else if (!sum_of_elements(key_value_types, nullptr))
+            return std::nullopt;
+        return res;
+    }
+
+    /// A leaf type without a fixed size, e.g. `String`.
+    auto column = type.createColumn();
+    if (value)
+        column->insert(*value);
+    else
+        column->insertDefault();
+    return column->byteSizeAt(0);
 }
 
 template <typename E>
@@ -1417,17 +1526,14 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
     {
         if (info.is_missing_column)
         {
-            auto column = info.output_type->createColumn();
             /// The value that `formOutputColumn` fills the column with. The default of a data lake field (e.g. the
             /// `initial-default` of Iceberg) may be much larger than the default value of the type: a long string, or
             /// a non-empty array.
-            if (info.missing_column_default)
-                column->insert(*info.missing_column_default);
-            else
-                column->insertDefault();
-            info.missing_bytes_per_value = static_cast<double>(column->byteSizeAt(0) + sumEnumBytesPerValue(*info.output_type));
+            const std::optional<size_t> value_bytes = defaultValueByteSize(
+                *info.output_type, info.missing_column_default ? &*info.missing_column_default : nullptr);
+            info.missing_bytes_per_value = static_cast<double>(value_bytes.value_or(0) + sumEnumBytesPerValue(*info.output_type));
             /// E.g. `toJSONString` of a default `JSON` repeats the names of its typed paths in every row.
-            info.missing_size_unknown = !maxByteSizeWithExpandedValues(*column, 0).has_value();
+            info.missing_size_unknown = !value_bytes.has_value();
         }
         /// The names of the values of an `Enum`, which a query may take for each value, e.g. by `toString`. They are
         /// charged to every primitive column under the type with an `Enum`, which is an upper bound.
