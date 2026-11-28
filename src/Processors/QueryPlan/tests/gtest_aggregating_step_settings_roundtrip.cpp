@@ -82,7 +82,8 @@ Aggregator::Params makeParams(bool serialize_string_with_zero_byte)
         /*max_block_size=*/65536,
         /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
         serialize_string_with_zero_byte,
-        /*enable_packed_string_keys=*/true);
+        /*enable_packed_string_keys=*/true,
+        /*enable_fixed_and_packed_string_keys=*/true);
 }
 
 std::unique_ptr<AggregatingStep> makeAggregatingStepFromParams(Aggregator::Params params)

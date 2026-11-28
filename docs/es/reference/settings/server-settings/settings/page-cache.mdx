@@ -30,7 +30,7 @@ Estos ajustes configuran el servidor de ClickHouse y se autogeneran a partir del
 
 ## page_cache_policy {#page_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nombre de la política de desalojo de la caché de páginas en espacio de usuario. Valores posibles: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Política de desalojo de la caché de páginas en espacio de usuario. Valores posibles: `LRU`, `SLRU`, `SIEVE`. Consulte [`page_cache_max_size`](/es/reference/settings/server-settings/settings/page-cache#page_cache_max_size) para la capacidad de la caché y [`page_cache_size_ratio`](/es/reference/settings/server-settings/settings/page-cache#page_cache_size_ratio) para el tamaño de la cola protegida en la política SLRU.
 
 ## page_cache_shards {#page_cache_shards}
 

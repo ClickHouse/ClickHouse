@@ -23,9 +23,9 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
 
 <Steps>
   <Step title="Airbyte 다운로드 및 실행" id="1-download-and-run-airbyte">
-    1. Airbyte는 Docker에서 실행되며 `docker-compose`를 사용합니다. 최신 버전의 Docker를 다운로드하여 설치했는지 확인하세요.
+    1. Airbyte는 Docker에서 실행되며 `docker-compose`를 사용합니다. 최신 버전의 Docker를 다운로드하여 설치하십시오.
 
-    2. 공식 GitHub 리포지토리를 복제한 다음, 터미널에서 `docker-compose up`을 실행하여 Airbyte를 배포하세요.
+    2. 공식 GitHub 리포지토리를 클론한 후 사용하는 터미널에서 `docker-compose up`을 실행하여 Airbyte를 배포하십시오.
 
        ```bash
        git clone https://github.com/airbytehq/airbyte.git --depth=1
@@ -36,57 +36,45 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
     3. 터미널에 Airbyte 배너가 표시되면 <a href="http://localhost:8000" target="_blank">localhost:8000</a>에 접속할 수 있습니다.
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Airbyte 배너](/images/integrations/data-ingestion/etl-tools/airbyte_01.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Airbyte 배너](/images/integrations/data-ingestion/etl-tools/airbyte_01.webp)
+         </Frame>
        </div>
 
     <Note>
-      또는 <a href="https://docs.airbyte.com/" target="_blank">Airbyte Cloud</a>에 가입하여 사용할 수 있습니다.
+      또는 <a href="https://docs.airbyte.com/" target="_blank">Airbyte Cloud</a>에 가입하여 사용할 수도 있습니다.
     </Note>
   </Step>
 
-  <Step title="ClickHouse를 대상으로 추가하기" id="2-add-clickhouse-as-a-destination">
-    이 섹션에서는 ClickHouse 인스턴스를 대상으로 추가하는 방법을 안내합니다.
+  <Step title="ClickHouse를 대상으로 추가" id="2-add-clickhouse-as-a-destination">
+    이 섹션에서는 ClickHouse 인스턴스를 대상으로 추가하는 방법을 설명합니다.
 
-    1. ClickHouse 서버를 시작하거나(Airbyte는 ClickHouse 버전 `21.8.10.19` 이상과 호환됩니다) ClickHouse Cloud 계정에 로그인합니다:
+    1. ClickHouse 서버를 시작하거나(Airbyte는 ClickHouse 버전 `21.8.10.19` 이상과 호환됩니다) ClickHouse Cloud 계정에 로그인하십시오:
 
        ```bash
        clickhouse-server start
        ```
 
-    2. Airbyte에서 &quot;Destinations&quot; 페이지를 선택한 다음 새 대상을 추가합니다:
+    2. Airbyte에서 &quot;Destinations&quot; 페이지로 이동하여 새 대상을 추가하십시오:
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Airbyte에서 대상 추가](/images/integrations/data-ingestion/etl-tools/airbyte_02.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Airbyte에서 대상 추가](/images/integrations/data-ingestion/etl-tools/airbyte_02.webp)
+         </Frame>
        </div>
 
-    3. &quot;Destination type&quot; 드롭다운 목록에서 ClickHouse를 선택한 다음, ClickHouse 호스트명과 포트, 데이터베이스 이름, 사용자 이름, 비밀번호를 입력하고 SSL connection 사용 여부를 선택하여 &quot;Set up the destination&quot; 양식을 작성합니다(`clickhouse-client`의 `--secure` 플래그와 동일):
+    3. &quot;Destination type&quot; 드롭다운 목록에서 ClickHouse를 선택한 후, &quot;Set up the destination&quot; 양식에 ClickHouse 호스트명과 포트, 데이터베이스 이름, 사용자 이름 및 비밀번호를 입력하고 SSL 연결 사용 여부(`clickhouse-client`의 `--secure` 플래그와 동일)를 선택하십시오:
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Airbyte에서 ClickHouse 대상 생성](/images/integrations/data-ingestion/etl-tools/airbyte_03.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Airbyte에서 ClickHouse 대상 생성](/images/integrations/data-ingestion/etl-tools/airbyte_03.webp)
+         </Frame>
        </div>
 
-    4. 완료되었습니다! 이제 Airbyte에 ClickHouse를 대상으로 추가했습니다.
+    4. 축하합니다! 이제 Airbyte에 ClickHouse가 대상으로 추가되었습니다.
 
     <Note>
-      ClickHouse를 대상으로 사용하려면 해당 사용자가 데이터베이스와 테이블을 생성하고 행을 삽입할 수 있는 권한을 가지고 있어야 합니다. Airbyte 전용 사용자(예: `my_airbyte_user`)를 만들고 다음 권한을 부여하는 것을 권장합니다:
+      ClickHouse를 대상으로 사용하려면 사용할 사용자에게 데이터베이스와 테이블을 생성하고 행을 삽입할 수 있는 권한이 있어야 합니다. 다음 권한을 부여한 Airbyte 전용 사용자(예: `my_airbyte_user`)를 생성하는 것을 권장합니다:
 
       ```sql
       CREATE USER 'my_airbyte_user'@'%' IDENTIFIED BY 'your_password_here';
@@ -97,91 +85,67 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
   </Step>
 
   <Step title="데이터셋을 소스로 추가" id="3-add-a-dataset-as-a-source">
-    이 튜토리얼에서 사용할 예시 데이터셋은 <a href="/ko/get-started/sample-datasets/nyc-taxi" target="_blank">New York City Taxi Data</a>(<a href="https://github.com/toddwschneider/nyc-taxi-data" target="_blank">Github</a>에서 제공)입니다. 이 튜토리얼에서는 이 데이터셋 중 2022년 1월에 해당하는 일부만 사용합니다.
+    이 문서에서 사용할 예제 데이터 세트는 <a href="/ko/get-started/sample-datasets/nyc-taxi" target="_blank">New York City Taxi Data</a>(<a href="https://github.com/toddwschneider/nyc-taxi-data" target="_blank">GitHub</a>에서 제공)입니다. 이 튜토리얼에서는 이 데이터 세트 중 2022년 1월에 해당하는 부분 집합을 사용합니다.
 
-    1. Airbyte에서 &quot;Sources&quot; 페이지를 선택한 다음, file 유형의 새 소스를 추가합니다.
+    1. Airbyte에서 &quot;Sources&quot; 페이지로 이동한 후 file 유형의 새 소스를 추가하십시오.
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Airbyte에서 소스 추가](/images/integrations/data-ingestion/etl-tools/airbyte_04.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Airbyte에서 소스 추가](/images/integrations/data-ingestion/etl-tools/airbyte_04.webp)
+         </Frame>
        </div>
 
-    2. 소스 이름을 지정하고 NYC Taxi 2022년 1월 파일의 URL(아래 참조)을 입력하여 &quot;Set up the source&quot; 양식을 작성합니다. 파일 포맷은 `parquet`, Storage Provider는 `HTTPS Public Web`, Dataset Name은 `nyc_taxi_2022`로 선택하십시오.
+    2. &quot;Set up the source&quot; 양식에서 소스 이름을 지정하고 NYC Taxi 2022년 1월 파일의 URL(아래 참조)을 입력하십시오. 파일 포맷은 `parquet`, Storage Provider는 `HTTPS Public Web`, Dataset Name은 `nyc_taxi_2022`로 지정해야 합니다.
 
        ```text
        https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2022-01.parquet
        ```
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Airbyte에서 ClickHouse 소스 생성](/images/integrations/data-ingestion/etl-tools/airbyte_05.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Airbyte에서 ClickHouse 소스 생성](/images/integrations/data-ingestion/etl-tools/airbyte_05.webp)
+         </Frame>
        </div>
 
-    3. 완료되었습니다. 이제 Airbyte에 소스 파일이 추가되었습니다.
+    3. 축하합니다! Airbyte에 소스 파일을 추가했습니다.
   </Step>
 
-  <Step title="ClickHouse에 연결을 생성하고 데이터셋 불러오기" id="4-create-a-connection-and-load-the-dataset-into-clickhouse">
-    1. Airbyte에서 &quot;Connections&quot; 페이지를 선택하고 새 연결을 추가하세요
+  <Step title="연결을 설정하고 데이터셋을 ClickHouse에 로드하십시오" id="4-create-a-connection-and-load-the-dataset-into-clickhouse">
+    1. Airbyte에서 &quot;Connections&quot; 페이지로 이동한 후 새 연결을 추가합니다
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Airbyte에서 연결 추가하기](/images/integrations/data-ingestion/etl-tools/airbyte_06.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Airbyte에서 연결 추가](/images/integrations/data-ingestion/etl-tools/airbyte_06.webp)
+      </Frame>
     </div>
 
-    2. &quot;기존 소스 사용&quot;을 선택한 다음 New York City Taxi Data를 선택하고, 이어서 &quot;기존 대상 사용&quot;을 선택한 후 ClickHouse 인스턴스를 선택합니다.
+    2. &quot;Use existing source&quot;를 선택하고 New York City Taxi Data를 선택한 다음, &quot;Use existing destination&quot;을 선택하고 사용할 ClickHouse 인스턴스를 선택하십시오.
 
-    3. 복제 빈도(이 튜토리얼에서는 `manual`을 사용합니다)를 선택하고, 동기화할 스트림으로 `nyc_taxi_2022`를 선택하여 &quot;연결 설정&quot; 양식을 작성하십시오. 정규화 옵션으로 Normalized Tabular Data를 선택했는지 확인하십시오.
+    3. &quot;Set up the connection&quot; 양식에서 복제 주기(Replication Frequency)를 선택하고(이 튜토리얼에서는 `manual`을 사용합니다), 동기화할 스트림으로 `nyc_taxi_2022`를 선택하십시오. 정규화(Normalization) 방식은 반드시 `Normalized Tabular Data`로 선택하십시오.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Airbyte에서 연결 만들기](/images/integrations/data-ingestion/etl-tools/airbyte_07.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Airbyte에서 연결 생성하기](/images/integrations/data-ingestion/etl-tools/airbyte_07.webp)
+      </Frame>
     </div>
 
-    4. 이제 연결이 생성되었으므로 데이터 로딩을 실행하려면 &quot;Sync now&quot;를 클릭하십시오(`Replication Frequency`로 `Manual`을 선택했기 때문입니다)
+    4. 이제 연결이 생성되었으므로 &quot;Sync now&quot;를 클릭하여 데이터 로딩을 트리거하십시오(Replication Frequency로 `Manual`을 선택했기 때문입니다).
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![지금 Airbyte에서 동기화하세요](/images/integrations/data-ingestion/etl-tools/airbyte_08.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Airbyte에서 지금 동기화 실행](/images/integrations/data-ingestion/etl-tools/airbyte_08.webp)
+      </Frame>
     </div>
 
-    5. 데이터 로딩이 시작되면 보기를 펼쳐 Airbyte 로그와 진행 상황을 확인할 수 있습니다. 작업이 완료되면 로그에 `Completed successfully` 메시지가 표시됩니다:
+    5. 데이터 로드가 시작됩니다. 보기를 펼치면 Airbyte 로그와 진행 상황을 확인할 수 있습니다. 작업이 완료되면 로그에 `Completed successfully` 메시지가 표시됩니다:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![성공적으로 완료되었습니다](/images/integrations/data-ingestion/etl-tools/airbyte_09.webp)
-
-    </Frame>
-
+      <Frame>
+        ![성공적으로 완료됨](/images/integrations/data-ingestion/etl-tools/airbyte_09.webp)
+      </Frame>
     </div>
 
-    6. 사용하는 SQL Client로 ClickHouse 인스턴스에 연결하고 생성된 테이블을 확인하십시오:
+    6. 원하는 SQL 클라이언트로 ClickHouse 인스턴스에 연결한 후 생성된 테이블을 확인하세요:
 
        ```sql
        SELECT *
@@ -189,7 +153,7 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
        LIMIT 10
        ```
 
-       응답은 다음과 같아야 합니다:
+       응답은 다음과 비슷합니다:
 
        ```response
        Query id: 4f79c106-fe49-4145-8eba-15e1cb36d325
@@ -213,7 +177,7 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
        FROM nyc_taxi_2022
        ```
 
-       응답은 다음과 같습니다.
+       응답은 다음과 같습니다:
 
        ```response
        Query id: a9172d39-50f7-421e-8330-296de0baa67e
@@ -223,7 +187,7 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
        └─────────┘
        ```
 
-    7. Airbyte가 데이터 타입을 자동으로 추론하고 대상 테이블에 4개의 컬럼을 추가했다는 점에 유의하십시오. 이러한 컬럼은 Airbyte가 복제 로직을 관리하고 작업 내역을 기록하는 데 사용됩니다. 자세한 내용은 <a href="https://docs.airbyte.com/integrations/destinations/clickhouse#output-schema" target="_blank">Airbyte 공식 문서</a>에서 확인할 수 있습니다.
+    7. Airbyte가 데이터 타입을 자동으로 추론하고 대상 테이블(destination table)에 4개의 컬럼을 추가한 것을 확인할 수 있습니다. 이 컬럼은 Airbyte가 복제 로직을 관리하고 작업 내역을 로그로 기록하는 데 사용됩니다. 자세한 내용은  <a href="https://docs.airbyte.com/integrations/destinations/clickhouse#output-schema" target="_blank">Airbyte 공식 문서</a>를 참조하십시오.
 
        ```sql
            `_airbyte_ab_id` String,
@@ -232,8 +196,8 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
            `_airbyte_nyc_taxi_072021_hashid` String
        ```
 
-       이제 데이터셋이 ClickHouse 인스턴스에 로드되었으므로 새 테이블을 생성하고, 더 적합한 ClickHouse 데이터 타입을 사용할 수 있습니다(<a href="/ko/get-started/sample-datasets/nyc-taxi" target="_blank">자세히 보기</a>).
+       이제 데이터셋이 ClickHouse 인스턴스에 로드되었으므로 새 테이블을 생성하고 더 적합한 ClickHouse 데이터 타입(data types)을 사용할 수 있습니다(<a href="/ko/get-started/sample-datasets/nyc-taxi" target="_blank">자세한 내용</a>).
 
-    8. 축하합니다 - Airbyte를 사용해 NYC 택시 데이터를 ClickHouse에 성공적으로 적재했습니다!
+    8. 축하합니다! Airbyte를 사용하여 NYC 택시 데이터를 ClickHouse에 성공적으로 로드했습니다!
   </Step>
 </Steps>

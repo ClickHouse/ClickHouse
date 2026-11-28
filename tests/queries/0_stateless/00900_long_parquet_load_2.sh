@@ -16,18 +16,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DATA_DIR=$CUR_DIR/data_parquet
 
-# TODO [parquet]: Known issues to investigate:
-
-# ClickHouse Parquet reader doesn't support such complex types, so I didn't burrow into the issue.
-# There is failure due parsing nested arrays or nested maps with NULLs:
-# ../contrib/arrow/cpp/src/arrow/array/array_nested.cc:192:  Check failed: (self->list_type_->value_type()->id()) == (data->child_data[0]->type->id())
-
-# Strange behaviour for repeated_no_annotation.parquet around __buitin_expect, so this file was disabled:
-# debug:
-#   ../contrib/arrow/cpp/src/arrow/array/array_nested.cc:193:  Check failed: self->list_type_->value_type()->Equals(data->child_data[0]->type)
-# release:
-#   Code: 349. DB::Ex---tion: Can not insert NULL data into non-nullable column "phoneNumbers": data for INSERT was parsed from stdin
-
 EXCLUDE=(
     # These have extremely long strings and blow up the output.
     list_monotonically_increasing_offsets.parquet

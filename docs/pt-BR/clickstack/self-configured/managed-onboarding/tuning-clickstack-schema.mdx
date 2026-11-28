@@ -1,0 +1,89 @@
+---
+slug: /clickstack/self-configured/managed-onboarding/tuning-clickstack-schema
+title: 'Ajuste do Self-managed ClickHouse Observability - refinando seu schema'
+description: 'Refine o schema do ClickStack para melhorar o desempenho de consultas e a eficiência de armazenamento no Self-managed ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['clickstack', 'tuning', 'schema', 'managed', 'observability', 'performance', 'optimization', 'storage']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+sidebarTitle: 'ajuste do schema do clickstack'
+---
+
+<Note>
+  Esta página aborda o **Self-managed ClickHouse Observability**. Para a experiência totalmente gerenciada, que é a recomendada, consulte a documentação [aqui](/pt-BR/clickstack/observability/overview).
+</Note>
+
+Se você já usa o ClickStack há algum tempo, provavelmente percebeu que o schema padrão atende à maioria das cargas de trabalho de observabilidade sem nenhuma alteração. Esta página é para quando isso já não basta: a latência das consultas começa a subir ou seus padrões de acesso passaram a divergir dos padrões previstos.
+
+Na prática, quatro otimizações resolvem a maior parte dos casos. Elas estão listadas aproximadamente em ordem de esforço. As duas primeiras são alterações locais com `ALTER TABLE` que você pode aplicar de forma incremental. A terceira vale a pena quando a mesma agregação é executada repetidamente em um dashboard. A quarta exige uma migração de tabela e, por isso, é a mais trabalhosa.
+
+Os resumos abaixo são breves de propósito. Para entender o raciocínio por trás de cada alteração, ver benchmarks e conferir as instruções para aplicá-la aos dados existentes, consulte [Ajuste de desempenho](/pt-BR/clickstack/self-configured/managing/performance-tuning).
+
+<Steps>
+  <Step title="Materialize atributos consultados com frequência" id="materialize-attributes">
+    Filtrar por `LogAttributes['service.version']` obriga o ClickHouse a carregar e decodificar todo o map `LogAttributes` para cada linha examinada. Ao promover o atributo a uma coluna `MATERIALIZED`, o mesmo filtro passa a ser uma leitura de coluna, normalmente uma ordem de grandeza mais rápida. O ClickStack reescreve o filtro automaticamente assim que a coluna passa a existir, de modo que pesquisas salvas e dashboards continuam funcionando sem alterações.
+
+    Escolha os atributos que você realmente consulta com frequência. Cada coluna materializada tem um custo em armazenamento e no momento da inserção; portanto, a ideia é &quot;promover o que você usa&quot;, e não &quot;promover tudo&quot;.
+
+    ```sql
+    ALTER TABLE otel_logs
+      ADD COLUMN ServiceVersion LowCardinality(String)
+      MATERIALIZED LogAttributes['service.version'];
+    ```
+
+    As linhas existentes ficam vazias na nova coluna até que você também execute `ALTER TABLE otel_logs MATERIALIZE COLUMN ServiceVersion`.
+
+    Saiba mais: [Materializar atributos consultados com frequência](/pt-BR/clickstack/self-configured/managing/performance-tuning#materialize-frequently-queried-attributes).
+  </Step>
+
+  <Step title="Adicione índices de salto" id="add-skip-indexes">
+    Os índices de salto permitem que o ClickHouse descarte grânulos de dados que não podem corresponder a um filtro, transformando uma varredura em uma leitura pequena e direcionada. Vale a pena conhecer três tipos:
+
+    * **Índices de texto** (`text(tokenizer = ...)`) em colunas string e em arrays `mapKeys`/`*AttributeItems`. O schema padrão de logs já vem com eles.
+    * **Índices min-max** em colunas numéricas filtradas por intervalo. A `Duration` de traces é o caso clássico.
+    * **Filtros Bloom** para buscas por igualdade com alta cardinalidade em versões do ClickHouse que ainda não suportam índices de texto.
+
+    ```sql
+    ALTER TABLE otel_traces ADD INDEX idx_duration Duration TYPE minmax GRANULARITY 1;
+    ALTER TABLE otel_traces MATERIALIZE INDEX idx_duration;
+    ```
+
+    Um índice de exclusão só compensa seu custo de avaliação se realmente eliminar grânulos. Confirme com `EXPLAIN indexes = 1` em uma consulta representativa antes de presumir que ele ajudou.
+
+    Saiba mais: [Adicionar índices de salto](/pt-BR/clickstack/self-configured/managing/performance-tuning#adding-skip-indexes).
+  </Step>
+
+  <Step title="Pré-calcule agregações recorrentes" id="materialized-views">
+    Quando a mesma agregação é executada repetidamente em um dashboard (principais serviços por taxa de erro, latência p99 por endpoint, contagem de requisições por minuto), uma visão materializada calcula o resultado no momento da inserção e o grava em uma pequena tabela de rollup. Os dashboards passam então a consultar o rollup em vez dos logs ou rastros brutos, o que sai bem mais barato.
+
+    Isso compensa quando o dashboard é muito acessado e a tabela subjacente é grande. O custo é um pouco de CPU no momento da inserção e uma segunda tabela para manter.
+
+    Saiba mais: [Aproveitar visões materializadas](/pt-BR/clickstack/self-configured/managing/performance-tuning#exploiting-materialized-views).
+  </Step>
+
+  <Step title="Escolha uma chave primária adequada ao seu padrão de acesso" id="choose-primary-key">
+    A chave primária define como as linhas são ordenadas em disco. Filtros nas colunas iniciais dessa chave permitem que o ClickHouse vá direto à região relevante; filtros que não começam por uma dessas colunas varrem a partição inteira.
+
+    A chave padrão de logs `(toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)` favorece consultas do tipo &quot;o que aconteceu nos últimos N minutos no serviço X&quot;. Se a maioria das suas consultas começa por outra coluna (um ID de tenant, um ID de cliente, uma região), alterar a chave primária para começar por essa coluna é a mudança de maior impacto que você pode fazer.
+
+    ```sql
+    CREATE TABLE otel_logs_v2
+    (
+      -- mesmas colunas de otel_logs
+    )
+    ENGINE = MergeTree
+    ORDER BY (TenantId, ServiceName, Timestamp);
+    ```
+
+    O ClickHouse não permite editar a chave primária diretamente, portanto isso exige uma migração de tabela, e não um simples `ALTER`. O guia de ajuste de desempenho mostra como criar a nova tabela, redirecionar a ingestão e usar uma tabela `Merge` para que os dashboards existentes continuem funcionando com dados antigos e novos.
+
+    Saiba mais: [Modificar a chave primária](/pt-BR/clickstack/self-configured/managing/performance-tuning#modifying-the-primary-key).
+  </Step>
+</Steps>
+
+## Leitura adicional {#further-reading}
+
+* [Ajuste de desempenho](/pt-BR/clickstack/self-configured/managing/performance-tuning): guia completo, incluindo projeções e aceleração da consulta de linhas.
+* [Tabelas e esquemas usados pelo ClickStack](/pt-BR/clickstack/self-configured/ingesting-data/schemas): a DDL canônica na qual as otimizações se baseiam.
+* [Preparação para produção](/pt-BR/clickstack/self-configured/managing/production): recomendações mais amplas para ambientes de produção.

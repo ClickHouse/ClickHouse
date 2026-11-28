@@ -145,7 +145,7 @@ namespace
         size_t normal_part_size;
         String multipart_upload_id;
         DequeWithMemoryTracking<String> multipart_tags;
-        DequeWithMemoryTracking<String> multipart_checksums;
+        DequeWithMemoryTracking<Aws::String> multipart_checksums;
         std::atomic<size_t> num_finished_parts = 0;
         std::atomic<bool> has_failed = false;
 
@@ -160,7 +160,7 @@ namespace
             auto metadata = object_metadata.value_or(ObjectAttributes{});
             if (!idempotency_id.empty())
                 metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
-            request.SetMetadata(metadata);
+            request.SetMetadata(S3::objectAttributesToAwsMap(metadata));
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
@@ -259,7 +259,7 @@ namespace
 
                 if (isTransientCompleteMultipartUploadError(error) && (retries < max_retries))
                 {
-                    const String details = error.GetExceptionName().empty() ? error.GetMessage() : error.GetExceptionName();
+                    const auto details = error.GetExceptionName().empty() ? error.GetMessage() : error.GetExceptionName();
                     LOG_INFO(log, "Multipart upload failed with a transient error ({}) for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", details, dest_bucket, dest_key, multipart_upload_id, multipart_tags.size());
                     continue; /// will retry
                 }
@@ -294,10 +294,10 @@ namespace
                                            outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
         }
 
-        void checkObjectAfterUpload()
+        void checkObjectAfterUpload(const S3::Client & client)
         {
             LOG_TRACE(log, "Checking object {} exists after upload", dest_key);
-            S3::checkObjectExists(*client_ptr, dest_bucket, dest_key, {}, "Immediately after upload");
+            S3::checkObjectExists(client, dest_bucket, dest_key, {}, "Immediately after upload");
             LOG_TRACE(log, "Object {} exists after upload", dest_key);
         }
 
@@ -416,7 +416,7 @@ namespace
             normal_part_size = part_size;
         }
 
-        String prepareChecksums(Aws::AmazonWebServiceRequest & request) const
+        Aws::String prepareChecksums(Aws::AmazonWebServiceRequest & request) const
         {
             if (!usesFlexibleUploadChecksumHeader())
                 return {};
@@ -435,7 +435,7 @@ namespace
             return upload_checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*upload_checksum_algorithm);
         }
 
-        void processUploadTask(UploadPartTask & task, String & part_tag, String & part_checksum)
+        void processUploadTask(UploadPartTask & task, String & part_tag, Aws::String & part_checksum)
         {
             if (has_failed)
                 return;
@@ -515,7 +515,7 @@ namespace
                 performMultipartUpload();
 
             if (request_settings[S3RequestSetting::check_objects_after_upload])
-                checkObjectAfterUpload();
+                checkObjectAfterUpload(*client_ptr);
         }
 
     private:
@@ -545,7 +545,7 @@ namespace
             request.SetBody(createS3UploadBody(create_read_buffer, offset, size));
 
             if (object_metadata.has_value())
-                request.SetMetadata(object_metadata.value());
+                request.SetMetadata(S3::objectAttributesToAwsMap(object_metadata.value()));
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
@@ -677,7 +677,7 @@ namespace
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 
-            return outcome.GetResult().GetETag();
+            return String(outcome.GetResult().GetETag());
         }
     };
 
@@ -692,6 +692,7 @@ namespace
             size_t src_offset_,
             size_t src_size_,
             size_t src_object_size_,
+            const std::shared_ptr<const S3::Client> & dest_client_ptr_,
             const String & dest_bucket_,
             const String & dest_key_,
             const S3::S3RequestSettings & request_settings_,
@@ -699,7 +700,7 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            std::function<void()> fallback_method_,
+            std::function<bool()> fallback_method_,
             bool is_ranged_copy_)
             : UploadHelper(
                 client_ptr_,
@@ -716,6 +717,7 @@ namespace
             , offset(src_offset_)
             , size(src_size_)
             , src_object_size(src_object_size_)
+            , dest_client_ptr(dest_client_ptr_)
             /// Native multipart copy is disabled for `S3Express` buckets: there `Client::doRequest` forces
             /// `CreateMultipartUpload` to use a flexible checksum, but the copy path does not propagate the per-part
             /// checksums returned by `UploadPartCopy` into `CompleteMultipartUpload`, which then fails. Large objects
@@ -727,7 +729,7 @@ namespace
         {
         }
 
-        void performCopy()
+        bool performCopy()
         {
             LOG_TEST(log, "Copy object {} to {} using native copy", src_key, dest_key);
 
@@ -750,8 +752,7 @@ namespace
                               "the source is {} bytes, not above the {} bytes S3 requires of a ranged copy source",
                               src_object_size,
                               MIN_SOURCE_SIZE_FOR_RANGE_COPY));
-                fallback_method();
-                return;
+                return fallback_method();
             }
 
             bool use_single_operation_copy = !is_ranged_copy
@@ -760,13 +761,12 @@ namespace
             /// A ranged copy must never reach whole-object CopyObject (it would copy the entire source).
             chassert(!(is_ranged_copy && use_single_operation_copy));
 
-            if (use_single_operation_copy)
-                performSingleOperationCopy();
-            else
-                performMultipartUploadCopy();
+            bool copied = use_single_operation_copy ? performSingleOperationCopy() : performMultipartUploadCopy();
 
-            if (request_settings[S3RequestSetting::check_objects_after_upload])
-                checkObjectAfterUpload();
+            /// The source client may be refused by the destination, e.g. for lacking its `x-amz-request-payer`.
+            if (copied && request_settings[S3RequestSetting::check_objects_after_upload])
+                checkObjectAfterUpload(*dest_client_ptr);
+            return copied;
         }
 
     private:
@@ -775,16 +775,17 @@ namespace
         size_t offset;
         size_t size;
         size_t src_object_size;
+        std::shared_ptr<const S3::Client> dest_client_ptr;
         bool supports_multipart_copy;
         bool is_ranged_copy;
         const ReadSettings read_settings;
-        std::function<void()> fallback_method;
+        std::function<bool()> fallback_method;
 
-        void performSingleOperationCopy()
+        bool performSingleOperationCopy()
         {
             S3::CopyObjectRequest request;
             fillCopyRequest(request);
-            processCopyRequest(request);
+            return processCopyRequest(request);
         }
 
         void fillCopyRequest(S3::CopyObjectRequest & request)
@@ -795,7 +796,7 @@ namespace
 
             if (object_metadata.has_value())
             {
-                request.SetMetadata(object_metadata.value());
+                request.SetMetadata(S3::objectAttributesToAwsMap(object_metadata.value()));
                 request.SetMetadataDirective(Aws::S3::Model::MetadataDirective::REPLACE);
             }
 
@@ -809,7 +810,7 @@ namespace
             client_ptr->setKMSHeaders(request);
         }
 
-        void processCopyRequest(S3::CopyObjectRequest & request)
+        bool processCopyRequest(S3::CopyObjectRequest & request)
         {
             size_t max_retries = std::max<UInt64>(request_settings[S3RequestSetting::max_unexpected_write_error_retries].value, 1UL);
             for (size_t retries = 1;; ++retries)
@@ -836,7 +837,7 @@ namespace
                         dest_bucket,
                         dest_key,
                         size);
-                    break;
+                    return true;
                 }
 
                 if (outcome.GetError().GetExceptionName() == "EntityTooLarge" ||
@@ -851,13 +852,11 @@ namespace
                     {
                         LOG_INFO(
                             log,
-                            "Multipart upload using copy is not supported, will try regular upload for Bucket: {}, Key: {}, Object size: "
-                            "{}",
+                            "Multipart upload using copy is not supported for Bucket: {}, Key: {}, Object size: {}; using fallback path",
                             dest_bucket,
                             dest_key,
                             size);
-                        fallback_method();
-                        break;
+                        return fallback_method();
                     }
 
                     // Can't come here with MinIO, MinIO allows single part upload for large objects.
@@ -870,8 +869,7 @@ namespace
                         dest_key,
                         size);
 
-                    performMultipartUploadCopy();
-                    break;
+                    return performMultipartUploadCopy();
                 }
 
                 if ((outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY) && (retries < max_retries))
@@ -897,19 +895,20 @@ namespace
             }
         }
 
-        void performMultipartUploadCopy()
+        bool performMultipartUploadCopy()
         {
             try
             {
                 UploadHelper::performMultipartUpload(offset, size);
+                return true;
             }
             catch (const S3Exception & e)
             {
                 if (e.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
                     throw;
 
-                tryLogCurrentException(log, "Multi part copy failed, trying with regular upload");
-                fallback_method();
+                tryLogCurrentException(log, "Multi part copy failed, using fallback path");
+                return fallback_method();
             }
         }
 
@@ -951,7 +950,7 @@ namespace
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 
-            return outcome.GetResult().GetCopyPartResult().GetETag();
+            return String(outcome.GetResult().GetCopyPartResult().GetETag());
         }
     };
 }
@@ -1006,7 +1005,7 @@ namespace
 {
     /// Shared by both public entry points. `is_ranged_copy` says whether only [src_offset, src_offset +
     /// src_size) of a larger source is wanted; it is internal, so no caller can leave it at a wrong default.
-    void copyS3FileImpl(
+    bool copyS3FileImpl(
         std::shared_ptr<const S3::Client> src_s3_client,
         const String & src_bucket,
         const String & src_key,
@@ -1027,8 +1026,10 @@ namespace
         if (!dest_s3_client)
             dest_s3_client = src_s3_client;
 
-        std::function<void()> fallback_method = [&] mutable
+        std::function<bool()> fallback_method = [&] mutable
         {
+            if (!fallback_file_reader)
+                return false;
             copyDataToS3File(
                 fallback_file_reader,
                 src_offset,
@@ -1040,13 +1041,13 @@ namespace
                 blob_storage_log,
                 schedule,
                 object_metadata);
+            return true;
         };
 
         if (!settings[S3RequestSetting::allow_native_copy])
         {
             LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
-            fallback_method();
-            return;
+            return fallback_method();
         }
 
         CopyFileHelper helper{
@@ -1056,6 +1057,7 @@ namespace
             src_offset,
             src_size,
             src_object_size,
+            dest_s3_client,
             dest_bucket,
             dest_key,
             settings,
@@ -1065,11 +1067,11 @@ namespace
             blob_storage_log,
             std::move(fallback_method),
             is_ranged_copy};
-        helper.performCopy();
+        return helper.performCopy();
     }
 }
 
-void copyS3File(
+bool copyS3File(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
@@ -1084,7 +1086,7 @@ void copyS3File(
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata)
 {
-    copyS3FileImpl(
+    return copyS3FileImpl(
         std::move(src_s3_client),
         src_bucket,
         src_key,
@@ -1103,7 +1105,7 @@ void copyS3File(
         /* is_ranged_copy= */ false);
 }
 
-void copyS3FileRange(
+bool copyS3FileRange(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
@@ -1120,7 +1122,7 @@ void copyS3FileRange(
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata)
 {
-    copyS3FileImpl(
+    return copyS3FileImpl(
         std::move(src_s3_client),
         src_bucket,
         src_key,

@@ -95,9 +95,9 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
         auto & window_description = it->second;
 
         WindowFunctionDescription window_function;
-        window_function.function_node = nullptr;
         window_function.column_name = std::move(window_function_name);
         window_function.aggregate_function = window_function_node_typed.getAggregateFunction();
+        window_function.general_function = window_function_node_typed.getWindowFunction();
 
         const auto & parameters_nodes = window_function_node_typed.getParameters().getNodes();
         window_function.function_parameters.reserve(parameters_nodes.size());

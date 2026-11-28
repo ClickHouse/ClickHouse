@@ -12,6 +12,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -74,51 +75,6 @@ struct TextIndexReadInfo
 };
 
 using TextIndexReadInfos = absl::flat_hash_map<String, TextIndexReadInfo>;
-
-String getNameWithoutAliases(const ActionsDAG::Node * node)
-{
-    while (node->type == ActionsDAG::ActionType::ALIAS)
-    {
-        node = node->children[0];
-    }
-
-    if (node->type == ActionsDAG::ActionType::FUNCTION)
-    {
-        String result_name = node->function_base->getName() + "(";
-        for (size_t i = 0; i < node->children.size(); ++i)
-        {
-            if (i)
-                result_name += ", ";
-
-            result_name += getNameWithoutAliases(node->children[i]);
-        }
-
-        result_name += ")";
-        return result_name;
-    }
-
-    /// Render a constant by value: its result_name can differ between the query and preprocessor DAGs,
-    /// so comparing by value keeps the haystack and preprocessor names consistent.
-    if (node->type == ActionsDAG::ActionType::COLUMN && node->column)
-        return applyVisitor(FieldVisitorToString(), node->column->getField());
-
-    return node->result_name;
-}
-
-/// Check if a node with the given canonical name exists as a subexpression within the DAG rooted at `node`.
-bool hasSubexpression(const ActionsDAG::Node * node, const String & subexpression_name)
-{
-    if (getNameWithoutAliases(node) == subexpression_name)
-        return true;
-
-    for (const auto * child : node->children)
-    {
-        if (hasSubexpression(child, subexpression_name))
-            return true;
-    }
-
-    return false;
-}
 
 const ActionsDAG::Node * replaceNodes(ActionsDAG & dag, const ActionsDAG::Node * node, const NodesReplacementMap & replacements)
 {
@@ -240,12 +196,23 @@ NameSet getColumnsUpdatedOnFly(const ReadFromMergeTree & read_from_merge_tree_st
 
 /// Helper function.
 /// Collects index conditions from the given ReadFromMergeTree step and stores them in text_index_read_infos.
-void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_step, TextIndexReadInfos & text_index_read_infos)
+/// A read of the probe plan of automatic parallel replicas has none of its own; it takes the conditions of the
+/// single-node read it stands for, so that both plans rewrite the same functions.
+void collectTextIndexReadInfos(
+    const ReadFromMergeTree * read_from_merge_tree_step,
+    const FindSingleNodeRead & find_single_node_read,
+    TextIndexReadInfos & text_index_read_infos)
 {
     auto component_guard = Coordination::setCurrentComponent("optimizeDirectReadFromTextIndex");
 
+    const ReadFromMergeTree * indexes_source = read_from_merge_tree_step;
+    if (!read_from_merge_tree_step->getIndexes() && find_single_node_read)
+        indexes_source = find_single_node_read(*read_from_merge_tree_step);
+    if (!indexes_source)
+        return;
+
     /// Everything below is needed only for text indexes.
-    const auto & indexes = read_from_merge_tree_step->getIndexes();
+    const auto & indexes = indexes_source->getIndexes();
     if (!indexes || std::ranges::none_of(indexes->skip_indexes.useful_indices, [](const auto & index) { return index.index->isTextIndex(); }))
         return;
 
@@ -586,6 +553,7 @@ private:
         const TextIndexReadInfo * info = nullptr;
         /// The virtual column replacing the function. An empty name means the inject-only rewrite (no direct read).
         IndexReadTask::Column virtual_column;
+        bool haystack_is_index_expression = false;
     };
 
     ActionsDAG & actions_dag;
@@ -662,6 +630,7 @@ private:
                 .index_name = index_name,
                 .info = &info,
                 .virtual_column = {},
+                .haystack_is_index_expression = !canonical_node.children.empty() && text_index_condition.isIndexExpression(*canonical_node.children.front()),
             };
 
             /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`). Otherwise, or if
@@ -757,15 +726,7 @@ private:
 
         if (apply_preprocessor)
         {
-            const auto & preprocessor_dag = preprocessor->getOriginalActionsDAG();
-            chassert(preprocessor_dag.getOutputs().size() == 1);
-            const auto & preprocessor_output = preprocessor_dag.getOutputs().front();
-            /// The index was analyzed on the expression under lossless conversions, e.g. `s` in `hasToken(toNullable(s), 'Foo')`.
-            const auto * haystack = unwrapLosslessConversion(arg_haystack);
-            auto haystack_name = getNameWithoutAliases(haystack);
-
-            /// Check that preprocessor contains current expression as its argument.
-            if (hasSubexpression(preprocessor_output, haystack_name))
+            if (condition.haystack_is_index_expression)
             {
                 /// Keep a `CAST` that drops `Nullable` under the preprocessor, so that the predicate still throws on NULL.
                 new_children[0] = unwrapLosslessConversion(arg_haystack, /*allow_drop_nullable=*/ false);
@@ -825,10 +786,14 @@ private:
             }
         }
 
+        /// A phrase must lie within one element, so the tokens of an Array are not flattened for it.
+        const bool match_phrase_per_element = apply_postprocessor && function_name == "hasPhrase"
+            && isArray(new_children[0]->result_type) && tokenizer->getType() != ITokenizer::Type::Array;
+
         /// Rewrite the haystack into the postprocessed tokens the index stores, so the row-level
         /// function still matches when the index isn't read directly (direct read off, or unmaterialized
         /// parts). getOriginalActionsDAG yields an Array(String) of postprocessed tokens.
-        if (apply_postprocessor)
+        if (apply_postprocessor && !match_phrase_per_element)
         {
             /// Name the postprocessor's haystack input after the haystack node's actual result_name so
             /// mergeNodes reuses that node (it matches by result_name). A reconstructed name can diverge for
@@ -840,7 +805,10 @@ private:
                 &merged_outputs);
             chassert(merged_outputs.size() == 1);
             new_children[0] = merged_outputs.front();
+        }
 
+        if (apply_postprocessor)
+        {
             /// new_children[0] is now an Array(String) of postprocessed tokens. Switch the tokenizer argument
             /// to 'array' to match them verbatim, instead of re-splitting tokens the index stores whole.
             if (function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase")
@@ -912,6 +880,26 @@ private:
                 needles_field = Array(tokens.begin(), tokens.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
             }
+        }
+
+        if (match_phrase_per_element)
+        {
+            ActionsDAG::NodeRawConstPtrs merged_outputs;
+            actions_dag.mergeNodes(
+                postprocessor->getPhraseActionsDAG(
+                    new_children[0]->result_name,
+                    new_children[0]->result_type,
+                    tokenizer->getDescription(),
+                    needles_field.safeGet<Array>(),
+                    preprocessor_source_ast),
+                &merged_outputs);
+            chassert(merged_outputs.size() == 1);
+
+            const ActionsDAG::Node * phrase_node = merged_outputs.front();
+            if (!phrase_node->result_type->equals(*function_node.result_type))
+                phrase_node = &actions_dag.addCast(*phrase_node, function_node.result_type, "", context);
+
+            return &actions_dag.addAlias(*phrase_node, function_node.result_name);
         }
 
         /// Recreate an argument with needles.
@@ -1013,8 +1001,21 @@ private:
             ActionsDAG::NodeRawConstPtrs children;
             auto function_builder = FunctionFactory::instance().get("and", context);
 
+            /// A hint is 0 only where the predicate is 0 or NULL. Map it to NULL, so the conjunction keeps the predicate's NULL.
+            const ActionsDAG::Node * zero = nullptr;
+            if (!has_exact_search && canContainNull(*function_node.result_type))
+            {
+                auto zero_type = std::make_shared<DataTypeUInt8>();
+                zero = &actions_dag.addColumn(zero_type->createColumnConst(0, 0), zero_type, "0");
+            }
+
             for (auto & condition : selected_conditions)
-                children.push_back(add_condition_to_input(condition));
+            {
+                const auto * hint = add_condition_to_input(condition);
+                if (zero)
+                    hint = &actions_dag.addFunction(FunctionFactory::instance().get("nullIf", context), {hint, zero}, "");
+                children.push_back(hint);
+            }
 
             if (!has_exact_search)
                 children.push_back(&function_node);
@@ -1194,7 +1195,11 @@ static bool isRowScanPassThroughStep(const IQueryPlanStep * step)
 ///
 /// See TextIndexDAGReplacer class for more details.
 void processAndOptimizeTextIndexFunctions(
-    const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings)
+    const Stack & stack,
+    QueryPlan::Nodes & nodes,
+    bool direct_read_from_text_index,
+    const FindSingleNodeRead & find_single_node_read,
+    const Optimization::ExtraSettings & settings)
 {
     const auto & frame = stack.back();
     ReadFromMergeTree * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
@@ -1205,7 +1210,7 @@ void processAndOptimizeTextIndexFunctions(
     /// analyzed skip indexes; the rest are filled in from the index definitions, so the rewrite also covers the
     /// SELECT list, steps above the scan, and queries that did not run skip-index analysis.
     TextIndexReadInfos text_index_infos;
-    collectTextIndexReadInfos(read_from_merge_tree_step, text_index_infos);
+    collectTextIndexReadInfos(read_from_merge_tree_step, find_single_node_read, text_index_infos);
     collectTextIndexInjectInfos(read_from_merge_tree_step, text_index_infos);
     if (text_index_infos.empty())
         return;

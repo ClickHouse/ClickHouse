@@ -55,7 +55,7 @@ struct NumericVectorBatch : public ColumnVectorBatch
         return data;
     }
 
-    const Container & getData() const { return assert_cast<const ColumnVector<T> &>(*column).getData(); }
+    [[nodiscard]] const Container & getData() const { return assert_cast<const ColumnVector<T> &>(*column).getData(); }
 
     ColumnPtr column;
 };

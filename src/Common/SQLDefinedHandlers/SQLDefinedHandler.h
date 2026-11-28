@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Core/Names.h>
 #include <Common/re2.h>
 
@@ -58,6 +59,13 @@ struct SQLDefinedHandler
     /// The canonical CREATE HANDLER statement, used for persistence and introspection.
     String create_statement;
 
+    /// The `SQL SECURITY` of the query; not set means `INVOKER` (the query runs as the requesting user).
+    std::optional<SQLSecurityType> sql_security_type;
+    std::optional<String> definer;
+
+    /// Whether `readonly` rejects the query, so it can run only for a mutating HTTP method.
+    bool requires_mutating_method = false;
+
     /// Whether a request to this handler can consume the HTTP request body: an `INSERT` takes the body as its
     /// data, and a query using the `_request_body` parameter reads it explicitly. Only for such handlers must a
     /// non-chunked request declare `Content-Length` up front, otherwise the body would be read until EOF and a
@@ -72,7 +80,7 @@ struct SQLDefinedHandler
     bool feeds_request_body_to_query = false;
 
     /// Returns true if the request path (without query string and fragment) matches this handler's URL.
-    bool matchesURL(const String & path) const;
+    [[nodiscard]] bool matchesURL(const String & path) const;
 
     /// Whether `path` matches the base path `prefix` on a path-segment boundary: the base path itself or
     /// anything below it after a '/'. E.g. "/api/v1" matches "/api/v1", "/api/v1/" and "/api/v1/write",
@@ -82,11 +90,11 @@ struct SQLDefinedHandler
     static bool urlPrefixMatches(std::string_view prefix, std::string_view path);
 
     /// Returns true if the given HTTP method (uppercase) is allowed by this handler.
-    bool matchesMethod(const String & method) const;
+    [[nodiscard]] bool matchesMethod(const String & method) const;
 
     /// Returns true if the handler is active for the given protocol name.
     /// Empty protocol_name means a legacy http/https port (matches only protocol-less handlers).
-    bool matchesProtocol(const String & protocol_name) const;
+    [[nodiscard]] bool matchesProtocol(const String & protocol_name) const;
 };
 
 using SQLDefinedHandlerPtr = std::shared_ptr<const SQLDefinedHandler>;

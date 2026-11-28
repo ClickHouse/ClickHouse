@@ -14,26 +14,20 @@ keywords: ['ClickStack 部署选项', '外部 ClickHouse', '外部 OTel', '最�
 
 本指南介绍使用 Helm 部署 ClickStack 的高级部署选项。有关基础安装，请参见 [Helm 部署主指南](/zh/clickstack/deployment/helm-v1)。
 
-<div id="overview">
-  ## 概述
-</div>
+## 概述 {#overview}
 
 ClickStack 的 Helm 图表支持多种部署配置：
 
 * **完整栈** (默认) - 包含所有组件
 * **外部 ClickHouse** - 使用现有的 ClickHouse 集群
 * **外部 OTel collector** - 使用现有的 OTel 基础设施
-* **最小化部署** - 仅部署 HyperDX，并使用外部依赖
+* **最小化部署** - 仅部署 ClickStack 用户界面，并使用外部依赖
 
-<div id="external-clickhouse">
-  ## 外部 ClickHouse
-</div>
+## 外部 ClickHouse {#external-clickhouse}
 
 如果您已有现有的 ClickHouse 集群 (包括 ClickHouse Cloud) ，则可以禁用内置的 ClickHouse 并连接到外部实例。
 
-<div id="external-clickhouse-inline">
-  ### 选项 1：内联配置 (开发/测试)
-</div>
+### 选项 1：内联配置 (开发/测试) {#external-clickhouse-inline}
 
 此方式适用于快速测试或非生产环境：
 
@@ -65,15 +59,11 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values-external-clickhouse.yaml
 ```
 
-<div id="external-clickhouse-secret">
-  ### 选项 2：外部 Secret (推荐用于生产环境)
-</div>
+### 选项 2：外部 Secret (推荐用于生产环境) {#external-clickhouse-secret}
 
 对于要将凭据与 Helm 配置分开的生产环境部署：
 
-<div id="create-configuration">
-  #### 创建配置文件
-</div>
+#### 创建配置文件 {#create-configuration}
 
 ```bash
 # 创建 connections.json
@@ -131,9 +121,7 @@ cat <<EOF > sources.json
 EOF
 ```
 
-<div id="create-kubernetes-secret">
-  #### 创建 Kubernetes Secret
-</div>
+#### 创建 Kubernetes Secret {#create-kubernetes-secret}
 
 ```bash
 kubectl create secret generic hyperdx-external-config \
@@ -144,9 +132,7 @@ kubectl create secret generic hyperdx-external-config \
 rm connections.json sources.json
 ```
 
-<div id="configure-helm-secret">
-  #### 配置 Helm 使用 Secret
-</div>
+#### 配置 Helm 使用 Secret {#configure-helm-secret}
 
 ```yaml
 # values-external-clickhouse-secret.yaml
@@ -168,9 +154,7 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values-external-clickhouse-secret.yaml
 ```
 
-<div id="using-clickhouse-cloud">
-  ### 使用 ClickHouse Cloud
-</div>
+### 使用 ClickHouse Cloud {#using-clickhouse-cloud}
 
 如果使用 ClickHouse Cloud：
 
@@ -191,9 +175,7 @@ hyperdx:
   existingConfigSourcesKey: "sources.json"
 ```
 
-<div id="external-otel-collector">
-  ## 外部 OTEL Collector
-</div>
+## 外部 OTEL Collector {#external-otel-collector}
 
 如果你已有 OTEL collector 基础设施：
 
@@ -212,11 +194,9 @@ helm install my-clickstack clickstack/clickstack -f values-external-otel.yaml
 
 有关通过入口暴露 OTel collector 端点的说明，请参阅[入口配置](/zh/clickstack/deployment/helm-configuration-v1#otel-collector-ingress)。
 
-<div id="minimal-deployment">
-  ## 最小化部署
-</div>
+## 最小化部署 {#minimal-deployment}
 
-对于已有基础设施的组织，只需部署 HyperDX：
+对于已有基础设施的组织，只需部署 ClickStack 用户界面：
 
 ```yaml
 # values-minimal.yaml
@@ -241,7 +221,7 @@ hyperdx:
       }
     ]
 
-  # 选项 2：外部 Secret（生产环境）
+  # Option 2: External secret (production)
   # useExistingConfigSecret: true
   # existingConfigSecret: "my-external-config"
   # existingConfigConnectionsKey: "connections.json"
@@ -252,9 +232,7 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values-minimal.yaml
 ```
 
-<div id="next-steps">
-  ## 后续步骤
-</div>
+## 后续步骤 {#next-steps}
 
 * [配置指南 (v1.x)](/zh/clickstack/deployment/helm-configuration-v1) - API 密钥、Secret 和入口设置
 * [云部署 (v1.x)](/zh/clickstack/deployment/helm-cloud-v1) - GKE、EKS 和 AKS 的特定配置

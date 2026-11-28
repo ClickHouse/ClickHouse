@@ -22,7 +22,7 @@ struct DecimalScaleBounds
     {
     }
 
-    bool fits(T value) const { return value >= min_multiplicand && value <= max_multiplicand; }
+    [[nodiscard]] bool fits(T value) const { return value >= min_multiplicand && value <= max_multiplicand; }
 
     /// Same contract as `common::mulOverflow(value, multiplier, res)`.
     bool mulOverflow(T value, T & res) const

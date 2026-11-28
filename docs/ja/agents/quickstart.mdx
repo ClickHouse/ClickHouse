@@ -1,0 +1,96 @@
+---
+sidebarTitle: 'クイックスタート'
+slug: /agents/quickstart
+title: 'クイックスタート'
+description: '初めての ClickHouse Agent を作成し、ClickHouse Cloud サービスに対して実行する'
+keywords: ['AI', 'ClickHouse Cloud', 'エージェント', 'クイックスタート', 'エージェントビルダー']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+Cloudコンソールでカスタムエージェントを作成し、サービスに対して自然言語でクエリを実行します。
+
+## 前提条件 {#prerequisites}
+
+* クエリを実行できる ClickHouse Cloud サービス。
+* エージェントビルダーで **エージェントを作成** オプションが利用できること。表示されない場合は、[共有とアクセス](/ja/agents/sharing-and-access) の説明に従い、組織の管理者に依頼して、管理者設定からエージェント作成の権限を付与してもらってください。
+
+## エージェントを構築する {#build-the-agent}
+
+<Steps>
+  <Step title="ClickHouse Agents を起動する" id="launch-agents">
+    Cloud サービスの左サイドバーで **ClickHouse agents** をクリックし、エージェントのランチパッドを開きます。続いて **Launch ClickHouse agents** をクリックすると、エージェントビルダーが開きます。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse agents (Beta) が選択された Cloud サービスのナビゲーションと、Launch ClickHouse agents ボタンを含むランチパッド](/images/cloud/agent-builder/launch-ch-agents.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="エージェントを作成する" id="create-the-agent">
+    エージェントビルダーで、左パネル上部の **Create New Agent** をクリックし、以下の基本フィールドを入力します。
+
+    * **Name** - エージェントを識別するための短い名前。
+    * **Description** - エージェントの用途の説明。チームメンバーにも表示されます。
+    * **Category** - エージェントのカテゴリ。組織でカスタムカテゴリを定義していなければ、`General` のままで構いません。
+    * **Instructions** - システムプロンプト。エージェントの役割、回答すべき質問、従うべきビジネスルールを記述します。
+    * **Model** - ドロップダウンからモデルを選択します。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Create New Agent ドロップダウン、フォームフィールド (Name、Description、Category、Instructions、Model)、Capabilities セクションを表示したエージェントビルダーパネル](/images/cloud/agent-builder/agent-builder.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="機能とツールをアタッチする" id="attach-tools">
+    エージェントの機能とツールは 2 か所で設定します。
+
+    メインパネルの **Capabilities** — [Run Code](/ja/agents/builder/code-interpreter)、[Web Search](/ja/agents/builder/web-search)、File Context、Artifacts、[MCP Servers](/ja/agents/builder/mcp-servers)、[Skills](/ja/agents/builder/skills) などのファーストパーティ機能です。エージェントに必要なものをトグルで有効にします。
+
+    <div className="ch-image-sm">
+      <Frame>
+        ![Run Code、Web Search、File Context、Artifacts、MCP Servers、Skills のトグルを表示したエージェントビルダーパネルの Capabilities セクション](/images/cloud/agent-builder/capabilities.webp)
+      </Frame>
+    </div>
+
+    パネル下部の **Add Tools** ボタンから追加する **Tools** — [画像生成](/ja/agents/builder/image-generation)、[ビジョン](/ja/agents/builder/vision)、検索 API、外部サービスなどの third-party インテグレーションです。
+
+    <div className="ch-image-sm">
+      <Frame>
+        ![Add Tools ボタンが強調表示されたエージェントビルダーパネルの下部](/images/cloud/agent-builder/tools-button.webp)
+      </Frame>
+    </div>
+
+    **Add Tools** をクリックすると、カタログを参照できます。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Google、OpenAI Image Tools、Wolfram、DALL-E-3、Tavily Search、Calculator、Stable Diffusion などの third-party インテグレーションがグリッド表示された Agent Tools モーダル](/images/cloud/agent-builder/tools-modal.webp)
+      </Frame>
+    </div>
+
+    [サブエージェント](/ja/agents/builder/subagents)は **Advanced settings** で設定します。詳細はサブエージェントのページを参照してください。
+
+    アタッチした機能とツールは後からいつでも変更できます。
+  </Step>
+
+  <Step title="クエリを実行する" id="run-a-query">
+    エージェントを保存したら、新しい会話を開き、エージェントピッカーから作成したエージェントを選択します。質問 (例: *「今週の行数上位 10 テーブルは？」*) を入力すると、エージェントが計画を立て、必要に応じてツールを呼び出して回答を返します。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![「What are my top 10 tables by row count this week?」という質問と、サービス全体で行数上位 10 個のテーブルをランク付けした Markdown テーブルおよびその下の Key Observations を含むエージェントの応答を示すチャットのやり取り](/images/cloud/agent-builder/chat-query.webp)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 次のステップ {#next-steps}
+
+* チームメンバーと[エージェントを共有](/ja/agents/sharing-and-access)します。
+* エージェントが安定して動作するようになったら、[マーケットプレイス](/ja/agents/marketplace)に公開します。

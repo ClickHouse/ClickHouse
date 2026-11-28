@@ -1,0 +1,15 @@
+3000
+3000
+3000	299900
+1000
+997
+1
+3000
+3000
+query_wide	1	1
+query_compact	1	1
+query_wide_two_columns	1	1
+query_compact_unread_incompressible	1	1
+query_compact_two_steps	1	1
+query_compact_block_of_one_row	1	1
+1	1	1

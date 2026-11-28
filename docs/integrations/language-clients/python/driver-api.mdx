@@ -313,7 +313,7 @@ ClickHouse Connect Client `query*` and `command` methods accept an optional `par
 
 #### Server-side binding {#server-side-binding}
 
-ClickHouse supports [server-side binding](/concepts/features/interfaces/client#cli-queries-with-parameters) for query values. The bound value is sent separately from the query as an HTTP parameter. ClickHouse Connect uses this mode when it detects an expression of the form `{<name>:<datatype>}`. Pass the values as a Python dictionary.
+ClickHouse supports [server-side binding](/concepts/features/interfaces/client#cli-queries-with-parameters) for query values. The bound value is sent separately from the query as an HTTP parameter. ClickHouse Connect uses this mode when it detects an expression of the form `{<name>:<datatype>}` outside strings, quoted identifiers, comments, and heredocs. Pass the values as a Python dictionary.
 
 Parameter names must be ClickHouse ASCII BareWord names. The driver accepts `$` at the start, inside, or at the end of the name when the server would accept it, such as `{$tenant_id:String}`. A dictionary key that starts and ends with `$` and has a buffer value such as `bytes`, `bytearray`, or `memoryview` is reserved for ClickHouse Connect's raw binary parameter convention. If such a key is used for a non-binary server-side parameter, keep it to a single `{name:Type}` placeholder. Repeated `$tag$` names can be parsed by ClickHouse as heredoc markers.
 
@@ -349,11 +349,24 @@ WHERE date >= '2022-10-01 15:20:05'
 
 Server-side binding works with `SELECT` queries and `INSERT ... VALUES` statements. For large plain insert batches, prefer `Client.insert`.
 
+A named `Tuple` parameter accepts a dictionary whose keys exactly match the declared fields. The client orders its values by the type declaration, so dictionary order doesn't matter:
+
+```python
+client.query(
+    "SELECT {p:Tuple(protocol UInt8, port UInt16)}",
+    parameters={"p": {"port": 79, "protocol": 13}},
+)
+```
+
+This also works for named tuples inside `Array`, `Tuple`, `Nullable`, and `Map` values. Missing or extra fields raise `ProgrammingError`. For `Map` parameters, set `dict_parameter_format="map"` as usual. Untyped client-side parameters have no Tuple declaration, so dictionaries keep the configured JSON or map formatting.
+
 #### Client-side binding {#client-side-binding}
 
 ClickHouse Connect also supports client-side parameter binding, which can allow more flexibility in generating templated SQL queries. For client-side binding, the `parameters` argument should be a dictionary or a sequence. Client-side binding uses the Python ["printf" style](https://docs.python.org/3/library/stdtypes.html#old-string-formatting) string formatting for parameter substitution.
 
 Note that unlike server-side binding, client-side binding doesn't work for database identifiers such as database, table, or column names, since Python-style formatting can't distinguish between the different types of strings, and they need to be formatted differently (backticks or double quotes for database identifiers, single quotes for data values).
+
+Because substitution is printf-style, a literal `%` in the query must be written as `%%` whenever `parameters` are passed. A query whose only `{name:Type}` text sits inside a string, quoted identifier, comment, or heredoc takes this client-side path, so an unescaped `%` in such a query raises `ValueError`.
 
 - Example with Python Dictionary, DateTime value and string escaping
 

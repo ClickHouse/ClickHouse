@@ -32,7 +32,15 @@ public:
     using Base = COWHelper<IColumnHelper<ColumnSparse>, ColumnSparse>;
     static Ptr create(const ColumnPtr & values_, const ColumnPtr & offsets_, size_t size_)
     {
-        return Base::create(values_->assumeMutable(), offsets_->assumeMutable(), size_);
+        /// The underlying columns may be shared with other owners (e.g. the original
+        /// sparse column that supplied `offsets_` via `getOffsetsPtr`). `assumeMutable`
+        /// here would `chassert(use_count() == 1)` and abort. Bypass via `const_cast`
+        /// + `getPtr` — the result is returned as `Ptr` (immutable) and any mutation
+        /// must go through `IColumn::mutate`, which deep-clones shared sub-columns.
+        return Base::create(
+            const_cast<IColumn *>(values_.get())->getPtr(),
+            const_cast<IColumn *>(offsets_.get())->getPtr(),
+            size_);
     }
 
     template <typename TColumnPtr>
@@ -44,7 +52,9 @@ public:
 
     static Ptr create(const ColumnPtr & values_)
     {
-        return Base::create(values_->assumeMutable());
+        /// The one-argument constructor appends a default value, so unlike the other immutable
+        /// overloads it must not borrow a potentially shared input column.
+        return Base::create(IColumn::mutate(values_));
     }
 
     template <typename TColumnPtr>
@@ -212,10 +222,10 @@ public:
         {
         }
 
-        bool ALWAYS_INLINE isDefault() const { return current_offset == offsets_size || current_row != offsets[current_offset]; }
-        size_t ALWAYS_INLINE getValueIndex() const { return isDefault() ? 0 : current_offset + 1; }
-        size_t ALWAYS_INLINE getCurrentRow() const { return current_row; }
-        size_t ALWAYS_INLINE getCurrentOffset() const { return current_offset; }
+        [[nodiscard]] bool ALWAYS_INLINE isDefault() const { return current_offset == offsets_size || current_row != offsets[current_offset]; }
+        [[nodiscard]] size_t ALWAYS_INLINE getValueIndex() const { return isDefault() ? 0 : current_offset + 1; }
+        [[nodiscard]] size_t ALWAYS_INLINE getCurrentRow() const { return current_row; }
+        [[nodiscard]] size_t ALWAYS_INLINE getCurrentOffset() const { return current_offset; }
         size_t ALWAYS_INLINE increaseCurrentRow() { return ++current_row; }
         size_t ALWAYS_INLINE increaseCurrentOffset() { return ++current_offset; }
 

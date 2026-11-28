@@ -32,7 +32,7 @@ doc_type: 'reference'
 
 ## Конфигурация {#configuration}
 
-Функции ИИ используют **именованную коллекцию**, в которой хранятся учётные данные провайдера и параметры конфигурации. Для разных функций или их вызовов можно создавать и использовать разные именованные коллекции. Например, для текстовых функций (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) и функций эмбеддингов (`aiEmbed`, `aiSimilarity`) можно определить отдельные именованные коллекции, так как им требуются разные конечные точки и обычно разные модели.
+Для работы функций ИИ требуется grant `AI FUNCTIONS` (см. [Управление доступом](#access-control)); они используют **именованную коллекцию**, в которой хранятся учётные данные провайдера и параметры конфигурации. Для разных функций или их вызовов можно создавать и использовать разные именованные коллекции. Например, для текстовых функций (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) и функций эмбеддингов (`aiEmbed`, `aiSimilarity`) можно определить отдельные именованные коллекции, так как им требуются разные конечные точки и обычно разные модели.
 
 Пример оператора для создания именованной коллекции с учётными данными провайдера: одна — с конечной точкой для чата, другая — с конечной точкой для эмбеддингов:
 
@@ -50,6 +50,41 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
     api_key = 'sk-...';
+```
+
+### Управление доступом {#access-control}
+
+Для вызова функции ИИ требуются две привилегии:
+
+* привилегия на саму функцию: либо привилегия на отдельную функцию (например, `aiGenerate`), либо группа `AI FUNCTIONS` (см. [`GRANT`](/ru/reference/statements/grant#ai-functions));
+* привилегия `NAMED COLLECTION` на выбранные учётные данные.
+
+```sql
+GRANT AI FUNCTIONS ON *.* TO ai_user_role;
+GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
+GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
+```
+
+Настройка [`allow_ai_functions`](/ru/reference/settings/session-settings/allow#allow_ai_functions) (включена по умолчанию) при значении `0` отключает функции ИИ — например, если задать это значение в профиле настроек или с помощью ограничения. Если указан `CONST`, пользователи этого профиля не смогут их включить:
+
+```sql
+CREATE SETTINGS PROFILE no_ai SETTINGS allow_ai_functions = 0 CONST TO ai_restricted_role;
+```
+
+Функции ИИ выполняются только в запросах, запущенных пользователем. Они отклоняются в мутациях (`ALTER TABLE ... UPDATE`, `ALTER TABLE ... DELETE`), а также в ключах, TTL, индексах пропуска данных и проекциях таблицы, поскольку те выполняются в фоновом режиме; при сбросе на диск таблиц `Buffer`, в ходе которого вычисляется функция ИИ, генерируется исключение. Столбцы `DEFAULT` и `MATERIALIZED` вычисляются при вставке; если такой столбец добавляется с помощью `ALTER TABLE`, для существующих частей он вычисляется в фоновом режиме, где функции ИИ не выполняются.
+
+Чтобы заполнить столбец в существующих строках, используйте легковесный [`UPDATE`](/ru/reference/statements/update): он выполняется в рамках запроса и записывает только обновлённый столбец:
+
+```sql
+UPDATE t SET y = aiEmbed(x, 'model') WHERE empty(y) SETTINGS enable_lightweight_update = 1;
+```
+
+Если таблица не удовлетворяет [требованиям к легковесному обновлению](/ru/reference/statements/update#lightweight-update-requirements), используйте `INSERT ... SELECT`, например, обрабатывая по одной партиции за раз:
+
+```sql
+CREATE TABLE t_tmp AS t;
+INSERT INTO t_tmp SELECT x, aiEmbed(x, 'model') AS y FROM t WHERE _partition_id = '202610';
+ALTER TABLE t REPLACE PARTITION ID '202610' FROM t_tmp;
 ```
 
 ### Параметры именованной коллекции {#named-collection-parameters}
@@ -196,32 +231,57 @@ URL `endpoint` в именованной коллекции AI — это исх
 
 ## Обсервабилити {#observability}
 
-Активность функции ИИ отслеживается через ClickHouse [ProfileEvents](/ru/reference/system-tables/query_log):
+Активность функций ИИ отслеживается с помощью [ProfileEvents](/ru/reference/system-tables/query_log) ClickHouse:
 
-| ProfileEvent      | Description                                                                                              |
-| ----------------- | -------------------------------------------------------------------------------------------------------- |
-| `AIAPICalls`      | Количество HTTP-запросов, отправленных провайдеру ИИ.                                                    |
-| `AIInputTokens`   | Общее количество использованных входных токенов.                                                         |
-| `AIOutputTokens`  | Общее количество использованных выходных токенов.                                                        |
-| `AIRowsProcessed` | Количество строк, для которых был получен результат.                                                     |
-| `AIRowsSkipped`   | Количество пропущенных строк (превышена квота или возникла ошибка при `ai_function_throw_on_error = 0`). |
+| ProfileEvent                 | Описание                                                                                                                                                                                       |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AIAPICalls`                 | Количество HTTP-запросов к провайдеру ИИ.                                                                                                                                                      |
+| `AIInputTokens`              | Общее количество израсходованных входных токенов, включая чтение из кэша и запись в кэш.                                                                                                       |
+| `AIOutputTokens`             | Общее количество израсходованных выходных токенов.                                                                                                                                             |
+| `AICacheReadTokens`          | Входные токены, прочитанные из кэша промптов провайдера.                                                                                                                                       |
+| `AICacheWriteTokens`         | Входные токены, записанные в кэш промптов провайдера.                                                                                                                                          |
+| `AIRequestMicroseconds`      | Общее время, затраченное на вызовы провайдера ИИ (сериализация запроса, полный цикл HTTP-запроса, разбор ответа), включая неудачные попытки, но без учёта задержки перед повторными попытками. |
+| `AIRetryBackoffMicroseconds` | Общее время ожидания перед повторными попытками неудачных вызовов провайдера ИИ.                                                                                                               |
+| `AIRowsProcessed`            | Количество строк, для которых получен результат.                                                                                                                                               |
+| `AIRowsSkipped`              | Количество пропущенных строк (превышена квота или произошла ошибка при `ai_function_throw_on_error = 0`).                                                                                      |
 
-Запросите эти события:
+Значения времени суммируются по всем выполнениям и потокам, поэтому могут превышать фактическое (местное) время выполнения запроса.
+Чтобы получить среднюю задержку запроса с учётом неудачных попыток, разделите `AIRequestMicroseconds` на `AIAPICalls`.
+Эти счётчики собираются на уровне запроса и не дают информации о задержке отдельных запросов к провайдеру.
+Если запрос вызывает несколько функций ИИ, их значения суммируются.
+
+Счётчики кэша являются подмножествами `AIInputTokens`, а не дополнительными токенами. Они отражают чтение из кэша и запись в кэш по данным провайдера, а не внутреннее кэширование ClickHouse. Если провайдер не сообщает об использовании кэша, количество токенов кэша
+будет равно нулю.
+
+Выполните запрос к этим событиям:
 
 ```sql
+SYSTEM FLUSH LOGS;
+
 SELECT
+    query_duration_ms,
     ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIRequestMicroseconds'] / 1000 AS request_ms,
+    request_ms / nullIf(api_calls, 0) AS mean_request_ms,
+    ProfileEvents['AIRetryBackoffMicroseconds'] / 1000 AS retry_backoff_ms,
+    ProfileEvents['AIRowsProcessed'] AS rows_processed,
+    ProfileEvents['AIRowsSkipped'] AS rows_skipped,
     ProfileEvents['AIInputTokens'] AS input_tokens,
-    ProfileEvents['AIOutputTokens'] AS output_tokens
+    ProfileEvents['AIOutputTokens'] AS output_tokens,
+    ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
+    ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens
 FROM system.query_log
 WHERE query_id = 'query_id'
-AND type = 'QueryFinish'
+AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
 ORDER BY event_time DESC;
 ```
 
+Параметры `log_queries` и `log_profile_events` по умолчанию включены, поэтому эти события записываются в `system.query_log`.
+Сводные значения по всему серверу также доступны в `system.events`.
+
 {/*
-  Внутреннее содержимое тегов ниже во время сборки документации заменяется на
-  документацию, сгенерированную из system.functions. Пожалуйста, не изменяйте и не удаляйте эти теги.
+  Содержимое приведённых ниже тегов при сборке документации заменяется
+  документацией, сгенерированной на основе system.functions. Не изменяйте и не удаляйте эти теги.
   См.: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
   */}
 

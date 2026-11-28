@@ -19,6 +19,7 @@
 #include <Common/logger_useful.h>
 #include <Processors/Executors/Runtime/V1/ExecutionThreadContext.h>
 #include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/Executors/Runtime/V1/ExecutingGraph.h>
 #include <Common/MemorySpillScheduler.h>
 #include <QueryPipeline/printPipeline.h>
@@ -127,19 +128,19 @@ struct WorkloadResources
         return true;
     }
 
-    bool renewCPULease() const
+    [[nodiscard]] bool renewCPULease() const
     {
         chassert(lease);
         return lease->renew();
     }
 
-    size_t getCPULeaseSlotId() const
+    [[nodiscard]] size_t getCPULeaseSlotId() const
     {
         chassert(lease);
         return lease->slot_id;
     }
 
-    bool isMemorySyncNeeded() const
+    [[nodiscard]] bool isMemorySyncNeeded() const
     {
         return reservation && tracker;
     }
@@ -327,6 +328,11 @@ void PipelineExecutor::setExceptionCallback(std::function<void()> callback)
 
 void PipelineExecutor::finalizeExecution()
 {
+    /// Stamped before the epilogue the output formats write in `onPipelineFinished` below, which is
+    /// not part of the execution.
+    if (step_profiler)
+        step_profiler->markExecutionFinished();
+
     /// The output formats write their epilogue in `onPipelineFinished` below, and for some of them (`Parquet`,
     /// `ORC`, the parallel formatting) that is a substantial amount of work with its own memory, which used
     /// to be done by the executor threads. It stays within the resource accounting of the query: the CPU slots
@@ -497,7 +503,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                     }
                     catch (...)
                     {
-                        cancel(IProcessor::CancelReason::Exception);
+                        cancelWithException(std::current_exception());
                         throw;
                     }
                 }
@@ -694,6 +700,9 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 {
     is_execution_initialized = true;
 
+    if (step_profiler)
+        step_profiler->markExecutionStarted();
+
     /// Read the flag ONCE. A config reload mid-initialization would otherwise split a
     /// single query between lazy and eager strategies (e.g. allocate lazy with max=1 but
     /// then start from the full `setMax` target, stranding subsequent setMax as a no-op).
@@ -722,8 +731,15 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// The eager path spawns a thread for every granted slot, as many as the pipeline width allows.
     tasks.requestThreads(lazy_allocation ? std::max<size_t>(initial_parallel, 1) : num_threads);
 
+    /// A thread runs one job until the execution ends or it is downscaled, so no thread is kept for reuse.
     if (num_threads > 1)
-        pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);
+        pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::QueryPipelineExecutorThreads,
+            CurrentMetrics::QueryPipelineExecutorThreadsActive,
+            CurrentMetrics::QueryPipelineExecutorThreadsScheduled,
+            num_threads,
+            /*max_free_threads=*/ 0,
+            /*queue_size=*/ num_threads);
 }
 
 void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)

@@ -47,6 +47,7 @@ public:
     bool canMoveConditionsToPrewhere() const override { return getTargetTable()->canMoveConditionsToPrewhere(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
+    bool isInsertOrderSensitive() const override { return getTargetTable()->isInsertOrderSensitive(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
     bool supportsSubcolumnCodecs() const override { return has_inner_table && getTargetTable()->supportsSubcolumnCodecs(); }
     /// readImpl forwards the already-analyzed query tree straight to the target table, so the
@@ -112,6 +113,7 @@ public:
 
     /// Runs `checkTableIsNotIncrementalRefreshSource` for every attached and detached table of `database`.
     /// Detached tables are included, because `DROP DATABASE` and `RENAME DATABASE` free their names too.
+    /// External databases are skipped.
     static void checkDatabaseHasNoIncrementalRefreshSources(
         const IDatabase & database, const String & database_name, const ContextPtr & local_context, bool is_drop_database);
 

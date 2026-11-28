@@ -58,7 +58,13 @@ ParseResult fromResponse(const HTTPResponse & response, size_t consumed)
 ParseResult fromException(const Poco::Exception & e)
 {
     ParseResult result;
-    result.error = std::string(e.className()) + ": " + e.displayText();
+    /// `Poco` does not distinguish a malformed message from a truncated one: the parser throws
+    /// `MalformedMessageException`, a subclass of `MessageException` with the same text, where
+    /// `Poco` throws `MessageException`. The difference is checked in `MalformedIsNotTruncated`.
+    const char * class_name = dynamic_cast<const Poco::Net::MalformedMessageException *>(&e)
+        ? Poco::Net::MessageException().className()
+        : e.className();
+    result.error = std::string(class_name) + ": " + e.displayText();
     return result;
 }
 
@@ -143,6 +149,7 @@ const std::vector<std::string> inputs = {
     "HTTP/1.1  503   Slow Down \r\nRetry-After: 1\r\n\r\n",
     "HTTP/1.1 200 OK\r\nA: =?UTF-8?B?aGVsbG8=?=\r\n\r\n",
     "HTTP/1.1 200 OK\r\n\rgarbage\r\nbody",
+    "HTTP/1.1 200 OK\r\nA: b\rX\r\n\r\n",
     "HTTP/1.1 200 OK\r\nA: " + std::string(9000, 'v') + "\r\n\r\n",
     "HTTP/1.1 200 OK\r\n" + std::string(300, 'n') + ": 1\r\n\r\n",
     "HTTP/1.1 200 " + std::string(600, 'r') + "\r\n\r\n",
@@ -200,9 +207,52 @@ TEST(HTTPResponseParser, LimitsHoldBeforeTheHeaderEnds)
         parser.feed(data.data(), data.size());
     };
 
-    EXPECT_THROW(feed_unterminated("HTTP/1.1 404 Not Found\r\nA: 1\r\nB: 2\r\nC: 3\r\nD"), Poco::Net::MessageException);
-    EXPECT_THROW(feed_unterminated("HTTP/1.1 404 Not Found\r\nA: 1234567890\r\n 1234567890"), Poco::Net::MessageException);
-    EXPECT_THROW(feed_unterminated("HTTP/1.1 100 Continue\r\nA: 1\r\nB: 2\r\nC: 3\r\nD"), Poco::Net::MessageException);
+    EXPECT_THROW(feed_unterminated("HTTP/1.1 404 Not Found\r\nA: 1\r\nB: 2\r\nC: 3\r\nD"), Poco::Net::HTTPHeaderLimitException);
+    EXPECT_THROW(feed_unterminated("HTTP/1.1 404 Not Found\r\nA: 1234567890\r\n 1234567890"), Poco::Net::HTTPHeaderLimitException);
+    EXPECT_THROW(feed_unterminated("HTTP/1.1 100 Continue\r\nA: 1\r\nB: 2\r\nC: 3\r\nD"), Poco::Net::HTTPHeaderLimitException);
+}
+
+/// The bytes that violate the syntax throw `MalformedMessageException`, so the request is not
+/// retried; the data that ends too early throws a plain `MessageException`, so it is retried.
+TEST(HTTPResponseParser, MalformedIsNotTruncated)
+{
+    const auto parse = [](const std::string & data)
+    {
+        HTTPResponseParser parser;
+        parser.feed(data.data(), data.size());
+        if (!parser.complete())
+            parser.feedEof();
+    };
+
+    for (const std::string & malformed : std::vector<std::string>{
+             "HTTP/1.1 2000 OK\r\n\r\n",
+             "HTTP/1.1.1.1 200 OK\r\n\r\n",
+             "HTTP/1.1 200 OK\rX\n\r\n",
+             "HTTP/1.1 200 OK\r\nA: b\rX\r\n\r\n",
+             "HTTP/1.1 200 " + std::string(600, 'r') + "\r\n\r\n"})
+    {
+        SCOPED_TRACE(malformed.substr(0, 100));
+        EXPECT_THROW(parse(malformed), Poco::Net::MalformedMessageException);
+    }
+    /// A status code that is not a number is not retried either.
+    EXPECT_THROW(parse("HTTP/1.1 abc OK\r\n\r\n"), Poco::SyntaxException);
+
+    for (const std::string & truncated : std::vector<std::string>{"HTTP/1.1", "HTTP/1.1 20", "HTTP/1.1 200 O", "HTTP/1.1 200 OK\r"})
+    {
+        SCOPED_TRACE(truncated);
+        try
+        {
+            parse(truncated);
+            ADD_FAILURE() << "no exception";
+        }
+        catch (const Poco::Net::MalformedMessageException & e)
+        {
+            ADD_FAILURE() << "malformed: " << e.displayText();
+        }
+        catch (const Poco::Net::MessageException &) // NOLINT(bugprone-empty-catch)
+        {
+        }
+    }
 }
 
 /// The status line is available before the rest of the header arrives.
@@ -239,5 +289,5 @@ TEST(HTTPResponseParser, ResetKeepsTheLimits)
 
     parser.reset();
     EXPECT_FALSE(parser.statusLineComplete());
-    EXPECT_THROW(parser.feed(second.data(), second.size()), Poco::Net::MessageException);
+    EXPECT_THROW(parser.feed(second.data(), second.size()), Poco::Net::HTTPHeaderLimitException);
 }

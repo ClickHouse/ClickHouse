@@ -101,8 +101,7 @@ BlockIO InterpreterUpdateQuery::execute()
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
     /// The spelling must be canonical before the query is enqueued for ON CLUSTER or a Replicated
-    /// database: the oldest DDL entry format carries no settings, so the replaying host would
-    /// otherwise resolve `toTime` with its own default.
+    /// database: the replaying host may not carry this session's settings.
     if (settings[Setting::use_legacy_to_time])
         replaceLegacyToTime(*query_ptr);
 

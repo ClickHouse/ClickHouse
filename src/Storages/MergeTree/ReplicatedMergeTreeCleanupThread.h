@@ -26,6 +26,8 @@ public:
         Int64 ctime = 0;
         Int64 czxid = 0;
         Int32 version = 0;
+        /// Block nodes never get children after creation, so the cached value stays valid.
+        Int32 num_children = 0;
     };
     using NodeCTimeAndVersionCache = std::map<String, NodeCacheEntry>;
     /// Remove old block hashes from ZooKeeper. This is done by the leader replica. Returns the number of removed blocks

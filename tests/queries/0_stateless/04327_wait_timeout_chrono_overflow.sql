@@ -1,3 +1,7 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the subquery query result cache is not used with plan-based parallel replicas
+-- (https://github.com/ClickHouse/ClickHouse/issues/131463), and nothing here depends on parallel replicas.
+
 -- A `Milliseconds`-typed wait timeout that does not fit into Int64 microseconds is rejected by
 -- `SettingFieldTimespan` itself, which `gtest_settings` covers; what is left to the settings that
 -- reach a `wait_for` unchecked, such as the plain UInt64 `interactive_delay`, is the clamp below.

@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
@@ -17,6 +16,7 @@ namespace DB
 StatisticsMinMax::StatisticsMinMax(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
     , data_type(removeNullable(data_type_))
+    , value_type(removeLowCardinalityAndNullable(data_type))
 {
 }
 
@@ -49,16 +49,26 @@ void StatisticsMinMax::merge(const StatisticsPtr & other_stats)
     row_count += other->row_count;
 }
 
-void StatisticsMinMax::serialize(WriteBuffer & buf)
+void StatisticsMinMax::serialize(WriteBuffer & buf, StatisticsFileVersion version)
 {
     writeIntBinary(row_count, buf);
+    if (version >= StatisticsFileVersion::V5)
+    {
+        StatisticsUtils::serializeBounds(min, max, *value_type, buf);
+        return;
+    }
+
+    /// V2 - V4 format: type name followed by min and max in the `Field` encoding
     writeStringBinary(data_type->getName(), buf);
     writeFieldBinary(min, buf);
     writeFieldBinary(max, buf);
 }
 
-std::optional<UInt64> StatisticsMinMax::getSerializedSize() const
+std::optional<UInt64> StatisticsMinMax::getSerializedSize(StatisticsFileVersion version) const
 {
+    if (version >= StatisticsFileVersion::V5)
+        return sizeof(row_count) + StatisticsUtils::getSerializedBoundsSize(min, max, *value_type);
+
     const String type_name = data_type->getName();
     return sizeof(row_count)
         + getLengthOfVarUInt(type_name.size()) + type_name.size()
@@ -72,25 +82,44 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
 
     if (version == StatisticsFileVersion::V1)
     {
-        /// V1 format: min and max were stored as Float64
+        /// V1 format: min and max were stored as `Float64` for any column type. The bounds are not exact (the
+        /// conversion to `Float64` may round a value of an integer or decimal type in either direction), so they
+        /// can neither answer `min` and `max` nor prune, and they cannot be written with the serialization of the
+        /// column type. They are skipped, and the statistics are dropped (see `ColumnStatistics::deserialize`).
         Float64 min_val = 0;
         Float64 max_val = 0;
         readFloatBinary(min_val, buf);
         readFloatBinary(max_val, buf);
-        min = min_val;
-        max = max_val;
+        is_unusable = true;
         return;
     }
 
-    /// V2+ format: type name followed by Field-typed min and max
+    if (version >= StatisticsFileVersion::V5)
+    {
+        StatisticsUtils::deserializeBounds(min, max, *value_type, buf);
+        return;
+    }
+
+    /// V2 - V4 format: type name followed by min and max in the `Field` encoding
     String stored_type_name;
     readStringBinary(stored_type_name, buf);
     if (stored_type_name != data_type->getName())
     {
+        /// Built for another column type: without the bounds, the statistics would exclude the values of this part.
+        is_unusable = true;
         return;
     }
     min = readFieldBinary(buf);
     max = readFieldBinary(buf);
+
+    /// Older versions rewrote the `Float64` bounds of `V1` unchanged in `V2` - `V4`. Such bounds are not exact,
+    /// and they cannot be written with the serialization of the column type.
+    if (!StatisticsUtils::isBoundOfType(min, *value_type) || !StatisticsUtils::isBoundOfType(max, *value_type))
+    {
+        min = Field();
+        max = Field();
+        is_unusable = true;
+    }
 }
 
 std::optional<Float64> StatisticsMinMax::estimateLess(const Field & val) const

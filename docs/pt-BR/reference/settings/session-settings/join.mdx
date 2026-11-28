@@ -15,19 +15,19 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 ## join_algorithm {#join_algorithm}
 
-<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
+<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,hash,ie_join" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Adicionado `ie_join` à lista padrão; assim, uma junção cuja seção `ON` tenha apenas condições de desigualdade é executada com IEJoin em vez de um `CROSS JOIN` com filtro. Por estar por último, ele é usado apenas quando os outros algoritmos não se aplicam."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' ficou obsoleto em favor de algoritmos de junção especificados explicitamente; além disso, agora parallel_hash é preferido em vez de hash"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Adicionado `ie_join` à lista padrão; assim, uma junção cuja seção `ON` tenha apenas condições de desigualdade é executada com IEJoin em vez de um `CROSS JOIN` com filtro. Por estar por último, ele é usado apenas quando os outros algoritmos não se aplicam."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "direct,hash,ie_join"},{"label": "`parallel_hash` é um alias obsoleto de `hash` e foi removido da lista padrão, mas ainda é aceito. Listar `hash` ou `parallel_hash` não controla o grau de paralelismo da junção."}]}, {"id": "row-3","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' ficou obsoleto em favor de algoritmos de junção especificados explicitamente; além disso, agora parallel_hash é preferido em vez de hash"}]}]} />
 
 Especifica qual algoritmo de [JOIN](/pt-BR/reference/statements/select/join) é usado.
 
-Vários algoritmos podem ser especificados, e um deles será escolhido para uma consulta específica com base em kind/strictness e no motor de tabela.
+Vários algoritmos podem ser especificados, e um deles será escolhido para uma consulta específica com base em tipo/strictness e no motor de tabela.
 
 O spill para algoritmos baseados em hash é configurado separadamente de `join_algorithm`. Todos os algoritmos baseados em hash usam [`max_bytes_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) e [`max_bytes_ratio_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) como limiares de spill.
 
 A maioria dos algoritmos afeta uma consulta apenas quando é selecionada para ela. Alguns, no entanto, alteram o planejamento apenas por estarem listados — mesmo como uma alternativa de menor prioridade que não é selecionada ao final — porque a decisão é tomada antes da escolha do algoritmo. Há dois efeitos desse tipo:
 
-* A inferência de tipo da chave de junção se torna mais restritiva (uma junção merge não pode unir chaves de tipos diferentes, por exemplo, `String` e `Nullable(String)`). Isso pode alterar os tipos de resultado das colunas `USING` e pode fazer com que uma junção com uma tabela do mecanismo `Join` falhe com `TYPE_MISMATCH`. Acionado por `full_sorting_merge` e `parallel_full_sorting_merge`.
+* A inferência de tipo da chave de junção se torna mais restritiva (uma junção merge não pode unir chaves de tipos diferentes, por exemplo, `String` e `Nullable(String)`). Isso pode alterar os tipos de resultado das colunas `USING` e pode fazer com que uma junção com uma tabela do motor `Join` falhe com `TYPE_MISMATCH`. Acionado por `full_sorting_merge` e `parallel_full_sorting_merge`.
 * `ORDER BY ... LIMIT` no lado preservado de uma junção recebe uma ordenação explícita em vez de uma leitura na ordem da chave primária, pois presume-se que a junção interrompa a leitura ordenada (uma junção merge insere sua própria ordenação antes da junção; uma partial junção merge reordena os blocos da esquerda; uma junção que pode produzir blocos atrasados também não propaga a leitura ordenada). O resultado é o mesmo, mas o plano é menos eficiente. Acionado por `full_sorting_merge`, `parallel_full_sorting_merge`, `partial_merge`, `prefer_partial_merge`, `grace_hash` e `auto`, e também por um valor diferente de zero em `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join`.
 
 Ambos se aplicam mesmo quando a consulta acaba sendo executada com `hash` ou outro algoritmo. Se isso for indesejável, não liste os algoritmos acima em `join_algorithm` para as consultas afetadas.
@@ -53,7 +53,7 @@ Ao usar o algoritmo `hash`, a parte direita do `JOIN` é carregada na RAM.
 
 * parallel&#95;hash
 
-Uma variação do `hash` join que divide os dados em buckets e constrói várias tabelas hash em vez de uma, de forma concorrente, para acelerar esse processo.
+O mesmo que `hash`, mantido por compatibilidade. Os hash joins `INNER`, `LEFT`, `RIGHT` e `FULL` podem construir a tabela hash em até `max_threads` threads, e o parâmetro `parallel_hash_join_threshold` determina quando isso acontece. Para construí-la em várias threads sempre que o tipo de junção permitir, defina `parallel_hash_join_threshold` como `0`.
 
 Ao usar o algoritmo `parallel_hash`, a parte direita do `JOIN` é carregada na RAM.
 

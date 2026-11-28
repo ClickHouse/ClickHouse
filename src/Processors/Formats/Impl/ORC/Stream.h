@@ -121,12 +121,12 @@ public:
     /// Finishes the stream and returns its size in bytes.
     size_t finish();
 
-    const std::string & getOutput() const { return output; }
+    [[nodiscard]] const std::string & getOutput() const { return output; }
 
     /// Clears the stream to start a new stripe.
     void reset();
 
-    size_t estimateSize() const { return output.size() + buffer.size(); }
+    [[nodiscard]] size_t estimateSize() const { return output.size() + buffer.size(); }
 
 private:
     void flushChunk();

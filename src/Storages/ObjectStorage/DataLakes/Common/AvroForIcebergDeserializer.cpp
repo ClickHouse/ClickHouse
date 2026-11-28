@@ -12,6 +12,10 @@
 #if USE_AVRO
 
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
@@ -31,6 +35,34 @@ namespace DB::Iceberg
 
 using namespace DB;
 
+namespace
+{
+
+/// A field of the Avro type `null` is read as `Nothing`, which has no values. The Iceberg writers use it for a type
+/// that has no values but NULL: the partition field of a `void` transform whose source column was dropped (the `unknown`
+/// type of Iceberg v3). Read it as `Nullable(Nothing)`, so that its values are NULL.
+DataTypePtr makeNothingNullable(const DataTypePtr & type)
+{
+    if (isNothing(type))
+        return makeNullable(type);
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements;
+        for (const auto & element : tuple->getElements())
+            elements.push_back(makeNothingNullable(element));
+        if (tuple->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple->getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
+    }
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return std::make_shared<DataTypeArray>(makeNothingNullable(array->getNestedType()));
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        return std::make_shared<DataTypeMap>(map->getKeyType(), makeNothingNullable(map->getValueType()));
+    return type;
+}
+
+}
+
 AvroForIcebergDeserializer::AvroForIcebergDeserializer(
     std::unique_ptr<ReadBufferFromFileBase> buffer_,
     const IcebergPathFromMetadata & manifest_file_path_,
@@ -43,7 +75,7 @@ try
         = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer), MAX_AVRO_SCHEMA_DEPTH);
 
     avro::NodePtr root_node = manifest_file_reader->dataSchema().root();
-    auto data_type = AvroSchemaReader::avroNodeToDataType(root_node);
+    auto data_type = makeNothingNullable(AvroSchemaReader::avroNodeToDataType(root_node));
 
     MutableColumns columns;
     columns.push_back(data_type->createColumn());
@@ -105,10 +137,12 @@ Int64 AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata() con
     }
 
     /// Older ClickHouse versions wrote both manifest lists and manifest files without the
-    /// `format-version` Avro metadata key, so we fall back to schema-based detection: the
-    /// `sequence_number` field appears at the top level of v2 manifest lists and v2
-    /// manifest entries, but is absent from their v1 counterparts.
-    if (hasPath(f_sequence_number))
+    /// `format-version` Avro metadata key, so we fall back to schema-based detection: v1 has
+    /// neither the `sequence_number` required by v2 manifest lists nor the `data_file.content`
+    /// required by v2 manifest entries (whose `sequence_number` is optional), and v3 adds `first_row_id`.
+    if (hasPath(f_manifest_first_row_id) || hasPath(c_data_file_first_row_id))
+        return 3;
+    if (hasPath(f_sequence_number) || hasPath(c_data_file_content))
         return 2;
     return 1;
 }
@@ -142,8 +176,8 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
     /// Iceberg v2 makes `snapshot_id` optional on the manifest entry: a missing Avro column
     /// or a null value is inherited from the manifest list (`added_snapshot_id`). Not gated
     /// on `format_version > 1` because the version comes from the Avro `format-version` key
-    /// or, failing that, from the presence of `sequence_number` -- a writer omitting both
-    /// would be misclassified as v1 and rejected here.
+    /// or, failing that, from the manifest schema -- a manifest misclassified as v1 would
+    /// be rejected here.
     std::optional<Int64> snapshot_id;
     const bool has_snapshot_id_column = hasPath(f_snapshot_id);
     if (has_snapshot_id_column)
@@ -242,6 +276,11 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             for (const auto & column_stats : values_count.safeGet<Array>())
             {
                 const auto & column_number_and_count = column_stats.safeGet<Tuple>();
+                if (column_number_and_count.size() != 2)
+                    throw Exception(
+                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                        "Expected a key-value pair of 2 elements in {} in manifest file '{}', got {} elements",
+                        path, manifest_file_path, column_number_and_count.size());
                 Int32 number = static_cast<Int32>(column_number_and_count[0].safeGet<Int32>());
                 Int64 count = column_number_and_count[1].safeGet<Int64>();
                 if (path == c_data_file_value_counts)
@@ -265,6 +304,11 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             for (const auto & column_stats : bounds.safeGet<Array>())
             {
                 const auto & column_number_and_bound = column_stats.safeGet<Tuple>();
+                if (column_number_and_bound.size() != 2)
+                    throw Exception(
+                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                        "Expected a key-value pair of 2 elements in {} in manifest file '{}', got {} elements",
+                        path, manifest_file_path, column_number_and_bound.size());
                 Int32 number = static_cast<Int32>(column_number_and_bound[0].safeGet<Int32>());
                 const Field & bound_value = column_number_and_bound[1];
 

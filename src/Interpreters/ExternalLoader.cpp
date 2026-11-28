@@ -8,7 +8,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadPool.h>
@@ -792,14 +792,14 @@ private:
     {
         Info(const String & name_, const std::shared_ptr<const ObjectConfig> & config_) : name(name_), config(config_) {}
 
-        bool loaded() const { return object != nullptr; }
-        bool failed() const { return !object && exception; }
-        bool loadedOrFailed() const { return loaded() || failed(); }
-        bool triedToLoad() const { return loaded() || failed() || isLoading(); }
-        bool failedToReload() const { return loaded() && exception != nullptr; }
-        bool isLoading() const { return loading_id > state_id; }
+        [[nodiscard]] bool loaded() const { return object != nullptr; }
+        [[nodiscard]] bool failed() const { return !object && exception; }
+        [[nodiscard]] bool loadedOrFailed() const { return loaded() || failed(); }
+        [[nodiscard]] bool triedToLoad() const { return loaded() || failed() || isLoading(); }
+        [[nodiscard]] bool failedToReload() const { return loaded() && exception != nullptr; }
+        [[nodiscard]] bool isLoading() const { return loading_id > state_id; }
 
-        Status status() const
+        [[nodiscard]] Status status() const
         {
             if (object)
                 return isLoading() ? Status::LOADED_AND_RELOADING : Status::LOADED;
@@ -808,7 +808,7 @@ private:
             return isLoading() ? Status::LOADING : Status::NOT_LOADED;
         }
 
-        Duration loadingDuration() const
+        [[nodiscard]] Duration loadingDuration() const
         {
             if (isLoading())
                 return std::chrono::duration_cast<Duration>(std::chrono::system_clock::now() - loading_start_time);
@@ -816,7 +816,7 @@ private:
         }
 
         template <typename ReturnType>
-        ReturnType getLoadResult() const
+        [[nodiscard]] ReturnType getLoadResult() const
         {
             if constexpr (std::is_same_v<ReturnType, LoadResult>)
             {
@@ -1109,7 +1109,7 @@ private:
         ThreadGroupSwitcher switcher(thread_group, ThreadName::EXTERNAL_LOADER);
 
         /// Do not account memory that was occupied by the dictionaries for the query/user context.
-        MemoryTrackerBlockerInThread memory_blocker;
+        ServerOwnedMemoryScope memory_blocker;
 
         LOG_TRACE(log, "Start loading object '{}'", name);
         try
