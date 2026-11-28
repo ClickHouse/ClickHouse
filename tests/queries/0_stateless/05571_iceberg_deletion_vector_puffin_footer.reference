@@ -1,0 +1,30 @@
+iceberg_v3_dv_misbound
+ICEBERG_SPECIFICATION_VIOLATION
+ICEBERG_SPECIFICATION_VIOLATION
+1
+iceberg_v3_deletion_vector
+apple	1
+cherry	3
+elderberry	5
+legacy_bare_deletion_vector
+1	legacy
+3	legacy
+deletion-vectors
+90	4473
+unknown_range
+ICEBERG_SPECIFICATION_VIOLATION
+same_name_swapped
+ICEBERG_SPECIFICATION_VIOLATION
+nested_suffix
+1
+mixed_blobs
+apple	1
+cherry	3
+elderberry	5
+duplicate_range
+describes two blobs at offset 4 and size 44
+large_footer
+apple	1
+cherry	3
+elderberry	5
+3

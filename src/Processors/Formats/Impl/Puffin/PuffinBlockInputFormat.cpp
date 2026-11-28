@@ -87,7 +87,7 @@ void validatePuffinFooterFlags(const UInt8 flags[4])
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Puffin footer flags");
 }
 
-String decompressPuffinFooterPayload(const char * data, size_t size)
+String decompressPuffinFooterPayload(const char * data, size_t size, size_t max_payload_size)
 {
     LZ4F_dctx * dctx = nullptr;
     size_t ret = LZ4F_createDecompressionContext(&dctx, LZ4F_VERSION);
@@ -118,15 +118,15 @@ String decompressPuffinFooterPayload(const char * data, size_t size)
     if (frame_info.contentSize == 0)
         throw Exception(ErrorCodes::LZ4_DECODER_FAILED, "Puffin footer LZ4 frame must declare content size");
 
-    const size_t max_decompressed_size = std::min(max_by_ratio, PUFFIN_FOOTER_MAX_PAYLOAD_SIZE);
+    const size_t max_decompressed_size = std::min(max_by_ratio, max_payload_size);
     if (frame_info.contentSize > max_decompressed_size)
     {
-        if (max_decompressed_size == PUFFIN_FOOTER_MAX_PAYLOAD_SIZE)
+        if (max_decompressed_size == max_payload_size)
             throw Exception(
                 ErrorCodes::LZ4_DECODER_FAILED,
                 "Puffin footer LZ4 content size {} exceeds absolute decompression limit {}",
                 frame_info.contentSize,
-                PUFFIN_FOOTER_MAX_PAYLOAD_SIZE);
+                max_payload_size);
 
         throw Exception(
             ErrorCodes::LZ4_DECODER_FAILED,
@@ -425,7 +425,7 @@ VectorWithMemoryTracking<PuffinBlob> parseFooterJSON(const String & footer_json,
     return blobs;
 }
 
-VectorWithMemoryTracking<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekable, size_t file_size)
+VectorWithMemoryTracking<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekable, size_t file_size, size_t max_payload_size)
 {
     if (file_size < 16)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin file too small");
@@ -465,12 +465,12 @@ VectorWithMemoryTracking<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBu
     if (payload_start < 2 * sizeof(PUFFIN_MAGIC))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin footer length: {}", footer_length_signed);
 
-    if (footer_length > PUFFIN_FOOTER_MAX_PAYLOAD_SIZE)
+    if (footer_length > max_payload_size)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Puffin footer payload size {} exceeds absolute limit {}",
             footer_length,
-            PUFFIN_FOOTER_MAX_PAYLOAD_SIZE);
+            max_payload_size);
 
     seekable.seek(static_cast<off_t>(payload_start - sizeof(PUFFIN_MAGIC)), SEEK_SET);
     char leading_magic_buf[4];
@@ -483,7 +483,7 @@ VectorWithMemoryTracking<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBu
 
     String footer_json;
     if ((flags[0] & PUFFIN_FOOTER_COMPRESSED_FLAG) != 0)
-        footer_json = decompressPuffinFooterPayload(footer_payload.data(), footer_payload.size());
+        footer_json = decompressPuffinFooterPayload(footer_payload.data(), footer_payload.size(), max_payload_size);
     else
         footer_json = std::move(footer_payload);
 
@@ -493,16 +493,17 @@ VectorWithMemoryTracking<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBu
 
 }
 
-PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read)
+PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read, bool limit_footer_size)
 {
     PuffinFooter result;
+    const size_t max_payload_size = limit_footer_size ? PUFFIN_FOOTER_MAX_PAYLOAD_SIZE : std::numeric_limits<size_t>::max();
 
     auto * seekable = dynamic_cast<SeekableReadBuffer *>(&buf);
     auto file_size_opt = tryGetFileSizeFromReadBuffer(buf);
 
     if (seekable_read && seekable && seekable->checkIfActuallySeekable() && file_size_opt)
     {
-        result.blobs = readPuffinFooterFromSeekable(*seekable, *file_size_opt);
+        result.blobs = readPuffinFooterFromSeekable(*seekable, *file_size_opt, max_payload_size);
     }
     else
     {
@@ -520,7 +521,7 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read)
         }
 
         ReadBufferFromMemory mem_buf(result.data.data(), result.data.size());
-        result.blobs = readPuffinFooterFromSeekable(mem_buf, result.data.size());
+        result.blobs = readPuffinFooterFromSeekable(mem_buf, result.data.size(), max_payload_size);
     }
 
     return result;

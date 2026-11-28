@@ -1,0 +1,110 @@
+{
+  "location": "data/persistent/legacy_bare_deletion_vector/warehouse/default/legacy_bare_deletion_vector",
+  "table-uuid": "0df07f41-5a36-4fff-9a8e-a9fde9817a98",
+  "last-updated-ms": 1785336300590,
+  "last-column-id": 2,
+  "schemas": [
+    {
+      "type": "struct",
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "type": "long",
+          "required": true
+        },
+        {
+          "id": 2,
+          "name": "source",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "schema-id": 0,
+      "identifier-field-ids": []
+    }
+  ],
+  "current-schema-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "default-spec-id": 0,
+  "last-partition-id": 999,
+  "properties": {},
+  "current-snapshot-id": 7777777777777777776,
+  "snapshots": [
+    {
+      "snapshot-id": 8314182234503896325,
+      "sequence-number": 1,
+      "timestamp-ms": 1785336300589,
+      "manifest-list": "data/persistent/legacy_bare_deletion_vector/warehouse/default/legacy_bare_deletion_vector/metadata/snap-8314182234503896325-0-cac6cfea-266f-44f8-9a3a-70dd8fb68014.avro",
+      "summary": {
+        "operation": "append",
+        "added-files-size": "928",
+        "added-data-files": "1",
+        "added-records": "3",
+        "total-data-files": "1",
+        "total-delete-files": "0",
+        "total-records": "3",
+        "total-files-size": "928",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0"
+      },
+      "schema-id": 0
+    },
+    {
+      "sequence-number": 2,
+      "snapshot-id": 7777777777777777776,
+      "parent-snapshot-id": 8314182234503896325,
+      "timestamp-ms": 1785336300590,
+      "summary": {
+        "operation": "delete",
+        "added-delete-files": "1",
+        "added-position-deletes": "1",
+        "total-delete-files": "1",
+        "total-position-deletes": "1",
+        "total-data-files": "1",
+        "total-records": "3"
+      },
+      "manifest-list": "data/persistent/legacy_bare_deletion_vector/warehouse/default/legacy_bare_deletion_vector/metadata/snap-legacy-bare-deletion-vector.avro",
+      "schema-id": 0
+    }
+  ],
+  "snapshot-log": [
+    {
+      "snapshot-id": 8314182234503896325,
+      "timestamp-ms": 1785336300589
+    },
+    {
+      "snapshot-id": 7777777777777777776,
+      "timestamp-ms": 1785336300590
+    }
+  ],
+  "metadata-log": [
+    {
+      "metadata-file": "data/persistent/legacy_bare_deletion_vector/warehouse/default/legacy_bare_deletion_vector/metadata/00000-b5f70159-508c-4ecc-8606-88e29f41f8e0.metadata.json",
+      "timestamp-ms": 1785336299908
+    }
+  ],
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "default-sort-order-id": 0,
+  "refs": {
+    "main": {
+      "snapshot-id": 7777777777777777776,
+      "type": "branch"
+    }
+  },
+  "statistics": [],
+  "partition-statistics": [],
+  "format-version": 3,
+  "last-sequence-number": 2,
+  "next-row-id": 3
+}

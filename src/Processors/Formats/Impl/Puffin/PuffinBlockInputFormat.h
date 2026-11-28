@@ -19,7 +19,8 @@ struct PuffinFooter
     VectorWithMemoryTracking<UInt8> data;
 };
 
-PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read);
+/// A footer payload over 16 MiB is rejected if `limit_footer_size`.
+PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read, bool limit_footer_size = true);
 
 String readPuffinBlobBytes(
     const PuffinBlob & blob, ReadBuffer & buf, const VectorWithMemoryTracking<UInt8> & data, bool seekable_read);
