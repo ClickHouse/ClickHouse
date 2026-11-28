@@ -65,6 +65,8 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
+    VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const override;
+
     bool empty() const override;
 
     void shutdown() override;
@@ -133,6 +135,7 @@ public:
         ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
     std::vector<LightWeightTableDetails> getLightweightTablesIteratorWithHint(
         ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded, const TablesFilter & tables_filter) const override;
+    VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const override;
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
     bool shouldBeEmptyOnDetach() const override { return false; }

@@ -1,0 +1,11 @@
+--- the default database of clickhouse-local
+0
+UNKNOWN_TABLE
+Maybe you meant default.table_with_projection
+--- an Overlay database over the database of the table
+0
+UNKNOWN_TABLE
+Maybe you meant ov.table_with_projection
+--- the hint of an Overlay database lists only the source tables the user can see
+hidden_table not suggested
+visible_table suggested
