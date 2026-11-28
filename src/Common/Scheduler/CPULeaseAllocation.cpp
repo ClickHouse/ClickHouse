@@ -133,9 +133,8 @@ void CPULeaseAllocation::Lease::reset()
     parent.reset();
 }
 
-CPULeaseAllocation::RequestChain::RequestChain(CPULeaseAllocation * lease, size_t max_threads_, ResourceLink master_link_, ResourceLink worker_link_)
-    : master_link(master_link_)
-    , worker_link(worker_link_)
+CPULeaseAllocation::RequestChain::RequestChain(CPULeaseAllocation * lease, size_t max_threads_, ResourceLink link_)
+    : link(link_)
     , requests(max_threads_) // NOTE: it should not be reallocated after initialization because we use raw pointers and iterators
     , head(requests.begin())
     , tail(requests.begin())
@@ -148,8 +147,6 @@ CPULeaseAllocation::RequestChain::RequestChain(CPULeaseAllocation * lease, size_
 void CPULeaseAllocation::RequestChain::finish()
 {
     tail->finish();
-    if (tail->is_master_slot)
-        request_master_slot = true;
     ++tail;
     if (tail == requests.end())
         tail = requests.begin();
@@ -167,15 +164,11 @@ bool CPULeaseAllocation::RequestChain::enqueue(ResourceCost cost, ResourceCost r
     chassert(!enqueued);
 
     head->reset(cost);
-    head->is_master_slot = std::exchange(request_master_slot, false);
     head->max_consumed = requested_ns_;  // Lease expires if we consume what we requested
 
-    // Master and worker are distinct resources, each with its own per-query scheduling state, so
-    // enqueue to the leaf this request actually targets. `ResourceLink::enqueue` stamps the scheduling
-    // pointers (cleared by `reset()` on renewal) and uses `enqueueRequest` — not the budget-aware
-    // variant, which would redistribute resource between requests from different queries; we budget
-    // per query independently for better fairness.
-    const ResourceLink & link = head->is_master_slot ? master_link : worker_link;
+    // `ResourceLink::enqueue` stamps the scheduling pointers (cleared by `reset()` on renewal) and uses
+    // `enqueueRequest` — not the budget-aware variant, which would redistribute resource between requests
+    // from different queries; we budget per query independently for better fairness.
     if (link.enqueue(&*head))
     {
         head->is_noncompeting = false;
@@ -193,9 +186,8 @@ bool CPULeaseAllocation::RequestChain::cancel(std::unique_lock<std::mutex> & loc
 {
     if (enqueued)
     {
-        auto * queue = head->is_master_slot ? master_link.queue : worker_link.queue;
-        chassert(queue);
-        bool canceled = queue->cancelRequest(&*head);
+        chassert(link.queue);
+        bool canceled = link.queue->cancelRequest(&*head);
         if (!canceled) // Request is currently processed by the scheduler thread, we have to wait
         {
             // Several parking threads can wait here, so wait for a new generation rather than `enqueued`
@@ -203,12 +195,7 @@ bool CPULeaseAllocation::RequestChain::cancel(std::unique_lock<std::mutex> & loc
             cancel_cv.wait(lock, [this, gen] { return cancel_generation != gen; });
         }
         else
-        {
             enqueued = false;
-            // Return the master-slot bit taken by `enqueue`, as `finish` does
-            if (head->is_master_slot)
-                request_master_slot = true;
-        }
         return canceled;
     }
     return false;
@@ -224,13 +211,13 @@ void CPULeaseAllocation::RequestChain::scheduled()
     cancel_cv.notify_all();
 }
 
-CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, CPULeaseSettings settings_, SlotCount initial_max_slots_)
+CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink link_, CPULeaseSettings settings_, SlotCount initial_max_slots_)
     : max_threads(max_threads_)
     , settings(std::move(settings_))
-    , parking_supported(master_link_ && worker_link_ && master_link_ == worker_link_)
+    , parking_supported(static_cast<bool>(link_))
     , log(getLogger("CPULeaseAllocation"))
     , threads(max_threads)
-    , requests(this, max_threads, master_link_, worker_link_)
+    , requests(this, max_threads, link_)
     , acquired_increment(CurrentMetrics::ConcurrencyControlAcquired, 0)
     , scheduled_increment(CurrentMetrics::ConcurrencyControlScheduled, 0)
     , parked_increment(CurrentMetrics::ConcurrencyControlParked, 0)

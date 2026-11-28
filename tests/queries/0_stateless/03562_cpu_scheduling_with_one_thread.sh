@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-fasttest
-# no-parallel: the server only allows one WORKER THREAD resource at a time,
-#   so concurrent runs would fail with "The second resource for WORKER THREAD
+# no-parallel: the server only allows one CPU resource at a time,
+#   so concurrent runs would fail with "The second resource for CPU
 #   is not allowed".
 # no-fasttest: the 5-second benchmark makes this too slow for fast test.
 
@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # create or replace resource and workload
 $CLICKHOUSE_CLIENT -nm -q "
-    CREATE OR REPLACE RESOURCE 03562_worker_cpu (WORKER THREAD, MASTER THREAD);
+    CREATE OR REPLACE RESOURCE 03562_worker_cpu (CONSUME CPU);
     CREATE OR REPLACE WORKLOAD 03562_wl SETTINGS max_concurrent_threads = 1;
 "
 

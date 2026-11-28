@@ -45,10 +45,9 @@ bool waitUntil(Predicate predicate)
 
 }
 
-/// Only worker threads compete for slots (like `CREATE RESOURCE cpu (WORKER THREAD)`), so the master request
-/// is free and finishing it returns no slot. A single report that covers several quanta finishes only the master
-/// request, and the master thread is preempted while its worker request is fully consumed and holds the only slot.
-/// The next worker request needs that slot, so the query must give it back on preemption, or it waits for itself.
+/// A single report that covers several quanta preempts the only running thread while its request is fully consumed
+/// and holds the only slot. The next request needs that slot, so the query must give it back on preemption,
+/// or it waits for itself.
 TEST(SchedulerCPULeaseAllocation, FullPreemptionReturnsConsumedSlots)
 {
     TimeSharedScheduler scheduler;
@@ -63,12 +62,11 @@ TEST(SchedulerCPULeaseAllocation, FullPreemptionReturnsConsumedSlots)
     CPULeaseSettings settings;
     settings.quantum_ns = quantum_ns;
     settings.report_ns = quantum_ns / 10;
-    ResourceLink worker_link;
-    worker_link.queue = queue.get();
-    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 3, ResourceLink{}, worker_link, settings);
+    ResourceLink link;
+    link.queue = queue.get();
+    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 2, link, settings);
 
-    // The free master request is granted immediately, the first worker request takes the only slot,
-    // and the second one waits in the queue.
+    // The first request takes the only slot, and the second one waits in the queue.
     while (semaphore->getInflights().first != 1 || queue->getQueueLengthAndCost().first != 1)
         std::this_thread::yield();
 
@@ -77,7 +75,7 @@ TEST(SchedulerCPULeaseAllocation, FullPreemptionReturnsConsumedSlots)
         auto slot = allocation->acquire();
         auto * lease = dynamic_cast<ISlotLease *>(slot.get());
         lease->startConsumption();
-        burnCPU(4 * quantum_ns); // One processor step that consumes more than all three requests
+        burnCPU(3 * quantum_ns); // One processor step that consumes more than both requests
         return lease->renew();
     });
 
@@ -91,7 +89,7 @@ TEST(SchedulerCPULeaseAllocation, FullPreemptionReturnsConsumedSlots)
     scheduler.stop();
 }
 
-/// Master and worker threads share one resource, which is the mode with parking. The worker parks and gives its
+/// The worker parks and gives its
 /// slot back, another query takes it, and the master runs out of its quantum and is preempted. The next grant
 /// brings the query back to one allocated slot, held by the parked worker but unused. It must resume the master.
 TEST(SchedulerCPULeaseAllocation, GrantResumesPreemptedThreadWhileOtherIsParked)
@@ -111,7 +109,7 @@ TEST(SchedulerCPULeaseAllocation, GrantResumesPreemptedThreadWhileOtherIsParked)
     settings.parking_enabled = true;
     ResourceLink link;
     link.queue = queue.get();
-    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 2, link, link, settings);
+    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 2, link, settings);
 
     // Both requests of the query are granted
     while (semaphore->getInflights().first != 2)
@@ -129,7 +127,7 @@ TEST(SchedulerCPULeaseAllocation, GrantResumesPreemptedThreadWhileOtherIsParked)
         std::this_thread::yield();
 
     // Another query takes the free slot and waits for one more, so the next request of the first query waits behind it
-    auto other = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 2, link, link, settings);
+    auto other = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 2, link, settings);
     while (semaphore->getInflights().first != 2 || queue->getQueueLengthAndCost().first != 1)
         std::this_thread::yield();
 
@@ -184,7 +182,7 @@ TEST(SchedulerCPULeaseAllocation, ParkGivesSlotBackToScheduler)
     settings.parking_enabled = true;
     ResourceLink link;
     link.queue = queue.get();
-    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 2, link, link, settings);
+    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 2, link, settings);
 
     // Both requests of the query are granted
     while (semaphore->getInflights().first != 2)
@@ -194,7 +192,7 @@ TEST(SchedulerCPULeaseAllocation, ParkGivesSlotBackToScheduler)
     auto * worker = dynamic_cast<ISlotLease *>(worker_slot.get());
 
     // Another query waits for a slot
-    auto other = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
+    auto other = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, settings);
     while (queue->getQueueLengthAndCost().first != 1)
         std::this_thread::yield();
 
@@ -226,7 +224,7 @@ TEST(SchedulerCPULeaseAllocation, UnparkAfterShutdown)
     settings.parking_enabled = true;
     ResourceLink link;
     link.queue = queue.get();
-    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 3, link, link, settings);
+    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 3, link, settings);
 
     // All three requests are granted
     while (semaphore->getInflights().first != 3)

@@ -42,9 +42,10 @@ class RestorerFromBackup;
  * entities of the inner layer. Its visible entities are the inherited entities plus the own entities that are not
  * shadowed. The inner layer has priority: configuration > SQL > implicit.
  *
- * Claim keys. A workload claims its key. A resource claims its key and one key per access-mode role it takes: MASTER
- * THREAD, WORKER THREAD, QUERY and MEMORY RESERVATION are served by at most one resource each (see
- * `getMasterThreadResourceName` and friends). READ DISK and WRITE DISK claim nothing.
+ * Claim keys. A workload claims its key. A resource claims its key and one key per access-mode role it takes: CPU,
+ * QUERY and MEMORY RESERVATION are served by at most one resource each (see `getCPUResourceName` and friends).
+ * CONSUME CPU and the deprecated WORKER THREAD take the CPU role. The deprecated MASTER THREAD, READ DISK and
+ * WRITE DISK claim nothing.
  *
  * Shadowing. An own entity is shadowed when an inherited entity claims one of its claim keys. A shadowed entity stays
  * stored but is not visible, as a whole; it is visible again once the inherited entity goes away.
@@ -54,7 +55,7 @@ class RestorerFromBackup;
  * conflicts with an exception.
  *
  * Implicit entities. The implicit layer synthesizes from the server configuration (see
- * `ImplicitWorkloadEntitiesConfig`) the resources `__server_cpu__` (MASTER THREAD, WORKER THREAD) and
+ * `ImplicitWorkloadEntitiesConfig`) the resources `__server_cpu__` (CONSUME CPU) and
  * `__server_memory__` (MEMORY RESERVATION), the workload `default` and the root workload (see below). User entities
  * shadow them. The names of the implicit resources are reserved: statements and loads reject user entities with these
  * names. Implicit entities cannot be dropped.
@@ -200,11 +201,8 @@ public:
     /// Destroy it before any state `handler` reads.
     virtual scope_guard getAllEntitiesAndSubscribe(const OnChangedHandler & handler) = 0;
 
-    /// Returns the name of resource used for CPU scheduling of the master query threads
-    virtual String getMasterThreadResourceName() = 0;
-
-    /// Returns the name of resource used for CPU scheduling of the additional query threads
-    virtual String getWorkerThreadResourceName() = 0;
+    /// Returns the name of resource used for CPU scheduling of query threads
+    virtual String getCPUResourceName() = 0;
 
     /// Returns the name of resource used for query slot scheduling
     virtual String getQueryResourceName() = 0;

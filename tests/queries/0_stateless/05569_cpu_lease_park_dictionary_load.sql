@@ -1,5 +1,5 @@
 -- Tags: no-parallel
--- no-parallel: the server allows only one MASTER THREAD / WORKER THREAD resource at a time
+-- no-parallel: the server allows only one CPU resource at a time
 
 DROP DICTIONARY IF EXISTS d_05569;
 DROP VIEW IF EXISTS v_05569;
@@ -8,7 +8,7 @@ DROP WORKLOAD IF EXISTS 05569_one;
 DROP WORKLOAD IF EXISTS 05569_all;
 DROP RESOURCE IF EXISTS 05569_cpu;
 
-CREATE RESOURCE 05569_cpu (MASTER THREAD, WORKER THREAD);
+CREATE RESOURCE 05569_cpu (CONSUME CPU);
 CREATE WORKLOAD 05569_all;
 CREATE WORKLOAD 05569_one IN 05569_all SETTINGS max_concurrent_threads = 1;
 
