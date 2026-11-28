@@ -31,12 +31,16 @@ public:
 
     void setPassThrough(bool value);
 
+    /// The lazy read is a `LazilyReadFromMergeTree`, which adds its readers at run time.
+    void setLazyReadExpands(bool value) { lazy_read_expands = value; }
+
 protected:
     void updateOutputHeader() override;
 
     ILazyMaterializingRowsPtr lazy_materializing_rows;
     String index_column_name;
     bool pass_through = false;
+    bool lazy_read_expands = false;
 };
 
 }
