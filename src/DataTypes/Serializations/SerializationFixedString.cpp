@@ -124,7 +124,10 @@ void SerializationFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffe
             throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserializing FixedString will lead to overflow");
 
         data.resize(new_data_size);
-        const size_t read_bytes = istr.readBig(reinterpret_cast<char *>(&data[initial_size]), bytes_to_read);
+        const size_t read_bytes = istr.readBigWithPadding(
+            reinterpret_cast<char *>(&data[initial_size]),
+            bytes_to_read,
+            data.capacity() - data.size() + ColumnFixedString::Chars::pad_right);
 
         if (read_bytes % n != 0)
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data of type FixedString. "

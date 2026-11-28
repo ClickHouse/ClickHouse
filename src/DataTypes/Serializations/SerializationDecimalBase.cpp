@@ -61,7 +61,8 @@ void SerializationDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBu
     typename ColumnType::Container & x = typeid_cast<ColumnType &>(column).getData();
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);
-    const size_t size = istr.readBig(reinterpret_cast<char *>(&x[initial_size]), sizeof(FieldType) * limit);
+    const size_t size = istr.readBigWithPadding(
+        reinterpret_cast<char *>(&x[initial_size]), sizeof(FieldType) * limit, (x.capacity() - x.size()) * sizeof(FieldType) + x.pad_right);
     x.resize(initial_size + size / sizeof(FieldType));
 
     if constexpr (std::endian::native == std::endian::big)
