@@ -17,6 +17,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// Pooled serializations share one reference counter between all threads.
+SerializationPtr withThreadLocalCounter(SerializationPtr serialization)
+{
+    const ISerialization * raw = serialization.get();
+    return SerializationPtr(std::make_shared<SerializationPtr>(std::move(serialization)), raw);
+}
+
+}
+
 SimpleDataTypesCache::SimpleDataTypesCache()
 {
     addSimpleType(BinaryTypeIndex::Nothing, "Nothing");
@@ -47,7 +59,7 @@ SimpleDataTypesCache::SimpleDataTypesCache()
 void SimpleDataTypesCache::addSimpleType(BinaryTypeIndex index, const String & type_name)
 {
     auto type = DataTypeFactory::instance().get(type_name);
-    Element element{type_name, type, type->getDefaultSerialization()};
+    Element element{type_name, type, withThreadLocalCounter(type->getDefaultSerialization())};
     by_index[static_cast<uint8_t>(index)] = element;
     by_name.emplace(type_name, std::move(element));
 }
@@ -183,7 +195,7 @@ const DataTypesCache::Element & DataTypesCache::getCacheElement(const String & t
         cache.clear();
 
     auto type = known_type ? *known_type : DataTypeFactory::instance().get(type_name);
-    it = cache.emplace(type_name, Element{type, type->getDefaultSerialization()}).first;
+    it = cache.emplace(type_name, Element{type, withThreadLocalCounter(type->getDefaultSerialization())}).first;
     return it->second;
 }
 
