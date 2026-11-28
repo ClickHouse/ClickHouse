@@ -28,7 +28,8 @@
             v1 UInt64,
             v2 UInt64,
             v3 UInt64,
-            PROJECTION category_proj INDEX category TYPE basic
+            PROJECTION category_proj INDEX category TYPE basic,
+            PROJECTION v2_proj INDEX v2 TYPE basic
         )
         ENGINE = MergeTree ORDER BY id
         SETTINGS index_granularity = 256
@@ -49,6 +50,9 @@
 
     <query>SELECT sum(v1), sum(v2), sum(v3) FROM t_projection_index_pools WHERE category = 'needle' SETTINGS use_indexes_refiner_in_read_pools = {pools}</query>
     <query>SELECT sum(v1), sum(v2), sum(v3) FROM t_projection_index_pools WHERE category = 'needle' SETTINGS use_indexes_refiner_in_read_pools = {pools}, allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_method = 'pread_threadpool'</query>
+    <!-- v2 = 1 matches no row: the small v2_proj bitmap is read first and is empty, so the large
+         category_proj bitmap is never read. -->
+    <query>SELECT sum(v1), sum(v2), sum(v3) FROM t_projection_index_pools WHERE category IN ('hay_1', 'hay_2', 'hay_3', 'hay_4') AND v2 = 1 SETTINGS use_indexes_refiner_in_read_pools = {pools}</query>
 
     <drop_query>DROP TABLE IF EXISTS t_projection_index_pools</drop_query>
 </test>
