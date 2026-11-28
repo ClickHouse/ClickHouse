@@ -7,6 +7,7 @@
 #include <Disks/createVolume.h>
 #include <Formats/NativeWriter.h>
 #include <IO/HTTPCommon.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/S3Common.h>
 #include <Interpreters/Context.h>
@@ -33,7 +34,11 @@
 #include <Common/randomDelay.h>
 #include <Common/thread_local_rng.h>
 #include <Core/UUID.h>
+#include <base/errnoToString.h>
 #include <base/sleep.h>
+
+#include <fcntl.h>
+#include <optional>
 
 namespace fs = std::filesystem;
 
@@ -52,6 +57,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_the_endpoint_id_with_zookeeper_name_prefix;
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsUInt64 min_compressed_bytes_to_fsync_after_fetch;
+    extern const MergeTreeSettingsUInt64 min_compressed_bytes_to_drop_page_cache_after_fetch;
 }
 
 namespace FailPoints
@@ -91,6 +97,27 @@ constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_INVALIDATED_SYSTEM_COLUMNS = 10
 std::string getEndpointId(const std::string & node_id)
 {
     return "DataPartsExchange:" + node_id;
+}
+
+/// Returns the descriptor of a written file if the file can be dropped from the OS page cache.
+/// A file on a remote disk is not in the page cache.
+std::optional<int> getDescriptorToDropPageCache([[maybe_unused]] const WriteBufferFromFileBase & file)
+{
+#if defined(POSIX_FADV_DONTNEED)
+    if (const auto * file_with_descriptor = dynamic_cast<const WriteBufferFromFileDescriptor *>(&file))
+        return file_with_descriptor->getFD();
+#endif
+    return {};
+}
+
+/// Drops a written and synced file from the OS page cache. It is only advice, so a failure is not an error.
+void dropPageCache([[maybe_unused]] int fd, [[maybe_unused]] const String & file_name, [[maybe_unused]] LoggerPtr log)
+{
+#if defined(POSIX_FADV_DONTNEED)
+    /// Unlike most functions, it returns the error number instead of setting errno.
+    if (int res = posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED); res != 0)
+        LOG_WARNING(log, "Cannot drop file {} from the page cache: {}", file_name, errnoToString(res));
+#endif
 }
 
 /// Simple functor for tracking fetch progress in system.replicated_fetches table.
@@ -649,6 +676,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
 
     bool sync = ((*data_settings)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_fetch]
                     && sum_files_size >= (*data_settings)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_fetch]);
+    bool drop_page_cache = ((*data_settings)[MergeTreeSetting::min_compressed_bytes_to_drop_page_cache_after_fetch]
+                    && sum_files_size >= (*data_settings)[MergeTreeSetting::min_compressed_bytes_to_drop_page_cache_after_fetch]);
 
     using PartType = MergeTreeDataPartType;
     PartType part_type = PartType::Wide;
@@ -697,7 +726,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
                 return std::make_unique<WriteBufferFromFile>(full_path, std::min<UInt64>(DBMS_DEFAULT_BUFFER_SIZE, file_size));
             };
 
-            return std::make_pair(downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix, disk, true, *in, output_buffer_getter, projections, throttler, sync), std::move(temporary_directory_lock));
+            return std::make_pair(downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix, disk, true, *in, output_buffer_getter, projections, throttler, sync, /* drop_page_cache = */ false), std::move(temporary_directory_lock));
         }
         catch (const Exception & e)
         {
@@ -745,7 +774,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     return std::make_pair(downloadPartToDisk(
         part_name, replica_path, to_detached, tmp_prefix,
         disk, false, *in, output_buffer_getter,
-        projections, throttler, sync),std::move(temporary_directory_lock));
+        projections, throttler, sync, drop_page_cache),std::move(temporary_directory_lock));
 }
 
 
@@ -756,7 +785,8 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
     OutputBufferGetter output_buffer_getter,
     MergeTreeData::DataPart::Checksums & checksums,
     ThrottlerPtr throttler,
-    bool sync) const
+    bool sync,
+    bool drop_page_cache) const
 {
     size_t files = 0;
     readBinary(files, in);
@@ -784,7 +814,8 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
                 data_part_storage->getRelativePath());
 
         written_files.emplace_back(output_buffer_getter(*data_part_storage, file_name, file_size));
-        HashingWriteBuffer hashing_out(*written_files.back());
+        auto & file = *written_files.back();
+        HashingWriteBuffer hashing_out(file);
         copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
         hashing_out.finalize();
 
@@ -814,6 +845,18 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
             file_name != IMergeTreeDataPart::METADATA_VERSION_FILE_NAME &&
             file_name != IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME)
             checksums.addFile(file_name, file_size, expected_hash);
+
+        /// Drop each file as soon as it is written, so that a big part does not evict much more than one file.
+        /// The page cache does not drop dirty pages, so the file has to be synced first.
+        if (drop_page_cache)
+        {
+            if (auto fd = getDescriptorToDropPageCache(file))
+            {
+                file.finalize();
+                file.sync();
+                dropPageCache(*fd, file.getFileName(), log);
+            }
+        }
     }
 
     /// Call fsync for all files at once in attempt to decrease the latency
@@ -836,7 +879,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     OutputBufferGetter output_buffer_getter,
     size_t projections,
     ThrottlerPtr throttler,
-    bool sync)
+    bool sync,
+    bool drop_page_cache)
 {
     String part_id;
     const auto data_settings = data.getSettings();
@@ -928,14 +972,14 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             projection_part_storage->createDirectories();
 
             downloadBaseOrProjectionPartToDisk(
-                replica_path, projection_part_storage, in, output_buffer_getter, projection_checksum, throttler, sync);
+                replica_path, projection_part_storage, in, output_buffer_getter, projection_checksum, throttler, sync, drop_page_cache);
 
             data_checksums.addFile(
                 projection_name + ".proj", projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
         }
 
         downloadBaseOrProjectionPartToDisk(
-            replica_path, part_storage_for_loading, in, output_buffer_getter, data_checksums, throttler, sync);
+            replica_path, part_storage_for_loading, in, output_buffer_getter, data_checksums, throttler, sync, drop_page_cache);
     }
     catch (const Exception & e)
     {
