@@ -105,6 +105,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
+    extern const int QUERY_WAS_CANCELLED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_REQUEST_PARAMETER;
 }
@@ -1532,7 +1533,17 @@ namespace
             {
                 if (isQueryCancelled())
                 {
-                    executor->cancel();
+                    /// Some work, e.g. `sleep`, checks only whether the query is cancelled in the process list.
+                    query_context->killCurrentQuery();
+                    try
+                    {
+                        executor->cancel();
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() != ErrorCodes::QUERY_WAS_CANCELLED)
+                            throw;
+                    }
                     return false;
                 }
                 return true;
@@ -1589,10 +1600,21 @@ namespace
 
                 throwIfFailedToSendResult();
 
-                return isQueryCancelled();
+                if (!isQueryCancelled())
+                    return false;
+                query_context->killCurrentQuery();
+                return true;
             };
             executor->setCancelCallback(std::move(callback), interactive_delay / 1000);
-            executor->execute();
+            try
+            {
+                executor->execute();
+            }
+            catch (const Exception & e)
+            {
+                if (!cancelled || e.code() != ErrorCodes::QUERY_WAS_CANCELLED)
+                    throw;
+            }
         }
 
         output_format_processor->finalize();
