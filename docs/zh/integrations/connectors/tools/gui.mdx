@@ -59,22 +59,40 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="CHOps">
-  [CHOps](https://ch-ops.io) 是一款免费、开源、自托管的 Web 仪表盘，用于管理和监控 ClickHouse 集群。它将 ClickHouse 的 HTTP 接口封装为浏览器 UI，可用于运行 SQL、排查慢查询、配置告警、管理备份以及控制访问权限。它适用于可通过 HTTP 访问的 ClickHouse 部署。CHOps 目前支持 ClickHouse 26.3 LTS；其他较新版本也可使用，但可能存在少量功能缺失。
+  [CHOps](https://ch-ops.io) 是一款免费、开源、自托管的 Web 仪表盘，用于管理和监控 ClickHouse 集群。它将 ClickHouse 的 HTTP 接口封装为浏览器 UI，可用于运行 SQL、排查慢查询、配置告警、管理备份以及控制访问权限。它适用于可通过 HTTP 访问的 ClickHouse 部署。CHOps 目前支持 ClickHouse 26.3 LTS 和 26.8 LTS；其他较新版本也可使用，但可能存在少量功能缺失。
 
   功能：
 
+  * 支持基于 Kubernetes 的部署
   * SQL 编辑器，支持自动补全、多种 `EXPLAIN` 类型、以 22 种格式导出结果、查询分析器以及查询指标时间线。
   * 集群概览：可终止查询的实时查询监控、查询分析与日志、表和分片检查、合并与变更 (mutation)、分布式 DDL 队列。
   * 自定义仪表盘，提供图表构建器、10 余种图表类型以及可配置的网格布局。
   * 支持 DVR 式回放的监控功能，可逐帧回放历史指标。
-  * 基于 SQL 的告警规则，支持阈值评估和电子邮件通知。
+  * 通过基于 SQL 的告警规则，将定时告警发送到 Google Chat、Microsoft Teams、Slack 和电子邮件
   * 访问控制：ClickHouse 用户和角色管理、权限授予可视化，以及 settings profile 编辑。
   * 备份到兼容 S3 的存储及从中恢复的编排功能，支持备份发现和存储 profile 管理。
   * 索引工具：数据跳过索引可视化、投影管理以及二级索引创建。
-  * 异常、错误和文本日志查看器，提供日历热力图和过滤搜索。
+  * 异常、错误和文本日志查看器，支持过滤搜索。
   * 可作为单个自包含二进制文件部署，也可通过 Docker 或从源码部署。
 
   [CHOps 源代码](https://github.com/Quantrail-Data/CH-Ops)。
+</Accordion>
+
+<Accordion title="hmg-Borzoi">
+  [hmg-Borzoi](https://github.com/hyundaimotorgroup/hmg-borzoi) 是一款开源、自托管的 ClickHouse 集群 Web 管理平台，采用 Apache 2.0 许可证。它将集群监控、SQL 执行、数据库浏览和访问管理整合到同一界面中。
+
+  功能：
+
+  * 用于监控多个 ClickHouse 集群及节点健康状况的仪表盘。
+  * 针对查询性能、存储、复制、合并、变更 (mutation) 和 ClickHouse Keeper 的集群诊断。
+  * SQL 编辑器，支持语法高亮、自动补全、`EXPLAIN` 和查询性能分析。
+  * 数据库和表浏览器，支持 schema 浏览和表血缘可视化。
+  * ClickHouse 用户、角色、settings profile 和权限授予管理。
+  * 基于规则的告警，提供执行历史和应用程序审计日志。
+  * 应用程序级基于角色的访问控制，以及 ClickHouse 凭证的加密存储。
+  * 可通过 Docker Compose 或 Kubernetes 进行自托管部署。
+
+  [快速入门](https://github.com/hyundaimotorgroup/hmg-borzoi/blob/main/docs/en/getting-started.md)。
 </Accordion>
 
 <Accordion title="LibreDB Studio">
@@ -83,7 +101,7 @@ doc_type: 'reference'
   功能：
 
   * 基于 Monaco 构建的 SQL 编辑器，支持 schema 感知的自动补全、多选项卡执行，以及以计划树形式呈现的 `EXPLAIN`。
-  * 支持虚拟化结果网格、筛选和 CSV/JSON 导出的 schema 浏览器。
+  * 支持虚拟化结果网格、过滤和 CSV/JSON 导出的 schema 浏览器。
   * 基于 `system` 表的监控：通过 `system.metrics`、`system.parts` 和 `system.disks` 查看服务器概览和分片大小，通过 `system.query_log` 查看已完成语句，通过 `system.processes` 查看正在执行的语句，并提供终止控制。
   * 在同一界面中使用 ClickHouse、PostgreSQL、MySQL、Oracle、SQL Server、SQLite、MongoDB、Redis、Couchbase 和 Apache Druid，因此分析型存储与为其提供数据的 OLTP 数据库位于同一个浏览器选项卡中。
   * MIT 构建中包含 OIDC 单点登录、基于角色的访问控制和查询审计跟踪。
@@ -92,18 +110,18 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="DataStoria">
-  [DataStoria](https://github.com/FrankChen021/datastoria) 是一款由 AI 驱动的 Web 控制台应用，可集中管理多个 ClickHouse 集群。
+  [DataStoria](https://github.com/FrankChen021/datastoria) 是一款 AI 驱动的 Web 控制台应用，可集中管理多个 ClickHouse 集群。
 
   功能：
 
-  * **AI 智能功能**：使用自然语言探索数据、优化和修复 SQL 查询，并将数据可视化。
-  * **官方 ClickHouse Agent 技能集成**：利用[官方最佳实践](https://github.com/ClickHouse/agent-skills)，向 AI 获取数据库优化建议。
-  * **智能错误诊断**：通过精确的行列高亮即时定位语法错误，并可一键获取 AI 提供的修复建议。
-  * **系统表检查**：借助强大的可视化仪表盘和过滤器，深入查看 `system.query_log`、`system.query_views_log`、`system.zookeeper`、`system.ddl_distributed_queue`、`system.part_log` 和 `system.processes`，快速了解集群状况。
-  * **一键 Explain**：通过可视化 AST 和管道视图即时了解查询执行计划。
-  * **依赖关系图**：可视化表关系，并跟踪数据在 Materialized Views、Distributed 表和外部系统之间的流动。
+  * **AI 智能辅助**：使用自然语言探索数据、优化和修复 SQL 查询，并对数据进行可视化。
+  * **集成官方 ClickHouse Agent Skills**：借助[官方最佳实践](https://github.com/ClickHouse/agent-skills)，向 AI 寻求数据库优化方案和建议。
+  * **智能错误诊断**：精确高亮出错的行和列，即时定位语法错误，并一键获取 AI 修复建议。
+  * **系统表检查**：通过强大的可视化仪表盘和过滤器，深入分析 `system.query_log`、`system.query_views_log`、`system.zookeeper`、`system.ddl_distributed_queue`、`system.part_log` 和 `system.processes`，快速掌握集群状况。
+  * **一键 Explain**：通过可视化的 AST 和管道视图，即时理解查询执行计划。
+  * **依赖关系图**：可视化表关系，并追踪流经物化视图、Distributed 表和外部系统的数据流。
   * **集群监控**：监控所有节点的实时指标、合并操作、复制状态、查询性能等。
-  * **隐私与安全**：所有 SQL 查询均直接从浏览器发送至 ClickHouse 服务器，确保数据完全私密。
+  * **隐私与安全**：所有 SQL 查询均直接从浏览器发送至 ClickHouse 服务器执行，充分保障隐私。
 
   [DataStoria 文档](https://docs.datastoria.app)。
 </Accordion>
@@ -116,7 +134,7 @@ doc_type: 'reference'
   * AI 驱动的 SQL 查询辅助，提供智能建议
   * 原生支持 ClickHouse 连接，并安全处理凭证
   * 界面美观易用，提供多种主题 (浅色、深色及多种彩色变体)
-  * 高级查询结果筛选与探索
+  * 高级查询结果过滤与探索
   * 跨平台支持 (macOS、Windows、Linux)
   * 性能出色，响应迅速
   * 开源，采用 MIT 许可证
@@ -130,7 +148,7 @@ doc_type: 'reference'
   * AI Copilot，可生成、解释和调试 SQL
   * 在统一的工作区中管理和查询多个 ClickHouse 集群
   * 感知 schema 的 SQL 自动补全，以及多选项卡查询工作区
-  * 交互式探索查询结果，支持筛选和可视化
+  * 交互式探索查询结果，支持过滤和可视化
   * AI 驱动的表摘要，帮助理解数据集
   * 直接连接 ClickHouse，支持 SSH 隧道
   * 现代化、对开发者友好的界面，支持浅色、深色及多种主题
@@ -140,18 +158,18 @@ doc_type: 'reference'
 
 <Accordion title="ClickHouse Schema Flow Visualizer">
   [ClickHouse Schema Flow Visualizer](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer) 是一款用于可视化 ClickHouse 表关系的开源 Web 应用。
-  它会连接到 ClickHouse 实例，解析 `system.tables` 元数据 (引擎类型、依赖关系、materialized view 的 SELECT) ，并渲染交互式表级数据流图，以及列级关系图，同时在每条边上标注转换表达式。图表使用 Dagre 布局，并以纯内联 SVG 形式渲染——无需加载任何客户端图表运行时。
+  它会连接到 ClickHouse 实例，解析 `system.tables` 元数据 (引擎类型、依赖关系、物化视图的 SELECT) ，并渲染交互式表级数据流图，以及列级关系图，同时在每条边上标注转换表达式。图表使用 Dagre 布局，并以纯内联 SVG 形式渲染——无需加载任何客户端图表运行时。
 
   功能：
 
   * 通过直观的侧边栏浏览 ClickHouse 数据库和表
-  * 数据流视图：表级上游来源和下游 materialized view
+  * 数据流视图：表级上游来源和下游物化视图
   * 关系视图：列级映射，并在每条边上显示解析出的转换表达式 (例如 `toStartOfHour(scheduled_departure)`、`avgState(delay_minutes)`)
   * 为 `MergeTree`、`Replicated*`、`Distributed`、`MaterializedView` 和 `Dictionary` 提供引擎感知的图标和颜色编码
   * 在关系视图中单击某一列，可高亮显示其在整个管道中的完整数据路径
   * 实时侧边栏过滤器，以及可跳转到任意表、列或引擎的 `Ctrl+K` / `⌘K` 命令面板
   * 可选的元数据叠加层，显示每个表的行数和磁盘占用大小
-  * 将当前图表导出为独立的 HTML 文件
+  * 将当前图表导出为自包含的 HTML 文件
   * 连接 ClickHouse 时支持 TLS，可选择跳过验证并使用自定义 CA / 客户端证书
 
   [ClickHouse Schema Flow Visualizer - 源代码](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer)
@@ -172,47 +190,47 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="HouseOps">
-  [HouseOps](https://github.com/HouseOps/HouseOps) 是适用于 OSX、Linux 和 Windows 的 UI/IDE。
+  [HouseOps](https://github.com/HouseOps/HouseOps) 是一款适用于 OSX、Linux 和 Windows 的 UI/IDE。
 
   功能：
 
-  * 支持语法高亮的查询构建器。可在表格或 JSON 视图中查看响应结果。
+  * 支持语法高亮的查询构建器，可在表格视图或 JSON 视图中查看响应。
   * 将查询结果导出为 CSV 或 JSON。
-  * 显示附带说明的进程列表。支持写入模式。可停止 (`KILL`) 进程。
-  * 数据库图，显示所有表及其列以及其他信息。
+  * 带描述信息的进程列表。写入模式。可终止 (`KILL`) 进程。
+  * 数据库关系图，显示所有表及其列，并附带更多信息。
   * 快速查看列大小。
   * 服务器配置。
 
-  计划开发以下功能：
+  计划开发的功能：
 
   * 数据库管理。
   * 用户管理。
   * 实时数据分析。
   * 集群监控。
   * 集群管理。
-  * 监控 replicated 和 Kafka 表。
+  * 监控复制表和 Kafka 表。
 </Accordion>
 
 <Accordion title="LightHouse">
-  [LightHouse](https://github.com/VKCOM/lighthouse) 是一款轻量级 ClickHouse Web 界面。
+  [LightHouse](https://github.com/VKCOM/lighthouse) 是一款适用于 ClickHouse 的轻量级 Web 界面。
 
   功能：
 
-  * 支持筛选和查看元数据的表列表。
-  * 支持筛选和排序的表预览。
+  * 支持过滤和元数据的表列表。
+  * 支持过滤和排序的表预览。
   * 只读查询执行。
 </Accordion>
 
 <Accordion title="Redash">
   [Redash](https://github.com/getredash/redash) 是一个数据可视化平台。
 
-  Redash 支持包括 ClickHouse 在内的多个数据源，可将来自不同数据源的查询结果联接为一个最终数据集。
+  Redash 支持包括 ClickHouse 在内的多种数据源，并可将来自不同数据源的查询结果合并为一个最终数据集。
 
   功能：
 
-  * 功能强大的查询编辑器。
+  * 强大的查询编辑器。
   * 数据库浏览器。
-  * 可将数据以不同形式呈现的可视化工具。
+  * 可视化工具，能够以多种形式呈现数据。
 </Accordion>
 
 <Accordion title="Grafana">
@@ -267,16 +285,25 @@ doc_type: 'reference'
   [cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) 是一个用于生成表架构 [PlantUML](https://plantuml.com/) 图的脚本。
 </Accordion>
 
-<Accordion title="ClickHouse 表关系图">
-  [ClickHouse table graph](https://github.com/mbaksheev/clickhouse-table-graph) 是一个用于可视化 ClickHouse 表之间依赖关系的简单 CLI 工具。该工具从 `system.tables` 表中获取表之间的关系，并以 [mermaid](https://mermaid.js.org/syntax/flowchart.html) 格式构建依赖关系流程图。借助此工具，您可以轻松可视化表依赖关系并了解 ClickHouse 数据库中的数据流。得益于 mermaid，生成的流程图美观且可轻松添加到您的 markdown 文档中。
+<Accordion title="ClickHouse table graph">
+  [ClickHouse table graph](https://github.com/mbaksheev/clickhouse-table-graph) 是一款简单的命令行工具，用于可视化 ClickHouse 表之间的依赖关系。该工具从 `system.tables` 表中获取表之间的关联关系，并以 [mermaid](https://mermaid.js.org/syntax/flowchart.html) 格式生成依赖关系流程图。借助该工具，您可以轻松地将表依赖关系可视化，并理解 ClickHouse 数据库中的数据流。得益于 mermaid，生成的流程图美观易读，并可轻松添加到您的 markdown 文档中。
+</Accordion>
+
+<Accordion title="ch_insp">
+  [ch&#95;insp](https://github.com/renatko/ch_insp) 是一款开源终端 UI，用于探索 ClickHouse 物化视图以及源表与目标表之间的数据流。
+
+  * 可视化源表、物化视图和目标表之间的数据流。
+  * 查看列血缘、视图定义和本地节点指标。
+  * 搜索和过滤数据流，或离线探索 SQL schema 转储。
+  * 仅执行只读的 ClickHouse 查询。
 </Accordion>
 
 <Accordion title="xeus-clickhouse">
-  [xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) 是一个适用于 ClickHouse 的 Jupyter 内核，支持在 Jupyter 中使用 SQL 查询 CH 数据。
+  [xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) 是适用于 ClickHouse 的 Jupyter 内核，支持在 Jupyter 中使用 SQL 查询 CH 数据。
 </Accordion>
 
 <Accordion title="MindsDB Studio">
-  [MindsDB](https://mindsdb.com/) 是一个适用于包括 ClickHouse 在内的数据库的开源 AI 层，可让您轻松开发、训练和部署先进的机器学习模型。MindsDB Studio(GUI) 可让您从数据库训练新模型、解读模型作出的预测、识别潜在的数据偏差，并使用可解释 AI 功能评估和可视化模型准确性，以便更快地调整和优化机器学习模型。
+  [MindsDB](https://mindsdb.com/) 是一个面向包括 ClickHouse 在内的多种数据库的开源 AI 层，可让您轻松开发、训练和部署先进的机器学习模型。借助 MindsDB Studio (GUI)，您可以基于数据库训练新模型、解读模型生成的预测、识别潜在的数据偏差，并使用可解释 AI 功能评估和可视化模型准确性，从而更快地调整和优化机器学习模型。
 </Accordion>
 
 <Accordion title="DBM">
@@ -284,7 +311,7 @@ doc_type: 'reference'
 
   功能：
 
-  * 支持查询历史记录 (分页、全部清除等)
+  * 支持查询历史 (分页、全部清除等)
   * 支持对选中的 SQL 子句执行查询
   * 支持终止查询
   * 支持表管理 (元数据、删除、预览)
@@ -351,38 +378,38 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Uptrace">
-  [Uptrace](https://github.com/uptrace/uptrace) 是一款基于 OpenTelemetry 和 ClickHouse 的 APM 工具，提供分布式链路追踪和指标。
+  [Uptrace](https://github.com/uptrace/uptrace) 是一款 APM 工具，基于 OpenTelemetry 和 ClickHouse 提供分布式追踪和指标功能。
 
   功能：
 
-  * [OpenTelemetry 链路追踪](https://uptrace.dev/opentelemetry/distributed-tracing.html)、指标和日志。
-  * 使用 AlertManager 发送电子邮件、Slack 和 PagerDuty 通知。
-  * 用于聚合 span 的类 SQL 查询语言。
-  * 用于查询指标的类 PromQL 语言。
-  * 预构建的指标仪表盘。
-  * 通过 YAML 配置支持多个用户/项目。
+  * [OpenTelemetry 追踪](https://uptrace.dev/opentelemetry/distributed-tracing.html)、指标和日志。
+  * 借助 AlertManager 发送电子邮件/Slack/PagerDuty 通知。
+  * 类 SQL 查询语言，用于聚合 span。
+  * 类 PromQL 语言，用于查询指标。
+  * 预置的指标仪表盘。
+  * 通过 YAML config 支持多用户/多项目。
 </Accordion>
 
 <Accordion title="clickhouse-monitoring">
-  [clickhouse-monitoring](https://github.com/duyet/clickhouse-monitoring) 是一个简单的 Next.js 仪表盘，依赖 `system.*` 表来帮助监控并概览您的 ClickHouse 集群。
+  [clickhouse-monitoring](https://github.com/duyet/clickhouse-monitoring) 是一个简洁的 Next.js 仪表盘，基于 `system.*` 表帮助您监控 ClickHouse 集群并提供整体概览。
 
   功能：
 
-  * 查询监控：当前查询、查询历史记录、查询资源 (内存、读取的分片、file&#95;open 等) 、资源消耗最高的查询、最常使用的表或列等。
-  * 集群监控：总内存/CPU 使用情况、分布式队列、全局设置、mergetree 设置、指标等。
-  * 表和分片信息：提供列级别的大小、行数、压缩率、分片大小等详细信息。
-  * 实用工具：Zookeeper 数据探索、查询 EXPLAIN、终止查询等。
-  * 指标可视化图表：查询和资源使用情况、合并/变更数量、合并性能、查询性能等。
+  * 查询监控：当前查询、查询历史、查询资源 (内存、读取的 parts、file&#95;open 等) 、开销最大的查询、最常用的表或列等。
+  * 集群监控：内存/CPU 总用量、分布式队列、全局设置、mergetree 设置、指标等。
+  * 表和 parts 信息：大小、行数、压缩情况、part 大小等，可细化到列级别。
+  * 实用工具：Zookeeper 数据探索、查询 EXPLAIN、强制终止查询等。
+  * 可视化指标图表：查询与资源用量、合并/变更 数量、合并性能、查询性能等。
 </Accordion>
 
 <Accordion title="CKibana">
-  [CKibana](https://github.com/TongchengOpenSource/ckibana) 是一项轻量级服务，可让您使用原生 Kibana UI 轻松搜索、探索和可视化 ClickHouse 数据。
+  [CKibana](https://github.com/TongchengOpenSource/ckibana) 是一个轻量级服务，让您可以直接使用原生 Kibana UI 轻松搜索、探索和可视化 ClickHouse 数据。
 
   功能：
 
-  * 将原生 Kibana UI 的图表请求转换为 ClickHouse 查询语法。
-  * 支持采样和缓存等高级功能，以提升查询性能。
-  * 最大限度降低用户从 ElasticSearch 迁移到 ClickHouse 后的学习成本。
+  * 将原生 Kibana UI 发出的图表请求转换为 ClickHouse 查询语法。
+  * 支持采样和缓存等高级功能，提升查询性能。
+  * 大幅降低用户从 ElasticSearch 迁移到 ClickHouse 后的学习成本。
 </Accordion>
 
 <Accordion title="Telescope">
@@ -390,7 +417,7 @@ doc_type: 'reference'
 
   功能：
 
-  * 简洁、响应式的 UI，提供强大的过滤器和可自定义的字段选择。
+  * 简洁、响应式的 UI，提供强大的筛选条件和可自定义的字段选择。
   * FlyQL 语法，支持直观且富有表现力的日志筛选。
   * 支持按时间绘制图表和分组，包括嵌套的 JSON、Map 和 Array 字段。
   * 可选支持原始 SQL `WHERE` 查询，用于高级筛选 (包含权限检查) 。
@@ -405,7 +432,7 @@ doc_type: 'reference'
   [ClickLens](https://ntk148v.github.io/clicklens/) 是一个现代化、功能强大且用户友好的 Web 界面，用于管理和监控 ClickHouse 数据库。它为开发人员、分析师和管理员提供了一套全面的工具，使其能够高效地与 ClickHouse 集群交互。ClickHouse 是一款出色的分析型数据库，但通过 CLI 或基础工具管理它可能颇具挑战。ClickLens 通过提供以下功能弥合了这一差距：
 
   * Discover - 灵活、类似 Kibana 的任意表数据探索
-  * SQL Console - 使用语法高亮和流式结果编写、执行和分析查询
+  * SQL 控制台 - 使用语法高亮和流式结果编写、执行和分析查询
   * 实时监控 - 密切关注集群运行状况、查询性能和资源使用情况
   * schema 浏览器 - 浏览数据库、表、列、parts 等
   * 访问控制 - 直接通过 UI 管理用户和角色
@@ -415,16 +442,16 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="CHouse UI">
-  [CHouse UI](https://chouse-ui.com) 是一个开源、自托管的 ClickHouse Web 界面，专为**在生产环境中运行 ClickHouse 的团队**打造。大多数工具通常只擅长某一个方面——查询工作区、仪表板、AI 助手或集群监控；而 CHouse UI 则将这些能力*结合*在一起：既提供团队访问层，也支持多集群统一监控，还内置一个自主运行的只读 AI SRE。不同于需要直接提供数据库凭据的客户端，它会在服务端加密存储凭据，并通过自身的 **Role-Based 访问控制 (RBAC)** 层控制访问，因此浏览器永远无法看到 ClickHouse 密码。
+  [CHouse UI](https://chouse-ui.com) 是一个开源、自托管的 ClickHouse Web 界面，专为**在生产环境中运行 ClickHouse 的团队**打造。大多数工具通常只擅长某一个方面——查询工作区、仪表盘、AI 助手或集群监控；而 CHouse UI 则将这些能力*结合*在一起：既提供团队访问层，也支持多集群统一监控，还内置一个自主运行的只读 AI SRE。不同于需要直接提供数据库凭据的客户端，它会在服务端加密存储凭据，并通过自身的 **基于角色的访问控制 (RBAC)** 层控制访问，因此浏览器永远无法看到 ClickHouse 密码。
 
   功能：
 
-  * **团队访问与安全** - 应用级 RBAC (预定义角色 + 自定义角色、细粒度的按 database/表划分的数据访问规则) 、带真实 session 上下文的审计日志，以及使用 AES-256-GCM 加密的服务端凭据。
+  * **团队访问与安全** - 应用级 RBAC (预定义角色 + 自定义角色、细粒度的按 数据库/表划分的数据访问规则) 、带真实 session 上下文的审计日志，以及使用 AES-256-GCM 加密的服务端凭据。
   * **多集群统一监控** - 在一个面板中查看所有已配置的 集群 (status、memory、活动查询、异常、趋势迷你图) ，每张卡片独立轮询，并由后端 snapshot 轮询器提供支持。
   * **Chouse AI — Fleet Doctor** - 一个自主运行的只读 AI SRE：它使用受保护的仅限 `system.*` 的 `SELECT` 工具 (ClickHouse `readonly=1`) 扫描整个集群群组，定位根因，并生成结构化报告，其中包含对高负载查询的深入分析和建议的重写方案。它绝不会修改 集群。
-  * **监控选项卡中的 AI** - 在 Query Logs 的某一行中提供“使用 Chouse AI 优化” (重写 + 前后 `EXPLAIN` 估算对比 + 在 SQL workspace 中打开) ，以及在 `system.errors` 某一行或某个 part 日志条目上提供一键“诊断”。
+  * **监控选项卡中的 AI** - 在 Query Logs 的某一行中提供“使用 Chouse AI 优化” (重写 + 前后 `EXPLAIN` 估算对比 + 在 SQL 工作区 中打开) ，以及在 `system.errors` 某一行或某个 part 日志条目上提供一键“诊断”。
   * **阈值告警** - 节点 memory 百分比、单查询 memory，以及长时间运行查询规则可发送到 Slack 和电子邮件——并在超出阈值时附带自主根因分析。
-  * **完整工作区** - Monaco SQL 编辑器、schema 浏览器、支持 kill 的实时查询视图、ClickHouse 原生监控 (memory 明细、parts/merges、副本延迟、延迟百分位数) ，以及数据导入/导出。
+  * **完整工作区** - Monaco SQL 编辑器、schema 浏览器、支持 强制终止 的实时查询视图、ClickHouse 原生监控 (memory 明细、parts/合并、副本延迟、延迟百分位数) ，以及数据导入/导出。
 
   开源 (Apache 2.0) ，优先面向本地部署——所有功能开箱即用，没有付费层级。
 
@@ -444,28 +471,28 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Beekeeper Studio">
-  [Beekeeper Studio](https://www.beekeeperstudio.io/) 是一款免费的 开源 SQL 编辑器和数据库管理工具，支持 ClickHouse。
+  [Beekeeper Studio](https://www.beekeeperstudio.io/) 是一款免费、开源的 SQL 编辑器和数据库管理工具，支持 ClickHouse。
 
-  功能特性：
+  功能：
 
-  * 现代化的 SQL 编辑器，支持 自动补全 和多选项卡查询执行。
-  * 可浏览表、视图和列的 schema 浏览器。
+  * 现代化 SQL 编辑器，支持自动补全，可在多个选项卡中执行查询。
+  * schema 浏览器，可浏览表、视图和列。
   * 保存并整理常用查询。
-  * 跨平台桌面应用 (Windows、macOS、Linux) ，并提供 自托管／Web 版本。
+  * 跨平台桌面应用 (Windows、macOS、Linux) ，另提供自托管/Web 版本。
 
   [Beekeeper Studio 与 ClickHouse 指南](https://docs.beekeeperstudio.io/user_guide/connecting/clickhouse/) · [GitHub](https://github.com/beekeeper-studio/beekeeper-studio)
 </Accordion>
 
 <Accordion title="Tabularis">
-  [Tabularis](https://github.com/TabularisDB/tabularis) 是一款面向 Windows、macOS 和 Linux 的开源桌面 SQL 工作区，采用 Apache 2.0 许可证。其 ClickHouse 支持由应用内安装的官方 插件 提供，该 插件 通过 Rust `clickhouse` 客户端与 HTTP 接口 (`8123`，启用 TLS 时为 `8443`) 通信。
+  [Tabularis](https://github.com/TabularisDB/tabularis) 是一款适用于 Windows、macOS 和 Linux 的开源桌面 SQL 工作区，基于 Apache 2.0 许可证发布。对 ClickHouse 的支持由一个官方插件提供，可直接在应用内安装；该插件通过 Rust `clickhouse` 客户端与 HTTP 接口 (`8123`，启用 TLS 时为 `8443`) 通信。
 
-  功能特性：
+  功能：
 
-  * 浏览数据库、表和视图，支持 Native ClickHouse 类型，包括 数据跳过索引 及其类型、列和 granularity。
-  * 基于 Monaco 的 SQL 编辑器，支持 自动补全、多语句执行和分页结果。
-  * 可在数据网格中直接进行 Inline insert、update 和删除；可为 `CREATE TABLE`、`ALTER TABLE ... ADD/MODIFY/RENAME COLUMN` 和 `ADD INDEX` 生成 DDL。
-  * 内置 MCP 服务器，使 AI 智能体 能够在同一应用中读取 schema 并运行查询。
-  * 在同一 window 中同时管理 ClickHouse、PostgreSQL、MySQL、SQLite、DuckDB、Redis、MongoDB 以及其他引擎。
+  * 浏览数据库、表和视图，支持 ClickHouse 原生类型，包括数据跳过索引及其类型、列和粒度。
+  * 基于 Monaco 的 SQL 编辑器，支持自动补全、多语句执行和结果分页。
+  * 可在数据网格中直接插入、更新和删除数据；可为 `CREATE TABLE`、`ALTER TABLE ... ADD/MODIFY/RENAME COLUMN` 和 `ADD INDEX` 生成 DDL。
+  * 内置 MCP 服务器，AI 代理可在同一应用中读取 schema 并运行查询。
+  * 在同一窗口中同时使用 ClickHouse 与 PostgreSQL、MySQL、SQLite、DuckDB、Redis、MongoDB 等其他引擎。
 
   [Tabularis ClickHouse 插件](https://github.com/TabularisDB/tabularis-clickhouse-plugin) · [官网](https://tabularis.dev)
 </Accordion>
@@ -483,6 +510,19 @@ doc_type: 'reference'
   * SSH 隧道、从密钥管理器读取密码、只读连接、MCP 服务器，以及可提供查询建议的 AI 助手——未经您批准，不会执行任何操作。
 
   [官网](https://dbine.com) · [下载](https://github.com/addlayer-io/dbine/releases)
+</Accordion>
+
+<Accordion title="QoreDB">
+  [QoreDB](https://github.com/QoreDB/QoreDB) 是一款基于 Rust 和 Tauri 构建的开放核心 (open-core) 桌面数据库客户端，原生支持 ClickHouse。
+
+  功能特性：
+
+  * 通过 HTTP (8123) 和 HTTPS (8443) 接口连接。
+  * SQL 编辑器，支持语法高亮、自动补全和虚拟化结果网格。
+  * 执行前对语句进行分类，在生产环境连接上执行破坏性查询前会请求确认。
+  * 可通过 `KILL QUERY` 取消正在运行的查询。
+  * 支持为每个连接单独启用只读模式。
+  * 支持 macOS、Windows 和 Linux。核心部分采用 Apache 2.0 许可证。
 </Accordion>
 
 ## 商业 {#commercial}
@@ -637,12 +677,12 @@ doc_type: 'reference'
   功能：
 
   * 连接后即可查看服务器概览——版本、运行时间、正在运行的查询、活跃合并、parts 和存储大小、副本状态，以及集群和节点，全部一目了然。
-  * 提供可视化查询构建器 (列选择器、过滤器、排序、限制) ，以及带语法高亮的 Monaco SQL 编辑器，并为每个连接保留查询历史记录。
+  * 提供可视化查询构建器 (列选择器、筛选条件、排序、限制) ，以及带语法高亮的 Monaco SQL 编辑器，并为每个连接保留查询历史。
   * 提供可视化 `CREATE TABLE` 向导，支持 `MergeTree` 变体、`ORDER BY`、`PARTITION BY`、`SETTINGS` 以及 `Nullable()` 自动封装。
   * 原生支持 ClickHouse 类型处理——`Nullable`、`Array`、`LowCardinality` 和嵌套对象。
   * 支持向量搜索——将 `Array(Float32)` embedding 列渲染为紧凑的向量单元，提供 2D embedding 可视化，并可通过 `cosineDistance` 查找相似项。
   * 支持在结果表中内联编辑数据并按批次保存，同时可使用 ClickHouse 的原生格式导入和导出 CSV/JSON/SQL。
-  * 连接选项包括：HTTP/HTTPS、用于访问 firewall 后私有集群的 SSH 隧道，以及用于安全浏览 production 环境的可选只读模式。
+  * 连接选项包括：HTTP/HTTPS、用于访问 firewall 后私有集群的 SSH 隧道，以及用于安全浏览 生产环境 的可选只读模式。
   * 支持 ClickHouse Cloud 和 自托管 部署。
 </Accordion>
 
@@ -655,8 +695,8 @@ doc_type: 'reference'
   * 按时间将相关告警归组为事件，灵敏度可调。
   * 表大小、行数和请求数随时间的变化，以及各主机之间的偏斜和不均衡指标。
   * 每列的压缩和未压缩大小、压缩节省量以及编解码器，并配有图表。
-  * 完整的查询历史记录，包含状态、异常码、耗时、内存以及读写的行数和字节数。
-  * 可按文本、表、用户、主机、耗时、状态和异常码预设对查询进行过滤。
+  * 完整的查询历史，包含状态、异常码、耗时、内存以及读写的行数和字节数。
+  * 可按文本、表、用户、主机、耗时、状态和异常码预设对查询设置筛选条件。
   * 按耗时、用户和类型展示的查询图表；带异常检测的各主机负载图表。
   * 针对主机资源的阈值告警，可说明问题并推荐修复方案。
 </Accordion>
@@ -673,4 +713,20 @@ doc_type: 'reference'
   * 支持 Windows、macOS 和 Linux 平台。
 
   提供免费的社区版，付费版本则提供更多功能。
+</Accordion>
+
+<Accordion title="TableStudio">
+  [TableStudio](https://tablestudio.sh/databases/clickhouse) 是一款原生 macOS 数据库客户端，除 ClickHouse 外，还支持 PostgreSQL、MySQL、SQLite、SQL Server 等数据库。
+
+  功能：
+
+  * 通过 HTTP 接口连接 ClickHouse Cloud 和自托管服务器，可直接连接，也可通过 SSH 隧道连接。
+  * 在查询运行前通过 `EXPLAIN ESTIMATE` 估算其将读取的行数，浏览表时仅读取可见列。
+  * 基于 `system.query_log` 提供查询洞察，并给出经 `EXPLAIN WHATIF` 验证的跳数索引建议。
+  * 针对排序键、分区、`Nullable` 列以及 `LowCardinality` 候选列进行 schema 检查。
+  * 针对长时间运行的 变更、失败的合并、卡住的复制队列以及分布式插入进行健康检查。
+  * 可在 Mac 上启动、停止和创建本地 ClickHouse 服务器，并在执行高风险变更前创建还原点。
+  * 为 Claude Code、Codex 和 Cursor 等编码代理提供 MCP 服务器和插件，读取操作仅限只读，生产环境变更会先暂存以供审核。
+
+  提供 7 天免费试用，之后可购买一次性许可证。
 </Accordion>

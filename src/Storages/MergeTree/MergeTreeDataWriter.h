@@ -173,9 +173,11 @@ private:
         bool defer_fsync,
         const MergeTreeTransactionPtr & txn = nullptr);
 
+    /// `is_insert` tells whether the parent part is created by an insert.
     static MergeTreeTemporaryPartPtr writeProjectionPartImpl(
         const String & part_name,
         bool is_temp,
+        bool is_insert,
         IMergeTreeDataPart * parent_part,
         const MergeTreeData & data,
         Block block,

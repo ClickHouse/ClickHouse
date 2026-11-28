@@ -1,0 +1,299 @@
+---
+slug: /clickstack/observability/integration-examples/nginx-traces
+title: 'مراقبة تتبعات Nginx باستخدام ClickHouse Observability'
+sidebarTitle: 'تتبعات Nginx'
+description: 'اجمع تتبعات Nginx وابحث فيها واعرضها مرئيًا في ClickHouse Observability عبر إدخال بيانات مُدار أو مُدار ذاتيًا.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'Nginx', 'تتبّع', 'otel']
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+التقط بيانات التتبّع الموزّع من Nginx باستخدام وحدة OpenTelemetry لـ Nginx، ثم أرسلها إلى ClickHouse Observability. ويمكنك استخدام [مجموعة البيانات التجريبية](#demo-dataset) لتجربة التكامل دون الحاجة إلى تثبيت Nginx.
+
+## المتطلبات المسبقة {#prerequisites}
+
+* خدمة ClickHouse Observability
+* لبيانات التتبّع الخاصة بك: نسخة مثبّتة من Nginx مع وحدة OpenTelemetry، وصلاحية تعديل تهيئتها؛ ويستخدم مثال Docker أدناه `nginx:1.27-otel`
+* لمجموعة البيانات التجريبية: `curl` وDocker
+
+### بيانات الاتصال {#connection-details}
+
+<Tabs>
+  <Tab title="مُدار بالكامل">
+    <BetaBadge label="خدمة في المرحلة التجريبية" />
+
+    افتح ClickHouse Observability وانتقل إلى **إعدادات الفريق ← البيانات ← بيانات القياس عن بُعد المُدارة**. انسخ نقطة النهاية ومفتاح API باستخدام **نسخ بيانات الاتصال**، أو اختر **إظهار المفتاح** لعرض المفتاح المُخفى.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![بيانات الاتصال في صفحة بيانات القياس عن بُعد المُدارة](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    تُصدِّر وحدة Nginx البيانات عبر **OTLP/gRPC**، وعادةً على المنفذ **4317**، بينما يستخدم العرض التوضيحي الخاص بـ JSON بروتوكول **OTLP/HTTP**، وعادةً على المنفذ **4318**. استخدم نقطة النهاية المطابقة للبروتوكول، مع تضمين `https://` عند الحاجة إلى TLS:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_GRPC_ENDPOINT='https://YOUR_OTEL_HOST:4317'
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    استبدل العناصر النائبة ببيانات الاتصال الخاصة بخدمتك. استخدم نقطة نهاية HTTP الأساسية دون `/v1/traces`؛ إذ يضيف مُصدِّر جامع البيانات هذا المسار تلقائيًا.
+  </Tab>
+
+  <Tab title="مُدار ذاتيًا">
+    استخدم نقاط نهاية OTLP وإعدادات المصادقة الخاصة بجامع البيانات لديك. إذا كان جامع البيانات لا يتطلب المصادقة، فاحذف التوجيه `header authorization` من إعداد Nginx والكتلة `headers` من جامع بيانات العرض التوضيحي. راجع [دليل البدء للإصدار المُدار ذاتيًا](/ar/clickstack/self-configured/getting-started/managed).
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_GRPC_ENDPOINT='http://YOUR_COLLECTOR_HOST:4317'
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+يجب أن يكون الوصول إلى نقطة نهاية gRPC ممكنًا من Nginx. عند استخدام Docker Desktop، استخدم `host.docker.internal` للوصول إلى جامع بيانات يعمل على المضيف. أما الحاويات الموجودة على شبكة Docker مشتركة، فاستخدم فيها اسم حاوية جامع البيانات. واستخدم `http://` لنقطة نهاية محلية دون تفعيل TLS.
+
+## التكامل مع خادم Nginx قائم {#existing-nginx}
+
+<Steps>
+  <Step title="تثبيت وحدة OpenTelemetry لـ Nginx" id="install-module">
+    تتضمن الصورة `nginx:1.27-otel` الملف `ngx_otel_module.so`. وللتثبيت خارج Docker، اتبع تعليمات التثبيت المتوفرة عبر الروابط في [توثيق وحدة OpenTelemetry لـ Nginx](https://nginx.org/en/docs/ngx_otel_module.html).
+  </Step>
+
+  <Step title="تهيئة التتبّع في Nginx" id="configure-nginx">
+    يستخدم مثال Docker التالي قالبًا كي يستبدل سكربت بدء تشغيل الحاوية متغيرات البيئة الخاصة بالاتصال. احفظه باسم `nginx.conf.template`. يوفّر الموقع `return 200` اختبارًا أوليًا بسيطًا؛ أما في تطبيقك، فأبقِ على تهيئة الخادم والتوجيه الحالية وأضف إليها توجيهات التتبّع الموضحة هنا.
+
+    ```nginx
+    load_module modules/ngx_otel_module.so;
+
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        otel_exporter {
+            endpoint ${OTEL_EXPORTER_OTLP_GRPC_ENDPOINT};
+            header authorization "${OTEL_EXPORTER_OTLP_AUTHORIZATION}";
+        }
+
+        otel_service_name "nginx-proxy";
+        otel_trace on;
+
+        server {
+            listen 80;
+
+            location / {
+                otel_trace_context propagate;
+                otel_span_name "$request_method $uri";
+                otel_span_attr http.status_code $status;
+                otel_span_attr http.request.method $request_method;
+                otel_span_attr http.route $uri;
+                return 200 "Nginx tracing is enabled\n";
+            }
+        }
+    }
+    ```
+
+    احفظ ما يلي باسم `compose.yaml` في الدليل نفسه:
+
+    ```yaml
+    services:
+      nginx:
+        image: nginx:1.27-otel
+        ports:
+          - "8081:80"
+        environment:
+          OTEL_EXPORTER_OTLP_GRPC_ENDPOINT: ${OTEL_EXPORTER_OTLP_GRPC_ENDPOINT}
+          OTEL_EXPORTER_OTLP_AUTHORIZATION: ${OTEL_EXPORTER_OTLP_AUTHORIZATION}
+          NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
+          NGINX_ENVSUBST_FILTER: ^OTEL_EXPORTER_OTLP_
+        volumes:
+          - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+    ```
+
+    يُبقي عامل تصفية الاستبدال على متغيرات Nginx مثل `$request_method` و`$uri` دون تغيير. لا يستبدل Nginx تلقائيًا متغيرات بيئة الصدفة (shell) في ملف `nginx.conf` المُركَّب مباشرةً. أما خارج Docker، فاستبدل العناصر النائبة الخاصة بالاتصال بقيمها الفعلية قبل التحقق من صحة التهيئة، وقيّد الوصول إلى الملف الذي يحتوي على المفتاح.
+  </Step>
+
+  <Step title="التحقق من الصحة وتشغيل Nginx" id="run-nginx">
+    اضبط [متغيرات الاتصال](#connection-details) في الطرفية نفسها، ثم نفّذ:
+
+    ```bash
+    docker compose run --rm nginx nginx -t
+    docker compose up -d nginx
+    curl http://localhost:8081/
+    ```
+
+    ينشئ كل طلب span يتضمن الطريقة والمسار ورمز الحالة والمدة. وفي حال وجود نشر قائم، أرسل طلبات إلى URL تطبيقك. وبعد تغيير القالب أو متغيرات البيئة، نفّذ `docker compose up -d --force-recreate nginx` لتطبيق التغييرات.
+  </Step>
+
+  <Step title="التحقق من التتبّعات في الواجهة" id="verifying-traces">
+    افتح **بحث**، واختر **Traces**، ثم طبّق عامل التصفية `ServiceName:nginx-proxy`. اختر نطاقًا زمنيًا يغطي طلباتك وانتظر بضع ثوانٍ حتى يكتمل التصدير. افتح أحد التتبّعات لفحص spans الخاصة به وسماته المتعلقة بـ HTTP.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![تتبعات Nginx في واجهة البحث](/images/clickstack/observability-nginx-demo-traces.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## مجموعة بيانات تجريبية {#demo-dataset}
+
+تضم العينة 1,000 من مقاطع التتبع الخاصة بـ Nginx موزعة على تسع نقاط نهاية، وتشمل طلبات ناجحة وأخطاء HTTP وأزمنة استجابة متفاوتة. اضبط [متغيرات الاتصال](#connection-details) قبل إرسالها.
+
+<Steps>
+  <Step title="تنزيل مجموعة البيانات النموذجية" id="download-sample">
+    ```bash
+    curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nginx-traces-sample.json
+    ```
+  </Step>
+
+  <Step title="تهيئة جامع البيانات التجريبي" id="configure-demo-collector">
+    احفظ ما يلي باسم `nginx-traces-demo.yaml` في دليل التنزيل:
+
+    ```yaml
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      transform/demo_timestamps:
+        error_mode: propagate
+        trace_statements:
+          - context: span
+            statements:
+              - set(cache["duration_ns"], end_time_unix_nano - start_time_unix_nano)
+              - >-
+                set(start_time,
+                  Now() - Duration("2m") -
+                  (Time("2025-10-27T19:36:05Z", "%Y-%m-%dT%H:%M:%SZ") - start_time)
+                )
+              - set(end_time_unix_nano, start_time_unix_nano + cache["duration_ns"])
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+
+    service:
+      pipelines:
+        traces/nginx-demo:
+          receivers: [otlp]
+          processors: [memory_limiter, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    <Note>
+      يُزيح المعالج `transform/demo_timestamps`، المخصص للعرض التوضيحي فقط، هذه العينة زمنيًا لتقع تقريبًا ضمن الساعات الـ 24 الماضية، بحيث تنتهي قبل دقيقتين من الاستيعاب، مع الحفاظ على مدد الـ spans ونمط حركة المرور. احذف هذا المعالج عند استخدام تتبعات Nginx الخاصة بك كي تحتفظ بطوابعها الزمنية الأصلية. قد يؤدي إرسال العينة مرة أخرى إلى ظهور spans مكررة.
+    </Note>
+  </Step>
+
+  <Step title="تشغيل جامع البيانات التجريبي" id="run-demo-collector">
+    <Note>
+      إذا كان جامع البيانات الوجهة يعمل على هذا الحاسوب، فاضبط `OTEL_EXPORTER_OTLP_ENDPOINT` على `http://host.docker.internal:4318`. يتضمن الأمر أدناه ربط مضيف Docker.
+    </Note>
+
+    شغّل OpenTelemetry Collector Contrib بالإصدار `0.161.0` من الدليل الذي يحتوي على ملف التهيئة، في الطرفية نفسها التي ضبطت فيها متغيرات الاتصال، وأبقِ هذه الطرفية مفتوحة:
+
+    ```bash
+    docker run --rm --name nginx-traces-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -p 127.0.0.1:14318:4318 \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/nginx-traces-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    يستخدم المستقبِل المحلي المنفذ `14318` لتجنّب التعارض مع أي جامع بيانات قائم على المنفذ `4318`. ويعيد جامع البيانات توجيه بيانات التتبّع إلى نقطة النهاية التي هيّأتها باستخدام إعدادات المصادقة المذكورة أعلاه.
+  </Step>
+
+  <Step title="إرسال بيانات التتبّع" id="send-traces">
+    في طرفية أخرى، ومن دليل التنزيل، أرسل العينة الأصلية إلى جامع البيانات المحلي:
+
+    ```bash
+    curl --fail-with-body -sS http://localhost:14318/v1/traces \
+      -H "Content-Type: application/json" \
+      --data-binary @nginx-traces-sample.json
+    ```
+
+    تشير استجابة النجاح الفارغة، مثل `{}` أو `{"partialSuccess":{}}`، إلى أن جامع البيانات المحلي قد قبل الطلب. افحص مخرجات جامع البيانات بحثًا عن أخطاء التصدير، وانتظر بضع ثوانٍ حتى تصل الدفعة إلى خدمتك. عند الانتهاء، أوقف جامع البيانات التجريبي بالضغط على **Ctrl+C**.
+  </Step>
+
+  <Step title="التحقق من بيانات التتبّع التجريبية" id="verify-demo-traces">
+    افتح **بحث**، واختر **Traces**، وصفِّ النتائج باستخدام `ServiceName:nginx-proxy`، ثم اختر **Last 2 days** لتشمل مجموعة البيانات المُزاحة بالكامل. افتح أحد التتبّعات لفحص سمات HTTP.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![أمثلة على تتبعات Nginx في عرض البحث](/images/clickstack/observability-nginx-demo-traces.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## لوحات المعلومات والتصور المرئي {#dashboards}
+
+<Steps>
+  <Step title="تنزيل تهيئة لوحة المعلومات" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-traces-dashboard.json'} download="nginx-traces-dashboard.json" eventName="docs.nginx_traces_monitoring.dashboard_download">نزّل ملف تهيئة لوحة المعلومات</TrackedLink>.
+  </Step>
+
+  <Step title="استيراد لوحة المعلومات" id="import-dashboard">
+    1. افتح صفحة **Dashboards** وانقر على **Import** في الزاوية العلوية اليمنى.
+    2. ارفع الملف `nginx-traces-dashboard.json`.
+    3. اربط الرسوم البيانية بمصدر **Traces** لديك، ثم انقر على **Finish Import**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![صفحة لوحات المعلومات مع إبراز زر Import](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="عرض لوحة المعلومات" id="created-dashboard">
+    طبّق عامل التصفية `ServiceName:nginx-proxy` واختر نطاقًا زمنيًا يشمل بيانات التتبّع لديك. لأغراض العرض التوضيحي، اختر **Last 2 days**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![مثال على لوحة معلومات تتبعات Nginx](/images/clickstack/observability-nginx-traces-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+### تعذّر بدء تشغيل Nginx {#nginx-fails-to-start}
+
+نفّذ الأمر `docker compose run --rm nginx nginx -t` للتحقق من صحة التهيئة المُولَّدة. إذا ظهر توجيه `otel_*` غير معروف أو كان ملف الوحدة مفقودًا، فهذا يعني أن الوحدة غير مثبّتة أو غير محمّلة. تأكّد من أنك تستخدم الصورة `-otel` وأن القالب مربوط في المسار الموضّح في الوثائق.
+
+### عدم ظهور أي بيانات تتبّع {#no-traces}
+
+* تحقّق من نقطة نهاية gRPC وأي مصادقة يتطلبها جامع البيانات في الوجهة. تستخدم الخدمات المُدارة البادئة `Bearer`. لا تستخدم نقطة نهاية HTTP مع وحدة Nginx.
+* تأكّد من إمكانية الوصول إلى نقطة النهاية من حاوية Nginx، ومن توافق مخطط عنوانها (http أو https) مع تهيئة TLS في الوجهة.
+* أرسِل بعض الطلبات؛ إذ لا يُنتج مثيل Nginx الخامل أي مقاطع تتبع للطلبات.
+* تحقّق من **Traces**، وعامل تصفية اسم الخدمة، والنطاق الزمني المحدد. وفي العرض التوضيحي، تأكّد من تضمين `transform/demo_timestamps` في مسار معالجة المُجمِّع، واختر **Last 2 days**.
+* في العرض التوضيحي، افحص طرفية جامع البيانات بحثًا عن أخطاء المصادقة أو أخطاء التصدير، وطابِق نقطة نهاية HTTP الخاصة به وقيمة التفويض مع بيانات الاتصال لديك.
+* افحص أخطاء Nginx باستخدام `docker compose logs nginx`. أما خارج Docker، فافحص سجل أخطاء Nginx لديك.
+
+## الخطوات التالية {#next-steps}
+
+* أعدّ [التنبيهات](/ar/clickstack/observability/features/alerts) للأخطاء أو لعتبات زمن الانتقال.
+* أنشئ [لوحات معلومات](/ar/clickstack/observability/features/dashboards/overview) إضافية.
+* لإضافة جامع بيانات بين Nginx والوجهة الخاصة بك، راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/observability/ingesting-data/opentelemetry).

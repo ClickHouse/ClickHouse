@@ -310,6 +310,18 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         std::vector<StoragePtr> buffered_tables;
         for (const auto & database : current_databases)
         {
+            /// Neither a data lake catalog nor a `Remote` database: listing their tables is a request
+            /// to another server, which can be retried for minutes when that server is unreachable,
+            /// and their tables hold no buffered rows.
+            if (database.second->isDatalakeCatalog() || database.second->isRemoteDatabase())
+                continue;
+
+            /// Nor an `Overlay` database: it forwards the listing to its sources, which can be the databases
+            /// skipped above, and returns `StorageAlias` tables, which hold no buffered rows either.
+            /// Its sources are visited by this loop on their own.
+            if (!database.second->ownsTables())
+                continue;
+
             try
             {
                 /// Enumerating a predefined database can materialize its lazily created system tables during

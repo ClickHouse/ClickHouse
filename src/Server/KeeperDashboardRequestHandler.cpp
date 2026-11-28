@@ -19,6 +19,7 @@
 #include <Interpreters/Context.h>
 #include <Common/config_version.h>
 #include <Common/re2.h>
+#include <base/scope_guard.h>
 
 /// Embedded HTML pages
 constexpr unsigned char resource_keeper_dashboard_html[] =
@@ -53,7 +54,11 @@ try
 
     response_json.set("ch_version", VERSION_DESCRIBE);
 
-    if (keeper_dispatcher->isServerActive())
+    scope_guard finish_four_letter_command;
+    if (keeper_dispatcher->tryBeginFourLetterCommand())
+        finish_four_letter_command = scope_guard([this] { keeper_dispatcher->finishFourLetterCommand(); });
+
+    if (finish_four_letter_command && keeper_dispatcher->isServerActive())
     {
         Poco::JSON::Object keeper_details;
         auto & stats = keeper_dispatcher->getKeeperConnectionStats();
@@ -121,6 +126,8 @@ try
         cluster.set("members", members);
         response_json.set("cluster", cluster);
     }
+
+    finish_four_letter_command.reset();
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);

@@ -153,6 +153,7 @@ public:
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         bool use_skip_indexes_for_disjunctions,
         PartialDisjunctionResult & partial_disjunction_result,
+        const QueryStatusPtr & query_status,
         LoggerPtr log);
 
     static MergeTreeIndexBulkGranulesMinMaxPtr getMinMaxIndexGranules(
@@ -393,6 +394,7 @@ public:
         MarkCache * mark_cache = nullptr;
         UncompressedCache * uncompressed_cache = nullptr;
         VectorSimilarityIndexCache * vector_similarity_index_cache = nullptr;
+        QueryStatusPtr query_status;
     };
 
     /// References into the caller's per-part state.

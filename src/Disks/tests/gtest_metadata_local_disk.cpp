@@ -1814,10 +1814,6 @@ TEST_F(MetadataLocalDiskTest, TestRollbackUndoesOnlyWhatAFailedOperationDid)
             .check = [&](const Metadata & metadata) { EXPECT_TRUE(metadata->existsDirectory("wd")); },
         },
         {
-            .name = "change the mode of a missing file",
-            .operation = [](Transaction & tx) { tx.chmod("missing", 0644); },
-        },
-        {
             .name = "move a file",
             .setup = [&](const Metadata & metadata) { create_files(metadata, {"mf"}); },
             .operation = [](Transaction & tx) { tx.moveFile("mf", "mf2"); },
@@ -1851,18 +1847,6 @@ TEST_F(MetadataLocalDiskTest, TestRollbackUndoesOnlyWhatAFailedOperationDid)
             },
             .operation = [](Transaction & tx) { tx.setLastModified("t", Poco::Timestamp::fromEpochTime(2000000000)); },
             .check = [&](const Metadata & metadata) { EXPECT_EQ(metadata->getLastModified("t").epochTime(), old_time.epochTime()); },
-        },
-        {
-            .name = "change the mode of a file",
-            .setup = [&](const Metadata & metadata)
-            {
-                create_files(metadata, {"m"});
-                auto tx = metadata->createTransaction();
-                tx->chmod("m", 0640);
-                tx->commit(DB::NoCommitOptions{});
-            },
-            .operation = [](Transaction & tx) { tx.chmod("m", 0600); },
-            .check = [&](const Metadata & metadata) { EXPECT_EQ(metadata->stat("m").st_mode & 0777, 0640u); },
         },
         {
             .name = "create a hard link",

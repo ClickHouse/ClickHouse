@@ -133,6 +133,16 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 레플리카 알고리즘을 사용합니다
 
+## parallel_replicas_for_object_storage_tables {#parallel_replicas_for_object_storage_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "객체 스토리지 엔진을 사용하는 테이블을 병렬 레플리카로 읽기 위한 새로운 설정입니다."}]}]} />
+
+`-Cluster` 테이블 함수(`S3`, `AzureBlobStorage`, `HDFS`, `Iceberg`, `IcebergS3`, `IcebergAzure`, `IcebergHDFS`, `IcebergLocal`, `DeltaLake`, `DeltaLakeS3`, `DeltaLakeAzure`, `Hudi`, `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS`)가 존재하는 객체 스토리지 엔진 테이블을 `cluster_for_parallel_replicas`의 레플리카들에 분산하여 읽습니다. 이는 `parallel_replicas_for_cluster_engines`가 테이블 함수에 적용되는 방식과 같습니다. `parallel_replicas_for_cluster_engines`가 비활성화되어 있으면 이 설정은 적용되지 않습니다.
+
+해당 테이블이 있는 레플리카만 읽기에 참여하며, 테이블은 모든 레플리카에서 정의가 동일해야 합니다.
+
 ## parallel_replicas_for_queries_with_multiple_tables {#parallel_replicas_for_queries_with_multiple_tables}
 
 <BetaBadge />

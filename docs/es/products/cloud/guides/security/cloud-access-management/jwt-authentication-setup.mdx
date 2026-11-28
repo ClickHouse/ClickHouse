@@ -30,7 +30,7 @@ Puede configurar estos proveedores de JWKS para cada servicio desde **Configurac
 </Tip>
 
 <div id="before-you-begin">
-  ## Antes de empezar
+  ## Antes de empezar {#before-you-begin}
 </div>
 
 Para configurar proveedores de JWT para un servicio, necesita:
@@ -45,7 +45,7 @@ Para configurar proveedores de JWT para un servicio, necesita:
 </Note>
 
 <div id="how-it-works">
-  ## Cómo funciona
+  ## Cómo funciona {#how-it-works}
 </div>
 
 El Client (su proveedor de identidad o aplicación) genera un JWT y lo firma con su **clave privada**. El token debe seguir el [formato de token](/es/concepts/features/security/external-authenticators/jwt#token-claims) previsto. A continuación, ClickHouse lo verifica con las claves **públicas** publicadas en su URL de JWKS:
@@ -56,22 +56,16 @@ El Client (su proveedor de identidad o aplicación) genera un JWT y lo firma con
 
 ClickHouse valida y obtiene la URL de JWKS al añadir o actualizar un proveedor, por lo que las URL mal configuradas o inaccesibles se rechazan de inmediato.
 
-<div id="add-a-jwt-provider">
-  ## Añada un proveedor de JWT
-</div>
+## Añada un proveedor de JWT {#add-a-jwt-provider}
 
 <Steps>
   <Step title="Abra la configuración de seguridad del servicio" id="open-security-settings">
-    Vaya a su servicio, abra **Settings** y desplácese hasta la sección **Security**. Localice la tarjeta **autenticación con JWT**.
+    Vaya a su servicio, abra **Settings** y desplácese hasta la sección **Seguridad**. Localice la tarjeta **autenticación con JWT**.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Sección de autenticación con JWT en la configuración de seguridad del servicio](/images/cloud/security/jwt/jwt-section.png)
-
-    </Frame>
-
+      <Frame>
+        ![Sección de autenticación con JWT en la configuración de seguridad del servicio](/images/cloud/security/jwt/jwt-section.png)
+      </Frame>
     </div>
   </Step>
 
@@ -101,7 +95,7 @@ ClickHouse valida y obtiene la URL de JWKS al añadir o actualizar un proveedor,
 </Warning>
 
 <div id="limits">
-  ## Límites
+  ## Límites {#limits}
 </div>
 
 * Se permite un máximo de **cinco** proveedores de JWT por servicio.
@@ -109,7 +103,7 @@ ClickHouse valida y obtiene la URL de JWKS al añadir o actualizar un proveedor,
 * La URL de JWKS debe ser un endpoint HTTPS público. Se rechazan las direcciones privadas, internas o de enlace local.
 
 <div id="related">
-  ## Contenido relacionado
+  ## Contenido relacionado {#related}
 </div>
 
 * [Autenticación con JWT](/es/concepts/features/security/external-authenticators/jwt) — claims de token, usuarios efímeros y uso del Client.

@@ -148,22 +148,40 @@ ARROW_IPC_GENERATED_HEADERS = (
     "Schema_generated.h",
     "SparseTensor_generated.h",
     "Tensor_generated.h",
-    "feather_generated.h",
+)
+# The messages and the gRPC service of Arrow Flight and Arrow Flight SQL, generated
+# by `contrib/arrow-cmake/flight.cmake` from `Flight.proto` and `FlightSql.proto`.
+ARROW_FLIGHT_GENERATED_HEADERS = (
+    "Flight.pb.h",
+    "Flight.grpc.pb.h",
+    "FlightSql.pb.h",
 )
 # The Thrift bindings of the Parquet metadata, generated from `parquet.thrift`
 # and committed to `contrib/arrow/cpp/src/generated`.
 PARQUET_GENERATED_HEADERS = ("parquet_types.h",)
 GENERATOR_INPUT_PATHS = {
-    # `contrib/arrow-cmake` regenerates Arrow's IPC metadata bindings from the
-    # schemas in `contrib/arrow` with the `flatc` built from `contrib/flatbuffers`.
-    # A bump of the `contrib/arrow` submodule, which is all the changed files
-    # show of it, can change both those schemas and the Parquet bindings.
-    "contrib/arrow": ARROW_IPC_GENERATED_HEADERS + PARQUET_GENERATED_HEADERS,
-    "contrib/arrow/format": ARROW_IPC_GENERATED_HEADERS,
-    "contrib/arrow/cpp/src/arrow/ipc/feather.fbs": ARROW_IPC_GENERATED_HEADERS,
+    # Only the definitions of the formats are taken from `contrib/arrow`, and
+    # `contrib/arrow-cmake` generates the headers from them: the Arrow IPC
+    # metadata bindings from the schemas, with the `flatc` built from
+    # `contrib/flatbuffers`, the Arrow Flight messages from the protocol files,
+    # and the copy of the Parquet bindings that the code is compiled with. A bump
+    # of the `contrib/arrow` submodule, which is all the changed files show of it,
+    # can change any of them.
+    "contrib/arrow": (
+        ARROW_IPC_GENERATED_HEADERS
+        + ARROW_FLIGHT_GENERATED_HEADERS
+        + PARQUET_GENERATED_HEADERS
+    ),
+    "contrib/arrow/format": (
+        ARROW_IPC_GENERATED_HEADERS + ARROW_FLIGHT_GENERATED_HEADERS
+    ),
     "contrib/arrow/cpp/src/parquet/parquet.thrift": PARQUET_GENERATED_HEADERS,
     "contrib/arrow/cpp/src/generated/parquet_types.h": PARQUET_GENERATED_HEADERS,
-    "contrib/arrow-cmake": ARROW_IPC_GENERATED_HEADERS,
+    "contrib/arrow-cmake": (
+        ARROW_IPC_GENERATED_HEADERS
+        + ARROW_FLIGHT_GENERATED_HEADERS
+        + PARQUET_GENERATED_HEADERS
+    ),
     "contrib/flatbuffers": ARROW_IPC_GENERATED_HEADERS,
     # The embedded web UI resources, included by `WebUIRequestHandler.cpp`.
     "contrib/clickstack": ("ClickStackResources.generated.h",),
@@ -183,8 +201,8 @@ GENERATOR_INPUT_PATHS = {
 # for every header under that directory. `llvm-config.h` and the other templates
 # of `contrib/llvm-project-cmake/config` are reached through `<llvm/...>`
 # headers, the `liburing-cmake` templates through `liburing.h`, and a bump of
-# `contrib/arrow` or `contrib/llvm-project` can break any of the `<arrow/...>`,
-# `<parquet/...>` or `<llvm/...>` headers the analyzed code includes, a bump of
+# `contrib/llvm-project` can break any of the `<llvm/...>` headers the analyzed
+# code includes, a bump of
 # `contrib/libdivide` the `<libdivide.h>` that the integer division functions
 # and `BloomFilter` include, next to the `libdivide-config.h` that
 # `contrib/libdivide-cmake` provides. A path
@@ -195,8 +213,6 @@ GENERATOR_INPUT_PATHS = {
 # headers only select the consumers: they are not part of the analyzed tree, so
 # diagnostics in them are not reported.
 GENERATOR_INPUT_INCLUDED_THROUGH = {
-    "contrib/arrow": ("arrow/", "parquet/"),
-    "contrib/arrow-cmake": ("arrow/", "parquet/"),
     "contrib/llvm-project": ("llvm/",),
     "contrib/llvm-project-cmake": ("llvm/",),
     "contrib/liburing": ("liburing.h",),
@@ -1569,7 +1585,7 @@ def self_test(repo_dir, build_dir, compile_commands):
     # A submodule bump is covered through every coverable file directly
     # including one of the submodule's public headers, not through a few
     # representative ones.
-    surface_header = "parquet/file_reader.h"
+    surface_header = "llvm/IR/IRBuilder.h"
     surface = {
         includer
         for includer, spelling in include_index(repo_dir).get(
@@ -1580,7 +1596,7 @@ def self_test(repo_dir, build_dir, compile_commands):
     }
     submodule_consumers = set(
         generated_header_consumers(
-            ["contrib/arrow"],
+            ["contrib/llvm-project"],
             repo_dir,
             MAX_INCLUDERS_PER_HEADER,
             lambda path: is_coverable(path, repo_dir, compile_commands),
@@ -1588,7 +1604,7 @@ def self_test(repo_dir, build_dir, compile_commands):
     )
     expect(
         surface and surface <= submodule_consumers,
-        f"`generated_header_consumers` for contrib/arrow misses files including "
+        f"`generated_header_consumers` for contrib/llvm-project misses files including "
         f"<{surface_header}>: {sorted(surface - submodule_consumers)}",
     )
     # A `contrib` template of the same name generates an unrelated header: it

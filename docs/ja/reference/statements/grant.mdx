@@ -142,7 +142,7 @@ GRANT SELECT(foo) ON db.table* TO john -- 誤り
 ClickHouse における権限の階層は以下のとおりです。
 
 * [`ALL`](#all)
-  * [`アクセス管理`](#access-management)
+  * [`ACCESS MANAGEMENT`](#access-management)
     * `ALLOW SQL SECURITY NONE`
     * `ALTER QUOTA`
     * `ALTER ROLE`
@@ -167,6 +167,15 @@ ClickHouse における権限の階層は以下のとおりです。
       * `SHOW ROW POLICIES`
       * `SHOW SETTINGS PROFILES`
       * `SHOW USERS`
+  * [`AI FUNCTIONS`](#ai-functions)
+    * `aiClassify`
+    * `aiEmbed`
+    * `aiExtract`
+    * `aiFilter`
+    * `aiGenerate`
+    * `aiRedact`
+    * `aiSimilarity`
+    * `aiTranslate`
   * [`ALTER`](#alter)
     * `ALTER DATABASE`
       * `ALTER DATABASE SETTINGS`
@@ -218,20 +227,25 @@ ClickHouse における権限の階層は以下のとおりです。
     * `CREATE DATABASE`
     * `CREATE DICTIONARY`
     * `CREATE FUNCTION`
-    * `CREATE RESOURCE`
     * `CREATE TABLE`
     * `CREATE VIEW`
-    * `CREATE WORKLOAD`
+  * `CREATE RESOURCE`
+  * `CREATE WORKLOAD`
   * [`dictGet`](#dictget)
   * [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
   * [`DROP`](#drop)
     * `DROP DATABASE`
     * `DROP DICTIONARY`
     * `DROP FUNCTION`
-    * `DROP RESOURCE`
     * `DROP TABLE`
     * `DROP VIEW`
-    * `DROP WORKLOAD`
+  * `DROP RESOURCE`
+  * `DROP WORKLOAD`
+  * `HANDLER ADMIN`
+    * `ALTER HANDLER`
+    * `CREATE HANDLER`
+    * `DROP HANDLER`
+    * `SHOW HANDLERS`
   * [`INSERT`](#insert)
   * [`INTROSPECTION`](#introspection)
     * `addressToLine`
@@ -634,6 +648,25 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
   * `addressToSymbol`. レベル: `GLOBAL`
   * `demangle`. レベル: `GLOBAL`
 
+### AI FUNCTIONS {#ai-functions}
+
+[AI関数](/ja/reference/functions/regular-functions/ai-functions)の使用を許可します。AI 関数を呼び出すには、選択した認証情報に対する `NAMED COLLECTION` 権限も必要です。
+
+* `AI FUNCTIONS`。レベル: `GROUP`
+  * `aiClassify`。レベル: `GLOBAL`
+  * `aiEmbed`。レベル: `GLOBAL`
+  * `aiExtract`。レベル: `GLOBAL`
+  * `aiFilter`。レベル: `GLOBAL`
+  * `aiGenerate`。レベル: `GLOBAL`
+  * `aiRedact`。レベル: `GLOBAL`
+  * `aiSimilarity`。レベル: `GLOBAL`
+  * `aiTranslate`。レベル: `GLOBAL`
+
+例:
+
+* `GRANT AI FUNCTIONS ON *.* TO john`
+* `GRANT aiGenerate, aiClassify ON *.* TO john`
+
 ### SOURCES {#sources}
 
 外部データソースの使用を許可します。ソースをバックエンドとする[データベース エンジン](/ja/reference/engines/database-engines/index)、[テーブルエンジン](/ja/reference/engines/table-engines/index)、および[テーブル関数](/ja/reference/functions/table-functions/index)に適用されます。
@@ -713,7 +746,7 @@ GRANT READ ON S3('s3://bar/.*') TO john
 ```
 
 <Warning>
-  ソースフィルターはパラメータに **regexp** を取るため、権限付与
+  ソースフィルターはパラメータに **正規表現** を取るため、権限付与
   `GRANT READ ON URL('http://www.google.com') TO john;`
 
   によって、次のクエリも許可されます。
@@ -743,8 +776,19 @@ GRANT READ ON S3('s3://foo/.*') TO john WITH GRANT OPTION
 GRANT CURRENT GRANTS(READ ON S3) TO alice
 ```
 
+**取り消し:**
+
+```sql
+-- Revokes only this filter, other filters on S3 are kept
+REVOKE READ ON S3('s3://foo/.*') FROM john
+
+-- Revokes READ on S3, including all filters
+REVOKE READ ON S3 FROM john
+```
+
 **重要な制限事項:**
 
+* **フィルターは文字列として比較されます:** `REVOKE` で削除されるのは、付与済みのものと完全に一致するフィルターのみです。`S3('s3://foo/bar/.*')` を取り消そうとしても、`S3('s3://foo/.*')` に対する権限付与が絞り込まれるわけではなく、例外がスローされます。
 * **部分的な取り消しはできません:** 付与済みのフィルターパターンの一部だけを取り消すことはできません。必要な場合は、付与全体をいったん取り消したうえで、新しいパターンで再付与する必要があります。
 * **ワイルドカードによる権限付与はできません:** `GRANT READ ON *('regexp')` や、これに類するワイルドカードのみのパターンは使用できません。必ず具体的なソースを指定してください。
 

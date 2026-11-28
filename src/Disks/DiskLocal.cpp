@@ -56,7 +56,6 @@ namespace ErrorCodes
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_RMDIR;
-    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_STAT;
 }
 
@@ -772,14 +771,6 @@ struct stat DiskLocal::stat(const String & path) const
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot stat file: {}", path);
 }
 
-void DiskLocal::chmod(const String & path, mode_t mode)
-{
-    auto full_path = fs::path(disk_path) / path;
-    if (::chmod(full_path.string().c_str(), mode) == 0)
-        return;
-    DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot chmod file: {}", path);
-}
-
 ObjectStoragePtr DiskLocal::getObjectStorage()
 {
     LocalObjectStorageSettings settings_object_storage(name, disk_path, /* read_only */false);
@@ -794,7 +785,7 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         ContextPtr context,
-        const DisksMap & map,
+        const DisksMap & /*map*/,
         bool attach,
         bool custom_disk) -> DiskPtr
     {
@@ -804,10 +795,6 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
 
         if (custom_disk && !attach)
             checkCustomLocalDiskPath(path, context);
-
-        for (const auto & [disk_name, disk_ptr] : map)
-            if (path == disk_ptr->getPath())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} and disk {} cannot have the same path ({})", name, disk_name, path);
 
         bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false) || global_skip_access_check;
         std::shared_ptr<IDisk> disk

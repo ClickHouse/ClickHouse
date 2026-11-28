@@ -2070,10 +2070,16 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
-        auto original_node = node;
+        /// A node with a single reference is not reached again, so it needs no entry.
+        QueryTreeNodePtr original_node;
+        if (node.use_count() > 1)
+            original_node = node;
+
         if (mode == Mode::OTHER_REWRITES)
             rewriteFunction(node);
-        visited_nodes.emplace(std::move(original_node), node);
+
+        if (original_node)
+            visited_nodes.emplace(std::move(original_node), node);
 
         if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN)
             return;
@@ -3109,9 +3115,12 @@ void LogicalExpressionOptimizerPass::run(QueryTreeNodePtr & query_tree_node, Con
 {
     /// The JOIN ON rewrites and the derivation of transitive comparisons run first: the derivation sees the rewritten JOIN ON,
     /// and the conflict detector of the other rewrites sees the derived conjuncts (`x = 3 AND x = y AND y = 5` -> FALSE).
-    LogicalExpressionOptimizerVisitor and_compare_chain_visitor(context, LogicalExpressionOptimizerVisitor::Mode::JOIN_ON_AND_COMPARE_CHAIN);
-    and_compare_chain_visitor.visit(query_tree_node);
-    and_compare_chain_visitor.revertAndCompareChainIfBudgetExceeded();
+    {
+        /// Destroyed before the next visitor: the references its caches hold would make unshared nodes look shared.
+        LogicalExpressionOptimizerVisitor and_compare_chain_visitor(context, LogicalExpressionOptimizerVisitor::Mode::JOIN_ON_AND_COMPARE_CHAIN);
+        and_compare_chain_visitor.visit(query_tree_node);
+        and_compare_chain_visitor.revertAndCompareChainIfBudgetExceeded();
+    }
 
     LogicalExpressionOptimizerVisitor visitor(std::move(context), LogicalExpressionOptimizerVisitor::Mode::OTHER_REWRITES);
     visitor.visit(query_tree_node);

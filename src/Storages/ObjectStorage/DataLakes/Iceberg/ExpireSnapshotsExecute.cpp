@@ -23,6 +23,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotFilesTraversal.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
@@ -54,6 +55,7 @@ namespace Setting
 extern const SettingsInt64 iceberg_expire_default_min_snapshots_to_keep;
 extern const SettingsInt64 iceberg_expire_default_max_snapshot_age_ms;
 extern const SettingsInt64 iceberg_expire_default_max_ref_age_ms;
+extern const SettingsNonZeroUInt64 iceberg_metadata_previous_versions_max;
 }
 
 namespace Iceberg
@@ -751,6 +753,7 @@ ExpireSnapshotsResult expireSnapshots(
 
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots is supported only for the second version of iceberg format");
+        persistent_table_components.schema_processor->registerMetadata(metadata);
 
         if (!metadata->has(Iceberg::f_current_snapshot_id))
         {
@@ -837,6 +840,7 @@ ExpireSnapshotsResult expireSnapshots(
                 LOG_WARNING(log, "Catalog commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);
                 continue;
             }
+            persistent_table_components.schema_processor->registerMetadata(committed_metadata);
             /// The snapshots the committed metadata retains, not `partition.retained_snapshots`: the catalog may have
             /// committed snapshots without a reference since `metadata` was read, e.g. staged ones, which can
             /// reference the files of the expired snapshots.
@@ -849,8 +853,13 @@ ExpireSnapshotsResult expireSnapshots(
         {
             updateMetadataForExpiration(metadata, expired_ref_names, partition.retained_snapshots, partition.expired_snapshot_ids);
 
-            std::string json_representation = stringifyJSON(metadata, 4);
             auto metadata_info = filename_generator.generateMetadataPathWithInfo();
+            appendToMetadataLog(
+                metadata,
+                metadata_info.path.serialize(),
+                metadata->getValue<Int64>(Iceberg::f_last_updated_ms),
+                context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
+            std::string json_representation = stringifyJSON(metadata, 4);
             auto hint_path = filename_generator.generateVersionHint();
             if (!writeMetadataFileAndVersionHint(
                     persistent_table_components.path_resolver,
