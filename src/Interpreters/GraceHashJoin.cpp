@@ -1001,7 +1001,8 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
         /// the actual hash-table cost (cell overhead, load-factor padding, resize peaks),
         /// so a tiny block could leave a near-full bucket bypassing the pre-check and OOM
         /// during the resize. Mirrors `SpillingHashJoin::addBlockToJoin`.
-        const bool pre_threshold_overflow = external_join_threshold > 0 && pre_total_bytes * 2 >= external_join_threshold;
+        const bool pre_threshold_overflow
+            = prev_keys_num > 1 && external_join_threshold > 0 && pre_total_bytes * 2 >= external_join_threshold;
 
         bool block_added = false;
         if (!pre_threshold_overflow)
