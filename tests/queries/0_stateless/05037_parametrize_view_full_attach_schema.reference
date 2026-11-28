@@ -1,0 +1,14 @@
+-- setting off: the declared schema is not part of the stored definition
+0
+-- setting off: a mismatching declared schema is not enforced either
+0
+1
+2
+-- setting on: the declared schema is latched, exposed...
+n	UInt64	NO		\N	
+n	UInt64					
+-- ...and enforced, regardless of the setting value at query time
+0
+1
+2
+TYPE_MISMATCH

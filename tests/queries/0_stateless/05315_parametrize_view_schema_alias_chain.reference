@@ -1,0 +1,28 @@
+-- { echoOn }
+
+-- A schemaless parameterized view cannot be described without parameters, also through an `Alias`.
+DESCRIBE TABLE 05315_pv_no_schema; -- { serverError UNSUPPORTED_METHOD }
+DESCRIBE TABLE 05315_alias_no_schema; -- { serverError UNSUPPORTED_METHOD }
+-- A declared schema is described directly and through an `Alias`.
+DESCRIBE TABLE 05315_pv_declared;
+n	UInt64			declared		
+DESCRIBE TABLE 05315_alias_declared;
+n	UInt64			declared		
+-- { echoOn }
+
+DESCRIBE TABLE 05315_a1;
+n	UInt64			declared		
+SELECT n FROM 05315_merge; -- { serverError STORAGE_REQUIRES_PARAMETER }
+-- { echoOn }
+
+-- A latched schema is checked against the output of the substituted `SELECT`, so only ordinary
+-- columns can be declared.
+CREATE VIEW 05315_pv_alias_column (n UInt64, s String ALIAS toString(n)) AS SELECT number AS n FROM numbers({upper_bound:UInt64}); -- { serverError BAD_ARGUMENTS }
+CREATE VIEW 05315_pv_materialized_column (n UInt64, s String MATERIALIZED toString(n)) AS SELECT number AS n FROM numbers({upper_bound:UInt64}); -- { serverError BAD_ARGUMENTS }
+CREATE VIEW 05315_pv_ephemeral_column (n UInt64, s String EPHEMERAL) AS SELECT number AS n FROM numbers({upper_bound:UInt64}); -- { serverError BAD_ARGUMENTS }
+-- Without the setting the declared list is dropped, so it is not checked either.
+SET use_declared_schema_for_parameterized_views = 0;
+CREATE VIEW 05315_pv_alias_column (n UInt64, s String ALIAS toString(n)) AS SELECT number AS n FROM numbers({upper_bound:UInt64});
+SELECT n FROM 05315_pv_alias_column(upper_bound = 2) ORDER BY n;
+0
+1
