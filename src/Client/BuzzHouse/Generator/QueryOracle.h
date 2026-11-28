@@ -55,6 +55,7 @@ private:
     MD5Impl md5_hash2;
     Poco::DigestEngine::Digest first_digest;
     Poco::DigestEngine::Digest second_digest;
+    Poco::DigestEngine::Digest concurrent_digest;
     PerformanceResult res1;
     PerformanceResult res2;
 
@@ -68,6 +69,8 @@ private:
     bool can_test_success;
     bool measure_performance;
     bool compare_explain = false;
+    /// Whether the concurrent write oracle compares the results of the round, or only runs it
+    bool compare_concurrent_write = false;
 
     std::unordered_set<String> found_tables;
     DB::Strings nsettings;
@@ -176,6 +179,13 @@ public:
     void dumpDictionaryContent(
         RandomGenerator & rg, StatementGenerator & gen, const SQLDictionary & d, SQLQuery & reload, SQLQuery & sq1, SQLQuery & sq2);
     void dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQuery & sq1, SQLQuery & sq2);
+
+    /// Concurrent write oracle: a read of `t` run in `PARALLEL WITH` a write to it must see the table as it was
+    /// either before the write or after it. `read` is run alone before and after `concurrent`, which runs the
+    /// write and the same read in parallel. Each run reports to `processConcurrentWriteResult` with its `step`.
+    void
+    generateConcurrentWriteQueries(RandomGenerator & rg, StatementGenerator & gen, SQLTable & t, SQLQuery & read, SQLQuery & concurrent);
+    void processConcurrentWriteResult(uint32_t step, bool success);
     void dumpObjectIntermediateSteps(
         RandomGenerator & rg,
         StatementGenerator & gen,
