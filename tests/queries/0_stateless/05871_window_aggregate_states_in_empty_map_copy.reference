@@ -1,0 +1,14 @@
+prefix, Map
+0	[]	[]	5
+1	[0]	[5]	5
+recalculate, Map
+0	[]	[]	5
+1	[0]	[5]	5
+prefix, empty Map argument
+10	10
+prefix, Array
+0	[]	5
+1	[25]	5
+groupArray of a state
+0	0	5
+1	5	5
