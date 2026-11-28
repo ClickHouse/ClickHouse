@@ -29,6 +29,7 @@ REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 
 SOURCE_FILES = [
     "src/Common/AsynchronousMetrics.cpp",
+    "src/Common/AsynchronousMetricsWithContext.cpp",
     "src/Interpreters/ServerAsynchronousMetrics.cpp",
     "src/Coordination/KeeperAsynchronousMetrics.cpp",
 ]

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/AsynchronousMetrics.h>
+#include <Common/AsynchronousMetricsWithContext.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -10,7 +10,7 @@
 namespace DB
 {
 
-class ServerAsynchronousMetrics : WithContext, public AsynchronousMetrics
+class ServerAsynchronousMetrics : WithContext, public AsynchronousMetricsWithContext
 {
 public:
     ServerAsynchronousMetrics(

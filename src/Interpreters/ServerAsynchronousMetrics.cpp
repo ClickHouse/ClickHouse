@@ -173,7 +173,7 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     bool update_jemalloc_epoch_,
     bool update_rss_)
     : WithContext(global_context_)
-    , AsynchronousMetrics(
+    , AsynchronousMetricsWithContext(
         update_period_seconds,
         protocol_server_metrics_func_,
         update_jemalloc_epoch_,

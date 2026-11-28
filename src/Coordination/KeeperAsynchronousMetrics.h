@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Common/AsynchronousMetrics.h>
+#include <Common/AsynchronousMetricsWithContext.h>
 
 #include <base/types.h>
 
@@ -20,7 +20,7 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
 void setKeeperFileDescriptorMetrics(
     AsynchronousMetricValues & new_values, Int64 open_file_descriptor_count, std::optional<size_t> max_file_descriptor_count);
 
-class KeeperAsynchronousMetrics : public AsynchronousMetrics
+class KeeperAsynchronousMetrics : public AsynchronousMetricsWithContext
 {
 public:
     KeeperAsynchronousMetrics(

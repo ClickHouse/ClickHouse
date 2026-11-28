@@ -115,7 +115,7 @@ public:
         const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
         bool update_jemalloc_epoch_,
         bool update_rss_,
-        const ContextPtr & context_);
+        bool collect_psi_metrics);
 
     virtual ~AsynchronousMetrics();
 
@@ -136,16 +136,23 @@ protected:
 private:
     virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) = 0;
     virtual void logImpl(AsynchronousMetricValues &) { }
+
+    /// The parts that depend on the environment of the process. The defaults are for a process without a server `Context`,
+    /// such as a standalone monitoring agent. `AsynchronousMetricsWithContext` implements them for the server and Keeper.
+
+    /// The size of the userspace page cache, subtracted from the memory usage in the `*WithoutPageCache` metrics.
+    virtual UInt64 getUserspacePageCacheBytes() const { return 0; }
+    /// Adds the metrics of the process environment (e.g. the logging queues and the compiled expression cache).
+    virtual void updateEnvironmentImpl(AsynchronousMetricValues & /*new_values*/) { }
+    /// In which form the key-value metrics are published.
+    virtual AsynchronousMetricsKeyValuesMode getKeyValuesMode() const { return AsynchronousMetricsKeyValuesMode::KeyValues; }
+    /// Looks at the freshly computed values and updates the warnings of the server.
+    virtual void processWarnings(const AsynchronousMetricValues & /*values*/) const { }
+
+protected:
     static const AsynchronousMetricValue * getAsynchronousMetricValue(const AsynchronousMetricValues & values, std::string_view name);
-    void processWarningForMutationStats(const AsynchronousMetricValues & new_values) const;
 
-    void processWarningForMemoryOverload(const AsynchronousMetricValues & new_values) const;
-    void processWarningForCPUOverload(const AsynchronousMetricValues & new_values) const;
-
-    using Clock = std::chrono::steady_clock;
-    mutable std::optional<Clock::time_point> mem_overload_started;
-    mutable std::optional<Clock::time_point> cpu_overload_started;
-
+private:
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
     std::unique_ptr<ThreadFromGlobalPool> thread;
@@ -173,7 +180,6 @@ private:
 
     [[maybe_unused]] const bool update_jemalloc_epoch;
     [[maybe_unused]] const bool update_rss;
-    ContextPtr context;
 
 #if defined(OS_LINUX)
     std::optional<ReadBufferFromFilePRead> meminfo TSA_GUARDED_BY(data_mutex);
