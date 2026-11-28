@@ -3,6 +3,7 @@
 #include <Core/Types_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -52,11 +53,15 @@ struct StreamingCursor
         ~PendingReport();
 
         /// The read reported its cursor or finished without it (e.g. it failed or was cancelled).
+        /// It can be called from several threads at once (a processor is cancelled from another thread than the one
+        /// that prepares it): the read is finished once.
         void finish() noexcept;
 
     private:
-        /// The root holder, which counts the pending reads.
+        /// The root holder, which counts the pending reads. It is set by the constructor (or a move, which must not be
+        /// concurrent with anything else), and `finish` only reads it.
         std::shared_ptr<StreamingCursor> holder;
+        std::atomic_flag finished;
     };
 
     /// Whether some reads did not report yet (the count is in the root holder).

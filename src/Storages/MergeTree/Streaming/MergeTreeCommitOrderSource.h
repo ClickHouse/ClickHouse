@@ -21,6 +21,7 @@
 
 #include <map>
 
+#include <atomic>
 #include <optional>
 #include <string>
 
@@ -82,7 +83,8 @@ private:
     ReadState read_state;
     int64_t finished_rounds = 0;
     /// Whether the cursor of the bounded read was reported to the query, see `surfaceFinalCursor`.
-    bool final_cursor_surfaced = false;
+    /// It is read by `onUpdatePorts`, which is called from another thread.
+    std::atomic<bool> final_cursor_surfaced = false;
     /// A bounded read for an incremental refresh is pending until it reports its cursor or finishes.
     StreamingCursor::PendingReport pending_report;
 
