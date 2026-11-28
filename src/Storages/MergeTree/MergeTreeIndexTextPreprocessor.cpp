@@ -36,7 +36,8 @@ namespace
 constexpr char preprocessor_lambda_arg[] = "__text_index_x";
 constexpr char preprocessor_column_name[] = "__text_index_column";
 
-ASTPtr convertASTForIndexColumn(const IndexDescription & index, const ASTPtr & expression_ast, bool replace_index_column)
+/// A null `index_expression` reads the index column through a placeholder identifier.
+ASTPtr convertASTForIndexColumn(const IndexDescription & index, const ASTPtr & expression_ast, const ASTPtr & index_expression)
 {
     chassert(index.column_names.size() == 1);
     chassert(index.data_types.size() == 1);
@@ -55,9 +56,7 @@ ASTPtr convertASTForIndexColumn(const IndexDescription & index, const ASTPtr & e
         replaceExpressionToIdentifier(new_expression, index.column_names.front(), preprocessor_lambda_arg);
 
         /// Create the array argument of arrayMap function.
-        auto array_map_arg = replace_index_column
-            ? make_intrusive<ASTIdentifier>(preprocessor_column_name)
-            : index.expression_list_ast->children.front();
+        ASTPtr array_map_arg = index_expression ? index_expression : make_intrusive<ASTIdentifier>(preprocessor_column_name);
 
         /// Pack preprocessor expression into lambda.
         return makeASTFunction("arrayMap",
@@ -65,7 +64,7 @@ ASTPtr convertASTForIndexColumn(const IndexDescription & index, const ASTPtr & e
             array_map_arg);
     }
 
-    if (replace_index_column)
+    if (!index_expression)
     {
         ASTPtr new_expression = expression_ast->clone();
         replaceExpressionToIdentifier(new_expression, index.column_names.front(), preprocessor_column_name);
@@ -126,19 +125,20 @@ ActionsDAG createActionsDAGForPreprocessor(
 
 MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression_ast, const IndexDescription & index_description)
     : index_column_type(index_description.data_types.front())
-    , expression_ast_for_index_column(convertASTForIndexColumn(index_description, expression_ast, true))
+    , expression_ast_for_index_column(convertASTForIndexColumn(index_description, expression_ast, nullptr))
+    , index_expression_ast(index_description.expression_list_ast->children.front()->clone())
     /// Use source index columns to execute index and preprocessor expressions.
     , original_actions(createActionsDAGForPreprocessor(
         index_description.expression->getRequiredColumnsWithTypes(),
         index_description.column_names.front(),
         index_column_type,
-        convertASTForIndexColumn(index_description, expression_ast, false)))
+        convertASTForIndexColumn(index_description, expression_ast, index_expression_ast)))
     /// Assume that index expression is already executed and use a placeholder column to execute preprocessor expression.
     , actions_for_index_column(createActionsDAGForPreprocessor(
         {{preprocessor_column_name, index_column_type}},
         preprocessor_column_name,
         index_column_type,
-        convertASTForIndexColumn(index_description, expression_ast, true)))
+        convertASTForIndexColumn(index_description, expression_ast, nullptr)))
     /// Take constant string and execute preprocessor expression.
     , actions_for_constant(createActionsDAGForPreprocessor(
         {{preprocessor_column_name, std::make_shared<DataTypeString>()}},

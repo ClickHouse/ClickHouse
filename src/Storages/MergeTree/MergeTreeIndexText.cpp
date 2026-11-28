@@ -2543,13 +2543,13 @@ void normalizeColumnExpression(ASTPtr & ast)
 /// Queries are analyzed with `optimize_empty_string_comparisons`, index expressions are not, so an index such as
 /// `arrayFilter(s -> s != '', arr)` is never matched by name (issue #111788). Returns the name of the index
 /// expression after the same rewrite, or `std::nullopt` if it does not change.
-std::optional<String> getNormalizedIndexColumnName(const IndexDescription & index)
+std::optional<String> getNormalizedIndexColumnName(const IndexDescription & index, const MergeTreeIndexTextPreprocessor & preprocessor)
 {
     /// A text index is always defined on a single expression.
     if (!index.expression_list_ast || index.expression_list_ast->children.size() != 1)
         return {};
 
-    ASTPtr normalized = index.expression_list_ast->children.front()->clone();
+    ASTPtr normalized = preprocessor.getIndexExpressionAST()->clone();
     normalizeColumnExpression(normalized);
 
     String name = normalized->getColumnName();
@@ -2573,7 +2573,7 @@ MergeTreeIndexText::MergeTreeIndexText(
     , posting_list_codec(std::move(posting_list_codec_))
     , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index_))
     , postprocessor(std::make_shared<MergeTreeIndexTextPostprocessor>(params.postprocessor, index_))
-    , normalized_index_column_name(getNormalizedIndexColumnName(index_))
+    , normalized_index_column_name(getNormalizedIndexColumnName(index_, *preprocessor))
 {
 }
 

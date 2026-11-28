@@ -1,0 +1,4 @@
+4
+arrayMap(x -> if(1, concat(x, \'x\'), x), arr)
+1
+arrayMap(x -> if(1, concat(x, \'x\'), x), arr)

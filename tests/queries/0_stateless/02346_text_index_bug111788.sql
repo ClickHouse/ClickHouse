@@ -170,3 +170,64 @@ SELECT trimLeft(explain) FROM (
 ) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 
 DROP TABLE tab;
+
+SELECT 'Index on an Array expression with a constant if and a preprocessor';
+
+CREATE TABLE tab
+(
+    arr Array(String),
+    INDEX idx arrayFilter(x -> if(1, x != '', 0), arr)
+        TYPE text(tokenizer = 'array', preprocessor = lower(arrayFilter(x -> x != '', arr)))
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 2;
+
+INSERT INTO tab VALUES (['Hello', '']), (['x']), (['y']), (['z']);
+
+SELECT count() FROM tab WHERE hasAnyTokens(arrayFilter(x -> if(1, x != '', 0), arr), ['hello']) SETTINGS optimize_empty_string_comparisons = 1;
+SELECT count() FROM tab WHERE hasAnyTokens(arrayFilter(x -> if(1, x != '', 0), arr), ['hello']) SETTINGS optimize_empty_string_comparisons = 0;
+
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE hasAnyTokens(arrayFilter(x -> if(1, x != '', 0), arr), ['hello'])
+    SETTINGS optimize_empty_string_comparisons = 1
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+
+DROP TABLE tab;
+
+SELECT 'Index on an Array expression with a constant if producing the empty string and a preprocessor';
+
+CREATE TABLE tab
+(
+    arr Array(String),
+    INDEX idx arrayFilter(x -> x != if(1, '', 'unused'), arr)
+        TYPE text(tokenizer = 'array', preprocessor = lower(arrayFilter(x -> x != '', arr)))
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 2;
+
+INSERT INTO tab VALUES (['Hello', '']), (['x']), (['y']), (['z']);
+
+SELECT count() FROM tab WHERE hasAnyTokens(arrayFilter(x -> x != if(1, '', 'unused'), arr), ['hello']) SETTINGS optimize_empty_string_comparisons = 1;
+SELECT count() FROM tab WHERE hasAnyTokens(arrayFilter(x -> x != if(1, '', 'unused'), arr), ['hello']) SETTINGS optimize_empty_string_comparisons = 0;
+
+DROP TABLE tab;
+
+SELECT 'Index on an expression reading a column only in a constant-folded branch';
+
+CREATE TABLE tab
+(
+    s String,
+    unused String,
+    INDEX idx concat(s, if(1 = 1, '', if(unused = '', 'a', 'b'))) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO tab VALUES ('Hello', 'ignored');
+
+SELECT count() FROM tab WHERE hasAnyTokens(concat(s, if(1 = 1, '', if(unused = '', 'a', 'b'))), ['Hello']);
+
+DROP TABLE tab;
