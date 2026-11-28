@@ -43,8 +43,8 @@ Index on an Array expression with a constant if and a preprocessor
 1
 Name: idx
 Granules: 1/2
-Index on a String expression with a constant if and a preprocessor
+Index on an Array expression with a constant if producing the empty string and a preprocessor
 1
 1
-Name: idx
-Granules: 1/2
+Index on an expression reading a column only in a constant-folded branch
+1

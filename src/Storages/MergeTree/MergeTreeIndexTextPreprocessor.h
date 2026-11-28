@@ -33,6 +33,9 @@ public:
 
     [[nodiscard]] bool isASCIILowerOrUpper() const { return is_ascii_lower_or_upper; }
 
+    /// Copy of the index expression; for an `Array` index the analysis that builds `original_actions` rewrites it in place.
+    [[nodiscard]] const ASTPtr & getIndexExpressionAST() const { return index_expression_ast; }
+
 private:
     /// True only when the preprocessor is exactly lower/upper applied directly to the index column
     /// (no nested transformations, and not the UTF-8 variants).
@@ -43,6 +46,7 @@ private:
     DataTypePtr index_column_type;
     /// The preprocessor expression with the index column replaced by a placeholder identifier.
     ASTPtr expression_ast_for_index_column;
+    ASTPtr index_expression_ast;
     /// The original expression actions that executes the preprocessor expression
     /// and the index expression from the required index column.
     ExpressionActions original_actions;

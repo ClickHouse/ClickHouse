@@ -27,7 +27,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
-#include <Interpreters/TreeRewriter.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -2512,17 +2511,15 @@ namespace
 {
 
 /// Rewrites `x = ''` / `x != ''` to `empty(x)` / `notEmpty(x)`, like `optimize_empty_string_comparisons` does in queries.
-/// Returns whether anything was rewritten.
-bool normalizeColumnExpression(ASTPtr & ast)
+void normalizeColumnExpression(ASTPtr & ast)
 {
-    bool rewritten = false;
     for (auto & child : ast->children)
-        rewritten |= normalizeColumnExpression(child);
+        normalizeColumnExpression(child);
 
     const auto * function = ast->as<ASTFunction>();
     if (!function || (function->name != "equals" && function->name != "notEquals")
         || !function->arguments || function->arguments->children.size() != 2)
-        return rewritten;
+        return;
 
     auto is_empty_string_literal = [](const ASTPtr & node)
     {
@@ -2538,27 +2535,22 @@ bool normalizeColumnExpression(ASTPtr & ast)
     else if (is_empty_string_literal(arguments[0]))
         expression = arguments[1];
     else
-        return rewritten;
+        return;
 
     ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", expression);
-    return true;
 }
 
 /// Queries are analyzed with `optimize_empty_string_comparisons`, index expressions are not, so an index such as
 /// `arrayFilter(s -> s != '', arr)` is never matched by name (issue #111788). Returns the name of the index
 /// expression after the same rewrite, or `std::nullopt` if it does not change.
-std::optional<String> getNormalizedIndexColumnName(const IndexDescription & index)
+std::optional<String> getNormalizedIndexColumnName(const IndexDescription & index, const MergeTreeIndexTextPreprocessor & preprocessor)
 {
     /// A text index is always defined on a single expression.
     if (!index.expression_list_ast || index.expression_list_ast->children.size() != 1)
         return {};
 
-    ASTPtr normalized = index.expression_list_ast->children.front()->clone();
-    if (!normalizeColumnExpression(normalized))
-        return {};
-
-    /// `sample_block` and queries name the analyzed expression, e.g. with a constant `if` folded.
-    TreeRewriter(Context::getGlobalContextInstance()).analyze(normalized, index.expression->getRequiredColumnsWithTypes());
+    ASTPtr normalized = preprocessor.getIndexExpressionAST()->clone();
+    normalizeColumnExpression(normalized);
 
     String name = normalized->getColumnName();
     if (index.sample_block.has(name))
@@ -2581,7 +2573,7 @@ MergeTreeIndexText::MergeTreeIndexText(
     , posting_list_codec(std::move(posting_list_codec_))
     , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index_))
     , postprocessor(std::make_shared<MergeTreeIndexTextPostprocessor>(params.postprocessor, index_))
-    , normalized_index_column_name(getNormalizedIndexColumnName(index_))
+    , normalized_index_column_name(getNormalizedIndexColumnName(index_, *preprocessor))
 {
 }
 
