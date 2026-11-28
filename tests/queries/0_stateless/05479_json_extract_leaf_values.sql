@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the reference pins the order of rows aggregated without `ORDER BY`, which follows the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 -- Tests for JSONExtractLeafValues and JSONExtractLeafPathsAndValues.
 
 SELECT '-- nested objects, scalars, null skipping, empty containers';

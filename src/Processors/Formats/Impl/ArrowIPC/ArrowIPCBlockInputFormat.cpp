@@ -217,7 +217,7 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
     chassert(in); /// the input buffer is set in the constructor and is never null
     size_t file_size = 0;
     /// Use random access only when the input is genuinely seekable, its size is known, and
-    /// `input_format_allow_seeks` is not disabled — mirroring `asArrowFile` in the library reader.
+    /// `input_format_allow_seeks` is not disabled.
     seekable = format_settings.seekable_read ? dynamic_cast<SeekableReadBuffer *>(in) : nullptr;
     std::optional<size_t> known_size;
     if (seekable)
@@ -242,8 +242,7 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
         copyData(*in, *data, is_stopped);
         data->finalize();
         /// `copyData` returns early when the read was cancelled, leaving `data` partial. Do not parse
-        /// that truncated buffer as an Arrow file — bail out and let `prepareReader`/`read` finish cleanly
-        /// (matching the library path, which returned without parsing after a cancelled `asArrowFile`).
+        /// that truncated buffer as an Arrow file — bail out and let `prepareReader`/`read` finish cleanly.
         if (is_stopped)
             return;
         file_size = data->count();

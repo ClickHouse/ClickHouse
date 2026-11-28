@@ -36,6 +36,8 @@ expect_after {
 
 # CLICKHOUSE_CLIENT_EXPECT_OPT is not used because it forces --progress no.
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --no-warnings --progress-table off --enable-progress-table-toggle 0 --highlight 0 --history_file=$history_file"
+# The progress bar is multibyte: Tcl 8.6 can keep the tail of a UTF-8 read buffered without a readable event.
+fconfigure $spawn_id -encoding binary
 expect ":) "
 
 # ~44 MB of incompressible data: big enough that the throttler's initial burst leaves the read

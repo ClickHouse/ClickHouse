@@ -8,6 +8,8 @@
 -- (dense segment padded whole), `SegmentsSkippedResolved` and `BlocksSkippedResolved`
 -- (region already resolved: all-ones for OR, all-zeros for AND). The OR and AND queries
 -- below still exercise both sides of each counter.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 SET enable_full_text_index = 1;
 SET text_index_posting_list_apply_mode = 'lazy';

@@ -850,6 +850,41 @@ GROUP BY concatWithSeparatorAssumeInjective('-', first_name, last_name);
 └─────────────┴─────────────┘
 ```
 
+## concatWithSeparatorIgnoreNulls {#concatWithSeparatorIgnoreNulls}
+
+Introduced in: v26.12.0
+
+Concatenates the values in order with a constant separator, skipping top-level `NULL` values.
+Empty strings are kept. If no values are supplied or all values are `NULL`, a non-`NULL` separator yields `''`.
+Values of types other than `String` and `FixedString` are converted to strings using their default text serialization.
+
+**Syntax**
+
+```sql
+concatWithSeparatorIgnoreNulls(separator[, value1, value2, ...])
+```
+
+**Arguments**
+
+- `separator` — A constant `String` or `FixedString`, including nullable and low-cardinality forms, or the `NULL` literal. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`Nullable(String)`](/reference/data-types/nullable) or [`Nullable(FixedString)`](/reference/data-types/nullable) or [`LowCardinality`](/reference/data-types/lowcardinality) or [`NULL`](/reference/syntax#null)
+- `value1, value2, ...` — Values to concatenate. [`Any`](/reference/data-types/index)
+
+**Returned value**
+
+Returns the concatenated string. The result is `Nullable(String)` if the separator type is nullable, including the `NULL` literal, and `String` otherwise. A `NULL` separator returns `NULL`. [`String`](/reference/data-types/string) or [`Nullable(String)`](/reference/data-types/nullable)
+
+**Examples**
+
+**Skip null values**
+
+```sql title=Query
+SELECT concatWithSeparatorIgnoreNulls(',', 'x', NULL, 'y') AS result
+```
+
+```response title=Response
+x,y
+```
+
 ## conv {#conv}
 
 Introduced in: v25.10.0

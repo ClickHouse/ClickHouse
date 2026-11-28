@@ -778,6 +778,18 @@ Sum size of currently allocated fiber stacks.
 
 Number of currently allocated fiber stacks (fibers are used for asynchronous communication with remote replicas).
 
+### FilesystemCacheCleanupHelperThreads {#filesystemcachecleanuphelperthreads}
+
+Number of helper threads in the filesystem cache background cleanup, which removes the keys without file segments from the cache metadata and from disk, and the empty key directories found at startup
+
+### FilesystemCacheCleanupHelperThreadsActive {#filesystemcachecleanuphelperthreadsactive}
+
+Number of helper threads in the filesystem cache background cleanup running a task
+
+### FilesystemCacheCleanupHelperThreadsScheduled {#filesystemcachecleanuphelperthreadsscheduled}
+
+Number of queued or active jobs of the helper threads in the filesystem cache background cleanup
+
 ### FilesystemCacheDelayedCleanupElements {#filesystemcachedelayedcleanupelements}
 
 Filesystem cache elements in background cleanup queue

@@ -1,6 +1,8 @@
 -- Tags: no-parallel-replicas, no-replicated-database
 -- no-parallel-replicas: profile events may differ with parallel replicas.
 -- no-replicated-database: fails due to additional shard.
+-- Disable force_primary_key_reverse_order: `ALTER TABLE ... MODIFY ORDER BY` cannot express `DESC`, so it would change the direction of a forced descending key
+SET force_primary_key_reverse_order = 0;
 
 -- v2 patch parts store the sort-key columns they were written with only to identify updated rows.
 -- After ALTER MODIFY ORDER BY narrows the sorting key, such columns are no longer part of the

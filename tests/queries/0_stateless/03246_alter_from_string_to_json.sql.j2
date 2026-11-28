@@ -1,5 +1,7 @@
 -- Random settings limits: index_granularity=(8192, 60000); index_granularity_bytes=(102400, None)
 -- Tags: long
+-- Disable force_primary_key_reverse_order: ALTER from String to JSON depends on physical row order for JSON merge
+SET force_primary_key_reverse_order = 0;
 -- After the ALTER the `json` column has ~97 substreams (typed paths plus every
 -- shared data bucket), and a compact part keeps one mark per granule per
 -- substream, so a tiny index_granularity multiplies the mark count by the

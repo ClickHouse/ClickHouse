@@ -1662,13 +1662,15 @@ Status ArrowFlightServer::doAction(const AuthMiddleware & auth, const protocol::
                     /// No value means "reset to default" (SET setting = DEFAULT).
                     session_context->checkSettingsConstraintsForSettingsReset({setting}, SettingSource::QUERY);
                     session_context->resetSettingsToDefaultValue({setting});
+                    session_context->reportObsoleteSettingsReset({setting});
                 }
                 else
                 {
                     auto string_value = to_string_value(value);
                     SettingChange change{setting, Field{string_value}};
                     session_context->checkSettingsConstraints(change, SettingSource::QUERY);
-                    session_context->setSetting(setting, string_value);
+                    /// `applySettingChange` also reports a change of an obsolete setting.
+                    session_context->applySettingChange(change);
                 }
             }
             catch (DB::Exception & e)

@@ -1,5 +1,7 @@
 -- Tags: no-parallel-replicas
 -- Optimization doen't work with parallel replicas
+-- Disable force_primary_key_reverse_order: the reference pins the pipeline, and the storage ordering is reused for window functions only with an ascending key
+SET force_primary_key_reverse_order = 0;
 SET explain_query_plan_default = 'legacy';
 
 CREATE TABLE t(a UInt32, b UInt32) ENGINE=MergeTree() ORDER BY a SETTINGS index_granularity = 8192;

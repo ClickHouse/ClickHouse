@@ -1,4 +1,7 @@
 -- Tags: no-msan
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 SET explain_query_plan_default = 'legacy';
 SET parallel_replicas_local_plan = 1;
 

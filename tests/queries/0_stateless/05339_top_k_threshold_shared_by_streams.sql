@@ -3,6 +3,8 @@
 
 -- The dynamic top-K threshold of ORDER BY ... LIMIT is collected across the blocks of all sorting streams.
 
+-- Disable force_primary_key_reverse_order: the reference pins the marks skipped by the top-K threshold, which depend on the sorting key direction
+SET force_primary_key_reverse_order = 0;
 SET use_query_condition_cache = 0;
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 SET use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000;
