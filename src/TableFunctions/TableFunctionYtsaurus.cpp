@@ -88,7 +88,9 @@ void TableFunctionYTsaurus::parseArguments(const ASTPtr & ast_function, ContextP
     if (!func_args.arguments)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'ytsaurus' must have arguments.");
 
-    ASTs & args = func_args.arguments->children;
+    /// A copy, since `CREATE TABLE ... AS ytsaurus(...)` stores this call as the definition of the table, which must keep the
+    /// SETTINGS argument removed below.
+    ASTs args = func_args.arguments->children;
 
     YTsaurusSettings yt_settings;
 
