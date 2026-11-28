@@ -1,0 +1,8 @@
+<clickhouse>
+    <open_policy_agent>
+        <uri>http://127.0.0.1:8181/v1/data/clickhouse/allow</uri>
+        <exempt_users>
+            <user>default</user>
+        </exempt_users>
+    </open_policy_agent>
+</clickhouse>
