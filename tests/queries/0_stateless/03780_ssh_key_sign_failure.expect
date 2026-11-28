@@ -1,0 +1,71 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest
+# no-fasttest: the SSH handshake is only compiled into a server built with SSH support.
+#
+# The client signs the server's challenge with the key given to `--ssh-key-file`. A key that the
+# signing backend refuses must surface as an error, never as a crash: `libssh`'s `sshsig_sign` used to
+# return `SSH_OK` while leaving its out parameter at `NULL` when `pki_sign_data` rejected the key, and
+# `SSHKey::signString` then built a `String` from it.
+#
+# The key here is a 1024-bit RSA key, which is below the FIPS-approved minimum modulus, so an OpenSSL
+# FIPS build refuses to sign with it. The user is given a different public key, so where signing does
+# succeed the server rejects the signature instead. Either way the client must report a code:
+#
+#   non-FIPS build   signs, the server rejects the signature   AUTHENTICATION_FAILED, 516
+#   FIPS build       cannot sign                               LIBSSH_ERROR, 706
+#
+# An unfixed client segfaults on the second one and prints no code at all.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+
+log_user 0
+set timeout 20
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "echo '-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAlwAAAAdzc2gtcn
+NhAAAAAwEAAQAAAIEArR2o6g78E1y0CmmU3tIHrwwoOhHsYMDHwv5iY0t6yujTo0rpvPQl
+RW38jtYIpAh+dURKtrWBOsoxpNNGGUCNdrP7Yu4vaLX1UNVZUEg9eQH6RvkyjFbP4VHbcL
+JylkNhZi2w7/RZ2qyxGvg8HNOER+oqQXyu5ZaJOqn6oip1mtkAAAH4VwglXVcIJV0AAAAH
+c3NoLXJzYQAAAIEArR2o6g78E1y0CmmU3tIHrwwoOhHsYMDHwv5iY0t6yujTo0rpvPQlRW
+38jtYIpAh+dURKtrWBOsoxpNNGGUCNdrP7Yu4vaLX1UNVZUEg9eQH6RvkyjFbP4VHbcLJy
+lkNhZi2w7/RZ2qyxGvg8HNOER+oqQXyu5ZaJOqn6oip1mtkAAAADAQABAAAAgDG7Qooy0d
+GSIRqYqC62sYRk/q1n9rr4xqpKv+L8jQL7jcjsPWeNz6M5bINwEz1kP0fa3YfNbpl/+nD6
+TLn2ZGzLQPfpjZ3JYrA+edzkN9EzfISQL2LKUxKZ2DIBStV4AyQTiq7L3R8DnmqzJgkrty
+e2eBcOki0j7CSX09BZwhINAAAAQHHTqFbPmhdD7qvwWqE3i3677A09nQstCyKfpYJ7Re8Y
+AeqiiXaEHx0WizIw0T0na5y21kpRkRDxZkLIhRZppV8AAABBANz8V0svfv6viywC7OwFr1
+AZijiJDJ8kGBixRSPD6Z1RL2CYzeJqKPI1AfRLYCGy1/0roDYb5mhamsMdgdLhwasAAABB
+AMiLnTRSjcv9GTq75uo0961r9hxgvTIXVGGUSXqS5eHztmeCu5sDhWP8OPm0fvAr+iLDBm
+ej4A3szkUI04WnWYsAAAAAAQID
+-----END OPENSSH PRIVATE KEY-----' > ssh_key_03780_sign_\$CLICKHOUSE_DATABASE ; chmod 600 ssh_key_03780_sign_\$CLICKHOUSE_DATABASE"
+expect eof
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CURL -sS \$CLICKHOUSE_URL -d \"CREATE USER IF NOT EXISTS user_03780_sign_\$CLICKHOUSE_DATABASE IDENTIFIED WITH ssh_key BY KEY 'AAAAB3NzaC1yc2EAAAADAQABAAABAQCynrX7OAFO5+bN5gBkEQkbJsLmfrHqivbPZF6XKw/TV3yGvX6pwgh/lQn/0tkDPTK1cP36QOARhJASZk2PYHIus0Py7OCvwCjLpXutmm8I4s9jjac7Qa1v6IwRRW7cktHmGKE9Fd60i/Qpr/Fw/g8a3n36dzx4YLIVAzE90KykN3yvUB567kL/QSlPQpdOi7G6IudsaErCVaKLu4lk3423EGaAUz64785eZ40nHKRpYuUgSD88Rh9Q3oYbZID6WGQmwt1/sNEpsVnF55DRg/lQvnkVBLPOg0b8kdBzIeuHZsPrgd4slrWd8R/4FYWIIFKFmq1TvzieQuR3tSxLI765' TYPE 'ssh-rsa'\""
+expect eof
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --ssh-key-file ssh_key_03780_sign_\$CLICKHOUSE_DATABASE --user user_03780_sign_\$CLICKHOUSE_DATABASE"
+
+expect -re "Connecting to .+ as user user_03780_sign_\\S+\\."
+expect -re "Code: (516|706)\\. "
+expect eof
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CURL -sS \$CLICKHOUSE_URL -d \"DROP USER IF EXISTS user_03780_sign_\$CLICKHOUSE_DATABASE\""
+expect eof
+
+spawn bash -c "rm -f ssh_key_03780_sign_\$CLICKHOUSE_DATABASE"
+expect eof
