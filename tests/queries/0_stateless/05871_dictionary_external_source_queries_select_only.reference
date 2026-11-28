@@ -1,0 +1,24 @@
+--- A non-SELECT invalidate query is not sent
+a
+rejected: 1
+0
+--- Lookups with any key are sent
+quote	backslash
+--- The queries held by a named collection are checked
+1
+--- A named collection requires the privilege NAMED COLLECTION
+Without the grant: denied, not created
+1
+0
+Without the grant, ON CLUSTER: denied, not created
+1
+0
+Without the grant, the name is an expression: denied, not created
+1
+0
+With the grant: created
+0
+1
+With the grant, ON CLUSTER: created
+0
+1

@@ -5,6 +5,7 @@
 #endif
 
 #include <mysqlxx/Connection.h>
+#include <cstring>
 #include <mysqlxx/Exception.h>
 
 static inline const char* ifNotEmpty(const char* s)
@@ -147,6 +148,22 @@ void Connection::connect(const char* db,
     /// Sets UTF-8 as default encoding. See https://mariadb.com/kb/en/mysql_set_character_set/
     if (mysql_set_character_set(driver.get(), "utf8mb4"))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+
+    /// ClickHouse writes string literals for MySQL with backslash escapes (dictionary lookups, the pushdown of the `MySQL`
+    /// engine and table function). With `NO_BACKSLASH_ESCAPES` a backslash is a plain character, so a value could end its
+    /// literal and be read as SQL. The server reports the mode in every response, so the mode is turned off for this session
+    /// when it is on. The same statement is the init command, which the driver runs again when it reconnects by itself.
+    if (driver->server_status & SERVER_STATUS_NO_BACKSLASH_ESCAPES)
+    {
+        static constexpr auto disable_no_backslash_escapes
+            = "SET SESSION sql_mode = TRIM(BOTH ',' FROM REPLACE(CONCAT(',', @@SESSION.sql_mode, ','), ',NO_BACKSLASH_ESCAPES,', ','))";
+        if (mysql_options(driver.get(), MYSQL_INIT_COMMAND, disable_no_backslash_escapes))
+            throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+        if (mysql_real_query(driver.get(), disable_no_backslash_escapes, strlen(disable_no_backslash_escapes)))
+            throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+        if (driver->server_status & SERVER_STATUS_NO_BACKSLASH_ESCAPES)
+            throw ConnectionFailed("Cannot turn off NO_BACKSLASH_ESCAPES in sql_mode of the MySQL session", 0);
+    }
 
     is_connected = true;
 }

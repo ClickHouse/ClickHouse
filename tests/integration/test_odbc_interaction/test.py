@@ -1087,3 +1087,30 @@ def test_odbc_long_text(started_cluster):
     assert result.strip() == long_text
     node1.query("DROP TABLE test_long_text")
     cursor.execute("drop table clickhouse.test_long_text")
+
+
+def test_odbc_dictionary_query_must_be_unambiguous_select(started_cluster):
+    # The dialect of an ODBC database is unknown, so a dictionary created by DDL rejects what SQL Server reads as several
+    # statements while ClickHouse reads one `SELECT`: an alias without `AS` and square brackets.
+    sqlite_setup = node1.odbc_drivers["SQLite3"]
+
+    def create(query):
+        node1.query("DROP DICTIONARY IF EXISTS odbc_dict_select")
+        node1.query(
+            f"""
+            CREATE DICTIONARY odbc_dict_select (id UInt64, value String) PRIMARY KEY id
+            SOURCE(ODBC(CONNECTION_STRING 'DSN={sqlite_setup["DSN"]}' QUERY '{query}'))
+            LAYOUT(HASHED()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)
+            """
+        )
+
+    try:
+        for query in ["SELECT x AS id, y SHUTDOWN FROM t1", "SELECT [''''] = 1 AS id, y AS value FROM t1"]:
+            create(query)
+            error = node1.query_and_get_error("SYSTEM RELOAD DICTIONARY odbc_dict_select")
+            assert "INCORRECT_QUERY" in error, error
+
+        create("SELECT x AS id, y AS value FROM t1")
+        node1.query("SYSTEM RELOAD DICTIONARY odbc_dict_select")
+    finally:
+        node1.query("DROP DICTIONARY IF EXISTS odbc_dict_select")

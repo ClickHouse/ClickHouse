@@ -4,6 +4,7 @@
 #include <Core/QualifiedTableName.h>
 #include <Core/Settings.h>
 #include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Dictionaries/registerDictionaries.h>
 
@@ -101,6 +102,8 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     , query_builder(makeExternalQueryBuilder(dict_struct, configuration.schema, configuration.table, configuration.query, configuration.where))
     , load_all_query(query_builder.composeLoadAllQuery())
 {
+    if (configuration.check_queries_are_select)
+        checkExternalDictionaryLoadQueryIsSelect(configuration.query, load_all_query, "PostgreSQL");
 }
 
 
@@ -131,6 +134,8 @@ BlockIO PostgreSQLDictionarySource::loadAll()
 BlockIO PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
+    if (configuration.check_queries_are_select)
+        checkExternalDictionaryQueryIsSelect(load_update_query, "Update query for PostgreSQL dictionary", "Only SELECT query can be used as a dictionary source", false);
     LOG_TRACE(log, fmt::runtime(load_update_query));
     BlockIO io;
     io.pipeline = loadBase(load_update_query);
@@ -194,6 +199,9 @@ bool PostgreSQLDictionarySource::isModified() const
 
 std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & request) const
 {
+    if (configuration.check_queries_are_select)
+        checkExternalDictionaryQueryIsSelect(request, "Invalidate query for PostgreSQL dictionary", "Only SELECT query can be used as a dictionary invalidate query", false);
+
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
@@ -307,6 +315,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                 .invalidate_query = named_collection->getOrDefault<String>("invalidate_query", ""),
                 .update_field = named_collection->getOrDefault<String>("update_field", ""),
                 .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
+                .check_queries_are_select = created_from_ddl,
             });
 
             bg_reconnect = named_collection->getOrDefault<bool>("background_reconnect", false);
@@ -342,7 +351,8 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                 .where = config.getString(fmt::format("{}.where", settings_config_prefix), ""),
                 .invalidate_query = config.getString(fmt::format("{}.invalidate_query", settings_config_prefix), ""),
                 .update_field = config.getString(fmt::format("{}.update_field", settings_config_prefix), ""),
-                .update_lag = config.getUInt64(fmt::format("{}.update_lag", settings_config_prefix), 1)
+                .update_lag = config.getUInt64(fmt::format("{}.update_lag", settings_config_prefix), 1),
+                .check_queries_are_select = created_from_ddl,
             });
 
             bg_reconnect = config.getBool(fmt::format("{}.background_reconnect", settings_config_prefix), false);

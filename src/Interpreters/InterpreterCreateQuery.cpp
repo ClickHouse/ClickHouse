@@ -42,6 +42,7 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -2553,6 +2554,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
+        /// The other replicas create a dictionary with full access, and their named collection can store other keys
+        /// than the one here, so the overrides of its keys are authorized here, before the query is enqueued.
+        /// A replayed entry was authorized on the replica that enqueued it.
+        if (isFreshTableDefinition(mode, create.attach_short_syntax) && !getContext()->isDDLOrOnClusterInternal())
+            getContext()->checkAccess(getAccessToOverrideNamedCollectionOfDictionarySource(create));
+
         chassert(!ddl_guard);
         /// Release before the guard: this replica runs the entry in this thread, and a synchronous drop waits for every snapshot.
         releaseQueryStorageSnapshots(getContext());
@@ -4152,6 +4159,9 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
     prepareOnClusterQuery(create, getContext(), create.cluster);
     DDLQueryOnClusterParams params;
     params.access_to_check = getRequiredAccess();
+    /// The hosts create a dictionary with full access unless they run the query as this user, and their named collection can
+    /// store other keys than the one here, so they cannot check the overrides of its keys: they are authorized here.
+    params.access_to_check.append_range(getAccessToOverrideNamedCollectionOfDictionarySource(create));
     params.additional_access_check = [captured_query_ptr = query_ptr](const String &, bool throw_if_unresolved)
     {
         /// `throw_if_unresolved` means the hosts do not run the query as this user.
@@ -4188,6 +4198,15 @@ BlockIO InterpreterCreateQuery::execute()
             "Use ATTACH TABLE {} to reattach an existing detached table.",
             create.getTable());
 
+    /// `getRequiredAccess` must authorize the named collection that is stored and sent to other hosts, so the constant
+    /// expressions of the source of a dictionary are evaluated once, here: one can return a new value at each evaluation
+    /// (`randConstant()`). The later evaluation in `getTablePropertiesAndNormalizeCreateQuery` does not change literals.
+    if (create.is_dictionary && create.dictionary && create.dictionary->source)
+    {
+        NormalizeAndEvaluateConstantsVisitor::Data visitor_data{getContext()};
+        NormalizeAndEvaluateConstantsVisitor(visitor_data).visit(create.dictionary->source->ptr());
+    }
+
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (create.attach_as_replicated.has_value())
@@ -4218,6 +4237,41 @@ BlockIO InterpreterCreateQuery::execute()
 }
 
 
+std::optional<String> InterpreterCreateQuery::getNamedCollectionOfDictionarySource(const ASTCreateQuery & create)
+{
+    if (!create.dictionary || !create.dictionary->source || !create.dictionary->source->elements)
+        return {};
+
+    for (const auto & child : create.dictionary->source->elements->children)
+    {
+        const auto * pair = child->as<ASTPair>();
+        if (!pair || Poco::toLower(pair->first) != "name")
+            continue;
+        if (const auto * identifier = pair->second->as<ASTIdentifier>())
+            return identifier->name();
+        if (const auto * literal = pair->second->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+            return literal->value.safeGet<String>();
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The name of a named collection in a dictionary source must be a string");
+    }
+    return {};
+}
+
+AccessRightsElements InterpreterCreateQuery::getAccessToOverrideNamedCollectionOfDictionarySource(const ASTCreateQuery & create)
+{
+    const auto collection_name = getNamedCollectionOfDictionarySource(create);
+    if (!collection_name)
+        return {};
+
+    /// Whether a key replaces a stored key depends on the collection on each host, so any key other than `name` counts.
+    for (const auto & child : create.dictionary->source->elements->children)
+    {
+        const auto * pair = child->as<ASTPair>();
+        if (pair && Poco::toLower(pair->first) != "name")
+            return {AccessRightsElement(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS, *collection_name)};
+    }
+    return {};
+}
+
 AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 {
     /// Internal queries (initiated by the server itself) always have access to everything.
@@ -4234,6 +4288,11 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     else if (create.is_dictionary)
     {
         required_access.emplace_back(AccessType::CREATE_DICTIONARY, create.getDatabase(), create.getTable());
+
+        /// The dictionary is loaded with the global context, which has access to every named collection.
+        /// So the privilege to use the collection of its source, required by table engines and table functions, is required here.
+        if (auto collection_name = getNamedCollectionOfDictionarySource(create))
+            required_access.emplace_back(AccessType::NAMED_COLLECTION, *collection_name);
     }
     else if (create.isView())
     {
