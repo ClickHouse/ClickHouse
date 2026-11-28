@@ -9,6 +9,7 @@
 #include <atomic>
 #include <map>
 #include <mutex>
+#include <optional>
 
 namespace DB
 {
@@ -66,6 +67,9 @@ private:
 
     std::string dumpTasks() const;
 
+    /// Lazy-instantiate the kernel polling and notification handles under caller lock.
+    void ensureInitialized();
+
 public:
     PollingQueue();
 
@@ -83,7 +87,15 @@ public:
     /// Get any ready descriptor.
     /// Returns a task or notification, or an empty result if nothing is ready.
     /// Does not block.
-    TaskData tryGetReadyTask(std::unique_lock<std::mutex> & lock) { return getTask(lock, 0); }
+    TaskData tryGetReadyTask(std::unique_lock<std::mutex> & lock)
+    {
+        /// Fast Path: If no async tasks were ever added, descriptors are uninitialized.
+        /// Return immediately without any epoll_wait syscall or cross-socket synchronization contention.
+        if (!initialized.load(std::memory_order_relaxed) && pending_notifications.load(std::memory_order_relaxed) == 0)
+            return {};
+
+        return getTask(lock, 0);
+    }
 
     /// Interrupt waiting permanently.
     void finish();
@@ -91,16 +103,18 @@ public:
     void notify(Notification notification);
 
 private:
-    Epoll epoll{EpollNesting::PipelinePoller};
+    std::atomic<bool> initialized{false};
+
+    std::optional<Epoll> epoll;
     UnorderedMapWithMemoryTracking<Key, TaskData> tasks;
 
     /// In-Flight timers
     Deadlines deadlines;
-    TimerDescriptor timer_signal;
+    std::optional<TimerDescriptor> timer_signal;
 
     /// `Finish` stays set; polling consumes the other notification bits.
     std::atomic<uint8_t> pending_notifications = 0;
-    WakeupFd notification_signal;
+    std::optional<WakeupFd> notification_signal;
 };
 #else
 class PollingQueue
