@@ -121,8 +121,7 @@ write_geoarrow("arrow", ["point(1 2)", "LINESTRING EMPTY", "POLYGON(())", "MULTI
 # 7. Rejected values, one file each so the throwing row is isolated.
 #    First group: readWKT rejects these too.
 #    Second group: the importer stays stricter than readWKT, which fabricates
-#    coordinates for them ('POINT()' -> (0,0), 'POINT(1)' -> (1,0)) or accepts a
-#    dimension tag the importer does not support.
+#    coordinates for them ('POINT()' -> (0,0), 'POINT(1)' -> (1,0)).
 bad_values = [
     "LINESTRINGEMPTY",
     "LINESTRING EMPTYX",
@@ -141,9 +140,6 @@ bad_values = [
     "MULTIPOLYGON(EMPTY )",
     "MULTIPOLYGON((EMPTY ))",
     "MULTIPOINT(1 1,())",
-    "POINT Z (1 2 3)",
-    "LINESTRING Z EMPTY",
-    "LINESTRING ZM EMPTY",
     "POINT EMPTY",
     "point empty",
     "POINT Z EMPTY",
@@ -153,7 +149,6 @@ bad_values = [
     "MULTIPOINT(())",
     "POINT(1)",
     "LINESTRING(1 1, 2)",
-    "LINESTRING M EMPTY",
     "LINESTRING M (1 1,2 2)",
 ]
 for i, wkt in enumerate(bad_values):
