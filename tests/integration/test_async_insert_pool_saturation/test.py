@@ -18,6 +18,7 @@ node_no_flush = cluster.add_instance(
 
 FAILPOINT = "async_insert_flush_pause_in_executor"
 ADMISSION_FAILPOINT = "async_insert_pause_before_schedule"
+SCHEDULE_FAILPOINT = "async_insert_throw_before_schedule"
 SETTINGS = {
     "async_insert": 1,
     "wait_for_async_insert": 0,
@@ -258,3 +259,37 @@ def test_shutdown_handles_batch_before_pool_admission(flush_on_shutdown):
         assert shutdown_node.query(f"SELECT count() FROM {table}") == expected
     finally:
         shutdown_node.query(f"DROP TABLE {table}")
+
+
+def test_failed_schedule_finishes_batch_and_keeps_deadline_worker(tables):
+    # Only the deadline worker flushes: the size threshold is never reached.
+    settings = {
+        **SETTINGS,
+        "wait_for_async_insert": 1,
+        "wait_for_async_insert_timeout": 10,
+        "async_insert_max_data_size": 1024,
+        "async_insert_busy_timeout_min_ms": 500,
+        "async_insert_busy_timeout_max_ms": 500,
+    }
+    try:
+        node.query(f"SYSTEM ENABLE FAILPOINT {SCHEDULE_FAILPOINT}")
+        # The worker takes the batch out of the queue and fails to schedule it.
+        error = node.http_query_and_get_error(
+            "INSERT INTO saturated FORMAT TSV", data="1\n", params=settings, timeout=60
+        )
+        assert "MEMORY_LIMIT_EXCEEDED" in error, error
+
+        # The same worker still flushes the next batch of its shard by the deadline.
+        assert (
+            node.http_query(
+                "INSERT INTO saturated FORMAT TSV",
+                data="2\n",
+                params=settings,
+                timeout=60,
+            )
+            == ""
+        )
+        assert node.query("SELECT x FROM saturated") == "2\n"
+        assert metric("PendingAsyncInsert") == 0
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {SCHEDULE_FAILPOINT}")

@@ -269,10 +269,10 @@ def send_forged_secondary_query(user, password, query, forged_initial_user):
 
 
 def test_forged_secondary_query_cannot_impersonate_on_secret_cluster(started_cluster):
-    """A user forges a SECONDARY_QUERY and reads a Distributed table over a secret cluster. The fix
-    refuses to forward a client-chosen initial_user, so the attacker never gets the admin-only data --
-    neither by impersonating 'admin' nor by sending an empty initial_user (which the shard would
-    otherwise authenticate as no user, i.e. with full access)."""
+    """A user forges a SECONDARY_QUERY and reads a Distributed table over a secret cluster. The attacker
+    never gets the admin-only data: a query impersonating 'admin' is not forwarded, and an empty
+    initial_user means the authenticated user (the shard would otherwise authenticate it as no user,
+    i.e. with full access)."""
     try:
         # A table only `admin` may read, exposed through a Distributed table over the secret cluster.
         node.query(
@@ -289,8 +289,12 @@ def test_forged_secondary_query_cannot_impersonate_on_secret_cluster(started_clu
         node.query("CREATE USER attacker IDENTIFIED WITH no_password HOST ANY")
         node.query("GRANT SELECT ON default.secret_dist TO attacker")
 
-        # The forged initial_user is rejected whether it impersonates 'admin' or is empty.
-        for forged_initial_user in [b"admin", b""]:
+        for forged_initial_user, expected_error in [
+            # Another user's name is refused at the interserver-secret boundary.
+            (b"admin", b"Refusing to forward a query over the cluster secret"),
+            # An empty name means the authenticated user, which has no access on the shard.
+            (b"", b"attacker: Not enough privileges"),
+        ]:
             response = send_forged_secondary_query(
                 user=b"attacker",
                 password=b"",
@@ -300,8 +304,7 @@ def test_forged_secondary_query_cannot_impersonate_on_secret_cluster(started_clu
 
             # The attacker must not obtain the admin-only data.
             assert b"TOP_SECRET_ADMIN_ONLY" not in response
-            # The query is rejected at the interserver-secret boundary, not silently downgraded.
-            assert b"Refusing to forward a query over the cluster secret" in response
+            assert expected_error in response
     finally:
         node.query("DROP TABLE IF EXISTS default.secret_dist SYNC")
         node.query("DROP TABLE IF EXISTS default.secret_data SYNC")

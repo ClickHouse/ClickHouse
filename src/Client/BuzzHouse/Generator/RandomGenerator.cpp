@@ -27,44 +27,90 @@ uint32_t RandomGenerator::nextLargeNumber()
     return dist3(generator);
 }
 
+/// Values at the edges of the integer widths and huge sizes, where overflows happen
+static constexpr uint64_t boundary_values[]
+    = {0,
+       1,
+       2,
+       3,
+       7,
+       127,
+       128,
+       255,
+       256,
+       32767,
+       32768,
+       65535,
+       65536,
+       (UINT64_C(1) << 20), /// 1 MiB
+       (UINT64_C(1) << 30), /// 1 GiB
+       (UINT64_C(1) << 31) - 1,
+       (UINT64_C(1) << 31),
+       (UINT64_C(1) << 32) - 1,
+       (UINT64_C(1) << 32),
+       (UINT64_C(1) << 32) + 1,
+       (UINT64_C(1) << 40), /// 1 TiB
+       (UINT64_C(1) << 53),
+       (UINT64_C(1) << 53) + 1,
+       (UINT64_C(1) << 62),
+       (UINT64_C(1) << 63) - 1,
+       (UINT64_C(1) << 63),
+       (UINT64_C(1) << 63) + 1,
+       std::numeric_limits<uint64_t>::max() - 1,
+       std::numeric_limits<uint64_t>::max()};
+
+/// A pool value cast to T: the truncation lands on the edges of the narrower widths, e.g. 2^32 - 1 on 255 for UInt8,
+/// and the unsigned values wrap to the negative ones, e.g. 2^63 on INT64_MIN and UINT64_MAX on -1
+template <typename T>
+static T boundaryValue(RandomGenerator & rg)
+{
+    const T res = static_cast<T>(boundary_values[rg.randomInt<size_t>(0, std::size(boundary_values) - 1)]);
+
+    if constexpr (std::is_signed_v<T>)
+    {
+        return (res != std::numeric_limits<T>::min() && rg.nextBool()) ? static_cast<T>(-res) : res;
+    }
+    return res;
+}
+
 uint8_t RandomGenerator::nextRandomUInt8()
 {
-    return uints8(generator);
+    return nextMediumNumber() < 6 ? boundaryValue<uint8_t>(*this) : uints8(generator);
 }
 
 int8_t RandomGenerator::nextRandomInt8()
 {
-    return ints8(generator);
+    return nextMediumNumber() < 6 ? boundaryValue<int8_t>(*this) : ints8(generator);
 }
 
 uint16_t RandomGenerator::nextRandomUInt16()
 {
-    return uints16(generator);
+    return nextMediumNumber() < 6 ? boundaryValue<uint16_t>(*this) : uints16(generator);
 }
 
 int16_t RandomGenerator::nextRandomInt16()
 {
-    return ints16(generator);
+    return nextMediumNumber() < 6 ? boundaryValue<int16_t>(*this) : ints16(generator);
 }
 
 uint32_t RandomGenerator::nextRandomUInt32()
 {
-    return uints32(generator);
+    return nextMediumNumber() < 6 ? boundaryValue<uint32_t>(*this) : uints32(generator);
 }
 
 int32_t RandomGenerator::nextRandomInt32()
 {
-    return ints32(generator);
+    return nextMediumNumber() < 6 ? boundaryValue<int32_t>(*this) : ints32(generator);
 }
 
 uint64_t RandomGenerator::nextRandomUInt64()
 {
-    return uints64(generator);
+    return nextMediumNumber() < 6 ? boundaryValue<uint64_t>(*this) : uints64(generator);
 }
 
 int64_t RandomGenerator::nextRandomInt64()
 {
-    return ints64(generator);
+    return nextMediumNumber() < 6 ? boundaryValue<int64_t>(*this) : ints64(generator);
 }
 
 uint64_t RandomGenerator::nextInFullRange()

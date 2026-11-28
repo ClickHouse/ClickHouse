@@ -133,6 +133,9 @@ public:
     /// Makes a backup of access entities.
     void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup) override;
 
+    /// Returns the storage `restoreFromBackup` restores access entities into.
+    StoragePtr getStorageForRestore();
+
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
     /// Sets the default profile's name.
