@@ -73,6 +73,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
 }
 
 namespace ErrorCodes
@@ -397,13 +398,16 @@ private:
         ContextAccessParams access;
         std::shared_ptr<const SettingsConstraintsAndProfileIDs> constraints;
         Settings settings;
+        /// The database that the unqualified names of `additional_table_filters` refer to, if there are filters.
+        String additional_table_filters_database;
 
         bool operator==(const Identity & other) const
         {
             /// The effective values are compared, not the lists of the changed settings: a `Merge` table assigns
             /// some settings for its children explicitly, such as `enable_parallel_replicas = 0`, and it must not
             /// make the child differ from a reader that has the same value by default.
-            return access == other.access && constraints == other.constraints && settings.hasSameValues(other.settings);
+            return access == other.access && constraints == other.constraints && settings.hasSameValues(other.settings)
+                && additional_table_filters_database == other.additional_table_filters_database;
         }
     };
 
@@ -412,7 +416,11 @@ private:
         Settings settings = context->getSettingsCopy();
         for (const auto * name : {"max_threads", "max_streams_to_max_threads_ratio", "parallelize_output_from_storages"})
             settings.setDefaultValue(name);
-        return {context->getAccess()->getParams(), context->getSettingsConstraintsAndCurrentProfiles(), std::move(settings)};
+        String additional_table_filters_database;
+        if (!settings[Setting::additional_table_filters].value.empty())
+            additional_table_filters_database = context->getDatabaseOfAdditionalTableFilters();
+        return {context->getAccess()->getParams(), context->getSettingsConstraintsAndCurrentProfiles(), std::move(settings),
+            std::move(additional_table_filters_database)};
     }
 
     [[nodiscard]] const PreparedSets * findSets(const Identity & identity) const TSA_REQUIRES(mutex)

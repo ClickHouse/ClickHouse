@@ -8,6 +8,16 @@ additional_table_filters
 additional_table_filters from another database
 2	2
 1	1
+additional_table_filters of a readonly query
+1	1
+0	0
+2	2
+1	1
+additional_table_filters by the alias of a table in a view
+2	2
+1	1
+1	1
+1	1
 allow_fuzz_query_functions = 1
 2	2	3
 allow_fuzz_query_functions = 0

@@ -1682,6 +1682,7 @@ ContextData::ContextData(const ContextData &o) :
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
     current_database(o.current_database),
+    additional_table_filters_database(o.additional_table_filters_database),
     can_use_query_result_cache(o.can_use_query_result_cache),
     settings(std::make_unique<Settings>(*o.settings)),
     progress_callback(o.progress_callback),
@@ -4448,6 +4449,18 @@ String Context::getCurrentDatabase() const
 {
     SharedLockGuard lock(mutex);
     return current_database;
+}
+
+String Context::getDatabaseOfAdditionalTableFilters() const
+{
+    SharedLockGuard lock(mutex);
+    return additional_table_filters_database.empty() ? current_database : additional_table_filters_database;
+}
+
+void Context::setDatabaseOfAdditionalTableFilters(const String & name)
+{
+    std::lock_guard lock(mutex);
+    additional_table_filters_database = name;
 }
 
 

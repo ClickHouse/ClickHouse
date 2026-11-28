@@ -406,26 +406,6 @@ static const std::vector<std::string_view> & getReaderSettingsForDefaultExpressi
     return names;
 }
 
-/// The `additional_table_filters` of the reading query restrict the rows that it reads from a table, so they also
-/// apply to the tables that a default reads: `x IN table` must not tell whether a filtered out row of `table` exists.
-/// A filter names a table relative to the current database of the reading query, while a default is evaluated with
-/// the current database of the storage, so in case they differ the unqualified names are qualified explicitly.
-static Field getReaderAdditionalTableFilters(const Context & read_context, const String & storage_database)
-{
-    Field filters = read_context.getSettingsRef().get("additional_table_filters");
-    const String reader_database = read_context.getCurrentDatabase();
-    if (reader_database.empty() || reader_database == storage_database)
-        return filters;
-
-    for (auto & filter : filters.safeGet<Map>())
-    {
-        auto & table = filter.safeGet<Tuple>().at(0).safeGet<String>();
-        if (!table.contains('.'))
-            table = reader_database + "." + table;
-    }
-    return filters;
-}
-
 /// The other settings of the storage context that replace the settings of the reading query must not bypass the constraints
 /// of its user: a setting pinned by a settings profile, such as `allow_executable_tables = 0 READONLY`, restricts what
 /// the user may read, whatever the settings of the storage are. The same holds for the readonly mode of the reading
@@ -480,12 +460,18 @@ ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
         const auto & reader_settings = settings.read_context->getSettingsRef();
         for (std::string_view name : getReaderSettingsForDefaultExpressions())
             default_expressions_settings.set(name, reader_settings.get(name));
-        default_expressions_settings.set(
-            "additional_table_filters",
-            getReaderAdditionalTableFilters(*settings.read_context, storage_context->getCurrentDatabase()));
+        /// The `additional_table_filters` of the reading query restrict the rows that it reads from a table, so they
+        /// also apply to the tables that a default reads: `x IN table` must not tell whether a filtered out row of
+        /// `table` exists. The filters are taken as they are, so the constraints of the reading query have nothing to
+        /// undo. A filter names a table by its alias or relative to the current database of the reading query,
+        /// while a default is evaluated with the current database of the storage, so the context remembers the
+        /// database the filters refer to instead of rewriting their keys, which cannot tell a table from an alias.
+        default_expressions_settings.set("additional_table_filters", reader_settings.get("additional_table_filters"));
         keepReaderSettingsConstraints(default_expressions_settings, *settings.read_context);
+        const String additional_table_filters_database = settings.read_context->getDatabaseOfAdditionalTableFilters();
         context_copy->setSettings(default_expressions_settings);
         context_copy->setCurrentDatabaseUnchecked(storage_context->getCurrentDatabase());
+        context_copy->setDatabaseOfAdditionalTableFilters(additional_table_filters_database);
     }
     else
     {

@@ -21,11 +21,13 @@ $CLICKHOUSE_CLIENT -m -q "
 
     SET allow_fuzz_query_functions = 1;
     CREATE VIEW rhs_view AS SELECT p FROM keys WHERE notEmpty(fuzzQuery('SELECT 1'));
+    CREATE VIEW rhs_alias_view SQL SECURITY INVOKER AS SELECT p FROM keys AS k;
 
     CREATE TABLE t (p UInt8) ENGINE = MergeTree ORDER BY p;
     INSERT INTO t VALUES (1), (2), (3);
     ALTER TABLE t ADD COLUMN in_keys UInt8 DEFAULT p IN keys;
     ALTER TABLE t ADD COLUMN in_view UInt8 DEFAULT p IN rhs_view;
+    ALTER TABLE t ADD COLUMN in_alias_view UInt8 DEFAULT p IN rhs_alias_view;
     ALTER TABLE t ADD COLUMN gated UInt8 DEFAULT notEmpty(fuzzQuery('SELECT 1'));
 
     CREATE TABLE t_conversion (p UInt8, f Nullable(UInt8)) ENGINE = MergeTree ORDER BY p;
@@ -50,6 +52,20 @@ echo 'additional_table_filters from another database'
 $CLICKHOUSE_CLIENT -q "USE ${other_db}; SELECT sum(p IN ${CLICKHOUSE_DATABASE}.keys), sum(in_keys) FROM ${CLICKHOUSE_DATABASE}.t SETTINGS additional_table_filters = {'keys': 'p = 1'}"
 $CLICKHOUSE_CLIENT -q "USE ${other_db}; SELECT sum(p IN ${CLICKHOUSE_DATABASE}.keys), sum(in_keys) FROM ${CLICKHOUSE_DATABASE}.t SETTINGS additional_table_filters = {'${CLICKHOUSE_DATABASE}.keys': 'p = 1'}"
 
+echo 'additional_table_filters of a readonly query'
+# The filters are taken from the reading query as they are, so its readonly mode has nothing to undo in them.
+$CLICKHOUSE_CLIENT --additional_table_filters "{'keys': 'p = 1'}" --readonly 1 -q "SELECT sum(p IN keys), sum(in_keys) FROM t"
+$CLICKHOUSE_CLIENT --additional_table_filters "{'keys': 'p = 1'}" --readonly 1 -q "SELECT toUInt8(2) IN keys, f FROM t_conversion SETTINGS apply_mutations_on_fly = 0"
+$CLICKHOUSE_CLIENT --additional_table_filters "{'keys': 'p = 1'}" --readonly 1 -q "USE ${other_db}; SELECT sum(p IN ${CLICKHOUSE_DATABASE}.keys), sum(in_keys) FROM ${CLICKHOUSE_DATABASE}.t"
+$CLICKHOUSE_CLIENT --additional_table_filters "{'${CLICKHOUSE_DATABASE}.keys': 'p = 1'}" --readonly 1 -q "USE ${other_db}; SELECT sum(p IN ${CLICKHOUSE_DATABASE}.keys), sum(in_keys) FROM ${CLICKHOUSE_DATABASE}.t"
+
+echo 'additional_table_filters by the alias of a table in a view'
+# A filter also names a table by its alias, whatever the current database is.
+$CLICKHOUSE_CLIENT -q "SELECT sum(p IN rhs_alias_view), sum(in_alias_view) FROM t"
+$CLICKHOUSE_CLIENT -q "SELECT sum(p IN rhs_alias_view), sum(in_alias_view) FROM t SETTINGS additional_table_filters = {'k': 'p = 1'}"
+$CLICKHOUSE_CLIENT -q "USE ${other_db}; SELECT sum(p IN ${CLICKHOUSE_DATABASE}.rhs_alias_view), sum(in_alias_view) FROM ${CLICKHOUSE_DATABASE}.t SETTINGS additional_table_filters = {'k': 'p = 1'}"
+$CLICKHOUSE_CLIENT --additional_table_filters "{'k': 'p = 1'}" --readonly 1 -q "USE ${other_db}; SELECT sum(p IN ${CLICKHOUSE_DATABASE}.rhs_alias_view), sum(in_alias_view) FROM ${CLICKHOUSE_DATABASE}.t"
+
 echo 'allow_fuzz_query_functions = 1'
 $CLICKHOUSE_CLIENT -q "SELECT sum(p IN rhs_view), sum(in_view), sum(gated) FROM t SETTINGS allow_fuzz_query_functions = 1"
 
@@ -63,6 +79,7 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(gated), sum(in_keys) FROM t SETTINGS allow_fuz
 $CLICKHOUSE_CLIENT -m -q "
     DROP TABLE t_conversion;
     DROP TABLE t;
+    DROP VIEW rhs_alias_view;
     DROP VIEW rhs_view;
     DROP TABLE keys;
     DROP DATABASE ${other_db};
