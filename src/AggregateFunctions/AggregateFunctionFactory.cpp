@@ -168,6 +168,18 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         if (!nested_types.empty())
         {
             auto nested_function = get(name, action, nested_types, parameters, out_properties);
+
+            /// The `Null` combinator replaces the function with `nothingNull` or `nothingUInt64` if an argument is
+            /// only `NULL`. These functions accept any arguments, so build them from the original arguments, as it is
+            /// done when the state type `AggregateFunction(nothingNull, Variant(...), ...)` is parsed, e.g. in the
+            /// header received from a remote shard. Otherwise the functions of the same state type differ.
+            const String & nested_name = nested_function->getName();
+            if (nested_name == NameAggregateFunctionNothingNull::name || nested_name == NameAggregateFunctionNothingUInt64::name)
+            {
+                AggregateFunctionProperties nothing_properties;
+                return get(nested_name, action, types_without_low_cardinality, parameters, nothing_properties);
+            }
+
             return std::make_shared<AggregateFunctionVariantAdapter>(nested_function, types_without_low_cardinality, nested_types, parameters);
         }
     }
