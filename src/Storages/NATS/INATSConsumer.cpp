@@ -246,7 +246,8 @@ void INATSConsumer::finishAndReturnUnprocessed(SkippedMessages skipped_messages_
     DequeWithMemoryTracking<MessageData> kept;
     for (auto & message : buffered)
     {
-        if (!message.reply.empty())
+        /// A core NATS message can have a reply subject too, of its publisher: that is not an acknowledgement subject.
+        if (needsAck() && !message.reply.empty())
             unprocessed.push_back(std::move(message.reply));
         else
             kept.push_back(std::move(message));

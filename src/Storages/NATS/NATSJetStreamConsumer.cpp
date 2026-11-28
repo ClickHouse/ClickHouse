@@ -3,8 +3,13 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
+#include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+
+#include <fmt/ranges.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -78,6 +83,26 @@ void NATSJetStreamConsumer::subscribeImpl()
     if (info->has("config"))
     {
         const auto config = info->getObject("config");
+
+        /// A consumer with filter subjects delivers only their messages, which must be the subjects of the table:
+        /// otherwise the table would consume, and acknowledge, messages of other subjects.
+        std::vector<String> filters;
+        if (config->has("filter_subject") && !config->getValue<String>("filter_subject").empty())
+            filters.push_back(config->getValue<String>("filter_subject"));
+        if (config->has("filter_subjects"))
+            if (const auto array = config->getArray("filter_subjects"))
+                for (size_t i = 0; i < array->size(); ++i)
+                    filters.push_back(array->getElement<String>(static_cast<unsigned>(i)));
+        if (!filters.empty())
+        {
+            for (const auto & subject : getSubjects())
+                if (std::find(filters.begin(), filters.end(), subject) == filters.end())
+                    throw Exception(
+                        ErrorCodes::CANNOT_CONNECT_NATS,
+                        "Subject {} does not match the filter subjects ({}) of the NATS JetStream consumer {} of stream {}",
+                        subject, fmt::join(filters, ", "), consumer_name, stream_name);
+        }
+
         if (config->has("max_batch") && config->getValue<Int64>("max_batch") > 0)
             pull_batch = std::min<size_t>(pull_batch, config->getValue<Int64>("max_batch"));
         if (config->has("max_expires") && config->getValue<Int64>("max_expires") > 0)

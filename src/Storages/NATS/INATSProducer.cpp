@@ -21,7 +21,6 @@ static constexpr auto PUBLISH_RETRY_INITIAL_WAIT = std::chrono::milliseconds(100
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int ACCESS_DENIED;
     extern const int INVALID_STATE;
     extern const int CANNOT_CONNECT_NATS;
 }
@@ -151,12 +150,13 @@ void INATSProducer::startProducingTaskLoop()
             {
                 publish();
             }
-            catch (const Exception & e)
+            catch (...)
             {
-                /// The server refused the publish: a retry cannot succeed.
-                if (e.code() == ErrorCodes::ACCESS_DENIED)
+                /// A failure that leaves the connection usable (e.g. a refused publish, or an invalid subject) cannot be
+                /// fixed by a retry: it fails the INSERT.
+                if (connection->isConnected())
                 {
-                    publish_error = e.message();
+                    publish_error = getCurrentExceptionMessage(false);
                     break;
                 }
                 /// The connection failed: the pending message is published again on a new connection.
