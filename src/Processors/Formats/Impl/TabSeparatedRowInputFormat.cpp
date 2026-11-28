@@ -1099,6 +1099,12 @@ void registerTSVSchemaReader(FormatFactory & factory)
                 String result = getAdditionalFormatInfoByEscapingRule(
                     settings, is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped);
                 result += fmt::format(", skip_first_lines={}", settings.tsv.skip_first_lines);
+                /// These decide how the text is split into rows, so they change the schema, the row count, or whether the file can be read at all.
+                result += fmt::format(
+                    ", crlf_end_of_line_input={}, allow_variable_number_of_columns={}, skip_trailing_empty_lines={}",
+                    settings.tsv.crlf_end_of_line_input,
+                    settings.tsv.allow_variable_number_of_columns,
+                    settings.tsv.skip_trailing_empty_lines);
                 if (!with_names)
                     result += fmt::format(
                         ", column_names_for_schema_inference={}, try_detect_header={}",
