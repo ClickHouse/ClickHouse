@@ -120,6 +120,11 @@ public:
         ContextPtr /* context */,
         TableExclusiveLockHolder &) override;
 
+    /// Puts the table in readonly mode: `INSERT` and `TRUNCATE` are refused, as for a path with globs.
+    void setReadOnly() { read_only = true; }
+
+    void checkInsertIsAllowed(ContextPtr context) const override;
+
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     bool storesDataOnDisk() const override;
@@ -209,6 +214,8 @@ private:
 
     Strings getPathsSnapshot() const;
 
+    void throwIfReadOnly() const;
+
     std::string format_name;
     // We use format settings from global context + CREATE query for File table
     // function -- in this case, format_settings is set.
@@ -259,6 +266,7 @@ private:
     // Counts the number of readers
     std::atomic<int32_t> readers_counter = 0;
     FileRenamer file_renamer;
+    std::atomic<bool> read_only = false;
     bool was_renamed = false;
     bool distributed_processing = false;
     NamesAndTypesList file_columns;
