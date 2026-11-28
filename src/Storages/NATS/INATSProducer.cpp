@@ -71,6 +71,7 @@ void INATSProducer::produce(const String & message, size_t, const Columns &, siz
 
 void INATSProducer::publish()
 {
+    size_t num_published = 0;
     for (size_t i = 0; i < BATCH; ++i)
     {
         if (!pending_payload)
@@ -89,6 +90,7 @@ void INATSProducer::publish()
         {
             pending_payload.reset();
             pending_payload_retries = 0;
+            ++num_published;
             continue;
         }
 
@@ -105,8 +107,12 @@ void INATSProducer::publish()
         break;
     }
 
-    /// Answers the `PING` of the server and notices an error it reported.
-    getConnection().processIncoming();
+    /// Sends the batch and waits until the server has processed it, which also reports an error of the server.
+    /// Without anything published, only answers the `PING` of the server.
+    if (num_published)
+        getConnection().flush();
+    else
+        getConnection().processIncoming();
 }
 
 void INATSProducer::stopProducingTask()

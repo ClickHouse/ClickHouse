@@ -54,6 +54,9 @@ constexpr size_t MAX_LINE_SIZE = 4 * 1024 * 1024;
 /// The servers do not allow a larger `max_payload`.
 constexpr UInt64 MAX_PAYLOAD_LIMIT = 64 * 1024 * 1024;
 
+/// Buffered output is sent once it reaches this size, and a larger buffer is released after it is sent.
+constexpr size_t OUTPUT_BUFFER_SIZE = 1024 * 1024;
+
 /// How many operations `processIncoming` reads at most in one call.
 constexpr size_t MAX_OPERATIONS_PER_PROCESSING = 100000;
 
@@ -611,7 +614,11 @@ void Connection::flushOutput()
         if (remaining <= 0 || !socket->poll(Poco::Timespan(remaining), mode | Poco::Net::Socket::SELECT_ERROR))
             fail("timeout while writing to the server");
     }
-    output.clear();
+
+    if (output.capacity() > 2 * OUTPUT_BUFFER_SIZE)
+        String().swap(output);
+    else
+        output.clear();
 }
 
 bool Connection::waitForInput(Clock::time_point deadline)
@@ -892,6 +899,8 @@ void Connection::publish(const String & subject, const String & reply, std::stri
             writeLine(fmt::format("PUB {} {} {}", subject, reply, data.size()));
         writeRaw(data.data(), data.size());
         writeRaw("\r\n", 2);
+        if (output.size() >= OUTPUT_BUFFER_SIZE)
+            flushOutput();
     });
 }
 

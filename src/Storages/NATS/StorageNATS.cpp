@@ -446,16 +446,19 @@ bool StorageNATS::subscribeConsumers()
     {
         try
         {
-            /// A direct `SELECT` that held a consumer while `unsubscribeConsumers` ran hands it back
-            /// still subscribed, with what it buffered while the table was not streaming. Replace
-            /// the subscription the way `unsubscribeConsumers` would have.
-            if (consumer->isSubscribed())
+            /// A consumer that is still subscribed (e.g. handed back by a direct `SELECT`) keeps its subscription
+            /// and what it has received: replacing it would drop core NATS messages that cannot be delivered again.
+            /// Only a consumer that lost its connection connects and subscribes again.
+            if (consumer->needsResubscribe())
             {
-                consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
-                consumer->unsubscribe();
+                String error;
+                if (!consumer->maintainConnection(error))
+                    throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to NATS {}: {}", connectionInfoForLog(), error);
             }
-
-            consumer->subscribe();
+            else
+            {
+                consumer->subscribe();
+            }
             ++num_initialized;
         }
         catch (...)
