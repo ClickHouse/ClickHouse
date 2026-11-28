@@ -188,7 +188,12 @@ public:
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
     [[nodiscard]] bool hasTopKThresholdTracker() const { return threshold_tracker != nullptr; }
 
-    void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_);
+    void updateLimitByHint(
+        Names limit_by_columns_,
+        UInt64 limit_by_length_,
+        UInt64 limit_by_offset_,
+        UInt64 limit_by_outer_limit_,
+        bool limit_by_always_read_till_end_);
 
     /// True when `transformPipeline` will attach the per-stream `LIMIT BY` pre-filter for the
     /// order this step currently has. A `FinishSorting` that still has to sort a suffix skips the
@@ -276,6 +281,8 @@ private:
     /// See `pushLimitByIntoSort`. Empty means no hint.
     Names limit_by_columns;
     UInt64 limit_by_group_length = 0;
+    UInt64 limit_by_group_offset = 0;
+    UInt64 limit_by_outer_limit = 0;
     bool limit_by_always_read_till_end = false;
 
     Processors scatter_stage;

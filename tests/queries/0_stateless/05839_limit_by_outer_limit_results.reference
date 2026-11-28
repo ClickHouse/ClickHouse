@@ -1,0 +1,146 @@
+desc, offset
+245	200535
+244	200892
+244	200642
+243	200999
+243	200749
+242	200856
+asc, offset
+3	503
+4	4
+4	254
+4	504
+5	5
+limit by length above outer limit
+249	200857
+249	200607
+249	200357
+249	200107
+single thread
+247	200821
+246	200928
+245	200785
+244	200892
+243	200999
+buffered read in order
+248	200214
+247	200571
+247	100497
+246	200928
+246	200178
+245	200535
+unbuffered read in order
+248	200214
+247	200571
+247	100497
+246	200928
+246	200178
+245	200535
+parallel replicas
+247	200571
+246	200928
+246	200678
+245	200785
+245	200535
+244	200892
+distributed
+248	200964
+248	200714
+247	200821
+247	200821
+247	200571
+246	200928
+246	200928
+same rows as without the outer limit
+1
+limit by offset
+248	200464
+247	200571
+247	200321
+246	200678
+246	200428
+245	200535
+limit by offset, asc
+1	751
+1	100001
+2	502
+2	752
+2	100002
+limit by offset above the rows of a group in one part
+249	100749
+249	100499
+248	100748
+248	100498
+247	100747
+247	100497
+limit by offset, parallel replicas
+247	200321
+246	200678
+246	200428
+245	200535
+245	200285
+244	200642
+limit by offset, distributed
+247	200821
+247	200571
+246	200928
+246	200678
+245	200785
+245	200535
+244	200892
+desc, n = 1, m = 0, offset = 0	1
+desc, n = 1, m = 0, offset = 5	1
+desc, n = 1, m = 2, offset = 0	1
+desc, n = 1, m = 2, offset = 5	1
+desc, n = 1, m = 6, offset = 0	1
+desc, n = 1, m = 6, offset = 5	1
+desc, n = 3, m = 0, offset = 0	1
+desc, n = 3, m = 0, offset = 5	1
+desc, n = 3, m = 2, offset = 0	1
+desc, n = 3, m = 2, offset = 5	1
+desc, n = 3, m = 6, offset = 0	1
+desc, n = 3, m = 6, offset = 5	1
+asc, n = 1, m = 0, offset = 0	1
+asc, n = 1, m = 0, offset = 5	1
+asc, n = 1, m = 2, offset = 0	1
+asc, n = 1, m = 2, offset = 5	1
+asc, n = 1, m = 6, offset = 0	1
+asc, n = 1, m = 6, offset = 5	1
+asc, n = 3, m = 0, offset = 0	1
+asc, n = 3, m = 0, offset = 5	1
+asc, n = 3, m = 2, offset = 0	1
+asc, n = 3, m = 2, offset = 5	1
+asc, n = 3, m = 6, offset = 0	1
+asc, n = 3, m = 6, offset = 5	1
+final
+497	1000497
+496	1000496
+495	1000495
+494	1000494
+rows read
+desc, n = 1, m = 0, offset = 0	ok
+desc, n = 1, m = 0, offset = 5	ok
+desc, n = 1, m = 2, offset = 0	ok
+desc, n = 1, m = 2, offset = 5	ok
+desc, n = 1, m = 6, offset = 0	ok
+desc, n = 1, m = 6, offset = 5	ok
+desc, n = 3, m = 0, offset = 0	ok
+desc, n = 3, m = 0, offset = 5	ok
+desc, n = 3, m = 2, offset = 0	ok
+desc, n = 3, m = 2, offset = 5	ok
+desc, n = 3, m = 6, offset = 0	ok
+desc, n = 3, m = 6, offset = 5	ok
+asc, n = 1, m = 0, offset = 0	ok
+asc, n = 1, m = 0, offset = 5	ok
+asc, n = 1, m = 2, offset = 0	ok
+asc, n = 1, m = 2, offset = 5	ok
+asc, n = 1, m = 6, offset = 0	ok
+asc, n = 1, m = 6, offset = 5	ok
+asc, n = 3, m = 0, offset = 0	ok
+asc, n = 3, m = 0, offset = 5	ok
+asc, n = 3, m = 2, offset = 0	ok
+asc, n = 3, m = 2, offset = 5	ok
+asc, n = 3, m = 6, offset = 0	ok
+asc, n = 3, m = 6, offset = 5	ok
+single thread	ok
+distributed	ok

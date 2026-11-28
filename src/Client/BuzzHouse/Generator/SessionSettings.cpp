@@ -710,6 +710,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_optimize_prewhere", trueOrFalseSetting},
        {"query_plan_propagate_predicate_across_join", trueOrFalseSetting},
        {"query_plan_push_down_limit", trueOrFalseSetting},
+       {"query_plan_push_down_limit_below_limit_by", trueOrFalseSetting},
        {"query_plan_push_down_volume_reducing_functions", trueOrFalseSetting},
        {"query_plan_push_limit_by_into_sort", trueOrFalseSetting},
        {"query_plan_remove_redundant_distinct", trueOrFalseSetting},

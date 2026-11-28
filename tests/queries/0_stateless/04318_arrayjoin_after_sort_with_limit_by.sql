@@ -1,3 +1,4 @@
+-- Random settings limits: query_plan_push_limit_by_into_sort=(1, None)
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/82279
 -- (LIMIT BY variant uncovered by the original PR #104558).
 --
