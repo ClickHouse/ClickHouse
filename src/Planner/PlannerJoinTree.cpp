@@ -1995,8 +1995,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
           * Drop it from the outer query and from this table's initiator actions: otherwise
           * `appendSetsFromActionsDAG` still treats the original `IN` sets as useful, and they
           * stay not-ready after the nested planner built a separate copy.
-          * `IStorageCluster` does not support `PREWHERE`, so fold the clause into wrap `WHERE`
+          * `IStorageCluster` does not support `PREWHERE`, so the clause becomes the wrap `WHERE`
           * (`clusterJoinWillWrapPrewhere` admitted it only when that is safe).
+          * It replaces the copied outer `WHERE` instead of being merged with it: a `WHERE`
+          * expression may throw on rows that `PREWHERE` excludes (`PREWHERE n != 0 WHERE intDiv(1, n) > 0`),
+          * and a single `and` does not keep that evaluation order when short-circuit evaluation
+          * is disabled. The outer `WHERE` is still applied on the initiator, after the wrap.
           */
         QueryTreeNodePtr wrap_prewhere;
         if (query_prewhere && table_expression_data.getPrewhereFilterActions())
@@ -2007,10 +2011,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
             if (is_cluster_storage)
             {
-                if (wrap_where)
-                    wrap_where = mergeConditionNodes({std::move(wrap_where), std::move(wrap_prewhere)}, query_context);
-                else
-                    wrap_where = std::move(wrap_prewhere);
+                wrap_where = std::move(wrap_prewhere);
                 wrap_prewhere = {};
             }
         }
