@@ -999,3 +999,84 @@ def test_failed_dry_run_retries_multipart_abort(cluster, broken_s3):
                 Key=upload["Key"],
                 UploadId=upload["UploadId"],
             )
+
+
+def test_cancelled_attach_keeps_parts(cluster, broken_s3):
+    """An `ATTACH TABLE` cancelled while loading a part from S3 must fail, not detach the part as broken."""
+    node = cluster.instances["node"]
+    table = "t_cancelled_attach"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"CREATE TABLE {table} (id UInt64) ENGINE = MergeTree ORDER BY id "
+        f"SETTINGS storage_policy = 'broken_s3'"
+    )
+    try:
+        node.query(f"INSERT INTO {table} SELECT number FROM numbers(10)")
+        uuid = node.query(
+            f"SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = '{table}'"
+        ).strip()
+        part_keys = node.query(
+            f"SELECT remote_path FROM system.remote_data_paths WHERE disk_name = 'broken_s3' "
+            f"AND position(local_path, '{uuid}/all_1_1_0/') > 0"
+        ).split()
+        assert part_keys
+        node.query(f"DETACH TABLE {table}")
+
+        # Only the files of the part: the table's own `format_version.txt` is read before the parts.
+        for key in part_keys:
+            broken_s3.setup_at_object_get(count=1000000, action="slow_down", key=key)
+        throttled_before = get_throttled(node)
+        error = node.query_and_get_error(
+            f"ATTACH TABLE {table}", settings={"max_execution_time": 2}
+        )
+        assert "TIMEOUT_EXCEEDED" in error, error
+        assert (
+            get_throttled(node) > throttled_before
+        ), "the part was not read from S3, so the assertions below would be vacuous"
+
+        broken_s3.reset()
+        node.query(f"ATTACH TABLE IF NOT EXISTS {table}")
+        assert (
+            node.query(
+                f"SELECT name FROM system.detached_parts "
+                f"WHERE database = currentDatabase() AND table = '{table}'"
+            )
+            == ""
+        )
+        assert int(node.query(f"SELECT count() FROM {table}")) == 10
+    finally:
+        broken_s3.reset()
+        node.query(f"ATTACH TABLE IF NOT EXISTS {table}")
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_cancelled_restore_does_not_report_damaged_backup(cluster, broken_s3):
+    """A `RESTORE` cancelled while loading a restored part from S3 must fail with the cancellation,
+    not report the backup as damaged."""
+    node = cluster.instances["node"]
+    node.query("DROP TABLE IF EXISTS t_restore_src SYNC")
+    node.query("DROP TABLE IF EXISTS t_restore_dst SYNC")
+    node.query("CREATE TABLE t_restore_src (id UInt64) ENGINE = MergeTree ORDER BY id")
+    try:
+        node.query("INSERT INTO t_restore_src SELECT number FROM numbers(10)")
+
+        # The source and the backup are local and the restored files are written to S3, so the only
+        # reads from S3 are those of the part being loaded.
+        broken_s3.setup_at_object_get(count=1000000, action="slow_down")
+        throttled_before = get_throttled(node)
+        # One session: a `Memory` backup lives in the session that took it.
+        error = node.query_and_get_error(
+            "BACKUP TABLE t_restore_src TO Memory('b') FORMAT Null; "
+            "SET max_execution_time = 2; "
+            "RESTORE TABLE t_restore_src AS t_restore_dst FROM Memory('b') "
+            "SETTINGS storage_policy = 'broken_s3' FORMAT Null"
+        )
+        assert "while restoring part" in error, error
+        assert (
+            get_throttled(node) > throttled_before
+        ), "the part was not read from S3, so the assertion below would be vacuous"
+        assert "TIMEOUT_EXCEEDED" in error and "BACKUP_DAMAGED" not in error, error
+    finally:
+        broken_s3.reset()
+        node.query("DROP TABLE IF EXISTS t_restore_dst SYNC")
+        node.query("DROP TABLE IF EXISTS t_restore_src SYNC")

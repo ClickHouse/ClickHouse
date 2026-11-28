@@ -3498,7 +3498,8 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     /// A persistent I/O error cannot be told from a damaged disk, so only the last attempt marks the part broken on it.
     auto should_rethrow = [&](std::exception_ptr exception_ptr)
     {
-        return isRetryableException(exception_ptr) || (!is_last_attempt && isIOErrorException(exception_ptr));
+        return isRetryableException(exception_ptr) || isQueryCancellation(exception_ptr)
+            || (!is_last_attempt && isIOErrorException(exception_ptr));
     };
 
     try
@@ -11186,7 +11187,7 @@ bool isPartMetadataParseError(const Poco::Exception & e)
 /// and records it in `system.errors` (the load runs under `Exception::SuppressErrorCodesScope`, so nothing
 /// has been recorded for it yet).
 ///
-/// A retryable failure (network, timeouts, ...) says nothing about the backup and keeps its original code.
+/// A retryable failure (network, timeouts, ...) or a cancelled query says nothing about the backup and keeps its original code.
 /// So does a failure of the destination (see `isDestinationSideError`): restoring a valid backup onto a full
 /// or readonly disk must not tell the user that the backup is damaged. Everything else means the backup
 /// cannot be read: either it was written by a newer server whose format this one does not understand
@@ -11222,7 +11223,7 @@ bool classifyAndRecordRestoreError(std::exception_ptr & error, bool retryable, b
             return true;
         }
 
-        bool part_is_broken = !retryable && !in_local_step && !isDestinationSideError(*e);
+        bool part_is_broken = !retryable && !in_local_step && !isDestinationSideError(*e) && !isQueryCancellation(error);
         if (part_is_broken)
         {
             e->resetCode(
