@@ -1,5 +1,7 @@
-import pytest
+from contextlib import closing
 import uuid
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
@@ -11,6 +13,8 @@ node1 = cluster.add_instance(
     main_configs=["configs/named_collections.xml", "configs/backups.xml"],
     user_configs=["configs/users.xml"],
     with_postgres=True,
+    # Exercise the pre-14 polymorphic array signatures; other PostgreSQL suites use latest.
+    env_variables={"POSTGRES_IMAGE": "postgres:13"},
 )
 
 postgres_table_template = """
@@ -48,6 +52,67 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
+
+
+def test_schema_inference_without_schema(started_cluster):
+    database = f"schema_inference_{uuid.uuid4().hex}"
+    table = f"inferred_{uuid.uuid4().hex}"
+    connection_args = (
+        f"'postgres1:5432', '{database}', 'items', 'postgres', '{pg_pass}'"
+    )
+
+    with closing(
+        get_postgres_conn(started_cluster.postgres_ip, started_cluster.postgres_port)
+    ) as admin, admin.cursor() as admin_cursor:
+        admin_cursor.execute(f"CREATE DATABASE {database}")
+        try:
+            with closing(
+                get_postgres_conn(
+                    started_cluster.postgres_ip,
+                    started_cluster.postgres_port,
+                    database=True,
+                    database_name=database,
+                )
+            ) as conn, conn.cursor() as cursor:
+                cursor.execute("CREATE SCHEMA preferred")
+                cursor.execute("CREATE TABLE preferred.items (id integer, value text)")
+                cursor.execute("INSERT INTO preferred.items VALUES (1, 'preferred')")
+                cursor.execute("CREATE TABLE public.items (id integer, other integer)")
+                cursor.execute("INSERT INTO public.items VALUES (2, 20)")
+
+            # New connections must infer the same relation that the data query reads, even
+            # when the first schema does not exist and another schema has a namesake table.
+            admin_cursor.execute(
+                f"ALTER DATABASE {database} SET search_path TO missing, preferred, public"
+            )
+            assert (
+                node1.query(f"SELECT id, value FROM postgresql({connection_args})")
+                == "1\tpreferred\n"
+            )
+
+            node1.query(f"CREATE TABLE {table} ENGINE = PostgreSQL({connection_args})")
+            assert node1.query(f"SELECT id, value FROM {table}") == "1\tpreferred\n"
+
+            node1.query(
+                f"CREATE DATABASE {database} ENGINE = PostgreSQL("
+                f"'postgres1:5432', '{database}', 'postgres', '{pg_pass}')"
+            )
+            assert "items" in node1.query(f"SHOW TABLES FROM {database}").splitlines()
+            assert (
+                node1.query(f"SELECT id, value FROM {database}.items")
+                == "1\tpreferred\n"
+            )
+
+            assert (
+                node1.query(
+                    f"SELECT id, other FROM postgresql({connection_args}, 'public')"
+                )
+                == "2\t20\n"
+            )
+        finally:
+            node1.query(f"DROP DATABASE IF EXISTS {database}")
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            admin_cursor.execute(f"DROP DATABASE {database} WITH (FORCE)")
 
 
 def test_postgres_database_engine_with_postgres_ddl(started_cluster):

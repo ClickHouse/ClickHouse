@@ -400,12 +400,14 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
     /// PostgreSQL). For PostgreSQL with the default search path the explicit part is `public`, and a
     /// ClickHouse server (which exposes its databases as schemas) lists just the connected database,
     /// so schema discovery and the data path always agree on the same relation.
+    /// Keep both `array_position` arguments as `name`/`name[]`: PostgreSQL before 14 requires matching
+    /// `anyelement`/`anyarray` types and cannot resolve a `name[]` array with a `text` element.
     const String relnamespace_expr = postgres_schema.empty()
         ? fmt::format(
             "(SELECT ns.oid FROM pg_namespace AS ns JOIN pg_class AS tbl ON tbl.relnamespace = ns.oid"
             " WHERE tbl.relname = {0} AND (ns.nspname = 'pg_catalog'"
-            " OR array_position(current_schemas(false), ns.nspname::text) > 0)"
-            " ORDER BY coalesce(array_position(current_schemas(false), ns.nspname::text), 0) LIMIT 1)",
+            " OR array_position(current_schemas(false), ns.nspname) > 0)"
+            " ORDER BY coalesce(array_position(current_schemas(false), ns.nspname), 0) LIMIT 1)",
             quoteStringPostgreSQL(postgres_table))
         : fmt::format("(SELECT oid FROM pg_namespace WHERE nspname = {})", quoteStringPostgreSQL(postgres_schema));
 
