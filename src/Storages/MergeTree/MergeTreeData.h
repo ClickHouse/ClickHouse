@@ -2619,6 +2619,12 @@ private:
 
     bool isReadonlySetting(const std::string & setting_name) const;
 
+    /// Whether the normally-readonly `index_granularity` / `index_granularity_bytes` (see
+    /// `MergeTreeSettings::isReadonlySetting`) may still be altered on this table: true only on
+    /// non-replicated, fully adaptive tables, where the change affects only newly written parts.
+    /// `new_settings` are the settings the table has after the ALTER.
+    bool canAlterGranularitySettingForNewParts(const String & setting_name, const MergeTreeSettings & new_settings, ContextPtr local_context) const;
+
     /// Is the disk should be searched for orphaned parts (ones that belong to a table based on file names, but located
     ///   on disks that are not a part of storage policy of the table).
     /// Sometimes it is better to bypass a disk e.g. to avoid interactions with a remote storage

@@ -117,6 +117,9 @@ struct MergeTreeSettings
     void loadFromQuery(
         ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false,
         bool stored_definition = false);
+    /// Adds the settings that are always stated in a table definition (`index_granularity`) with
+    /// their current values, unless `changes` already has them.
+    void addImmutableSettingsIfAbsent(SettingsChanges & changes) const;
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     [[nodiscard]] bool needSyncPart(size_t input_rows, size_t input_bytes) const;

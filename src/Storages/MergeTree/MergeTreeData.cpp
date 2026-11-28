@@ -6409,6 +6409,34 @@ static void checkUniqueKeyMutationCommands(const MutationCommands & commands)
     }
 }
 
+bool MergeTreeData::canAlterGranularitySettingForNewParts(const String & setting_name, const MergeTreeSettings & new_settings, ContextPtr local_context) const
+{
+    if (setting_name != "index_granularity" && setting_name != "index_granularity_bytes")
+        return false;
+
+    /// Replicated engines pin these in Keeper as immutable table-identity fields that every replica
+    /// must match, with no replicated path to change them; keep them readonly there.
+    if (supportsReplication())
+        return false;
+
+    /// A `Replicated` database applies the change to shared metadata on replicas that can hold different local parts
+    /// (e.g. after a non-replicated `ATTACH PARTITION ... FROM`), and retries a replay until it succeeds. The checks
+    /// below could pass on one replica and fail on another, stalling the database queue. Refuse uniformly instead.
+    /// Ordinary `ON CLUSTER` has no such transaction and needs none: each host's table is independent.
+    if (local_context->getZooKeeperMetadataTransaction())
+        return false;
+
+    /// Safe only while every part is adaptive (reads its granularity from its own marks); non-adaptive
+    /// or mixed-granularity tables reconstruct granule boundaries from the live `index_granularity`, so
+    /// changing it would misread existing data.
+    if ((*getSettings())[MergeTreeSetting::index_granularity_bytes] == 0 || has_non_adaptive_index_granularity_parts)
+        return false;
+
+    /// Keep the table adaptive: with `index_granularity_bytes = 0` new parts get the non-adaptive mark
+    /// format. A RESET falls back to the configured default, which may be zero too.
+    return new_settings[MergeTreeSetting::index_granularity_bytes] != 0;
+}
+
 void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, ContextPtr local_context) const
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
@@ -7692,9 +7720,19 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             const auto & setting_name = changed_setting.name;
             const auto & new_value = changed_setting.value;
             MergeTreeSettings::checkCanSet(setting_name, new_value);
-            const Field * current_value = current_changes.tryGet(setting_name);
 
-            if ((!current_value || *current_value != new_value) && isReadonlySetting(setting_name))
+            /// A definition may state a setting more than once and the last occurrence is in effect, so a change is
+            /// compared with that one: the first could equal the new value while the effective one does not.
+            const Field * current_value = nullptr;
+            for (const auto & current_setting : current_changes)
+            {
+                if (current_setting.name == setting_name)
+                    current_value = &current_setting.value;
+            }
+
+            if ((!current_value || *current_value != new_value)
+                && isReadonlySetting(setting_name)
+                && !canAlterGranularitySettingForNewParts(setting_name, *alter_effective_settings, local_context))
             {
                 throw Exception(ErrorCodes::READONLY_SETTING, "Setting '{}' is readonly for storage '{}'", setting_name, getName());
             }
@@ -7731,7 +7769,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             const auto & setting_name = current_setting.name;
             const Field * new_value = new_changes.tryGet(setting_name);
             /// Prevent unsetting readonly setting
-            if (isReadonlySetting(setting_name) && !new_value)
+            if (isReadonlySetting(setting_name) && !new_value
+                && !canAlterGranularitySettingForNewParts(setting_name, *alter_effective_settings, local_context))
             {
                 throw Exception(ErrorCodes::READONLY_SETTING, "Setting '{}' is readonly for storage '{}'", setting_name, getName());
             }

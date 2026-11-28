@@ -202,7 +202,8 @@ struct AlterCommand
     /// is a part) is applied; they let `MODIFY ORDER BY` suggest only the columns added by the ALTER for
     /// a typo, because an expression added to the sorting key may use nothing else.
     /// `settings_defaults` are the engine's config defaults, used to rebuild the metadata derived
-    /// from the `MergeTree` settings. Engines without such metadata pass nothing.
+    /// from the `MergeTree` settings and to keep a reset immutable setting stated with its default.
+    /// Engines without such metadata pass nothing.
     void apply(
         StorageInMemoryMetadata & metadata,
         ContextPtr context,

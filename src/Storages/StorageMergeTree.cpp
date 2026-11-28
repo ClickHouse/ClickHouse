@@ -16,6 +16,7 @@
 #include <Core/UUID.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
+#include <Disks/SingleDiskVolume.h>
 #include <Disks/supportWritingWithAppend.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/copyData.h>
@@ -32,6 +33,7 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -47,6 +49,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -154,6 +157,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool enable_replacing_merge_with_cleanup_for_min_age_to_force_merge;
     extern const MergeTreeSettingsUInt64 finished_mutations_to_keep;
+    extern const MergeTreeSettingsUInt64 index_granularity;
+    extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
@@ -190,6 +195,7 @@ namespace ErrorCodes
     extern const int INVALID_TRANSACTION;
     extern const int FILE_DOESNT_EXIST;
     extern const int UNFINISHED;
+    extern const int READONLY_SETTING;
 }
 
 namespace ActionLocks
@@ -628,6 +634,34 @@ void StorageMergeTree::alter(
     commands.apply(
         new_metadata, local_context, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets], settings_defaults.get());
 
+    bool granularity_changed = false;
+    if (std::ranges::any_of(commands, [](const AlterCommand & command)
+        {
+            return command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING;
+        }))
+    {
+        MergeTreeSettings new_storage_settings = *settings_defaults;
+        if (new_metadata.hasSettingsChanges())
+            new_storage_settings.applyChangesLeavingDiskUnresolved(new_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes);
+
+        granularity_changed
+            = new_storage_settings[MergeTreeSetting::index_granularity] != (*old_storage_settings)[MergeTreeSetting::index_granularity]
+            || new_storage_settings[MergeTreeSetting::index_granularity_bytes] != (*old_storage_settings)[MergeTreeSetting::index_granularity_bytes];
+    }
+
+    /// A part brought into the table while the granularity changes could have been checked against the old value
+    /// and be read with the new one. So the change holds the lock of the operations that bring parts in from
+    /// before the new value is applied until it is committed or rolled back. It is not held while waiting for
+    /// a mutation: `DROP PARTITION` blocks the mutations of its partition before it takes the lock.
+    OperationDataPartsLock granularity_change_lock;
+    auto lock_for_granularity_change = [&]
+    {
+        if (!granularity_changed)
+            return;
+        granularity_change_lock = lockOperationsWithParts();
+        checkNoNonAdaptivePartsForGranularityChange();
+    };
+
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
@@ -663,6 +697,7 @@ void StorageMergeTree::alter(
         /// "nothing is loading" fast path, and could therefore drop or replace a partition before the
         /// deferred outdated parts were loaded. So the flag is cleared only by the scope guard above,
         /// when the statement returns or unwinds, after the tail has brought the workers back.
+        lock_for_granularity_change();
         commit_of_readonly_table = (*old_storage_settings)[MergeTreeSetting::table_readonly];
         if (commit_of_readonly_table)
         {
@@ -861,6 +896,8 @@ void StorageMergeTree::alter(
                 LOG_DEBUG(log, "Mutation {} finished", mutation_to_wait);
             }
         }
+
+        lock_for_granularity_change();
 
         {
             /// Settings, the rename `mutation_*.txt`, and the durable metadata commit are
@@ -1072,10 +1109,15 @@ void StorageMergeTree::alter(
         /// the wait, otherwise a blocked mutation (e.g. after SYSTEM STOP MERGES) would block
         /// any concurrent DROP/RENAME on this table.
         ddl_guard.reset();
+        if (granularity_change_lock.owns_lock())
+            granularity_change_lock.unlock();
 
         if (!maybe_mutation_commands.empty() && query_settings[Setting::alter_sync] > 0)
             waitForMutation(mutation_version, false);
     }
+
+    if (granularity_change_lock.owns_lock())
+        granularity_change_lock.unlock();
 
     {
         /// Some additional changes in settings
@@ -4226,6 +4268,10 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
 PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     const PartitionCommand & command, const StorageMetadataPtr &, ContextPtr local_context)
 {
+    /// A part loaded here takes its granularity settings from the table, so a granularity change must not
+    /// interleave, see `alter`. Declared before `renamed_parts`, which renames the parts back on unwinding.
+    auto operation_data_parts_lock = lockOperationsWithParts();
+
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, local_context, renamed_parts);
@@ -4269,6 +4315,50 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     }
 
     return results;
+}
+
+void StorageMergeTree::checkNoNonAdaptivePartsForGranularityChange() const
+{
+    auto throw_non_adaptive_part = [this](const String & part_name)
+    {
+        throw Exception(ErrorCodes::READONLY_SETTING,
+            "Settings 'index_granularity' and 'index_granularity_bytes' cannot be changed for storage '{}', "
+            "because part {} has non-adaptive granularity", getName(), part_name);
+    };
+
+    /// A restart loads the parts in every state, and an outdated part may be activated again then.
+    waitForOutdatedPartsToBeLoaded();
+    {
+        /// A read-only table does not load its outdated parts, so their marks are unknown.
+        std::lock_guard lock(outdated_data_parts_mutex);
+        if (!outdated_unloaded_data_parts.empty())
+            throw Exception(ErrorCodes::READONLY_SETTING,
+                "Settings 'index_granularity' and 'index_granularity_bytes' cannot be changed for storage '{}' "
+                "while {} of its outdated parts are not loaded, for example because the table is read-only",
+                getName(), outdated_unloaded_data_parts.size());
+    }
+
+    const auto parts = getDataPartsVectorForInternalUsage(
+        {DataPartState::PreActive, DataPartState::Active, DataPartState::Outdated, DataPartState::Deleting, DataPartState::DeleteOnDestroy});
+    for (const auto & part : parts)
+    {
+        if (!part->index_granularity_info.mark_type.adaptive)
+            throw_non_adaptive_part(part->name);
+    }
+
+    /// The mark type is probed the way `ATTACH` loads the part, which also looks inside a packed part.
+    const String detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;
+    for (const auto & detached_part : getDetachedParts())
+    {
+        if (!detached_part.disk->existsDirectory(fs::path(detached_path) / detached_part.dir_name))
+            continue;
+
+        auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part.dir_name, detached_part.disk, 0);
+        const auto [storage, mark_type] = MergeTreeDataPartBuilder::getPartStorageAndMarkType(
+            volume, detached_path, detached_part.dir_name, getReadSettings());
+        if (mark_type && !mark_type->adaptive)
+            throw_non_adaptive_part(fs::path(DETACHED_DIR_NAME) / detached_part.dir_name);
+    }
 }
 
 void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr local_context)
