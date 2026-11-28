@@ -1,0 +1,21 @@
+<test>
+    <settings>
+        <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
+    </settings>
+
+    <create_query>
+        CREATE TABLE test_lc_nullable_is_null (s LowCardinality(Nullable(String)), u LowCardinality(Nullable(UInt32))) ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO test_lc_nullable_is_null
+        SELECT if(number % 10 = 0, NULL, concat('value_', toString(number % 1000))), if(number % 10 = 3, NULL, toUInt32(number % 200))
+        FROM numbers_mt(700000000)
+    </fill_query>
+
+    <query>SELECT count() FROM test_lc_nullable_is_null WHERE s IS NULL SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM test_lc_nullable_is_null WHERE s IS NOT NULL SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM test_lc_nullable_is_null WHERE u IS NOT NULL SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_lc_nullable_is_null</drop_query>
+</test>

@@ -93,12 +93,18 @@ public:
         {
             const auto & low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(*elem.column);
             const size_t null_index = low_cardinality_column.getDictionary().getNullValueIndex();
-            auto res = DataTypeUInt8().createColumn();
-            auto & data = typeid_cast<ColumnUInt8 &>(*res).getData();
-            data.resize(low_cardinality_column.size());
-            for (size_t i = 0; i != low_cardinality_column.size(); ++i)
-                data[i] = (low_cardinality_column.getIndexAt(i) != null_index);
-            return res;
+            const IColumn & indexes = low_cardinality_column.getIndexes();
+            auto res_column = ColumnUInt8::create(indexes.size());
+            auto & res_data = res_column->getData();
+            switch (low_cardinality_column.getSizeOfIndexType())
+            {
+                case sizeof(UInt8): vectorIndexNotEquals(assert_cast<const ColumnUInt8 &>(indexes).getData(), null_index, res_data); break;
+                case sizeof(UInt16): vectorIndexNotEquals(assert_cast<const ColumnUInt16 &>(indexes).getData(), null_index, res_data); break;
+                case sizeof(UInt32): vectorIndexNotEquals(assert_cast<const ColumnUInt32 &>(indexes).getData(), null_index, res_data); break;
+                case sizeof(UInt64): vectorIndexNotEquals(assert_cast<const ColumnUInt64 &>(indexes).getData(), null_index, res_data); break;
+                default: throwUnexpectedLowCardinalityIndexType(low_cardinality_column.getSizeOfIndexType());
+            }
+            return res_column;
         }
 
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*elem.column))
@@ -138,6 +144,17 @@ private:
         size_t size = null_map.size();
         for (size_t i = 0; i < size; ++i)
             res[i] = !null_map[i];
+    }
+
+    template <typename IndexType>
+    static void vectorIndexNotEquals(const PaddedPODArray<IndexType> & indexes, size_t null_index, PaddedPODArray<UInt8> & res)
+    {
+        const IndexType null_position = static_cast<IndexType>(null_index);
+        const IndexType * __restrict src = indexes.data();
+        UInt8 * __restrict dst = res.data();
+        const size_t size = indexes.size();
+        for (size_t i = 0; i < size; ++i)
+            dst[i] = src[i] != null_position;
     }
 
 };
