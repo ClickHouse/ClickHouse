@@ -56,6 +56,9 @@ constexpr size_t FRAME_OVERHEAD = FRAME_HEADER_SIZE + 1;
 constexpr UInt32 MIN_FRAME_SIZE = 4096;
 constexpr UInt32 MAX_FRAME_SIZE = 128 * 1024 * 1024;
 
+/// How many frames one call processes at most after its deadline, while frames keep arriving (e.g. a flood of heartbeats).
+constexpr size_t MAX_FRAMES_AFTER_DEADLINE = 10000;
+
 /// Buffered output is sent once it reaches this size, and a larger buffer is released after it is sent.
 constexpr size_t OUTPUT_BUFFER_SIZE = 1024 * 1024;
 
@@ -589,7 +592,8 @@ void Connection::readExact(char * to, size_t size, Clock::time_point deadline)
 {
     while (size)
     {
-        if (!waitForInput(deadline))
+        /// Checked also while input is available: a peer that keeps sending must not extend the deadline.
+        if (Clock::now() >= deadline || !waitForInput(deadline))
         {
             if (error.empty())
                 error = "timeout while reading a frame";
@@ -795,6 +799,7 @@ std::optional<Connection::Method> Connection::processFrame(Frame frame)
 bool Connection::processIncoming(Poco::Timespan timeout)
 {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(timeout.totalMicroseconds());
+    size_t frames_after_deadline = 0;
     while (true)
     {
         const auto wait = std::max(deadline - std::chrono::steady_clock::now(), std::chrono::steady_clock::duration::zero());
@@ -804,6 +809,10 @@ bool Connection::processIncoming(Poco::Timespan timeout)
                 fail(fmt::format("unexpected method {}.{}", method->class_id, method->method_id));
             if (!deliveries.empty() || !confirms.empty())
                 return true;
+            /// Frames that are already there are read after the deadline too (to notice the closing of the connection
+            /// behind heartbeats), but a bounded number: a peer that keeps sending heartbeats must not hold the call.
+            if (std::chrono::steady_clock::now() >= deadline && ++frames_after_deadline > MAX_FRAMES_AFTER_DEADLINE)
+                return false;
             continue;
         }
 
@@ -1172,8 +1181,11 @@ void Connection::receiveAvailable(size_t max_deliveries)
     checkUsable();
     try
     {
-        while (deliveries.size() < max_deliveries && waitForInput(Clock::now()))
+        /// Bounded by frames as well: frames other than deliveries (e.g. heartbeats) do not count as deliveries.
+        size_t frames = 0;
+        while (deliveries.size() < max_deliveries && frames < max_deliveries + MAX_FRAMES_AFTER_DEADLINE && waitForInput(Clock::now()))
         {
+            ++frames;
             if (auto method = processFrame(receiveFrameOrThrow()))
                 fail(fmt::format("unexpected method {}.{}", method->class_id, method->method_id));
         }
