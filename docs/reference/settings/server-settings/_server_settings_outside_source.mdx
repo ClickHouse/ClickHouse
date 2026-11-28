@@ -1707,6 +1707,8 @@ Configuration of clusters used by the [Distributed](/reference/engines/table-eng
 
 For the value of the `incl` attribute, see the section "[Configuration files](/concepts/features/configuration/server-config/configuration-files)".
 
+The server refuses to start when a replica `host` is empty, contains whitespace or a control character, or is made of digits and dots but is not a valid IPv4 address.
+
 **See Also**
 
 - [skip_unavailable_shards](/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
@@ -1929,6 +1931,10 @@ The following settings can be configured by sub-tags:
 | `use_compression` (optional)               | Enables compression in Keeper protocol if set to true.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `use_xid_64` (optional)                    | Enables 64-bit transaction IDs. Set to `true` to enable extended transaction ID format. Default: `false`.                                                                                                                                                                                                                                                                                                                                                |
 | `pass_opentelemetry_tracing_context` (optional) | Enables propagation of OpenTelemetry tracing context to Keeper requests. When enabled, tracing spans will be created for Keeper operations, allowing distributed tracing across ClickHouse and Keeper. See [Tracing ClickHouse Keeper Requests](/guides/oss/deployment-and-scaling/monitoring/opentelemetry#tracing-clickhouse-keeper-requests) for more details. Default: `false`.                                                                                                                                      |
+
+The server refuses to start when a node `host` is empty, contains whitespace or a control character, or is made of digits and dots but is not a valid IPv4 address; the same holds for the `hostname` of each server in `keeper_server.raft_configuration`.
+A node `host` with `:` outside square brackets is rejected too: write the port in `port`, and an IPv6 address in brackets, such as `[::1]`.
+The hosts of `auxiliary_zookeepers` are checked the same way when they are first used.
 
 There is also the `zookeeper_load_balancing` setting (optional) which lets you select the algorithm for ZooKeeper node selection:
 

@@ -108,7 +108,7 @@ Cluster::Address::Address(
     , shard_index(shard_index_)
     , replica_index(replica_index_)
 {
-    host_name = config.getString(config_prefix + ".host");
+    host_name = getHostFromConfig(config, config_prefix + ".host");
     if (config.has(config_prefix + ".user"))
         user_specified = true;
 

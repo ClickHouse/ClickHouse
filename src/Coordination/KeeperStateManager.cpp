@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/isLocalAddress.h>
+#include <Common/parseAddress.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -192,7 +193,7 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
         }
 
         int new_server_id = config.getInt(full_prefix + ".id");
-        std::string hostname = config.getString(full_prefix + ".hostname");
+        std::string hostname = getHostFromConfig(config, full_prefix + ".hostname");
         int port = config.getInt(full_prefix + ".port");
         bool can_become_leader = config.getBool(full_prefix + ".can_become_leader", true);
         int32_t priority = config.getInt(full_prefix + ".priority", 1);
