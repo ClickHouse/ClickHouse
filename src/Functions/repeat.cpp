@@ -7,6 +7,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 #include <IO/WriteHelpers.h>
+#include <base/defines.h>
 
 
 namespace DB
@@ -68,6 +69,30 @@ struct RepeatImpl
             res_offsets[i] = data_size;
         }
         res_data.resize(data_size);
+        if (repeat_time == 0)
+            return;
+        if (repeat_time == 1)
+        {
+            if (data_size != 0)
+                memcpy(res_data.data(), data.data(), data_size);
+            return;
+        }
+#if defined(__x86_64__)
+        const size_t rows = offsets.size();
+        /// Both strategies support every row width; the average only selects the copy strategy.
+        if (rows != 0 && data.size() / rows > 16)
+        {
+            for (UInt64 i = 0; i < rows; ++i)
+            {
+                processImpl<false>(
+                    data.data() + offsets[static_cast<ssize_t>(i) - 1],
+                    res_data.data() + res_offsets[static_cast<ssize_t>(i) - 1],
+                    offsets[i] - offsets[static_cast<ssize_t>(i) - 1],
+                    static_cast<UInt64>(repeat_time));
+            }
+            return;
+        }
+#endif
         for (UInt64 i = 0; i < res_offsets.size(); ++i)
         {
             process(
@@ -149,36 +174,80 @@ struct RepeatImpl
     }
 
 private:
-    // A very fast repeat implementation, only invoke memcpy for O(log(n)) times.
-    // as the calling times decreases, more data will be copied for each memcpy, thus
-    // SIMD optimization will be more efficient.
-    static void process(const UInt8 * src, UInt8 * dst, UInt64 size, UInt64 repeat_time)
+    template <bool short_seed>
+    static ALWAYS_INLINE void processImpl(const UInt8 * src, UInt8 * dst, UInt64 size, UInt64 repeat_time)
     {
-        if (unlikely(repeat_time <= 0))
-            return;
-
+        auto copy = [](UInt8 * to, const UInt8 * from, UInt64 length)
+        {
+            if constexpr (short_seed)
+            {
+                if (length <= 16)
+                {
+                    /// `ColumnString` padding permits the extra bytes; the rounded ranges can overlap.
+                    __builtin_memmove(to, from, 16);
+                    return;
+                }
+                if (length <= 32)
+                {
+                    __builtin_memcpy(to, from, 16);
+                    __builtin_memcpy(to + length - 16, from + length - 16, 16);
+                    return;
+                }
+                if (length <= 64)
+                {
+                    __builtin_memcpy(to, from, 32);
+                    __builtin_memcpy(to + length - 32, from + length - 32, 32);
+                    return;
+                }
+            }
+            memcpy(to, from, length);
+        };
         UInt64 k = 0;
         UInt64 last_bit = repeat_time & 1;
         repeat_time >>= 1;
 
         const UInt8 * dst_hdr = dst;
-        memcpy(dst, src, size);
+        copy(dst, src, size);
         dst += size;
 
         while (repeat_time > 0)
         {
             UInt64 copy_size = size * (1ULL << k);
-            memcpy(dst, dst_hdr, copy_size);
+            copy(dst, dst_hdr, copy_size);
             dst += copy_size;
             if (last_bit)
             {
-                memcpy(dst, dst_hdr, copy_size);
+                copy(dst, dst_hdr, copy_size);
                 dst += copy_size;
             }
             k += 1;
             last_bit = repeat_time & 1;
             repeat_time >>= 1;
         }
+    }
+
+    static ALWAYS_INLINE void process(const UInt8 * src, UInt8 * dst, UInt64 size, UInt64 repeat_time)
+    {
+        if (unlikely(repeat_time == 0))
+            return;
+#if defined(__x86_64__)
+        if (size <= 16)
+        {
+            if (size == 0)
+                return;
+            if (size == 1)
+            {
+                if (repeat_time == 1)
+                    *dst = *src;
+                else
+                    memset(dst, *src, repeat_time);
+                return;
+            }
+            processImpl<true>(src, dst, size, repeat_time);
+            return;
+        }
+#endif
+        processImpl<false>(src, dst, size, repeat_time);
     }
 };
 

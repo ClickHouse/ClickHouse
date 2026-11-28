@@ -1,0 +1,7 @@
+<test>
+    <settings>
+        <max_block_size>65409</max_block_size>
+        <max_threads>1</max_threads>
+    </settings>
+    <query>SELECT count() FROM numbers(700000) WHERE NOT ignore(repeat(concat('привет ', toString(number % 10)), 70))</query>
+</test>
