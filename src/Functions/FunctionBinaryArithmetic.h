@@ -572,9 +572,9 @@ struct StringReduceOperationImpl
         for (size_t i = 0; i < size; ++i)
         {
             res[i] = process(
-                a.data() + offsets_a[i - 1],
+                a.data() + offsets_a[static_cast<ssize_t>(i) - 1],
                 a.data() + offsets_a[i],
-                b.data() + offsets_b[i - 1],
+                b.data() + offsets_b[static_cast<ssize_t>(i) - 1],
                 b.data() + offsets_b[i]);
         }
     }
@@ -586,7 +586,7 @@ struct StringReduceOperationImpl
         for (size_t i = 0; i < size; ++i)
         {
             res[i] = process(
-                a.data() + offsets_a[i - 1],
+                a.data() + offsets_a[static_cast<ssize_t>(i) - 1],
                 a.data() + offsets_a[i],
                 reinterpret_cast<const UInt8 *>(b.data()),
                 reinterpret_cast<const UInt8 *>(b.data()) + b.size());
@@ -3866,9 +3866,10 @@ template <typename LeftColumnType, typename A, typename B>
     [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return valid_on_default_arguments; }
 
     /// The String operand of a date and interval operation is parsed for every row, and its default value is not a valid date.
+    /// Neither can a tuple operation be executed on default arguments, it is delegated to an `ITupleFunction`.
     [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
     {
-        return canBeExecutedOnDefaultArguments()
+        return canBeExecutedOnDefaultArguments() && !prepared_tuple_function && !prepared_tuple_and_number_function
             && !(prepared_interval_function
                  && std::ranges::any_of(arguments, [](const auto & argument) { return isString(removeLowCardinalityAndNullable(argument.type)); }));
     }

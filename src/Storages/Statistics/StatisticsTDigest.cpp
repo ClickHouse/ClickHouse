@@ -37,7 +37,7 @@ size_t StatisticsTDigest::allocatedBytes() const
     return sizeof(*this) + t_digest.allocatedBytes();
 }
 
-void StatisticsTDigest::serialize(WriteBuffer & buf)
+void StatisticsTDigest::serialize(WriteBuffer & buf, StatisticsFileVersion /*version*/)
 {
     t_digest.serialize(buf);
 }

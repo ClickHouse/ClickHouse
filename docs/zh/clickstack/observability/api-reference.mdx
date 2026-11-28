@@ -1,0 +1,84 @@
+---
+slug: /clickstack/observability/api-reference
+title: 'API 参考文档'
+description: 'ClickHouse Observability API 参考文档，涵盖仪表盘、告警、数据源、Webhook、角色和保存的搜索'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'API', 'REST API', '仪表盘', '告警']
+sidebarTitle: 'API 参考文档'
+---
+
+ClickHouse Observability 通过 ClickHouse Cloud API 管理仪表盘、告警、Webhook、角色和保存的搜索，并访问数据源。
+
+<Note>
+  在全托管模式下，数据源由系统自动管理。您可以使用数据源读取操作查看数据源；数据源的创建、更新和删除操作则适用于需要自行管理数据源的部署。
+</Note>
+
+## API 参考文档 {#api-docs}
+
+在侧边栏中选择一个端点，即可查看其参数、请求与响应 schema 以及交互式示例。这些页面采用 **ClickHouse Cloud API** 规范，使用云服务 URL 及相应的身份验证方式。
+
+可用的端点如下：
+
+| 资源          | 操作                             |
+| ----------- | ------------------------------ |
+| **仪表盘**     | 创建、列出、获取、更新、删除和验证仪表盘           |
+| **告警**      | 创建、列出、获取、更新和删除告警               |
+| **数据源**     | 列出和获取数据源；对于自行管理的数据源，还可创建、更新和删除 |
+| **Webhook** | 创建、列出、更新、删除和验证 Webhook         |
+| **角色**      | 创建、列出、获取、更新和删除角色               |
+| **保存的搜索**   | 创建、列出、获取、更新和删除保存的搜索            |
+
+## 身份验证 {#authentication}
+
+ClickHouse Observability 通过 [HTTP 基本身份验证](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication)，使用 **ClickHouse Cloud API 密钥**进行身份验证。如需创建和管理 API 密钥，请参阅[管理 API 密钥](/zh/products/cloud/features/admin-features/api/openapi)。
+
+该密钥必须具有 `control-plane:service:manage-clickstack-api` 权限。
+
+通过 HTTP 基本身份验证提供密钥 ID 和密钥 Secret：
+
+```bash
+export KEY_ID=<your_key_id>
+export KEY_SECRET=<your_key_secret>
+
+curl --user $KEY_ID:$KEY_SECRET \
+  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
+```
+
+## 基准 URL 与请求格式 {#base-url}
+
+所有 ClickHouse Observability API 请求均发送至 ClickHouse Cloud API：
+
+```bash
+https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/<resource>
+```
+
+您可以在 ClickHouse Cloud 控制台的 **组织 → 组织详情** 中找到**组织 ID**。**服务 ID** 可在服务 URL 或服务详情页面中查看。
+
+### 示例：列出仪表盘 {#list-dashboards-managed}
+
+```bash
+curl --user $KEY_ID:$KEY_SECRET \
+  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
+```
+
+### 示例：创建告警 {#create-alert-managed}
+
+```bash
+curl -X POST --user $KEY_ID:$KEY_SECRET \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dashboardId": "<DASHBOARD_ID>",
+    "tileId": "<TILE_ID>",
+    "threshold": 100,
+    "interval": "1h",
+    "source": "tile",
+    "thresholdType": "above",
+    "channel": {
+      "type": "webhook",
+      "webhookId": "<WEBHOOK_ID>"
+    },
+    "name": "Error Spike Alert",
+    "message": "Error rate exceeded 100 in the last hour"
+  }' \
+  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/alerts
+```

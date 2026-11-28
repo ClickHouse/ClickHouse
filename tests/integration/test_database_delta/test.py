@@ -935,6 +935,7 @@ FROM {db_name}.`{schema_name}.{table_name}`
         f"""
     SELECT event_date, data, _commit_version
     FROM {db_name}.`{schema_name}.{table_name}`
+    ORDER BY _commit_version
         """,
         settings={
             "delta_lake_snapshot_start_version": 1,

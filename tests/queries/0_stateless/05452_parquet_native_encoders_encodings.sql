@@ -1,4 +1,5 @@
 -- Tags: no-fasttest
+-- Random settings limits: output_format_parquet_max_dictionary_size=(1048576, None); output_format_parquet_row_group_size_bytes=(536870912, None); output_format_parquet_use_alp_encoding=(0, 0)
 -- no-fasttest: the `ParquetMetadata` format uses the Arrow library.
 
 -- A companion to `05406_parquet_native_encoders`: check, with an independent reader of the file

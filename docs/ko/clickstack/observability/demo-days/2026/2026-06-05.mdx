@@ -1,0 +1,124 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-06-05
+title: '데모 데이 - 2026-06-05'
+sidebarTitle: '2026-06-05'
+description: '2026-06-05 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+## 트레이스 분할 보기 및 확장 트레이스 보기 {#split-trace-view-and-extended-trace-view}
+
+*데모 진행자: [@karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/L4sduqf3CR8" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 트레이스 패널에서 분할 보기 모드를 사용할 수 있습니다. 타임라인에서 스팬을 차례로 클릭하면, 기존처럼 선택한 스팬 아래에 상세 정보 패널이 열리는 대신 오른쪽 상세 정보 패널의 내용이 바로 갱신됩니다. 따라서 개별 스팬을 자세히 살펴보는 동안에도 전체 타임라인을 계속 확인할 수 있습니다.
+
+또한 확장 트레이스 보기로 전환하면 스크롤과 확대/축소를 지원하는 전체 너비 타임라인을 사용할 수 있습니다. 두 패널은 각각 독립적으로 열고 닫을 수 있으므로, 보던 위치를 잃지 않고 상위 수준의 개요와 세부 스팬 검사 사이를 손쉽게 오갈 수 있습니다.
+
+**관련 풀 리퀘스트:** [#2402](https://github.com/hyperdxio/hyperdx/pull/2402) feat: trace panel inline split detail
+
+## 소스 수준 필수 필터 {#source-level-required-filters}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/RcAl8Sl5GFM" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 소스에 필수 필터를 선언할 수 있으며, 선언된 필터는 해당 소스를 사용하는 모든 대시보드에 자동으로 표시됩니다. 소스를 참조하는 대시보드마다 같은 필터를 일일이 추가할 필요 없이, ClickStack이 이 요구 사항을 감지하여 필터를 대시보드 수준으로 끌어올립니다. 이때 필터는 해당 소스를 실제로 사용하는 타일에만 적용됩니다.
+
+개별 타일에 다른 필터 값이 필요하면 대시보드 수준의 값을 재정의할 수 있습니다. 또한 필수 필터는 차트 편집기 프리뷰에도 그대로 적용되므로 필터를 제거하지 않고도 쿼리를 검사할 수 있습니다. 필수 소스 필터는 SQL 기반 차트에서 사용하는 SQL 필터 매크로와도 연동되며, 대시보드 간 연결을 설정하면 ClickStack이 이 필터를 연결 매개변수 후보에 자동으로 포함합니다.
+
+## Y축을 데이터에 맞추기 {#fit-y-axis-to-data}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/cNiGHy1OqhU" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+라인 차트에 &quot;Y축을 데이터에 맞추기&quot; 표시 설정이 새로 추가되었습니다. 기본적으로 Y축은 0에서 시작하므로, 값은 크지만 변동 폭이 작은 경우 표시 범위가 압축되어 추세를 한눈에 파악하기 어렵습니다.
+
+이 옵션을 활성화하면 실제 데이터 범위를 기준으로 Y축 범위가 동적으로 계산됩니다. 따라서 축의 최솟값과 최댓값을 수동으로 구성하지 않아도 값이 큰 시계열의 변동을 확인할 수 있습니다.
+
+**관련 풀 리퀘스트:** [#2417](https://github.com/hyperdxio/hyperdx/pull/2417) feat(charts): add &#39;Fit Y-Axis to Data&#39; display setting for line charts
+
+## 이상 탐지 알림 {#anomaly-alerts}
+
+*데모 진행자: [@fleon](https://github.com/fleon)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aAgN3ZlQz8M" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Himanshu는 Z-score 탐지를 활용한 이상 탐지 기반 알림 기능의 개발 현황을 소개했습니다. 고정된 임계값 대신, 예상 평균에서 몇 표준편차만큼 벗어났을 때 알림을 트리거할지 설정합니다. 계절성 윈도우(시간 단위 또는 일 단위)에 따라 기준값 계산 방식이 결정되며, 알림 편집기에서 알림이 발생했을 윈도우를 강조 표시해 주므로 저장하기 전에 민감도를 조정할 수 있습니다.
+
+이 기능은 임계값 알림의 흔한 문제, 즉 사용자가 어떤 숫자 값을 설정해야 할지 모르는 경우가 많다는 문제를 해결합니다. Z-score를 조정하면서 알림이 발생할 수 있는 윈도우가 실시간으로 갱신되는 것을 확인할 수 있으므로, 과도한 노이즈 없이 실제 급증만 포착하는 임계값을 손쉽게 찾을 수 있습니다. 값이 예상 범위를 초과할 때만(예상 범위 아래로 떨어질 때는 제외) 알림이 발생하도록 범위를 지정할 수 있으며, 출현 설정을 사용하면 연속된 여러 데이터 포인트에서 조건이 유지될 때만 알림이 발생하도록 할 수 있습니다. 이 기능은 아직 개발 중이며, 현재 기준값은 이동 평균으로 계산됩니다. 지수 이동 평균도 지원할 예정입니다.
+
+## API 및 AI 에이전트 구성 개선 {#clearer-configuration-for-api-and-ai-agents}
+
+*데모 진행자: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/gpQA-Vso1XI" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 ClickStack 설정에 API 키와 MCP 연결 설정을 한곳에서 관리할 수 있는 전용 API 및 에이전트 탭이 추가되었습니다. Claude, Cursor, OpenCode용 원클릭 버튼이 제공되므로 연결 명령어를 직접 작성할 필요가 없습니다. 예를 들어 Cursor 버튼을 누르면 알맞은 설치 명령이 미리 입력된 터미널이 열립니다. OpenCode 사용자에게는 복사해 바로 붙여넣을 수 있는 시스템 프롬프트 스니펫이 제공됩니다. 그 밖의 MCP 클라이언트는 범용 JSON 구성 옵션을 사용하면 됩니다.
+
+**관련 풀 리퀘스트:** [#2407](https://github.com/hyperdxio/hyperdx/pull/2407) feat(team-settings): connect your AI assistant
+
+## 숫자 차트 색상 선택 {#color-selection-for-number-charts}
+
+*데모 진행자: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qsZ-I6FEsNw" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 숫자 타일에서 정적 색상 선택기와 조건부 색상 규칙을 모두 사용할 수 있습니다. 차트 팔레트도 &quot;color-1&quot;, &quot;color-10&quot; 대신 &quot;blue&quot;, &quot;gray&quot;처럼 사람이 읽을 수 있는 색상 이름을 사용하도록 개선되어, 어떤 색상을 선택하는지 훨씬 쉽게 파악할 수 있습니다.
+
+조건부 색상을 사용하면 대상 값 미만은 녹색, 경고 범위는 황색, 위험 임계값 초과는 빨간색처럼 순서가 지정된 임계값 규칙을 정의할 수 있습니다. 따라서 숫자 타일을 대시보드의 상태 표시기로 제대로 활용할 수 있으며, 특히 오류율이나 P99 지연 시간처럼 숫자를 일일이 읽지 않고도 한눈에 상태를 확인해야 하는 메트릭에 유용합니다.
+
+**관련 풀 리퀘스트:** [#2386](https://github.com/hyperdxio/hyperdx/pull/2386) Number tile conditional color rules (ordered thresholds), [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): number tile static color picker
+
+## 스키마 마이그레이션(Schema migrations) {#schema-migrations}
+
+*데모 진행자: [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qVV8vQqctfM" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 ClickStack 설정(Enterprise)에 스키마 마이그레이션(Schema Migrations) 탭이 추가되어, 데이터 스키마(schemas)에 대한 DDL 변경을 버전 단위로 통제하며 적용할 수 있습니다. 마이그레이션을 작성하고 버전 번호를 지정하면 백그라운드 작업이 이를 감지하여 재시도 로직과 엄격한 실행 순서에 따라 실행합니다. 마이그레이션 하나가 실패하면, 해당 마이그레이션의 문제가 해결되거나 삭제될 때까지 이에 의존하는 후속 마이그레이션은 실행되지 않습니다.
+
+또한 이 버전 기반 모델 덕분에 ClickHouse는 ALTER TABLE 작업을 수동으로 수행하지 않고도 ClickStack Cloud 팀에 관리형 스키마 최적화를 푸시할 수 있습니다. 각 팀은 대기 중인 마이그레이션을 검토하고 원하는 시점에 차단을 해제할 수 있습니다. 1단계에서는 추가형 변경을 지원하며, 프라이머리 키 변경은 2단계에서 지원할 예정입니다.
+
+## 기본 제공 브라우저 RUM 대시보드 {#out-of-the-box-browser-rum-dashboards}
+
+*데모 진행자: [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Kmq9qwTnObw" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 ClickStack은 웹 성능 메트릭 전반을 다루는 사전 구축된 브라우저 RUM 대시보드를 제공합니다. 이 대시보드에는 페이지 조회수와 P90 로드 시간을 보여 주는 성능 개요와 함께 LCP, INP, CLS 등의 웹 바이탈(Web Vitals)이 포함되어 있습니다. 웹 바이탈에는 단계별 임계값이 적용되어 있어 각 메트릭이 양호한지, 개선이 필요한지, 불량한지를 한눈에 확인할 수 있습니다.
+
+그 밖의 섹션에서는 시간대별 페이지 조회수, 장기 작업(long tasks), 디바이스별 분류, 가장 느린 페이지, 오류가 가장 많은 세션, JavaScript 오류율, API 실패를 확인할 수 있습니다. 사용자 정의 행 작업을 통해 테이블의 행을 클릭하면 관련 세션이나 트레이스 데이터로 바로 드릴스루할 수 있습니다. 페이지 상단의 필터로는 서비스, 환경, 서비스 버전, 페이지별로 데이터를 세분화해 볼 수 있습니다. 국가별 필터링은 현재 개발 중이며, 브라우저 SDK가 Geo 데이터를 전송하도록 개선된 이후 지원될 예정입니다.
+
+**관련 풀 리퀘스트:** [#2413](https://github.com/hyperdxio/hyperdx/pull/2413) feat: add Browser RUM dashboard template
+
+## 종속 대시보드 필터 {#dependent-dashboard-filters}
+
+*데모 진행자 [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/nTnBmZ-MvFg" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 대시보드 필터를 서로 종속되도록 설정할 수 있습니다. 한 필터에서 값을 선택하면 하위 필터에서 선택할 수 있는 옵션이 자동으로 좁혀집니다. 이 기능이 처음 적용된 대시보드는 Kubernetes 대시보드입니다. 파드를 선택하면 배포 및 노드 드롭다운에 클러스터 전체의 옵션이 모두 표시되지 않고, 해당 파드와 관련된 값만 표시됩니다.
+
+따라서 결과가 비어 있는 필터 조합은 처음부터 표시되지 않습니다. 이 기능은 현재 Kubernetes 대시보드 템플릿에서 제공됩니다.

@@ -555,11 +555,14 @@ private:
     static void
     intervalsToPoints(const std::vector<IntervalWithValue> & intervals, std::vector<IntervalStorageType> & temporary_points_storage)
     {
+        const size_t old_size = temporary_points_storage.size();
+        temporary_points_storage.resize(old_size + intervals.size() * 2);
+        IntervalStorageType * points = temporary_points_storage.data() + old_size;
         for (const auto & interval_with_value : intervals)
         {
             auto & interval = getInterval(interval_with_value);
-            temporary_points_storage.emplace_back(interval.left);
-            temporary_points_storage.emplace_back(interval.right);
+            *points++ = interval.left;
+            *points++ = interval.right;
         }
     }
 

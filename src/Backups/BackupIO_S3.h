@@ -45,7 +45,7 @@ public:
     BackupReaderS3(
         const S3::URI & s3_uri_,
         const String & access_key_id_,
-        const String & secret_access_key_,
+        std::string_view secret_access_key_,
         const String & role_arn,
         const String & role_session_name,
         const String & external_id,
@@ -90,7 +90,7 @@ public:
     BackupWriterS3(
         const S3::URI & s3_uri_,
         const String & access_key_id_,
-        const String & secret_access_key_,
+        std::string_view secret_access_key_,
         const String & role_arn,
         const String & role_session_name,
         const String & external_id,
@@ -138,6 +138,7 @@ public:
 
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
+    std::unique_ptr<WriteBuffer> writeFileImpl(const String & file_name, const WriteSettings & file_write_settings);
 
     const S3::URI s3_uri;
     const DataSourceDescription data_source_description;

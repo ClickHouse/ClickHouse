@@ -57,9 +57,13 @@ Lorsqu’il est désactivé, les politiques de ligne sont appliquées avant FINA
 filtre des lignes qui devraient être utilisées pour la déduplication dans ReplacingMergeTree ou des moteurs similaires.
 
 Si l’expression de la politique de ligne est déterministe et dépend uniquement de colonnes de ORDER BY qui ne sont pas à virgule flottante, elle sera tout de même
-appliquée avant FINAL par optimisation, car un tel filtrage ne peut pas affecter le résultat de la déduplication. Les colonnes à virgule flottante
+appliquée avant FINAL par optimisation, car un tel filtrage ne peut pas affecter le résultat de la déduplication. Une valeur calculée
+une seule fois pour l’ensemble de la requête, comme `currentUser()`, `now()` ou le set d’un `IN (subquery)`, n’empêche pas cette
+optimisation ; en revanche, le set d’une table `Set`, qui peut changer pendant l’exécution de la requête, l’empêche. Les colonnes à virgule flottante
 ou contenant des valeurs à virgule flottante (telles que `Tuple(Float64, ...)`, `Array(Float64)`, `Nullable(Float64)`, etc.)
 sont exclues, car `-0.0` et `0.0` sont dédupliquées comme une seule et même clé, alors qu’une condition de politique peut les distinguer.
+`GraphiteMergeTree` agrège des lignes ayant des horodatages différents en une seule ligne ; pour ce moteur, seule la colonne path est donc prise en compte, et uniquement
+lorsqu’elle est la première colonne de `ORDER BY`.
 
 Valeurs possibles :
 

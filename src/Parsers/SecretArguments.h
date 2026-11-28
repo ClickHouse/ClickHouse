@@ -100,7 +100,7 @@ public:
     virtual bool maskDictionarySourceValue(const String & key, String & value) const = 0;
 };
 
-/// Finds no secrets. For the programs that don't register the engines (the client, the WebAssembly parser):
+/// Finds no secrets. For the programs that don't register the engines (the WebAssembly parser):
 /// they show the secrets of engine arguments.
 class NoSecretArgumentsFinder final : public ISecretArgumentsFinder
 {
@@ -113,7 +113,7 @@ public:
 };
 
 /// Installed once at startup by every program that formats an AST hiding its secrets: `SecretArgumentsRegistry`
-/// where the engines are registered (`server`, `local`, `format`), `NoSecretArgumentsFinder` elsewhere.
+/// where the engines are registered (`server`, `local`, `client`, `format`), `NoSecretArgumentsFinder` elsewhere.
 void setSecretArgumentsFinder(const ISecretArgumentsFinder * finder);
 /// Throws `LOGICAL_ERROR` if no finder is installed, so a program that forgets to install one can't show secrets.
 const ISecretArgumentsFinder & getSecretArgumentsFinder();

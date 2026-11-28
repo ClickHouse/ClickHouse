@@ -24,20 +24,20 @@ PlanAnalysisSnapshot PlanAnalysisSnapshot::capture(const PlanWalk & walk)
     return snapshot;
 }
 
-const StepAnalyzer * PlanAnalysisSnapshot::find(const String & step_id) const
+const StepAnalyzer * PlanAnalysisSnapshot::find(UInt64 step_id) const
 {
     const auto it = analyzers.find(step_id);
     return it != analyzers.end() ? &it->second : nullptr;
 }
 
-std::vector<const StepAnalyzer *> PlanAnalysisSnapshot::stepsInPostOrder() const
+VectorWithMemoryTracking<const StepAnalyzer *> PlanAnalysisSnapshot::stepsInPostOrder() const
 {
     const auto * root = find(root_id);
     if (!root)
         return {};
 
-    std::vector<const StepAnalyzer *> post_order;
-    std::vector<const StepAnalyzer *> to_visit{root};
+    VectorWithMemoryTracking<const StepAnalyzer *> post_order;
+    VectorWithMemoryTracking<const StepAnalyzer *> to_visit{root};
 
     while (!to_visit.empty())
     {

@@ -127,7 +127,7 @@ class GH:
                 # head ref. Falling back to `repos/{repo}/commits/{sha}` would
                 # reintroduce the 300-entry cap this branch exists to avoid, so a
                 # large PR could silently lose changed test files and turn the
-                # merge-queue flaky check into a false green. Fail closed instead:
+                # merge-queue targeted checks into a false green. Fail closed instead:
                 # a merge-queue run always corresponds to exactly one PR, so a
                 # missing linked PR number is a real fault, not a skip condition.
                 raise RuntimeError(

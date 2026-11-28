@@ -2,6 +2,7 @@
 
 #include <Server/StatelessWorker/StatelessWorkerAllocation.h>
 #include <Server/StatelessWorker/StaticStatelessWorkersProvider.h>
+#include <Server/StatelessWorker/StatelessWorkersProviderFactory.h>
 #include <Server/StatelessWorker/StatelessWorkersProviderRegistry.h>
 #include <Interpreters/Context.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -11,7 +12,10 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 
+#include <algorithm>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <string>
 
 namespace ProfileEvents
@@ -296,6 +300,39 @@ TEST(StaticStatelessWorkersProvider, ClusterFormRetiredWhenRemoteServersChange)
     EXPECT_EQ(p2->allocate(0, PROVISIONING_TIMEOUT_MS)->getAddresses()[0].host, "host-b");
 }
 
+/// The provider reads the liveness of the cluster that `<cluster>` names. A change of that name must
+/// retire the provider, also when the new cluster has the same replicas.
+TEST(StaticStatelessWorkersProvider, ClusterFormRetiredWhenClusterNameChanges)
+{
+    const std::string remote_servers = R"(
+    <remote_servers>
+        <sw_first><shard><replica><host>host-a</host><port>9000</port></replica></shard></sw_first>
+        <sw_second><shard><replica><host>host-a</host><port>9000</port></replica></shard></sw_second>
+    </remote_servers>
+)";
+    applyStatelessWorkerConfig(remote_servers + R"(
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <clusters><dyn><cluster>sw_first</cluster></dyn></clusters>
+    </stateless_worker_client>
+)");
+    StatelessWorkersProviderRegistry registry;
+    auto p1 = registry.getProvider("dyn");
+    ASSERT_TRUE(p1);
+
+    applyStatelessWorkerConfig(remote_servers + R"(
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <clusters><dyn><cluster>sw_second</cluster></dyn></clusters>
+    </stateless_worker_client>
+)");
+    registry.reloadConfig(getContext().context->getConfigRef());
+    EXPECT_FALSE(registry.tryGetProvider("dyn"));
+
+    auto p2 = registry.getProvider("dyn");
+    EXPECT_NE(p1.get(), p2.get());
+}
+
 /// A lookup after the configuration changed, but before the reload reached the registry, builds a
 /// provider from the new configuration instead of returning the stale cached one.
 TEST(StatelessWorkersProviderRegistry, LookupRebuildsProviderChangedBeforeReload)
@@ -377,7 +414,9 @@ TEST(StatelessWorkersProviderRegistry, ListsBuiltProvidersByCluster)
     auto provider_a = registry.getProvider("a");
     auto built = registry.getBuiltProviders();
     ASSERT_EQ(built.size(), 2u);
-    std::map<String, StatelessWorkersProviderPtr> by_cluster(built.begin(), built.end());
+    std::map<String, StatelessWorkersProviderPtr> by_cluster;
+    for (const auto & provider : built)
+        by_cluster.emplace(provider->getClusterName(), provider);
     EXPECT_EQ(by_cluster.at("").get(), default_provider.get());
     EXPECT_EQ(by_cluster.at("a").get(), provider_a.get());
     EXPECT_FALSE(by_cluster.contains("b"));
@@ -397,8 +436,8 @@ TEST(StatelessWorkersProviderRegistry, ListsDefaultClusterUnderItsName)
     auto provider = registry.getProvider("main");
     auto built = registry.getBuiltProviders();
     ASSERT_EQ(built.size(), 1u);
-    EXPECT_EQ(built[0].first, "main");
-    EXPECT_EQ(built[0].second.get(), provider.get());
+    EXPECT_EQ(built[0].get(), provider.get());
+    EXPECT_EQ(StatelessWorkersProviderRegistry::getClusterDisplayName(getContext().context->getConfigRef(), built[0]->getClusterName()), "main");
 }
 
 /// End-to-end: the registry resolves a named static cluster and allocates its workers (no discovery).
@@ -526,6 +565,74 @@ TEST(Context, RefusesProviderWhenClientIsNotConfigured)
     {
         EXPECT_EQ(e.code(), ErrorCodes::SUPPORT_IS_DISABLED);
     }
+}
+
+namespace
+{
+
+/// Counts how the registry refreshes it.
+struct RecordingProvider : IStatelessWorkersProvider
+{
+    size_t reloads = 0;
+    size_t credential_refreshes = 0;
+
+    StatelessWorkerAllocationPtr allocate(size_t, uint64_t) override { return nullptr; }
+    StatelessWorkerAllocationPtr tryAllocate(size_t, uint64_t) override { return nullptr; }
+    std::vector<StatelessWorkerState> getWorkersState() const override { return {}; }
+    size_t getPlanningNodeCount(size_t requested_workers) const override { return requested_workers; }
+    std::string getAuthToken() const override { return {}; }
+    void start() override {}
+    void shutdown() override {}
+    void reloadConfig(const Poco::Util::AbstractConfiguration &, const std::string &) override { ++reloads; }
+    void refreshSharedCredentials(const Poco::Util::AbstractConfiguration &) override { ++credential_refreshes; }
+};
+
+}
+
+/// A provider retired while a query holds it is listed as retired and refreshes its shared credentials on every
+/// reload, but never takes its cluster's new definition. The registry forgets it once no query holds it.
+TEST(StatelessWorkersProviderRegistry, RetiredProviderRefreshesSharedCredentialsUntilDrained)
+{
+    static std::once_flag registered;
+    std::call_once(registered, []
+    {
+        StatelessWorkersProviderFactory::instance().registerProviderKind("recording", StatelessWorkersProviderFactory::ProviderKind{
+            .create = [](const Poco::Util::AbstractConfiguration &, const String &) -> StatelessWorkersProviderPtr
+            { return std::make_shared<RecordingProvider>(); },
+            .config_signature = [](const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+            { return config.getString(config_prefix + ".recording"); },
+        });
+    });
+
+    auto config_with_source = [](const std::string & source)
+    {
+        return "<stateless_worker_client><enabled>1</enabled><clusters><foo><recording>" + source
+            + "</recording></foo></clusters></stateless_worker_client>";
+    };
+    applyStatelessWorkerConfig(config_with_source("a"));
+    StatelessWorkersProviderRegistry registry;
+    auto held = std::static_pointer_cast<RecordingProvider>(registry.getProvider("foo"));
+
+    /// Redefined under the same name: the held provider is retired.
+    applyStatelessWorkerConfig(config_with_source("b"));
+    const auto & config = getContext().context->getConfigRef();
+    registry.reloadConfig(config);
+    registry.reloadConfig(config);
+    EXPECT_EQ(held->credential_refreshes, 2u);
+    EXPECT_EQ(held->reloads, 0u);
+    EXPECT_NE(registry.getProvider("foo").get(), held.get());
+    auto built = registry.getBuiltProviders();
+    ASSERT_EQ(built.size(), 2u);
+    EXPECT_TRUE(std::find(built.begin(), built.end(), held) != built.end());
+    built.clear();
+    EXPECT_EQ(held->getClusterName(), "foo");
+    EXPECT_TRUE(held->getRetireTime().has_value());
+    EXPECT_FALSE(registry.getProvider("foo")->getRetireTime().has_value());
+
+    std::weak_ptr<IStatelessWorkersProvider> weak = held;
+    held.reset();
+    EXPECT_TRUE(weak.expired());
+    EXPECT_EQ(registry.getBuiltProviders().size(), 1u);
 }
 
 }

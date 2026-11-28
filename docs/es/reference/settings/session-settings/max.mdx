@@ -89,6 +89,9 @@ Número máximo de snapshots de Paimon que se pueden consumir en cada lectura in
 
 Tiempo máximo estimado de ejecución de la consulta, en segundos. Se comprueba en cada bloque de datos
 cuando se agota [`timeout_before_checking_execution_speed`](/es/reference/settings/session-settings/other#timeout_before_checking_execution_speed).
+Funciona por extrapolación a partir de la velocidad actual de ejecución de la consulta.
+Si establece `timeout_before_checking_execution_speed` en 0, este parámetro de configuración
+no se comprobará.
 
 ## max_expanded_ast_elements {#max_expanded_ast_elements}
 
@@ -147,13 +150,15 @@ Proporción máxima entre los tiempos de espera de la CPU del SO (métrica OSCPU
 
 El número máximo de réplicas para cada segmento al ejecutar una consulta.
 
-Posibles valores:
+Valores posibles:
 
 * Entero positivo.
 
 **Información adicional**
 
 Esta opción puede producir resultados diferentes según la configuración utilizada.
+
+Con `parallel_replicas_mode` `sampling_key`, o con el modo de clave personalizada en un cluster con más de un segmento, cada réplica devuelve su propia parte del resultado del segmento. Las réplicas de un segmento solo se usan conjuntamente cuando el initiator agrega u ordena completamente estas partes por sí mismo (por ejemplo, en una agregación sin claves de `GROUP BY`). En caso contrario, por ejemplo con `GROUP BY` y `distributed_aggregation_memory_efficient` o con `ORDER BY`, el segmento se lee desde una sola réplica.
 
 ### Procesamiento en paralelo con la clave `SAMPLE` {#parallel-processing-using-sample-key}
 

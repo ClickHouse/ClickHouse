@@ -26,6 +26,9 @@ CREATE TABLE t_autopr_lazy_read (key UInt64, ord UInt64 CODEC(NONE), pad String 
     ENGINE = MergeTree ORDER BY key SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_autopr_lazy_read SELECT number, cityHash64(number), repeat('x', 500) FROM numbers(100000);
 
+-- Plan-based parallel replicas collects no statistics for the join query below when it ships the whole join:
+-- https://github.com/ClickHouse/ClickHouse/issues/131450
+SET parallel_replicas_plan_based = 0;
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2, parallel_replicas_local_plan = 1,
     parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

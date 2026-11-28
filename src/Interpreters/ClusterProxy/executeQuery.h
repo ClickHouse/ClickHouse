@@ -128,6 +128,15 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context);
 /// one used by the Fast test job, must not disable the local plan for every query).
 bool leafTimeoutRequiresRemoteOnlyLeafReading(const Settings & settings);
 
+/// Returns per-replica liveness of `cluster` (resolved from `cluster_name`), in the cluster's replica order.
+/// It is the same `is_active` signal that `system.clusters` reports. Returns an empty vector when the
+/// liveness is unknown; the caller must then treat all replicas as usable.
+std::vector<bool> getReplicasLiveness(const String & cluster_name, const ClusterPtr & cluster);
+
+/// Number of replicas a parallel replicas query over `cluster` reads from, as the reading coordinator counts them:
+/// the active replicas (all of them when the liveness is unknown), at most `max_parallel_replicas`.
+size_t getReplicasCountForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster);
+
 /// Builds the `_shard_num` scalar shipped to a shard, recording which shard numbering the number belongs
 /// to: `Cluster::getShardScopeIdentity`, not the name, since a derived cluster keeps the name and may
 /// renumber the shards. Both live in one block so that overwriting `_shard_num` replaces number and

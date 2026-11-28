@@ -97,7 +97,7 @@ public:
     using IOptimizationRule::addPhysicalToMemo;
 
 protected:
-    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr, const ExpressionProperties &, Memo &) const override { return {}; }
+    GroupExpressions applyImpl(GroupExpressionPtr, const ExpressionProperties &, Memo &) const override { return {}; }
 };
 
 }
