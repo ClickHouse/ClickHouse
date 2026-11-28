@@ -32,11 +32,12 @@ INSERT INTO replica2 SETTINGS insert_keeper_fault_injection_probability=0 VALUES
 
 SYSTEM SYNC REPLICA replica2;
 
-ALTER TABLE replica1 DETACH PART 'all_2_2_0'; --{serverError NOT_IMPLEMENTED}
+ALTER TABLE replica1 DETACH PART 'all_2_2_0';
 
 SELECT name FROM system.parts WHERE table = 'replica1' and database = currentDatabase() and active = 1 ORDER BY name;
 
 SELECT COUNT() FROM replica1;
+SELECT COUNT() FROM replica1 SETTINGS select_sequential_consistency = 1;
 
 SET insert_quorum_parallel=1;
 
