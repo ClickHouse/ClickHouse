@@ -40,9 +40,9 @@ REGISTER_FUNCTION(Has)
     factory.registerFunction<FunctionHas>(documentation);
 }
 
-FunctionOverloadResolverPtr createInternalFunctionHasOverloadResolver()
+FunctionOverloadResolverPtr createInternalFunctionHasOverloadResolver(ContextPtr context)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionHas>());
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionHas>(context));
 }
 
 }

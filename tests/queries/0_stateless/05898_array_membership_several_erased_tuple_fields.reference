@@ -1,0 +1,24 @@
+erased elements, rows differ in the second field
+0	1	1	1	1	1	1
+1	0	0	0	0	0	0
+2	1	1	2	2	1	1
+the same, one row per block
+0	1
+1	0
+2	1
+erased needle, rows differ in the second field
+0	1	1	1	1	1	1
+1	0	0	0	0	0	0
+2	1	1	2	2	1	1
+the same, one row per block
+0	1
+1	0
+2	1
+three erased fields, rows differ in the last one
+0	1	1
+1	0	0
+2	1	1
+erased fields at different depths
+0	1	1
+1	0	0
+2	0	0
