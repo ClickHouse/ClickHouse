@@ -936,7 +936,6 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
         /// from the staged rows and unnests them again. Building them again from the block's own columns would copy
         /// each such column once more, however few rows miss. Of a column that several aggregates read, a dense form
         /// that one of them prepared is preferred to a sparse one, which takes a pass over its offsets (below).
-        /// A `null_map_only_arguments` column is prepared, and so staged, as a `Nullable(UInt8)` with its null map.
         std::vector<ArgumentSource> arguments(argument_layout.num_positions, {nullptr, source_rows});
         for (size_t i = 0; i < params.aggregates_size; ++i)
             for (size_t j = 0; j < aggregates_positions[i].size(); ++j)

@@ -811,7 +811,6 @@ AggregatedDataVariants::Type chooseMergeBlocksMethod(AggregatedDataVariants::Typ
     return method;
 }
 
-/// `Nullable(UInt8)` zeros with the null map of `column`, the form of a `null_map_only_arguments` argument.
 ColumnPtr nullMapOnlyArgument(const IColumn & column)
 {
     auto null_map = getOuterNullMap(column);
