@@ -465,13 +465,17 @@ static MutationCommands coalesceSingletonRowMaskUpdates(
 /// column whose name collides with this sentinel).
 static const String NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER = "dummy";
 
-static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & data_part, const MutationCommands & commands)
+/// The names are names of columns of the table, so they are looked up in the part with the identity that the
+/// table gives them (see `IMergeTreeDataPart::tryGetColumnForTable`): a column `a.x` that the part does not
+/// hold is not the path `x` of a `JSON` column `a`.
+static bool haveMutationsOfDynamicColumns(
+    const MergeTreeData::DataPartPtr & data_part, const MutationCommands & commands, const ColumnsDescription & table_columns)
 {
     for (const auto & command : commands)
     {
         if (!command.column_name.empty())
         {
-            auto column = data_part->tryGetColumn(command.column_name);
+            auto column = data_part->tryGetColumnForTable(command.column_name, table_columns);
             if (column && column->type->hasDynamicSubcolumns())
                 return true;
         }
@@ -482,7 +486,7 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
         for (const auto & child : alter->update_assignments->children)
         {
             const auto & column_name = child->as<ASTAssignment &>().column_name;
-            auto column = data_part->tryGetColumn(column_name);
+            auto column = data_part->tryGetColumnForTable(column_name, table_columns);
             if (column && column->type->hasDynamicSubcolumns())
                 return true;
         }
@@ -530,10 +534,11 @@ static bool hasDynamicColumnsWithoutRecordedSubstreams(const MergeTreeData::Data
 static bool rewritesAllPartColumns(
     const MergeTreeData::DataPartPtr & source_part,
     const MutationCommands & commands_for_part,
+    const ColumnsDescription & table_columns,
     const MutationsInterpreter * interpreter,
     MergeTreeDataPartStorageType future_storage_type)
 {
-    return haveMutationsOfDynamicColumns(source_part, commands_for_part)
+    return haveMutationsOfDynamicColumns(source_part, commands_for_part, table_columns)
         || hasDynamicColumnsWithoutRecordedSubstreams(source_part)
         || !isWidePart(source_part)
         || !isPerFilePartStorage(source_part->getDataPartStorage())
@@ -709,7 +714,7 @@ static NameSet collectIndicesRebuiltByMutation(
         if (command.type == MutationCommand::Type::READ_COLUMN)
         {
             DataTypePtr old_type;
-            if (auto part_column = part->tryGetColumn(command.column_name))
+            if (auto part_column = part->tryGetColumnForTable(command.column_name, metadata_snapshot->getColumns()))
                 old_type = part_column->type;
             else if (const auto * missing = serialization_infos.getMissingColumnInfo(markerName(command.column_name));
                      missing && !missing->type_name.empty())
@@ -939,7 +944,7 @@ static void splitAndModifyMutationCommands(
         return std::nullopt;
     };
 
-    if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
+    if (haveMutationsOfDynamicColumns(part, commands, table_columns) || hasDynamicColumnsWithoutRecordedSubstreams(part)
         || !isWidePart(part) || !isPerFilePartStorage(part->getDataPartStorage())
         || part->getDataPartStorage().getType() != future_storage_type)
     {
@@ -981,7 +986,7 @@ static void splitAndModifyMutationCommands(
                 else
                 {
                     auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
-                    if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                    if (!column_ordinary || !part->tryGetColumnForTable(command.column_name, table_columns) || !part->hasColumnFiles(*column_ordinary))
                     {
                         for_interpreter.push_back(command);
                         mutated_columns.emplace(command.column_name);
@@ -1318,7 +1323,7 @@ static void splitAndModifyMutationCommands(
                 else
                 {
                     auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
-                    if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                    if (!column_ordinary || !part->tryGetColumnForTable(command.column_name, table_columns) || !part->hasColumnFiles(*column_ordinary))
                     {
                         for_interpreter.push_back(command);
                         mutated_columns.emplace(command.column_name);
@@ -3358,7 +3363,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         ctx->out->write(cur_block);
 
         if (ctx->minmax_idx)
-            ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns);
+            ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns, ctx->metadata_snapshot->getColumns());
 
         if (!ctx->statistics_to_build.empty())
             ctx->statistics_to_build.buildIfExists(cur_block);
@@ -4075,7 +4080,8 @@ private:
             indices_to_calculate.insert(indices_to_calculate.end(), ctx->text_indices_to_recalc.begin(), ctx->text_indices_to_recalc.end());
 
             auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, indices_to_calculate)->getActionsDAG().clone();
-            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
+                builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context, &ctx->metadata_snapshot->getColumns());
             if (!extracting_subcolumns_dag.getNodes().empty())
                 indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
 
@@ -4959,7 +4965,9 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
     if (command.type != MutationCommand::READ_COLUMN)
         return false;
 
-    auto part_column = part->tryGetColumn(command.column_name);
+    /// A column that the table declares in its own right (e.g. `a.size0` next to an `Array` column `a`)
+    /// is matched only by the column stored under that name, never by a same-named subcolumn.
+    auto part_column = part->tryGetColumnForTable(command.column_name, metadata_snapshot->getColumns());
     if (!part_column)
         return false;
 
@@ -4988,12 +4996,12 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
     return true;
 }
 
-static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const MutationCommand & command)
+static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command)
 {
     if (command.type != MutationCommand::READ_COLUMN)
         return false;
 
-    auto part_column = part->tryGetColumn(command.column_name);
+    auto part_column = part->tryGetColumnForTable(command.column_name, metadata_snapshot->getColumns());
     if (!part_column)
         return false;
 
@@ -5053,7 +5061,7 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
     if (canSkipConversionToNullable(part, metadata_snapshot, command))
         return true;
 
-    if (canSkipConversionToVariant(part, command))
+    if (canSkipConversionToVariant(part, metadata_snapshot, command))
         return true;
 
     return false;
@@ -5422,7 +5430,7 @@ bool MutateTask::prepare()
         && isWidePart(ctx->source_part)
         && isFullPartStorage(ctx->source_part->getDataPartStorage())
         && !MutationHelpers::hasDynamicColumnsWithoutRecordedSubstreams(ctx->source_part)
-        && !MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part)
+        && !MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part, ctx->metadata_snapshot->getColumns())
         && !context_for_reading->getSettingsRef()[Setting::max_bytes_in_set];
     if (can_coalesce_row_mask_updates)
     {
@@ -5710,7 +5718,7 @@ bool MutateTask::prepare()
     /// Decided once here and reused for the task selection below, so that the column list of the new
     /// part cannot disagree with the task that fills it.
     const bool rewrites_all_columns = !ctx->recalculate_ttl_only && MutationHelpers::rewritesAllPartColumns(
-        ctx->source_part, ctx->commands_for_part, ctx->interpreter.get(), ctx->future_part->part_format.storage_type);
+        ctx->source_part, ctx->commands_for_part, ctx->metadata_snapshot->getColumns(), ctx->interpreter.get(), ctx->future_part->part_format.storage_type);
 
     auto [new_columns, new_infos, new_columns_substreams] = ctx->recalculate_ttl_only
         ? std::make_tuple(ctx->source_part->getColumns(), ctx->source_part->getSerializationInfos(), ctx->source_part->getColumnsSubstreams())

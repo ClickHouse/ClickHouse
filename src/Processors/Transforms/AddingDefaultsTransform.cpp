@@ -141,18 +141,12 @@ static MutableColumnPtr mixColumns(
     return column_mixed;
 }
 
-/// The column that `name` is or is a subcolumn of.
+/// The column that `name` is or is a subcolumn of, as the table resolves the name: next to a `JSON` column `a`
+/// and a `Tuple` column `a.x`, the subcolumn `a.x.y` belongs to `a.x`, not to `a`.
 static String getColumnOfSubcolumn(const ColumnsDescription & columns, const String & name)
 {
-    if (columns.has(name))
-        return name;
-
-    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
-    {
-        const auto * column = columns.tryGet(String(column_name));
-        if (column && column->type->tryGetSubcolumnType(subcolumn_name))
-            return column->name;
-    }
+    if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+        return column->getNameInStorage();
     return name;
 }
 
@@ -334,7 +328,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
         auto dag = evaluateMissingDefaults(evaluate_block, required_columns_list, columns, context, false);
         if (dag)
         {
-            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header, dag->getRequiredColumnsNames(), context);
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header, dag->getRequiredColumnsNames(), context, &columns);
             auto actions = std::make_shared<ExpressionActions>(
                 ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag)),
                 ExpressionActionsSettings(context, CompileExpressions::yes), true);

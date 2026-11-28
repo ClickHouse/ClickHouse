@@ -179,8 +179,9 @@ public:
     std::vector<ColumnSize> getSubcolumnSizes(const NamesAndTypesList & subcolumns) const;
     /// The sizes of the subcolumns, and, if `with_columns`, of the columns among `column_names` that the part has. The uncached
     /// subcolumn sizes are calculated with one reader per column, or nullopt is returned if `only_from_memory` and that reads files.
+    /// A name that `table_columns` declares as a column is not taken for a subcolumn of another column, see `tryGetColumnForTable`.
     std::optional<std::vector<std::pair<String, ColumnSize>>> getColumnAndSubcolumnSizes(
-        const Names & column_names, bool with_columns, bool only_from_memory) const;
+        const Names & column_names, const ColumnsDescription & table_columns, bool with_columns, bool only_from_memory) const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
@@ -249,6 +250,12 @@ public:
 
     NameAndTypePair getColumn(const String & name) const;
     std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
+
+    /// Like `tryGetColumn`, but for a name that `table_columns` declares as a column in its own right:
+    /// such a name is answered only by a column that the part stores under that name, never by a
+    /// same-named subcolumn of another column. A column `a.size0` next to an `Array` column `a` that a
+    /// part does not hold is read from its default there rather than from the sizes of `a`.
+    std::optional<NameAndTypePair> tryGetColumnForTable(const String & column_name, const ColumnsDescription & table_columns) const;
 
     /// Get sample column from part. For ordinary columns it just creates column using it's type.
     /// For columns with dynamic structure it reads sample column with 0 rows from the part.

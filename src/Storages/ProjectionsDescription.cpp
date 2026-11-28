@@ -79,6 +79,28 @@ extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
 
 }
 
+bool ProjectionDescription::providesColumn(const String & column_name, const ColumnsDescription & table_columns) const
+{
+    bool stored = false;
+    if (table_columns.hasPhysical(column_name))
+    {
+        stored = sample_block.findByName(column_name) != nullptr;
+    }
+    else if (auto column_in_table = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+             column_in_table && column_in_table->isSubcolumn())
+    {
+        /// A subcolumn of a table column is provided only by the same column of the projection, which stores
+        /// the column itself in place of its subcolumns (see `fillProjectionDescriptionByQuery`).
+        const auto * column_in_projection = sample_block.findByName(column_in_table->getNameInStorage());
+        stored = column_in_projection && column_in_projection->type->tryGetSubcolumnType(column_in_table->getSubcolumnName());
+    }
+    else
+    {
+        stored = sample_block.findColumnOrSubcolumnByName(column_name).has_value();
+    }
+    return stored || metadata->virtuals.has(column_name);
+}
+
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
     const String column_name = node->getColumnName();
@@ -572,7 +594,9 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column_with_type_name.name);
 
         /// Subcolumns can be used in projection only when the original column is used.
-        if (columns.hasSubcolumn(GetColumnsOptions::All, column_with_type_name.name))
+        /// A table column named like a subcolumn of another column (e.g. `a.size0` next to an `Array` column `a`)
+        /// shadows that subcolumn, so it is stored in the projection as a column of its own.
+        if (!columns.has(column_with_type_name.name) && columns.hasSubcolumn(GetColumnsOptions::All, column_with_type_name.name))
         {
             auto subcolumn = columns.getColumnOrSubcolumn(GetColumnsOptions::All, column_with_type_name.name);
             if (!result.sample_block.has(subcolumn.getNameInStorage()))
@@ -800,7 +824,12 @@ Block ProjectionDescription::calculateByQuery(
         {
             String source_column_name
                 = with_parent_part_offset && column.name == "_parent_part_offset" ? String("_part_offset") : column.name;
-            auto source_column = source_block.getColumnOrSubcolumnByName(source_column_name);
+            /// A subcolumn (required by the key of the projection) is taken from the column that the table gives
+            /// the name, as the columns of the projection resolve it: `a.x.y` is the element `y` of a `Tuple`
+            /// column `a.x`, not the path `x.y` of a `JSON` column `a`.
+            auto source_column = source_block.has(source_column_name)
+                ? source_block.getByName(source_column_name)
+                : metadata->getColumns().getSubcolumnFromBlock(source_block, source_column_name);
             source_column.name = column.name;
             projection_block.insert(std::move(source_column));
         }

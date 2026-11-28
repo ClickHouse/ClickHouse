@@ -5,11 +5,16 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/FunctionFactory.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
 
-ActionsDAG createSubcolumnsExtractionActions(const Block & available_columns, const Names & required_columns, const ContextPtr & context)
+ActionsDAG createSubcolumnsExtractionActions(
+    const Block & available_columns,
+    const Names & required_columns,
+    const ContextPtr & context,
+    const ColumnsDescription * table_columns)
 {
     /// Create a new ActionsDAG that only extracts all subcolumns that are not presented in the available_columns.
     ActionsDAG extract_subcolumns_dag;
@@ -22,7 +27,28 @@ ActionsDAG createSubcolumnsExtractionActions(const Block & available_columns, co
         if (available_columns.has(required_column))
             continue;
 
-        for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(required_column))
+        auto column_and_subcolumn_pairs = Nested::getAllColumnAndSubcolumnPairs(required_column);
+
+        /// The column that the table gives the subcolumn is the only one to take it from. If it is not available
+        /// (the `INSERT` omitted it), the subcolumn is not extracted from another column that happens to offer
+        /// the same name: its values would not be the values of the subcolumn of the table.
+        /// An `EPHEMERAL` column counts as well: it is an input of the `DEFAULT` and `MATERIALIZED` expressions
+        /// evaluated on `INSERT`. It is in no part, so for the other callers its subcolumn is simply not available.
+        String column_name_in_table;
+        String subcolumn_name_in_table;
+        if (table_columns)
+        {
+            auto column_in_table = table_columns->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysicalAndEphemeral, required_column);
+            if (column_in_table && column_in_table->isSubcolumn())
+            {
+                column_name_in_table = column_in_table->getNameInStorage();
+                subcolumn_name_in_table = column_in_table->getSubcolumnName();
+                column_and_subcolumn_pairs.clear();
+                column_and_subcolumn_pairs.emplace_back(column_name_in_table, subcolumn_name_in_table);
+            }
+        }
+
+        for (auto [column_name, subcolumn_name] : column_and_subcolumn_pairs)
         {
             const auto * column = available_columns.findByName(column_name);
             if (!column || !column->type->tryGetSubcolumnType(subcolumn_name))

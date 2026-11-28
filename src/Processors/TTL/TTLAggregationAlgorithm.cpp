@@ -112,7 +112,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         /// a subcolumn, e.g. `n.a` for `ORDER BY n.a`. It holds the value calculated before `SET`, so the subcolumn
         /// is extracted from the stored column instead.
         auto sorting_key_dag = sorting_key.expression->getActionsDAG().clone();
-        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header_of_stored_columns, sorting_key_dag.getRequiredColumnsNames(), context);
+        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header_of_stored_columns, sorting_key_dag.getRequiredColumnsNames(), context, &storage_columns);
         if (!extracting_subcolumns_dag.getNodes().empty())
             sorting_key_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(sorting_key_dag));
 
@@ -201,7 +201,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
             aggregator_header.insert({output->result_type->createColumn(), output->result_type, output->result_name});
         }
 
-        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header_of_stored_columns, arguments_dag.getRequiredColumnsNames(), context);
+        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header_of_stored_columns, arguments_dag.getRequiredColumnsNames(), context, &storage_columns);
         if (!extracting_subcolumns_dag.getNodes().empty())
             arguments_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(arguments_dag));
 

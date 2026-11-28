@@ -1,0 +1,9 @@
+-- the EPHEMERAL column is supplied
+-- the EPHEMERAL column is omitted
+1	{'x.y':11}	44	44
+2	{'x.y':12}	45	45
+3	{'x.y':13}	0	0
+-- the EPHEMERAL column has an explicit default
+1	{'x.y':11}	44	44
+2	{'x.y':12}	55	55
+3	{'x.y':13}	55	55

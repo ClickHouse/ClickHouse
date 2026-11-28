@@ -379,7 +379,7 @@ void updateTTL(
         ttl_infos.updatePartMinMaxTTL(ttl_info);
 }
 
-void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActionsPtr & expr, Block & block)
+void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActionsPtr & expr, Block & block, const ColumnsDescription & table_columns)
 {
     /// Iterate over required columns in the expression and check if block doesn't have this column.
     /// It can happen only if required column is a actually a subcolumn of some column in the block.
@@ -388,7 +388,7 @@ void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActions
     for (const auto & required_column : expr->getRequiredColumns())
     {
         if (!block.has(required_column))
-            block.insert(block.getSubcolumnByName(required_column));
+            block.insert(table_columns.getSubcolumnFromBlock(block, required_column));
     }
 }
 
@@ -628,7 +628,7 @@ Block MergeTreeDataWriter::mergeBlock(
     for (const auto * column_name : {&merging_params.sign_column, &merging_params.version_column, &merging_params.is_deleted_column})
     {
         if (!column_name->empty() && !block.has(*column_name))
-            block.insert(block.getSubcolumnByName(*column_name));
+            block.insert(metadata_snapshot->getColumns().getSubcolumnFromBlock(block, *column_name));
     }
 
     SharedHeader header = std::make_shared<const Block>(std::move(block));
@@ -858,7 +858,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// Do not write _block_number and _block_offset for 0-level parts: block number is not known on this step.
     const auto minmax_columns = MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-    minmax_idx->update(block, minmax_columns);
+    minmax_idx->update(block, minmax_columns, metadata_snapshot->getColumns());
 
     const bool optimize_on_insert = !isPatchPartitionId(partition_id)
         && global_settings[Setting::optimize_on_insert]
@@ -890,7 +890,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
         auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices, is_computed_before_merge);
-        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
+        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block, metadata_snapshot->getColumns());
         expr->execute(block);
     }
 
@@ -950,7 +950,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         /// The merge may drop rows, so the min/max index of the part is computed again from the merged rows.
         /// Otherwise it may hold values of no stored row, and it is used to answer queries such as `max` of a column.
         minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-        minmax_idx->update(block, minmax_columns);
+        minmax_idx->update(block, minmax_columns, metadata_snapshot->getColumns());
     }
 
     if (expr_after_merge)
@@ -965,7 +965,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             if (block.has(required_column) && !table_columns.hasPhysical(required_column)
                 && table_columns.hasSubcolumn(GetColumnsOptions::AllPhysical, required_column))
                 block.erase(required_column);
-        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr_after_merge, block);
+        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr_after_merge, block, metadata_snapshot->getColumns());
         expr_after_merge->execute(block);
     }
 
@@ -1364,7 +1364,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
         auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {});
-        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
+        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block, metadata_snapshot->getColumns());
         expr->execute(block);
     }
 

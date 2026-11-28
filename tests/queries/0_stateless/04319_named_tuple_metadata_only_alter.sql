@@ -240,9 +240,11 @@ INSERT INTO t_named_tuple_alter VALUES (1, [(1, 'a')], 99);
 
 SELECT 'Case 14 (stream collision rejected):';
 -- The new `c` subfield in `items` would generate stream "items.c" which collides
--- with the existing top-level `items.c` column. The pre-existing validation must reject.
+-- with the existing top-level `items.c` column. It would also make the stored column `items.c`
+-- the name of a subcolumn of `items`, and that check refuses the `ALTER` before the validation
+-- of stream names is reached.
 ALTER TABLE t_named_tuple_alter
-    MODIFY COLUMN items Nested(a Int64, b String, c Nullable(Int64)); -- { serverError BAD_ARGUMENTS }
+    MODIFY COLUMN items Nested(a Int64, b String, c Nullable(Int64)); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 DROP TABLE t_named_tuple_alter;
 SET flatten_nested = 1;

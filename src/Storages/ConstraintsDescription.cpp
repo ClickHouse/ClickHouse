@@ -1,4 +1,5 @@
 #include <Storages/ConstraintsDescription.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <Common/quoteString.h>
 #include <Core/Block.h>
@@ -167,6 +168,11 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
     for (const auto & column : source_columns_)
         available_columns.insert({column.type->createColumn(), column.type, column.name});
 
+    /// A subcolumn is taken from the column that the table gives the name, as a read from the table does:
+    /// next to a `JSON` column `a` and a `Tuple` column `a.x`, the subcolumn `a.x.y` is the element of `a.x`,
+    /// not the path `x.y` of `a`.
+    ColumnsDescription columns_description(source_columns_);
+
     ConstraintsExpressions res;
     res.reserve(constraints.size());
     for (const auto & constraint : constraints)
@@ -181,7 +187,8 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
 
             /// Prepend actions that extract the required subcolumns from their parent columns, so the expression
             /// can be evaluated on a block that contains only the top-level columns.
-            auto extract_subcolumns_dag = createSubcolumnsExtractionActions(available_columns, constraint_dag.getRequiredColumnsNames(), context);
+            auto extract_subcolumns_dag = createSubcolumnsExtractionActions(
+                available_columns, constraint_dag.getRequiredColumnsNames(), context, &columns_description);
             res.push_back(std::make_shared<ExpressionActions>(
                 ActionsDAG::merge(std::move(extract_subcolumns_dag), std::move(constraint_dag)),
                 ExpressionActionsSettings(context, CompileExpressions::yes)));
