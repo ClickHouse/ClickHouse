@@ -178,6 +178,9 @@ protected:
     virtual void createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids);
     virtual void markReplicasActive(bool reinitialized);
 
+    /// Releases claimed host IDs that are not local any more, e.g. claimed because of a stale DNS answer.
+    void releaseNonLocalHostIDs();
+
     void runMainThread();
     void runCleanupThread();
 
