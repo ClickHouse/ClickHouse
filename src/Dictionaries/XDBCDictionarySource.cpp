@@ -12,6 +12,7 @@
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Common/escapeForFileName.h>
@@ -88,6 +89,11 @@ XDBCDictionarySource::XDBCDictionarySource(
     , bridge_url(bridge_helper->getMainURI())
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), context_->getServerSettings()))
 {
+    if (configuration.check_queries_are_select)
+    {
+        checkExternalDictionaryQueryConditionPlaceholder(configuration.query, "ODBC");
+        checkExternalDictionaryLoadQueryIsSelect(load_all_query, "ODBC");
+    }
 }
 
 /// copy-constructor is provided in order to support cloneability
@@ -135,6 +141,8 @@ BlockIO XDBCDictionarySource::loadAll()
 BlockIO XDBCDictionarySource::loadUpdatedAll()
 {
     std::string load_query_update = getUpdateFieldAndDate();
+    if (configuration.check_queries_are_select)
+        checkExternalDictionaryQueryIsSelect(load_query_update, "Update query for ODBC dictionary", "Only SELECT query can be used as a dictionary source");
 
     LOG_TRACE(log, fmt::runtime(load_query_update));
     BlockIO io;
@@ -199,6 +207,9 @@ bool XDBCDictionarySource::isModified() const
 
 std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request) const
 {
+    if (configuration.check_queries_are_select)
+        checkExternalDictionaryQueryIsSelect(request, "Invalidate query for ODBC dictionary", "Only SELECT query can be used as a dictionary invalidate query");
+
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
@@ -249,7 +260,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
                                    Block & sample_block,
                                    ContextPtr global_context,
                                    const std::string & /* default_database */,
-                                   bool /* check_config */) -> DictionarySourcePtr {
+                                   bool created_from_ddl) -> DictionarySourcePtr {
 
         if (global_context->getSettingsRef()[Setting::cloud_mode])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `odbc` is disabled");
@@ -272,7 +283,8 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
             .where = config.getString(settings_config_prefix + ".where", ""),
             .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
-            .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1)
+            .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
+            .check_queries_are_select = shouldCheckExternalDictionaryQueries(global_context, created_from_ddl),
         };
 
         return std::make_unique<XDBCDictionarySource>(dict_struct, configuration, sample_block, global_context, bridge);

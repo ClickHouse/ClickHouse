@@ -5,16 +5,147 @@
 #include <IO/WriteHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/Defines.h>
+#include <Databases/removeWhereConditionPlaceholder.h>
+#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/Lexer.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/SettingsChanges.h>
 
 namespace DB
 {
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool dictionaries_external_source_queries_select_only;
+}
+
 namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int INCORRECT_QUERY;
+    extern const int SYNTAX_ERROR;
+}
+
+namespace
+{
+
+/// The errors of the checks below do not contain the text of the query: the query can come from a named collection, whose values
+/// are hidden from a user without `SHOW NAMED COLLECTIONS SECRETS`, and the error reaches the caller of `dictGet` and
+/// `system.dictionaries`.
+size_t positionInQuery(const String & query, const char * pos)
+{
+    return pos - query.data() + 1;
+}
+
+ASTPtr parseDictionaryQueryAsSelect(const String & query, const String & description, const char * error_message)
+{
+    const char * pos = query.data();
+    const char * query_end = query.data() + query.size();
+    ParserQuery parser(query_end);
+    String parser_error_message; /// Contains the text of the query from the error, so it is not shown.
+    ASTPtr ast = tryParseQuery(
+        parser, pos, query_end, parser_error_message, /* hilite = */ false, description, /* allow_multi_statements = */ false,
+        /* max_query_size = */ 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, /* skip_insignificant = */ true);
+    if (!ast)
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "Syntax error ({}): the query is not a SELECT that the ClickHouse parser reads. "
+            "The query is not shown, because it can come from a named collection",
+            description);
+
+    if (!ast || ast->getQueryKind() != IAST::QueryKind::Select)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "{}", error_message);
+
+    return ast;
+}
+
+bool hasSettings(const IAST & ast)
+{
+    if (ast.as<ASTSetQuery>())
+        return true;
+    for (const auto & child : ast.children)
+        if (hasSettings(*child))
+            return true;
+    return false;
+}
+
+}
+
+void checkDictionaryQueryIsSelect(const String & query, const String & description, const char * error_message)
+{
+    parseDictionaryQueryAsSelect(query, description, error_message);
+}
+
+void checkExternalDictionaryQueryIsSelect(const String & query, const String & source_description, const char * error_message)
+{
+    /// A query valid for the database can be rejected by the ClickHouse parser, so the errors say which check rejected it.
+    const String description = source_description
+        + " (checked as a ClickHouse SELECT query, see the server setting `dictionaries_external_source_queries_select_only`)";
+
+    Lexer lexer(query.data(), query.data() + query.size());
+    for (Token token = lexer.nextToken(); !token.isEnd() && !token.isError(); token = lexer.nextToken())
+    {
+        const std::string_view text(token.begin, token.size());
+        const bool is_quoted = token.type == TokenType::StringLiteral || token.type == TokenType::QuotedIdentifier;
+        const bool is_ascii_quoted = is_quoted && (text.starts_with('\'') || text.starts_with('"') || text.starts_with('`'));
+        const char * kind = nullptr;
+        if (token.type == TokenType::Comment)
+            kind = "a comment";
+        else if (token.type == TokenType::HereDoc)
+            kind = "a heredoc";
+        else if (is_quoted && !is_ascii_quoted)
+            kind = "a typographic quote";
+        else if (is_quoted && text.contains('\\'))
+            kind = "a backslash in a quoted token";
+
+        if (kind)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "{} cannot contain comments, heredocs, typographic quotes or backslashes, because the database may read them differently: "
+                "{} at position {}",
+                description,
+                kind,
+                positionInQuery(query, token.begin));
+    }
+
+    ASTPtr ast = parseDictionaryQueryAsSelect(query, description, error_message);
+    const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+    if (hasSettings(*ast) || (query_with_output && (query_with_output->out_file || query_with_output->format_ast)))
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "{}", error_message);
+}
+
+bool shouldCheckExternalDictionaryQueries(const ContextPtr & context, bool created_from_ddl)
+{
+    return created_from_ddl && context->getServerSettings()[ServerSetting::dictionaries_external_source_queries_select_only];
+}
+
+void checkExternalDictionaryQueryConditionPlaceholder(const String & query, const String & source_name)
+{
+    const String description = "Query for " + source_name + " dictionary";
+
+    Lexer lexer(query.data(), query.data() + query.size());
+    for (Token token = lexer.nextToken(); !token.isEnd() && !token.isError(); token = lexer.nextToken())
+    {
+        if ((token.type == TokenType::StringLiteral || token.type == TokenType::QuotedIdentifier)
+            && std::string_view(token.begin, token.size()).contains(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE))
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "{} cannot contain {} in a string literal or a quoted identifier, because it is replaced by a condition with quotes",
+                description,
+                CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
+    }
+}
+
+void checkExternalDictionaryLoadQueryIsSelect(const String & load_all_query, const String & source_name)
+{
+    checkExternalDictionaryQueryIsSelect(
+        load_all_query, "Query for " + source_name + " dictionary", "Only SELECT query can be used as a dictionary source");
 }
 
 /// For simple key

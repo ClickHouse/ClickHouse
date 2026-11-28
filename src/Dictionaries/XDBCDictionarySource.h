@@ -37,6 +37,8 @@ public:
         const std::string invalidate_query;
         const std::string update_field;
         const UInt64 update_lag;
+        /// See `shouldCheckExternalDictionaryQueries`.
+        const bool check_queries_are_select;
     };
 
     XDBCDictionarySource(

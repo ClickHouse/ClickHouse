@@ -29,6 +29,8 @@ public:
         const String invalidate_query;
         const String update_field;
         const UInt64 update_lag;
+        /// See `shouldCheckExternalDictionaryQueries`.
+        const bool check_queries_are_select;
     };
 
     PostgreSQLDictionarySource(

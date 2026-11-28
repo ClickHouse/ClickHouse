@@ -42,6 +42,7 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -226,6 +227,36 @@ namespace fs = std::filesystem;
 
 namespace
 {
+
+/// Returns the named collection that the source of a dictionary refers to with the key `name`, if any.
+/// The constant expressions of the source must be already evaluated.
+std::optional<String> getNamedCollectionOfDictionarySource(const ASTCreateQuery & create)
+{
+    if (!create.dictionary || !create.dictionary->source || !create.dictionary->source->elements)
+        return {};
+
+    for (const auto & child : create.dictionary->source->elements->children)
+    {
+        const auto * pair = child->as<ASTPair>();
+        if (!pair || Poco::toLower(pair->first) != "name")
+            continue;
+
+        String name;
+        if (const auto * identifier = pair->second->as<ASTIdentifier>())
+            name = identifier->name();
+        else if (const auto * literal = pair->second->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+            name = literal->value.safeGet<String>();
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The name of a named collection in a dictionary source must be a string");
+
+        /// The source reads the name from the dictionary configuration, which expands `${...}` with other values of the
+        /// definition (`${dictionary.comment}`), so the authorized name would not be the one used.
+        if (name.contains("${"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The name of a named collection in a dictionary source cannot contain `${{`: {}", name);
+        return name;
+    }
+    return {};
+}
 
 /// How many tables a single `CREATE` adds to the database. Usually one, but the engines with
 /// hidden inner tables (`MaterializedView`, `TimeSeries`) issue nested internal `CREATE`s from
@@ -4188,6 +4219,15 @@ BlockIO InterpreterCreateQuery::execute()
             "Use ATTACH TABLE {} to reattach an existing detached table.",
             create.getTable());
 
+    /// `getRequiredAccess` must authorize the named collection that is stored and sent to other hosts, so the constant
+    /// expressions of the source of a dictionary are evaluated once, here: one can return a new value at each evaluation
+    /// (`randConstant()`). The later evaluation in `getTablePropertiesAndNormalizeCreateQuery` does not change literals.
+    if (create.is_dictionary && create.dictionary && create.dictionary->source)
+    {
+        NormalizeAndEvaluateConstantsVisitor::Data visitor_data{getContext()};
+        NormalizeAndEvaluateConstantsVisitor(visitor_data).visit(create.dictionary->source->ptr());
+    }
+
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (create.attach_as_replicated.has_value())
@@ -4234,6 +4274,11 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     else if (create.is_dictionary)
     {
         required_access.emplace_back(AccessType::CREATE_DICTIONARY, create.getDatabase(), create.getTable());
+
+        /// The dictionary is loaded with the global context, which has access to every named collection.
+        /// So the privilege to use the collection of its source, required by table engines and table functions, is required here.
+        if (auto collection_name = getNamedCollectionOfDictionarySource(create))
+            required_access.emplace_back(AccessType::NAMED_COLLECTION, *collection_name);
     }
     else if (create.isView())
     {

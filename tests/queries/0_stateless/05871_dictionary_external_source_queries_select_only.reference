@@ -1,0 +1,41 @@
+--- A non-SELECT invalidate query is not sent
+a
+rejected: 1
+0
+--- A non-SELECT update query is not sent
+a
+rejected: 1
+a
+--- Lookups with any key are sent
+quote	backslash
+--- The queries held by a named collection are checked
+1
+--- A named collection requires the privilege NAMED COLLECTION
+Without the grant: denied, not created
+1
+0
+Without the grant, ON CLUSTER: denied, not created
+1
+0
+Without the grant, the name is an expression: denied, not created
+1
+0
+Without the grant, CREATE OR REPLACE: denied, not created
+1
+0
+--- The name of the collection cannot refer to other values of the definition
+1
+0
+1
+0
+With the grant: created
+0
+1
+With the grant, ON CLUSTER: created
+0
+1
+--- The errors do not show a query held by a named collection
+backslash: rejected 1, shown 0
+last_exception: rejected 1, shown 0
+syntax: rejected 1, shown 0
+last_exception: rejected 1, shown 0
