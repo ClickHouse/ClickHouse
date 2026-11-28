@@ -1,0 +1,75 @@
+---
+slug: /clickstack/self-configured/overview
+title: 'Self-managed ClickHouse Observability'
+sidebarTitle: '概要'
+description: 'セルフマネージドな ClickHouse オブザーバビリティの機能、調査ワークフロー、運用上の責任範囲'
+doc_type: 'guide'
+keywords: ['clickstack', 'observability', 'logs', 'monitoring', 'platform']
+---
+
+<Note>
+  このページでは **Self-managed ClickHouse Observability** について説明します。ほとんどのチームには完全マネージド型を推奨します。チームに最適なオプションを選ぶには、[各提供形態の比較](/ja/clickstack/observability/overview#compare-the-offerings)を参照してください。
+</Note>
+
+**Self-managed ClickHouse Observability** は、オープンソースの ClickStack 上に構築された、SRE、開発者、そして彼らが利用する AIエージェントのためのオブザーバビリティプラットフォームです。インジェストとデータベース設定を自ら制御しながら、OpenTelemetry のログ、トレース、メトリクスをセッションリプレイとあわせて検索・クエリし、相関付けることができます。スキーマのカスタマイズやクエリパフォーマンスのチューニングが必要なチーム、あるいはサービスのサイジングやスケーリングの方法を自ら決めたいチームに適しています。
+
+調査は ClickStack UI から行うことも、[MCPサーバー](/ja/clickstack/observability/mcp)経由で独自のエージェントを接続して行うこともできます。日常的な調査には検索とトレース探索を、テレメトリー内のリクエストの詳細、カスタム属性、ビジネスコンテキストの分析には SQL を使用します。
+
+ClickHouse と ClickStack UI のホスティングと運用は ClickHouse Cloud が担います。セルフマネージドの場合でも、データベースや UI を自分でホストする必要はありません。お客様の役割は、インジェスト用の collector を実行し、ワークロードに合わせてデータベース設定を管理することです。
+
+ほとんどのチームには、まず[完全マネージド型の ClickHouse オブザーバビリティ](/ja/clickstack/observability/overview)から始めることを推奨します。マネージドの OpenTelemetry エンドポイントにテレメトリーを送信するだけで、インジェスト、スキーマ、インフラストラクチャ、スケーリングはすべて ClickHouse が処理します。セルフマネージドでも同じ ClickStack の調査体験が得られますが、データベースのチューニングとキャパシティプランニングはお客様の責任となります。こうした制御が必要で、かつ運用に必要な専門知識がある場合に選択してください。
+
+## データの流れ {#architectural-overview}
+
+アプリケーションとインフラストラクチャは、テレメトリーを collector に送信します。collector はそれを処理し、ClickHouse Cloud サービスに書き込みます。ホスト型の ClickStack UI は、そのデータにクエリを実行して、検索、可視化、調査を行います。
+
+データは UI で探索することも、MCP 対応のエージェントを接続して探索することもできます。どちらのワークフローでも同じテレメトリーを使用します。SQL を使えば、シグナルを相関付けたり、過去の挙動を比較したり、事前定義されたビューでは扱えない問いを調査したりできます。なお、アプリケーションのインストルメントと、環境からのテレメトリー収集は、引き続きユーザー側で行う必要があります。
+
+コンポーネント図と詳細については、[セルフマネージドのアーキテクチャ](/ja/clickstack/self-configured/architecture)を参照してください。
+
+## 利用者が管理する範囲 {#what-you-manage}
+
+* **インジェスト:** [OpenTelemetry collector](/ja/clickstack/self-configured/ingesting-data/collector) のデプロイと運用を行います。これには、レシーバー、処理、認証、ClickHouse Cloud への接続が含まれます。
+* **スキーマとデータソース:** [テーブルとスキーマ](/ja/clickstack/self-configured/ingesting-data/schemas) を選択し、それらをクエリするための UI の [データソース](/ja/clickstack/self-configured/managing/config) を設定します。
+* **キャパシティとパフォーマンス:** ワークロードの変化に応じて [リソースを見積もり](/ja/clickstack/self-configured/managing/estimating-resources)、サイジングとスケーリングを設定し、[パフォーマンスをチューニング](/ja/clickstack/self-configured/managing/performance-tuning) します。
+* **保持期間:** [データ保持ポリシー](/ja/clickstack/self-configured/managing/ttl) を設定し、調査に必要なデータ量とストレージコストのバランスを取ります。
+
+ClickHouse Cloud は、基盤となるインフラストラクチャ、データベースのアップグレード、バックアップを管理します。ただし、データベースのチューニングやキャパシティプランニングは引き続き利用者の責任となります。
+
+## 機能 {#features}
+
+* [MCP](/ja/clickstack/observability/mcp) を介して独自のエージェントを接続し、テレメトリーの検索、トレースの追跡、パターンや変化の分析、SQL の実行を行えます。
+* ログ、トレース、メトリクス、セッションリプレイを検索し、相互に相関付けることができます。ブラウザ上の操作からバックエンドサービス、データベースクエリに至るまで、リクエストを一貫して追跡できます。
+* [全文検索と Lucene 形式のフィルタ](/ja/clickstack/observability/features/search) (`level:err` など) または SQL を使用して、high-cardinality なテレメトリーに対して検索や集計を実行できます。ログやトレーススパン内の JSON フィールドやカスタム属性に対するクエリも可能です。
+* [AIノートブック](/ja/clickstack/observability/notebooks)でテレメトリーを探索したり、[自然言語の質問からチャート](/ja/clickstack/observability/text-to-chart)を作成したりできます。
+* [ダッシュボード](/ja/clickstack/observability/features/dashboards/overview)の構築、[アラート](/ja/clickstack/observability/features/alerts)の設定、[ディープリンク](/ja/clickstack/observability/url-parameters)による調査ビューの共有が可能です。
+* [イベントパターン](/ja/clickstack/observability/features/event-patterns)で繰り返し発生する障害を特定し、[イベントデルタ](/ja/clickstack/observability/features/event-deltas)で変化を調査できます。また、新しいイベントの到着に合わせてログやトレースをライブテールで確認できます。
+* 自身で運用する collector を通じて OpenTelemetry データを取り込めるため、処理、テーブル、スキーマ、保持期間を自由に制御できます。
+
+## 原則 {#principles}
+
+### 使い慣れたエージェントを持ち込む {#bring-your-own-agents}
+
+チームですでに使用しているエージェントや開発ツールを、MCP 経由で接続できます。エージェントは UI と同じデータを使って、ログの検索、トレースの追跡、パターンや変化の特定を行えます。さらに、SQL を実行して証拠を相関付けたり、調査ツールでは直接扱えない問いを掘り下げたりすることも可能です。
+
+### 使いやすく purpose-built な設計 {#user-friendly-purpose-built}
+
+ClickStack UI は、検索、トレースの探索、チャート、ダッシュボード、アラートを 1 か所に統合しています。日常的な調査には Lucene 形式のフィルタやビジュアルなクエリビルダーを使い、分析をより細かく制御したい場合は SQL に切り替えられます。
+
+### エンドツーエンドのオブザーバビリティ {#end-to-end-observability}
+
+フロントエンドのセッションリプレイをアプリケーションログ、分散トレース、メトリクスと関連付けることで、システム全体にわたって障害を追跡できます。ワイドイベントでは、リクエストの詳細、カスタム属性、ビジネスコンテキストがログやトレーススパンにまとめて保持されるため、エンジニアやエージェントは影響を受けているリクエスト、サービス、顧客を容易に特定できます。
+
+### ClickHouse に最適化された設計 {#built-for-clickhouse}
+
+ClickHouse の列指向ストレージ、圧縮、並列クエリ実行により、high-cardinality な大量のテレメトリーに対しても高速な検索と集計が可能です。クエリの同時実行により、エンジニアとエージェントが同じデータを並列に調査できます。セルフマネージドのデプロイメントでは、ワークロードに合わせてスキーマ、ソートキー、リソースをチューニングできます。
+
+### OpenTelemetry ネイティブ {#open-telemetry-native}
+
+標準的な OpenTelemetry のインストルメンテーション、SDK、コレクターを使用して、ログ、トレース、メトリクスを送信します。インジェスト用の collector はユーザー自身が運用し、ClickHouse に書き込む前にテレメトリーをどう処理するかを設定します。これにより、既存のインストルメンテーションを活かしつつ、インジェストパイプラインを自ら制御できます。
+
+## はじめる {#get-started}
+
+[入門ガイド](/ja/clickstack/self-configured/getting-started/managed)に従ってサービスをセットアップし、collector を接続します。続いて、[サンプルデータセット](/ja/clickstack/observability/example-datasets)を使って UI を操作してみましょう。手順が分かれている場合は、**Self-managed** の手順を選択してください。
+
+本番環境でサービスを利用する前に、[本番環境向けガイダンス](/ja/clickstack/self-configured/managing/production)と[管理の概要](/ja/clickstack/self-configured/managing/overview)を確認してください。

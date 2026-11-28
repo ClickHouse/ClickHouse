@@ -1,6 +1,6 @@
--- A `-Merge` window function of `contingency` and its relatives keeps its own state in the window layout and
--- merges ordinary states into it, through each combinator between `-Merge` and the function. `-MergeState`
--- builds the same merge with the ordinary layout, so the two must give the same values on every row.
+-- A `-Merge` window function of `contingency` and its relatives merges ordinary states, through each
+-- combinator between `-Merge` and the function. `-MergeState` builds the same merge as a state, so the
+-- two must give the same values on every row.
 -- The values are compared as text, so `nan` equals `nan`, and `+ 0` turns `-0` into `0`.
 
 DROP TABLE IF EXISTS t_crosstab_window_merge;
@@ -10,7 +10,7 @@ INSERT INTO t_crosstab_window_merge
 SELECT number % 3, intDiv(number, 3) % 20, number % 4, intDiv(number, 7) % 5, if(number % 11 = 0, NULL, number % 4)
 FROM numbers(600);
 
-SELECT '-- each row: window layout equals ordinary layout';
+SELECT '-- each row: -Merge equals -MergeState';
 SELECT
     count(),
     countIf(toString(plain) != toString(plain_ordinary)),

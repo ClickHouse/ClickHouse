@@ -638,7 +638,7 @@ ORDER BY tuple();
 
   Необязательный параметр `posting_list_block_size` (по умолчанию: 1048576) задает размер блоков списка вхождений в строках.
 
-  Необязательный параметр `posting_list_codec` (по умолчанию: `none`) задает кодек для списка вхождений:
+  Необязательный параметр `posting_list_codec` (по умолчанию: `pfor`) задает кодек для списка вхождений:
 
   * `none` — списки вхождений хранятся без дополнительного сжатия.
   * `bitpacking` — применяет [дифференциальное (delta) кодирование](https://en.wikipedia.org/wiki/Delta_encoding), а затем [упаковку битов](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (в обоих случаях в блоках фиксированного размера). Замедляет запросы SELECT, поэтому сейчас не рекомендуется.
@@ -914,6 +914,16 @@ SELECT count() FROM table WHERE has(array, 'clickhouse');
 ```sql
 SELECT count() FROM table WHERE hasAny(tags, ['clickhouse', 'olap']);
 SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
+```
+
+#### `arrayJoin` {#functions-example-arrayjoin}
+
+Условие на отдельный элемент индексированного массива использует индекс так же, как `has` и `hasAny`: `arrayJoin(tags) = 'clickhouse'` использует его как `has(tags, 'clickhouse')`, а `arrayJoin(tags) IN (set)` — как `hasAny(tags, set)`. То же относится к `GLOBAL IN`, к `IN` с `transform_null_in = 1`, если множество не содержит `NULL`, а также к секции `ARRAY JOIN`. Индекс лишь позволяет пропускать гранулы, а ClickHouse по-прежнему проверяет условие для каждого элемента. `LEFT ARRAY JOIN` индекс не использует.
+
+Пример:
+
+```sql
+SELECT arrayJoin(tags) AS tag FROM table WHERE tag IN ('clickhouse', 'olap');
 ```
 
 #### `mapContains` {#functions-example-mapcontains}
@@ -1630,7 +1640,10 @@ Aggregating
 Версия формата хранения текстовых индексов на диске задаётся настройкой уровня таблицы [`text_index_serialization_version`](/ru/reference/settings/merge-tree-settings/text-index) (по умолчанию: `v2_with_positions`).
 Эта настройка является предпочтительной, а не жёстким ограничением: если настроенная версия не может представить индекс, автоматически выбирается более новая версия, способная это сделать. Поэтому запись текстового индекса из-за этой настройки никогда не завершается ошибкой.
 При поэтапном обновлении зафиксируйте формат с помощью настройки [`compatibility`](/ru/reference/settings/session-settings/compatibility#compatibility) на уже обновлённых серверах: если для неё указана версия, предшествующая той, в которой был введён соответствующий формат, `text_index_serialization_version` автоматически возвращается к более старому значению, а новые серверы продолжают записывать формат, который старые серверы всё ещё могут читать.
-Кодек списка вхождений этой версией не управляется: часть, записанная с `posting_list_codec = 'pfor'` (или с настройкой `text_index_posting_list_codec`), не может быть прочитана серверами, выпущенными до появления этого кодека, и ни `text_index_serialization_version`, ни `compatibility` не препятствуют его использованию, поскольку кодек, указанный для индекса, имеет старшинство над предпочтением версии — так же, как и `support_phrase_search`. Не включайте `pfor`, пока не будут обновлены все серверы, которые могут читать эту таблицу.
+
+Кодек списка вхождений не управляется настройкой `text_index_serialization_version`. Части, записанные с кодеком `pfor`, не могут быть прочитаны серверами версий ниже 26.10.
+
+Начиная с версии 26.11, `pfor` используется по умолчанию для настройки [`text_index_posting_list_codec`](/ru/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec). При поэтапном обновлении укажите на обновлённых серверах в настройке [`compatibility`](/ru/reference/settings/session-settings/compatibility#compatibility) версию ниже 26.11. Тогда значением по умолчанию снова станет `none`, и эти серверы продолжат записывать части, которые могут читать старые серверы.
 
 ## Текстовые индексы и индексы на основе фильтра Блума {#text-index-vs-bloom-filter-indexes}
 
@@ -1647,7 +1660,7 @@ Aggregating
 **Текстовые индексы**
 
 * Строят детерминированный инвертированный индекс по токенам. Сам индекс не может давать ложноположительных срабатываний.
-* Специально оптимизированы для полнотекстового поиска.
+* Специально оптимизированы для текстового поиска.
 * Хранят информацию на уровне строк, что обеспечивает эффективный поиск по терминам.
 * Они довольно велики (от десятков до сотен мегабайт на часть).
 

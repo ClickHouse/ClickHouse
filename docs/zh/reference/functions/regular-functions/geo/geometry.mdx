@@ -8,7 +8,7 @@ doc_type: 'reference'
 
 ## Geometry {#geometry}
 
-Geometry 函数可用于计算 POLYGON、LINESTRING、MULTIPOLYGON、MULTILINESTRING、RING 和 POINT 等几何类型的周长和面积。请在 Geometry 类型中使用几何对象。如果输入值为 `NULL`，则以下所有函数都返回 0。
+Geometry 函数可用于计算 POLYGON、LINESTRING、MULTIPOLYGON、MULTILINESTRING、RING 和 POINT 等几何类型的周长、面积和长度。请在 Geometry 类型中使用几何对象。如果输入值为 `NULL`，则以下所有函数都返回 0。
 
 ## perimeterCartesian {#perimetercartesian}
 
@@ -136,4 +136,108 @@ SELECT areaSpherical(geom) FROM geo_dst;
 ┌─areaSpherical(geom)────┐
 │ -0.0003046096848622019 │
 └────────────────────────┘
+```
+
+## lengthCartesian {#lengthcartesian}
+
+在笛卡尔 (扁平) 坐标系中计算 Geometry 对象中各条线的长度，即相邻点之间距离的总和。
+`MultiLineString` 的长度为其所有线的总长度；`Ring` 按依次连接其各点的线来测量；未指定类型名称的点数组也按此方式测量，因为其类型为 `Ring`。
+点、多边形和多重多边形没有长度，因此函数对它们返回 0；如需计算多边形的周长，请使用 [perimeterCartesian](#perimetercartesian)。
+如需测量由点数组构成的嵌套数组，请将其 CAST 为 `MultiLineString`，因为未指定类型名称时，其类型为 `Polygon`。
+
+别名：`ST_Length`。
+
+**语法**
+
+```sql
+lengthCartesian(geom)
+```
+
+**参数**
+
+* `geom` — Geometry 对象。[Geometry](/zh/reference/data-types/geo)。
+
+**返回值**
+
+* 数值 — 各线的长度，以坐标系单位表示。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+SELECT lengthCartesian(readWKT('LINESTRING(0 0,3 4,3 10)')) AS length;
+```
+
+```response title="Response"
+┌─length─┐
+│     11 │
+└────────┘
+```
+
+## lengthSpherical {#lengthspherical}
+
+计算 Geometry 对象中各条线在球面上的长度，点以 (经度，纬度) 形式给出，单位为度。
+结果是以弧度表示的角度，即半径为 1 的球面上的长度，与 [perimeterSpherical](#perimeterspherical) 的结果一致。
+将其乘以地球平均半径 6371008.8 米，即可得到以米为单位的近似长度；如需精确长度，请使用 [lengthSpheroid](#lengthspheroid)。
+与 [lengthCartesian](#lengthcartesian) 相同，对于点、多边形和多重多边形，该函数返回 0。
+
+**语法**
+
+```sql
+lengthSpherical(geom)
+```
+
+**参数**
+
+* `geom` — Geometry 对象。[Geometry](/zh/reference/data-types/geo)。
+
+**返回值**
+
+* 数值 — 线的长度 (以弧度为单位) 。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+SELECT lengthSpherical(readWKT('LINESTRING(0 0,1 0)')) AS length;
+```
+
+```response title="Response"
+┌───────────────length─┐
+│ 0.017453292519943292 │
+└──────────────────────┘
+```
+
+## lengthSpheroid {#lengthspheroid}
+
+在 WGS84 椭球体 (GPS 所采用的地球模型) 上计算 Geometry 对象中各条线的长度 (单位：米) ，点以 (经度, 纬度) 形式给出，单位为度。
+每条线段都是椭球体上两点之间的最短路径 (即测地线) ，使用 Karney 算法计算，与 GeographicLib 的实现一致。
+与 [lengthCartesian](#lengthcartesian) 相同，对于点、多边形和多重多边形，该函数返回 0。
+如果坐标以 (纬度, 经度) 形式存储 (例如 DuckDB 中 `ST_Length_Spheroid` 的输入) ，请先使用 [flipCoordinates](/zh/reference/functions/regular-functions/geo/flipCoordinates) 交换坐标顺序，否则计算结果将是另一条线的长度。
+如果任一坐标为 NaN 或无穷大，或者纬度超出 [-90, 90] 范围，则结果为 NaN。
+
+**语法**
+
+```sql
+lengthSpheroid(geom)
+```
+
+**参数**
+
+* `geom` — Geometry 对象。[Geometry](/zh/reference/data-types/geo)。
+
+**返回值**
+
+* 数值 — 线的长度，单位为米。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+计算一条从伦敦经巴黎到柏林的线的长度：
+
+```sql title="Query"
+SELECT lengthSpheroid(readWKT('LINESTRING(-0.1276 51.5072,2.3522 48.8566,13.405 52.52)')) AS length;
+```
+
+```response title="Response"
+┌─────────────length─┐
+│ 1223596.2073957825 │
+└────────────────────┘
 ```

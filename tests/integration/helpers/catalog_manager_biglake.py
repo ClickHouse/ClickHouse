@@ -598,6 +598,22 @@ class BigLakeCatalogManager(CatalogManager):
         except Exception as exc:
             log.warning("Cleanup of table '%s' failed: %s", table_identifier, exc)
 
+    def gcs_table_path(self, name: str) -> str:
+        """`bucket/prefix/...` of a table that ClickHouse writes directly, cleaned up with the session."""
+        return f"{self._namespace_gcs_path(self._session_namespace)}/{name}"
+
+    def delete_gcs_path(self, gcs_path: str) -> None:
+        self._delete_gcs_prefix(gcs_path)
+
+    def gcs_path_exists(self, gcs_path: str) -> bool:
+        # A new filesystem without the instance cache: a cached listing must not answer for the storage.
+        fs = gcsfs.GCSFileSystem(token=self._credential.token, skip_instance_cache=True)
+        return fs.exists(gcs_path)
+
+    def write_gcs_object(self, gcs_path: str, data: bytes) -> None:
+        fs = gcsfs.GCSFileSystem(token=self._credential.token, skip_instance_cache=True)
+        fs.pipe_file(gcs_path, data)
+
     def _delete_gcs_prefix(self, gcs_path: str) -> None:
         try:
             fs = gcsfs.GCSFileSystem(token=self._credential.token)

@@ -14,11 +14,11 @@
 --   2. Distributed execution result
 --   3. Single-node baseline for correctness comparison
 
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 SET explain_query_plan_default = 'legacy';
 SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 0;
 SET enable_parallel_replicas = 0;
-SET query_plan_use_new_logical_join_step = 1;
 SET distributed_plan_default_shuffle_join_bucket_count = 2;
 SET distributed_plan_default_reader_bucket_count = 2;
 SET distributed_plan_force_exchange_kind = 'Persisted';
