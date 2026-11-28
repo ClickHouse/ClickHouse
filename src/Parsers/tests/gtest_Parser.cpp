@@ -68,20 +68,25 @@ TEST(ParserCopyQuery, FormattingPreservesTableCopy)
     };
 
     const std::vector<TestCase> test_cases = {
-        {"COPY t TO STDOUT", "COPY t TO STDOUT"},
-        {"COPY t FROM STDIN", "COPY t FROM STDIN"},
-        {"COPY db.t (a, b) TO STDOUT", "COPY db.t (a, b) TO STDOUT"},
-        {"COPY db.t (a, b) FROM STDIN", "COPY db.t (a, b) FROM STDIN"},
+        {"COPY function FROM STDIN", "COPY `function` FROM STDIN"},
+        {R"(COPY "function".t FROM STDIN)", "COPY `function`.`t` FROM STDIN"},
+        {R"(COPY "FuNcTiOn" FROM STDIN)", "COPY `FuNcTiOn` FROM STDIN"},
+        {R"(COPY "db.name"."table`name" FROM STDIN)", R"(COPY `db.name`.`table\`name` FROM STDIN)"},
+        {"COPY pg_catalog.pg_type (oid) TO STDOUT", "COPY `pg_catalog`.`pg_type` (oid) TO STDOUT"},
+        {"COPY t TO STDOUT", "COPY `t` TO STDOUT"},
+        {"COPY t FROM STDIN", "COPY `t` FROM STDIN"},
+        {"COPY db.t (a, b) TO STDOUT", "COPY `db`.`t` (a, b) TO STDOUT"},
+        {"COPY db.t (a, b) FROM STDIN", "COPY `db`.`t` (a, b) FROM STDIN"},
         {
             R"(COPY "db name"."table name" ("first col", second) TO STDOUT)",
             "COPY `db name`.`table name` (`first col`, second) TO STDOUT",
         },
-        {"COPY t TO STDOUT WITH (FORMAT csv)", "COPY t TO STDOUT WITH (FORMAT CSV)"},
-        {"COPY t TO STDOUT WITH (FORMAT csv, HEADER)", "COPY t TO STDOUT WITH (FORMAT CSV, HEADER)"},
-        {"COPY t FROM STDIN WITH (HEADER)", "COPY t FROM STDIN WITH (HEADER)"},
-        {"COPY t TO STDOUT WITH (FORMAT binary)", "COPY t TO STDOUT WITH (FORMAT Binary)"},
-        {"COPY t TO STDOUT WITH (FORMAT text)", "COPY t TO STDOUT"},
-        {"COPY t TO STDOUT WITH CSV HEADER", "COPY t TO STDOUT WITH (FORMAT CSV, HEADER)"},
+        {"COPY t TO STDOUT WITH (FORMAT csv)", "COPY `t` TO STDOUT WITH (FORMAT CSV)"},
+        {"COPY t TO STDOUT WITH (FORMAT csv, HEADER)", "COPY `t` TO STDOUT WITH (FORMAT CSV, HEADER)"},
+        {"COPY t FROM STDIN WITH (HEADER)", "COPY `t` FROM STDIN WITH (HEADER)"},
+        {"COPY t TO STDOUT WITH (FORMAT binary)", "COPY `t` TO STDOUT WITH (FORMAT Binary)"},
+        {"COPY t TO STDOUT WITH (FORMAT text)", "COPY `t` TO STDOUT"},
+        {"COPY t TO STDOUT WITH CSV HEADER", "COPY `t` TO STDOUT WITH (FORMAT CSV, HEADER)"},
     };
 
     for (const auto & test_case : test_cases)
@@ -108,6 +113,9 @@ TEST(ParserCopyQuery, FormattingPreservesTableCopy)
         EXPECT_EQ(before->column_names, after->column_names) << "query: " << test_case.query;
         EXPECT_EQ(before->format, after->format) << "query: " << test_case.query;
         EXPECT_EQ(before->header, after->header) << "query: " << test_case.query;
+
+        const auto cloned = ast->clone();
+        EXPECT_EQ(test_case.formatted, cloned->formatWithSecretsOneLine()) << "query: " << test_case.query;
     }
 }
 

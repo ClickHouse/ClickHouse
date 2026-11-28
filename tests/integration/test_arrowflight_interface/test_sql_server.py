@@ -914,6 +914,44 @@ def test_statement_ingest_with_schema():
     writer.close()
 
 
+def test_statement_ingest_keyword_target():
+    client = get_client()
+    batch = pa.record_batch([pa.array([42], type=pa.uint32())], names=["id"])
+    try:
+        node.query("CREATE TABLE default.`function` (id UInt32) ENGINE = Memory")
+        node.query("CREATE DATABASE `function`")
+        node.query("CREATE TABLE `function`.target (id UInt32) ENGINE = Memory")
+
+        # Cover a bare keyword target and a keyword in the database component.
+        for database, table in [(None, "function"), ("function", "target")]:
+            cmd = CommandStatementIngest(table=table)
+            if database is not None:
+                cmd.schema = database
+            cmd.table_definition_options.if_not_exist = (
+                CommandStatementIngest.TableDefinitionOptions.TABLE_NOT_EXIST_OPTION_FAIL
+            )
+            cmd.table_definition_options.if_exists = (
+                CommandStatementIngest.TableDefinitionOptions.TABLE_EXISTS_OPTION_APPEND
+            )
+            writer, reader = client.client.do_put(
+                flight_descriptor(cmd), batch.schema, client._flight_call_options()
+            )
+            writer.write_batch(batch)
+            writer.done_writing()
+            result = reader.read()
+            writer.close()
+            update_result = DoPutUpdateResult()
+            update_result.ParseFromString(result.to_pybytes())
+            assert update_result.record_count == 1
+
+        assert node.query("SELECT id FROM default.`function`") == "42\n"
+        assert node.query("SELECT id FROM `function`.target") == "42\n"
+    finally:
+        node.query("DROP TABLE IF EXISTS default.`function` SYNC")
+        node.query("DROP DATABASE IF EXISTS `function` SYNC")
+        client.client.close()
+
+
 def test_statement_ingest_catalog_not_supported():
     """CommandStatementIngest with catalog returns NotImplemented."""
     client = get_client()
