@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Executors/Runtime/V1/ExecutingGraph.h>
 #include <Processors/QueryPlan/Profiling/Execution/WorkInterval.h>
 #include <base/types.h>
 
@@ -11,7 +12,6 @@
 namespace DB
 {
 
-class IProcessor;
 class ISpillable;
 class ReadProgressCallback;
 class StepProfiler;
@@ -29,8 +29,8 @@ private:
     std::mutex mutex;
     bool wake_flag = false;
 
-    /// Currently processing processor.
-    IProcessor * processor = nullptr;
+    /// The node of the currently processing processor.
+    ExecutingGraph::Node * node = nullptr;
 
     /// Exception from executing thread itself.
     std::exception_ptr exception;
@@ -69,10 +69,10 @@ public:
     void wakeUp();
 
     /// Methods to access/change currently executing task.
-    [[nodiscard]] bool hasTask() const { return processor != nullptr; }
-    void setTask(IProcessor * task) { processor = task; }
-    [[nodiscard]] IProcessor * getTask() const { return processor; }
-    IProcessor * popTask() { return std::exchange(processor, nullptr); }
+    [[nodiscard]] bool hasTask() const { return node != nullptr; }
+    void setTask(ExecutingGraph::Node * task) { node = task; }
+    [[nodiscard]] ExecutingGraph::Node * getTask() const { return node; }
+    ExecutingGraph::Node * popTask() { return std::exchange(node, nullptr); }
     bool executeTask(ISpillable * spill_target = nullptr);
 
     void setException(std::exception_ptr exception_);

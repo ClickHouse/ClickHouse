@@ -217,7 +217,9 @@ TEST(PipelineExecutor, RequestedThreadsKeptWhileAsyncTasksPending)
         close(fds[0]);
         close(fds[1]);
     });
-    PendingAsyncProcessor processor(fds[0]);
+    /// A task is a graph node of a processor. No graph is needed here, only the node.
+    Processors processors{std::make_shared<PendingAsyncProcessor>(fds[0])};
+    ExecutingGraph::Node node(processors.begin(), 0);
 
     ExecutorTasks tasks;
     tasks.init(num_streams, 1, std::make_shared<GrantedAllocation>(num_streams), false, false, nullptr, nullptr, nullptr);
@@ -226,7 +228,7 @@ TEST(PipelineExecutor, RequestedThreadsKeptWhileAsyncTasksPending)
 
     ExecutorTasks::Queue queue;
     ExecutorTasks::Queue async_queue;
-    async_queue.push(&processor);
+    async_queue.push(&node);
     tasks.pushTasks(queue, async_queue, tasks.getThreadContext(0));
     EXPECT_TRUE(tasks.hasThreadsToSpawn());
 

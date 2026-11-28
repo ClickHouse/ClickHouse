@@ -192,6 +192,8 @@ static void executeJob(IProcessor & processor, ReadProgressCallback * read_progr
 
 bool ExecutionThreadContext::executeTask(ISpillable * spill_target)
 {
+    IProcessor * processor = node->processor();
+
     std::unique_ptr<OpenTelemetry::SpanHolder> span;
 
     if (trace_processors)

@@ -2,6 +2,7 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/QueueWithMemoryTracking.h>
+#include <Processors/Executors/Runtime/V1/ExecutingGraph.h>
 #include <Processors/Executors/Runtime/V1/ExecutionThreadContext.h>
 #include <Processors/Executors/Runtime/V1/PollingQueue.h>
 #include <Processors/Executors/Runtime/V1/ThreadsQueue.h>
@@ -21,7 +22,6 @@
 namespace DB
 {
 
-class IProcessor;
 class StepProfiler;
 
 namespace Runtime::V1
@@ -42,12 +42,12 @@ class ExecutorTasks : public ISpillRequestListener
     std::mutex mutex;
 
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
-    /// Stores processors need to be prepared. Preparing status is already set for them.
-    TaskQueue<IProcessor> task_queue;
+    /// Stores the nodes of the processors that have to be executed. The status of the node is already set for that.
+    TaskQueue<ExecutingGraph::Node> task_queue;
 
     /// Async tasks should be processed with higher priority, but also require task stealing logic.
     /// So we have a separate queue specifically for them.
-    TaskQueue<IProcessor> fast_task_queue;
+    TaskQueue<ExecutingGraph::Node> fast_task_queue;
     std::atomic_bool has_fast_tasks = false; // Required only to enable local task optimization
     std::atomic_bool spill_requested = false;
 
@@ -104,9 +104,7 @@ public:
         return spill_requested.load(std::memory_order_relaxed) && spill_requested.exchange(false, std::memory_order_acq_rel);
     }
 
-    /// This queue can grow a lot and lead to OOM, so it is allocated through a tracking
-    /// allocator that throws instead of overcommitting.
-    using Queue = DevectorQueueWithMemoryTracking<IProcessor *>;
+    using Queue = ExecutingGraph::Queue;
 
     void pushSpillTasks(Queue & queue, size_t thread_number);
 
@@ -116,7 +114,7 @@ public:
     void logLogicalErrors(const LoggerPtr & log);
 
     void tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock);
-    void tryWakeUpAnyOtherThreadWithTasksInQueue(ExecutionThreadContext & self, TaskQueue<IProcessor> & queue, std::unique_lock<std::mutex> & lock);
+    void tryWakeUpAnyOtherThreadWithTasksInQueue(ExecutionThreadContext & self, TaskQueue<ExecutingGraph::Node> & queue, std::unique_lock<std::mutex> & lock);
 
     /// It sets the task for specified thread `context`.
     /// If task was succeessfully found, one thread is woken up to process the remaining tasks.

@@ -37,8 +37,9 @@ SharedHeader makeHeader()
         Block{ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "x")});
 }
 
-/// One output, not connected at first. On its first `prepare` it asks for an expansion, connects the
-/// output to a new sink and hands the sink to the graph; afterwards it is finished.
+/// One output, not connected at first. It has some work to do first, so that the graph hands it out as
+/// a task. On the `prepare` after the work it asks for an expansion, connects the output to a new sink
+/// and hands the sink to the graph; afterwards it is finished.
 class Expander final : public IProcessor
 {
 public:
@@ -48,7 +49,15 @@ public:
 
     Status prepare() override
     {
+        if (!worked)
+            return Status::Ready;
+
         return expanded ? Status::Finished : Status::UpdatePipeline;
+    }
+
+    void work() override
+    {
+        worked = true;
     }
 
     PipelineUpdate updatePipeline() override
@@ -61,6 +70,7 @@ public:
         return update;
     }
 
+    bool worked = false;
     bool expanded = false;
 };
 
@@ -81,12 +91,26 @@ TEST(ExecutingGraphFailedExpansion, LaterExpansionBailsOutInsteadOfLogicalError)
     ExecutingGraph::Queue async_queue;
     ExecutingGraph::UpdateNodeBuffers buffers;
 
-    /// The initialization prepares both childless expanders and expands the first of them; recording
-    /// its new sink fails. The expander's output is connected to that sink by then.
+    /// The initialization prepares both childless expanders, and each of them becomes a task.
+    graph.initializeExecution(queue, async_queue, /*num_threads=*/ 2);
+    ASSERT_EQ(queue.size(), 2);
+
+    /// What a thread of the executor does with a task before it updates the node.
+    auto execute_task = [&]
+    {
+        auto * task = queue.front();
+        queue.pop();
+        task->processor()->work();
+        return task;
+    };
+
+    /// The first thread expands its node; recording the new sink fails.
+    /// The expander's output is connected to that sink by then.
+    auto * task = execute_task();
     FailPointInjection::enableFailPoint("executing_graph_add_node_fail");
     try
     {
-        graph.initializeExecution(queue, async_queue);
+        graph.updateNode(*task, queue, async_queue, buffers, /*thread_num=*/ 0);
         FailPointInjection::disableFailPoint("executing_graph_add_node_fail");
         FAIL() << "the injected failure did not propagate";
     }
@@ -98,9 +122,10 @@ TEST(ExecutingGraphFailedExpansion, LaterExpansionBailsOutInsteadOfLogicalError)
 
     /// Exactly one of them got as far as connecting its output.
     ASSERT_NE(first->expanded, second->expanded);
-    auto & not_expanded = first->expanded ? *second : *first;
 
     /// The other expansion must not walk the inconsistent graph; the query is being cancelled anyway.
-    EXPECT_EQ(graph.updateNode(not_expanded, queue, async_queue, buffers), ExecutingGraph::UpdateNodeStatus::Cancelled);
+    task = execute_task();
+    EXPECT_EQ(
+        graph.updateNode(*task, queue, async_queue, buffers, /*thread_num=*/ 1), ExecutingGraph::UpdateNodeStatus::Cancelled);
     EXPECT_TRUE(queue.empty());
 }

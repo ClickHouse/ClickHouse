@@ -440,7 +440,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
         if (resources.reservation && tasks.takeSpillNotification())
         {
             Queue spill_queue;
-            graph->scheduleSpills(spill_queue);
+            graph->scheduleSpills(spill_queue, thread_num);
             tasks.pushSpillTasks(spill_queue, thread_num);
         }
 
@@ -450,7 +450,8 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
 
         if (!tasks.isFinished() && context.hasTask())
         {
-            auto * spill_target = resources.reservation ? graph->getSpillTarget(*context.getTask()) : nullptr;
+            /// This thread owns the node while its task is executed, so nothing else changes the spill target.
+            auto * spill_target = resources.reservation ? context.getTask()->spill_target : nullptr;
             if (!context.executeTask(spill_target))
                 cancelWithException(context.getException());
 
@@ -479,7 +480,8 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 bool updated = false;
                 try
                 {
-                    updated = graph->updateNode(*context.getTask(), queue, async_queue, update_node_buffers) == ExecutingGraph::UpdateNodeStatus::Done;
+                    updated = graph->updateNode(*context.getTask(), queue, async_queue, update_node_buffers, thread_num)
+                        == ExecutingGraph::UpdateNodeStatus::Done;
                 }
                 catch (...)
                 {
@@ -712,7 +714,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 
     Queue queue;
     Queue async_queue;
-    graph->initializeExecution(queue, async_queue);
+    graph->initializeExecution(queue, async_queue, num_threads);
 
     /// use_threads should reflect number of thread spawned and can grow with tasks.upscale(...).
     /// Starting from 1 instead of 0 is to tackle the single thread scenario, where no upscale() will
