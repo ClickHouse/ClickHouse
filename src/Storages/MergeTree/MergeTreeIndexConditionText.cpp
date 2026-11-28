@@ -473,10 +473,10 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         return can_be_exact_read_mode ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
     }
 
-    if (function_name == "hasAny")
+    if (function_name == "hasAny" || function_name == "in" || function_name == "globalIn")
     {
-        /// Function hasAny creates several text search queries with
-        /// tokenizers that split strings, so we can't use direct read as a hint.
+        /// These functions create one text search query per element unless the elements are folded into
+        /// one query for exact direct read, so we can't use direct read as a hint.
         return can_be_exact_read_mode ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
     }
 
@@ -2612,6 +2612,8 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     /// `m['key']` answered by a `mapValues(m)` index: an absent key reads the value type's default.
     bool has_index_for_map_element_value = false;
+    /// The index is built on the argument itself, not on `mapValues` of its map, the array of `arrayJoin` or a JSON path.
+    bool has_index_for_argument = false;
     bool padded = false;
 
     auto has_index = [&](const RPNBuilderTreeNode & argument)
@@ -2625,11 +2627,17 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// `arrayJoin(arr) IN (set)` needs an element in the set, like `hasAny(arr, set)`
         if (getIndexedArrayJoinArgument(node, padded))
             return true;
-        return hasIndexForColumn(node.getColumnName())
-            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types);
+        if (hasIndexForColumn(node.getColumnName()))
+        {
+            has_index_for_argument = true;
+            return true;
+        }
+        return tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types).has_value();
     };
 
-    if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
+    const bool lhs_is_tuple = lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple";
+
+    if (lhs_is_tuple)
     {
         const auto function = lhs.toFunctionNode();
         auto arguments_size = function.getArgumentsSize();
@@ -2693,6 +2701,14 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     };
     String normalized;
 
+    /// With the `array` tokenizer and no processors an element is one token, so `x IN (...)` is the union of their
+    /// posting lists: one `Any` query, read exactly. The original predicate is still needed for the other components
+    /// of a tuple, the key of `m['key']`, the row of `arrayJoin` or a JSON path. A set from a subquery has no AST for
+    /// the parts without a materialized index, so direct read skips it, see `convertSetColumnToAST`.
+    const bool read_exactly = total_row_count != 0 && !lhs_is_tuple && has_index_for_argument
+        && getDirectReadMode(function_name) == TextIndexDirectReadMode::Exact;
+    VectorWithMemoryTracking<String> union_tokens;
+
     for (size_t row = 0; row < total_row_count; ++row)
     {
         /// The atom is an OR over the elements, and the index skips NULL rows when building a
@@ -2738,7 +2754,22 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             return false;
         }
 
+        if (read_exactly)
+        {
+            chassert(tokens.size() == 1);
+            union_tokens.push_back(std::move(tokens.front()));
+            continue;
+        }
+
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens)));
+    }
+
+    if (read_exactly)
+    {
+        out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+            function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact, std::move(union_tokens)));
+        return true;
     }
 
     out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
