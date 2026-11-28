@@ -1999,10 +1999,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         const auto format_name = object_info->getFileFormat().value_or(configuration->format);
         const String format_name_lower = Poco::toLower(format_name);
         const bool input_format_does_not_read_file = format_name_lower == "one";
-        /// An `ORC` count reads the footer from storage when `_headers` is requested, so the data
-        /// `GET` supplies the headers even when the reader skips all stripes.
-        if (headers_requested && format_name_lower != "orc")
-            need_only_count = false;
 
         row_lineage_columns = getMaterializedRowLineageColumns(*object_info, read_from_format_info, format_name);
 
@@ -2331,10 +2327,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         logIcebergFileStats(object_info, log);
 
-        const bool use_metadata_cache = object_info->getObjectMetadata()->isEtagUsableAsCacheKey()
-            && !headers_requested
-            && ((format_name_lower == "parquet" && context_->getSettingsRef()[Setting::use_parquet_metadata_cache])
-                || (format_name_lower == "orc" && context_->getSettingsRef()[Setting::use_orc_metadata_cache]));
+        const bool use_orc_metadata_cache = format_name_lower == "orc"
+            && context_->getSettingsRef()[Setting::use_orc_metadata_cache]
+            && object_info->getObjectMetadata()->isEtagUsableAsCacheKey();
         const bool use_parquet_content_cache = format_name_lower == "parquet"
             && (context_->getSettingsRef()[Setting::use_parquet_metadata_cache] || context_->getSettingsRef()[Setting::use_columns_cache])
             && object_info->getObjectMetadata()->getContentCacheToken().has_value();
@@ -2353,7 +2348,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         InputFormatPtr input_format;
         /// The metadata of the object identifies its version for the `ORC` and `Parquet` metadata caches
         /// and for the columns cache.
-        if (use_metadata_cache || use_parquet_content_cache)
+        /// A footer read supplies the data `GET` response for `_headers`, including for count-only queries.
+        if (!headers_requested && (use_orc_metadata_cache || use_parquet_content_cache))
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())

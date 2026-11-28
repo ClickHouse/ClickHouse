@@ -17,6 +17,7 @@ ${CLICKHOUSE_CLIENT} --query "SELECT number AS id FROM numbers(10) FORMAT ORC" >
 ${CLICKHOUSE_CLIENT} --query "SELECT number AS id FROM numbers(20) FORMAT ORC" > "${work_dir}/large.orc"
 ${CLICKHOUSE_CLIENT} --query "SELECT number + 100 AS id FROM numbers(10) FORMAT ORC" > "${work_dir}/changed.orc"
 ${CLICKHOUSE_CLIENT} --query "SELECT sipHash64(number) AS id FROM numbers(131072) FORMAT ORC SETTINGS output_format_orc_compression_method = 'none'" > "${work_dir}/headers.orc"
+${CLICKHOUSE_CLIENT} --query "SELECT sipHash64(number) AS id FROM numbers(131072) FORMAT Parquet SETTINGS output_format_parquet_compression_method = 'none'" > "${work_dir}/headers.parquet"
 cp "${work_dir}/small.orc" "${work_dir}/weak.orc"
 
 python3 -u - "${work_dir}" <<'PY' &
@@ -85,10 +86,10 @@ class Handler(BaseHTTPRequestHandler):
             data = (work_dir / 'weak.orc').read_bytes()
             etag = 'W/"same-etag"'
         elif self.path == '/headers/':
-            data = b'<a href="f.orc">f.orc</a>'
+            data = b'<a href="headers.orc">headers.orc</a>\n<a href="headers.parquet">headers.parquet</a>'
             etag = None
-        elif self.path == '/headers/f.orc':
-            data = (work_dir / 'headers.orc').read_bytes()
+        elif self.path in ('/headers/headers.orc', '/headers/headers.parquet'):
+            data = (work_dir / pathlib.Path(self.path).name).read_bytes()
             etag = '"headers-etag"'
         else:
             self.send_error(404)
@@ -103,7 +104,7 @@ class Handler(BaseHTTPRequestHandler):
             content_range = f'bytes {begin}-{end}/{len(data)}'
             data = data[begin:end + 1]
             status = 206
-        if include_body and self.path == '/headers/f.orc':
+        if include_body and etag and self.path.startswith('/headers/'):
             with (work_dir / 'get_bytes').open('a') as counts:
                 print(len(data), file=counts)
         self.send_response(status)
@@ -162,16 +163,20 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_
 cp "${work_dir}/large.orc" "${work_dir}/weak.orc"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/weak/*.orc', 'ORC', 'id UInt64') SETTINGS ${settings}"
 
-headers_source="url('http://127.0.0.1:${first_port}/headers/*.orc', 'ORC', 'id UInt64')"
-for cache in 0 1; do
-    count_settings="${common_settings}, use_orc_metadata_cache = ${cache}, optimize_count_from_files = 1, remote_filesystem_read_prefetch = 0, max_threads = 1"
+check_header_count() {
+    local extension=$1 cache=$2 max_bytes=$3
+    local headers_source="url('http://127.0.0.1:${first_port}/headers/*.${extension}', 'auto', 'id UInt64')"
+    local count_settings="${common_settings}, use_${extension}_metadata_cache = ${cache}, optimize_count_from_files = 1, remote_filesystem_read_prefetch = 0, max_threads = 1"
     # Prime the footer when caching is enabled. The following query still needs a data `GET` for `_headers`.
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${headers_source} SETTINGS ${count_settings}"
     : > "${work_dir}/get_bytes"
     ${CLICKHOUSE_CLIENT} --query "SELECT count(), any(_headers['X-Method']) FROM ${headers_source} SETTINGS ${count_settings}"
-    # Allow room for the 16 KiB footer probe while catching a scan of the 1 MiB data column.
-    awk '{ total += $1 } END { if (total == 0 || total > 65536) { print "Unexpected ORC GET bytes:", total + 0; exit 1 } }' "${work_dir}/get_bytes"
-done
+    awk -v limit="$max_bytes" '{ total += $1 } END { if (total == 0 || total > limit) { print "Unexpected GET bytes:", total + 0; exit 1 } }' "${work_dir}/get_bytes"
+}
+# Allow room for each format's footer probe while catching a scan of the 1 MiB data column.
+check_header_count orc 0 65536
+check_header_count orc 1 65536
+check_header_count parquet 1 262144
 
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/redirect/*.orc', 'ORC', 'id UInt64') SETTINGS ${settings}, max_http_get_redirects = 1"
 
