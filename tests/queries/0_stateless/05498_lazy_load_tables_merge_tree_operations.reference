@@ -1,0 +1,25 @@
+- mutations
+0
+19	0
+has TTL	1
+- create as
+0
+1	1	source comment
+VIOLATED_CONSTRAINT
+- system tables
+0	0	0
+0
+1000
+1	1000	1000	idx_v	1
+- show columns and indexes
+1
+1
+PRIMARY	id
+idx_v	
+1
+- system commands
+0
+1	20
+- table functions
+0
+1	1	1

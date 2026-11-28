@@ -405,10 +405,17 @@ bool prewhereSupportedColumnsContain(
     const NameSet & supported_columns, bool include_subcolumns, const ColumnsDescription & columns, const String & column_name);
 
 class IStorage;
+struct StorageSnapshot;
 
 /// Whether the read of `storage` can evaluate a row policy over `required_columns` as its row-level filter.
 /// A remote storage ships only query text and would drop it. Wrappers (Merge, Buffer) re-derive it against
-/// their children's types, so every column must be in the PREWHERE contract.
-bool canPushDownRowPolicyFilter(const IStorage & storage, const ColumnsDescription & columns, const Names & required_columns);
+/// their children's types, so every column must be in the PREWHERE contract, which is the one for the read of
+/// `storage_snapshot` if it is given (see `IStorage::supportedPrewhereColumnsForSnapshot`).
+bool canPushDownRowPolicyFilter(
+    const IStorage & storage,
+    const std::shared_ptr<StorageSnapshot> & storage_snapshot,
+    const ContextPtr & context,
+    const ColumnsDescription & columns,
+    const Names & required_columns);
 
 }

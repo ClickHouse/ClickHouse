@@ -1,0 +1,19 @@
+plain	0
+streaming	0
+SYSTEM VIEWS only, a streaming table
+SYSTEM STOP: ACCESS_DENIED
+SYSTEM START: ACCESS_DENIED
+SYSTEM PAUSE: ACCESS_DENIED
+SYSTEM CANCEL: ACCESS_DENIED
+SYSTEM REFRESH: ACCESS_DENIED
+plain	0
+streaming	0
+SYSTEM VIEWS only, a table that is not a streaming one
+SYSTEM PAUSE: BAD_ARGUMENTS
+plain	1
+streaming	0
+SYSTEM STREAMING ENGINES, a streaming table
+SYSTEM PAUSE: OK
+SYSTEM START: OK
+plain	1
+streaming	1

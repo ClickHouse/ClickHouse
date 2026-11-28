@@ -187,6 +187,15 @@ public:
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
     virtual std::optional<NameSet> supportedPrewhereColumns() const { return std::nullopt; }
 
+    /// Same, for a read of `storage_snapshot`. A wrapper whose contract depends on the schema of the table it
+    /// reads overrides it: a data lake pins the table state selected for the query (e.g. by `iceberg_snapshot_id`)
+    /// in the metadata of the snapshot, the schema belongs to that state, and two `SELECT`s of one query can pin
+    /// different states, so the current metadata of the storage may describe another read.
+    virtual std::optional<NameSet> supportedPrewhereColumnsForSnapshot(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*context*/) const
+    {
+        return supportedPrewhereColumns();
+    }
+
     /// Whether a subcolumn is admitted into PREWHERE whenever `supportedPrewhereColumns` admits
     /// its origin column. Subcolumn sets are open-ended (JSON paths), so the contract enumerates
     /// top-level names only; this tells whether the storage's PREWHERE machinery resolves a
@@ -664,6 +673,19 @@ public:
     /// Updates metadata that can be changed by other processes
     /// Return true if external metadata exists and was updated.
     virtual void updateExternalDynamicMetadataIfExists(ContextPtr /* context */) { }
+
+    /// The metadata of the table at the data lake table state `state`, which `updateExternalDynamicMetadataIfExists`
+    /// pinned in the metadata of an earlier analysis. The schema can belong to the state (e.g. a column of an Iceberg
+    /// table can be renamed between snapshots), so a data lake builds it from the state rather than from the current
+    /// metadata, which another analysis may have changed since. The default is for a storage whose schema does not
+    /// depend on the state.
+    virtual StorageMetadataPtr getInMemoryMetadataForDataLakeTableState(const DataLakeTableStateSnapshot & state, ContextPtr context) const
+    {
+        const auto current_metadata = getInMemoryMetadataPtr(context, false);
+        auto pinned_metadata = std::make_shared<StorageInMemoryMetadata>(*current_metadata);
+        pinned_metadata->setDataLakeTableState(state);
+        return pinned_metadata;
+    }
 
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.

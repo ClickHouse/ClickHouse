@@ -1,0 +1,20 @@
+alias to broken
+CHECK ALL TABLES: ACCESS_DENIED
+a_log	0
+broken	0
+valid	0
+alias to valid
+CHECK ALL TABLES: ACCESS_DENIED
+a_log	0
+broken	0
+valid	0
+alias to a_log
+CHECK ALL TABLES: ACCESS_DENIED
+a_log	0
+broken	0
+valid	0
+with the right on the target
+1
+a_log	0
+broken	0
+valid	1

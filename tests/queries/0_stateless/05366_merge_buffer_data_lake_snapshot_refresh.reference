@@ -8,7 +8,7 @@ v	Int64
 merge() after rename	160	26220
 w	Int64
 loop() after rename	26220
-lazy	TableProxy
+lazy	IcebergLocal	0
 lazy merge()	110	5995
 lazy Merge	120	8040
 lazy Buffer	130	11085

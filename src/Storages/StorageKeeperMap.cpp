@@ -1983,6 +1983,7 @@ void registerStorageKeeperMap(StorageFactory & factory)
         SecretArgumentsSpec{},
         {
             .supports_sort_order = true,
+            .supports_deferred_load = true,
         },
         Documentation{
             .description = R"DOCS_MD(

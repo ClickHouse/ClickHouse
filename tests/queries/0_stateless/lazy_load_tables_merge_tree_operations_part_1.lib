@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2154
+
+# The first half of the operations of `lazy_load_tables_merge_tree_operations.lib`.
+
+echo "- mutations"
+query "
+    CREATE TABLE t (d Date, id UInt64, v String, n UInt32,
+        INDEX idx_v v TYPE bloom_filter GRANULARITY 1,
+        PROJECTION proj (SELECT n, count() GROUP BY n))
+    ENGINE = $engine_def PARTITION BY toYYYYMM(d) ORDER BY id
+    SETTINGS lightweight_mutation_projection_mode = 'rebuild';
+    INSERT INTO t SELECT '2026-01-01', number, toString(number), number % 5 FROM numbers(10);
+    INSERT INTO t SELECT '2026-02-01', number + 10, toString(number), number % 5 FROM numbers(10);"
+reload
+loaded t
+# `IN PARTITION` resolves the partition through a `MergeTreeData` cast.
+query "ALTER TABLE t DELETE IN PARTITION 202601 WHERE id = 1 SETTINGS mutations_sync = 2"
+reload
+query "ALTER TABLE t MATERIALIZE INDEX idx_v SETTINGS mutations_sync = 2"
+reload
+query "ALTER TABLE t MATERIALIZE PROJECTION proj SETTINGS mutations_sync = 2"
+reload
+# `supportsTTL` gates `ALTER MODIFY TTL`.
+query "ALTER TABLE t MODIFY TTL d + INTERVAL 100 YEAR"
+query "SELECT count(), countIf(id = 1) FROM t"
+query "SELECT 'has TTL', create_table_query LIKE '%TTL d + toIntervalYear(100)%' FROM system.tables WHERE database = currentDatabase() AND name = 't'"
+query "DROP TABLE t SYNC"
+
+echo "- create as"
+# `CREATE TABLE ... AS` copies indices, projections, constraints and the comment out of the metadata of
+# the source, which a stand-in reports as columns only.
+query "
+    CREATE TABLE src (id UInt64, n UInt32, CONSTRAINT c_n CHECK n > 0,
+        INDEX idx_n n TYPE minmax GRANULARITY 1,
+        PROJECTION p (SELECT n, count() GROUP BY n))
+    ENGINE = $engine_def ORDER BY id COMMENT 'source comment'"
+reload
+loaded src
+# An explicit engine, since the stored one of the source carries its own coordination path.
+query "CREATE TABLE copy AS src ENGINE = $engine_def ORDER BY id"
+query "SELECT
+    (SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'copy'),
+    (SELECT count() FROM system.projections WHERE database = currentDatabase() AND table = 'copy'),
+    (SELECT comment FROM system.tables WHERE database = currentDatabase() AND name = 'copy')"
+query "INSERT INTO copy VALUES (1, 0)" 2>&1 | grep -o -m1 VIOLATED_CONSTRAINT
+query "DROP TABLE src SYNC; DROP TABLE copy SYNC"
+
+echo "- system tables"
+query "
+    CREATE TABLE t (id UInt64, v String, INDEX idx_v v TYPE bloom_filter GRANULARITY 1)
+    ENGINE = $engine_def ORDER BY id;
+    INSERT INTO t SELECT number, toString(number) FROM numbers(1000);"
+reload
+# The system tables that walk every table see the real storage without loading it, so they report
+# nothing until something else loads it.
+query "SELECT
+    (SELECT count() FROM system.parts WHERE database = currentDatabase()),
+    (SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase()),
+    (SELECT sum(data_compressed_bytes) FROM system.columns WHERE database = currentDatabase())"
+loaded t
+query "SELECT count() FROM t"
+query "SELECT
+    (SELECT count() FROM system.parts WHERE database = currentDatabase() AND active),
+    (SELECT sum(rows) FROM system.parts WHERE database = currentDatabase() AND active),
+    (SELECT total_rows FROM system.tables WHERE database = currentDatabase() AND name = 't'),
+    (SELECT name FROM system.data_skipping_indices WHERE database = currentDatabase()),
+    (SELECT data_compressed_bytes > 0 AND marks_bytes > 0 FROM system.data_skipping_indices WHERE database = currentDatabase())"
+query "DROP TABLE t SYNC"
+
+echo "- show columns and indexes"
+# `SHOW COLUMNS` and `SHOW INDEXES` name a single table, so they load it instead of reporting the empty
+# keys and indices that the passive system tables have for a stand-in.
+query "
+    CREATE TABLE t (d Date, id UInt64, v String, INDEX idx_v v TYPE bloom_filter GRANULARITY 1)
+    ENGINE = $engine_def PARTITION BY toYYYYMM(d) ORDER BY id"
+reload
+query "SHOW COLUMNS FROM t" | grep -c 'PRI SOR'
+loaded t
+reload
+query "SHOW INDEXES FROM t" | cut -f3,5 | LC_ALL=C sort
+loaded t
+query "DROP TABLE t SYNC"
+
+echo "- system commands"
+query "
+    CREATE TABLE t (id UInt64) ENGINE = $engine_def ORDER BY id SETTINGS merge_selector_algorithm = 'Manual';
+    INSERT INTO t SELECT number FROM numbers(10);
+    INSERT INTO t SELECT number + 10 FROM numbers(10);"
+parts=$(query "SELECT arrayStringConcat(groupArray(concat('''', name, '''')), ', ') FROM (SELECT name FROM system.parts WHERE database = currentDatabase() AND active ORDER BY name) FORMAT TSVRaw")
+reload
+loaded t
+query "OPTIMIZE TABLE t DRY RUN PARTS $parts"
+# Merging the parts last, since it invalidates their names.
+reload
+query "SYSTEM SCHEDULE MERGE t PARTS $parts"
+query "OPTIMIZE TABLE t FINAL"
+query "SELECT count(), sum(rows) FROM system.parts WHERE database = currentDatabase() AND table = 't' AND active"
+query "DROP TABLE t SYNC"
+
+echo "- table functions"
+# The table functions that read parts directly cast the source table to `MergeTreeData`.
+query "
+    CREATE TABLE t (id UInt64, n UInt32, PROJECTION p (SELECT n, count() GROUP BY n)) ENGINE = $engine_def ORDER BY id;
+    INSERT INTO t VALUES (1, 7);"
+reload
+loaded t
+query "SELECT
+    (SELECT count() > 0 FROM mergeTreeIndex(currentDatabase(), 't')),
+    (SELECT count() > 0 FROM mergeTreeProjection(currentDatabase(), 't', 'p')),
+    (SELECT count() > 0 FROM mergeTreeCodecBlockCounts(currentDatabase(), 't'))"
+query "DROP TABLE t SYNC"

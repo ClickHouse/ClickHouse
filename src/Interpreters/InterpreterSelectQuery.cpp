@@ -2449,7 +2449,8 @@ bool InterpreterSelectQuery::shouldPushRowLevelFilterToStorage() const
 
     /// NOTE: uses the interpreter's own row_policy_info, so it is callable before
     /// analysis_result exists; they share the same object.
-    return canPushDownRowPolicyFilter(*storage, metadata_snapshot->getColumns(), row_policy_info->actions.getRequiredColumnsNames());
+    return canPushDownRowPolicyFilter(
+        *storage, storage_snapshot, context, metadata_snapshot->getColumns(), row_policy_info->actions.getRequiredColumnsNames());
 }
 
 void InterpreterSelectQuery::addPrewhereAliasActions()
@@ -2602,7 +2603,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         }
     }
 
-    const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
+    const auto supported_prewhere_columns = storage->supportedPrewhereColumnsForSnapshot(storage_snapshot, context);
     if (supported_prewhere_columns.has_value())
     {
         NameSet required_columns_from_prewhere = get_prewhere_columns();

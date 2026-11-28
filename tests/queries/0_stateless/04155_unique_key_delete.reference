@@ -11,5 +11,5 @@ shadow_partition	1
 shadow_partition	2
 shadow_alias	1
 shadow_alias	2
-lazy_stand_in	TableProxy
+lazy_stand_in	MergeTree	0
 lazy_survivors	3

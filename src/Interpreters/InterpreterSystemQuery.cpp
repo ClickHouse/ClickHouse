@@ -74,6 +74,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageQueryRunner.h>
 #include <Storages/StorageProxy.h>
@@ -326,6 +327,29 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
 
 constexpr std::string_view table_is_not_replicated = "Table {} is not replicated";
 
+/// Loads the table that `getActionLock` of `table` takes the lock from, if a database with `lazy_load_tables`
+/// has not loaded it yet. That is the table itself, or the table a wrapper forwards the lock to: the inner
+/// table of a materialized view or the target of an `Alias`, which are deferred while the wrapper is not.
+/// A deferred table has no lock to give until it is loaded, so without this an explicit `SYSTEM STOP` would
+/// do nothing and the background work would start once the table is first accessed.
+void loadActionLockProvider(StoragePtr table)
+{
+    for (size_t depth = 0; table && depth < max_storage_proxy_depth; ++depth)
+    {
+        table = resolveStorageProxyLoading(table);
+        if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(table.get()))
+        {
+            if (!materialized_view->hasInnerTable())
+                return;
+            table = materialized_view->tryGetTargetTable();
+        }
+        else if (const auto * alias = dynamic_cast<const StorageAlias *>(table.get()))
+            table = alias->tryGetTargetTable();
+        else
+            return;
+    }
+}
+
 }
 
 /// Implements SYSTEM [START|STOP] <something action from ActionLocks>
@@ -354,7 +378,15 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
                 table->onActionLockRemove(action_type);
             }
             else
+            {
+                /// A deferred table has no lock to take until it is loaded, so the command would do nothing and
+                /// the background work would start once the table is first accessed. Naming the table pays the
+                /// load cost, like the other `SYSTEM` commands addressed to a table. This includes the table
+                /// behind a materialized view or an `Alias`, which forward the lock to it. The lock is still
+                /// kept for the catalog object that was named, so that `SYSTEM START` on the same table finds it.
+                loadActionLockProvider(table);
                 manager->add(table, action_type);
+            }
         }
     }
     else
@@ -2930,7 +2962,27 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
     const bool can_views = access->isGranted(AccessType::SYSTEM_VIEWS, table_id.database_name, table_id.table_name);
     const bool can_streaming = access->isGranted(AccessType::SYSTEM_STREAMING_ENGINES, table_id.database_name, table_id.table_name);
 
-    auto storage = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(table_id, getContext()));
+    auto throw_not_authorized = [&]
+    {
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Not enough privileges. To execute this query, it's necessary to have the grant "
+            "SYSTEM VIEWS (for refreshable materialized views) or SYSTEM STREAMING ENGINES (for "
+            "streaming engines) on {}", table_id.getNameForLogs());
+    };
+
+    auto storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    /// Loading a lazily loaded table constructs and starts it, so it is not done for a user who does not hold
+    /// the grant the table requires. A table that is not loaded yet is never a view, and its engine, known
+    /// from the `CREATE` query, tells whether it is a streaming one, so this is the same decision as below.
+    if (storage && !isStorageLoaded(storage))
+    {
+        const auto * features = StorageFactory::instance().tryGetStorageFeatures(storage->getName());
+        const bool is_streaming_engine = features && features->is_streaming;
+        if (!(is_streaming_engine ? can_streaming : (can_views || can_streaming)))
+            throw_not_authorized();
+        storage = resolveStorageProxyLoading(storage);
+        chassert(storage->isStreamingStorage() == is_streaming_engine);
+    }
     const bool is_streaming = storage && storage->isStreamingStorage();
     const auto * mv = storage ? dynamic_cast<const StorageMaterializedView *>(storage.get()) : nullptr;
     const bool is_refreshable_view = mv && mv->isRefreshable();
@@ -2940,10 +2992,7 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
         : storage ? (can_views || can_streaming)
         : (can_views && can_streaming);
     if (!authorized)
-        throw Exception(ErrorCodes::ACCESS_DENIED,
-            "Not enough privileges. To execute this query, it's necessary to have the grant "
-            "SYSTEM VIEWS (for refreshable materialized views) or SYSTEM STREAMING ENGINES (for "
-            "streaming engines) on {}", table_id.getNameForLogs());
+        throw_not_authorized();
 
     if (!storage)
         storage = DatabaseCatalog::instance().getTable(table_id, getContext()); /// throws UNKNOWN_TABLE

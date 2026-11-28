@@ -20,6 +20,8 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Core/Settings.h>
@@ -115,6 +117,54 @@ BlockIO InterpreterUpdateQuery::execute()
     /// update. Resolve the table best-effort (null for a non-local ON CLUSTER target) and fail closed.
     StoragePtr table_for_access;
     auto resolved_table_id = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary);
+
+    auto get_required_access = [&](InterpreterAlterQuery::RowExistsColumnKind row_exists_column_kind)
+    {
+        bool deletes_via_row_exists = false;
+        bool updates_columns = false;
+        for (const ASTPtr & assignment_ast : update_query.assignments->children)
+        {
+            const bool is_lightweight_delete_assignment = isLightweightDeleteAssignment(assignment_ast->as<const ASTAssignment &>());
+            if (!is_lightweight_delete_assignment
+                || row_exists_column_kind != InterpreterAlterQuery::RowExistsColumnKind::LightweightDeleteMarker)
+                updates_columns = true;
+            if (is_lightweight_delete_assignment && row_exists_column_kind != InterpreterAlterQuery::RowExistsColumnKind::Regular)
+                deletes_via_row_exists = true;
+        }
+
+        AccessRightsElements required_access;
+        if (deletes_via_row_exists)
+            required_access.emplace_back(AccessType::ALTER_DELETE, update_query.getDatabase(), update_query.getTable());
+        if (updates_columns)
+            required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
+        return required_access;
+    };
+
+    /// The checks that do not need the storage, done before a table that a database with `lazy_load_tables` has
+    /// not loaded yet is loaded: loading constructs and starts it, so a user without the rights to update it must
+    /// not be able to trigger that. The same as in `InterpreterAlterQuery::executeToTable`.
+    auto check_access_before_loading = [&](const StoragePtr & storage, const StorageID & storage_id)
+    {
+        if (!storage)
+            return;
+        /// The stand-in reports only the physical columns, so it cannot tell whether `_row_exists` is the
+        /// lightweight-delete marker. A physical `_row_exists` is always an ordinary column; otherwise the precheck
+        /// assumes the marker, which requires the least, and the precise check is repeated on the loaded storage.
+        if (!isStorageLoaded(storage))
+        {
+            const auto stand_in_metadata = storage->getInMemoryMetadataPtr(getContext(), false);
+            const bool has_physical_row_exists = stand_in_metadata->getColumns().has(RowExistsColumn::name);
+            getContext()->checkAccess(get_required_access(
+                has_physical_row_exists
+                    ? InterpreterAlterQuery::RowExistsColumnKind::Regular
+                    : InterpreterAlterQuery::RowExistsColumnKind::LightweightDeleteMarker));
+        }
+        /// An `Alias` answers the engine facts and the metadata from its target, which loads a lazily loaded
+        /// target, and checks `ALTER` on the target only after that, in `StorageAlias::updateLightweight`.
+        if (storage->as<StorageAlias>())
+            checkAccessBeforeLoadingLazyTable(storage, storage_id, getContext(), {AccessType::ALTER});
+    };
+
     if (resolved_table_id)
     {
         /// The database has to be pinned before the access rights and the distributed dispatch are built
@@ -122,26 +172,12 @@ BlockIO InterpreterUpdateQuery::execute()
         /// rights that are checked and the table that is updated can name different databases.
         update_query.setDatabase(resolved_table_id.database_name);
         table_for_access = DatabaseCatalog::instance().tryGetTable(resolved_table_id, getContext());
+        check_access_before_loading(table_for_access, resolved_table_id);
+        /// The required access depends on the virtual columns of the storage, which the stand-in of a lazily
+        /// loaded table does not report.
+        table_for_access = resolveStorageProxyLoading(table_for_access);
     }
-    const auto row_exists_column_kind = InterpreterAlterQuery::getRowExistsColumnKind(table_for_access, getContext());
-
-    bool deletes_via_row_exists = false;
-    bool updates_columns = false;
-    for (const ASTPtr & assignment_ast : update_query.assignments->children)
-    {
-        const bool is_lightweight_delete_assignment = isLightweightDeleteAssignment(assignment_ast->as<const ASTAssignment &>());
-        if (!is_lightweight_delete_assignment
-            || row_exists_column_kind != InterpreterAlterQuery::RowExistsColumnKind::LightweightDeleteMarker)
-            updates_columns = true;
-        if (is_lightweight_delete_assignment && row_exists_column_kind != InterpreterAlterQuery::RowExistsColumnKind::Regular)
-            deletes_via_row_exists = true;
-    }
-
-    AccessRightsElements required_access;
-    if (deletes_via_row_exists)
-        required_access.emplace_back(AccessType::ALTER_DELETE, update_query.getDatabase(), update_query.getTable());
-    if (updates_columns)
-        required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
+    auto required_access = get_required_access(InterpreterAlterQuery::getRowExistsColumnKind(table_for_access, getContext()));
 
     if (!update_query.cluster.empty())
     {
@@ -179,6 +215,11 @@ BlockIO InterpreterUpdateQuery::execute()
 
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    /// A concurrent `EXCHANGE` can put another table under this name, and it can be a lazily loaded one that is
+    /// not loaded yet, so it gets the same checks before the predicates below load it.
+    check_access_before_loading(table, table_id);
+    if (const auto resolved_table = resolveStorageProxyLoading(table); resolved_table != table_for_access)
+        getContext()->checkAccess(get_required_access(InterpreterAlterQuery::getRowExistsColumnKind(resolved_table, getContext())));
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 

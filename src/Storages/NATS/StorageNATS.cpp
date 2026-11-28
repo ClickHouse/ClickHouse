@@ -1525,6 +1525,9 @@ void registerStorageNATS(StorageFactory & factory)
         },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
+            .supports_deferred_load = true,
+            .defers_only_without_dependent_views = true,
+            .is_streaming = true,
             .source_access_type = AccessTypeObjects::Source::NATS,
             .has_builtin_setting_fn = NATSSettings::hasBuiltin,
         },

@@ -177,6 +177,7 @@ public:
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
+    StorageMetadataPtr getInMemoryMetadataForDataLakeTableState(const DataLakeTableStateSnapshot & state, ContextPtr query_context) const override;
 
     std::shared_ptr<IDataLakeMetadata> getExternalMetadata(ContextPtr query_context);
 

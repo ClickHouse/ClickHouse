@@ -1,0 +1,24 @@
+through an alias without the rights on the target
+ACCESS_DENIED
+ACCESS_DENIED
+t	0
+_row_exists = 0 with ALTER UPDATE only
+ACCESS_DENIED
+t	0
+an ordinary update with ALTER DELETE only
+ACCESS_DENIED
+t	0
+an ordinary update with ALTER UPDATE only
+OK
+t	1
+1	10
+2	2
+_row_exists = 0 with ALTER DELETE only
+t	0
+OK
+t	1
+2	2
+the same on the loaded table
+ACCESS_DENIED
+ACCESS_DENIED
+2	2

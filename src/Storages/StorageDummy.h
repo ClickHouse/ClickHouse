@@ -30,6 +30,13 @@ public:
         return original_storage_snapshot ? original_storage_snapshot->storage.supportedPrewhereColumns() : std::nullopt;
     }
 
+    std::optional<NameSet> supportedPrewhereColumnsForSnapshot(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr context) const override
+    {
+        return original_storage_snapshot
+            ? original_storage_snapshot->storage.supportedPrewhereColumnsForSnapshot(original_storage_snapshot, context)
+            : std::nullopt;
+    }
+
     bool supportedPrewhereColumnsIncludeSubcolumns() const override
     {
         return original_storage_snapshot && original_storage_snapshot->storage.supportedPrewhereColumnsIncludeSubcolumns();

@@ -1,0 +1,34 @@
+WHERE
+new	1	11
+new	2	12
+old	1	11
+new	1	11
+new	2	12
+old	1	11
+PREWHERE on the column whose type differs in the old snapshot
+ILLEGAL_PREWHERE
+ILLEGAL_PREWHERE
+ILLEGAL_PREWHERE
+PREWHERE on the same column in the new snapshot
+new	1	11
+new	2	12
+new	1	11
+new	2	12
+old	1	11
+new	1	11
+new	2	12
+old	1	11
+PREWHERE on a column whose type is the same
+new	1	11
+new	2	12
+old	1	11
+new	1	11
+new	2	12
+old	1	11
+row policy
+new	1	11
+new	2	12
+old	1	11
+new	1	11
+new	2	12
+old	1	11

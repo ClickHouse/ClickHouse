@@ -25,7 +25,7 @@ DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SELECT 'cold engine', engine FROM system.tables WHERE database = currentDatabase() AND name = 'src';
+SELECT 'cold', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 'src';
 SELECT 'stream', count(), sum(k) FROM src STREAM BOUNDED;
 SELECT count() FROM t_log STREAM BOUNDED; -- { serverError ILLEGAL_STREAM }
 

@@ -17,8 +17,8 @@ DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SELECT 'stand-in', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
+SELECT 'stand-in', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't';
 SYSTEM UNLOAD PRIMARY KEY;
-SELECT 'still stand-in', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
+SELECT 'still stand-in', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't';
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

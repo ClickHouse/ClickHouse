@@ -2,6 +2,7 @@
 #include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageAlias.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -187,11 +188,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     if (database && table)
     {
         const auto & settings = getContext()->getSettingsRef();
-        if (query.if_empty)
-        {
-            if (auto rows = table->totalRows(getContext()); rows > 0)
-                throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
-        }
 
         AccessFlags drop_storage;
 
@@ -201,6 +197,45 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             drop_storage = AccessType::DROP_DICTIONARY;
         else
             drop_storage = AccessType::DROP_TABLE;
+
+        /// `TRUNCATE` of an `Alias` goes on to its target, and the alias answers the questions asked below
+        /// (whether it supports transactions, whether it is a `MergeTree`) from the target, which loads a target
+        /// that a database with `lazy_load_tables` has not loaded yet. The right to truncate the target is checked
+        /// only by `StorageAlias::truncate`, after that, so it is required here before the target is loaded.
+        if (query.kind == ASTDropQuery::Kind::Truncate && table->as<StorageAlias>())
+        {
+            context_->checkAccess(AccessType::TRUNCATE, table_id);
+            checkAccessBeforeLoadingLazyTable(table, table_id, context_, {AccessType::TRUNCATE});
+        }
+
+        if (query.if_empty)
+        {
+            /// The stand-in of a lazily loaded table (see the `lazy_load_tables` database setting) does not know
+            /// its row count, so the table is loaded to check it. Authorize first: a user without the right
+            /// to drop the table must not be able to load it.
+            const StoragePtr storage_to_count = [&]
+            {
+                const auto * proxy = dynamic_cast<const StorageProxy *>(table.get());
+                if (!proxy || !proxy->isLazyStandIn())
+                    return table;
+                if (query.kind == ASTDropQuery::Kind::Truncate)
+                    context_->checkAccess(AccessType::TRUNCATE, table_id);
+                else if (query.kind != ASTDropQuery::Kind::Drop || !query.no_access_check)
+                    context_->checkAccess(drop_storage, table_id);
+                return proxy->getNested();
+            }();
+            /// An `Alias` reports the row count of its target, which can be such a stand-in as well.
+            /// `TRUNCATE` goes on to the target, so the right to truncate it is required to load it,
+            /// which was checked above. `DROP` and `DETACH` remove only the alias, so the target is loaded
+            /// for a user who can see it, which is what the alias requires to report the count of a loaded target.
+            if (table->as<StorageAlias>())
+            {
+                const bool is_truncate = query.kind == ASTDropQuery::Kind::Truncate;
+                loadTableIfLazy(table_id, context_, is_truncate ? AccessType::TRUNCATE : AccessType::SHOW_TABLES);
+            }
+            if (auto rows = storage_to_count->totalRows(getContext()); rows > 0)
+                throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
+        }
 
         /// Authorize before asking whether the table supports transactions: for a lazily loaded table
         /// (see the `lazy_load_tables` database setting) that loads the table and reveals its engine.
@@ -245,6 +280,11 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             && settings[Setting::ignore_drop_queries_probability] != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop
             && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= static_cast<double>(settings[Setting::ignore_drop_queries_probability]))
         {
+            /// Authorize before classifying the table below: for a lazily loaded table that loads it, which must not be
+            /// possible for a user without the right to drop it.
+            if (!query.no_access_check)
+                context_->checkAccess(drop_storage, table_id);
+
             ast_drop_query.sync = false;
             /// A real DROP of an object storage, table function or non-truncatable table does not delete its data, so do not TRUNCATE it.
             /// The proxy is checked first: its `supportsTruncate` resolves the table function.
@@ -256,8 +296,14 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             StoragePtr inner_table;
             if (materialized_view && materialized_view->hasInnerTable())
                 inner_table = materialized_view->tryGetTargetTable();
+            if (inner_table)
+                inner_table = resolveStorageProxyLoading(inner_table);
 
-            if (table->storesDataOnDisk() || keeps_data_on_drop(*table) || (inner_table && keeps_data_on_drop(*inner_table)))
+            /// The stand-in of a deferred table answers `storesDataOnDisk` and `isObjectStorage` without loading it,
+            /// e.g. both are false for an `S3` table, so the decision is made on the real storage.
+            const StoragePtr storage_to_classify = resolveStorageProxyLoading(table);
+            if (storage_to_classify->storesDataOnDisk() || keeps_data_on_drop(*storage_to_classify)
+                || (inner_table && keeps_data_on_drop(*inner_table)))
             {
                 LOG_TEST(getLogger("InterpreterDropQuery"), "Ignore DROP TABLE query for table {}.{}", table_id.database_name, table_id.table_name);
                 return {};

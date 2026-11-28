@@ -28,14 +28,14 @@ read -r macros_path macros_replica < <($CLICKHOUSE_CLIENT -q "SELECT zookeeper_p
 
 # A stand-in appears when the database is loaded.
 $CLICKHOUSE_CLIENT -q "DETACH DATABASE $DB; ATTACH DATABASE $DB;"
-$CLICKHOUSE_CLIENT -q "SELECT 'stand-ins', name, engine FROM system.tables WHERE database = '$DB' ORDER BY name"
+$CLICKHOUSE_CLIENT -q "SELECT 'stand-ins', name, engine, is_loaded FROM system.tables WHERE database = '$DB' ORDER BY name"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM DROP REPLICA '$explicit_replica' FROM ZKPATH '$explicit_path'" 2>&1 | grep -o -m1 "There is a local table ${DB}.t_explicit"
 $CLICKHOUSE_CLIENT -q "SYSTEM DROP REPLICA '$macros_replica' FROM ZKPATH '$macros_path'" 2>&1 | grep -o -m1 "There is a local table ${DB}.t_macros"
 $CLICKHOUSE_CLIENT -q "SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/${CLICKHOUSE_DATABASE}_05333_nonexistent'" 2>&1 | grep -o -m1 "does not look like a table path"
 
 # The guard did not load the tables, and their replicas are still there.
-$CLICKHOUSE_CLIENT -q "SELECT 'still stand-ins', name, engine FROM system.tables WHERE database = '$DB' ORDER BY name"
+$CLICKHOUSE_CLIENT -q "SELECT 'still stand-ins', name, engine, is_loaded FROM system.tables WHERE database = '$DB' ORDER BY name"
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA $DB.t_explicit; SYSTEM SYNC REPLICA $DB.t_macros;"
 $CLICKHOUSE_CLIENT -q "SELECT 'loaded', table, is_readonly FROM system.replicas WHERE database = '$DB' ORDER BY table"
 

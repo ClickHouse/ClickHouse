@@ -43,7 +43,7 @@ $CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary 1 --send_logs_level fata
 # The `INSERT` loaded the table. Attach the database again to put the table behind a proxy.
 $CLICKHOUSE_CLIENT --query "DETACH DATABASE $DB"
 $CLICKHOUSE_CLIENT --query "ATTACH DATABASE $DB"
-$CLICKHOUSE_CLIENT --query "SELECT 'engine before the read', engine FROM system.tables WHERE database = '$DB' AND name = 'tab'"
+$CLICKHOUSE_CLIENT --query "SELECT 'engine before the read', engine, is_loaded FROM system.tables WHERE database = '$DB' AND name = 'tab'"
 
 # A slow query that holds the proxy until it is killed.
 $CLICKHOUSE_CLIENT --query_id "$READER_ID" --query "

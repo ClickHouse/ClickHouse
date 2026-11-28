@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Tags: no-replicated-database
-# A database with `lazy_load_tables` replaces the proxy of a loaded table with the loaded storage, but
-# only when nobody holds the proxy: otherwise one query could use the proxy and its table locks while
-# another uses the loaded storage. While a query that loaded the table through the proxy is still
-# running, the proxy stays. Once that query is gone, the next lookup replaces it.
+# A table of a database with `lazy_load_tables` stays usable through the catalog while a query that loaded it
+# is still running, and after that query is gone.
 #
-# The proxy does not forward `totalBytesUncompressed`, so `system.tables.total_bytes_uncompressed`
-# tells the proxy (NULL) from the loaded `MergeTree` (not NULL).
+# The database replaces the stand-in of a loaded table with the loaded storage only when nobody holds the
+# stand-in, so the reader below keeps it in the catalog until it is killed, and the next lookup replaces it.
+# That timing is not observable from SQL and is not what the test asserts: the stand-in reports the engine from
+# the `CREATE` query and forwards everything else to the loaded storage, so `system.tables` shows only whether
+# the table is loaded. The test asserts that `system.tables` and a read of the table give the same answers
+# at both moments, whichever of the two objects the catalog holds.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,7 +32,7 @@ ${CLICKHOUSE_CLIENT} -m -q "
 "
 
 state() {
-    ${CLICKHOUSE_CLIENT} -q "SELECT engine, total_bytes_uncompressed IS NOT NULL FROM system.tables WHERE database = '${DB}' AND name = 't'"
+    ${CLICKHOUSE_CLIENT} -q "SELECT engine, is_loaded, total_rows FROM system.tables WHERE database = '${DB}' AND name = 't'"
 }
 
 echo "cold: $(state)"
@@ -42,26 +44,21 @@ echo "cold: $(state)"
 ${CLICKHOUSE_CLIENT} --query_id "${CLICKHOUSE_DATABASE}_reader" --function_sleep_max_microseconds_per_block 0 -q "
     SELECT sleepEachRow(1) FROM \`${DB}\`.t FORMAT Null" >/dev/null 2>&1 &
 
-# Wait until the reader has loaded the table, i.e. the engine is known.
+# Wait until the reader has loaded the table.
 for _ in {1..600}
 do
     [ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = '${CLICKHOUSE_DATABASE}_reader'")" = 1 ] \
-        && [ "$(${CLICKHOUSE_CLIENT} -q "SELECT engine FROM system.tables WHERE database = '${DB}' AND name = 't'")" = MergeTree ] \
+        && [ "$(${CLICKHOUSE_CLIENT} -q "SELECT is_loaded FROM system.tables WHERE database = '${DB}' AND name = 't'")" = 1 ] \
         && break
     sleep 0.1
 done
 
-# The reader holds the proxy, so the lookup above and this one must leave it in place.
+# The reader is still running, so these lookups find the stand-in.
 echo "held: $(state)"
+echo "held count: $(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM \`${DB}\`.t")"
 
 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '${CLICKHOUSE_DATABASE}_reader' SYNC SETTINGS kill_throw_if_noop = 0 FORMAT Null"
 wait
 
-# The last references of the killed query may go away only a moment after it has left the process list.
-for _ in {1..600}
-do
-    [ "$(state)" = "MergeTree	1" ] && break
-    sleep 0.1
-done
-
 echo "released: $(state)"
+echo "released count: $(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM \`${DB}\`.t")"
