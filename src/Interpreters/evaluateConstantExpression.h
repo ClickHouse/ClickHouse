@@ -42,6 +42,10 @@ EvaluateConstantExpressionResult evaluateConstantExpression(const ASTPtr & node,
 
 std::optional<EvaluateConstantExpressionResult> tryEvaluateConstantExpression(const ASTPtr & node, const ContextPtr & context);
 
+/// Same as `evaluateConstantExpression`, but also returns the evaluated column, unless the expression is a literal.
+std::pair<EvaluateConstantExpressionResult, std::optional<EvaluateConstantExpressionColumnResult>>
+evaluateConstantExpressionWithColumn(const ASTPtr & node, const ContextPtr & context);
+
 /** Same as `evaluateConstantExpression`, but returns the value as a single-row column + exact type,
   * without collapsing the type through `Field`. Prefer this on paths that only need to read a scalar
   * (via `IColumn` typed getters) — it avoids a `Field` materialization and preserves the SQL type.

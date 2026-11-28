@@ -1,7 +1,9 @@
 #include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/normalizeDivision.h>
+#include <Interpreters/convertColumnToType.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
@@ -671,7 +673,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Try to evaluate single expression if other parsers don't work
     buf->position() = const_cast<char *>((*token_iterator)->begin);
 
-    std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
+    /// Keep the column: a `Field` loses the types of the values inside `Dynamic` and `JSON` (`Date` becomes `UInt64`).
+    auto [value_raw, value_column] = evaluateConstantExpressionWithColumn(ast, context);
 
     Field & expression_value = value_raw.first;
 
@@ -703,8 +706,11 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Instead try to create a column with single element and cast it to the destination type.
     if (type.hasDynamicStructure())
     {
-        ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
-        auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
+        ColumnPtr source_column = value_column
+            ? createColumnFromFieldKeepingDynamicTypes(
+                  value_raw.second, expression_value, *value_column->getColumn()->convertToFullColumnIfConst(), value_raw.second, 0)
+            : value_raw.second->createColumnConst(1, expression_value);
+        auto casted_column = castColumn(ColumnWithTypeAndName(source_column, value_raw.second, ""), type.getPtr(), nullptr);
         column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
     }
     else
