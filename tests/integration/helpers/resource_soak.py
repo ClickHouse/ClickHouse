@@ -22,6 +22,9 @@ MiB = 1024 * 1024
 # AddressSanitizer keeps freed memory in a quarantine to detect use after free, up to `quarantine_size_mb` (256 MiB by default on 64-bit targets, ClickHouse does not change it in `base/base/sanitizer_options.h`). The quarantine fills with the churn of allocations, not with leaks, and its memory stays resident, so on an ASan build the resident memory may grow by this much without any leak.
 ASAN_QUARANTINE_BYTES = 256 * MiB
 
+# Idle sessions kept by the HTTP connection pools, one socket each.
+POOLED_CONNECTION_METRICS = ["DiskConnectionsStored", "StorageConnectionsStored", "HTTPConnectionsStored"]
+
 
 def soak_iterations(env_var: str, default: int, minimum: int = 10) -> int:
     """Number of soak iterations: `env_var` if set, `default` otherwise.
@@ -100,7 +103,7 @@ class ResourceSampler:
 
     def __init__(self, node, metrics: Iterable[str] = ()):
         self.node = node
-        self.metrics = sorted(set(metrics) | {"MemoryTracking"})
+        self.metrics = sorted(set(metrics) | {"MemoryTracking", "IcebergCatalogThreads", "IcebergCatalogThreadsActive", *POOLED_CONNECTION_METRICS})
         self.pid = node.get_process_pid("clickhouse")
         assert self.pid is not None, "cannot find the server process"
         self.asan = node.is_built_with_sanitizer("address")
@@ -186,7 +189,7 @@ done | sort | uniq -c | sort -rn | head -20
     ):
         """Assert that the server-wide resources do not grow from the early to the late window.
 
-        Memory gets a tolerance in bytes plus a fraction of the early value: allocator caching, log buffers and the query that just ran move it by some megabytes between samples. File descriptors and threads come from bounded pools (connection pools, thread pools), so after the warmup their number moves by a few at most.
+        Memory gets a tolerance in bytes plus a fraction of the early value: allocator caching, log buffers and the query that just ran move it by some megabytes between samples. The connection pools and the catalog thread pool keep as many idle sessions and threads as the most requests that ever ran at once, which one slow response can raise in any iteration, so their idle part is subtracted, like the caches from the memory. The remaining file descriptors and threads move by a few at most after the warmup.
 
         `cache_metrics` name `system.metrics` sizes in bytes of caches that legitimately fill up during the soak, for example `IcebergMetadataFilesCacheBytes` while every `INSERT` adds a manifest. Their size is subtracted from the memory before the comparison, as the caches have limits of their own."""
         caches = [sum(s.metrics[m] for m in cache_metrics) for s in self.samples]
@@ -210,9 +213,20 @@ done | sort | uniq -c | sort -rn | head -20
                 rel_tolerance=memory_rel_tolerance,
                 unit=" B",
             )
-        assert_not_growing("open file descriptors", self.series("fds"), abs_tolerance=fds_tolerance)
+        pooled = [sum(s.metrics[m] for m in POOLED_CONNECTION_METRICS) for s in self.samples]
+        assert_not_growing(
+            "open file descriptors without idle pooled connections",
+            [f - p for f, p in zip(self.series("fds"), pooled)],
+            abs_tolerance=fds_tolerance,
+        )
         assert_not_growing("descriptors of exited threads", self.series("exited_thread_fds"), abs_tolerance=fds_tolerance, statistic=max)
-        assert_not_growing("threads", self.series("threads"), abs_tolerance=threads_tolerance, statistic=max)
+        idle_catalog_threads = [s.metrics["IcebergCatalogThreads"] - s.metrics["IcebergCatalogThreadsActive"] for s in self.samples]
+        assert_not_growing(
+            "threads without idle catalog threads",
+            [t - i for t, i in zip(self.series("threads"), idle_catalog_threads)],
+            abs_tolerance=threads_tolerance,
+            statistic=max,
+        )
 
 
 class QueryLog:
