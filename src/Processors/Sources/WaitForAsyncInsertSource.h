@@ -44,6 +44,7 @@ inline void waitForAsyncInsertAndReportProgress(
         Progress p;
         p.written_rows = progress_result.rows;
         p.written_bytes = progress_result.bytes;
+        p.accepted_rows = progress_result.rows;
         if (report_read_progress)
         {
             p.read_rows = progress_result.rows;
