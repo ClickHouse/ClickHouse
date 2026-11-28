@@ -40,4 +40,9 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
   */
 bool conversionPreservesOrder(const IDataType & from, const IDataType & to);
 
+/** Returns true if reading a column of `stored_type` as `read_type` keeps every stored value as it is:
+  * the types differ at most by `LowCardinality` or by a `Nullable` that `stored_type` does not have.
+  */
+bool readKeepsStoredValues(const DataTypePtr & stored_type, const DataTypePtr & read_type);
+
 }

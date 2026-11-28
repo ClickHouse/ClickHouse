@@ -387,4 +387,14 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
     return false;
 }
 
+bool readKeepsStoredValues(const DataTypePtr & stored_type, const DataTypePtr & read_type)
+{
+    auto stored = removeLowCardinality(stored_type);
+    auto read = removeLowCardinality(read_type);
+    if (!stored->isNullable())
+        read = removeNullable(read);
+    /// Not `equals`: it ignores the time zone of `DateTime` and `DateTime64`.
+    return stored->getName() == read->getName();
+}
+
 }
