@@ -13,7 +13,8 @@ INSERT INTO t_proj_rls_alter VALUES (1, 1), (2, 1), (3, 0);
 ALTER TABLE t_proj_rls_alter ADD PROJECTION p (SELECT id, v ORDER BY id);
 ALTER TABLE t_proj_rls_alter MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
 
-CREATE ROW POLICY rp_proj_rls_alter ON t_proj_rls_alter FOR SELECT USING v = 1 TO ALL;
+-- the policy reads `id`: a new type of a column that a policy reads is refused
+CREATE ROW POLICY rp_proj_rls_alter ON t_proj_rls_alter FOR SELECT USING id < 3 TO ALL;
 
 SELECT '-- no pending mutation';
 SELECT id FROM mergeTreeProjection(currentDatabase(), 't_proj_rls_alter', 'p') ORDER BY id;
