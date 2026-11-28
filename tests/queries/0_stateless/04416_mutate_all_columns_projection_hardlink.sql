@@ -2,7 +2,6 @@
 -- An all-columns mutation (rewriting a Dynamic column) hardlinks an untouched materialized
 -- PROJECTION from the source part instead of rebuilding it. The rebuilt checksums.txt must track
 -- the hardlinked projection (<name>.proj), otherwise CHECK TABLE fails and the projection is unusable.
-SET allow_experimental_dynamic_type = 1;
 
 DROP TABLE IF EXISTS t_proj_hardlink;
 

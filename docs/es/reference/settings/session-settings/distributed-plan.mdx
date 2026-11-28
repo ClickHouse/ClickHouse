@@ -20,12 +20,15 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 <ExperimentalBadge />
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+<SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "Nueva configuración experimental."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "De forma predeterminada, el número de tareas de lectura se elige en función de las filas que se van a leer y del número de trabajadores."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "8"},{"label": "Nuevo ajuste experimental."}]}]} />
 
-Número predeterminado de tareas para la lectura paralela en una consulta distribuida. Las tareas se reparten entre las réplicas.
-Lo utiliza el planificador distribuido basado en reglas. El optimizador basado en costos elige el grado de paralelismo de lectura según el costo estimado y no utiliza esta configuración.
+Número de tareas para la lectura en paralelo en una consulta distribuida. Las tareas se reparten entre los trabajadores.
+
+Con `0`, el número se elige automáticamente: una tarea por cada `distributed_plan_min_rows_per_reader` filas seleccionadas por la lectura, con un mínimo de una y un máximo igual al número de trabajadores.
+
+Lo utiliza el planificador distribuido basado en reglas. El optimizador basado en costes elige el fan-out de lectura en función del costo estimado y no utiliza este parámetro de configuración.
 
 ## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
 
@@ -145,6 +148,17 @@ Cuando `send_logs_level` reenvía al coordinador los logs de las tareas de worke
 
 Número máximo de filas para usar un broadcast join en lugar de un shuffle join en el plan de consulta distribuida.
 Una heurística para el planificador distribuido basado en reglas. Cuando el optimizador basado en costos está habilitado, la elección entre broadcast y shuffle se realiza según el costo estimado y esta configuración no tiene efecto.
+
+## distributed_plan_min_rows_per_reader {#distributed_plan_min_rows_per_reader}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1000000"},{"label": "Nuevo ajuste experimental."}]}]} />
+
+Número mínimo de filas para cada tarea de lectura cuando `distributed_plan_default_reader_bucket_count` es `0`.
+Lo utiliza el planificador distribuido basado en reglas.
 
 ## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
 

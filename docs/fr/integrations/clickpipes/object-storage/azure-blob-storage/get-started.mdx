@@ -8,7 +8,7 @@ doc_type: 'guide'
 
 **Prérequis**
 
-Pour suivre ce guide, vous aurez besoin de :
+Pour suivre ce guide, vous aurez besoin de :
 
 * D’un compte Azure Blob Storage
 * D’une [chaîne de connexion Azure](/fr/integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage#acquiring-azure-blob-storage-access-keys)
@@ -17,27 +17,19 @@ Pour suivre ce guide, vous aurez besoin de :
 
 <Steps>
   <Step title="Accéder aux sources de données" id="navigate-to-data-sources">
-    Depuis la page d’accueil de votre service, cliquez sur **Data sources** dans le menu de gauche.
-    Développez le menu déroulant **ClickPipes**, puis cliquez sur **Create ClickPipe**
+    Depuis la page d&#39;accueil de votre service, cliquez sur **Sources de données** dans le menu de gauche.
+    Développez la liste déroulante **ClickPipes** et cliquez sur **Créer un ClickPipe**
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Accéder aux sources de données](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Accéder aux sources de données](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Créer un ClickPipe](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Créer un ClickPipe](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -45,97 +37,77 @@ Pour suivre ce guide, vous aurez besoin de :
     Sélectionnez **Azure Blob Storage** comme type de données
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Sélectionner Azure Blob Storage](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Sélectionner Azure Blob Storage](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="Configurer votre connexion ClickPipe" id="setup-connection">
+  <Step title="Configurer la connexion de votre ClickPipe" id="setup-connection">
     1. Donnez à votre ClickPipe un nom explicite
-    2. Sélectionnez **Connection String** dans le menu déroulant de la méthode d’authentification
-    3. Collez votre chaîne de connexion Azure dans le champ **Connection string**
+    2. Sélectionnez **Chaîne de connexion** dans la liste déroulante des méthodes d&#39;authentification
+    3. Collez votre chaîne de connexion Azure dans le champ **Chaîne de connexion**
     4. Saisissez le nom de votre conteneur
-    5. Saisissez le chemin de votre fichier Azure Blob Storage, en utilisant des caractères génériques si vous souhaitez ingérer plusieurs fichiers
+    5. Saisissez le chemin du fichier dans Azure Blob Storage, en utilisant des caractères génériques si vous souhaitez ingérer plusieurs fichiers
 
-    Vous pouvez aussi activer l’ingestion continue. Consultez [&quot;Ingestion continue&quot;](/fr/integrations/clickpipes/object-storage/azure-blob-storage/overview#continuous-ingestion) pour plus de détails.
+    Vous pouvez également activer l&#39;ingestion continue. Pour plus de détails, consultez [« ingestion continue »](/fr/integrations/clickpipes/object-storage/azure-blob-storage/overview#continuous-ingestion).
 
     Enfin, cliquez sur **Incoming data**
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Détails de la configuration](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Détails de configuration](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="Sélectionner le format des données" id="select-data-format">
+  <Step title="Sélectionner le format de données" id="select-data-format">
     1. Sélectionnez le type de fichier
-    2. Sélectionnez la compression du fichier (`detect automatically`, `none`, `gzip`, `brotli`, `xz` ou `zstd`)
-    3. Renseignez toute configuration supplémentaire propre au format, comme le délimiteur utilisé pour les formats séparés par des virgules
-    4. Cliquez sur **Parse information**
+    2. Choisissez la compression du fichier (`detect automatically`, `none`, `gzip`, `brotli`, `xz` ou `zstd`)
+    3. Renseignez la configuration supplémentaire propre au format, comme le délimiteur utilisé pour les formats séparés par des virgules
+    4. Cliquez sur **Analyser les informations**
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Choisir le format des données](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Choisir le format de données](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="Configurer la table, le schéma et les paramètres" id="configure-table-schema">
     Vous devez maintenant créer une nouvelle table ou sélectionner une table existante dans laquelle stocker les données entrantes.
 
-    1. Choisissez si vous souhaitez charger les données dans une nouvelle table ou dans une table existante
-    2. Sélectionnez la base de données à utiliser ainsi que le nom à donner à la table s’il s’agit d’une nouvelle table
+    1. Indiquez si les données doivent être chargées dans une nouvelle table ou dans une table existante
+    2. Sélectionnez la base de données à utiliser et, s&#39;il s&#39;agit d&#39;une nouvelle table, le nom à lui attribuer
     3. Choisissez une ou plusieurs clés de tri
-    4. Définissez les correspondances entre le fichier source et la table de destination pour le nom de colonne, le type de colonne, la valeur par défaut et la possibilité d’une valeur nulle
-    5. Enfin, indiquez les paramètres avancés, comme le type de moteur à utiliser, l’expression de partitionnement et la clé primaire
+    4. Définissez les correspondances entre le fichier source et la table de destination pour le nom de colonne, le type de colonne, la valeur par défaut et l&#39;acceptation des valeurs NULL
+    5. Enfin, spécifiez les paramètres avancés, tels que le type de moteur à utiliser, l&#39;expression de partitionnement et la clé primaire
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Analyser les informations](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Analyser les informations](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp)
+      </Frame>
     </div>
 
     Une fois la configuration de la table, du schéma et des paramètres terminée, cliquez sur **Details and settings**
   </Step>
 
   <Step title="Configurer les autorisations" id="configure-permissions">
-    ClickPipes configurera un utilisateur de base de données dédié à l’écriture des données.
+    ClickPipes va créer un utilisateur de base de données dédié à l&#39;écriture des données.
     Vous pouvez sélectionner un rôle pour cet utilisateur.
-    Pour les vues matérialisées ou l’accès aux dictionnaires depuis la table de destination, choisissez &quot;Full access&quot;.
+    Pour accéder à des vues matérialisées ou à des dictionnaires depuis la table de destination, choisissez « Full access ».
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Configurer les autorisations](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Configurer les autorisations](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="Finaliser la configuration" id="complete-setup">
-    Cliquez sur **Create ClickPipe** pour finaliser la configuration
+  <Step title="Terminer la configuration" id="complete-setup">
+    Cliquez sur **Créer un ClickPipe** pour terminer la configuration
 
-    Vous devriez maintenant voir votre ClickPipe avec le statut de provisionnement.
-    Après quelques instants, son statut passera de **provisioning** à **completed**.
+    Votre ClickPipe devrait maintenant apparaître avec le statut « provisioning ».
+    Au bout de quelques instants, son statut passera de **provisioning** à **completed**.
   </Step>
 </Steps>

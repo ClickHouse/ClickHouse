@@ -1,0 +1,7 @@
+<clickhouse>
+  <profiles>
+    <default>
+      <max_query_size from_zk="/shared_by_main_and_users_config" />
+    </default>
+  </profiles>
+</clickhouse>

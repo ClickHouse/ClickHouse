@@ -25,35 +25,36 @@ ClickHouse поддерживает чтение и запись в этих ф�
 
 В таблице ниже показаны поддерживаемые типы данных и их соответствие [типам данных](/ru/reference/data-types/index) ClickHouse в запросах `INSERT` и `SELECT`.
 
-| Тип данных Arrow (`INSERT`)             | Тип данных ClickHouse                                                                                     | Тип данных Arrow (`SELECT`) |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------- |
-| `BOOL`                                  | [Bool](/ru/reference/data-types/boolean)                                                                     | `BOOL`                      |
-| `UINT8`, `BOOL`                         | [UInt8](/ru/reference/data-types/int-uint)                                                                   | `UINT8`                     |
-| `INT8`                                  | [Int8](/ru/reference/data-types/int-uint)/[Enum8](/ru/reference/data-types/enum)                                | `INT8`                      |
-| `UINT16`                                | [UInt16](/ru/reference/data-types/int-uint)                                                                  | `UINT16`                    |
-| `INT16`                                 | [Int16](/ru/reference/data-types/int-uint)/[Enum16](/ru/reference/data-types/enum)                              | `INT16`                     |
-| `UINT32`                                | [UInt32](/ru/reference/data-types/int-uint)                                                                  | `UINT32`                    |
-| `INT32`                                 | [Int32](/ru/reference/data-types/int-uint)                                                                   | `INT32`                     |
-| `UINT64`                                | [UInt64](/ru/reference/data-types/int-uint)                                                                  | `UINT64`                    |
-| `INT64`                                 | [Int64](/ru/reference/data-types/int-uint)                                                                   | `INT64`                     |
-| `FLOAT`, `HALF_FLOAT`                   | [Float32](/ru/reference/data-types/float)                                                                    | `FLOAT32`                   |
-| `DOUBLE`                                | [Float64](/ru/reference/data-types/float)                                                                    | `FLOAT64`                   |
-| `DATE32`                                | [Date32](/ru/reference/data-types/date32)                                                                    | `UINT16`                    |
-| `DATE64`                                | [DateTime](/ru/reference/data-types/datetime)                                                                | `UINT32`                    |
-| `TIMESTAMP`                             | [DateTime64](/ru/reference/data-types/datetime64)                                                            | `TIMESTAMP`                 |
-| `TIME32`, `TIME64`                      | [Time64](/ru/reference/data-types/time64)                                                                    | `TIME32`, `TIME64`          |
-| `STRING`, `BINARY`                      | [String](/ru/reference/data-types/string)                                                                    | `BINARY`                    |
-| `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/ru/reference/data-types/fixedstring)                                                          | `FIXED_SIZE_BINARY`         |
-| `DECIMAL`                               | [Decimal](/ru/reference/data-types/decimal)                                                                  | `DECIMAL`                   |
-| `DECIMAL256`                            | [Decimal256](/ru/reference/data-types/decimal)                                                               | `DECIMAL256`                |
-| `LIST`, `LIST_VIEW`                     | [Array](/ru/reference/data-types/array)                                                                      | `LIST`                      |
-| `STRUCT`                                | [Tuple](/ru/reference/data-types/tuple)                                                                      | `STRUCT`                    |
-| `MAP`                                   | [Map](/ru/reference/data-types/map)                                                                          | `MAP`                       |
-| `UINT32`                                | [IPv4](/ru/reference/data-types/ipv4)                                                                        | `UINT32`                    |
-| `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/ru/reference/data-types/ipv6)                                                                        | `FIXED_SIZE_BINARY`         |
-| `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/ru/reference/data-types/int-uint)                                           | `FIXED_SIZE_BINARY`         |
-| `DURATION`                              | [Interval](/ru/reference/data-types/special-data-types/interval) (Nanosecond/Microsecond/Millisecond/Second) | `DURATION`                  |
-| `INT64`                                 | [Interval](/ru/reference/data-types/special-data-types/interval) (Minute/Hour/Day/Week/Month/Quarter/Year)   | `INT64`                     |
+| Тип данных Arrow (`INSERT`)             | Тип данных ClickHouse                                                                                                                                       | Тип данных Arrow (`SELECT`) |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| `BOOL`                                  | [Bool](/ru/reference/data-types/boolean)                                                                                                                       | `BOOL`                      |
+| `UINT8`, `BOOL`                         | [UInt8](/ru/reference/data-types/int-uint)                                                                                                                     | `UINT8`                     |
+| `INT8`                                  | [Int8](/ru/reference/data-types/int-uint)/[Enum8](/ru/reference/data-types/enum)                                                                                  | `INT8`                      |
+| `UINT16`                                | [UInt16](/ru/reference/data-types/int-uint)                                                                                                                    | `UINT16`                    |
+| `INT16`                                 | [Int16](/ru/reference/data-types/int-uint)/[Enum16](/ru/reference/data-types/enum)                                                                                | `INT16`                     |
+| `UINT32`                                | [UInt32](/ru/reference/data-types/int-uint)                                                                                                                    | `UINT32`                    |
+| `INT32`                                 | [Int32](/ru/reference/data-types/int-uint)                                                                                                                     | `INT32`                     |
+| `UINT64`                                | [UInt64](/ru/reference/data-types/int-uint)                                                                                                                    | `UINT64`                    |
+| `INT64`                                 | [Int64](/ru/reference/data-types/int-uint)                                                                                                                     | `INT64`                     |
+| `FLOAT`, `HALF_FLOAT`                   | [Float32](/ru/reference/data-types/float)                                                                                                                      | `FLOAT32`                   |
+| `DOUBLE`                                | [Float64](/ru/reference/data-types/float)                                                                                                                      | `FLOAT64`                   |
+| `DATE32`                                | [Date32](/ru/reference/data-types/date32)                                                                                                                      | `UINT16`                    |
+| `DATE64`                                | [DateTime](/ru/reference/data-types/datetime)                                                                                                                  | `UINT32`                    |
+| `TIMESTAMP`                             | [DateTime64](/ru/reference/data-types/datetime64)                                                                                                              | `TIMESTAMP`                 |
+| `TIME32`, `TIME64`                      | [Time64](/ru/reference/data-types/time64)                                                                                                                      | `TIME32`, `TIME64`          |
+| `STRING`, `BINARY`                      | [String](/ru/reference/data-types/string)                                                                                                                      | `BINARY`                    |
+| `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/ru/reference/data-types/fixedstring)                                                                                                            | `FIXED_SIZE_BINARY`         |
+| `DECIMAL`                               | [Decimal](/ru/reference/data-types/decimal)                                                                                                                    | `DECIMAL`                   |
+| `DECIMAL256`                            | [Decimal256](/ru/reference/data-types/decimal)                                                                                                                 | `DECIMAL256`                |
+| `LIST`, `LIST_VIEW`                     | [Array](/ru/reference/data-types/array)                                                                                                                        | `LIST`                      |
+| `STRUCT`                                | [Tuple](/ru/reference/data-types/tuple)                                                                                                                        | `STRUCT`                    |
+| `MAP`                                   | [Map](/ru/reference/data-types/map)                                                                                                                            | `MAP`                       |
+| `UINT32`                                | [IPv4](/ru/reference/data-types/ipv4)                                                                                                                          | `UINT32`                    |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/ru/reference/data-types/ipv6)                                                                                                                          | `FIXED_SIZE_BINARY`         |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/ru/reference/data-types/int-uint)                                                                                             | `FIXED_SIZE_BINARY`         |
+| `DURATION`                              | [Interval](/ru/reference/data-types/special-data-types/interval) (Nanosecond/Microsecond/Millisecond/Second)                                                   | `DURATION`                  |
+| `INT64`                                 | [Interval](/ru/reference/data-types/special-data-types/interval) (Minute/Hour/Day/Week/Month/Quarter/Year)                                                     | `INT64`                     |
+| `INTERVAL`                              | [Interval](/ru/reference/data-types/special-data-types/interval) (Month) или [Tuple](/ru/reference/data-types/tuple) интервалов для `DAY_TIME` и `MONTH_DAY_NANO` | `INT64`, `STRUCT`           |
 
 Массивы могут быть вложенными и могут иметь тип `Nullable` в качестве аргумента. Типы `Tuple` и `Map` также могут быть вложенными.
 

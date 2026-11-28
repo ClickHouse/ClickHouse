@@ -183,12 +183,12 @@ std::unique_ptr<IDataType::SubcolumnInfo> wrapDynamicSubcolumn(
                 creator = std::move(specialized);
         }
 
-        /// Build the serialization before the type is wrapped, so that a creator
+        /// Build the serialization and the column before the type is wrapped, so that a creator
         /// inspecting its prev_type argument sees the type the serialization
         /// actually serializes. Same order as in ISerialization::createFromPath.
         dynamic_subcolumn_info->data.serialization = creator->create(dynamic_subcolumn_info->data.serialization, dynamic_subcolumn_info->data.type);
+        dynamic_subcolumn_info->data.column = creator->create(dynamic_subcolumn_info->data.column, dynamic_subcolumn_info->data.type);
         dynamic_subcolumn_info->data.type = creator->create(dynamic_subcolumn_info->data.type);
-        dynamic_subcolumn_info->data.column = creator->create(dynamic_subcolumn_info->data.column);
     }
 
     path[i].data = dynamic_subcolumn_info->data;
@@ -444,6 +444,12 @@ void IDataType::insertDefaultInto(IColumn & column) const
 
 void IDataType::insertManyDefaultsInto(IColumn & column, size_t n) const
 {
+    if (isDefaultInsertTrivial())
+    {
+        column.insertManyDefaults(n);
+        return;
+    }
+
     column.reserve(column.size() + n);
     for (size_t i = 0; i < n; ++i)
         insertDefaultInto(column);

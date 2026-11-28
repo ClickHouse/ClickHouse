@@ -27,13 +27,9 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
     AWS 指南可见[此处](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html)。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![DynamoDB Kinesis 数据流](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
-
-    </Frame>
-
+      <Frame>
+        ![DynamoDB Kinesis 数据流](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -42,18 +38,14 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
     **你需要以 DynamoDB JSON 格式执行“完整导出”。**
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![DynamoDB S3 导出](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
-
-    </Frame>
-
+      <Frame>
+        ![DynamoDB S3 导出](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="将快照导入 ClickHouse" id="3-load-the-snapshot-into-clickhouse">
-    ### 创建所需的表
+### 创建所需的表 {#create-necessary-tables}
 
     来自 DynamoDB 的快照数据大致如下：
 
@@ -116,7 +108,7 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
     * 该表应将分区键用作排序键 (由 `ORDER BY` 指定)
       * 具有相同排序键的行会根据 `version` 列去重。
 
-    ### 创建快照 ClickPipe
+### 创建快照 ClickPipe {#create-the-snapshot-clickpipe}
 
     现在，您可以创建一个 ClickPipe，将快照数据从 S3 加载到 ClickHouse。请遵循[此处](/zh/integrations/clickpipes/object-storage/amazon-s3/overview)的 S3 ClickPipe 指南，但使用以下设置：
 
@@ -143,13 +135,9 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
       * 按照下图所示，将其他字段映射到相应的目标端列
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![DynamoDB 映射列](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
-
-    </Frame>
-
+      <Frame>
+        ![DynamoDB 映射列](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
+      </Frame>
     </div>
   </Step>
 

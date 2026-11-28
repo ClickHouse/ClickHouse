@@ -58,9 +58,11 @@ public:
 
     [[nodiscard]] bool hasEquiKeys() const { return !equi_keys.empty(); }
     [[nodiscard]] bool hasMultipleEquiKeys() const { return equi_keys.size() >= 2; }
+    /// A set-operation join removes duplicates only among the rows it sees, so its left side must not be split.
     [[nodiscard]] bool isBroadcastSafe() const
     {
-        return JoinCommon::canSplitLeftInput(join_step.getJoinOperator().kind, join_step.getJoinOperator().strictness);
+        return JoinCommon::canSplitLeftInput(join_step.getJoinOperator().kind, join_step.getJoinOperator().strictness)
+            && join_step.getJoinOperator().set_operation == JoinSetOperation::None;
     }
 
 private:
@@ -300,6 +302,11 @@ void HashJoinImplementation::StrategyEnumerator::addBroadcastJoins(size_t node_c
         if (!found)
             return;
     }
+
+    /// The join does not move the left rows, so it also keeps a partitioning whose keys are cast before hashing
+    /// (`Nullable(Int32)` joined with `Int32`).
+    keyed_left_dist.hash_type_names = required_properties.distribution.hash_type_names;
+    keyed_output_dist.hash_type_names = required_properties.distribution.hash_type_names;
 
     addAlternative(strategySingleton<BroadcastJoinStrategy>(), keyed_left_dist, right_dist, keyed_output_dist);
 }

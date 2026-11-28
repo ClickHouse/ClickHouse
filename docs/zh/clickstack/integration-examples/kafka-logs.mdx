@@ -16,14 +16,14 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-kafka">
-  ## 与现有 Kafka 集成
+  ## 与现有 Kafka 集成 {#existing-kafka}
 </div>
 
 本节介绍如何通过修改 ClickStack OTel collector 配置，将现有 Kafka 部署中的 broker 日志发送到 ClickStack。
 如果您想在配置自己的现有环境之前先测试 Kafka 日志集成，可以先在[“演示数据集”](/zh/clickstack/integration-examples/kafka-logs#demo-dataset)部分使用我们预先配置的环境和示例数据进行测试。
 
 <div id="prerequisites">
-  ### 前置条件
+  ### 前置条件 {#prerequisites}
 </div>
 
 * ClickStack 实例正在运行
@@ -58,7 +58,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="为 Kafka 创建自定义 OTel collector 配置" id="custom-otel">
-    ClickStack 支持通过挂载自定义配置文件并设置环境变量来扩展基础 OpenTelemetry Collector 配置。该自定义配置会与由 HyperDX 通过 OpAMP 管理的基础配置合并。
+    ClickStack 支持通过挂载自定义配置文件并设置环境变量来扩展基础 OpenTelemetry Collector 配置。该自定义配置会与由 ClickStack 用户界面通过 OpAMP 管理的基础配置合并。
 
     创建一个名为 `kafka-logs-monitoring.yaml` 的文件，内容如下：
 
@@ -158,34 +158,24 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="在 HyperDX 中验证日志" id="verifying-logs">
-    配置完成后，登录 HyperDX，确认日志已开始流入：
+  <Step title="在 ClickStack 用户界面中验证日志" id="verifying-logs">
+    配置完成后，登录 ClickStack 用户界面，确认日志已开始流入：
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![搜索视图](/images/clickstack/kafka/logs/search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![搜索视图](/images/clickstack/kafka/logs/search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![日志视图](/images/clickstack/kafka/logs/log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![日志视图](/images/clickstack/kafka/logs/log-view.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
-<div id="demo-dataset">
-  ## 演示数据集
-</div>
+## 演示数据集 {#demo-dataset}
 
 在配置生产系统之前，先使用预生成的样本数据集测试 Kafka 日志集成。
 
@@ -259,39 +249,29 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
       clickhouse/clickstack-all-in-one:latest
     ```
 
-    ## 在 HyperDX 中验证日志
+## 在 ClickStack 用户界面中验证日志 {#verify-demo-logs}
 
     ClickStack 运行后：
 
-    1. 打开 [HyperDX](http://localhost:8080/) 并登录你的账户 (你可能需要先创建一个账户)
+    1. 打开 [ClickStack 用户界面](http://localhost:8080/) 并登录你的账户 (你可能需要先创建一个账户)
     2. 进入搜索视图，并将数据源设为 `Logs`
     3. 将时间范围设置为包含 **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![搜索视图](/images/clickstack/kafka/logs/search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![搜索视图](/images/clickstack/kafka/logs/search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![日志视图](/images/clickstack/kafka/logs/log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![日志视图](/images/clickstack/kafka/logs/log-view.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## 仪表盘与可视化
-</div>
+## 仪表盘与可视化 {#dashboards}
 
 <Steps>
   <Step title="下载仪表盘配置" id="download">
@@ -299,29 +279,21 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="导入预置仪表盘" id="import-dashboard">
-    1. 打开 HyperDX，进入“仪表盘”部分。
+    1. 打开 ClickStack 用户界面，进入“仪表盘”部分。
     2. 点击右上角省略号下方的“导入仪表盘”。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![导入仪表盘](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![导入仪表盘](/images/clickstack/import-dashboard.webp)
+      </Frame>
     </div>
 
     3. 上传 kafka-logs-dashboard.json 文件，然后点击“完成导入”。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![完成导入 Kafka 日志仪表盘](/images/clickstack/kafka/logs/finish-import.webp)
-
-    </Frame>
-
+      <Frame>
+        ![完成导入 Kafka 日志仪表盘](/images/clickstack/kafka/logs/finish-import.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -329,19 +301,15 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     对于演示数据集，请将时间范围设置为 **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Kafka 日志示例仪表盘](/images/clickstack/kafka/logs/example-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Kafka 日志示例仪表盘](/images/clickstack/kafka/logs/example-dashboard.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## 故障排查
+  ## 故障排查 {#troubleshooting}
 </div>
 
 **确认生效的配置中包含您的 filelog 接收器：**
@@ -365,15 +333,13 @@ tail -1 /var/log/kafka/server.log
 如果你的 Kafka 安装使用了自定义的 Log4j 格式，请相应调整 `regex_parser` 中的正则表达式。
 
 <div id="next-steps">
-  ## 后续步骤
+  ## 后续步骤 {#next-steps}
 </div>
 
 * 为关键事件 (broker 故障、复制错误、消费者组问题) 设置[告警](/zh/clickstack/features/alerts)
 * 结合 [Kafka Metrics](/zh/clickstack/integration-examples/kafka-metrics) 进行全面的 Kafka 监控
 * 针对特定场景 (controller 事件、分区重新分配) 创建更多[仪表盘](/zh/clickstack/features/dashboards/overview)
 
-<div id="going-to-production">
-  ## 投入生产环境
-</div>
+## 投入生产环境 {#going-to-production}
 
 本指南使用 ClickStack 内置的 OpenTelemetry Collector 进行快速设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

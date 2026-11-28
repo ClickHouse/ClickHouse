@@ -483,15 +483,15 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 `arrayCount` は[高階関数](/ja/reference/functions/regular-functions/overview#higher-order-functions)です。
 
-<Info>
+<Note>
   **`UInt32` を返すには設定 `array_count_legacy_uint32_result` を使用します**
 
-  バージョン 26.10 で後方互換性のない変更が導入されました。条件に一致する要素が `4294967295` 個を超える配列でも正確な結果が得られるよう、`arrayCount` は `UInt32` ではなく `UInt64` を返すようになりました。
+  バージョン 26.10 で後方互換性のない変更が導入されました。条件に一致する要素が `4294967295` 個を超える Array でも正確な結果が得られるよう、`arrayCount` は `UInt32` ではなく `UInt64` を返すようになりました。
   結果の定数性も変更されています。非定数の配列と、定数 false に畳み込まれる述語を組み合わせた場合、26.10 より前は結果が定数カラムでした (`isConstant(arrayCount(...))` は `1` を返していました) が、現在はフルカラムとなり (`isConstant` は `0` を返します) 、`length(arrayFilter(...))` と同じ挙動になります。
-  以前の挙動 (`UInt32` の結果型と結果の定数性の両方) を維持するには、設定 `array_count_legacy_uint32_result` (デフォルト: `false`) を `true` に設定してください。
+  以前の挙動 (`UInt32` の結果の型と結果の定数性の両方) を維持するには、設定 `array_count_legacy_uint32_result` (デフォルト: `false`) を `true` に設定してください。
 
   クラスターのローリングアップグレード中は、まだアップグレードされていないサーバーをイニシエーターとする分散クエリではこの設定が転送されません。そのため、アップグレード済みの分片上でローカルに評価される型依存の式 (例: `byteSize(arrayCount(...))`) では `UInt64` が返されます。クラスター全体のアップグレードが完了するまでこうしたクエリの挙動を一切変えたくない場合は、アップグレード済みのサーバー上で、分片側のクエリを実行するユーザーに対して `array_count_legacy_uint32_result = 1` を設定し、アップグレード完了後に削除してください。どのユーザーが該当するかはクラスターの設定によって異なります。サーバー間の `secret` が設定されている場合、分片はイニシエーターの現在のユーザーとしてクエリを実行します。それ以外の場合は、クラスター定義または `remote` テーブル関数で指定されたユーザー (指定がなければ `default`) が該当します。最も簡単かつ確実なのは、アップグレード済みサーバーのすべてのユーザーに対してこの設定を有効にする方法です。
-</Info>
+</Note>
 
 **構文**
 
@@ -502,7 +502,7 @@ arrayCount([func, ] arr1, ...)
 **引数**
 
 * `func` — 任意。配列の各要素に適用する関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `arr1, ..., arrN` — N 個の配列。[`Array(T)`](/ja/reference/data-types/array)
+* `arr1, ..., arrN` — N 個の Array。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
@@ -3482,6 +3482,8 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
 指定した範囲内の配列要素に集約関数を適用し、各範囲に対応する結果を格納した配列を返します。
 この関数は、`arrayReduce(agg_func, arraySlice(arr1, index, length), ...)` を複数回実行した場合と同じ結果を返します。
+唯一の違いは、length が符号なしとして扱われる点です。`Int64` の最大値を超える length を指定すると配列の残りすべてが選択されますが、
+`arraySlice` ではそのような値は負の length として解釈されます。
 
 **構文**
 
@@ -3491,13 +3493,13 @@ arrayReduceInRanges(agg_f, ranges, arr1[, arr2, ... ,arrN])
 
 **引数**
 
-* `agg_f` — 使用する aggregate function の名前。[`String`](/ja/reference/data-types/string)
-* `ranges` — 集約する範囲。集約を開始する索引 `i` と、集約対象の範囲 `r` を含む `(i, r)` 形式の Tuple の配列。[`Array(T)`](/ja/reference/data-types/array) または [`Tuple(T)`](/ja/reference/data-types/tuple)
-* `arr1[, arr2, ... ,arrN]` — aggregate function に渡す N 個の配列。[`Array(T)`](/ja/reference/data-types/array)
+* `agg_f` — 使用する 集約関数 の名前。[`String`](/ja/reference/data-types/string)
+* `ranges` — 集約する範囲。集約を開始するインデックス `i` と、集約対象の範囲 `r` を含む `(i, r)` 形式の Tuple の配列。[`Array(T)`](/ja/reference/data-types/array) または [`Tuple(T)`](/ja/reference/data-types/tuple)
+* `arr1[, arr2, ... ,arrN]` — 集約関数 に渡す N 個の配列。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-指定した範囲に対する aggregate function の結果を含む配列を返します。[`Array(T)`](/ja/reference/data-types/array)
+指定した範囲に対する 集約関数 の結果を含む配列を返します。[`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -4517,6 +4519,170 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 [['a','c'],['b','d']]
 ```
 
+## arrayTreePreorder {#arrayTreePreorder}
+
+導入バージョン: v26.11.0
+
+ノード識別子と親識別子の 2 つの配列として保存された木 (またはフォレスト) を、深さ優先の前順 (preorder) で並べます。
+
+`ids` と `parent_ids` の要素 `i` は、入力ノード `i` とその親を表します。
+この関数は 4 つの配列からなる名前付きタプルを返します。いずれの配列も前順に並んでおり、位置はすべて 1始まりです。
+要素 `k` は前順における `k` 番目のノードを表します。
+
+* `order[k]` — このノードの入力インデックス。データ配列は `arrayMap(i -> x[i], t.order)` で前順に並べ替えられます。
+* `size[k]` — このノードの部分木に含まれるノード数 (ノード自身を含む)。部分木は位置の連続した範囲 `[k, k + size[k])` です。
+* `parent[k]` — 識別子がこのノードの親識別子と一致するノードの前順位置。該当するノードがない場合は `0`。
+* `depth[k]` — このノードから所属する木のルートまでの距離。ルートの場合は `0`。
+
+ノード `a` がノード `b` の祖先となるのは、`a < b AND b < a + size[a]` が成り立つ場合に限ります。
+部分木に対する加法的な集約は、2 つのプレフィックス和の差分として求められます ([`arrayCumSum`](#arrayCumSum) を参照)。
+それ以外の部分木に対する集約は、前順に並べ替えたデータ配列に [`arraySlice`](#arraySlice) を適用することで求められます。
+
+木はルートの入力順に 1 つずつ書き出され、各ノードの子も入力順に訪問されるため、結果は決定論的です。時間計算量は配列サイズに対して線形で、木の深さに制限はありません。
+
+この関数は配列の内容を理由に例外をスローすることはなく、どのような入力からでも有効なフォレストを構築します。
+
+* 親識別子が `NULL` であるか、`ids` に存在しない場合 (例: 空文字列や孤立ノード)、そのノードはルートになります。
+* 親リンクが循環を形成している場合、循環内で入力順が最も早いノードのリンクが切断され、そのノードがルートになります。このノードの `parent` には実際の親の位置が保持され、その値は自身の位置より大きくなります。したがって、`parent[k] > k` は位置 `k` で循環が切断されたことを示します。自分自身を親とするノードは `parent[k] = k` になります。
+* `ids` に重複した値がある場合、子は最初の出現にアタッチ済みになります。
+
+識別子はハッシュによって比較されます。そのため、識別子に浮動小数点数 (`0.0` と `-0.0` は等しいもののハッシュ値が異なるため) や、`Dynamic`、`Variant`、`JSON` の値 (それらの内部の `NULL` は通常の値として比較される一方、`Nullable` 型の `NULL` はルートとして扱われるため) を使用したり、含めたりすることはできません。
+
+入力の構造は結果から判別できます (以下の例を参照)。
+
+* 循環があるかどうか: `arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent))`。
+* 循環が切断された位置: `arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent)`。
+* 木のルートの位置: `arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)`。木の数は `countEqual(t.depth, 0)` で求められます。
+* 親識別子が存在しないノードの位置: `arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)`。
+* 入力が実際のルートを持つ 1 つの木かどうか: `t.size[1] = length(ids) AND t.parent[1] <= 1`。この式はどちらのルートの表現 (存在しない親識別子は `0`、自己ループは `1` になる) も許容し、全体が 1 つの大きな循環になっている配列は除外します。
+* 位置 `r` で切断された循環に属するノードの位置: `arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))`。これは、`r` から実際の親 `t.parent[r]` までのノードのうち、部分木に実際の親を含むノードです。
+* 重複した識別子: `arrayEnumerateUniq(ids) > 1`。
+
+位置 `k` にあるノードの入力インデックスを取得するには、`t.order[k]` を使用します。
+
+**構文**
+
+```sql
+arrayTreePreorder(ids, parent_ids)
+```
+
+**引数**
+
+* `ids` — ノードの識別子。浮動小数点数、`Dynamic`、`Variant`、`JSON` はサポートされていません。[`Array(T)`](/ja/reference/data-types/array)
+* `parent_ids` — 親ノードの識別子 (ノードごとに 1 つ)。`ids` と同じサイズである必要があります。[`Array(T)`](/ja/reference/data-types/array)
+
+**戻り値**
+
+前順レイアウトのタプルを返します。[`Tuple(order Array(UInt32), size Array(UInt32), parent Array(UInt32), depth Array(UInt32))`](/ja/reference/data-types/tuple)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT arrayTreePreorder(['G2', 'A', 'T1', 'B', 'G1', 'G3'], ['B', '', 'B', 'A', 'A', 'A']) AS t
+```
+
+```response title=Response
+([2,4,1,3,5,6],[6,3,1,1,1,1],[0,1,2,2,1,1],[0,1,2,2,1,1])
+```
+
+**トレース内の各エージェントスパンのコストと子孫スパン数**
+
+```sql title=Query
+WITH
+    ['A', 'G1', 'B', 'G2', 'T1', 'G3'] AS ids,
+    ['', 'A', 'A', 'B', 'B', 'A'] AS parent_ids,
+    ['AGENT', 'GENERATION', 'AGENT', 'GENERATION', 'TOOL', 'GENERATION'] AS types,
+    [0, 2, 0, 3, 0, 1] AS costs,
+    arrayTreePreorder(ids, parent_ids) AS t,
+    arrayCumSum(arrayMap(i -> costs[i], t.order)) AS cum
+SELECT arrayMap(k -> (ids[t.order[k]], cum[k + t.size[k] - 1] - cum[k], t.size[k] - 1),
+    arrayFilter(k -> types[t.order[k]] = 'AGENT', arrayEnumerate(t.order))) AS res
+```
+
+```response title=Response
+[('A',6,5),('B',3,2)]
+```
+
+**無効な入力: 循環 C -&gt; D -&gt; E -&gt; C、循環の下位にあるノード F、孤立ノード G**
+
+```sql title=Query
+SELECT arrayTreePreorder(['A', 'B', 'C', 'D', 'E', 'F', 'G'], ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+```
+
+```response title=Response
+([1,2,3,5,4,6,7],[2,1,4,2,1,1,1],[0,1,5,3,4,3,0],[0,1,0,1,2,1,0])
+```
+
+**循環の検出と切断箇所の特定**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+SELECT
+    arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent)) AS has_cycle,
+    arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent) AS cut_positions,
+    arrayMap(k -> ids[t.order[k]], cut_positions) AS cut_ids
+```
+
+```response title=Response
+┌─has_cycle─┬─cut_positions─┬─cut_ids─┐
+│         1 │ [3]           │ ['C']   │
+└───────────┴───────────────┴─────────┘
+```
+
+**ルート、木の数、親が見つからないノード、単一の木であるかの確認**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+SELECT
+    arrayMap(k -> ids[t.order[k]], arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)) AS roots,
+    countEqual(t.depth, 0) AS trees,
+    arrayMap(k -> ids[t.order[k]], arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)) AS parent_not_found,
+    t.size[1] = length(ids) AND t.parent[1] <= 1 AS is_one_tree
+```
+
+```response title=Response
+┌─roots─────────┬─trees─┬─parent_not_found─┬─is_one_tree─┐
+│ ['A','C','G'] │     3 │ ['A','G']        │           0 │
+└───────────────┴───────┴──────────────────┴─────────────┘
+```
+
+**位置 3 で切断された循環のノード**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t,
+    3 AS r
+SELECT arrayMap(k -> ids[t.order[k]], arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))) AS cycle
+```
+
+```response title=Response
+┌─cycle─────────┐
+│ ['C','E','D'] │
+└───────────────┘
+```
+
+**識別子が重複する場合：子ノードは最初に出現したノードにアタッチ済みになります**
+
+```sql title=Query
+WITH ['a', 'b', 'a', 'c'] AS ids
+SELECT
+    arrayFilter((id, n) -> n > 1, ids, arrayEnumerateUniq(ids)) AS duplicate_ids,
+    arrayTreePreorder(ids, ['', 'a', '', 'a']).order AS order
+```
+
+```response title=Response
+┌─duplicate_ids─┬─order─────┐
+│ ['a']         │ [1,2,4,3] │
+└───────────────┴───────────┘
+```
+
 ## arrayUnion {#arrayUnion}
 
 導入バージョン: v24.10.0
@@ -4791,7 +4957,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 配列に要素が1つも含まれていない場合、その配列は空と見なされます。
 
 <Note>
-  [`optimize_functions_to_subcolumns` 設定](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns)を有効にすることで最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数は配列カラム全体を読み取って処理する代わりに、[size0](/ja/reference/data-types/array#array-size) サブカラムのみを読み取ります。クエリ `SELECT empty(arr) FROM TABLE;` は `SELECT arr.size0 = 0 FROM TABLE;` に変換されます。
+  クエリ内の他の箇所でそのカラムが使用されていない場合、この関数は配列カラム全体を読み取って処理する代わりに、[size0](/ja/reference/data-types/array#array-size) サブカラムのみを読み取ることができます。クエリ `SELECT empty(arr) FROM TABLE;` は `SELECT arr.size0 = 0 FROM TABLE;` に変換されます。この最適化は [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定によって制御され、デフォルトで有効になっています。
 </Note>
 
 この関数は String や UUID に対しても使用できます。
@@ -4804,11 +4970,11 @@ empty(arr)
 
 **引数**
 
-* `arr` — 入力Array。[`Array(T)`](/ja/reference/data-types/array)
+* `arr` — 入力配列。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-空のArrayの場合は `1`、空でないArrayの場合は `0` を返します。[`UInt8`](/ja/reference/data-types/int-uint)
+空の配列の場合は `1`、空でない配列の場合は `0` を返します。[`UInt8`](/ja/reference/data-types/int-uint)
 
 **例**
 
@@ -5837,12 +6003,12 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 
 導入バージョン: v1.1.0
 
-入力された Array が空でないかどうかを確認します。
+入力配列 が空でないかどうかを確認します。
 
-Array は、少なくとも 1 つの要素を含んでいれば空ではないと見なされます。
+配列 は、少なくとも 1 つの要素を含んでいれば空ではないと見なされます。
 
 <Note>
-  [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定を有効にすると、この関数を最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数は Array 全体のカラムを読み取って処理する代わりに、[size0](/ja/reference/data-types/array#array-size) サブカラムだけを読み取ります。クエリ `SELECT notEmpty(arr) FROM table` は `SELECT arr.size0 != 0 FROM TABLE` に変換されます。
+  そのカラムがクエリ内のほかの箇所で使用されていない場合、この関数は 配列 全体のカラムを読み取って処理する代わりに、[size0](/ja/reference/data-types/array#array-size) サブカラムだけを読み取ることができます。クエリ `SELECT notEmpty(arr) FROM table` は `SELECT arr.size0 != 0 FROM TABLE` に変換されます。この最適化は [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定で制御され、この設定はデフォルトで有効になっています。
 </Note>
 
 この関数は String や UUID に対しても使用できます。

@@ -1,0 +1,183 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/browser
+description: '使用 ClickStack 浏览器 SDK 采集浏览器日志、链路追踪和会话回放数据。'
+title: '浏览器 JS'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', '浏览器', '会话回放']
+sidebarTitle: '浏览器 JS'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+ClickStack 浏览器 SDK 基于 OpenTelemetry 构建，用于采集浏览器请求、错误和会话回放数据。借助该 SDK，您可以在 ClickHouse Observability 中结合后端遥测数据排查前端事件。
+
+<ClickStackIntegrates signals={['logs', 'traces']} />
+
+## 安装 {#install}
+
+在前端应用程序中安装该软件包：
+
+```shell
+npm install @clickhouse/clickstack-browser
+```
+
+该软件包使用 ES 模块。npm 会自动安装其 OpenTelemetry 对等依赖项 (peer dependencies) 。如果您的应用程序也直接安装了 `@opentelemetry/api`，请使用 `~1.9.1` 版本，并确保项目中只存在一份副本；1.10 版本不在此 SDK 支持的范围内。
+
+## 配置目标端 {#configure-destination}
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 服务" />
+
+    在您的服务中打开 **团队设置 → 数据 → Managed Telemetry**，复制 **OTLP HTTP 端点** 和 **API key**。请使用包含端口的完整 HTTPS 端点，但不要带上 `/v1/traces` 等信号路径。
+
+    在应用程序的入口模块中初始化 SDK：
+
+    ```javascript
+    import { init } from '@clickhouse/clickstack-browser';
+
+    init({
+      endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+      apiKey: 'Bearer YOUR_INGESTION_API_KEY',
+      serviceName: 'my-frontend-app',
+    });
+    ```
+  </Tab>
+
+  <Tab title="自管理">
+    使用采集器的 OTLP HTTP 端点及其已配置的摄取密钥。用户的浏览器必须能够访问该端点。有关采集器的设置，请参阅 [使用 OpenTelemetry 进行摄取](/zh/clickstack/observability/ingesting-data/opentelemetry#self-managed)。
+
+    ```javascript
+    import { init } from '@clickhouse/clickstack-browser';
+
+    init({
+      endpoint: 'https://YOUR_COLLECTOR_HOST:4318',
+      apiKey: 'YOUR_INGESTION_API_KEY',
+      serviceName: 'my-frontend-app',
+    });
+    ```
+
+    请使用为采集器 OTLP 接收器配置的密钥。采集器必须在其 HTTP 接收器的 CORS 配置中允许您应用程序的源 (origin)。
+  </Tab>
+</Tabs>
+
+每次页面加载只需调用一次 `init`，并将其置于入口模块的顶层，例如 Vite 中的 `src/main.ts` 或 Next.js 中的 `instrumentation-client.ts`。初始化是异步执行的，因此在同一 tick 中立即发出的请求可能不会被捕获。请勿在 React effect 中执行初始化：调用 `shutdown` 的清理逻辑会在本次页面加载期间永久停止遥测数据采集。
+
+<Note>
+  浏览器端配置 (包括其中的摄取密钥) 对任何加载该页面的人都是可见的。若要将密钥保留在服务器端，请使用同源端点 (例如 `/otel`) ，省略 `apiKey`，并配置服务器在转发 OTLP 请求时附带相应的授权请求头。
+</Note>
+
+## 验证摄取 {#verify-ingestion}
+
+加载您的应用程序，与页面交互，发起一个请求，并触发一个控制台错误。在 ClickHouse Observability 中选择最近的时间范围，然后在 日志 或 链路追踪 中搜索 `my-frontend-app`。打开 会话回放，查看录制的会话。
+
+如果数据缺失，请检查浏览器控制台以及发往 `/v1/traces` 和 `/v1/logs` 的网络请求，并核对端点、授权请求头、CORS 以及内容安全策略 (Content Security Policy) 。对于自管理部署，请确认您的 ClickStack 版本支持会话回放以及 SDK 的标准 `session.id` 属性；仅收到记录并不代表会话一定会显示在 UI 中。
+
+## 初始化选项 {#initialization-options}
+
+将以下选项传递给 `init`。如果使用共享采集器，请设置 `endpoint`；如果链路追踪和日志发送到不同的目标端，则需同时提供两个信号端点。
+
+| 选项                   | 默认值              | 用途                                                                                   |
+| -------------------- | ---------------- | ------------------------------------------------------------------------------------ |
+| `endpoint`           | 必填，除非已同时设置两个信号端点 | OTLP HTTP 基础 URL 或同源代理路径；SDK 会自动追加各信号的路径                                             |
+| `tracesEndpoint`     | 未设置              | 完整的链路追踪 URL，将按原样使用，取代由 `endpoint` 推导出的 URL                                           |
+| `logsEndpoint`       | 未设置              | 完整的日志和回放 URL，将按原样使用，取代由 `endpoint` 推导出的 URL                                          |
+| `serviceName`        | 必填               | 为所有遥测数据设置 `service.name`                                                             |
+| `apiKey`             | 未设置              | `authorization` 请求头的值；请使用上文中与您的目标端对应的格式                                              |
+| `traceOrigins`       | 未设置              | 接收追踪上下文的后端源或正则表达式                                                                    |
+| `replay`             | `true`           | 录制会话回放；设为 `false` 时仍保留浏览器遥测数据，但禁用回放                                                  |
+| `resourceAttributes` | 未设置              | 附加的资源属性 (同样适用于回放) ；`serviceName`、`serviceVersion` 和 `environment` 优先于同名键             |
+| `maskAllText`        | `true`           | 在回放中遮盖文本                                                                             |
+| `maskAllInputs`      | `true`           | 遮盖 input、textarea 和 select 的值                                                        |
+| `console`            | `'error'`        | 捕获 `'error'`、`'warn'`、`'info'` (包括 `console.log`) 或 `'debug'` 及更高严重级别；设为 `false` 可禁用 |
+| `serviceVersion`     | 未设置              | 标识您的应用程序发行版                                                                          |
+| `environment`        | 未设置              | 设置 `deployment.environment.name`                                                     |
+| `sanitizeUrl`        | 未设置              | 重写记录的 URL，例如移除查询参数                                                                   |
+
+完整 API 请参阅 [Browser SDK 参考文档](https://github.com/ClickHouse/clickstack-browser#quick-start)。
+
+## 会话回放与隐私 {#session-replay-and-privacy}
+
+会话回放默认处于启用状态。文本和输入值默认会进行脱敏处理。
+
+脱敏不会隐藏复选框状态、单选按钮状态，也不会隐藏链接 URL 和占位符等属性。请使用 `rr-block` 类排除敏感元素。URL 清理不适用于回放页面内容、堆栈跟踪或控制台消息中的 URL。请仅采集您的隐私政策所允许的用户信息。
+
+如需在不停止浏览器遥测数据采集的情况下暂停回放：
+
+```javascript
+import { pauseReplay } from '@clickhouse/clickstack-browser';
+
+pauseReplay();
+```
+
+如需恢复录制：
+
+```javascript
+import { resumeReplay } from '@clickhouse/clickstack-browser';
+
+resumeReplay();
+```
+
+## 关联前端与后端追踪 {#trace-propagation}
+
+如需将浏览器请求与后端追踪关联起来，请在 `init` 选项中添加 `traceOrigins`，并将示例值替换为您的后端源 (origin) ：
+
+```javascript
+traceOrigins: ['https://api.example.com'],
+```
+
+发往页面同源地址及匹配后端的请求会携带 `traceparent`、`tracestate` 和 `baggage`。您的后端必须经过插桩，才能延续该上下文。
+
+跨源后端必须通过 CORS 放行这些请求头。遥测采集器也必须允许来自前端源的请求。如果您的应用程序启用了内容安全策略 (Content Security Policy) ，请在 `connect-src` 中放行采集器端点。
+
+## 识别用户并记录错误 {#users-and-errors}
+
+用户登录时，使用 `setUser` 将用户信息附加到后续的 span 和日志中：
+
+```javascript
+import { setUser } from '@clickhouse/clickstack-browser';
+
+setUser({ id: 'user-123', email: 'user@example.com' });
+```
+
+用户退出登录时，清除用户信息并开启新会话：
+
+```javascript
+import { setUser, startNewSession } from '@clickhouse/clickstack-browser';
+
+setUser(null);
+startNewSession();
+```
+
+要将应用程序元数据附加到后续的 span 和日志中，请使用 `setAttributes`。每次调用都会替换之前设置的属性；传入 `null` 即可清除：
+
+```javascript
+import { setAttributes } from '@clickhouse/clickstack-browser';
+
+setAttributes({ 'app.team.name': 'checkout' });
+```
+
+未捕获的错误和未处理的 Promise rejection 会被自动捕获。通过 `console.error` 上报的 React 错误边界默认也会被捕获。对于已捕获但尚未记录到日志的错误，请使用 `recordException`；如果对同一错误既调用 `recordException` 记录又输出日志，会产生重复事件：
+
+```javascript
+import { recordException } from '@clickhouse/clickstack-browser';
+
+try {
+  await submitCheckout();
+} catch (error) {
+  recordException(error, { 'app.operation': 'checkout' });
+  // Handle the error in your application.
+}
+```
+
+将 `submitCheckout` 替换为您要监控的应用操作。
+
+## 从 HyperDX 浏览器 SDK 迁移 {#migration}
+
+此次升级并非仅仅更换软件包名称。`url` 改为 `endpoint`，`service` 改为 `serviceName`，`tracePropagationTargets` 改为 `traceOrigins`。文本脱敏和输入脱敏现在默认均为 `true`。请将 `setGlobalAttributes` 替换为 `setUser` (用于设置用户身份) 和 `setAttributes` (用于设置应用程序元数据) 。通过 `console.error` 上报错误的 React 错误边界无需额外的钩子；如果错误尚未记录到日志，请使用 `recordException`。
+
+有关已移除的选项和属性变更，请参阅 [SDK 迁移指南](https://github.com/ClickHouse/clickstack-browser/blob/main/docs/migration.md)。如果通过 script 标签安装，或应用程序已初始化 OpenTelemetry，请参阅 [SDK README](https://github.com/ClickHouse/clickstack-browser#readme)。
+
+如果 ClickStack 浏览器 SDK 在您的应用程序中引发兼容性问题，您可以在排查期间改用[旧版 HyperDX 浏览器 SDK](https://github.com/hyperdxio/hyperdx-js/tree/main/packages/browser)。请参照上述迁移指南恢复其配置和 API 调用；这两个 SDK 不可互换，也不应同时运行。

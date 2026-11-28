@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Disks/DiskFromAST.h>
+#include <Disks/DiskRoot.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -179,6 +180,7 @@
 #include <Common/StringUtils.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ThreadStatus.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -420,7 +422,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
-    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_small_parts;
+    extern const MergeTreeSettingsUInt64 min_bytes_for_object_shared_data_main_serialization_version;
+    extern const MergeTreeSettingsBool use_object_shared_data_serialization_version_for_small_parts_on_insert;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 
@@ -649,9 +653,7 @@ namespace
 
 struct TableDiskRoot
 {
-    String storage_description;
-    String storage_namespace;
-    fs::path path;
+    DiskRoot disk_root;
     String disk_name;
     const MergeTreeData * owner;
 };
@@ -676,12 +678,8 @@ void MergeTreeData::acquireTableDiskRoots()
         if (disk->isReadOnly() || disk->isWriteOnce())
             continue;
 
-        auto path = fs::path(disk->getPath()).lexically_normal();
-        if (!path.has_filename() && path.has_relative_path())
-            path = path.parent_path();
-
-        auto object_storage = disk->getObjectStorage();
-        roots.push_back({object_storage->getDescription(), object_storage->getObjectsNamespace(), std::move(path), disk->getName(), this});
+        if (auto disk_root = getDiskRoot(disk))
+            roots.push_back({std::move(*disk_root), disk->getName(), this});
     }
 
     std::lock_guard lock(table_disk_roots_mutex);
@@ -689,8 +687,7 @@ void MergeTreeData::acquireTableDiskRoots()
     {
         for (const auto & owned : table_disk_roots)
         {
-            if (owned.storage_description != root.storage_description || owned.storage_namespace != root.storage_namespace
-                || !pathsOverlap(owned.path, root.path))
+            if (owned.disk_root.filesystem != root.disk_root.filesystem || !pathsOverlap(owned.disk_root.path, root.disk_root.path))
                 continue;
 
             String remedy;
@@ -703,8 +700,8 @@ void MergeTreeData::acquireTableDiskRoots()
 
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table {} cannot store its data at '{}' on disk {}: table {} already stores its data at '{}' on disk {} on the same storage. {}",
-                getStorageID().getNameForLogs(), root.path.string(), backQuote(root.disk_name),
-                owned.owner->getStorageID().getNameForLogs(), owned.path.string(), backQuote(owned.disk_name), remedy);
+                getStorageID().getNameForLogs(), root.disk_root.path, backQuote(root.disk_name),
+                owned.owner->getStorageID().getNameForLogs(), owned.disk_root.path, backQuote(owned.disk_name), remedy);
         }
     }
     table_disk_roots.insert(table_disk_roots.end(), roots.begin(), roots.end());
@@ -1472,11 +1469,10 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
             {
                 /// A copy of `load_parts`: it is destroyed before `pool`, whose destructor joins the running jobs.
                 pool->scheduleOrThrowOnError(
-                    [load_parts, thread_group = CurrentThread::getGroup()]
+                    attachedJob(ThreadName::MERGETREE_LOAD_STATISTICS, [load_parts]
                     {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_LOAD_STATISTICS);
                         load_parts();
-                    });
+                    }));
             }
 
             pool->wait();
@@ -3752,32 +3748,15 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         /// Check extra (AKA orpahned) parts on different disks, in order to not allow to miss data parts at undefined disks.
         std::unordered_set<String> defined_disk_names;
 
+        /// A `cache` or `encrypted` disk and the disk it wraps can be put into different storage policies,
+        /// but they list the same files, so a disk in the place of a disk of the policy is defined too.
+        VectorWithMemoryTracking<DiskRoot> defined_disk_roots;
+
         for (const auto & disk_ptr : disks)
         {
             defined_disk_names.insert(disk_ptr->getName());
-        }
-
-        /// In case of delegate disks it is not enough to traverse `disks`,
-        /// because for example cache or encrypted disk which wrap s3 disk and s3 disk itself can be put into different storage policies.
-        /// But disk->exists returns the same thing for both disks.
-        for (const auto & [disk_name, disk] : getContext()->getDisksMap())
-        {
-            /// As encrypted disk can use the same path of its nested disk,
-            /// we need to take it into account here.
-            const auto & delegate = disk->getDelegateDiskIfExists();
-            if (delegate && disk->getPath() == delegate->getPath())
-                defined_disk_names.insert(delegate->getName());
-
-            if (disk->supportsCache())
-            {
-                /// As cache is implemented on object storage layer, not on disk level, e.g.
-                /// we have such structure:
-                /// DiskObjectStorage(CachedObjectStorage(...(CachedObjectStored(ObjectStorage)...)))
-                /// and disk_ptr->getName() here is the name of last delegate - ObjectStorage.
-                /// So now we need to add cache layers to defined disk names.
-                auto caches = disk->getCacheLayersNames();
-                defined_disk_names.insert(caches.begin(), caches.end());
-            }
+            if (auto disk_root = getDiskRoot(disk_ptr))
+                defined_disk_roots.push_back(std::move(*disk_root));
         }
 
         std::unordered_set<String> skip_check_disks;
@@ -3790,12 +3769,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             }
 
             bool is_disk_defined = defined_disk_names.contains(disk_name);
-            if (!is_disk_defined && disk->existsDirectory(relative_data_path))
+            if (!is_disk_defined)
             {
-                /// There still a chance that underlying disk is defined in storage policy
-                const auto & delegate = disk->getDelegateDiskIfExists();
-                is_disk_defined = delegate && !delegate->isBroken() && !delegate->isCustomDisk() && delegate->getPath() == disk->getPath()
-                    && defined_disk_names.contains(delegate->getName());
+                const auto disk_root = getDiskRoot(disk);
+                is_disk_defined = disk_root && std::ranges::find(defined_disk_roots, *disk_root) != defined_disk_roots.end();
             }
 
             if (!is_disk_defined && disk->existsDirectory(relative_data_path))
@@ -6637,6 +6614,30 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         apply_context->setAnalyzingBackgroundExpressions(true);
     commands.apply(new_metadata, apply_context, share_nested_offsets, settings_defaults.get());
 
+    /// Under a Replicated database every replica re-runs this interpreter over an entry the initiator already
+    /// committed. A replica catching up on an ALTER accepted by an older version must not be failed by a check
+    /// that version did not have, or the DDL queue stalls on an entry it cannot skip.
+    bool is_initial_alter = true;
+    if (auto txn = local_context->getZooKeeperMetadataTransaction())
+        is_initial_alter = txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+    if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
+        is_initial_alter = false;
+#endif
+
+    /// `CLEAR COLUMN` of `_block_number` / `_block_offset` changes the values by which patch parts find their rows.
+    /// The mutation applies the patches that precede it, but a patch written for a part whose values of these columns
+    /// repeat may match other rows, so the unapplied patches have to be applied or dropped first, as for `DETACH PARTITION`.
+    /// Not only while lightweight updates are enabled: the patches written before they were disabled stay.
+    if (is_initial_alter)
+    {
+        for (const auto & command : commands)
+        {
+            if (command.isClearOfBlockColumns(old_metadata))
+                assertNoPatchesForClearOfBlockColumns(command, local_context);
+        }
+    }
+
     /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
     /// stay physically sorted in the directions the key had when they were written, and no regular data part records those
     /// directions: every reader of a regular data part's order takes them from the current metadata. A direction change in
@@ -6644,17 +6645,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// analysis compares boundary tuples in the claimed order, so it would prune the wrong mark ranges and silently
     /// return wrong results.
     {
-        /// Under a Replicated database every replica re-runs this interpreter over an entry the initiator already
-        /// committed. A replica catching up on an ALTER accepted by an older version must not be failed by a check
-        /// that version did not have, or the DDL queue stalls on an entry it cannot skip.
-        bool is_initial_alter = true;
-        if (auto txn = local_context->getZooKeeperMetadataTransaction())
-            is_initial_alter = txn->isInitialQuery();
-#if CLICKHOUSE_CLOUD
-        if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
-            is_initial_alter = false;
-#endif
-
         /// A definition the ALTER changes may not have an alias. One that an older server stored is kept while the
         /// definition stays as it was, up to a column rename.
         if (is_initial_alter)
@@ -7453,7 +7443,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                         "a metadata-only ALTER cannot recompute the TTL. Drop the TTL to run this change",
                         backQuoteIfNeed(command.column_name), offending_expr->formatForErrorMessage());
 
-                /// GROUP BY ... SET assignments are stored as prebuilt ExpressionActions, not as an AST above.
+                /// GROUP BY ... SET assignments are checked through their prebuilt ExpressionActions, which require every column they read.
                 for (const auto & set_part : ttl.set_parts)
                     if (expression_uses_changed_subcolumn(set_part.expression))
                         throw Exception(
@@ -7930,6 +7920,18 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     }
 
     return {part_type, storage_type};
+}
+
+MergeTreeObjectSharedDataSerializationVersion MergeTreeData::chooseObjectSharedDataSerializationVersion(
+    size_t bytes_uncompressed, bool is_insert, ProjectionDescriptionRawPtr projection) const
+{
+    const auto settings = getSettings(projection ? &projection->settings_changes : nullptr);
+    bool is_small_part = (is_insert && (*settings)[MergeTreeSetting::use_object_shared_data_serialization_version_for_small_parts_on_insert])
+        || bytes_uncompressed < (*settings)[MergeTreeSetting::min_bytes_for_object_shared_data_main_serialization_version];
+
+    if (is_small_part)
+        return (*settings)[MergeTreeSetting::object_shared_data_serialization_version_for_small_parts];
+    return (*settings)[MergeTreeSetting::object_shared_data_serialization_version];
 }
 
 MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
@@ -9689,13 +9691,15 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             if (use_active_parts_threshold)
             {
                 parts_over_threshold = active_parts_over_threshold;
-                allowed_parts_over_threshold = active_parts_to_throw_insert - active_parts_to_delay_insert;
+                allowed_parts_over_threshold = active_parts_over_threshold; /// if throw threshold is not above delay threshold, will use max delay
+                if (active_parts_to_throw_insert > active_parts_to_delay_insert)
+                    allowed_parts_over_threshold = active_parts_to_throw_insert - active_parts_to_delay_insert;
             }
             else
             {
                 parts_over_threshold = outdated_parts_over_threshold;
-                allowed_parts_over_threshold = outdated_parts_over_threshold; /// if throw threshold is not set, will use max delay
-                if ((*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] > 0)
+                allowed_parts_over_threshold = outdated_parts_over_threshold; /// if throw threshold is not above delay threshold, will use max delay
+                if ((*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] > (*settings)[MergeTreeSetting::inactive_parts_to_delay_insert])
                     allowed_parts_over_threshold = (*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] - (*settings)[MergeTreeSetting::inactive_parts_to_delay_insert];
             }
         }
@@ -9909,10 +9913,11 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
         DataPartStateAndPartitionID active_parts{MergeTreeDataPartState::Active, partition_id};
         DataPartStateAndPartitionID outdated_parts{MergeTreeDataPartState::Outdated, partition_id};
         DataPartsVector res;
-        {
-            res.insert(res.end(), data_parts_by_state_and_info.lower_bound(active_parts), data_parts_by_state_and_info.upper_bound(active_parts));
-            res.insert(res.end(), data_parts_by_state_and_info.lower_bound(outdated_parts), data_parts_by_state_and_info.upper_bound(outdated_parts));
-        }
+        /// Sorted by part info, like the non-transactional result.
+        std::merge(
+            data_parts_by_state_and_info.lower_bound(active_parts), data_parts_by_state_and_info.upper_bound(active_parts),
+            data_parts_by_state_and_info.lower_bound(outdated_parts), data_parts_by_state_and_info.upper_bound(outdated_parts),
+            std::back_inserter(res), LessDataPart());
         filterVisibleDataParts(res, txn->getSnapshot(), txn->tid);
         return res;
     }
@@ -11385,6 +11390,22 @@ static std::string_view getDatePartOfDateText(std::string_view text)
     return text;
 }
 
+/// Whether the field is or contains a `Decimal` (also a `DateTime64` or `Time64`) value.
+static bool containsDecimalField(const Field & value)
+{
+    switch (value.getType())
+    {
+        case Field::Types::Array:
+            return std::ranges::any_of(value.safeGet<Array>(), containsDecimalField);
+        case Field::Types::Tuple:
+            return std::ranges::any_of(value.safeGet<Tuple>(), containsDecimalField);
+        case Field::Types::Map:
+            return std::ranges::any_of(value.safeGet<Map>(), containsDecimalField);
+        default:
+            return Field::isDecimal(value.getType());
+    }
+}
+
 /// Converts one field of a partition value to the type of the partition key column.
 ///
 /// Text parsing of the date and time types is lenient: a day or a time of day that does not exist rolls over
@@ -11394,12 +11415,26 @@ static std::string_view getDatePartOfDateText(std::string_view text)
 /// `date_time_overflow_behavior = 'throw'`, and the date and time it spells must be the ones of the parsed value.
 /// This also rejects a local time that does not exist in the time zone of a `DateTime` key because of a daylight
 /// saving time shift (`'2024-03-31 02:30:00'` in `Europe/Berlin` is read as `01:30:00`): no row can have that value.
-static Field convertPartitionFieldToType(const Field & value, const DataTypePtr & type)
+static Field convertPartitionFieldToType(const Field & value, const DataTypePtr & value_type, const DataTypePtr & type)
 {
     const DataTypePtr nested_type = removeLowCardinalityAndNullable(type);
     const WhichDataType which(nested_type);
     if (value.getType() != Field::Types::String || !which.isDateOrDate32OrDateTimeOrDateTime64())
-        return convertFieldToTypeOrThrow(value, *type);
+    {
+        Field converted = convertFieldToTypeOrThrow(value, *type);
+
+        /// A `Decimal`, `DateTime64` or `Time64` value is truncated to the scale of the key, so `.5009` of a
+        /// `DateTime64(4)` value would name the `.500` partition of a `DateTime64(3)` key. The fields are checked,
+        /// not the type, to also catch such a value in an `Array`, a `Tuple` or a `Dynamic`. Inside an `Array` or
+        /// a `Tuple` only the strict conversion is used: the round trip cannot compare an element parsed from a string.
+        if (containsDecimalField(value)
+            && tryConvertFieldToTypeExact(value, *type, Field::isDecimal(value.getType()) ? value_type.get() : nullptr).isNull())
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                            "Partition value {} of type {} is not a valid value of type {}: it is read as {}",
+                            value, value_type ? value_type->getName() : value.getTypeName(), type->getName(), converted);
+
+        return converted;
+    }
 
     /// A time of day after a date is ignored the same way as by `toDate`.
     const String & text = value.safeGet<String>();
@@ -11513,6 +11548,12 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
                             ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
                     }
                     auto first_arg = tuple_ast->arguments->as<ASTExpressionList>()->children.at(0);
+                    const auto * inner_cast = first_arg->as<ASTFunction>();
+                    while (isFunctionCast(inner_cast) && inner_cast->arguments && !inner_cast->arguments->children.empty())
+                    {
+                        first_arg = inner_cast->arguments->children.at(0);
+                        inner_cast = first_arg->as<ASTFunction>();
+                    }
                     if (const auto * inner_tuple = first_arg->as<ASTFunction>(); inner_tuple && inner_tuple->name == "tuple")
                     {
                         const auto * arguments_ast = inner_tuple->arguments->as<ASTExpressionList>();
@@ -11628,7 +11669,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             }
         }
         /// Simple partition key, need to evaluate and cast
-        Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
+        auto [partition_key_value, partition_key_type] = evaluateConstantExpression(partition_value_ast, local_context);
 
         /// A cast of a one-element tuple (e.g. a substituted query parameter of type `Tuple(T)`)
         /// evaluates to a tuple; unwrap it, unless the partition key column itself is a tuple.
@@ -11639,14 +11680,16 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
                 throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                                 "Wrong number of fields in the partition expression: {}, must be: 1", tuple_value.size());
             partition_key_value = std::move(tuple_value[0]);
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(partition_key_type.get());
+            partition_key_type = tuple_type ? tuple_type->getElement(0) : nullptr;
         }
 
-        partition_row[0] = convertPartitionFieldToType(partition_key_value, key_sample_block.getByPosition(0).type);
+        partition_row[0] = convertPartitionFieldToType(partition_key_value, partition_key_type, key_sample_block.getByPosition(0).type);
     }
     else
     {
         /// Complex key, need to evaluate, untuple and cast
-        Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
+        const auto [partition_key_value, partition_key_type] = evaluateConstantExpression(partition_value_ast, local_context);
         if (partition_key_value.getType() != Field::Types::Tuple)
             throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                             "Expected tuple for complex partition key, got {}", partition_key_value.getTypeName());
@@ -11656,8 +11699,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Wrong number of fields in the partition expression: {}, must be: {}", tuple.size(), fields_count);
 
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(partition_key_type.get());
         for (size_t i = 0; i < fields_count; ++i)
-            partition_row[i] = convertPartitionFieldToType(tuple[i], key_sample_block.getByPosition(i).type);
+            partition_row[i] = convertPartitionFieldToType(
+                tuple[i], tuple_type ? tuple_type->getElement(i) : nullptr, key_sample_block.getByPosition(i).type);
     }
 
     MergeTreePartition partition(std::move(partition_row));
@@ -12991,6 +13036,25 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     return loaded_parts;
 }
 
+void MergeTreeData::assertNoPatchesForClearOfBlockColumns(const AlterCommand & command, ContextPtr local_context) const
+{
+    std::optional<String> partition_id;
+    if (command.partition && !command.partition->as<ASTPartition &>().all)
+        partition_id = getPartitionIDFromQuery(command.partition, local_context);
+
+    auto parts = partition_id
+        ? getVisibleDataPartsVectorInPartition(local_context, *partition_id)
+        : getVisibleDataPartsVector(local_context);
+
+    std::map<String, DataPartsVector> parts_by_partition;
+    for (const auto & part : parts)
+        parts_by_partition[part->info.getPartitionId()].push_back(part);
+
+    /// A patch committed after this check is applied by the mutation, as the ones before it.
+    for (const auto & [id, partition_parts] : parts_by_partition)
+        assertNoPatchesForParts(partition_parts, getPatchPartsVectorForPartition(id), "CLEAR COLUMN " + command.column_name);
+}
+
 bool MergeTreeData::assertNoPatchesForParts(const DataPartsVector & parts, const DataPartsVector & patches, std::string_view command, bool throw_on_error) const
 {
     if (parts.empty() || patches.empty())
@@ -14120,18 +14184,29 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
                 columns_list.push_back(column);
     }
 
-    MergeTreeMapSerializationVersion map_version = settings[MergeTreeSetting::map_serialization_version];
-    MergeTreeObjectSharedDataSerializationVersion shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version];
-    MergeTreeMapSerializationVersion zero_level_map_version = settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts];
-    MergeTreeObjectSharedDataSerializationVersion zero_level_shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version_for_zero_level_parts];
+    /// A part may be written with any combination of these versions: the `Map` version depends on whether the part is
+    /// inserted or merged, the JSON shared data version on the size of the part. A collision under any
+    /// combination corrupts the parts written with it. Checked separately, as parts of different configurations never
+    /// share a file.
+    std::set<MergeTreeMapSerializationVersion> map_versions{
+        settings[MergeTreeSetting::map_serialization_version],
+        settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts]};
+    std::set<MergeTreeObjectSharedDataSerializationVersion> shared_data_versions{
+        settings[MergeTreeSetting::object_shared_data_serialization_version],
+        settings[MergeTreeSetting::object_shared_data_serialization_version_for_small_parts]};
 
-    auto collision = findStreamFileNameCollision(columns_list, settings, map_version, shared_data_version);
-
-    /// Zero-level parts (written by `INSERT`) may use different serialization versions than merged parts, and a
-    /// collision under either corrupts the parts written with it. Checked separately, as parts of different
-    /// configurations never share a file.
-    if (!collision && (zero_level_map_version != map_version || zero_level_shared_data_version != shared_data_version))
-        collision = findStreamFileNameCollision(columns_list, settings, zero_level_map_version, zero_level_shared_data_version);
+    std::optional<StreamFileNameCollision> collision;
+    for (auto map_version : map_versions)
+    {
+        for (auto shared_data_version : shared_data_versions)
+        {
+            collision = findStreamFileNameCollision(columns_list, settings, map_version, shared_data_version);
+            if (collision)
+                break;
+        }
+        if (collision)
+            break;
+    }
 
     if (!collision)
         return;
@@ -16155,6 +16230,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         .withBytesAndRows(0, 0, 0)
         .withPartInfo(new_part_info)
         .build();
+    new_data_part->object_shared_data_serialization_version = chooseObjectSharedDataSerializationVersion(0, /*is_insert =*/false, /*projection =*/nullptr);
 
     /// Keep the format version and sort-key columns of the patch partition.
     if (new_part_info.isPatch())

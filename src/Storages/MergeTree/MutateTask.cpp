@@ -862,6 +862,47 @@ static NameSet collectIndicesRebuiltByMutation(
     return rebuilt;
 }
 
+/// `CLEAR COLUMN` of `_block_number` / `_block_offset` (see `isClearOfBlockColumns`) removes both columns from the
+/// part, so that the reader returns `min_block` and `_part_offset` instead, as for a part that never stored them.
+/// The skip indices and projections built from the stored values are removed too: the next merge builds them again.
+static bool hasClearOfBlockColumns(const MutationCommands & commands, const StorageInMemoryMetadata & metadata)
+{
+    return std::ranges::any_of(commands, [&](const MutationCommand & command) { return command.isClearOfBlockColumns(metadata); });
+}
+
+static bool isBlockColumn(const String & column_name)
+{
+    return column_name == BlockNumberColumn::name || column_name == BlockOffsetColumn::name;
+}
+
+static bool storesBlockColumns(const IMergeTreeDataPart & part)
+{
+    return part.getColumns().contains(BlockNumberColumn::name) || part.getColumns().contains(BlockOffsetColumn::name);
+}
+
+static bool usesBlockColumns(const IndexDescription & index)
+{
+    return std::ranges::any_of(index.expression->getRequiredColumns(), isBlockColumn);
+}
+
+static bool usesBlockColumns(const ProjectionDescription & projection)
+{
+    return projection.with_block_number || projection.with_block_offset || std::ranges::any_of(projection.required_columns, isBlockColumn);
+}
+
+/// The `minmax_*.idx` files of the block columns in the part. They keep the ranges of the stored values.
+static NameSet getMinMaxFilesOfBlockColumns(const IMergeTreeDataPart & part)
+{
+    NameSet files;
+    for (const auto & column_name : {BlockNumberColumn::name, BlockOffsetColumn::name})
+    {
+        String file_name = "minmax_" + MergeTreePartMinMaxIndex::getFileColumnName(column_name, part.checksums) + ".idx";
+        if (part.checksums.files.contains(file_name))
+            files.insert(std::move(file_name));
+    }
+    return files;
+}
+
 /** Split mutation commands into two parts:
 *   First part should be executed by mutations interpreter.
 *   Other is just simple drop/renames, so they can be executed without interpreter.
@@ -882,6 +923,7 @@ static void splitAndModifyMutationCommands(
 {
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
+    const bool clears_block_columns = hasClearOfBlockColumns(commands, *metadata_snapshot);
     auto nameInPart = [&](String name)
     {
         if (alter_conversions->isColumnRenamed(name))
@@ -905,8 +947,24 @@ static void splitAndModifyMutationCommands(
         NameSet dropped_columns;
         NameSet extra_columns_for_indices_and_projections;
 
+        if (clears_block_columns)
+        {
+            for (const auto & column_name : {BlockNumberColumn::name, BlockOffsetColumn::name})
+            {
+                if (part_columns.has(column_name))
+                {
+                    mutated_columns.insert(column_name);
+                    dropped_columns.insert(column_name);
+                }
+            }
+        }
+
         for (const auto & command : commands)
         {
+            /// Handled below, for both kinds of mutation.
+            if (command.isClearOfBlockColumns(*metadata_snapshot))
+                continue;
+
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
                 auto marker_name = nameInPart(command.column_name);
@@ -1241,6 +1299,10 @@ static void splitAndModifyMutationCommands(
 
         for (const auto & command : commands)
         {
+            /// Handled below, for both kinds of mutation.
+            if (command.isClearOfBlockColumns(*metadata_snapshot))
+                continue;
+
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
                 auto marker_name = nameInPart(command.column_name);
@@ -1423,8 +1485,35 @@ static void splitAndModifyMutationCommands(
         }
     }
 
+    if (clears_block_columns)
+    {
+        /// A rewrite of the whole part does not read the columns (see `dropped_columns` above).
+        if (isWidePart(part) && isPerFilePartStorage(part->getDataPartStorage()))
+        {
+            for (const auto & column_name : {BlockNumberColumn::name, BlockOffsetColumn::name})
+                if (part_columns.has(column_name))
+                    for_file_renames.push_back({.type = MutationCommand::Type::DROP_COLUMN, .column_name = column_name});
+        }
+
+        for (const auto & index : metadata_snapshot->getSecondaryIndices())
+            if (usesBlockColumns(index))
+                for_file_renames.push_back({.type = MutationCommand::Type::DROP_INDEX, .column_name = index.name});
+
+        for (const auto & projection : metadata_snapshot->getProjections())
+            if (usesBlockColumns(projection))
+                for_file_renames.push_back({.type = MutationCommand::Type::DROP_PROJECTION, .column_name = projection.name});
+
+        /// So that the interpreter does not write the stored values of the columns into a rewritten part.
+        if (!for_interpreter.empty())
+        {
+            auto it = std::ranges::find_if(commands, [&](const MutationCommand & command) { return command.isClearOfBlockColumns(*metadata_snapshot); });
+            for_interpreter.push_back(*it);
+        }
+    }
+
     /// Any mutation that processes data through the interpreter also materializes `_block_number` and `_block_offset` columns when they are enabled.
-    if (!for_interpreter.empty())
+    /// Not when it clears them, so that the new part stores neither of them.
+    if (!for_interpreter.empty() && !clears_block_columns)
     {
         const auto data_settings = part->storage.getSettings();
 
@@ -2711,6 +2800,7 @@ static void finalizeMutatedPart(
     const CompressionCodecPtr & codec,
     ContextPtr context,
     StorageMetadataPtr metadata_snapshot,
+    bool clears_block_columns,
     bool sync)
 {
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
@@ -2800,6 +2890,11 @@ static void finalizeMutatedPart(
             /// The mutated part keeps the block range of the source part's name, so repairing against the
             /// source part re-derives exactly the ranges the new part's own name would give.
             minmax_index->repairInheritedBlockColumns(*source_part, metadata_snapshot);
+
+            /// The ranges of the removed values can be narrower than the ones of the values the reader returns
+            /// instead, and would skip the part wrongly. A mutation that hardlinks columns keeps the rows of the part.
+            if (clears_block_columns)
+                minmax_index->setComputedBlockColumns(*source_part, source_part->rows_count, metadata_snapshot);
 
             auto files = minmax_index->store(
                 metadata_snapshot,
@@ -3036,6 +3131,8 @@ struct MutationContext
     bool changes_storage_type{};
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
     bool recalculate_ttl_only = false;
+    /// The mutation removes `_block_number` and `_block_offset` from the source part, see `hasClearOfBlockColumns`.
+    bool clears_block_columns = false;
 
     MergeTreeTransactionPtr txn;
 
@@ -4285,6 +4382,13 @@ private:
         ctx->new_data_part->checksums = ctx->source_part->checksums;
         ctx->new_data_part->invalidated_system_columns = ctx->source_part->invalidated_system_columns;
 
+        /// `finalizeMutatedPart` writes them again with the ranges of the values the new part reads.
+        if (ctx->clears_block_columns)
+        {
+            for (const auto & file_name : MutationHelpers::getMinMaxFilesOfBlockColumns(*ctx->source_part))
+                ctx->new_data_part->checksums.remove(file_name);
+        }
+
         /// When the archive will not be hardlinked from source (packed_skip_index_archive_dirty),
         /// the inherited skp_idx.packed entry must not survive untouched into the new part's
         /// checksums: it points at a file that may not exist in the new part. Drop it up front;
@@ -4613,6 +4717,7 @@ private:
             ctx->compression_codec,
             ctx->context,
             ctx->metadata_snapshot,
+            ctx->clears_block_columns,
             ctx->need_sync);
     }
 
@@ -4939,6 +5044,9 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
     if (command.type == MutationCommand::APPLY_PATCHES)
         return true;
 
+    if (command.isClearOfBlockColumns(*metadata_snapshot) && !MutationHelpers::storesBlockColumns(*part))
+        return true;
+
     if (command.type == MutationCommand::APPLY_DELETED_MASK && !part->hasLightweightDelete())
         return true;
 
@@ -4976,6 +5084,16 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     {
         if (cmd.type == MutationCommand::Type::DROP_INDEX)
             ctx->indices_to_drop_names.insert(cmd.column_name);
+    }
+
+    /// The indices over `_block_number` and `_block_offset`, which `CLEAR COLUMN` of these columns removes.
+    if (ctx->clears_block_columns)
+    {
+        for (const auto & cmd : ctx->for_file_renames)
+        {
+            if (cmd.type == MutationCommand::Type::DROP_INDEX)
+                ctx->indices_to_drop_names.insert(cmd.column_name);
+        }
     }
 
     for (const auto & index : indices)
@@ -5266,6 +5384,8 @@ bool MutateTask::prepare()
         if (!canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, command, context_for_reading))
             ctx->commands_for_part.emplace_back(command);
     }
+
+    ctx->clears_block_columns = MutationHelpers::hasClearOfBlockColumns(ctx->commands_for_part, *ctx->metadata_snapshot);
 
     auto updated_columns_in_patches = alter_conversions->getColumnsUpdatedInPatches();
 
@@ -5566,6 +5686,10 @@ bool MutateTask::prepare()
     builder.withPartInfo(ctx->future_part->part_info);
 
     ctx->new_data_part = std::move(builder).build();
+    ctx->new_data_part->object_shared_data_serialization_version = ctx->data->chooseObjectSharedDataSerializationVersion(
+        ctx->source_part->getTotalColumnsSize().data_uncompressed,
+        /*is_insert =*/false,
+        /*projection =*/nullptr);
     ctx->new_data_part->getDataPartStorage().beginTransaction();
     if (auto max_bytes_to_buffer = (*ctx->data->getSettings())[MergeTreeSetting::max_bytes_to_buffer_for_packed_part])
         ctx->new_data_part->getDataPartStorage().setTemporaryDataForTransaction(ctx->context->getTempDataOnDisk(), max_bytes_to_buffer);
@@ -5675,6 +5799,10 @@ bool MutateTask::prepare()
                 ctx->metadata_snapshot,
                 ctx->materialized_projections);
 
+            /// It would be built from the stored values of the block columns, which the mutation removes with the projection.
+            if (ctx->clears_block_columns)
+                std::erase_if(ctx->projections_to_recalc, [](const auto * projection) { return MutationHelpers::usesBlockColumns(*projection); });
+
             projections_to_skip.assign(ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end());
         }
         else
@@ -5723,6 +5851,10 @@ bool MutateTask::prepare()
         /// Skip the corrupted-part orphan files (see `MutationContext::orphan_skip_index_files`);
         /// `collectFilesToSkip` cannot reach them since they are absent from `checksums.txt`.
         ctx->files_to_skip.insert(ctx->orphan_skip_index_files.begin(), ctx->orphan_skip_index_files.end());
+
+        /// `finalizeMutatedPart` writes them again: writing through a hardlink would change the source part.
+        if (ctx->clears_block_columns)
+            ctx->files_to_skip.merge(MutationHelpers::getMinMaxFilesOfBlockColumns(*ctx->source_part));
 
         /// A declaration that could not be analyzed has no `ProjectionDescription`, so nothing above can decide
         /// whether its data still matches the rows this mutation rewrites. Leave it out of the new part when a

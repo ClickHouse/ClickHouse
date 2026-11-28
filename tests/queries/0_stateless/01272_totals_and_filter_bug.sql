@@ -1,4 +1,4 @@
-select * from (select number, count() from numbers(2) group by number with totals) where number > 0 settings enable_optimize_predicate_expression=0;
+select * from (select number, count() from numbers(2) group by number with totals) where number > 0;
 
 select '-';
 

@@ -16,7 +16,7 @@ RIGHT JOIN, left side WITH TOTALS
 0	0	1
 0	0	1
 
-0	0	0
+0	6	0
 INNER JOIN: only the input without totals becomes an empty source
 1
 an aggregation over a WITH TOTALS subquery has no totals, so it is still an empty source

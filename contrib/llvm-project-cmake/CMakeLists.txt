@@ -328,6 +328,30 @@ set(LLVM_COMPILE_DEFINITIONS
     LLVM_ENABLE_RTTI=1
 )
 
+# The JIT (`src/Interpreters/JIT/CHJIT.cpp`) compiles at `CodeGenOptLevel::Aggressive` and emits object code into
+# memory; its modules have no debug metadata and no inline assembly. The parts of LLVM below never run in it, but
+# the initialization of the target refers to them unconditionally, so the linker cannot discard them.
+# These macros of our fork of LLVM remove the references at the places where they are made (about 4 MiB of the binary):
+# - `LLVM_DISABLE_GLOBAL_ISEL`, `LLVM_DISABLE_FAST_ISEL`: the instruction selectors for `-O0`.
+# - `LLVM_DISABLE_PIPELINE_PARSING`: the target's table of passes by name, for the textual pipelines of `opt` and `llc`.
+# - `LLVM_DISABLE_DEBUG_INFO_EMISSION`: the DWARF and CodeView writers. The `DWARF` input format reads DWARF with
+#   another library, `LLVMDebugInfoDWARF`, and is not affected.
+# - `LLVM_DISABLE_ASM_PRINTING`: the instruction printer, the assembly streamer and the assembly parser.
+#   The GPU engine compiles to PTX, which is text, so it keeps them.
+# Turn the option off to print the assembly of the compiled code (`PRINT_ASSEMBLY` in `CHJIT.cpp`).
+option (LLVM_TRIM_FOR_JIT "Leave out the parts of LLVM that the JIT never runs" ON)
+if (LLVM_TRIM_FOR_JIT)
+    list (APPEND LLVM_COMPILE_DEFINITIONS
+        LLVM_DISABLE_GLOBAL_ISEL
+        LLVM_DISABLE_FAST_ISEL
+        LLVM_DISABLE_PIPELINE_PARSING
+        LLVM_DISABLE_DEBUG_INFO_EMISSION
+    )
+    if (NOT LLVM_ENABLE_NVPTX)
+        list (APPEND LLVM_COMPILE_DEFINITIONS LLVM_DISABLE_ASM_PRINTING)
+    endif ()
+endif ()
+
 #
 # Cross-compilation support for tablegen tools
 #
