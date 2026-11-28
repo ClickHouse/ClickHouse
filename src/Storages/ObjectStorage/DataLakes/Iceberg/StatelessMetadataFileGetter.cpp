@@ -196,7 +196,8 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
     ContextPtr local_context,
     LoggerPtr log,
     const ManifestFileCacheKey & cache_key,
-    Int32 table_snapshot_schema_id)
+    Int32 table_snapshot_schema_id,
+    Int32 table_format_version)
 {
     auto cacheable_info = getManifestFile(
         object_storage,
@@ -205,7 +206,8 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
         log,
         cache_key.manifest_file_path);
 
-    return getManifestFileEntriesHandle(cacheable_info, persistent_table_components, local_context, cache_key, table_snapshot_schema_id);
+    return getManifestFileEntriesHandle(
+        cacheable_info, persistent_table_components, local_context, cache_key, table_snapshot_schema_id, table_format_version);
 }
 
 Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesHandle(
@@ -213,7 +215,8 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     const ManifestFileCacheKey & cache_key,
-    Int32 table_snapshot_schema_id)
+    Int32 table_snapshot_schema_id,
+    Int32 table_format_version)
 {
     auto iterator = Iceberg::ManifestFileIterator::create(
         manifest_file.getDeserializer(),
@@ -226,7 +229,8 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
         cache_key.partition_spec_id,
         local_context,
         nullptr,
-        table_snapshot_schema_id);
+        table_snapshot_schema_id,
+        table_format_version);
 
     while (iterator->next())
     {

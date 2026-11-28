@@ -261,7 +261,13 @@ static Plan getPlan(
             if (!plan.manifest_file_lineage.contains(manifest_file.manifest_file_path))
                 plan.manifest_file_lineage[manifest_file.manifest_file_path] = {manifest_file.added_snapshot_id};
             auto files_handle = getManifestFileEntriesHandle(
-                object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
+                object_storage,
+                persistent_table_components,
+                context,
+                log,
+                manifest_file,
+                static_cast<Int32>(current_schema_id),
+                initial_metadata_object->getValue<Int32>(Iceberg::f_format_version));
 
             if (!manifest_files.contains(manifest_file.manifest_file_path))
             {
@@ -783,7 +789,13 @@ static bool writeConsolidatedManifestFile(
         const Int32 source_partition_spec_id = manifest_file.partition_spec_id;
 
         auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
+            object_storage,
+            persistent_table_components,
+            context,
+            log,
+            manifest_file,
+            static_cast<Int32>(current_schema_id),
+            metadata_object->getValue<Int32>(Iceberg::f_format_version));
 
         for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {

@@ -402,7 +402,8 @@ AlterDropPartitionExecutor::discoverTargetFilePaths(const SnapshotState & state,
 
     for (const auto & manifest_key : state.snapshot->manifest_list_entries)
     {
-        auto handle = getManifestFileEntriesHandle(object_storage, components, context, log, manifest_key, state.schema_id);
+        auto handle = getManifestFileEntriesHandle(
+            object_storage, components, context, log, manifest_key, state.schema_id, state.snapshot->format_version);
 
         collect(handle.getFilesWithoutDeleted(FileContentType::DATA));
         collect(handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE));
@@ -497,7 +498,8 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
 
     for (const auto & manifest_key : state.snapshot->manifest_list_entries)
     {
-        auto handle = getManifestFileEntriesHandle(object_storage, components, context, log, manifest_key, state.schema_id);
+        auto handle = getManifestFileEntriesHandle(
+            object_storage, components, context, log, manifest_key, state.schema_id, state.snapshot->format_version);
 
         size_t entries_to_keep = 0;
         size_t entries_to_remove = 0;

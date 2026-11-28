@@ -886,7 +886,13 @@ void validateSnapshotForMutation(
     for (const auto & manifest_list_entry : manifest_list_entries)
     {
         auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_table_components, context, log, manifest_list_entry, current_schema_id);
+            object_storage,
+            persistent_table_components,
+            context,
+            log,
+            manifest_list_entry,
+            current_schema_id,
+            metadata->getValue<Int32>(f_format_version));
 
         for (const auto & file_entry : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {

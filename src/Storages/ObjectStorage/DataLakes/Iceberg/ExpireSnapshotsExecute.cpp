@@ -381,7 +381,8 @@ ExpiredFiles collectExpiredFiles(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    Int32 current_schema_id)
+    Int32 current_schema_id,
+    Int32 table_format_version)
 {
     const auto & path_resolver = persistent_table_components.path_resolver;
 
@@ -441,7 +442,7 @@ ExpiredFiles collectExpiredFiles(
 
                 auto entries_handle = getManifestFileEntriesHandle(
                     object_storage, persistent_table_components, context, log,
-                    manifest_entry, current_schema_id);
+                    manifest_entry, current_schema_id, table_format_version);
 
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
                 {
@@ -799,15 +800,16 @@ ExpireSnapshotsResult expireSnapshots(
 
         /// The files of the expired snapshots that none of `retained_snapshots` and `retained_statistics_paths` references.
         auto collect_expired_files = [&](const Poco::JSON::Array::Ptr & retained_snapshots,
-                                         const std::vector<Iceberg::IcebergPathFromMetadata> & retained_statistics_paths)
+                                         const std::vector<Iceberg::IcebergPathFromMetadata> & retained_statistics_paths,
+                                         Int32 table_format_version)
         {
             auto retained = collectSnapshotReferencedFiles(
-                retained_snapshots, object_storage, persistent_table_components, context, log, current_schema_id);
+                retained_snapshots, object_storage, persistent_table_components, context, log, current_schema_id, table_format_version);
             /// A Puffin file can hold both deletion vectors and statistics.
             retained.data_file_paths.insert(retained_statistics_paths.begin(), retained_statistics_paths.end());
             return collectExpiredFiles(
                 partition.expired_manifest_list_paths, expired_statistics_paths, retained, object_storage, persistent_table_components,
-                context, log, current_schema_id);
+                context, log, current_schema_id, table_format_version);
         };
 
         /// Collected before the commit, so that a failure to read the retained snapshots fails the whole request.
@@ -815,7 +817,9 @@ ExpireSnapshotsResult expireSnapshots(
         ExpiredFiles expired_files;
         if (!catalog_commits_metadata || options.dry_run)
             expired_files = collect_expired_files(
-                partition.retained_snapshots, collectStatisticsPaths(metadata, partition.expired_snapshot_ids, /*expired=*/ false));
+                partition.retained_snapshots,
+                collectStatisticsPaths(metadata, partition.expired_snapshot_ids, /*expired=*/ false),
+                metadata->getValue<Int32>(Iceberg::f_format_version));
 
         if (options.dry_run)
         {
@@ -847,7 +851,8 @@ ExpireSnapshotsResult expireSnapshots(
             expired_files = collect_expired_files(
                 committed_metadata->has(Iceberg::f_snapshots) ? committed_metadata->getArray(Iceberg::f_snapshots)
                                                               : Poco::JSON::Array::Ptr(new Poco::JSON::Array),
-                collectStatisticsPaths(committed_metadata, {}, /*expired=*/ false));
+                collectStatisticsPaths(committed_metadata, {}, /*expired=*/ false),
+                committed_metadata->getValue<Int32>(Iceberg::f_format_version));
         }
         else
         {

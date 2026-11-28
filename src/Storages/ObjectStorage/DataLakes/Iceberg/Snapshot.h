@@ -26,6 +26,8 @@ struct IcebergDataSnapshot
     Poco::JSON::Array::Ptr partition_specs;
     /// The `statistics` of `metadata.json`, which hold the statistics files of all snapshots; null when absent.
     Poco::JSON::Array::Ptr statistics;
+    /// `format-version` of the metadata file this snapshot was read from.
+    Int32 format_version;
 
     [[nodiscard]] std::optional<size_t> getTotalRows() const
     {

@@ -107,7 +107,8 @@ public:
         Int32 partition_spec_id,
         DB::ContextPtr context,
         std::shared_ptr<const ActionsDAG> filter_dag_,
-        Int32 table_snapshot_schema_id_);
+        Int32 table_snapshot_schema_id_,
+        Int32 table_format_version_);
 
     ManifestFileEntriesHandle getFilesWithoutDeletedHandle() const;
 
