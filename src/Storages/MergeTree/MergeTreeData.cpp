@@ -9691,13 +9691,15 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             if (use_active_parts_threshold)
             {
                 parts_over_threshold = active_parts_over_threshold;
-                allowed_parts_over_threshold = active_parts_to_throw_insert - active_parts_to_delay_insert;
+                allowed_parts_over_threshold = active_parts_over_threshold; /// if throw threshold is not above delay threshold, will use max delay
+                if (active_parts_to_throw_insert > active_parts_to_delay_insert)
+                    allowed_parts_over_threshold = active_parts_to_throw_insert - active_parts_to_delay_insert;
             }
             else
             {
                 parts_over_threshold = outdated_parts_over_threshold;
-                allowed_parts_over_threshold = outdated_parts_over_threshold; /// if throw threshold is not set, will use max delay
-                if ((*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] > 0)
+                allowed_parts_over_threshold = outdated_parts_over_threshold; /// if throw threshold is not above delay threshold, will use max delay
+                if ((*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] > (*settings)[MergeTreeSetting::inactive_parts_to_delay_insert])
                     allowed_parts_over_threshold = (*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] - (*settings)[MergeTreeSetting::inactive_parts_to_delay_insert];
             }
         }
@@ -9911,10 +9913,11 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
         DataPartStateAndPartitionID active_parts{MergeTreeDataPartState::Active, partition_id};
         DataPartStateAndPartitionID outdated_parts{MergeTreeDataPartState::Outdated, partition_id};
         DataPartsVector res;
-        {
-            res.insert(res.end(), data_parts_by_state_and_info.lower_bound(active_parts), data_parts_by_state_and_info.upper_bound(active_parts));
-            res.insert(res.end(), data_parts_by_state_and_info.lower_bound(outdated_parts), data_parts_by_state_and_info.upper_bound(outdated_parts));
-        }
+        /// Sorted by part info, like the non-transactional result.
+        std::merge(
+            data_parts_by_state_and_info.lower_bound(active_parts), data_parts_by_state_and_info.upper_bound(active_parts),
+            data_parts_by_state_and_info.lower_bound(outdated_parts), data_parts_by_state_and_info.upper_bound(outdated_parts),
+            std::back_inserter(res), LessDataPart());
         filterVisibleDataParts(res, txn->getSnapshot(), txn->tid);
         return res;
     }

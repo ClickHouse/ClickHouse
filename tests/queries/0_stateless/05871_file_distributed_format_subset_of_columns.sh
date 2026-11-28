@@ -42,6 +42,8 @@ make_bin_file "id UInt32, s String" "(1, 'a'), (2, 'bb'), (3, 'ccc')" "${CLICKHO
 file_size=$(wc -c < "${CLICKHOUSE_USER_FILES}/${file_name}" | tr -d ' ')
 file_mtime=$(date -r "${CLICKHOUSE_USER_FILES}/${file_name}" +%s)
 
+# The table is temporary: a `File` table in the `Distributed` format reads its file when it is attached, so a table
+# left by the stress test (a stopped test, an ignored DROP, a fuzzer copy) would keep the server from starting.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT * FROM file('${file_name}', 'Distributed');
     SELECT id FROM file('${file_name}', 'Distributed');
@@ -51,12 +53,11 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM file('${file_name}', 'Distributed');
     SELECT count() FROM file('${file_name}', 'Distributed') WHERE s = 'bb';
     SELECT id, _row_number, _size = ${file_size}, _time = toDateTime(${file_mtime}) FROM file('${file_name}', 'Distributed');
-    CREATE TABLE file_table (id UInt32, s String) ENGINE = File('Distributed', '${file_name}');
+    CREATE TEMPORARY TABLE file_table (id UInt32, s String) ENGINE = File('Distributed', '${file_name}');
     SELECT s FROM file_table;
 "
 
 rm "${CLICKHOUSE_USER_FILES}/${file_name}"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE file_table"
 
 # A file with a second block of another structure is broken and gives an error, not a wrong cast of the column.
 # The blocks of a file with `UInt64` are added after the blocks of a file with `String`, without the header of the

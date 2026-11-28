@@ -47,10 +47,10 @@ GeneralWindowFunctionSlot createGeneralSlot(GeneralWindowFunctionPtr general, si
     return slot;
 }
 
-AggregateWindowFunctionSlot createAggregateSlot(AggregateFunctionPtr function, const WindowDescription & window, size_t function_index)
+AggregateWindowFunctionSlot createAggregateSlot(AggregateFunctionPtr function, const WindowTransformParams & params, size_t function_index)
 {
     return AggregateWindowFunctionSlot{
-        .function = createAggregateWindowFunction(function, window),
+        .function = createAggregateWindowFunction(function, params.window_description, params.function_settings),
         .result_type = function->getResultType(),
         .function_index = function_index,
     };
@@ -125,26 +125,24 @@ bool isRowReady(const WindowFunctionRequirements & required, const Frame & frame
 
 }
 
-WindowTransform::WindowTransform(
-    SharedHeader input_header_, SharedHeader output_header_,
-    const WindowDescription & window_description_, const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
+WindowTransform::WindowTransform(SharedHeader input_header_, SharedHeader output_header_, const WindowTransformParams & params_)
     : IProcessor({input_header_}, {output_header_})
-    , params(WindowTransformParams::create(*input_header_, window_description_, functions))
+    , params(params_)
     , indexes(params)
-    , arguments(params.input_header, functions)
+    , arguments(params.input_header, params.functions)
     , frame(params)
 {
     try
     {
-        general_functions.reserve(functions.size());
-        aggregate_functions.reserve(functions.size());
-        for (size_t function_index = 0; function_index < functions.size(); ++function_index)
+        general_functions.reserve(params.functions.size());
+        aggregate_functions.reserve(params.functions.size());
+        for (size_t function_index = 0; function_index < params.functions.size(); ++function_index)
         {
-            const WindowFunctionDescription & function = functions[function_index];
+            const WindowFunctionDescription & function = params.functions[function_index];
             if (function.general_function)
                 general_functions.push_back(createGeneralSlot(function.general_function, function_index));
             else
-                aggregate_functions.push_back(createAggregateSlot(function.aggregate_function, params.window_description, function_index));
+                aggregate_functions.push_back(createAggregateSlot(function.aggregate_function, params, function_index));
         }
     }
     catch (...)
