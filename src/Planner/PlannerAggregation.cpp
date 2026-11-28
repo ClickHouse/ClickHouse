@@ -18,6 +18,7 @@ namespace Setting
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
     extern const SettingsBool adaptive_aggregator_disable_thaw;
+    extern const SettingsUInt64 aggregation_direct_index_max_cells;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool compile_aggregate_expressions;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
@@ -111,7 +112,7 @@ Aggregator::Params getAggregatorParams(const ContextPtr & query_context, const N
     if (tmp_data_scope)
         tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
 
-    return Aggregator::Params(
+    Aggregator::Params params(
         keys,
         aggregates,
         overflow_row,
@@ -145,6 +146,8 @@ Aggregator::Params getAggregatorParams(const ContextPtr & query_context, const N
         settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
         settings[Setting::adaptive_aggregator_disable_thaw],
         settings[Setting::use_aggregation_memory_tracker]);
+    params.aggregation_direct_index_max_cells = settings[Setting::aggregation_direct_index_max_cells];
+    return params;
 }
 
 }
