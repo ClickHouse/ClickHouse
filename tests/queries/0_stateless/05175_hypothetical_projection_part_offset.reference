@@ -1,9 +1,6 @@
---- _part_offset drops the granule the key kept ---
-estimated marks: 1
-real granules:   1
---- the same predicate through _part_starting_offset ---
-estimated marks: 1
-real granules:   1
+--- a projection that does not store parent offsets cannot serve _part_offset ---
+does not contain column _part_offset
+PROJECTION_NOT_USED
 --- the key alone, for comparison ---
 estimated marks: 2
 real granules:   2
