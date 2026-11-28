@@ -101,7 +101,18 @@ void INATSConsumer::subscribe()
         return;
 
     connect();
-    subscribeImpl();
+    try
+    {
+        subscribeImpl();
+    }
+    catch (...)
+    {
+        /// Some of the subscriptions may have been accepted (e.g. the server refused only one subject). They would take
+        /// messages from the other members of the queue group without anything reading them: closing the connection
+        /// removes them all on the server.
+        connection.disconnect();
+        throw;
+    }
     subscribed = true;
 }
 
@@ -121,14 +132,15 @@ void INATSConsumer::unsubscribe()
     {
         /// Waits until the server has processed the unsubscription, so that every message of the subscriptions has arrived.
         unsubscribeImpl();
-        /// What has arrived is kept (core NATS cannot deliver it again) or returned by the caller (JetStream).
-        salvageReceived();
         LOG_DEBUG(log, "Consumer unsubscribed");
     }
     catch (...)
     {
         tryLogCurrentException(log, "Cannot unsubscribe a NATS consumer");
     }
+    /// What has arrived is kept (core NATS cannot deliver it again) or returned by the caller (JetStream), also if the
+    /// unsubscription failed after reading some messages.
+    salvageReceived();
     subscribed = false;
 }
 

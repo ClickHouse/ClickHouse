@@ -143,7 +143,7 @@ std::vector<String> NATSJetStreamConsumer::drainBeforeUnsubscribe()
         if (message->sid != sid)
             continue;
 
-        if (message->status == 0)
+        if (message->status == 0 || !message->data.empty())
         {
             if (!message->reply.empty())
                 replies.push_back(message->reply);
@@ -173,7 +173,9 @@ std::optional<NATSClient::Message> NATSJetStreamConsumer::acceptMessage(NATSClie
     if (message.sid != sid)
         return {};
 
-    if (message.status == 0)
+    /// A message with a payload is a message of the stream even if its headers have a status line, as the previous client
+    /// classified it. Only messages without a payload are control messages of the pull request (statuses 100, 404, 408, 409).
+    if (message.status == 0 || !message.data.empty())
     {
         if (pull_remaining > 0)
         {
