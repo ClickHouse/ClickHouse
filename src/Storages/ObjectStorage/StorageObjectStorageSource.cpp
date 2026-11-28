@@ -261,12 +261,6 @@ namespace
             || configuration.partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE;
     }
 
-    String getObjectStorageHash(const IObjectStorage & object_storage)
-    {
-        const String description = object_storage.getDescription();
-        return sipHash128String(description.substr(0, description.find('?')) + '\0' + object_storage.getObjectsNamespace());
-    }
-
     /// The identity of the credentials with which `object_storage` reads, for the key of the page cache: it serves bytes
     /// without a request, so a reader must not get the bytes read with other credentials (e.g. a reader allowed to list
     /// the objects but not to read them). `std::nullopt` if it is not known, then each read is authorized by a `HEAD`

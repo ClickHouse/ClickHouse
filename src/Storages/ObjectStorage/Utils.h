@@ -45,6 +45,9 @@ void checkSessionMayUseServerIdentity(const IObjectStorage & object_storage, con
 /// concurrent sessions overwrite. For delta-kernel, which builds its credentials from those parameters.
 void checkSessionMayUseServerIdentityIgnoringSharedFlag(const IObjectStorage & object_storage, const ContextPtr & context);
 
+/// Identifies the storage object paths are relative to (its description without the query string, and its namespace).
+String getObjectStorageHash(const IObjectStorage & object_storage);
+
 /// An empty column name has no identifier to render it with, so it cannot survive analysis.
 void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name);
 

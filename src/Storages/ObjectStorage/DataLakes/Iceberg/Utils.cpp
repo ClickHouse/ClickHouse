@@ -70,6 +70,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
@@ -294,6 +295,17 @@ MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
         .compression_method = getCompressionMethodFromMetadataFile(path)};
 }
 
+static CompressionMethod getVersionHintCompressionMethod(CompressionMethod known_compression_method, const ContextPtr & local_context)
+{
+    auto compression_method = known_compression_method;
+    if (compression_method == CompressionMethod::None)
+    {
+        auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
+        compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
+    }
+    return compression_method;
+}
+
 /// Resolve metadata filename from version hint content.
 /// Version hint may contain just a version number (e.g. "1") or a full filename (e.g. "v1.metadata.json").
 /// When only a version number is given, we try to find the actual file, which may have a compression suffix.
@@ -321,12 +333,7 @@ static std::optional<String> resolveMetadataFilenameFromVersionHint(
         return candidate;
 
     /// Try with known compression method.
-    auto compression_method = known_compression_method;
-    if (compression_method == CompressionMethod::None)
-    {
-        auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
-        compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
-    }
+    auto compression_method = getVersionHintCompressionMethod(known_compression_method, local_context);
     if (compression_method != CompressionMethod::None)
     {
         /// Try the Iceberg spec extension first (gzip -> "gz"), then the legacy
@@ -1977,11 +1984,37 @@ void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata)
         default_spec_id);
 }
 
+String getTableDirectoryKey(const IObjectStorage & object_storage, const String & table_path)
+{
+    String directory = table_path;
+    if (object_storage.getType() == ObjectStorageType::Local)
+        directory = fs::weakly_canonical(resolvePathRelativelyToBase(table_path, object_storage.getCommonKeyPrefix())).string();
+    return getObjectStorageHash(object_storage) + '\0' + directory + '\0';
+}
+
+static String getLatestMetadataSelection(
+    bool follows_version_hint,
+    bool by_last_updated_ms,
+    bool v_prefixed_names_only,
+    bool version_hint_scheme,
+    CompressionMethod version_hint_compression)
+{
+    String selection = follows_version_hint ? "version-hint" : "listing";
+    if (by_last_updated_ms)
+        selection += ":last-updated-ms";
+    if (v_prefixed_names_only)
+        selection += ":v-prefixed";
+    if (version_hint_scheme)
+        selection += ":version-hint-scheme";
+    if (version_hint_compression != CompressionMethod::None)
+        selection += ":" + toContentEncodingName(version_hint_compression);
+    return selection;
+}
+
 template <typename LoadFunc>
 static MetadataFileWithInfo getOrLoadLatestMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr metadata_cache,
-    const String & table_path,
-    const std::optional<String> & table_uuid,
+    const String & cache_key,
     const ContextPtr & local_context,
     bool force_fetch_latest_metadata,
     LoadFunc && load_fn)
@@ -1995,8 +2028,7 @@ static MetadataFileWithInfo getOrLoadLatestMetadataFileAndVersion(
     if (metadata_cache)
     {
         return metadata_cache->getOrSetLatestMetadataVersion(
-            table_path,
-            table_uuid,
+            cache_key,
             load_fn,
             tolerated_staleness_ms
         )->latest_metadata;
@@ -2026,20 +2058,25 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     bool force_fetch_latest_metadata,
     bool ignore_metadata_pointer_overrides)
 {
+    MostRecentMetadataFileSelectionWay selection_way
+        = data_lake_settings[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
+        ? MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
+        : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
+    bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
+        || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
+
+    const bool list_v_prefixed_names_only = local_context->getSettingsRef()[Setting::iceberg_list_only_v_prefixed_metadata_files]
+        && !ignore_metadata_pointer_overrides && !need_all_metadata_files_parsing
+        && !data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
+        && !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed;
+
+    const bool reads_version_hint_scheme = !(table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
+        && data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
+        && (ignore_metadata_pointer_overrides || !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed);
+
     auto load_fn = [&]()
     {
         auto log = getLogger("IcebergMetadataFileResolver");
-        MostRecentMetadataFileSelectionWay selection_way
-            = data_lake_settings[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
-            ? MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
-            : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
-        bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
-            || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
-
-        const bool list_v_prefixed_names_only = local_context->getSettingsRef()[Setting::iceberg_list_only_v_prefixed_metadata_files]
-            && !ignore_metadata_pointer_overrides && !need_all_metadata_files_parsing
-            && !data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
-            && !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed;
 
         std::vector<String> metadata_files;
         String listed_prefix;
@@ -2093,9 +2130,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             /// explicit path, so only the hint spells it here; a reader obeys the explicit path.
             String pointer_content;
             bool pointer_is_version_hint = false;
-            if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
-                && (ignore_metadata_pointer_overrides
-                    || !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed))
+            if (reads_version_hint_scheme)
             {
                 /// A hint that cannot be read leaves the scheme unknown, and guessing it here would
                 /// widen what a destructive caller may delete, so the read is allowed to throw.
@@ -2341,7 +2376,17 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
     };
 
-    return getOrLoadLatestMetadataFileAndVersion(metadata_cache, table_path, table_uuid, local_context, force_fetch_latest_metadata, load_fn);
+    const auto cache_key = IcebergMetadataFilesCache::getLatestMetadataVersionKey(
+        getTableDirectoryKey(*object_storage, table_path),
+        table_path,
+        getLatestMetadataSelection(
+            /* follows_version_hint = */ false,
+            selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD,
+            list_v_prefixed_names_only,
+            reads_version_hint_scheme,
+            CompressionMethod::None),
+        use_table_uuid_for_metadata_file_selection ? table_uuid : std::nullopt);
+    return getOrLoadLatestMetadataFileAndVersion(metadata_cache, cache_key, local_context, force_fetch_latest_metadata, load_fn);
 }
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
@@ -2432,7 +2477,16 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
                 /* force_fetch_latest_metadata */ true,
                 ignore_metadata_pointer_overrides);
         };
-        return getOrLoadLatestMetadataFileAndVersion(metadata_cache, table_path, table_uuid, local_context, force_fetch_latest_metadata, load_fn);
+        const auto cache_key = IcebergMetadataFilesCache::getLatestMetadataVersionKey(
+            getTableDirectoryKey(*object_storage, table_path),
+            table_path,
+            getLatestMetadataSelection(
+                /* follows_version_hint = */ true,
+                data_lake_settings[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value,
+                /* v_prefixed_names_only = */ false,
+                /* version_hint_scheme = */ false,
+                getVersionHintCompressionMethod(known_compression_method, local_context)));
+        return getOrLoadLatestMetadataFileAndVersion(metadata_cache, cache_key, local_context, force_fetch_latest_metadata, load_fn);
     }
 
     {
