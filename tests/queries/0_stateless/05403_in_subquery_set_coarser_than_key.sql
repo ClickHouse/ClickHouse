@@ -125,6 +125,13 @@ CREATE TABLE t_map (k Array(Tuple(String, String))) ENGINE = MergeTree PARTITION
 INSERT INTO t_map VALUES ([('01', 'a')]), ([('1', 'a')]), ([('2', 'b')]);
 SELECT count() FROM t_map WHERE k IN (SELECT map(toUInt8(1), 'a'));
 
+-- The cast into `String` tells `-0` from `0`, which the index holds as one value.
+CREATE TABLE t_fz (x Float64) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1;
+INSERT INTO t_fz VALUES (-0.), (0.), (1.);
+SELECT count() FROM t_fz WHERE x IN (SELECT '0');
+SELECT count() FROM t_fz WHERE x NOT IN (SELECT '0');
+SELECT countIf(x NOT IN (SELECT '0')) FROM t_fz;
+
 -- A set whose cast merges nothing keeps pruning.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT toDateTime('2023-02-01 12:00:01', 'UTC'))) WHERE explain ILIKE '%Granules: 1/2%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT toDateTime64('2023-02-01 12:00:01', 3, 'UTC'))) WHERE explain ILIKE '%Granules: 1/2%';
@@ -144,6 +151,8 @@ CREATE TABLE t_wrap (k Int64) ENGINE = MergeTree ORDER BY k SETTINGS index_granu
 INSERT INTO t_wrap VALUES (1), (5);
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_wrap WHERE k IN (SELECT CAST(toInt64(1), 'Dynamic'))) WHERE explain ILIKE '%Granules: 1/2%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_wrap WHERE k IN (SELECT CAST(toInt64(1), 'Variant(Int64, String)'))) WHERE explain ILIKE '%Granules: 1/2%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_wrap WHERE k IN (SELECT '1')) WHERE explain ILIKE '%Granules: 1/2%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT x FROM t_fz WHERE x IN (SELECT '0')) WHERE explain ILIKE '%Granules: 2/3%';
 CREATE TABLE t_saf (id UInt8, v SimpleAggregateFunction(any, Bool), INDEX i v TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 INSERT INTO t_saf VALUES (1, false), (2, true);
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT id FROM t_saf WHERE v IN (SELECT true) SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Granules: 1/2%';
@@ -181,3 +190,4 @@ DROP TABLE t_time;
 DROP TABLE t_boolb;
 DROP TABLE t_map;
 DROP TABLE t_saf;
+DROP TABLE t_fz;

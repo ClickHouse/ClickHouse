@@ -3966,6 +3966,12 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
             if (keyToSetConversionMayCollapse(predicate_column_type, element_type)
                 && !(!mapping.set_transform && isTextOfElementValues(mapping.index_mapping.functions, element_type)))
                 return false;
+
+            /// The index holds `-0` and `0` as one value while their text differs, so a `String` element names a superset.
+            if (!element_type->equals(*predicate_column_type)
+                && anyInTypeTree(*predicate_column_type, [](const IDataType & type) { return isFloat(type); })
+                && anyInTypeTree(*element_type, [](const IDataType & type) { return isString(type); }))
+                out_is_exact = false;
         }
 
         /// A float element over a `Decimal`, `DateTime64` or `Time64` input names a key point that misses matching values,
