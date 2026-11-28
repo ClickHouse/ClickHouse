@@ -1,0 +1,25 @@
+count	1
+aggregate first	1
+key only	k
+two keys	1
+key reduced to a constant	1
+key made constant by multiIf	1
+contradictory key	1
+expression	1
+totals	1
+grouping sets with a key	1
+grouping sets with ()	2
+grouping sets, default	1
+union all	2
+nested	1
+exists	1
+in	1
+join	1
+remote	1
+kept	1
+removed at the default	0
+non-constant key	0
+mixed keys	0
+grouping sets without a constant set	1
+non-empty input	1
+default setting	0
