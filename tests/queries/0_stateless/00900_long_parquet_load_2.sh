@@ -100,6 +100,8 @@ EXCLUDE=(
     05444_int96_lower_boundary.parquet
     # Hand-crafted `DELTA_BINARY_PACKED` file for the 05479 filter-in-decoder test.
     05479_delta_binary_packed_filter_int8.parquet
+    # Two-level LIST fixture, tested by 05872.
+    05872_parquet_two_level_list_single_field.parquet
 )
 
 for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parquet.gz' \) -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do
