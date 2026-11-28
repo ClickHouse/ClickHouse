@@ -1,0 +1,16 @@
+0	4	0	4
+0	2
+1	8	Nullable(UInt64)
+0	String
+\N
+0	9
+0	0
+1	1
+2	2
+3	3
+AggregateFunction(minDistinct, UInt64)	9
+0
+FUNCTION id: 2, function_name: min, function_type: aggregate, result_type: UInt64
+FUNCTION id: 6, function_name: max, function_type: aggregate, result_type: UInt64
+FUNCTION id: 8, function_name: maxIf, function_type: aggregate, result_type: UInt64
+FUNCTION id: 13, function_name: minDistinctState, function_type: aggregate, result_type: AggregateFunction(minDistinct, UInt64)

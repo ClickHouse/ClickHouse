@@ -1350,6 +1350,11 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
         result_aggregate_function_name = result_aggregate_function_name.substr(0, prefix_length) + "DistinctIf";
     }
 
+    /// Duplicates do not change the result of min and max, so there is no need to build a set of distinct values
+    static constexpr std::array<std::string_view, 4> min_max_distinct = {"mindistinct", "maxdistinct", "mindistinctif", "maxdistinctif"};
+    if (std::ranges::contains(min_max_distinct, Poco::toLower(result_aggregate_function_name)))
+        result_aggregate_function_name.erase(3, strlen("Distinct"));
+
     static constexpr std::array<std::string_view, 4> suffixes_to_replace = {"MergeState", "Merge", "State", "If"};
 
     /// Must be idempotent: shards and parallel replicas resolve the rewritten names (`sumOrNullIf`) again.
