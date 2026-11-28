@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Storages/MergeTree/WhatIf/HypotheticalProjection.h>
 
@@ -249,11 +250,17 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
     return false;
 }
 
-bool QueryDAG::build(QueryPlan::Node & node)
+bool QueryDAG::build(QueryPlan::Node & node, size_t max_expanded_ast_elements)
 {
     ActionsDAG::NodeRawConstPtrs filter_nodes;
     if (!buildImpl(node, filter_nodes))
         return false;
+
+    /// Projection analysis walks each filter condition once per path.
+    if (max_expanded_ast_elements)
+        for (const auto * filter : filter_nodes)
+            if (getExpandedTreeSize(*filter, max_expanded_ast_elements) > max_expanded_ast_elements)
+                return false;
 
     if (!filter_nodes.empty())
     {

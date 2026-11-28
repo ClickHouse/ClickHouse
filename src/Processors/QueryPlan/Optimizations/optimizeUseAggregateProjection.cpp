@@ -60,6 +60,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool force_optimize_projection;
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool prefer_optimize_projection;
     extern const SettingsString preferred_optimize_projection_name;
@@ -856,9 +857,9 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
         return candidates;
 
     QueryDAG dag;
-    if (!dag.build(*node.children.front()))
+    if (!dag.build(*node.children.front(), context->getSettingsRef()[Setting::max_expanded_ast_elements]))
     {
-        rejectProjections(candidates.reject_reasons, agg_projections, {}, "the steps between the aggregation and the read cannot be rewritten onto a projection");
+        rejectProjections(candidates.reject_reasons, agg_projections, {}, "the steps between the aggregation and the read cannot be rewritten onto a projection, or their filter condition exceeds max_expanded_ast_elements");
         return candidates;
     }
 
@@ -982,9 +983,9 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
         return candidates;
 
     QueryDAG dag;
-    if (!dag.build(*node.children.front()))
+    if (!dag.build(*node.children.front(), context->getSettingsRef()[Setting::max_expanded_ast_elements]))
     {
-        rejectProjections(candidates.reject_reasons, agg_projections, {}, "the steps between the aggregation and the read cannot be rewritten onto a projection");
+        rejectProjections(candidates.reject_reasons, agg_projections, {}, "the steps between the aggregation and the read cannot be rewritten onto a projection, or their filter condition exceeds max_expanded_ast_elements");
         return candidates;
     }
 

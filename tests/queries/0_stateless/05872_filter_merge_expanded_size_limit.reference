@@ -1,0 +1,34 @@
+Expression
+  Aggregating
+    Expression
+      Filter
+        Expression
+          ReadFromSystemNumbers
+1
+Expression
+  Aggregating
+    Expression
+      Filter
+        ReadFromSystemNumbers
+Expression
+  Aggregating
+    Expression
+      Filter
+        Expression
+          ReadFromSystemNumbers
+Expression
+  Aggregating
+    Expression
+      Filter
+        Filter
+          ReadFromSystemNumbers
+Condition: true
+└──ReadFromMergeTree (default.t_05872)
+8192
+0
+Expression
+  Filter
+    Aggregating
+      Filter
+        Expression
+          ReadFromSystemNumbers
