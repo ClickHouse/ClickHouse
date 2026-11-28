@@ -1,0 +1,143 @@
+{
+  "format-version": 3,
+  "table-uuid": "cf7f6e74-f056-444d-9f59-11ecbfec53fc",
+  "location": "file:///iceberg-deletes/deletion-vectors",
+  "last-sequence-number": 2,
+  "last-updated-ms": 1782735563003,
+  "last-column-id": 3,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": true,
+          "type": "long"
+        },
+        {
+          "id": 2,
+          "name": "category",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "id": 3,
+          "name": "value",
+          "required": false,
+          "type": "double"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "last-partition-id": 999,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {
+    "write.merge.mode": "merge-on-read",
+    "write.update.mode": "merge-on-read",
+    "write.delete.mode": "merge-on-read",
+    "write.metadata.compression-codec": "none",
+    "write.parquet.compression-codec": "uncompressed"
+  },
+  "current-snapshot-id": 6217695766594304194,
+  "next-row-id": 100,
+  "refs": {
+    "main": {
+      "snapshot-id": 6217695766594304194,
+      "type": "branch"
+    }
+  },
+  "snapshots": [
+    {
+      "sequence-number": 1,
+      "snapshot-id": 5211583809966789225,
+      "timestamp-ms": 1782735562872,
+      "summary": {
+        "operation": "append",
+        "manifests-created": "1",
+        "manifests-kept": "0",
+        "manifests-replaced": "0",
+        "added-data-files": "1",
+        "added-records": "100",
+        "added-files-size": "2558",
+        "changed-partition-count": "1",
+        "total-records": "100",
+        "total-files-size": "2558",
+        "total-data-files": "1",
+        "total-delete-files": "0",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0",
+        "iceberg-version": "Apache Iceberg 1.11.0 (commit 6976e020b894f6a6777704df2b8c4458cb291ae9)"
+      },
+      "manifest-list": "file:///iceberg-deletes/deletion-vectors/metadata/snap-5211583809966789225-1-6d6b6c78-ea01-49cf-be75-e48b55e9f81c.avro",
+      "schema-id": 0,
+      "first-row-id": 0,
+      "added-rows": 100
+    },
+    {
+      "sequence-number": 2,
+      "snapshot-id": 6217695766594304194,
+      "parent-snapshot-id": 5211583809966789225,
+      "timestamp-ms": 1782735563003,
+      "summary": {
+        "operation": "delete",
+        "manifests-created": "1",
+        "manifests-kept": "1",
+        "manifests-replaced": "0",
+        "added-delete-files": "1",
+        "added-dvs": "1",
+        "added-files-size": "51",
+        "added-position-deletes": "10",
+        "changed-partition-count": "1",
+        "total-records": "100",
+        "total-files-size": "2609",
+        "total-data-files": "1",
+        "total-delete-files": "1",
+        "total-position-deletes": "10",
+        "total-equality-deletes": "0",
+        "iceberg-version": "Apache Iceberg 1.11.0 (commit 6976e020b894f6a6777704df2b8c4458cb291ae9)"
+      },
+      "manifest-list": "file:///iceberg-deletes/deletion-vectors/metadata/snap-6217695766594304194-1-54b8a009-2aab-4422-bc2a-6de7f5baac52.avro",
+      "schema-id": 0,
+      "first-row-id": 100,
+      "added-rows": 0
+    }
+  ],
+  "statistics": [],
+  "partition-statistics": [],
+  "snapshot-log": [
+    {
+      "timestamp-ms": 1782735562872,
+      "snapshot-id": 5211583809966789225
+    },
+    {
+      "timestamp-ms": 1782735563003,
+      "snapshot-id": 6217695766594304194
+    }
+  ],
+  "metadata-log": [
+    {
+      "timestamp-ms": 1782735562249,
+      "metadata-file": "file:///iceberg-deletes/deletion-vectors/metadata/v1.metadata.json"
+    },
+    {
+      "timestamp-ms": 1782735562877,
+      "metadata-file": "file:///iceberg-deletes/deletion-vectors/metadata/v2.metadata.json"
+    }
+  ]
+}

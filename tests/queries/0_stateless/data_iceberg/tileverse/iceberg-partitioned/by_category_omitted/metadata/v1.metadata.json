@@ -1,0 +1,102 @@
+{
+  "location": "file:///iceberg-partitioned/by_category_omitted",
+  "table-uuid": "84b519ce-b923-402e-b68f-bf289049209b",
+  "last-updated-ms": 1782344113377,
+  "last-column-id": 3,
+  "schemas": [
+    {
+      "type": "struct",
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "type": "long",
+          "required": true
+        },
+        {
+          "id": 2,
+          "name": "category",
+          "type": "string",
+          "required": true
+        },
+        {
+          "id": 3,
+          "name": "amount",
+          "type": "long",
+          "required": true
+        }
+      ],
+      "schema-id": 0,
+      "identifier-field-ids": []
+    }
+  ],
+  "current-schema-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": [
+        {
+          "source-id": 2,
+          "field-id": 1000,
+          "transform": "identity",
+          "name": "category"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "last-partition-id": 1000,
+  "properties": {},
+  "current-snapshot-id": 7189951345053510387,
+  "snapshots": [
+    {
+      "snapshot-id": 7189951345053510387,
+      "sequence-number": 1,
+      "timestamp-ms": 1782344113377,
+      "manifest-list": "file:///iceberg-partitioned/by_category_omitted/metadata/snap-7189951345053510387-0-1f83630d-08c1-4462-a8ca-10b98714a70a.avro",
+      "summary": {
+        "operation": "append",
+        "added-files-size": "5178",
+        "added-data-files": "3",
+        "added-records": "300",
+        "changed-partition-count": "3",
+        "total-data-files": "3",
+        "total-delete-files": "0",
+        "total-records": "300",
+        "total-files-size": "5178",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0"
+      },
+      "schema-id": 0
+    }
+  ],
+  "snapshot-log": [
+    {
+      "snapshot-id": 7189951345053510387,
+      "timestamp-ms": 1782344113377
+    }
+  ],
+  "metadata-log": [
+    {
+      "metadata-file": "file:///iceberg-partitioned/by_category_omitted/metadata/00000-9d717ed2-3227-4478-b783-33e14f0b7a50.metadata.json",
+      "timestamp-ms": 1782344113263
+    }
+  ],
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "default-sort-order-id": 0,
+  "refs": {
+    "main": {
+      "snapshot-id": 7189951345053510387,
+      "type": "branch"
+    }
+  },
+  "statistics": [],
+  "partition-statistics": [],
+  "format-version": 2,
+  "last-sequence-number": 1
+}
