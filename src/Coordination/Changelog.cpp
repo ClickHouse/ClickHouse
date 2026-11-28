@@ -1258,6 +1258,23 @@ LogEntryStorage::LogEntryStorage(const LogFileSettings & log_settings, ReadAhead
 {
 }
 
+void LogEntryStorage::ignoreLatestLogsCacheLimits()
+{
+    if (latest_logs_cache.hasUnlimitedSpace())
+        return;
+
+    chassert(latest_logs_cache.empty() && logs_location.empty());
+    LOG_WARNING(
+        log,
+        "latest_logs_cache_size_threshold ({}) and latest_logs_cache_entry_count_threshold ({}) are ignored because compress_logs "
+        "is enabled or compressed changelog files exist: their entries cannot be read back from disk, so the latest logs cache is "
+        "unlimited",
+        latest_logs_cache.size_threshold,
+        latest_logs_cache.count_threshold);
+    latest_logs_cache.size_threshold = 0;
+    latest_logs_cache.count_threshold = 0;
+}
+
 LogEntryStorage::~LogEntryStorage()
 {
     shutdown();
@@ -3767,6 +3784,10 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     /// compressed file below the snapshot shouldn't disable the feature).
     const bool any_in_scope_compressed
         = std::ranges::any_of(in_scope_files, [](const auto & file_description) { return file_description->is_compressed; });
+
+    /// Positions in compressed files are decompressed offsets, so their entries must never be evicted.
+    if (compress_logs || any_in_scope_compressed)
+        entry_storage.ignoreLatestLogsCacheLimits();
 
     /// A single in-scope file has no parallelism to exploit; `startup_read_max_streams <= 1`
     /// (explicitly requested, or auto-resolved to 1 on a single-core machine) selects serial too.

@@ -396,6 +396,9 @@ struct LogEntryStorage
     /// True when latest_logs_cache has no size or entry-count threshold (retains the whole live log, never evicts).
     bool isUnlimitedCacheMode() const { return latest_logs_cache.hasUnlimitedSpace(); }
 
+    /// Sets both latest_logs_cache thresholds to 0. Must be called before any entry is added.
+    void ignoreLatestLogsCacheLimits();
+
     void addLocation(uint64_t index, uint64_t term, int32_t value_type, const LogEntryPtr & log_entry, LogLocation log_location);
 
     void reserveLocations(size_t count);
@@ -438,8 +441,8 @@ private:
         size_t min_index_in_cache = 0;
         size_t max_index_in_cache = 0;
 
-        const size_t size_threshold;
-        const size_t count_threshold;
+        size_t size_threshold;
+        size_t count_threshold;
     };
 
     InMemoryCache latest_logs_cache;
